@@ -25,14 +25,17 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     is_dev_root_set,
 )
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_ASSET_ARCHITECTURES,
+    CLIPROXYAPI_ASSETS,
     CLIPROXYAPI_AUTH_DIR,
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_DOWNLOAD_URL,
+    CLIPROXYAPI_FETCH_LIMIT_BYTES,
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_SUPERVISED_NAME,
     CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
@@ -75,7 +78,8 @@ class CliproxyApiProvisioner:
             RuntimeError: On a machine the vendor publishes no binary for.
             FileNotFoundError: Outside Linux, when the package carries no
                 binary.
-            subprocess.CalledProcessError: If the download or any setup step fails.
+            DownloadFailedError: If the release did not serve the pinned file.
+            subprocess.CalledProcessError: If a setup step fails.
         """
         if not is_linux():
             return self._register(report=report)
@@ -194,19 +198,28 @@ class CliproxyApiProvisioner:
         )
 
     def _download_binary(self, architecture: str) -> None:
+        """Fetch the pinned release and install the gateway from it.
+
+        Args:
+            architecture: A normalized name from
+                :mod:`neutrino_hub.system.machine`.
+
+        Raises:
+            DownloadFailedError: If the release did not serve the pinned file.
+        """
+        url = download_url(architecture)
+        _, digest = CLIPROXYAPI_ASSETS[("linux", architecture)]
         with tempfile.TemporaryDirectory() as workdir:
-            archive = Path(workdir) / "cliproxyapi.tar.gz"
-            run(
-                [
-                    "curl",
-                    "-fL",
-                    "--retry",
-                    "2",
-                    "-o",
-                    str(archive),
-                    download_url(architecture),
-                ],
-                timeout_s=600,
+            archive = (
+                SourceFetcher()
+                .fetch_file(
+                    file=url.rsplit("/", 1)[-1],
+                    sources=[url],
+                    digest=f"sha256:{digest}",
+                    directory=Path(workdir),
+                    limit=CLIPROXYAPI_FETCH_LIMIT_BYTES,
+                )
+                .path
             )
             with tarfile.open(archive) as tar:
                 member = tar.getmember("cli-proxy-api")

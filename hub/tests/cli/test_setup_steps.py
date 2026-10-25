@@ -17,7 +17,9 @@ import pytest
 
 from neutrino_hub import edition
 from neutrino_hub.cli import setup
+from neutrino_hub.exceptions import DownloadFailedError
 from tests.cli.test_setup_local_agent import FakeReporter
+from tests.conftest import FakeSourceFetcher
 
 # The proxy core's step and its unit, where the tree carries the proxy.
 XRAY = ["xray"] if edition.has_feature("proxy") else []
@@ -173,12 +175,13 @@ def _frp_archive(asset: str, payload: bytes) -> bytes:
 def checkout_frpc(monkeypatch, tmp_path):
     """A checkout with no frpc yet, and a release the download is answered
     from; the URLs asked for, in order."""
-    asked: list = []
-    archives: dict = {}
+    fetcher = FakeSourceFetcher()
 
     def pin(system, machine, asset, *, digest=""):
         archive = _frp_archive(asset, b"frpc " + asset.encode())
-        archives[asset] = archive
+        fetcher.bodies[
+            f"https://github.com/fatedier/frp/releases/download/v9.9.9/{asset}"
+        ] = archive
         digest = digest or hashlib.sha256(archive).hexdigest()
         monkeypatch.setattr(setup, "FRP_ASSETS", {(system, machine): (asset, digest)})
         monkeypatch.setattr(setup, "hub_os", lambda: system)
@@ -187,16 +190,13 @@ def checkout_frpc(monkeypatch, tmp_path):
         monkeypatch.setattr(setup, "FRP_BINARY_PATH", tmp_path / "bin" / name)
 
     def run(command, **keywords):
-        assert command[0] == "curl", command
-        asked.append(command[-1])
-        target = Path(command[command.index("-o") + 1])
-        target.write_bytes(archives[command[-1].rsplit("/", 1)[-1]])
-        return SimpleNamespace(stdout="", is_success=True)
+        raise AssertionError(f"ran {command}")
 
     monkeypatch.setattr(setup, "is_packaged", lambda: False)
     monkeypatch.setattr(setup, "run", run)
+    monkeypatch.setattr(setup, "SourceFetcher", lambda: fetcher)
     monkeypatch.setattr(setup, "FRP_VERSION", "9.9.9")
-    return SimpleNamespace(pin=pin, asked=asked, binaries=tmp_path / "bin")
+    return SimpleNamespace(pin=pin, fetcher=fetcher, binaries=tmp_path / "bin")
 
 
 @pytest.mark.parametrize(
@@ -215,8 +215,12 @@ def test_a_checkout_fetches_the_pinned_frpc_alone(
     reporter = FakeReporter()
 
     assert setup._step_frpc(reporter) == "frpc 9.9.9"
-    assert checkout_frpc.asked == [
-        f"https://github.com/fatedier/frp/releases/download/v9.9.9/{asset}"
+    assert checkout_frpc.fetcher.asked == [
+        (
+            "file",
+            asset,
+            [f"https://github.com/fatedier/frp/releases/download/v9.9.9/{asset}"],
+        )
     ]
     assert reporter.notes == ["downloading frpc 9.9.9 (~14 MB)"]
     binary = checkout_frpc.binaries / name
@@ -228,7 +232,7 @@ def test_a_checkout_fetches_the_pinned_frpc_alone(
 def test_a_download_that_is_not_the_pinned_frpc_is_refused(checkout_frpc):
     checkout_frpc.pin("linux", "amd64", "frp_9.9.9_linux_amd64.tar.gz", digest="0" * 64)
 
-    with pytest.raises(ValueError, match="not 0000"):
+    with pytest.raises(DownloadFailedError):
         setup._step_frpc(FakeReporter())
     assert not checkout_frpc.binaries.exists()
 
@@ -241,7 +245,7 @@ def test_a_machine_frp_publishes_nothing_for_fetches_nothing(
 
     with pytest.raises(RuntimeError, match="linux riscv64"):
         setup._step_frpc(FakeReporter())
-    assert checkout_frpc.asked == []
+    assert checkout_frpc.fetcher.asked == []
 
 
 def test_a_package_without_its_frpc_asks_for_a_reinstall(monkeypatch, tmp_path):

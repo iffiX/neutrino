@@ -4,19 +4,17 @@ The package carries one release of each, so a box splits traffic the moment it
 is installed. The lists behind them move every few days, which is why a running
 machine can take a newer release: the file is fetched from the repository that
 publishes it, held against the digest published beside it, and written over the
-copy xray loads only once both files are in hand.
+copy xray loads only once both files are in hand. Every read goes through the
+hub's fetcher, each with the one source the repository has.
 
 Which release a machine holds is state, not configuration. It describes the
 bytes on the disk, so it lives beside them under ``/var/lib`` rather than in
 ``config/``, and a restored backup brings back neither.
 """
 
-import hashlib
 import json
 import os
 import tempfile
-import urllib.request
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,13 +23,15 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_GEODATA,
     XRAY_GEODATA_DOWNLOAD_URL,
     XRAY_GEODATA_LATEST_URL,
+    XRAY_GEODATA_LIMIT_BYTES,
     XRAY_GEODATA_SOURCE_PACKAGE,
     XRAY_GEODATA_SOURCE_RELEASE,
     XRAY_GEODATA_SUM_SUFFIX,
-    XRAY_GEODATA_TIMEOUT_S,
     XRAY_GEODATA_VERSION_PATH,
 )
-from neutrino_hub.utils.tls_trust import public_ssl_context
+from neutrino_hub.utils.source_fetch import SourceFetcher
+
+DIGEST_LENGTH = 64
 
 
 @dataclass(frozen=True)
@@ -121,31 +121,27 @@ def installed(*, version_path: Path = XRAY_GEODATA_VERSION_PATH) -> XrayGeodataS
     return XrayGeodataState(releases=taken, source=XRAY_GEODATA_SOURCE_RELEASE)
 
 
-def latest(*, fetch_bytes: Callable[[str], bytes] | None = None) -> dict[str, str]:
+def latest(*, fetcher=None) -> dict[str, str]:
     """The newest release each database's repository publishes.
 
     Args:
-        fetch_bytes: How one address is read; None reads it over the
-            network, and a test answers from its own table instead.
+        fetcher: What reads the repositories; None is a
+            :class:`~neutrino_hub.utils.source_fetch.SourceFetcher`.
 
     Returns:
         File name to the release tag.
 
     Raises:
-        OSError: If a repository cannot be reached.
-        ValueError: If a reply is not a release naming a tag.
+        DownloadFailedError: If a repository did not answer with a release
+            naming a tag.
     """
-    read = _read if fetch_bytes is None else fetch_bytes
+    fetcher = fetcher if fetcher is not None else SourceFetcher()
     found = {}
     for source in sources():
         url = XRAY_GEODATA_LATEST_URL.format(repository=source.repository)
-        try:
-            release = json.loads(read(url).decode("utf-8"))["tag_name"]
-        except (KeyError, UnicodeDecodeError, ValueError) as error:
-            raise ValueError(f"{url} named no release") from error
-        if not isinstance(release, str) or not release:
-            raise ValueError(f"{url} named no release")
-        found[source.file_name] = release
+        found[source.file_name], _ = fetcher.fetch_document(
+            file=f"{source.repository} latest release", sources=[url], parse=_tag_of
+        )
     return found
 
 
@@ -154,39 +150,45 @@ def fetch(
     *,
     directory: Path = XRAY_GEODATA_DIR,
     version_path: Path = XRAY_GEODATA_VERSION_PATH,
-    fetch_bytes: Callable[[str], bytes] | None = None,
+    fetcher=None,
 ) -> XrayGeodataState:
     """Put the named release of every database where xray reads it.
 
     Both files are fetched and checked before either is written, and each is
-    written through a temporary file in the same directory and moved into
-    place, so a database xray is loading is never half a file and a digest
-    that does not match leaves the machine on what it already had.
+    fetched into a temporary file in the same directory and moved into place,
+    so a database xray is loading is never half a file and a digest that does
+    not match leaves the machine on what it already had.
 
     Args:
         releases: File name to the release to take it from.
         directory: Where xray reads its databases.
         version_path: The file recording what was taken.
-        fetch_bytes: How one address is read; None reads it over the
-            network.
+        fetcher: What reads the repositories; None is a
+            :class:`~neutrino_hub.utils.source_fetch.SourceFetcher`.
 
     Returns:
         What the machine holds afterwards.
 
     Raises:
         KeyError: If a database has no release named for it.
-        OSError: If an address cannot be read or a file cannot be written.
-        ValueError: If a file does not match the digest published beside it,
-            or a digest file is not one.
+        DownloadFailedError: If a digest file or a database could not be
+            had as published.
+        OSError: If a file cannot be written.
     """
-    read = _read if fetch_bytes is None else fetch_bytes
-    taken = {
-        source.file_name: _downloaded(source, releases[source.file_name], read)
-        for source in sources()
-    }
+    fetcher = fetcher if fetcher is not None else SourceFetcher()
     directory.mkdir(parents=True, exist_ok=True)
-    for file_name, payload in taken.items():
-        _replace(directory / file_name, payload)
+    taken = {}
+    try:
+        for source in sources():
+            taken[source.file_name] = _downloaded(
+                source, releases[source.file_name], directory, fetcher
+            )
+        for file_name, download in taken.items():
+            os.chmod(download.path, 0o644)
+            download.place(directory / file_name)
+    finally:
+        for download in taken.values():
+            download.discard()
     state = XrayGeodataState(
         releases={name: releases[name] for name in taken},
         source=XRAY_GEODATA_SOURCE_RELEASE,
@@ -223,38 +225,80 @@ def _source_of(file_name: str, url: str) -> XrayGeodataSource:
     )
 
 
-def _downloaded(
-    source: XrayGeodataSource, release: str, fetch_bytes: Callable[[str], bytes]
-) -> bytes:
-    """One database's bytes, checked against the digest published with them.
+def _downloaded(source: XrayGeodataSource, release: str, directory: Path, fetcher):
+    """One database fetched beside its place, checked against its published digest.
 
     Args:
         source: Which database.
         release: The release to take it from.
-        fetch_bytes: How one address is read.
+        directory: Where the temporary file is made.
+        fetcher: What reads the repository.
 
     Returns:
-        The file's bytes.
+        The download, not yet in its place.
 
     Raises:
-        OSError: If an address cannot be read.
-        ValueError: If the digest file is not one, or the bytes do not match
-            it.
+        DownloadFailedError: If the digest file is not one, or no source
+            served the bytes it names.
+        OSError: If the temporary file cannot be written.
     """
     address = XRAY_GEODATA_DOWNLOAD_URL.format(
         repository=source.repository, release=release, asset=source.asset
     )
-    published = fetch_bytes(address + XRAY_GEODATA_SUM_SUFFIX).decode(
-        "utf-8", "replace"
+    published, _ = fetcher.fetch_document(
+        file=source.asset + XRAY_GEODATA_SUM_SUFFIX,
+        sources=[address + XRAY_GEODATA_SUM_SUFFIX],
+        parse=_digest_of,
     )
-    wanted = published.split()[0] if published.split() else ""
-    if len(wanted) != 64 or not all(letter in "0123456789abcdef" for letter in wanted):
-        raise ValueError(f"{address}{XRAY_GEODATA_SUM_SUFFIX} published no digest")
-    payload = fetch_bytes(address)
-    digest = hashlib.sha256(payload).hexdigest()
-    if digest != wanted:
-        raise ValueError(f"{address} came back as {digest}, not {wanted}")
-    return payload
+    return fetcher.fetch_file(
+        file=source.asset,
+        sources=[address],
+        digest="sha256:" + published,
+        directory=directory,
+        limit=XRAY_GEODATA_LIMIT_BYTES,
+    )
+
+
+def _tag_of(body: bytes) -> str:
+    """The tag a repository's latest release names.
+
+    Args:
+        body: The release as the repository described it.
+
+    Returns:
+        The tag.
+
+    Raises:
+        ValueError: If the answer names no tag.
+    """
+    try:
+        tag = json.loads(body.decode("utf-8")).get("tag_name")
+    except (AttributeError, UnicodeDecodeError, ValueError) as error:
+        raise ValueError("the answer is not a release") from error
+    if not isinstance(tag, str) or not tag:
+        raise ValueError("the release names no tag")
+    return tag
+
+
+def _digest_of(body: bytes) -> str:
+    """The sha256 a ``.sha256sum`` file publishes.
+
+    Args:
+        body: The file as the repository served it.
+
+    Returns:
+        The digest, in hex.
+
+    Raises:
+        ValueError: If the file holds no digest.
+    """
+    words = body.decode("utf-8", "replace").split()
+    wanted = words[0].lower() if words else ""
+    if len(wanted) != DIGEST_LENGTH or any(
+        letter not in "0123456789abcdef" for letter in wanted
+    ):
+        raise ValueError("the file publishes no digest")
+    return wanted
 
 
 def _replace(path: Path, payload: bytes) -> None:
@@ -276,21 +320,3 @@ def _replace(path: Path, payload: bytes) -> None:
     except BaseException:
         Path(staged).unlink(missing_ok=True)
         raise
-
-
-def _read(url: str) -> bytes:
-    """Read one address.
-
-    Args:
-        url: What to read.
-
-    Returns:
-        Everything it answered with.
-
-    Raises:
-        OSError: If it cannot be reached.
-    """
-    with urllib.request.urlopen(
-        url, timeout=XRAY_GEODATA_TIMEOUT_S, context=public_ssl_context()
-    ) as reply:
-        return reply.read()

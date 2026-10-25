@@ -1544,12 +1544,9 @@ class HubReleaseView(BaseModel):
 
 
 class HubReleaseLatestView(BaseModel):
-    """The newest release published, and the package in it for this box."""
+    """The newest release published, and the size of its package for this box."""
 
     version: str
-    published_at: str
-    notes: str
-    page_url: str
     size_bytes: int
 
 
@@ -1775,11 +1772,11 @@ class ChannelPong(BaseModel):
 
 class ChannelModuleState(BaseModel):
     """What one module on a device is to be."""
-    # The recipe resolved for the machine's platform: ``{runner, method,
-    # params}``.
 
     want: str
     config: dict = Field(default_factory=dict)
+    # The recipe resolved for the machine's platform: ``{runner, method,
+    # params}``.
     install: dict = Field(default_factory=dict)
 
 
@@ -1808,12 +1805,12 @@ class ChannelAiToolsState(BaseModel):
     # the hub's own machine.
     base_url: str = ""
     api_key: str = ""
-    # The cc-switch artifact for the machine's platform, ``{name, kind,
-    # digest}``, which the agent asks the package stream for.
-    cc_switch_artifact: dict = Field(default_factory=dict)
     tool_configs: dict = Field(default_factory=dict)
     accounts: list[ChannelAiToolsAccount] = Field(default_factory=list)
     cc_switch_version: str = ""
+    # The cc-switch artifact for the machine's platform, ``{name, kind,
+    # digest}``, which the agent asks the package stream for.
+    cc_switch_artifact: dict = Field(default_factory=dict)
     retry_mark: str = ""
 
 

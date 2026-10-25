@@ -2,44 +2,19 @@
 
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 
-# Where the hub's own releases are published, and how a release is asked
-# for, by edition: GitHub's API for ``intl``, Gitee's for ``cn``. An edition
-# reads its own edition's releases and no other.
-HUB_UPDATE_REPOSITORY = "iffiX/neutrino"
-HUB_UPDATE_LATEST_URLS = {
-    "intl": "https://api.github.com/repos/{repository}/releases/latest",
-    "cn": "https://gitee.com/api/v5/repos/{repository}/releases/latest",
-}
-HUB_UPDATE_TAG_URLS = {
-    "intl": "https://api.github.com/repos/{repository}/releases/tags/{tag}",
-    "cn": "https://gitee.com/api/v5/repos/{repository}/releases/tags/{tag}",
-}
-# A release's own page, for an edition whose API names none.
-HUB_UPDATE_PAGE_URLS = {
-    "intl": "https://github.com/{repository}/releases/tag/{tag}",
-    "cn": "https://gitee.com/{repository}/releases/tag/{tag}",
-}
+# What every release site holds beside a release's files: the file naming
+# the newest release, the tag prefix a version is filed under, and each
+# release's own digest list, one `<sha256>  <file>` line per file.
+HUB_UPDATE_LATEST_NAME = "latest.json"
 HUB_UPDATE_TAG_PREFIX = "v"
-# The release's own digest list, one `<sha256>  <file>` line per asset.
 HUB_UPDATE_CHECKSUMS_NAME = "SHA256SUMS"
-# GitHub's API answers nothing without a User-Agent.
-HUB_UPDATE_HEADERS = {
-    "User-Agent": "neutrino-hub",
-    "Accept": "application/vnd.github+json",
-}
-HUB_UPDATE_FETCH_TIMEOUT_S = 600
+# The largest package taken, and how much of it a probe asks for when only
+# its size is wanted.
 HUB_UPDATE_FETCH_LIMIT_BYTES = 1024 * 1024 * 1024
-# An install reuses a release a check read this recently instead of asking
-# the release API again.
+HUB_UPDATE_SIZE_PROBE_BYTES = 1
+# An install reuses a release a check read this recently instead of reading
+# the release sites again.
 HUB_UPDATE_RELEASE_REUSE_S = 10 * 60
-# GitHub's answer when the address has spent its hourly allowance of API
-# calls: one of these statuses with no calls remaining, and the epoch second
-# the allowance renews.
-HUB_UPDATE_RATE_LIMIT_STATUSES = (403, 429)
-HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER = "x-ratelimit-remaining"
-HUB_UPDATE_RATE_LIMIT_RESET_HEADER = "x-ratelimit-reset"
-HUB_UPDATE_RETRY_AFTER_HEADER = "retry-after"
-HUB_UPDATE_RATE_LIMIT_WINDOW_S = 60 * 60
 
 # Under the state root: the packages, the script the unit runs, its log and
 # its result. `nhub reset all` clears the directory.
@@ -189,24 +164,14 @@ HUB_UPDATE_STAGES_SETTLED = (
 # Why the target version was given up on: the first failure, whatever the
 # rollback did after it. Each is worded in the frontend's code catalog.
 HUB_UPDATE_REASON_SPACE_SHORT = "disk_space_short"
+HUB_UPDATE_REASON_DOWNLOAD_FAILED = "download_failed"
 HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED = "package_fetch_failed"
-HUB_UPDATE_REASON_PACKAGE_SHA256_MISMATCH = "package_sha256_mismatch"
 HUB_UPDATE_REASON_PACKAGE_NAME_MISMATCH = "package_name_mismatch"
 HUB_UPDATE_REASON_PACKAGE_MISSING = "package_missing"
-HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED = "rollback_fetch_failed"
 HUB_UPDATE_REASON_LAUNCH_FAILED = "update_launch_failed"
 HUB_UPDATE_REASON_INSTALL_FAILED = "package_install_failed"
 HUB_UPDATE_REASON_GATE_FAILED = "health_gate_failed"
 HUB_UPDATE_REASON_INTERRUPTED = "update_interrupted"
-
-# Why GitHub gave no release, one code each so the panel can say which. The
-# last is a GitHub that answered with something that is not a release.
-HUB_UPDATE_ERROR_RELEASE_DNS = "release_dns_failed"
-HUB_UPDATE_ERROR_RELEASE_TIMEOUT = "release_timed_out"
-HUB_UPDATE_ERROR_RELEASE_REFUSED = "release_refused"
-HUB_UPDATE_ERROR_RELEASE_HTTP = "release_http_error"
-HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED = "release_rate_limited"
-HUB_UPDATE_ERROR_RELEASE_UNREACHABLE = "release_unreachable"
 
 # How the newest release stands to the version running.
 HUB_UPDATE_RELATION_CURRENT = "current"

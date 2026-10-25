@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub.cli import update as update_module
-from neutrino_hub.exceptions import HubUpdateError
+from neutrino_hub.exceptions import DownloadFailedError, HubUpdateError
 from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
 
 
@@ -18,13 +18,10 @@ class Release:
     def __init__(self, version: str, *, has_package: bool = True):
         self.version = version
         self.tag = f"v{version}"
-        self.published_at = "2026-10-01T12:00:00Z"
-        self.notes = "\n".join(f"line {index}" for index in range(30))
-        self.page_url = f"https://example.invalid/{version}"
         self.asset_name = f"neutrino-hub_{version}_amd64.deb"
-        self.asset_url = f"https://example.invalid/{self.asset_name}"
+        self.sources = (f"https://example.invalid/{self.asset_name}",)
+        self.digest = "sha256:" + "a" * 64
         self.asset_size = 100 * 1024 * 1024
-        self.checksums_url = "https://example.invalid/SHA256SUMS"
         self.has_package = has_package
 
 
@@ -177,12 +174,7 @@ def test_the_release_is_described_before_the_question(box, capsys):
 
     out = capsys.readouterr().out
     assert "running 0.3.0; newest release 0.3.1" in out
-    assert "published 2026-10-01T12:00:00Z; 100 MB" in out
-    assert "https://example.invalid/0.3.1" in out
-    assert "  line 0" in out
-    assert "  line 19" in out
-    assert "  line 20" not in out
-    assert "  …" in out
+    assert "\n100 MB\n" in out
     assert "needs 400 MB free" in out
     assert asked == ["install 0.3.1 over 0.3.0? [y/N] "]
     assert installer.prepared == []
@@ -394,7 +386,7 @@ def test_a_package_file_under_another_name_is_refused_with_its_code(
     assert update_module.update(is_confirmed=True, package=brought) == 1
     err = capsys.readouterr().err
     assert "package_name_mismatch (name=hub.deb" in err
-    assert "release_unreachable" not in err
+    assert "download_failed" not in err
     assert installer.launched == []
 
 
@@ -403,16 +395,59 @@ def test_a_staging_that_fails_is_reported_with_its_reason(box, capsys):
     installer.checker.latest = lambda: Release("0.3.1")
 
     def failing(found, *, current, port, https_port, on_progress):
-        raise HubUpdateError("package_sha256_mismatch", name=found.asset_name)
+        raise HubUpdateError("disk_space_short", path="/var", needed_bytes=1)
 
     installer.prepare = failing
 
     assert update_module.update(is_confirmed=True, package=None) == 1
-    assert (
-        "package_sha256_mismatch (name=neutrino-hub_0.3.1_amd64.deb)"
-        in capsys.readouterr().err
-    )
+    assert "disk_space_short (path=/var, needed_bytes=1)" in capsys.readouterr().err
     assert installer.launched == []
+
+
+def test_a_package_no_site_served_names_each_site_and_why(box, capsys):
+    installer, _, _ = box
+    installer.checker.latest = lambda: Release("0.3.1")
+
+    def failing(found, *, current, port, https_port, on_progress):
+        raise HubUpdateError(
+            "download_failed",
+            file=found.asset_name,
+            sources=[
+                {"source": "https://one/x.deb", "reason": "http_404", "detail": ""},
+                {"source": "https://two/x.deb", "reason": "stalled", "detail": "slow"},
+            ],
+        )
+
+    installer.prepare = failing
+
+    assert update_module.update(is_confirmed=True, package=None) == 1
+    err = capsys.readouterr().err
+    assert "download_failed (neutrino-hub_0.3.1_amd64.deb)" in err
+    assert "https://one/x.deb: http_404" in err
+    assert "https://two/x.deb: stalled slow" in err
+
+
+def test_release_sites_that_do_not_answer_are_named(box, capsys):
+    installer, _, _ = box
+
+    def down():
+        raise DownloadFailedError(
+            "latest.json",
+            [
+                {
+                    "source": "https://one/latest.json",
+                    "reason": "unreachable",
+                    "detail": "",
+                }
+            ],
+        )
+
+    installer.checker.latest = down
+
+    assert update_module.update(is_confirmed=True, package=None) == 1
+    err = capsys.readouterr().err
+    assert "download_failed (latest.json)" in err
+    assert "https://one/latest.json: unreachable" in err
 
 
 def test_the_command_is_registered_and_needs_root():

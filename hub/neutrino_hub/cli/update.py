@@ -17,7 +17,7 @@ from pathlib import Path
 
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.cli.stop import is_confirmed_on_terminal
-from neutrino_hub.exceptions import HubUpdateError
+from neutrino_hub.exceptions import DownloadFailedError, HubUpdateError
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_REASON_PACKAGE_MISSING,
     HUB_UPDATE_RELATION_CURRENT,
@@ -30,14 +30,10 @@ from neutrino_hub.modules.hub_update.constants import (
 from neutrino_hub.modules.hub_update.installer import (
     HubUpdateInstaller,
     check_space,
+    failure_output,
     free_bytes,
 )
-from neutrino_hub.modules.hub_update.release import (
-    HubRelease,
-    HubReleaseChecker,
-    relation,
-    unreachable_reason,
-)
+from neutrino_hub.modules.hub_update.release import HubReleaseChecker, relation
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 from neutrino_hub.platforms.detect import hub_platform
 from neutrino_hub.system.installation import is_packaged
@@ -49,7 +45,6 @@ from neutrino_hub.web.constants import (
 )
 
 # --- config ---
-UPDATE_NOTES_LINES = 20
 # The unit installs, holds a gate of three minutes, and may do both again for
 # the rollback; the wait outlasts that.
 UPDATE_WAIT_TIMEOUT_S = 15 * 60
@@ -114,10 +109,9 @@ def update(*, is_confirmed: bool, package: "Path | None") -> int:
     except HubUpdateError as error:
         print(f"error: {_worded(error)}", file=sys.stderr)
         return STATUS_FAILED
-    except (OSError, ValueError) as error:
-        code, params = unreachable_reason(error)
+    except DownloadFailedError as error:
         print(
-            f"error: {_worded(HubUpdateError(code, **params))}: {error}",
+            f"error: {_worded(HubUpdateError(error.code, **error.params))}",
             file=sys.stderr,
         )
         return STATUS_FAILED
@@ -142,8 +136,7 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
 
     Raises:
         HubUpdateError: When the staging fails.
-        OSError: When GitHub cannot be reached.
-        ValueError: When a reply is not a release.
+        DownloadFailedError: When no release site answered.
     """
     found = installer.checker.latest()
     if found is None:
@@ -157,7 +150,7 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
     if not found.has_package:
         print(f"{found.version} carries no package for this hub", file=sys.stderr)
         return STATUS_CANNOT, None
-    _print_release(found)
+    print(f"{_megabytes(found.asset_size)} MB")
     if standing == HUB_UPDATE_RELATION_MAJOR:
         print(
             f"{found.version} is a new major version; a major changes the shape "
@@ -267,25 +260,14 @@ def _wait(installer: HubUpdateInstaller, *, shown: int) -> int:
     return STATUS_FAILED
 
 
-def _print_release(found: HubRelease) -> None:
-    """The release as a person reads it: when, how big, what it says."""
-    print(f"published {found.published_at}; {_megabytes(found.asset_size)} MB")
-    if found.page_url:
-        print(found.page_url)
-    lines = found.notes.strip().splitlines()
-    if lines:
-        print()
-        for line in lines[:UPDATE_NOTES_LINES]:
-            print(f"  {line}")
-        if len(lines) > UPDATE_NOTES_LINES:
-            print("  …")
-        print()
-
-
 def _worded(error: HubUpdateError) -> str:
-    """The reason and its details, for the terminal."""
+    """The reason and its details, for the terminal; each failed source on a line."""
     if not error.params:
         return error.code
+    if "sources" in error.params:
+        output = failure_output(error)
+        named = f"{error.code} ({error.params.get('file', '')})"
+        return f"{named}\n{output}" if output else named
     details = ", ".join(f"{key}={value}" for key, value in error.params.items())
     return f"{error.code} ({details})"
 

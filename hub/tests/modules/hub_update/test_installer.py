@@ -3,7 +3,6 @@
 import hashlib
 import json
 import os
-import io
 import subprocess
 import time
 from collections import namedtuple
@@ -25,33 +24,35 @@ from neutrino_hub.modules.hub_update.installer import (
 )
 from neutrino_hub.modules.hub_update.release import HubRelease
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
+from tests.conftest import FakeSourceFetcher
 
 ASSET = "neutrino-hub_{version}_amd64.deb"
 Usage = namedtuple("Usage", "total used free")
 
 
-def release(version: str, payload: bytes) -> HubRelease:
+def release(version: str, payload: bytes, *, digest: str = "") -> HubRelease:
+    """A release at one site whose digest list names the payload's digest."""
     name = ASSET.format(version=version)
     return HubRelease(
         version=version,
         tag=f"v{version}",
-        published_at="2026-10-01T12:00:00Z",
-        notes="",
-        page_url="",
         asset_name=name,
-        asset_url=f"https://example.invalid/{name}",
+        sources=(f"https://site.invalid/v{version}/{name}",),
+        digest=digest or "sha256:" + hashlib.sha256(payload).hexdigest(),
         asset_size=len(payload),
-        checksums_url=f"https://example.invalid/v{version}/SHA256SUMS",
     )
 
 
-class Checker:
-    """Releases and digests answered from what a test declares."""
+def source_of(found: HubRelease) -> str:
+    return found.sources[0]
 
-    def __init__(self, *, latest=None, by_version=None, digests=None):
+
+class Checker:
+    """Releases answered from what a test declares."""
+
+    def __init__(self, *, latest=None, by_version=None):
         self.latest_release = latest
         self.by_version = by_version or {}
-        self.digests = digests or {}
         self.asked = []
 
     def latest(self):
@@ -60,19 +61,6 @@ class Checker:
     def for_version(self, version, *, max_age_s=0):
         self.asked.append((version, max_age_s))
         return self.by_version.get(version)
-
-    def digest_of(self, found):
-        return self.digests[found.asset_name]
-
-
-class Stream(io.BytesIO):
-    """A download that closes like a response."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return False
 
 
 @pytest.fixture
@@ -89,13 +77,7 @@ def roots(monkeypatch, tmp_path):
 
 def make_installer(tmp_path, *, checker, payloads=None, units=None, launched=None):
     """An installer whose network, systemd and disk are the test's."""
-    payloads = payloads or {}
     launched = launched if launched is not None else []
-
-    def open_url(url):
-        if url not in payloads:
-            raise OSError(f"no route to {url}")
-        return Stream(payloads[url])
 
     def run_command(command, **keywords):
         launched.append((command, keywords))
@@ -105,7 +87,7 @@ def make_installer(tmp_path, *, checker, payloads=None, units=None, launched=Non
         state=HubUpdateStateFile(path=tmp_path / "state" / "hub_update" / "state.json"),
         asset=ASSET,
         family="debian",
-        open_url=open_url,
+        fetcher=FakeSourceFetcher(payloads),
         run_command=run_command,
         unit_state_of=lambda unit: (units or {}).get(unit, "inactive"),
         disk_usage=lambda path: Usage(10**12, 0, 10**12),
@@ -329,9 +311,9 @@ def test_an_unknown_family_has_no_command():
 def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
     payload = b"new package bytes"
     wanted = release("0.3.1", payload)
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(payload).hexdigest()})
+    checker = Checker()
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: payload}
+        tmp_path, checker=checker, payloads={source_of(wanted): payload}
     )
     lines = []
 
@@ -350,19 +332,15 @@ def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
     assert plan.started_at.endswith("Z")
     assert lines == [
         "downloading neutrino-hub_0.3.1_amd64.deb  17\u00a0B",
-        "25%",
-        "50%",
-        "75%",
-        "100%",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from site.invalid",
         "checked",
         "no rollback package for 0.3.0",
     ]
-    assert plan.steps == (
-        "downloading neutrino-hub_0.3.1_amd64.deb  17\u00a0B",
-        "25%  50%  75%  100%",
-        "checked",
-        "no rollback package for 0.3.0",
-    )
+    assert plan.steps == tuple(lines)
+    assert installer._fetcher.asked == [
+        ("file", wanted.asset_name, [source_of(wanted)])
+    ]
+    assert not list(plan.package.parent.glob(".partial_*"))
 
 
 MEBIBYTE = 1024 * 1024
@@ -389,9 +367,9 @@ def test_a_size_reads_as_the_panels_card_shows_it(size, shown):
 def test_a_staged_plan_keeps_when_the_update_was_asked_for(tmp_path, roots):
     payload = b"new"
     wanted = release("0.3.1", payload)
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(payload).hexdigest()})
+    checker = Checker()
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: payload}
+        tmp_path, checker=checker, payloads={source_of(wanted): payload}
     )
 
     plan = installer.prepare(
@@ -405,31 +383,52 @@ def test_a_staged_plan_keeps_when_the_update_was_asked_for(tmp_path, roots):
     assert plan.started_at == "2026-10-14T01:00:00Z"
 
 
-def test_a_package_whose_digest_differs_is_deleted_and_refused(tmp_path, roots):
-    wanted = release("0.3.1", b"tampered")
-    checker = Checker(digests={wanted.asset_name: "0" * 64})
+def test_a_package_no_site_serves_as_published_is_refused_naming_each(tmp_path, roots):
+    wanted = release("0.3.1", b"tampered", digest="sha256:" + "0" * 64)
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: b"tampered"}
+        tmp_path, checker=Checker(), payloads={source_of(wanted): b"tampered"}
     )
 
     with pytest.raises(HubUpdateError) as refused:
         installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
-    assert refused.value.code == "package_sha256_mismatch"
-    assert not list((roots[0] / "hub_update").glob("*.deb"))
-    assert not list((roots[0] / "hub_update").glob(".tmp_*"))
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["file"] == wanted.asset_name
+    assert refused.value.params["sources"] == [
+        {"source": source_of(wanted), "reason": "digest_mismatch", "detail": ""}
+    ]
+    assert not list((roots[0] / "hub_update").iterdir())
 
 
-def test_a_download_that_breaks_leaves_nothing_behind(tmp_path, roots):
+def test_a_site_that_does_not_serve_the_package_leaves_nothing_behind(tmp_path, roots):
     wanted = release("0.3.1", b"x" * 10)
-    checker = Checker(digests={wanted.asset_name: "0" * 64})
-    installer = make_installer(tmp_path, checker=checker, payloads={})
+    installer = make_installer(tmp_path, checker=Checker(), payloads={})
 
     with pytest.raises(HubUpdateError) as refused:
         installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
-    assert refused.value.code == "package_fetch_failed"
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["sources"][0]["reason"] == "http_404"
     assert not list((roots[0] / "hub_update").iterdir())
+
+
+def test_a_failed_staging_leaves_each_source_in_the_records_output():
+    error = HubUpdateError(
+        "download_failed",
+        file="a.deb",
+        sources=[
+            {"source": "https://one/a.deb", "reason": "http_404", "detail": ""},
+            {"source": "https://two/a.deb", "reason": "stalled", "detail": "timed out"},
+        ],
+    )
+
+    assert installer_module.failure_output(error) == (
+        "https://one/a.deb: http_404\nhttps://two/a.deb: stalled timed out"
+    )
+    assert (
+        installer_module.failure_output(HubUpdateError("x", detail="disk full"))
+        == "disk full"
+    )
 
 
 def test_a_package_already_here_that_matches_is_not_downloaded_again(tmp_path, roots):
@@ -438,7 +437,7 @@ def test_a_package_already_here_that_matches_is_not_downloaded_again(tmp_path, r
     directory = roots[0] / "hub_update"
     directory.mkdir()
     (directory / wanted.asset_name).write_bytes(payload)
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(payload).hexdigest()})
+    checker = Checker()
     installer = make_installer(tmp_path, checker=checker, payloads={})
     lines = []
 
@@ -460,9 +459,9 @@ def test_staging_keeps_only_the_target_and_the_rollback(tmp_path, roots):
     (directory / "update.log").write_text("old log")
     (directory / "update.sh").write_text("old script")
     (directory / ".tmp_leftover").write_bytes(b"half")
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(payload).hexdigest()})
+    checker = Checker()
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: payload}
+        tmp_path, checker=checker, payloads={source_of(wanted): payload}
     )
 
     plan = installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
@@ -479,17 +478,11 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
     old = b"old"
     wanted = release("0.3.1", new)
     previous = release("0.3.0", old)
-    checker = Checker(
-        by_version={"0.3.0": previous},
-        digests={
-            wanted.asset_name: hashlib.sha256(new).hexdigest(),
-            previous.asset_name: hashlib.sha256(old).hexdigest(),
-        },
-    )
+    checker = Checker(by_version={"0.3.0": previous})
     installer = make_installer(
         tmp_path,
         checker=checker,
-        payloads={wanted.asset_url: new, previous.asset_url: old},
+        payloads={source_of(wanted): new, source_of(previous): old},
     )
     lines = []
 
@@ -499,24 +492,16 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
 
     assert plan.rollback.read_bytes() == old
     assert checker.asked == [("0.3.0", 600)]
-    assert lines[-7:] == [
-        "downloading rollback neutrino-hub_0.3.0_amd64.deb  3\u00a0B",
-        "25%",
-        "50%",
-        "75%",
-        "100%",
-        "checked",
-        "rollback package 0.3.0 ready",
-    ]
     assert plan.steps == (
         "downloading neutrino-hub_0.3.1_amd64.deb  3\u00a0B",
-        "25%  50%  75%  100%",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from site.invalid",
         "checked",
         "downloading rollback neutrino-hub_0.3.0_amd64.deb  3\u00a0B",
-        "25%  50%  75%  100%",
+        "hub: fetching neutrino-hub_0.3.0_amd64.deb from site.invalid",
         "checked",
         "rollback package 0.3.0 ready",
     )
+    assert lines == list(plan.steps)
 
 
 def test_a_rollback_package_already_here_is_said_so(tmp_path, roots):
@@ -525,9 +510,9 @@ def test_a_rollback_package_already_here_is_said_so(tmp_path, roots):
     directory = roots[0] / "hub_update"
     directory.mkdir()
     (directory / "neutrino-hub_0.3.0_amd64.deb").write_bytes(b"old")
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(new).hexdigest()})
+    checker = Checker()
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: new}
+        tmp_path, checker=checker, payloads={source_of(wanted): new}
     )
     lines = []
 
@@ -545,9 +530,9 @@ def test_a_rollback_package_already_here_is_said_so(tmp_path, roots):
 def test_no_release_for_the_running_version_means_no_rollback(tmp_path, roots):
     new = b"new"
     wanted = release("0.3.1", new)
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(new).hexdigest()})
+    checker = Checker()
     installer = make_installer(
-        tmp_path, checker=checker, payloads={wanted.asset_url: new}
+        tmp_path, checker=checker, payloads={source_of(wanted): new}
     )
     lines = []
 
@@ -562,24 +547,19 @@ def test_no_release_for_the_running_version_means_no_rollback(tmp_path, roots):
 def test_a_rollback_a_release_carries_but_cannot_be_fetched_refuses(tmp_path, roots):
     new = b"new"
     wanted = release("0.3.1", new)
-    previous = release("0.3.0", b"old")
-    checker = Checker(
-        by_version={"0.3.0": previous},
-        digests={
-            wanted.asset_name: hashlib.sha256(new).hexdigest(),
-            previous.asset_name: "0" * 64,
-        },
-    )
+    previous = release("0.3.0", b"old", digest="sha256:" + "0" * 64)
+    checker = Checker(by_version={"0.3.0": previous})
     installer = make_installer(
         tmp_path,
         checker=checker,
-        payloads={wanted.asset_url: new, previous.asset_url: b"old"},
+        payloads={source_of(wanted): new, source_of(previous): b"old"},
     )
 
     with pytest.raises(HubUpdateError) as refused:
         installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
-    assert refused.value.code == "rollback_fetch_failed"
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["file"] == previous.asset_name
     assert not (roots[0] / "hub_update" / previous.asset_name).exists()
 
 
@@ -599,11 +579,11 @@ def test_the_gate_holds_for_the_panel_and_whatever_of_the_routers_is_running(
 ):
     new = b"new"
     wanted = release("0.3.1", new)
-    checker = Checker(digests={wanted.asset_name: hashlib.sha256(new).hexdigest()})
+    checker = Checker()
     installer = make_installer(
         tmp_path,
         checker=checker,
-        payloads={wanted.asset_url: new},
+        payloads={source_of(wanted): new},
         units={"neutrino_hub_router": "active", "neutrino_hub_dnsmasq": "inactive"},
     )
 

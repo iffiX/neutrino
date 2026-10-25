@@ -46,6 +46,8 @@ XRAY_SHA256 = {
     "arm64": "4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c",  # scan: allow
 }
 XRAY_BINARY_NAME = "xray"
+# The largest release archive a development fetch takes.
+XRAY_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 # The same release for every system a hub package is built for: the asset
 # each system and machine takes, and its hash. The Linux rows are the files
 # the two tables above name.
@@ -104,7 +106,8 @@ XRAY_GEODATA_DOWNLOAD_URL = (
 # file is held against: the pins above are one release and say nothing about
 # the next one.
 XRAY_GEODATA_SUM_SUFFIX = ".sha256sum"
-XRAY_GEODATA_TIMEOUT_S = 120
+# The largest database a fetch takes.
+XRAY_GEODATA_LIMIT_BYTES = 256 * 1024 * 1024
 # Which release each database on this machine came from. State rather than
 # configuration: it describes the files on the disk, and a restored backup
 # carries neither the databases nor this.

@@ -19,12 +19,10 @@ import hashlib
 import io
 import json
 import os
-import socket
 import stat
 import sys
 import tarfile
 import time
-import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,7 +31,11 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
-from neutrino_hub.exceptions import AgentOfflineError, NetworkApplyError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    DownloadFailedError,
+    NetworkApplyError,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub import edition
@@ -1347,14 +1349,29 @@ class _Release:
     def __init__(self, version: str, *, size: int = 100, has_package: bool = True):
         self.version = version
         self.tag = f"v{version}"
-        self.published_at = "2026-10-01T12:00:00Z"
-        self.notes = "notes"
-        self.page_url = f"https://example.invalid/{version}"
         self.asset_name = f"neutrino-hub_{version}_amd64.deb"
-        self.asset_url = f"https://example.invalid/{self.asset_name}"
+        self.sources = (f"https://example.invalid/{self.asset_name}",)
+        self.digest = "sha256:" + "a" * 64
         self.asset_size = size
-        self.checksums_url = "https://example.invalid/SHA256SUMS"
         self.has_package = has_package
+
+
+def _sites_down() -> DownloadFailedError:
+    return DownloadFailedError(
+        "latest.json",
+        [
+            {
+                "source": "https://one.invalid/latest.json",
+                "reason": "unreachable",
+                "detail": "no route",
+            },
+            {
+                "source": "https://two.invalid/latest.json",
+                "reason": "http_503",
+                "detail": "",
+            },
+        ],
+    )
 
 
 class _Checker:
@@ -1405,8 +1422,10 @@ class _Installer:
 
     def prepare(self, found, *, current, port, https_port, on_progress, started_at):
         on_progress("downloading neutrino-hub_0.3.1_amd64.deb  1 MB")
-        on_progress("50%")
-        on_progress("100%")
+        on_progress("hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com")
+        on_progress(
+            "hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com, 1.0 / 1.0 MB"
+        )
         if self.prepare_failure is not None:
             raise self.prepare_failure
         on_progress("checked")
@@ -1567,13 +1586,7 @@ def test_a_scan_reads_the_newest_release_and_how_it_stands(update_box):
 
     assert body == {
         "current": "0.3.0",
-        "latest": {
-            "version": "0.3.1",
-            "published_at": "2026-10-01T12:00:00Z",
-            "notes": "notes",
-            "page_url": "https://example.invalid/0.3.1",
-            "size_bytes": 100,
-        },
+        "latest": {"version": "0.3.1", "size_bytes": 100},
         "has_package": True,
         "is_newer": True,
         "is_major": False,
@@ -1631,39 +1644,17 @@ def test_a_scan_says_when_the_disk_is_short(update_box, monkeypatch):
     assert body["free_bytes"] == 399
 
 
-def test_a_scan_that_cannot_reach_the_releases_is_a_bad_gateway(update_box):
+def test_a_scan_no_release_site_answers_is_a_bad_gateway_naming_each(update_box):
     opened, installer, _ = update_box
-    installer.checker.failure = OSError("no route")
+    installer.checker.failure = _sites_down()
 
     response = opened.post("/api/hub/setting/release/scan")
 
     assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "release_refused"
-
-
-def test_a_scan_says_when_it_is_the_name_that_did_not_resolve(update_box):
-    opened, installer, _ = update_box
-    installer.checker.failure = urllib.error.URLError(
-        socket.gaierror(-2, "Name or service not known")
-    )
-
-    response = opened.post("/api/hub/setting/release/scan")
-
-    assert response.status_code == 502
-    assert response.json()["detail"] == {"code": "release_dns_failed", "params": {}}
-
-
-def test_every_reason_github_gave_no_release_is_worded():
-    from neutrino_hub.modules.hub_update import constants as update_constants
-
-    worded = json.loads(
-        (
-            Path(__file__).resolve().parents[4] / "frontend/src/locales/en/codes.json"
-        ).read_text(encoding="utf-8")
-    )
-    for name in dir(update_constants):
-        if name.startswith("HUB_UPDATE_ERROR_RELEASE_"):
-            assert f"code.{getattr(update_constants, name)}" in worded
+    assert response.json()["detail"] == {
+        "code": "download_failed",
+        "params": _sites_down().params,
+    }
 
 
 def test_an_install_stages_the_confirmed_release_as_a_task(update_box):
@@ -1687,7 +1678,6 @@ def test_an_install_stages_the_confirmed_release_as_a_task(update_box):
 
 
 def test_an_install_reuses_the_release_a_check_read_moments_before(update_box):
-    """Every address shares GitHub's sixty calls an hour."""
     opened, installer, runtime = update_box
     installer.checker.latest_release = _Release("0.3.1")
 
@@ -1697,25 +1687,6 @@ def test_an_install_reuses_the_release_a_check_read_moments_before(update_box):
     assert installer.checker.ages == [0, 600]
     for _, source in runtime.tasks.started:
         asyncio.run(source.aclose())
-
-
-def test_a_scan_github_refused_for_its_hourly_limit_says_when_it_clears(
-    update_box,
-):
-    opened, installer, _ = update_box
-    installer.checker.failure = urllib.error.HTTPError(
-        "https://api",
-        403,
-        "rate limit exceeded",
-        {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(int(time.time()))},
-        None,
-    )
-
-    response = opened.post("/api/hub/setting/release/scan")
-
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "release_rate_limited"
-    assert response.json()["detail"]["params"]["minutes"] == 1
 
 
 @pytest.mark.parametrize(
@@ -1790,13 +1761,14 @@ def test_an_install_refuses_when_the_disk_is_short(update_box, monkeypatch):
 
 def test_an_install_that_cannot_reach_the_releases_is_a_bad_gateway(update_box):
     opened, installer, _ = update_box
-    installer.checker.failure = OSError("no route")
+    installer.checker.failure = _sites_down()
 
     response = opened.post(
         "/api/hub/setting/release/install", json={"version": "0.3.1"}
     )
 
     assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "download_failed"
 
 
 async def _drained(source) -> list:
@@ -1819,8 +1791,8 @@ def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch
 
     assert lines == [
         "downloading neutrino-hub_0.3.1_amd64.deb  1 MB\n",
-        "50%\n",
-        "100%\n",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com\n",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com, 1.0 / 1.0 MB\n",
         "checked\n",
         "installing; the panel restarts now\n",
     ]
@@ -1847,7 +1819,7 @@ def test_the_staging_writes_each_line_into_the_record_as_it_goes(update_box):
     assert record.stage == "preparing"
     assert record.steps == [
         "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
-        "50%  100%",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com, 1.0 / 1.0 MB",
         "checked",
     ]
 
@@ -1873,7 +1845,15 @@ def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
     opened, installer, _ = update_box
     installer.state.save(_record("preparing"))
     installer.prepare_failure = HubUpdateError(
-        "package_sha256_mismatch", name="neutrino-hub_0.3.1_amd64.deb"
+        "download_failed",
+        file="neutrino-hub_0.3.1_amd64.deb",
+        sources=[
+            {
+                "source": "https://github.com/x/neutrino-hub_0.3.1_amd64.deb",
+                "reason": "digest_mismatch",
+                "detail": "",
+            }
+        ],
     )
     found = _Release("0.3.1")
 
@@ -1888,12 +1868,15 @@ def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
 
     record = installer.state.load()
     assert record.stage == "failed"
-    assert record.reason == "package_sha256_mismatch"
+    assert record.reason == "download_failed"
+    assert record.output == (
+        "https://github.com/x/neutrino-hub_0.3.1_amd64.deb: digest_mismatch"
+    )
     assert record.started_at == "2026-09-20T15:00:00Z"
     assert record.finished_at.endswith("Z")
     assert record.steps == [
         "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
-        "50%  100%",
+        "hub: fetching neutrino-hub_0.3.1_amd64.deb from github.com, 1.0 / 1.0 MB",
     ]
     assert installer.launched == []
 

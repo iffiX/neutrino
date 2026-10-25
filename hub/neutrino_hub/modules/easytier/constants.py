@@ -25,6 +25,8 @@ EASYTIER_SHA256 = {
     "arm64": "f533ec25a7ea714e09f645615012200278058525795cc3bb690ff011aec1a70f",  # scan: allow
 }
 EASYTIER_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
+# The largest release archive a development fetch takes.
+EASYTIER_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 # The asset each system and machine takes from the same release, and its
 # hash, for every system a hub package is built for. The Linux rows are the
 # files the two tables above name; the Windows archive carries wintun.dll

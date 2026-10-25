@@ -1420,9 +1420,6 @@ export interface HubReleaseView {
 
 export interface HubReleaseLatest {
   version: string;
-  published_at: string;
-  notes: string;
-  page_url: string;
   size_bytes: number;
 }
 

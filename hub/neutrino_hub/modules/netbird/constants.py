@@ -19,6 +19,8 @@ NETBIRD_SHA256 = {
     "arm64": "d686745aa64bb4c597602ce95e76558f5f848d0672c88d63f96397d2507005b2",  # scan: allow
 }
 NETBIRD_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
+# The largest release archive a development fetch takes.
+NETBIRD_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 NETBIRD_BINARY_NAME = "netbird"
 # The asset each system and machine takes from the same release, and its
 # hash, for every system a hub package is built for. The Linux rows are the

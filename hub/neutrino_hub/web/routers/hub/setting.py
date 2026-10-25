@@ -31,6 +31,7 @@ from cryptography import x509
 
 from neutrino_hub import edition
 from neutrino_hub.exceptions import (
+    DownloadFailedError,
     HubUpdateError,
     PasswordRefusedError,
     VaultPassphraseError,
@@ -47,13 +48,13 @@ from neutrino_hub.modules.hub_update.constants import (
 from neutrino_hub.modules.hub_update.installer import (
     HubUpdateInstaller,
     check_space,
+    failure_output,
     free_bytes,
 )
 from neutrino_hub.modules.hub_update.release import (
     HubRelease,
     HubReleaseChecker,
     relation,
-    unreachable_reason,
 )
 from neutrino_hub.modules.hub_update.state import (
     HubUpdateRecord,
@@ -1251,10 +1252,9 @@ async def scan_release() -> HubReleaseScanView:
         a rollback package can be had; the room the update needs and has.
 
     Raises:
-        HTTPException: 409 ``hub_not_packaged`` from a checkout; 502 naming
-            why GitHub gave no release: ``release_dns_failed``,
-            ``release_timed_out``, ``release_refused``, ``release_http_error``
-            or ``release_unreachable``.
+        HTTPException: 409 ``hub_not_packaged`` from a checkout; 502
+            ``download_failed {file, sources}`` when no release site
+            answered, naming each and why.
     """
     if not is_packaged():
         raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
@@ -1264,8 +1264,8 @@ async def scan_release() -> HubReleaseScanView:
         is_rollback_available = found is not None and await asyncio.to_thread(
             installer.is_rollback_available, HUB_VERSION
         )
-    except (OSError, ValueError) as error:
-        raise _unreachable(error) from error
+    except DownloadFailedError as error:
+        raise _download_failed(error) from error
     if found is None:
         return HubReleaseScanView(current=HUB_VERSION)
     standing = relation(HUB_VERSION, found.version)
@@ -1275,13 +1275,7 @@ async def scan_release() -> HubReleaseScanView:
     )
     return HubReleaseScanView(
         current=HUB_VERSION,
-        latest=HubReleaseLatestView(
-            version=found.version,
-            published_at=found.published_at,
-            notes=found.notes,
-            page_url=found.page_url,
-            size_bytes=found.asset_size,
-        ),
+        latest=HubReleaseLatestView(version=found.version, size_bytes=found.asset_size),
         has_package=found.has_package,
         is_newer=standing != HUB_UPDATE_RELATION_CURRENT,
         is_major=standing == HUB_UPDATE_RELATION_MAJOR,
@@ -1299,7 +1293,7 @@ async def install_release(
     """Stage the newest release and hand its install to the system.
 
     The release a check read in the last ten minutes is installed without
-    asking GitHub again.
+    reading the release sites again.
 
     Args:
         request: The version the person confirmed.
@@ -1313,8 +1307,8 @@ async def install_release(
         HTTPException: 409 ``hub_not_packaged``, ``update_in_progress``,
             ``release_not_latest`` when the newest release is not the one
             confirmed, ``release_not_newer``, ``release_major``, or
-            ``disk_space_short``; 502 naming why GitHub gave no release, as
-            a scan does.
+            ``disk_space_short``; 502 ``download_failed`` when no release
+            site answered, as a scan does.
     """
     if not is_packaged():
         raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
@@ -1327,8 +1321,8 @@ async def install_release(
         found = await asyncio.to_thread(
             installer.checker.latest, max_age_s=HUB_UPDATE_RELEASE_REUSE_S
         )
-    except (OSError, ValueError) as error:
-        raise _unreachable(error) from error
+    except DownloadFailedError as error:
+        raise _download_failed(error) from error
     if found is None or found.version != request.version:
         raise _conflict(
             UPDATE_ERROR_NOT_LATEST, version="" if found is None else found.version
@@ -1441,7 +1435,7 @@ def _record_failure(
             started_at=record.started_at if record is not None else stamp_now(),
             finished_at=stamp_now(),
             reason=error.code,
-            output=str(error.params.get("detail", "")),
+            output=failure_output(error),
             steps=record.steps if record is not None else [],
         )
     )
@@ -1481,12 +1475,11 @@ def _conflict(code: str, **params) -> HTTPException:
     )
 
 
-def _unreachable(error: Exception) -> HTTPException:
-    """The 502 for a GitHub that gave no release, naming why."""
-    code, params = unreachable_reason(error)
+def _download_failed(error: DownloadFailedError) -> HTTPException:
+    """The 502 for release sites none of which answered, naming each."""
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"code": code, "params": params},
+        detail={"code": error.code, "params": error.params},
     )
 
 

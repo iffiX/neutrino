@@ -11,6 +11,7 @@ import tarfile
 
 import pytest
 
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.netbird import provisioner as module
 from neutrino_hub.modules.netbird.constants import (
     NETBIRD_BINARY_NAME,
@@ -21,6 +22,7 @@ from neutrino_hub.modules.netbird.constants import (
 from neutrino_hub.modules.registry import MODULE_SPECS
 from neutrino_hub.system.constants import SYSTEM_OPTIONAL_UNITS
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
+from tests.conftest import FakeSourceFetcher
 
 PACKAGED_UNIT = (UTILS_DATA_DIR / "services" / NETBIRD_UNIT).read_text(encoding="utf-8")
 
@@ -69,11 +71,11 @@ def a_box(
 
     def fake_run(command, **kwargs):
         ran.append(command)
-        if command[0] == "curl" and tarball is not None:
-            (tmp_path / "served").write_bytes(tarball)
-            target = command[command.index("-o") + 1]
-            (tmp_path / "served").replace(target)
         return FakeResult()
+
+    served = {} if tarball is None else {module.download_url("amd64"): tarball}
+    fetcher = FakeSourceFetcher(served)
+    monkeypatch.setattr(module, "SourceFetcher", lambda: fetcher)
 
     monkeypatch.setattr(module, "SYSTEM_SYSTEMD_DIR", systemd)
     monkeypatch.setattr(module, "NETBIRD_BINARY_PATH", binary)
@@ -109,7 +111,7 @@ def test_a_carried_client_is_never_downloaded_again(tmp_path, monkeypatch):
 
     result = provisioner.provision()
 
-    assert not [command for command in ran if command[0] == "curl"]
+    assert module.SourceFetcher().asked == []
     assert result.message == f"netbird {NETBIRD_VERSION}"
 
 
@@ -184,8 +186,14 @@ def test_a_checkout_fetches_the_pinned_release(tmp_path, monkeypatch):
 
     result = provisioner.provision()
 
-    assert ran[0][0] == "curl"
-    assert NETBIRD_VERSION in ran[0][-1]
+    assert module.SourceFetcher().asked == [
+        (
+            "file",
+            f"netbird {NETBIRD_VERSION} for amd64",
+            [module.download_url("amd64")],
+        )
+    ]
+    assert NETBIRD_VERSION in module.download_url("amd64")
     assert binary.read_bytes() == b"the client"
     assert binary.stat().st_mode & 0o777 == 0o755
     assert result.is_changed is True
@@ -199,7 +207,7 @@ def test_a_download_that_is_not_what_was_pinned_is_refused(tmp_path, monkeypatch
     )
     monkeypatch.setattr(module, "NETBIRD_SHA256", {"amd64": "0" * 64})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(DownloadFailedError):
         provisioner.provision()
 
     assert not binary.exists()

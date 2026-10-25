@@ -96,19 +96,23 @@ def test_steps_are_kept_one_per_line():
     assert steps == ["downloading a.deb  3 MB", "checked", "installed 0.3.1"]
 
 
-def test_a_downloads_percentages_share_one_line():
+def test_a_downloads_progress_shares_the_row_of_its_source():
     steps: list = []
-    for line in ("downloading a.deb  3 MB", "25%", "50%", "75%", "100%", "checked"):
-        append_step(steps, line)
-    for line in ("downloading rollback b.deb  3 MB", "25%", "50%"):
+    for line in (
+        "downloading a.deb  3 MB",
+        "hub: fetching a.deb from github.com",
+        "hub: fetching a.deb from github.com, 1.0 / 3.0 MB",
+        "hub: fetching a.deb from cnb.cool",
+        "hub: fetching a.deb from cnb.cool, 3.0 / 3.0 MB",
+        "checked",
+    ):
         append_step(steps, line)
 
     assert steps == [
         "downloading a.deb  3 MB",
-        "25%  50%  75%  100%",
+        "hub: fetching a.deb from github.com, 1.0 / 3.0 MB",
+        "hub: fetching a.deb from cnb.cool, 3.0 / 3.0 MB",
         "checked",
-        "downloading rollback b.deb  3 MB",
-        "25%  50%",
     ]
 
 

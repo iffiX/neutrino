@@ -13,6 +13,7 @@ import zipfile
 
 import pytest
 
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.easytier import provisioner as module
 from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_NAME,
@@ -23,6 +24,7 @@ from neutrino_hub.modules.easytier.constants import (
 from neutrino_hub.modules.registry import MODULE_SPECS
 from neutrino_hub.system.constants import SYSTEM_OPTIONAL_UNITS
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
+from tests.conftest import FakeSourceFetcher
 
 PACKAGED_UNIT = (UTILS_DATA_DIR / "services" / EASYTIER_UNIT).read_text(
     encoding="utf-8"
@@ -52,7 +54,8 @@ def a_box(
         monkeypatch: The fixture.
         is_engine_present: Whether the package already staged the binaries.
         is_dev_root_set: Whether this is a development root.
-        archive: What a download serves, when one is expected.
+        archive: What the release serves, when a fetch is expected; the
+            fetcher is what ``module.SourceFetcher()`` gives back.
 
     Returns:
         The provisioner, the command vectors it ran, the systemd directory
@@ -72,11 +75,11 @@ def a_box(
 
     def fake_run(command, **kwargs):
         ran.append(command)
-        if command[0] == "curl" and archive is not None:
-            target = command[command.index("-o") + 1]
-            (tmp_path / "served").write_bytes(archive)
-            (tmp_path / "served").replace(target)
         return FakeResult()
+
+    served = {} if archive is None else {module.download_url("amd64"): archive}
+    fetcher = FakeSourceFetcher(served)
+    monkeypatch.setattr(module, "SourceFetcher", lambda: fetcher)
 
     monkeypatch.setattr(module, "SYSTEM_SYSTEMD_DIR", systemd)
     monkeypatch.setattr(module, "EASYTIER_CORE_PATH", core)
@@ -110,7 +113,7 @@ def test_a_carried_engine_is_never_downloaded_again(tmp_path, monkeypatch):
 
     result = provisioner.provision()
 
-    assert not [command for command in ran if command[0] == "curl"]
+    assert module.SourceFetcher().asked == []
     assert result.message == f"easytier {EASYTIER_VERSION}"
 
 
@@ -153,7 +156,14 @@ def test_a_checkout_fetches_the_pinned_release(tmp_path, monkeypatch):
 
     result = provisioner.provision()
 
-    assert [command for command in ran if command[0] == "curl"]
+    assert module.SourceFetcher().asked == [
+        (
+            "file",
+            f"easytier {EASYTIER_VERSION} for amd64",
+            [module.download_url("amd64")],
+        )
+    ]
+    assert ran[0][0] != "curl"
     assert core.read_bytes() == b"the engine"
     assert cli.read_bytes() == b"the engine"
     assert core.stat().st_mode & 0o111
@@ -167,7 +177,7 @@ def test_a_release_that_is_not_what_is_pinned_is_refused(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(module, "EASYTIER_SHA256", {"amd64": "00" * 32})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(DownloadFailedError):
         provisioner.provision()
 
     assert not core.exists()

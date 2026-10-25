@@ -11,11 +11,15 @@ import json
 
 import pytest
 
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.constants import (
+    XRAY_GEODATA_DOWNLOAD_URL,
+    XRAY_GEODATA_LATEST_URL,
     XRAY_GEODATA_SOURCE_PACKAGE,
     XRAY_GEODATA_SOURCE_RELEASE,
 )
+from tests.conftest import FakeSourceFetcher
 
 GEOIP = "geoip.dat"
 GEOSITE = "geosite.dat"
@@ -26,31 +30,35 @@ def digest_of(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def fake_release_fetcher(bodies: dict, sums: dict | None = None):
-    """A fetcher answering from a table, digests derived unless overridden.
+def fake_release_fetcher(bodies: dict, sums: dict | None = None, *, latest=None):
+    """A fetcher answering the repositories from a table, digests derived unless overridden.
 
     Args:
-        bodies: Asset address suffix to the bytes it answers with.
-        sums: Address suffix to the digest published beside it, where that
+        bodies: Asset name to the bytes it answers with.
+        sums: Asset name to the digest published beside it, where that
             should not be the digest of the bytes.
+        latest: Repository to the answer its latest release gives; None
+            names the tags of :data:`NEW`.
 
     Returns:
-        A callable taking one address.
+        A :class:`FakeSourceFetcher`.
     """
-
-    def fetch(url: str) -> bytes:
-        if url.startswith("https://api.github.com/"):
-            repository = url.split("/repos/", 1)[1].rsplit("/releases", 1)[0]
-            tag = NEW[GEOIP] if repository == "v2fly/geoip" else NEW[GEOSITE]
-            return json.dumps({"tag_name": tag}).encode("utf-8")
-        name = url.rsplit("/", 1)[-1]
-        if name.endswith(".sha256sum"):
-            asset = name.removesuffix(".sha256sum")
-            published = (sums or {}).get(asset, digest_of(bodies[asset]))
-            return f"{published}  {asset}\n".encode("utf-8")
-        return bodies[name]
-
-    return fetch
+    table = {}
+    for source in geodata.sources():
+        tag = NEW[source.file_name]
+        latest_url = XRAY_GEODATA_LATEST_URL.format(repository=source.repository)
+        table[latest_url] = (
+            json.dumps({"tag_name": tag}).encode("utf-8")
+            if latest is None
+            else latest[source.repository]
+        )
+        address = XRAY_GEODATA_DOWNLOAD_URL.format(
+            repository=source.repository, release=tag, asset=source.asset
+        )
+        published = (sums or {}).get(source.asset, digest_of(bodies[source.asset]))
+        table[address + ".sha256sum"] = f"{published}  {source.asset}\n".encode()
+        table[address] = bodies[source.asset]
+    return FakeSourceFetcher(table)
 
 
 @pytest.fixture
@@ -113,7 +121,7 @@ def test_the_version_file_is_what_a_fetch_wrote(tmp_path, directory, bodies):
         NEW,
         directory=directory,
         version_path=version_path,
-        fetch_bytes=fake_release_fetcher(bodies),
+        fetcher=fake_release_fetcher(bodies),
     )
 
     read_back = geodata.installed(version_path=version_path)
@@ -123,17 +131,25 @@ def test_the_version_file_is_what_a_fetch_wrote(tmp_path, directory, bodies):
 
 
 def test_the_newest_release_is_read_off_each_repository(bodies):
-    assert geodata.latest(fetch_bytes=fake_release_fetcher(bodies)) == NEW
+    fetcher = fake_release_fetcher(bodies)
+
+    assert geodata.latest(fetcher=fetcher) == NEW
+    assert [kind for kind, _, _ in fetcher.asked] == ["document", "document"]
 
 
 def test_a_repository_that_names_no_release_is_refused(bodies):
-    def fetch(url: str) -> bytes:
-        if url.startswith("https://api.github.com/"):
-            return b"{}"
-        return fake_release_fetcher(bodies)(url)
+    fetcher = fake_release_fetcher(
+        bodies,
+        latest={
+            "v2fly/geoip": b"{}",
+            "v2fly/domain-list-community": b"{}",
+        },
+    )
 
-    with pytest.raises(ValueError):
-        geodata.latest(fetch_bytes=fetch)
+    with pytest.raises(DownloadFailedError) as raised:
+        geodata.latest(fetcher=fetcher)
+
+    assert raised.value.params["sources"][0]["reason"] == "digest_mismatch"
 
 
 def test_a_file_that_is_not_what_was_published_replaces_nothing(
@@ -144,12 +160,12 @@ def test_a_file_that_is_not_what_was_published_replaces_nothing(
     version_path = tmp_path / "version.json"
     fetcher = fake_release_fetcher(bodies, sums={"dlc.dat": "0" * 64})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(DownloadFailedError):
         geodata.fetch(
             NEW,
             directory=directory,
             version_path=version_path,
-            fetch_bytes=fetcher,
+            fetcher=fetcher,
         )
 
     assert (directory / GEOIP).read_bytes() == b"carried by the package"
@@ -162,15 +178,16 @@ def test_a_digest_file_that_holds_no_digest_replaces_nothing(
 ):
     fetcher = fake_release_fetcher(bodies, sums={"dlc.dat": "not a digest"})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(DownloadFailedError):
         geodata.fetch(
             NEW,
             directory=directory,
             version_path=tmp_path / "version.json",
-            fetch_bytes=fetcher,
+            fetcher=fetcher,
         )
 
     assert (directory / GEOSITE).read_bytes() == b"carried by the package"
+    assert sorted(path.name for path in directory.iterdir()) == [GEOIP, GEOSITE]
 
 
 def test_each_database_is_replaced_in_one_step(
@@ -192,7 +209,7 @@ def test_each_database_is_replaced_in_one_step(
         NEW,
         directory=directory,
         version_path=tmp_path / "version.json",
-        fetch_bytes=fake_release_fetcher(bodies),
+        fetcher=fake_release_fetcher(bodies),
     )
 
     assert sorted(target for _, target in replaced) == sorted(
@@ -206,6 +223,7 @@ def test_each_database_is_replaced_in_one_step(
     assert (directory / GEOIP).read_bytes() == bodies["geoip-only-cn-private.dat"]
     assert (directory / GEOSITE).read_bytes() == bodies["dlc.dat"]
     assert not list(directory.glob(".tmp_*"))
+    assert not list(directory.glob(".partial_*"))
 
 
 def test_a_release_missing_for_a_database_is_refused(tmp_path, directory, bodies):
@@ -214,5 +232,5 @@ def test_a_release_missing_for_a_database_is_refused(tmp_path, directory, bodies
             {GEOIP: NEW[GEOIP]},
             directory=directory,
             version_path=tmp_path / "version.json",
-            fetch_bytes=fake_release_fetcher(bodies),
+            fetcher=fake_release_fetcher(bodies),
         )

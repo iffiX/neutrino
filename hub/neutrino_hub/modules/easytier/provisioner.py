@@ -13,7 +13,6 @@ and no unit is written: the apply hands the carried engine's start line to the
 process controller, which runs it as a child of the hub's one service.
 """
 
-import hashlib
 import shutil
 import tempfile
 import zipfile
@@ -28,6 +27,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CORE_PATH,
     EASYTIER_DROPIN_DIR_NAME,
     EASYTIER_DOWNLOAD_URL,
+    EASYTIER_FETCH_LIMIT_BYTES,
     EASYTIER_SHA256,
     EASYTIER_SUPERVISED_NAME,
     EASYTIER_SUPPORTED_ARCHITECTURES,
@@ -39,6 +39,7 @@ from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.constants import UTILS_DATA_DIR, is_dev_root_set
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.utils.subprocess_run import run
 
 
@@ -188,29 +189,20 @@ class EasyTierProvisioner:
                 :mod:`neutrino_hub.system.machine`.
 
         Raises:
-            ValueError: If what arrived is not what is pinned.
-            subprocess.CalledProcessError: If the download fails.
+            DownloadFailedError: If the release did not serve the pinned file.
         """
         with tempfile.TemporaryDirectory() as workdir:
-            archive = Path(workdir) / "easytier.zip"
-            run(
-                [
-                    "curl",
-                    "-fL",
-                    "--retry",
-                    "2",
-                    "-o",
-                    str(archive),
-                    download_url(architecture),
-                ],
-                timeout_s=600,
-            )
-            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-            if digest != EASYTIER_SHA256[architecture]:
-                raise ValueError(
-                    f"easytier {EASYTIER_VERSION} for {architecture} hashes to "
-                    f"{digest}, not the pinned {EASYTIER_SHA256[architecture]}"
+            archive = (
+                SourceFetcher()
+                .fetch_file(
+                    file=f"easytier {EASYTIER_VERSION} for {architecture}",
+                    sources=[download_url(architecture)],
+                    digest=f"sha256:{EASYTIER_SHA256[architecture]}",
+                    directory=Path(workdir),
+                    limit=EASYTIER_FETCH_LIMIT_BYTES,
                 )
+                .path
+            )
             with zipfile.ZipFile(archive) as bundle:
                 for name, target in (
                     (EASYTIER_CORE_NAME, EASYTIER_CORE_PATH),

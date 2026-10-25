@@ -7,7 +7,6 @@ where things ended.
 """
 
 import json
-import re
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -27,8 +26,10 @@ from neutrino_hub.modules.hub_update.constants import (
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.json_file import write_generated
 
-PERCENT_STEP = re.compile(r"^[0-9]+%$")
-PERCENT_ROW = re.compile(r"^[0-9]+%(  [0-9]+%)*$")
+# The head of the fetcher's lines: one per source a download comes from,
+# then its progress after a comma.
+FETCH_LINE_PREFIX = "hub: fetching "
+FETCH_PROGRESS_SEPARATOR = ", "
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -61,16 +62,28 @@ class HubUpdateRecord:
 
 
 def append_step(steps: list[str], line: str) -> None:
-    """Add one line to a record's steps, a percentage to the row before it.
+    """Add one line to a record's steps, a download's progress in place of the last.
+
+    A ``hub: fetching <file> from <host>`` line and the progress lines after
+    it share one row, which shows the latest; another host starts a row of
+    its own.
 
     Args:
         steps: The steps so far, changed in place.
         line: The line said.
     """
-    if PERCENT_STEP.match(line) and steps and PERCENT_ROW.match(steps[-1]):
-        steps[-1] = f"{steps[-1]}  {line}"
+    head = _fetch_head(line)
+    if head and steps and _fetch_head(steps[-1]) == head:
+        steps[-1] = line
         return
     steps.append(line)
+
+
+def _fetch_head(line: str) -> str:
+    """The file and the host a fetcher's line names, empty for any other line."""
+    if not line.startswith(FETCH_LINE_PREFIX):
+        return ""
+    return line.split(FETCH_PROGRESS_SEPARATOR, 1)[0]
 
 
 def stamp_now() -> str:

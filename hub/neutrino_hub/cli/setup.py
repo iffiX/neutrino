@@ -113,6 +113,7 @@ from neutrino_hub.utils.constants import (
     UTILS_SETUP_LOG_PATH,
 )
 from neutrino_hub.utils.json_file import copy_example, read_config, write_config
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
@@ -168,6 +169,8 @@ SETUP_PANEL_TIMEOUT_S = 10
 # How long the panel gets to start listening before its link is given up on.
 SETUP_PANEL_WAIT_S = 30.0
 SETUP_PANEL_POLL_S = 1.0
+# The largest frp release archive a checkout's fetch takes.
+FRPC_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 # The browser wizard listens on every address, because whoever opens it is on
 # one of this machine's networks and setup does not yet know which.
 SETUP_BROWSER_HOST = "0.0.0.0"
@@ -1293,9 +1296,8 @@ def _fetch_frpc() -> None:
     """Put the pinned frpc release where the package would have put it.
 
     Raises:
-        ValueError: When the download is not the pinned file.
+        DownloadFailedError: When the release did not serve the pinned file.
         RuntimeError: On a system and machine frp publishes no build for.
-        subprocess.CalledProcessError: When the download fails.
     """
     system, machine = hub_os(), machine_architecture()
     if (system, machine) not in FRP_ASSETS:
@@ -1305,11 +1307,17 @@ def _fetch_frpc() -> None:
     member = f"{folder}/{FRP_BINARY_PATH.name}"
     url = FRP_RELEASE_URL.format(version=FRP_VERSION, asset=asset)
     with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / asset
-        run(["curl", "-fL", "--retry", "2", "-o", str(archive), url], timeout_s=600)
-        arrived = hashlib.sha256(archive.read_bytes()).hexdigest()
-        if arrived != digest:
-            raise ValueError(f"{url} came back as {arrived}, not {digest}")
+        archive = (
+            SourceFetcher()
+            .fetch_file(
+                file=asset,
+                sources=[url],
+                digest=f"sha256:{digest}",
+                directory=Path(workdir),
+                limit=FRPC_FETCH_LIMIT_BYTES,
+            )
+            .path
+        )
         if asset.endswith(".zip"):
             with zipfile.ZipFile(archive) as bundle:
                 content = bundle.read(member)

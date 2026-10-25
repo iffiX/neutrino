@@ -4,13 +4,16 @@ The wizard returns answers and is checked on those, the renderers are checked
 on the files, and this is the step that turns one into the other.
 """
 
+import hashlib
+
 import pytest
 
 from neutrino_hub.cli import wizard
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.xray import setup_part
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.utils.constants import UTILS_EXAMPLES_DIR
-from tests.conftest import unlock_vault
+from tests.conftest import FakeSourceFetcher, unlock_vault
 
 # A share link the parser accepts, made up: example.com, and the password
 # inside the base64 is the words "s3cret-password".
@@ -179,3 +182,33 @@ def test_the_service_user_owns_the_log_directory(monkeypatch, tmp_path):
     assert calls == ["id", "useradd"]
     assert (tmp_path / "geodata").is_dir()
     assert [user for _, user in owned] == ["xray", "xray"]
+
+
+# --- what a checkout fetches ---
+
+PINNED_URL = "https://releases.example/v1/geoip.dat"
+
+
+def test_a_checkout_fetches_a_pinned_file_through_the_fetcher(tmp_path):
+    body = b"the database"
+    fetcher = FakeSourceFetcher({PINNED_URL: body})
+    target = tmp_path / "geodata" / "geoip.dat"
+
+    setup_part.fetch_pinned(
+        PINNED_URL, hashlib.sha256(body).hexdigest(), target, fetcher=fetcher
+    )
+
+    assert target.read_bytes() == body
+    assert fetcher.asked == [("file", "geoip.dat", [PINNED_URL])]
+    assert [path.name for path in target.parent.iterdir()] == ["geoip.dat"]
+
+
+def test_a_pinned_file_served_as_other_bytes_is_refused(tmp_path):
+    fetcher = FakeSourceFetcher({PINNED_URL: b"something else"})
+    target = tmp_path / "geodata" / "geoip.dat"
+
+    with pytest.raises(DownloadFailedError) as raised:
+        setup_part.fetch_pinned(PINNED_URL, "0" * 64, target, fetcher=fetcher)
+
+    assert raised.value.params["sources"][0]["reason"] == "digest_mismatch"
+    assert not target.exists()

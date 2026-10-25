@@ -5,7 +5,6 @@ directory, writes the proxy screen's answers into ``config/xray/``, and asks
 the proxy screen with the defaults and the link reader below.
 """
 
-import hashlib
 import shutil
 import tempfile
 import zipfile
@@ -18,6 +17,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY,
     XRAY_BINARY_NAME,
     XRAY_DOWNLOAD_URL,
+    XRAY_FETCH_LIMIT_BYTES,
     XRAY_GEODATA,
     XRAY_NODES_FILE,
     XRAY_ROUTING_FILE,
@@ -33,6 +33,7 @@ from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.utils.constants import UTILS_LOG_DIR
 from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.utils.subprocess_run import run
 
 
@@ -160,7 +161,7 @@ def fetch_xray_binary() -> None:
 
     Raises:
         RuntimeError: On a machine the vendor publishes no build for.
-        ValueError: When the download is not the pinned file.
+        DownloadFailedError: When the release did not serve the pinned file.
     """
     require_architecture(XRAY_SUPPORTED_ARCHITECTURES, "xray")
     architecture = machine_architecture()
@@ -184,25 +185,30 @@ def fetch_xray_binary() -> None:
     target.chmod(0o755)
 
 
-def fetch_pinned(url: str, sha256: str, target: Path) -> None:
-    """Download one file and refuse anything but the pinned bytes.
+def fetch_pinned(url: str, sha256: str, target: Path, *, fetcher=None) -> None:
+    """Download one file through the hub's fetcher and keep only the pinned bytes.
 
     Args:
         url: What to fetch.
-        sha256: The digest the file must have.
+        sha256: The digest the file must have, in hex.
         target: Where to write it.
+        fetcher: What downloads it; None is a
+            :class:`~neutrino_hub.utils.source_fetch.SourceFetcher`.
 
     Raises:
-        ValueError: If what arrives is not what was pinned.
+        DownloadFailedError: If the address did not serve the pinned bytes.
+        OSError: If the file cannot be written.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as workdir:
-        staged = Path(workdir) / target.name
-        run(["curl", "-fL", "--retry", "2", "-o", str(staged), url], timeout_s=600)
-        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
-        if digest != sha256:
-            raise ValueError(f"{url} came back as {digest}, not {sha256}")
-        shutil.move(str(staged), target)
+    fetcher = fetcher if fetcher is not None else SourceFetcher()
+    download = fetcher.fetch_file(
+        file=target.name,
+        sources=[url],
+        digest=f"sha256:{sha256}",
+        directory=target.parent,
+        limit=XRAY_FETCH_LIMIT_BYTES,
+    )
+    download.place(target)
 
 
 class XrayWizardPart:

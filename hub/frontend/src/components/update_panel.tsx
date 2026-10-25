@@ -25,9 +25,9 @@ import "./update_panel.css";
 /**
  * Updating the hub itself, from the newest release published.
  *
- * Nothing is asked of GitHub until the button is pressed. What a check
- * found is kept for the visit, so the page can be left and come back to
- * without checking again. An install is confirmed in the update dialog,
+ * Nothing is asked of the release sites until the button is pressed. What a
+ * check found is kept for the visit, so the page can be left and come back
+ * to without checking again. An install is confirmed in the update dialog,
  * which follows the update through the panel's restart to its end. The
  * record of what became of it is read from the backend, and shown until the
  * next update.
@@ -260,7 +260,6 @@ function ScanResult({ scan, packageFamily }: ScanResultProps) {
     <div className="update_found">
       <div className="update_found_line">
         <span className="mono">{latest.version}</span>
-        <span className="faint">{localDate(latest.published_at)}</span>
         <span className="faint">{formatBytes(latest.size_bytes)}</span>
         <span className="faint">
           {t("ui.settings.update_room", {
@@ -268,11 +267,6 @@ function ScanResult({ scan, packageFamily }: ScanResultProps) {
             free: formatBytes(scan.free_bytes),
           })}
         </span>
-        {latest.page_url !== "" && (
-          <a href={latest.page_url} target="_blank" rel="noreferrer noopener">
-            {t("ui.settings.update_release_page")}
-          </a>
-        )}
       </div>
       {!scan.has_package && (
         <div className="notice notice--warn">
@@ -305,12 +299,6 @@ function ScanResult({ scan, packageFamily }: ScanResultProps) {
             })}
           </div>
         </div>
-      )}
-      {latest.notes.trim() !== "" && (
-        <>
-          <span className="field_hint">{t("ui.settings.update_notes")}</span>
-          <pre className="update_notes">{latest.notes.trim()}</pre>
-        </>
       )}
     </div>
   );

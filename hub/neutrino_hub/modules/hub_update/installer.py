@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -28,7 +27,12 @@ from typing import Callable
 import psutil
 
 from neutrino_hub import HUB_PACKAGE_ASSET
-from neutrino_hub.exceptions import AgentArtifactFetchError, HubUpdateError
+from neutrino_hub.exceptions import (
+    AgentArtifactFetchError,
+    DownloadFailedError,
+    DownloadTooLargeError,
+    HubUpdateError,
+)
 from neutrino_hub.modules.devices.agent_package import (
     AGENT_PACKAGE_FAMILY_OF_OS,
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
@@ -61,11 +65,9 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_DIR_NAME,
     HUB_UPDATE_DNF_LOCK_TEXT,
     HUB_UPDATE_FETCH_LIMIT_BYTES,
-    HUB_UPDATE_FETCH_TIMEOUT_S,
     HUB_UPDATE_GATE_POLL_S,
     HUB_UPDATE_GATE_TIMEOUT_S,
     HUB_UPDATE_GATE_UNITS,
-    HUB_UPDATE_HEADERS,
     HUB_UPDATE_HEALTH_PATH,
     HUB_UPDATE_LAUNCH_TIMEOUT_S,
     HUB_UPDATE_LOCK_TIMEOUT_S,
@@ -80,12 +82,11 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_PANEL_UNIT,
     HUB_UPDATE_REASON_GATE_FAILED,
     HUB_UPDATE_REASON_INSTALL_FAILED,
+    HUB_UPDATE_REASON_DOWNLOAD_FAILED,
     HUB_UPDATE_REASON_LAUNCH_FAILED,
     HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED,
     HUB_UPDATE_REASON_PACKAGE_MISSING,
     HUB_UPDATE_REASON_PACKAGE_NAME_MISMATCH,
-    HUB_UPDATE_REASON_PACKAGE_SHA256_MISMATCH,
-    HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED,
     HUB_UPDATE_REASON_SPACE_SHORT,
     HUB_UPDATE_RELEASE_REUSE_S,
     HUB_UPDATE_SCRIPT_MODE,
@@ -124,11 +125,9 @@ from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.system.machine import distribution_family, machine_architecture
 from neutrino_hub.system.systemd_ctl import held_unit_state
 from neutrino_hub.utils import constants
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.utils.subprocess_run import run
-from neutrino_hub.utils.tls_trust import public_ssl_context
 
-DOWNLOAD_CHUNK_BYTES = 1024 * 1024
-PROGRESS_STEPS = 4
 # A size in the steps, as the panel's card shows it: steps of 1024, one
 # decimal below ten in any unit but bytes, the number and the unit joined by
 # a no-break space so a line never breaks between them.
@@ -937,6 +936,34 @@ class HubUpdateStagingSteps:
             self._on_progress(line)
 
 
+def failure_output(error: HubUpdateError) -> str:
+    """What a failed staging leaves in the record's output.
+
+    Args:
+        error: Why the staging stopped.
+
+    Returns:
+        Its ``detail``, or for a download no source served one line per
+        source with its reason and the error's own words; empty when it
+        names neither.
+    """
+    lines = [
+        " ".join(
+            part
+            for part in (
+                f"{item.get('source', '')}:",
+                str(item.get("reason", "")),
+                str(item.get("detail", "")),
+            )
+            if part
+        )
+        for item in error.params.get("sources") or []
+        if isinstance(item, dict)
+    ]
+    detail = str(error.params.get("detail", "") or "")
+    return "\n".join(([detail] if detail else []) + lines)
+
+
 def handed_over_steps(plan: "HubUpdatePlan") -> list[str]:
     """The steps a record holds once the install is handed over.
 
@@ -1341,7 +1368,7 @@ class HubUpdateInstaller:
         directory: Path | None = None,
         asset: str = HUB_PACKAGE_ASSET,
         family: str | None = None,
-        open_url: Callable[[str], object] | None = None,
+        fetcher=None,
         run_command: Callable[..., object] = run,
         unit_state_of: Callable[[str], str] | None = None,
         disk_usage: Callable[[Path], "shutil._ntuple_diskusage"] = shutil.disk_usage,
@@ -1358,8 +1385,9 @@ class HubUpdateInstaller:
             asset: The name the build stamped, with ``{version}`` open.
             family: The distribution family, or ``pkg`` or ``msi``; None
                 reads the machine's.
-            open_url: How a download is opened, answering a stream with a
-                ``read(size)``; None opens it over the network.
+            fetcher: What downloads the packages from the release sites;
+                None is a
+                :class:`~neutrino_hub.utils.source_fetch.SourceFetcher`.
             run_command: How the unit or the launchd job is started.
             unit_state_of: How the install's state is read, in systemd's
                 words; None reads it from systemd, launchd or the Windows
@@ -1374,7 +1402,7 @@ class HubUpdateInstaller:
         self._directory = directory
         self._asset = asset
         self._family = family
-        self._open_url = _open_url if open_url is None else open_url
+        self._fetcher = SourceFetcher() if fetcher is None else fetcher
         self._run = run_command
         self._unit_state = unit_state_of
         self._disk_usage = disk_usage
@@ -1433,9 +1461,9 @@ class HubUpdateInstaller:
             of that version carries it.
 
         Raises:
-            OSError: If GitHub had to be asked and could not be reached.
-            ValueError: If the release read is not shaped like one, or this
-                hub carries no stamp.
+            DownloadFailedError: If the release sites had to be read and none
+                answered.
+            ValueError: If this hub carries no stamp.
         """
         if self._rollback_path(current).is_file():
             return True
@@ -1482,9 +1510,10 @@ class HubUpdateInstaller:
             The plan the unit is handed.
 
         Raises:
-            HubUpdateError: ``disk_space_short``, ``package_fetch_failed``,
-                ``package_sha256_mismatch`` or ``rollback_fetch_failed``;
-                nothing half-written remains.
+            HubUpdateError: ``disk_space_short``, ``download_failed`` naming
+                each source of the package or of the rollback and why it
+                failed, or ``package_fetch_failed`` when the file cannot be
+                written; nothing half-written remains.
         """
         started_at = started_at or stamp_now()
         staging = HubUpdateStagingSteps(on_progress)
@@ -1498,26 +1527,13 @@ class HubUpdateInstaller:
         )
         self._prune(keep={release.asset_name, rollback_name})
         target = directory / release.asset_name
-        try:
-            digest = self._checker.digest_of(release)
-        except (OSError, ValueError) as error:
-            raise HubUpdateError(
-                HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED, detail=str(error)[:200]
-            ) from error
-        if target.is_file() and _file_digest(target) == digest:
+        if target.is_file() and "sha256:" + _file_digest(target) == release.digest:
             staging.say(f"{release.asset_name} already here, checked")
         else:
             staging.say(
                 f"downloading {release.asset_name}  {_size_text(release.asset_size)}"
             )
-            received = self._download(
-                release.asset_url, target, total=release.asset_size, say=staging.say
-            )
-            if received != digest:
-                target.unlink(missing_ok=True)
-                raise HubUpdateError(
-                    HUB_UPDATE_REASON_PACKAGE_SHA256_MISMATCH, name=release.asset_name
-                )
+            self._download(release, target, say=staging.say)
             staging.say("checked")
         rollback = self._ensure_rollback(current, say=staging.say)
         return HubUpdatePlan(
@@ -1562,7 +1578,7 @@ class HubUpdateInstaller:
                 ``package_name_mismatch`` when its name is not this box's
                 package at any version, ``disk_space_short``,
                 ``package_fetch_failed`` when the file cannot be read, or
-                ``rollback_fetch_failed``.
+                ``download_failed`` for the rollback.
         """
         started_at = started_at or stamp_now()
         staging = HubUpdateStagingSteps(on_progress)
@@ -1760,8 +1776,8 @@ class HubUpdateInstaller:
         """The running version's package, fetched when a release carries it.
 
         Raises:
-            HubUpdateError: ``rollback_fetch_failed`` when a release carries
-                it and it could not be taken down whole.
+            HubUpdateError: ``download_failed`` when a release carries it and
+                no release site served it, or its release could not be read.
         """
         rollback = self._rollback_path(current)
         if rollback.is_file():
@@ -1772,30 +1788,16 @@ class HubUpdateInstaller:
             previous = self._checker.for_version(
                 current, max_age_s=HUB_UPDATE_RELEASE_REUSE_S
             )
-            if previous is None or not previous.has_package:
-                say(f"no rollback package for {current}")
-                return None
-            digest = self._checker.digest_of(previous)
-            say(
-                f"downloading rollback {previous.asset_name}  "
-                f"{_size_text(previous.asset_size)}"
-            )
-            received = self._download(
-                previous.asset_url, rollback, total=previous.asset_size, say=say
-            )
-        except (OSError, ValueError) as error:
-            raise HubUpdateError(
-                HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED, detail=str(error)[:200]
-            ) from error
-        except HubUpdateError as error:
-            raise HubUpdateError(
-                HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED, **error.params
-            ) from error
-        if received != digest:
-            rollback.unlink(missing_ok=True)
-            raise HubUpdateError(
-                HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED, name=rollback.name
-            )
+        except DownloadFailedError as error:
+            raise HubUpdateError(error.code, **error.params) from error
+        if previous is None or not previous.has_package:
+            say(f"no rollback package for {current}")
+            return None
+        say(
+            f"downloading rollback {previous.asset_name}  "
+            f"{_size_text(previous.asset_size)}"
+        )
+        self._download(previous, rollback, say=say)
         say("checked")
         say(f"rollback package {current} ready")
         return rollback
@@ -1809,50 +1811,54 @@ class HubUpdateInstaller:
         return (HUB_UPDATE_PANEL_UNIT,) + running
 
     def _download(
-        self, url: str, destination: Path, *, total: int, say: Callable[[str], None]
-    ) -> str:
-        """Take one file down beside its destination, then move it there.
+        self, release: HubRelease, destination: Path, *, say: Callable[[str], None]
+    ) -> None:
+        """Take one release's package down from the release sites, checked.
 
-        Returns:
-            The sha256 of what arrived.
+        The fetcher writes the file beside its destination and checks it
+        against the digest the release's ``SHA256SUMS`` lists; it is moved
+        into place only then.
+
+        Args:
+            release: The release whose package is wanted.
+            destination: Where the package belongs.
+            say: Told the fetcher's ``hub: fetching`` lines.
 
         Raises:
-            HubUpdateError: ``package_fetch_failed``; nothing remains.
+            HubUpdateError: ``download_failed`` when no site served the
+                package, naming each and why; ``package_fetch_failed`` when
+                the file cannot be written. Nothing remains either way.
         """
-        digest = hashlib.sha256()
-        received = 0
-        next_step = 1
-        handle, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".tmp_")
         try:
-            with os.fdopen(handle, "wb") as sink, self._open_url(url) as source:
-                while True:
-                    chunk = source.read(DOWNLOAD_CHUNK_BYTES)
-                    if not chunk:
-                        break
-                    received += len(chunk)
-                    if received > HUB_UPDATE_FETCH_LIMIT_BYTES:
-                        raise HubUpdateError(
-                            HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED,
-                            detail=f"past {HUB_UPDATE_FETCH_LIMIT_BYTES} bytes",
-                        )
-                    sink.write(chunk)
-                    digest.update(chunk)
-                    while total and received * PROGRESS_STEPS >= next_step * total:
-                        say(f"{next_step * 100 // PROGRESS_STEPS}%")
-                        next_step += 1
-                sink.flush()
-                os.fsync(sink.fileno())
-            os.chmod(temporary, HUB_UPDATE_PACKAGE_MODE)
-            os.replace(temporary, destination)
+            download = self._fetcher.fetch_file(
+                file=release.asset_name,
+                sources=list(release.sources),
+                digest=release.digest,
+                directory=destination.parent,
+                limit=HUB_UPDATE_FETCH_LIMIT_BYTES,
+                on_line=say,
+            )
+        except DownloadFailedError as error:
+            raise HubUpdateError(error.code, **error.params) from error
+        except (DownloadTooLargeError, ValueError) as error:
+            raise HubUpdateError(
+                HUB_UPDATE_REASON_DOWNLOAD_FAILED,
+                file=release.asset_name,
+                sources=[],
+                detail=str(error)[:200],
+            ) from error
         except OSError as error:
-            Path(temporary).unlink(missing_ok=True)
             raise HubUpdateError(
                 HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED, detail=str(error)[:200]
             ) from error
-        except HubUpdateError:
-            Path(temporary).unlink(missing_ok=True)
-            raise
-        return digest.hexdigest()
+        try:
+            os.chmod(download.path, HUB_UPDATE_PACKAGE_MODE)
+            download.place(destination)
+        except OSError as error:
+            download.discard()
+            raise HubUpdateError(
+                HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED, detail=str(error)[:200]
+            ) from error
 
 
 def _render_system_script(
@@ -2009,24 +2015,6 @@ def _filled(line: str, path: str) -> str:
         .replace("@PACMAN_LOCK@", shlex.quote(HUB_UPDATE_PACMAN_LOCK_PATH))
         .replace("@DNF_LOCK@", shlex.quote(HUB_UPDATE_DNF_LOCK_TEXT))
         .replace("@STEP_WAITING@", shlex.quote(HUB_UPDATE_STEP_WAITING))
-    )
-
-
-def _open_url(url: str):
-    """Open one download over the network.
-
-    Args:
-        url: What to read.
-
-    Returns:
-        The response, read in chunks and closed by the caller.
-
-    Raises:
-        OSError: If it cannot be reached.
-    """
-    request = urllib.request.Request(url, headers=HUB_UPDATE_HEADERS)
-    return urllib.request.urlopen(
-        request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S, context=public_ssl_context()
     )
 
 

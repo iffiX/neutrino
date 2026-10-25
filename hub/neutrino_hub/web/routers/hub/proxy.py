@@ -64,7 +64,7 @@ from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.exceptions import NetworkApplyError
+from neutrino_hub.exceptions import DownloadFailedError, NetworkApplyError
 from neutrino_hub.web.models import (
     ApplyChange,
     ApplyResult,
@@ -262,16 +262,16 @@ async def scan_geodata() -> GeodataView:
         What the box holds, with ``latest`` naming what is out there.
 
     Raises:
-        HTTPException: 502 with ``geodata_unreachable`` when a repository
-            cannot be read, which is the usual answer on a box whose own
-            uplink is down.
+        HTTPException: 502 ``download_failed {file, sources}`` when a
+            repository cannot be read, which is the usual answer on a box
+            whose own uplink is down.
     """
     try:
         newest = await asyncio.to_thread(geodata.latest)
-    except (OSError, ValueError) as error:
+    except DownloadFailedError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"code": "geodata_unreachable", "params": {}},
+            detail={"code": error.code, "params": error.params},
         ) from error
     return _geodata_view(geodata.installed(), latest=newest)
 

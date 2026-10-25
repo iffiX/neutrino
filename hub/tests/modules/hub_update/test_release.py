@@ -1,57 +1,69 @@
-"""What the hub reads off its own releases, answered from recorded replies."""
+"""What the hub reads off its own releases, from release sites answered from a table."""
 
+import hashlib
 import json
-import socket
-import urllib.error
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from neutrino_hub.modules.hub_update import release as release_module
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.hub_update.release import (
     HubReleaseChecker,
     asset_name,
+    digest_listing,
+    latest_version,
     relation,
     version_of_asset,
 )
+from neutrino_hub.utils.source_fetch import SourceFetcher, failure_entry
+from tests.conftest import FakeSourceFetcher
 
 ASSET = "neutrino-hub_{version}_amd64.deb"
-LATEST_URL = "https://api.github.com/repos/iffiX/neutrino/releases/latest"
-TAG_URL = "https://api.github.com/repos/iffiX/neutrino/releases/tags/{tag}"
-DOWNLOAD = "https://github.com/iffiX/neutrino/releases/download/{tag}/{name}"
-DIGEST = "a" * 64
+SITES = (
+    {
+        "files": "https://github.example/releases/download/{tag}/",
+        "latest": "https://github.example/releases/latest/download/latest.json",
+    },
+    {
+        "files": "https://cnb.example/-/releases/download/{tag}/",
+        "latest": "https://cnb.example/-/git/raw/main/latest.json",
+    },
+)
+GITHUB = "https://github.example/releases/download/v{version}/{name}"
+CNB = "https://cnb.example/-/releases/download/v{version}/{name}"
+LATEST = [site["latest"] for site in SITES]
 
 
-def release_json(version: str, *, assets=None) -> bytes:
-    """A release as GitHub describes it, carrying the named files."""
-    tag = f"v{version}"
-    names = assets if assets is not None else [ASSET.format(version=version)]
-    return json.dumps(
-        {
-            "tag_name": tag,
-            "published_at": "2026-10-01T12:00:00Z",
-            "body": "## Changes\n\n- one thing\n",
-            "html_url": f"https://github.com/iffiX/neutrino/releases/tag/{tag}",
-            "assets": [
-                {
-                    "name": name,
-                    "size": 1000 + index,
-                    "browser_download_url": DOWNLOAD.format(tag=tag, name=name),
-                }
-                for index, name in enumerate([*names, "SHA256SUMS"])
-            ],
-        }
-    ).encode("utf-8")
+def latest_json(version: str) -> bytes:
+    return json.dumps({"tag": f"v{version}", "version": version}).encode()
 
 
-def answering(table: dict) -> callable:
-    """A fetch answering from a table, or refusing like GitHub does."""
+def sums(*names: str, payload: bytes = b"package") -> bytes:
+    digest = hashlib.sha256(payload).hexdigest()
+    return "".join(f"{digest}  {name}\n" for name in names).encode()
 
-    def fetch(url: str) -> bytes:
-        if url not in table:
-            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-        return table[url]
 
-    return fetch
+def published(version: str, *, package: bytes = b"package", names=None) -> dict:
+    """One release at both sites: its digest list and this box's package."""
+    name = ASSET.format(version=version)
+    listed = names if names is not None else [name, "install.sh"]
+    table = {}
+    for address in (GITHUB, CNB):
+        table[address.format(version=version, name="SHA256SUMS")] = sums(
+            *listed, payload=package
+        )
+        if name in listed:
+            table[address.format(version=version, name=name)] = package
+    return table
+
+
+def checker_over(table: dict, **keywords) -> tuple:
+    fetcher = FakeSourceFetcher(table)
+    return (
+        HubReleaseChecker(asset=ASSET, sites=SITES, fetcher=fetcher, **keywords),
+        fetcher,
+    )
 
 
 # --- names ---
@@ -111,280 +123,142 @@ def test_the_relation_orders_by_number_and_singles_out_a_new_major(
     assert relation(current, latest) == expected
 
 
-# --- reading GitHub ---
+# --- the files a release site holds ---
 
 
-def test_the_latest_release_names_this_boxs_package():
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering({LATEST_URL: release_json("0.3.1")}),
+def test_latest_json_names_the_version_of_its_tag():
+    assert latest_version(latest_json("0.6.1")) == "0.6.1"
+    assert latest_version(b'{"tag": "v0.6.1"}') == "0.6.1"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>", b"{}", b'{"tag": "0.6.1"}', b'{"tag": "v0.6.1", "version": "0.6.0"}'],
+)
+def test_a_latest_json_of_another_shape_is_refused(body):
+    with pytest.raises(ValueError):
+        latest_version(body)
+
+
+def test_the_digest_list_is_read_by_file_name():
+    digest = "a" * 64
+    listing = digest_listing(f"{digest}  one.deb\n{digest} *two.msi\n\n".encode())
+
+    assert listing == {"one.deb": digest, "two.msi": digest}
+
+
+def test_a_digest_list_with_a_line_that_is_no_digest_is_refused():
+    with pytest.raises(ValueError):
+        digest_listing(b"not-a-digest  one.deb\n")
+
+
+# --- reading the release sites ---
+
+
+def test_the_latest_release_names_this_boxs_package_at_every_site():
+    table = {LATEST[0]: latest_json("0.3.1"), **published("0.3.1")}
+    checker, fetcher = checker_over(table)
+
+    found = checker.latest()
+
+    name = "neutrino-hub_0.3.1_amd64.deb"
+    assert found.version == "0.3.1"
+    assert found.tag == "v0.3.1"
+    assert found.asset_name == name
+    assert found.has_package is True
+    assert found.sources == (
+        GITHUB.format(version="0.3.1", name=name),
+        CNB.format(version="0.3.1", name=name),
     )
+    assert found.digest == "sha256:" + hashlib.sha256(b"package").hexdigest()
+    assert found.asset_size == len(b"package")
+    assert fetcher.asked[0] == ("document", "latest.json", LATEST)
+    assert fetcher.asked[1] == (
+        "document",
+        "SHA256SUMS",
+        [
+            GITHUB.format(version="0.3.1", name="SHA256SUMS"),
+            CNB.format(version="0.3.1", name="SHA256SUMS"),
+        ],
+    )
+
+
+def test_one_site_answering_is_enough():
+    table = {LATEST[1]: latest_json("0.3.1")}
+    for key, value in published("0.3.1").items():
+        if key.startswith("https://cnb.example/"):
+            table[key] = value
+    checker, _ = checker_over(table)
 
     found = checker.latest()
 
     assert found.version == "0.3.1"
-    assert found.tag == "v0.3.1"
-    assert found.asset_name == "neutrino-hub_0.3.1_amd64.deb"
-    assert found.asset_url == DOWNLOAD.format(
-        tag="v0.3.1", name="neutrino-hub_0.3.1_amd64.deb"
-    )
-    assert found.asset_size == 1000
-    assert found.checksums_url == DOWNLOAD.format(tag="v0.3.1", name="SHA256SUMS")
-    assert found.published_at == "2026-10-01T12:00:00Z"
-    assert found.notes.startswith("## Changes")
-    assert found.page_url.endswith("/v0.3.1")
-
-
-def test_a_mainland_hub_reads_its_release_off_gitee():
-    """Gitee's reply names no page and no publish time, only when the release
-    was made, and its files under its own download address."""
-    gitee = "https://gitee.com/iffiX/neutrino/releases/download/{tag}/{name}"
-    name = ASSET.format(version="0.3.1")
-    reply = {
-        "tag_name": "v0.3.1",
-        "created_at": "2026-10-01T20:00:00+08:00",
-        "body": "## Changes",
-        "assets": [
-            {
-                "name": entry,
-                "browser_download_url": gitee.format(tag="v0.3.1", name=entry),
-            }
-            for entry in (name, "SHA256SUMS")
-        ],
-    }
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="cn",
-        fetch_bytes=answering(
-            {
-                "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest": (
-                    json.dumps(reply).encode("utf-8")
-                )
-            }
-        ),
-    )
-
-    found = checker.latest()
-
-    assert found.asset_url == gitee.format(tag="v0.3.1", name=name)
-    assert found.checksums_url == gitee.format(tag="v0.3.1", name="SHA256SUMS")
-    assert found.published_at == "2026-10-01T20:00:00+08:00"
-    assert found.page_url == "https://gitee.com/iffiX/neutrino/releases/tag/v0.3.1"
-    assert (
-        HubReleaseChecker(asset=ASSET, edition="cn", fetch_bytes=answering({})).latest()
-        is None
-    )
+    assert found.asset_size == len(b"package")
 
 
 def test_nothing_published_reads_as_no_release():
-    checker = HubReleaseChecker(asset=ASSET, edition="intl", fetch_bytes=answering({}))
+    checker, _ = checker_over({})
 
     assert checker.latest() is None
-    assert checker.for_version("0.3.0") is None
 
 
 def test_a_release_without_this_boxs_package_is_a_release_with_none():
-    """GitHub answered; the release has no package of this family, which is
-    no error and no unreachable GitHub."""
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering(
-            {LATEST_URL: release_json("0.3.1", assets=["neutrino-hub_0.3.1_arm64.deb"])}
-        ),
-    )
+    table = {
+        LATEST[0]: latest_json("0.3.1"),
+        **published("0.3.1", names=["neutrino-hub_0.3.1_arm64.deb"]),
+    }
+    checker, _ = checker_over(table)
 
     found = checker.latest()
 
     assert found.version == "0.3.1"
     assert found.has_package is False
-    assert found.asset_url == ""
-    assert found.asset_size == 0
+    assert found.sources == ()
+    assert found.digest == ""
 
 
-def test_a_reply_that_is_not_a_release_is_refused():
-    checker = HubReleaseChecker(
-        asset=ASSET, edition="intl", fetch_bytes=answering({LATEST_URL: b"<html>"})
-    )
+class UnreachableFetcher(FakeSourceFetcher):
+    """Every site refuses the connection."""
 
-    with pytest.raises(ValueError):
+    def fetch_document(self, *, file, sources, parse, limit=0) -> tuple:
+        raise DownloadFailedError(
+            file,
+            [failure_entry(source, "unreachable", "refused") for source in sources],
+        )
+
+
+def test_sites_that_do_not_answer_fail_the_check_naming_each():
+    checker = HubReleaseChecker(asset=ASSET, sites=SITES, fetcher=UnreachableFetcher())
+
+    with pytest.raises(DownloadFailedError) as raised:
         checker.latest()
 
+    assert raised.value.params["file"] == "latest.json"
+    assert [item["source"] for item in raised.value.params["sources"]] == LATEST
 
-def test_an_unreachable_github_is_an_os_error():
-    def down(url: str) -> bytes:
-        raise urllib.error.URLError("no route")
 
-    checker = HubReleaseChecker(asset=ASSET, edition="intl", fetch_bytes=down)
+def test_a_checkout_names_no_site_and_reads_nothing():
+    checker = HubReleaseChecker(asset=ASSET, sites=(), fetcher=FakeSourceFetcher())
 
-    with pytest.raises(OSError):
+    with pytest.raises(DownloadFailedError) as raised:
         checker.latest()
+
+    assert raised.value.params == {"file": "latest.json", "sources": []}
 
 
 def test_the_release_of_one_version_is_read_by_its_tag():
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering({TAG_URL.format(tag="v0.3.0"): release_json("0.3.0")}),
-    )
+    checker, _ = checker_over(published("0.3.0"))
 
     found = checker.for_version("0.3.0")
 
     assert found.version == "0.3.0"
-    assert found.asset_name == "neutrino-hub_0.3.0_amd64.deb"
+    assert found.has_package is True
 
 
-def test_the_digest_is_the_line_of_the_checksums_that_names_the_package():
-    checksums = (
-        f"{'b' * 64}  neutrino-hub_0.3.1_arm64.deb\n"
-        f"{DIGEST}  neutrino-hub_0.3.1_amd64.deb\n"
-    ).encode("utf-8")
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering(
-            {
-                LATEST_URL: release_json("0.3.1"),
-                DOWNLOAD.format(tag="v0.3.1", name="SHA256SUMS"): checksums,
-            }
-        ),
-    )
+def test_a_version_no_site_holds_is_no_release():
+    checker, _ = checker_over(published("0.3.0"))
 
-    assert checker.digest_of(checker.latest()) == DIGEST
-
-
-def test_a_checksums_file_without_the_package_is_refused():
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering(
-            {
-                LATEST_URL: release_json("0.3.1"),
-                DOWNLOAD.format(tag="v0.3.1", name="SHA256SUMS"): b"nothing here\n",
-            }
-        ),
-    )
-
-    with pytest.raises(ValueError):
-        checker.digest_of(checker.latest())
-
-
-def test_a_line_that_is_not_a_digest_is_refused():
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=answering(
-            {
-                LATEST_URL: release_json("0.3.1"),
-                DOWNLOAD.format(
-                    tag="v0.3.1", name="SHA256SUMS"
-                ): b"xyz  neutrino-hub_0.3.1_amd64.deb\n",
-            }
-        ),
-    )
-
-    with pytest.raises(ValueError):
-        checker.digest_of(checker.latest())
-
-
-def test_the_network_read_sends_a_user_agent(monkeypatch):
-    """GitHub's API answers nothing to a request without one."""
-    seen = {}
-
-    class Reply:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def read(self):
-            return b"{}"
-
-    def urlopen(request, timeout, context=None):
-        seen["headers"] = dict(request.header_items())
-        seen["timeout"] = timeout
-        return Reply()
-
-    monkeypatch.setattr(release_module.urllib.request, "urlopen", urlopen)
-
-    release_module._read("https://example.invalid/x")
-
-    assert seen["headers"]["User-agent"] == "neutrino-hub"
-    assert seen["timeout"] == 600
-
-
-@pytest.mark.parametrize(
-    ("error", "expected"),
-    [
-        (
-            urllib.error.URLError(socket.gaierror(-2, "Name or service not known")),
-            ("release_dns_failed", {}),
-        ),
-        (urllib.error.URLError(TimeoutError("timed out")), ("release_timed_out", {})),
-        (TimeoutError("timed out"), ("release_timed_out", {})),
-        (
-            urllib.error.URLError(ConnectionRefusedError(111, "refused")),
-            ("release_refused", {}),
-        ),
-        (OSError("no route to host"), ("release_refused", {})),
-        (
-            urllib.error.HTTPError("https://api", 403, "rate limited", {}, None),
-            ("release_http_error", {"status": 403}),
-        ),
-        (ValueError("not a release"), ("release_unreachable", {})),
-    ],
-)
-def test_why_github_gave_no_release_is_named(error, expected):
-    assert release_module.unreachable_reason(error) == expected
-
-
-# --- GitHub's hourly allowance ---
-
-
-def spent(status: int, **headers) -> urllib.error.HTTPError:
-    """A refusal from an address with no API calls left this hour."""
-    return urllib.error.HTTPError(
-        "https://api",
-        status,
-        "rate limit exceeded",
-        {"x-ratelimit-remaining": "0", **headers},
-        None,
-    )
-
-
-@pytest.mark.parametrize("status", [403, 429])
-def test_an_address_with_no_calls_left_says_when_they_renew(monkeypatch, status):
-    monkeypatch.setattr(release_module.time, "time", lambda: 1_791_936_000.0)
-    error = spent(status, **{"x-ratelimit-reset": "1791936725"})
-
-    assert release_module.unreachable_reason(error) == (
-        "release_rate_limited",
-        {"minutes": 13, "reset_at": "2026-10-14T00:12:05Z"},
-    )
-
-
-def test_a_refusal_with_calls_left_is_an_http_error():
-    error = urllib.error.HTTPError(
-        "https://api", 403, "forbidden", {"x-ratelimit-remaining": "12"}, None
-    )
-
-    assert release_module.unreachable_reason(error) == (
-        "release_http_error",
-        {"status": 403},
-    )
-
-
-def test_a_renewal_naming_no_moment_is_read_off_retry_after_or_the_hour():
-    assert release_module.renewal({"retry-after": "30"}, now=0) == {
-        "minutes": 1,
-        "reset_at": "1970-01-01T00:00:30Z",
-    }
-    assert release_module.renewal({}, now=0) == {
-        "minutes": 60,
-        "reset_at": "1970-01-01T01:00:00Z",
-    }
+    assert checker.for_version("0.3.0+ci") is None
 
 
 # --- what a checker remembers ---
@@ -398,63 +272,102 @@ class Clock:
         return self.now
 
 
-def counting(table: dict, asked: list) -> callable:
-    fetch = answering(table)
-
-    def counted(url: str) -> bytes:
-        asked.append(url)
-        return fetch(url)
-
-    return counted
+def documents_asked(fetcher: FakeSourceFetcher) -> list:
+    return [file for kind, file, _ in fetcher.asked if kind == "document"]
 
 
 def test_a_release_read_moments_ago_is_reused_when_asked_to():
-    asked: list = []
     clock = Clock()
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=counting(
-            {
-                LATEST_URL: release_json("0.3.1"),
-                TAG_URL.format(tag="v0.3.0"): release_json("0.3.0"),
-            },
-            asked,
-        ),
-        clock=clock,
-    )
+    table = {
+        LATEST[0]: latest_json("0.3.1"),
+        **published("0.3.1"),
+        **published("0.3.0"),
+    }
+    checker, fetcher = checker_over(table, clock=clock)
     checker.latest()
     checker.for_version("0.3.0")
     clock.now += 599
 
     assert checker.latest(max_age_s=600).version == "0.3.1"
     assert checker.for_version("0.3.0", max_age_s=600).version == "0.3.0"
-    assert asked == [LATEST_URL, TAG_URL.format(tag="v0.3.0")]
+    assert documents_asked(fetcher) == ["latest.json", "SHA256SUMS", "SHA256SUMS"]
 
 
 def test_a_check_always_asks_and_an_old_read_is_asked_again():
-    asked: list = []
     clock = Clock()
-    checker = HubReleaseChecker(
-        asset=ASSET,
-        edition="intl",
-        fetch_bytes=counting({LATEST_URL: release_json("0.3.1")}, asked),
-        clock=clock,
-    )
+    table = {LATEST[0]: latest_json("0.3.1"), **published("0.3.1")}
+    checker, fetcher = checker_over(table, clock=clock)
     checker.latest()
     checker.latest()
     clock.now += 601
     checker.latest(max_age_s=600)
 
-    assert asked == [LATEST_URL] * 3
+    assert documents_asked(fetcher).count("latest.json") == 3
 
 
 def test_a_release_that_is_not_there_is_remembered_too():
-    asked: list = []
-    checker = HubReleaseChecker(
-        asset=ASSET, edition="intl", fetch_bytes=counting({}, asked), clock=Clock()
-    )
+    checker, fetcher = checker_over({}, clock=Clock())
 
     assert checker.for_version("0.3.0+ci") is None
     assert checker.for_version("0.3.0+ci", max_age_s=600) is None
-    assert len(asked) == 1
+    assert documents_asked(fetcher) == ["SHA256SUMS"]
+
+
+# --- against sites served on loopback ---
+
+
+class _Site(BaseHTTPRequestHandler):
+    files: dict = {}
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        body = self.files.get(self.path)
+        if body is None:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        asked = self.headers.get("Range", "")
+        if asked:
+            first, _, last = asked.removeprefix("bytes=").partition("-")
+            start = int(first)
+            end = min(int(last), len(body) - 1) if last else len(body) - 1
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(body)}")
+            body = body[start : end + 1]
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def test_the_real_fetcher_reads_a_site_and_sizes_the_package():
+    package = b"p" * 4096
+    name = ASSET.format(version="0.7.0")
+    files = {
+        "/latest.json": latest_json("0.7.0"),
+        "/v0.7.0/SHA256SUMS": sums(name, payload=package),
+        f"/v0.7.0/{name}": package,
+    }
+    handler = type("Handler", (_Site,), {"files": files})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        checker = HubReleaseChecker(
+            asset=ASSET,
+            sites=({"files": base + "/{tag}/", "latest": base + "/latest.json"},),
+            fetcher=SourceFetcher(probe_bytes=1, probe_timeout_s=2.0),
+        )
+        found = checker.latest()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert found.version == "0.7.0"
+    assert found.sources == (f"{base}/v0.7.0/{name}",)
+    assert found.asset_size == len(package)
+    assert found.digest == "sha256:" + hashlib.sha256(package).hexdigest()

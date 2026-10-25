@@ -25,6 +25,7 @@ from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import proxy as proxy_router
 from tests.conftest import unlock_vault
+from tests.conftest import FakeSourceFetcher
 from tests.modules.xray.test_geodata import NEW, fake_release_fetcher
 
 ROUTING = {
@@ -151,7 +152,8 @@ def geodata_paths(monkeypatch, tmp_path):
         for source in geodata.sources()
     }
     installed, fetch = geodata.installed, geodata.fetch
-    monkeypatch.setattr(geodata, "_read", fake_release_fetcher(bodies))
+    fetcher = fake_release_fetcher(bodies)
+    monkeypatch.setattr(geodata, "SourceFetcher", lambda: fetcher)
     monkeypatch.setattr(
         geodata, "installed", lambda: installed(version_path=version_path)
     )
@@ -285,15 +287,14 @@ def test_a_scan_answers_with_what_is_held_and_what_is_published(client):
 def test_a_scan_that_cannot_reach_the_repositories_is_refused(client, monkeypatch):
     opened, _ = client
 
-    def unreachable(url: str) -> bytes:
-        raise OSError("no route to host")
-
-    monkeypatch.setattr(geodata, "_read", unreachable)
+    monkeypatch.setattr(geodata, "SourceFetcher", FakeSourceFetcher)
 
     response = opened.post("/api/hub/proxy/geodata/scan")
 
     assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "geodata_unreachable"
+    detail = response.json()["detail"]
+    assert detail["code"] == "download_failed"
+    assert [item["reason"] for item in detail["params"]["sources"]] == ["http_404"]
 
 
 def test_an_update_answers_with_the_job_that_does_it(client):

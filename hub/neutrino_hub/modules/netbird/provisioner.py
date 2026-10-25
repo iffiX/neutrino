@@ -13,7 +13,6 @@ the carried client is registered with the process controller as a child of
 the hub's one service.
 """
 
-import hashlib
 import shutil
 import tarfile
 import tempfile
@@ -25,6 +24,7 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_BINARY_NAME,
     NETBIRD_BINARY_PATH,
     NETBIRD_DOWNLOAD_URL,
+    NETBIRD_FETCH_LIMIT_BYTES,
     NETBIRD_HUB_STATE_DIR,
     NETBIRD_SHA256,
     NETBIRD_STATE_DIR,
@@ -40,6 +40,7 @@ from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
 from neutrino_hub.utils.constants import UTILS_DATA_DIR, is_dev_root_set
+from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.utils.subprocess_run import run
 
 
@@ -217,29 +218,20 @@ class NetbirdProvisioner:
                 :mod:`neutrino_hub.system.machine`.
 
         Raises:
-            ValueError: If what arrived is not what is pinned.
-            subprocess.CalledProcessError: If the download fails.
+            DownloadFailedError: If the release did not serve the pinned file.
         """
         with tempfile.TemporaryDirectory() as workdir:
-            archive = Path(workdir) / "netbird.tar.gz"
-            run(
-                [
-                    "curl",
-                    "-fL",
-                    "--retry",
-                    "2",
-                    "-o",
-                    str(archive),
-                    download_url(architecture),
-                ],
-                timeout_s=600,
-            )
-            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-            if digest != NETBIRD_SHA256[architecture]:
-                raise ValueError(
-                    f"netbird {NETBIRD_VERSION} for {architecture} hashes to "
-                    f"{digest}, not the pinned {NETBIRD_SHA256[architecture]}"
+            archive = (
+                SourceFetcher()
+                .fetch_file(
+                    file=f"netbird {NETBIRD_VERSION} for {architecture}",
+                    sources=[download_url(architecture)],
+                    digest=f"sha256:{NETBIRD_SHA256[architecture]}",
+                    directory=Path(workdir),
+                    limit=NETBIRD_FETCH_LIMIT_BYTES,
                 )
+                .path
+            )
             with tarfile.open(archive) as bundle:
                 # Only the client: the licences beside it in the release are
                 # carried in the package's own licence directory.

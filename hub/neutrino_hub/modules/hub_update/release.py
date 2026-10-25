@@ -1,60 +1,45 @@
-"""What the hub's own releases publish, read from its edition's release API.
+"""What the hub's own releases publish, read from the release sites.
 
-``intl`` reads GitHub's and ``cn`` Gitee's, whose release carries the same
-``tag_name`` and ``assets`` of ``name`` and ``browser_download_url``. A
-release is the one `releases/latest` names, which by GitHub's definition is
-neither a draft nor a pre-release; the package this box wants from it is the
-one whose name the build stamped into this package with the version left
-open, so nothing here knows how any family spells a machine. Pure but for the
-one fetch, which a test replaces. A checker remembers each release it read,
-so an install can reuse what a check read moments before.
+A release site holds every file of every release under the names the release
+gives them, ``latest.json`` naming the newest release as ``{tag, version}``
+and each release's ``SHA256SUMS`` covering all of its files. The newest
+release is the one ``latest.json`` names, read from every site at once; its
+digest list is read the same way, and the package this box wants from it is
+the one whose name the build stamped into this package with the version left
+open, so nothing here knows how any family spells a machine, or which
+edition's package is whose. Every read goes through the fetcher. A checker
+remembers each release it read, so an install can reuse what a check read
+moments before.
 """
 
 import json
-import math
 import re
-import socket
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Callable
 
 from neutrino_hub import HUB_PACKAGE_ASSET
-from neutrino_hub.edition import EDITION
+from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_CHECKSUMS_NAME,
-    HUB_UPDATE_ERROR_RELEASE_DNS,
-    HUB_UPDATE_ERROR_RELEASE_HTTP,
-    HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED,
-    HUB_UPDATE_ERROR_RELEASE_REFUSED,
-    HUB_UPDATE_ERROR_RELEASE_TIMEOUT,
-    HUB_UPDATE_ERROR_RELEASE_UNREACHABLE,
-    HUB_UPDATE_FETCH_TIMEOUT_S,
-    HUB_UPDATE_HEADERS,
-    HUB_UPDATE_LATEST_URLS,
-    HUB_UPDATE_PAGE_URLS,
-    HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER,
-    HUB_UPDATE_RATE_LIMIT_RESET_HEADER,
-    HUB_UPDATE_RATE_LIMIT_STATUSES,
-    HUB_UPDATE_RATE_LIMIT_WINDOW_S,
+    HUB_UPDATE_LATEST_NAME,
     HUB_UPDATE_RELATION_CURRENT,
     HUB_UPDATE_RELATION_MAJOR,
     HUB_UPDATE_RELATION_NEWER,
-    HUB_UPDATE_REPOSITORY,
-    HUB_UPDATE_RETRY_AFTER_HEADER,
+    HUB_UPDATE_SIZE_PROBE_BYTES,
     HUB_UPDATE_TAG_PREFIX,
-    HUB_UPDATE_TAG_URLS,
 )
+from neutrino_hub.utils.release_sites import latest_addresses, release_addresses
+from neutrino_hub.utils.source_fetch import SourceFetcher, http_reason
 from neutrino_hub.utils.version_number import parse_version
-from neutrino_hub.utils.tls_trust import public_ssl_context
 
 VERSION_FIELD = "{version}"
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # What a version looks like inside a file name: digits, dots, and the
 # characters a pre-release or a build suffix may add.
 VERSION_IN_NAME = r"([0-9][0-9A-Za-z.+~-]*?)"
+# The key a remembered read of the newest release is kept under.
+LATEST_KEY = ""
 
 
 @dataclass(frozen=True)
@@ -63,27 +48,23 @@ class HubRelease:
 
     Attributes:
         version: The version, the tag without its prefix.
-        tag: The tag as GitHub names it.
-        published_at: When it was published, as GitHub stamps it.
-        notes: The release's body.
-        page_url: The release's page.
+        tag: The tag the release sites file it under.
         asset_name: The package file's name.
-        asset_url: Where the package downloads from; empty without a package.
-        asset_size: The package's size in bytes.
-        checksums_url: Where the release's digest list downloads from.
-        has_package: Whether the release carries this box's package and its
-            digest list.
+        sources: Each release site's address of the package; empty without
+            a package.
+        digest: The package's ``sha256:<hex>`` as the release's
+            ``SHA256SUMS`` lists it; empty without a package.
+        asset_size: The package's size in bytes, 0 when no site named it.
+        has_package: Whether the release's digest list names this box's
+            package.
     """
 
     version: str
     tag: str
-    published_at: str
-    notes: str
-    page_url: str
     asset_name: str
-    asset_url: str
-    asset_size: int
-    checksums_url: str
+    sources: tuple = ()
+    digest: str = ""
+    asset_size: int = 0
     has_package: bool = True
 
 
@@ -149,37 +130,103 @@ def relation(current: str, latest: str) -> str:
     return HUB_UPDATE_RELATION_NEWER
 
 
+def latest_version(body: bytes) -> str:
+    """The version a ``latest.json`` names.
+
+    Args:
+        body: The file as a site served it.
+
+    Returns:
+        The version, the tag without its prefix.
+
+    Raises:
+        ValueError: If the file names no tag of the release's form, or a
+            version other than its tag's.
+    """
+    try:
+        named = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as error:
+        raise ValueError("latest.json is not JSON") from error
+    tag = named.get("tag") if isinstance(named, dict) else None
+    if not isinstance(tag, str) or not tag.startswith(HUB_UPDATE_TAG_PREFIX):
+        raise ValueError("latest.json names no release tag")
+    version = tag[len(HUB_UPDATE_TAG_PREFIX) :]
+    if str(named.get("version", version)) != version:
+        raise ValueError("latest.json names a version other than its tag's")
+    return version
+
+
+def digest_listing(body: bytes) -> dict:
+    """The digests a ``SHA256SUMS`` lists, by file name.
+
+    Args:
+        body: The file as a site served it.
+
+    Returns:
+        File name to its sha256 in hex.
+
+    Raises:
+        ValueError: If a line is not ``<sha256>  <file>``.
+    """
+    listing = {}
+    for line in body.decode("utf-8", "replace").splitlines():
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) != 2 or not DIGEST_PATTERN.match(parts[0]):
+            raise ValueError(
+                f"{HUB_UPDATE_CHECKSUMS_NAME} has a line that is no digest"
+            )
+        listing[parts[1].lstrip("*")] = parts[0]
+    return listing
+
+
+def is_nowhere(error: DownloadFailedError) -> bool:
+    """Whether every source answered that it holds no such file.
+
+    Args:
+        error: The failed read.
+
+    Returns:
+        True when there were sources and each answered 404.
+    """
+    sources = error.params.get("sources") or []
+    return bool(sources) and all(item["reason"] == http_reason(404) for item in sources)
+
+
 class HubReleaseChecker:
-    """Reads what the repository publishes for this box's kind of package."""
+    """Reads what the release sites publish for this box's kind of package."""
 
     def __init__(
         self,
         *,
         asset: str = HUB_PACKAGE_ASSET,
-        repository: str = HUB_UPDATE_REPOSITORY,
-        edition: str = EDITION,
-        fetch_bytes: Callable[[str], bytes] | None = None,
+        sites=None,
+        fetcher=None,
         clock: Callable[[], float] = time.monotonic,
     ):
         """Set up a checker.
 
         Args:
             asset: The name the build stamped, with ``{version}`` open.
-            repository: The repository the releases are under.
-            edition: The hub's edition, whose release API is read.
-            fetch_bytes: How one address is read; None reads it over the
-                network, and a test answers from its own table instead.
+            sites: The release sites; None reads this hub's stamp.
+            fetcher: What reads the sites; None is a
+                :class:`~neutrino_hub.utils.source_fetch.SourceFetcher`
+                whose probe asks for one byte, enough for a size.
             clock: Monotonic seconds, which age what the checker remembers.
         """
         self._asset = asset
-        self._repository = repository
-        self._edition = edition
-        self._read = _read if fetch_bytes is None else fetch_bytes
+        self._sites = sites
+        self._fetcher = (
+            fetcher
+            if fetcher is not None
+            else SourceFetcher(probe_bytes=HUB_UPDATE_SIZE_PROBE_BYTES)
+        )
         self._clock = clock
         self._remembered: dict[str, tuple[float, HubRelease | None]] = {}
 
     def latest(self, *, max_age_s: float = 0) -> HubRelease | None:
-        """The newest release, neither a draft nor a pre-release.
+        """The newest release, as ``latest.json`` names it.
 
         Args:
             max_age_s: How old a release this checker read before may be
@@ -187,16 +234,28 @@ class HubReleaseChecker:
 
         Returns:
             The release, ``has_package`` False when it carries no package for
-            this box, or None when nothing has been published yet.
+            this box, or None when no site names one yet.
 
         Raises:
-            OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release.
+            DownloadFailedError: When no site answered.
         """
-        return self._release_at(
-            HUB_UPDATE_LATEST_URLS[self._edition].format(repository=self._repository),
-            max_age_s=max_age_s,
-        )
+        remembered = self._remembered.get(LATEST_KEY)
+        if remembered is not None and self._clock() - remembered[0] < max_age_s:
+            return remembered[1]
+        try:
+            version, _ = self._fetcher.fetch_document(
+                file=HUB_UPDATE_LATEST_NAME,
+                sources=latest_addresses(sites=self._sites),
+                parse=latest_version,
+            )
+        except DownloadFailedError as error:
+            if not is_nowhere(error):
+                raise
+            found = None
+        else:
+            found = self.for_version(version, max_age_s=max_age_s)
+        self._remembered[LATEST_KEY] = (self._clock(), found)
+        return found
 
     def for_version(self, version: str, *, max_age_s: float = 0) -> HubRelease | None:
         """The release of one version, for the package the box runs now.
@@ -208,218 +267,73 @@ class HubReleaseChecker:
 
         Returns:
             The release, ``has_package`` False when it carries no package for
-            this box, or None when no release carries that tag, which a CI
+            this box, or None when no site holds that release, which a CI
             build's version does not.
 
         Raises:
-            OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release.
+            DownloadFailedError: When no site answered.
+            ValueError: If this hub carries no stamp.
         """
-        tag = HUB_UPDATE_TAG_PREFIX + version
-        return self._release_at(
-            HUB_UPDATE_TAG_URLS[self._edition].format(
-                repository=self._repository, tag=tag
-            ),
-            max_age_s=max_age_s,
-        )
-
-    def digest_of(self, release: HubRelease) -> str:
-        """The sha256 the release publishes for this box's package.
-
-        Args:
-            release: The release.
-
-        Returns:
-            The digest, sixty-four hex characters.
-
-        Raises:
-            OSError: If the digest list cannot be reached.
-            ValueError: If the list has no line for the package, or that line
-                is not a digest.
-        """
-        listing = self._read(release.checksums_url).decode("utf-8", "replace")
-        for line in listing.splitlines():
-            parts = line.split()
-            if len(parts) == 2 and parts[1] == release.asset_name:
-                if not DIGEST_PATTERN.match(parts[0]):
-                    raise ValueError(f"{release.asset_name} has no digest")
-                return parts[0]
-        raise ValueError(f"{HUB_UPDATE_CHECKSUMS_NAME} names no {release.asset_name}")
-
-    def _release_at(self, url: str, *, max_age_s: float) -> HubRelease | None:
-        """One release as GitHub describes it, read now or remembered.
-
-        Args:
-            url: The API address of the release.
-            max_age_s: How old a remembered answer may be.
-
-        Returns:
-            The release, or None when GitHub has nothing at that address.
-
-        Raises:
-            OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release.
-        """
-        remembered = self._remembered.get(url)
+        remembered = self._remembered.get(version)
         if remembered is not None and self._clock() - remembered[0] < max_age_s:
             return remembered[1]
-        release = self._read_release(url)
-        self._remembered[url] = (self._clock(), release)
-        return release
+        found = self._read_release(version)
+        self._remembered[version] = (self._clock(), found)
+        return found
 
-    def _read_release(self, url: str) -> HubRelease | None:
-        """One release as GitHub describes it, read now.
+    def _read_release(self, version: str) -> HubRelease | None:
+        """One release as its digest list describes it, read now.
 
         Args:
-            url: The API address of the release.
+            version: The version wanted.
 
         Returns:
-            The release, or None when GitHub has nothing at that address.
+            The release, or None when no site holds it.
 
         Raises:
-            OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release.
+            DownloadFailedError: When no site answered.
+            ValueError: If this hub carries no stamp.
         """
+        wanted = asset_name(version, asset=self._asset)
+        tag = HUB_UPDATE_TAG_PREFIX + version
+        addresses = release_addresses(version, sites=self._sites)
         try:
-            raw = self._read(url)
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
+            listing, _ = self._fetcher.fetch_document(
+                file=HUB_UPDATE_CHECKSUMS_NAME,
+                sources=[
+                    f"{address}/{HUB_UPDATE_CHECKSUMS_NAME}" for address in addresses
+                ],
+                parse=digest_listing,
+            )
+        except DownloadFailedError as error:
+            if is_nowhere(error):
                 return None
             raise
-        try:
-            described = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as error:
-            raise ValueError(f"{url} did not answer with a release") from error
-        if not isinstance(described, dict):
-            raise ValueError(f"{url} did not answer with a release")
-        tag = described.get("tag_name")
-        if not isinstance(tag, str) or not tag.startswith(HUB_UPDATE_TAG_PREFIX):
-            raise ValueError(f"{url} named no release tag")
-        version = tag[len(HUB_UPDATE_TAG_PREFIX) :]
-        wanted = asset_name(version, asset=self._asset)
-        assets = {
-            entry.get("name"): entry
-            for entry in described.get("assets") or []
-            if isinstance(entry, dict)
-        }
-        package = assets.get(wanted)
-        checksums = assets.get(HUB_UPDATE_CHECKSUMS_NAME)
-        # Gitee names when a release was made and no page of its own.
-        published_at = str(
-            described.get("published_at") or described.get("created_at") or ""
-        )
-        page_url = str(
-            described.get("html_url")
-            or HUB_UPDATE_PAGE_URLS[self._edition].format(
-                repository=self._repository, tag=tag
-            )
-        )
-        if package is None or checksums is None:
+        if wanted not in listing:
             return HubRelease(
-                version=version,
-                tag=tag,
-                published_at=published_at,
-                notes=str(described.get("body") or ""),
-                page_url=page_url,
-                asset_name=wanted,
-                asset_url="",
-                asset_size=0,
-                checksums_url="",
-                has_package=False,
+                version=version, tag=tag, asset_name=wanted, has_package=False
             )
+        sources = tuple(f"{address}/{wanted}" for address in addresses)
         return HubRelease(
             version=version,
             tag=tag,
-            published_at=published_at,
-            notes=str(described.get("body") or ""),
-            page_url=page_url,
             asset_name=wanted,
-            asset_url=str(package.get("browser_download_url") or ""),
-            asset_size=int(package.get("size") or 0),
-            checksums_url=str(checksums.get("browser_download_url") or ""),
+            sources=sources,
+            digest="sha256:" + listing[wanted],
+            asset_size=self._size_of(sources),
         )
 
+    def _size_of(self, sources: tuple) -> int:
+        """The package's size, as the first site that names it says.
 
-def unreachable_reason(error: Exception) -> tuple:
-    """The code and its parameters for a GitHub that gave no release.
+        Args:
+            sources: Each site's address of the package.
 
-    Args:
-        error: What reading the release raised: the ``OSError`` kinds
-            ``urllib`` raises, or the ``ValueError`` of a reply that is not
-            a release.
-
-    Returns:
-        ``(code, params)``: an address with no GitHub API calls left this
-        hour names the whole minutes until they renew and the moment they
-        do, any other HTTP refusal names its status, then a name that did
-        not resolve, a connection that timed out, one that was refused or
-        found no route, and a reply that was not a release.
-    """
-    if isinstance(error, urllib.error.HTTPError):
-        if _is_rate_limited(error):
-            return HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED, renewal(error.headers)
-        return HUB_UPDATE_ERROR_RELEASE_HTTP, {"status": error.code}
-    cause = error.reason if isinstance(error, urllib.error.URLError) else error
-    if isinstance(cause, socket.gaierror):
-        return HUB_UPDATE_ERROR_RELEASE_DNS, {}
-    if isinstance(cause, TimeoutError) or "timed out" in str(cause):
-        return HUB_UPDATE_ERROR_RELEASE_TIMEOUT, {}
-    if isinstance(error, OSError):
-        return HUB_UPDATE_ERROR_RELEASE_REFUSED, {}
-    return HUB_UPDATE_ERROR_RELEASE_UNREACHABLE, {}
-
-
-def renewal(headers, *, now: float | None = None) -> dict:
-    """When an address's spent GitHub API calls renew, from the refusal.
-
-    Args:
-        headers: The refusal's headers.
-        now: The epoch second to count from; None is now.
-
-    Returns:
-        ``{minutes, reset_at}``: whole minutes until they renew, at least
-        one, and the moment as an ISO stamp in UTC. A refusal naming no
-        moment is taken to renew in GitHub's own hour.
-    """
-    now = time.time() if now is None else now
-    try:
-        reset = float(headers.get(HUB_UPDATE_RATE_LIMIT_RESET_HEADER))
-    except (TypeError, ValueError):
-        try:
-            reset = now + float(headers.get(HUB_UPDATE_RETRY_AFTER_HEADER))
-        except (TypeError, ValueError):
-            reset = now + HUB_UPDATE_RATE_LIMIT_WINDOW_S
-    reset = max(reset, now)
-    return {
-        "minutes": max(1, math.ceil((reset - now) / 60)),
-        "reset_at": datetime.fromtimestamp(reset, tz=timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
-    }
-
-
-def _is_rate_limited(error: urllib.error.HTTPError) -> bool:
-    """Whether GitHub refused because the address has no API calls left."""
-    if error.code not in HUB_UPDATE_RATE_LIMIT_STATUSES or error.headers is None:
-        return False
-    return error.headers.get(HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER) == "0"
-
-
-def _read(url: str) -> bytes:
-    """Read one address.
-
-    Args:
-        url: What to read.
-
-    Returns:
-        Everything it answered with.
-
-    Raises:
-        OSError: If it cannot be reached; an HTTP refusal is the
-            ``urllib.error.HTTPError`` kind of it.
-    """
-    request = urllib.request.Request(url, headers=HUB_UPDATE_HEADERS)
-    with urllib.request.urlopen(
-        request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S, context=public_ssl_context()
-    ) as reply:
-        return reply.read()
+        Returns:
+            The size in bytes, 0 when no site names one.
+        """
+        for source in sources:
+            size = self._fetcher.probe(source).size
+            if size:
+                return size
+        return 0

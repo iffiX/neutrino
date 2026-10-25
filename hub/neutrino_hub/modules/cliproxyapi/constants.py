@@ -84,6 +84,8 @@ CLIPROXYAPI_RESTART_WAIT_S = 10.0
 CLIPROXYAPI_KEY_REFUSED_STATUSES = (401, 403)
 
 CLIPROXYAPI_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
+# The largest release archive a development fetch takes.
+CLIPROXYAPI_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 # The vendor's release assets name arm64 the kernel way.
 CLIPROXYAPI_ASSET_ARCHITECTURES = {"amd64": "amd64", "arm64": "aarch64"}
 
