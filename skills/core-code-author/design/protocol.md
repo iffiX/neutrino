@@ -1277,6 +1277,10 @@ module's `want` and its configuration; **Install** and **Uninstall** on an
 `install_failed` module write a fresh `retry_mark`, as every press on a
 `failed` one does.
 
+The agent has a runner for a `container` module only once a state names
+it, so a `container` module that a machine's report leaves out reads
+`absent` on every surface once that machine has reported.
+
 This table is closed on every surface; a surface that meets a token outside it
 shows the word for a machine that has not reported. That is also what the
 panel shows for `agent_never_reported`, the code a request gets when the
@@ -1340,12 +1344,17 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
 | code-server | each instance's account, port and whether it runs; nothing is imported |
 | Samba on Windows and macOS | only the shares the module made, in the Linux shape with `params` `comment`, `read only` and `valid users`; the accounts it made; the sessions; and `fence {is_present, is_enabled, blocked}` |
+
+| Rule | Reason |
+| --- | --- |
+| The agent reports no environment of a hub container. | A hub container's environment holds its module's secrets, such as Hermes WebUI's password and the module's gateway key, and the hub composed it. |
+| Every route and stream that hands a report's `details` to the panel gives each container's `environment` as the variables' names alone, never their values. The import of a container reads the values from the report the hub keeps, never through the browser. | A declared or hand-started container's environment can hold a person's secrets, and the panel lists the containers to every signed-in page. |
 
 On Windows and macOS an agent with the `smb_server` capability runs the
 `samba` module against the SMB server the system holds. Its entry is

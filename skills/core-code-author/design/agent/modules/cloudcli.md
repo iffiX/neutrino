@@ -92,8 +92,14 @@ again with the next host.
 
 **npm cannot take the agent down.** On Linux an account's npm runs as a
 transient service of its own, `neutrino_cloudcli_install_<account>.service`,
-started by `systemd-run --wait --pipe -p OOMPolicy=stop`, and the agent's
-unit has `OOMPolicy=continue`. When the kernel kills the
+started by `systemd-run --wait -p OOMPolicy=stop` with the service's output
+and errors in one file, `run/install_<account>.log` under `cloudcli/` in
+the state root, which systemd opens, the agent reads once the service has
+ended and then deletes; the agent's unit has `OOMPolicy=continue`.
+`systemd-run` gets no `--pipe` on any distribution: on Rocky 9 with SELinux
+enforcing, systemd rejected the agent's pipes and the service failed to
+start with `Failed to start transient service unit: Connection reset by
+peer`. When the kernel kills the
 install for want of memory, the install ends
 `cloudcli_install_out_of_memory {account}` and the agent keeps running. A
 failed install is tried again only with a state of another hash, and the

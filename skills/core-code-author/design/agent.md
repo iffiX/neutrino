@@ -130,6 +130,15 @@ reported state reports `queued`, until the agent reaches it. The module it
 installs reads `installing`, and a read of every module taken meanwhile
 leaves that row as it is.
 
+A `container` module that a state asks to be present while it is not
+installed reads `installing` from that state until it reads its `want` or
+a step fails: while it waits behind Containers, while its images are
+pulled, after the pull, while Containers is applied again for it, and while
+its first start runs. While its images are pulled, a read leaves the
+Containers row as it is. The pull runs on Containers' Podman, and on
+Windows a read of the Podman machine failed while a 2.8 GB image was
+pulled, so Containers read `stopped`.
+
 **The agent is handed conclusions, never a table to search.** The recipes it
 receives are already resolved for its platform; it has no manifest logic and
 no version table. A module it has no runner for is `unsupported`, which is an

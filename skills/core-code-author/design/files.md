@@ -321,7 +321,12 @@ code, and every file in it goes when the task ends.
 hold programs the accounts of the machine run, so those directories alone
 are readable and executable by
 every account (mode 755; on Windows the Users group gets read and execute),
-while the rest of the agent's state stays root's.
+while the rest of the agent's state stays root's. Where SELinux is
+enforcing or permissive, each module's unpack in them is labelled `bin_t`,
+after the unpack and at every apply of the module, since systemd does not
+run a program labelled `var_lib_t`
+([agent/module_install.md](agent/module_install.md), "From the hub's
+cache"); nothing else under the state root is labelled.
 
 **The databases live here rather than beside the binary that reads them.**
 They ship with the package and are replaced by newer ones while the machine

@@ -204,11 +204,16 @@ What is probed differs by what the source serves:
 | Source | The probe | What follows |
 | --- | --- | --- |
 | a file | a Range request for its first 1 MiB | the download, with the measures and the moves |
-| a container image | the registry's manifest request for the image's digest | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A `docker.io` source stays in the list whatever its probe gives while the Containers module names mirrors, since Podman reaches it through them |
+| a container image | the registry's manifest request for the image's digest | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A source whose probe got no answer is pulled from after the ranked ones, in the artifact's order, and only a pull's own failure is listed in `download_failed` |
 | an npm registry | a GET of the package's document | npm runs with the fastest as `--registry`; an install that fails runs again with the next |
 | a source set a container lists | a GET of the set's `probe` path under each source | every variable of the set names the fastest in the container's environment; the container's tools read it, and nothing moves later |
 | a host an npm setting names | a GET of the host's base address | the setting names the fastest host; an install that fails on a native module runs again with the next |
 | a version list or `latest.json` | a GET | the fastest valid answer is read |
+
+An image's probe can fail where its pull works, and Podman checks the
+digest of every pull. On Windows the agent's probe verifies against the
+roots the system has fetched so far, and a probe of docker.io failed
+`CERTIFICATE_VERIFY_FAILED` while Podman in the machine pulled the image.
 
 The hub's fetcher is `utils/source_fetch.py`, and it does all of this. The
 agent's is `modules/shared/source_fetch.py`, standard library only: it
@@ -241,6 +246,7 @@ owner:
 | The cache names each file by its digest, and keeps every file of a version some machine names, with cc-switch's pinned files. It deletes the other files after it places a new one. | Two machines can run two versions of one module at once. |
 | A machine names a module's version while its `modules.json` names the module with a `want` other than a settled `absent`: its chosen `version`, or the tested one while that is empty. | A machine that chose nothing follows the tested version. |
 | On Windows `cmd.exe` runs `verify`, which is the program's quoted path with `--version`, such as `"%ProgramData%\Neutrino\agent\state\vscode\code.exe" --version`. | It fails when the file is missing. |
+| On Linux, where SELinux is enforcing or permissive, the agent labels each module's unpack `bin_t` with `chcon -R -t bin_t` right after the unpack and at every apply of the module; the unpack of an artifact that names no directory is the module's directory. Where SELinux is disabled or absent, nothing is labelled. | The unpack under `/var/lib/neutrino/agent` is labelled `var_lib_t`, which systemd does not run: on Rocky 9 code-server, Codeg and VS Code exited 203/EXEC. A relabel of the whole system puts `var_lib_t` back, and the next apply undoes it. |
 | The `verify` of a module installed from an `msi` or a `pkg` names the program where that installer puts it. | The system's installer chooses the place. |
 
 ## From the system's packages
