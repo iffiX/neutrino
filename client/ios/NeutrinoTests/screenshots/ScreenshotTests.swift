@@ -319,18 +319,23 @@ final class ScreenshotTests: XCTestCase {
         scrollToEnd(shown)
         settle()
 
-        let steps: [(String, () -> Void)] = [
-            ("terminals_motion_1_keyboard_on", { cache.openKeyboard(on: core.activeTab) }),
-            ("terminals_motion_2_keys_off", { cache.keys.toggleRow() }),
-            ("terminals_motion_3_keys_on", { cache.keys.toggleRow() }),
-            ("terminals_motion_4_keyboard_off", { KeyboardClosingLayer.close() }),
-            ("terminals_motion_5_keys_off_no_keyboard", { cache.keys.toggleRow() }),
-            ("terminals_motion_6_keys_on_no_keyboard", { cache.keys.toggleRow() }),
+        let isUp = { cache.focus.isKeyboardShown && !cache.keyboard.isMoving && cache.keyboard.overlap > 100 }
+        let isDown = { !cache.focus.isKeyboardShown && !cache.keyboard.isMoving && cache.keyboard.overlap == 0 }
+        let steps: [(String, () -> Void, () -> Bool)] = [
+            ("terminals_motion_1_keyboard_on", { cache.openKeyboard(on: core.activeTab) }, isUp),
+            ("terminals_motion_2_keys_off", { cache.keys.toggleRow() }, isUp),
+            ("terminals_motion_3_keys_on", { cache.keys.toggleRow() }, isUp),
+            ("terminals_motion_4_keyboard_off", { KeyboardClosingLayer.close() }, isDown),
+            ("terminals_motion_5_keys_off_no_keyboard", { cache.keys.toggleRow() }, isDown),
+            ("terminals_motion_6_keys_on_no_keyboard", { cache.keys.toggleRow() }, isDown),
         ]
-        for (name, step) in steps {
+        for (name, step, isAtRest) in steps {
             try recordingOfSimulator(name, in: directory) {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.5))
                 step()
+                XCTAssertTrue(
+                    isTrue(isAtRest),
+                    "the slide of \(name) did not end: \(cache.keyboard.overlap), \(cache.keyboard.isMoving)")
                 RunLoop.main.run(until: Date().addingTimeInterval(1.5))
             }
         }
@@ -459,17 +464,19 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// Ask the CI job to record the whole Simulator screen while `body` runs: the job starts a recording, as
-    /// `<name>.mp4`, for a `<name>.rec` file and answers with `<name>.recording`, and stops it for a `<name>.stop`
-    /// file and answers with `<name>.stopped`.
+    /// `<name>.mp4`, for a `<name>.rec` file and answers with `<name>.recording` once it has started, and stops it
+    /// for a `<name>.stop` file and answers with `<name>.stopped` once it has ended; it gives up on either after 120
+    /// seconds.
     private func recordingOfSimulator(_ name: String, in directory: URL, _ body: () -> Void) throws {
         let started = directory.appendingPathComponent("\(name).recording")
         let stopped = directory.appendingPathComponent("\(name).stopped")
         try Data().write(to: directory.appendingPathComponent("\(name).rec"))
-        let isStarted = isTrue(within: 30) { FileManager.default.fileExists(atPath: started.path) }
+        let isStarted = isTrue(within: 180) { FileManager.default.fileExists(atPath: started.path) }
         XCTAssertTrue(isStarted, "no recording for \(name)")
+        guard isStarted else { return }
         body()
         try Data().write(to: directory.appendingPathComponent("\(name).stop"))
-        let isStopped = isTrue(within: 30) { FileManager.default.fileExists(atPath: stopped.path) }
+        let isStopped = isTrue(within: 180) { FileManager.default.fileExists(atPath: stopped.path) }
         XCTAssertTrue(isStopped, "\(name) did not stop")
     }
 

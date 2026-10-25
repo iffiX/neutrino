@@ -180,10 +180,12 @@ jobs:
       # the whole Simulator screen, the keyboard's window with it, writes
       # <name>.shot there, and the loop below takes it as <name>.png. A test
       # that needs a recording of the screen writes <name>.rec, and the loop
-      # starts <name>.mp4 and answers with <name>.recording; <name>.stop stops
-      # it, at the latest 20 seconds on, answered with <name>.stopped. The
-      # Simulator gets no hardware keyboard, so the software one comes up,
-      # and its slide-to-type introduction counts as seen.
+      # starts <name>.mp4 and answers with <name>.recording once the recorder
+      # prints that it has started; <name>.stop stops it with SIGINT, answered
+      # with <name>.stopped once the recorder has ended. A recorder that has
+      # not started or ended 120 seconds on is killed and its log printed, with
+      # no answer. The Simulator gets no hardware keyboard, so the software
+      # one comes up, and its slide-to-type introduction counts as seen.
       - name: Run the unit and UI tests
         working-directory: client/ios
         env:
@@ -208,27 +210,45 @@ jobs:
               for asked in "$screens"/*.rec; do
                 [ -e "$asked" ] || continue
                 name="${asked%.rec}"
+                rm -f "$asked"
                 "$simctl" io "$SIMULATOR" recordVideo --codec=h264 --force "$name.mp4" > "$name.log" 2>&1 &
-                echo $! > "$name.pid"
-                for _ in $(seq 30); do
-                  grep -q "Recording started" "$name.log" && break
+                pid=$!
+                began=$SECONDS
+                while ! grep -q "Recording started" "$name.log" && kill -0 "$pid" 2> /dev/null \
+                    && [ $((SECONDS - began)) -lt 120 ]; do
                   sleep 0.1
                 done
-                rm -f "$asked"
-                touch "$name.recording"
+                if grep -q "Recording started" "$name.log"; then
+                  echo "the recording $name started after $((SECONDS - began)) s"
+                  echo "$pid" > "$name.pid"
+                  touch "$name.recording"
+                else
+                  kill -KILL "$pid" 2> /dev/null || true
+                  echo "the recording $name did not start:"
+                  cat "$name.log" || true
+                  rm -f "$name.log"
+                fi
               done
               for asked in "$screens"/*.stop; do
                 [ -e "$asked" ] || continue
                 name="${asked%.stop}"
+                rm -f "$asked"
+                [ -e "$name.pid" ] || continue
                 pid="$(cat "$name.pid")"
-                kill -INT "$pid" || true
-                for _ in $(seq 200); do
-                  kill -0 "$pid" 2> /dev/null || break
+                rm -f "$name.pid"
+                kill -INT "$pid" 2> /dev/null || true
+                began=$SECONDS
+                while kill -0 "$pid" 2> /dev/null && [ $((SECONDS - began)) -lt 120 ]; do
                   sleep 0.1
                 done
-                kill -KILL "$pid" 2> /dev/null || true
-                rm -f "$asked" "$name.pid" "$name.log"
-                touch "$name.stopped"
+                if kill -0 "$pid" 2> /dev/null; then
+                  kill -KILL "$pid" 2> /dev/null || true
+                  echo "the recording $name did not stop:"
+                  cat "$name.log" || true
+                else
+                  touch "$name.stopped"
+                fi
+                rm -f "$name.log"
               done
               sleep 0.1
             done
