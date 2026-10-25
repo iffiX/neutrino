@@ -219,6 +219,9 @@ overrides both, which is what makes a second instance testable. Details of the f
         codeg/              Codeg's two artifacts, one subdirectory each:
                             server/ the server bundle and node/ its
                             Node.js, read and run by every account
+        podman/env/         each declared and hub container's environment,
+                            one file per container that its unit reads,
+                            mode 0600 under 0700, root only
         ai_tools/           per account, the record of each AI tool the
                             agent pointed at the hub, root only; on
                             Windows also login.json, the login the account

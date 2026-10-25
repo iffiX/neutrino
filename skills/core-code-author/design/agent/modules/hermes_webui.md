@@ -10,8 +10,9 @@ module's software is container images, installed by the `container` method
 `agent/neutrino_agent/modules/hermes_webui/` holds `config.py`,
 `constants.py` and `hooks.py`: the forwarder's login, the gateway keys and the
 health read, which the `container` runner calls. The configuration is
-`{port, secret, password}`: the forwarder's port, 8787 unless the person sets
-another, the token secret, and the webui's password. The hub generates the
+`{port, secret, password, cookie_name}`: the forwarder's port, 8787 unless the
+person sets another, the token secret, the webui's password, and the name of
+the webui's login cookie ("The page"). The hub generates the
 secret and the password the first time the module is installed or its port
 is set, and seals both in
 `config/devices/<id>/hermes_webui.json`, beside the module's gateway key. The
@@ -57,11 +58,14 @@ Both containers join the network `neutrino_hermes_webui` and have the label
 | `WANTED_UID`, `WANTED_GID` | webui | `1024` |
 | `HERMES_WEBUI_STATE_DIR` | webui | `/home/hermeswebui/.hermes/webui` |
 | `HERMES_WEBUI_PASSWORD` | webui | the module's password |
+| `HERMES_WEBUI_COOKIE_NAME` | webui | `hermes_session_` and the first 12 characters of the device id ("The page") |
 | `NEUTRINO_GATEWAY_URL`, `NEUTRINO_GATEWAY_KEY` | both | the gateway's address and the module's key ("The gateway") |
 | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX`, `UV_INDEX_URL` | both | the fastest source of the `pypi` source set ("The first start") |
 
 The webui image sets `HERMES_WEBUI_HOST=0.0.0.0` and `HERMES_WEBUI_PORT=8787`
-itself, and the module leaves both as the image sets them.
+itself, and the module leaves both as the image sets them. Each container's
+environment is in its root-only environment file, never in its unit or on a
+command line ([containers.md](containers.md), "Linux").
 
 | Rule | Reason |
 | --- | --- |
@@ -85,7 +89,7 @@ WebUI`, with `is_token_required: true` and `description_code`
 | Rule | Reason |
 | --- | --- |
 | The agent's forwarder listens on `127.0.0.1` at the configured port, where the agent's end of a `connect` stream reaches it. | The configured port is the page's, as a program run as an account has its forwarder at the configured port ([module_template.md](../module_template.md), "The run"). |
-| The webui's 8787 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply. The agent keeps it in the module's record, root-only under `platform.agent_data_dir()`, and writes it into the container's Quadlet file or plain unit. | The forwarder holds the configured port, which is 8787 too unless the person sets another. A port picked one time keeps the container's file the same across applies. |
+| The webui's 8787 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply. The agent keeps it in the module's record, root-only under `platform.agent_data_dir()`, and writes it into the container's unit. | The forwarder holds the configured port, which is 8787 too unless the person sets another. A port picked one time keeps the container's unit the same across applies. |
 | The published port is in no entry, and the `connect` stream does not serve it. | Every request from a client reaches the webui through the forwarder's check. |
 | A configured port another program holds is one line in the agent's log, and the forwarder tries it again every report interval. | The page is there when the other program lets the port go. |
 | The webui's own password stays set. | A program on the machine that finds the published port still meets the webui's login. On macOS every container in the Podman machine reaches the Mac's loopback. |
@@ -94,9 +98,9 @@ The forwarder turns the hub's token into the webui's own login:
 
 | A request | The forwarder |
 | --- | --- |
-| holds `?tkn=<token>` that verifies | sends `POST /api/auth/login` to the webui with the JSON body `{"password": <password>}`, sets the `hermes_session` cookie the webui returns on the browser, and redirects to `/` |
+| holds `?tkn=<token>` that verifies | sends `POST /api/auth/login` to the webui with the JSON body `{"password": <password>}`, sets the login cookie the webui returns on the browser, and redirects to `/` |
 | holds `?tkn=<token>` that does not verify, has expired or was spent | 401 |
-| holds the `hermes_session` cookie | passed on unchanged, `Host` and `Origin` as the browser sent them, and the webui checks the cookie |
+| holds the login cookie | passed on unchanged, `Host` and `Origin` as the browser sent them, and the webui checks the cookie |
 | asks for `/api/auth/login`, whatever else it holds | 401; the browser's login request never reaches the webui |
 | holds neither | 401 |
 
@@ -105,6 +109,7 @@ The forwarder turns the hub's token into the webui's own login:
 | The forwarder passes `Host` unchanged. | The webui rejects a browser's POST whose `Origin` differs from its `Host` with 403. In the lab a forwarder that rewrote `Host` got 403. |
 | The login is the forwarder's own request to the published port, with the password as JSON and no `Origin`. | The webui rejects a form post with 400, and accepts a POST with no `Origin`, as a program sends it. The browser holds the cookie and never the password. |
 | The cookie is the webui's, HttpOnly and SameSite=Lax, and lasts 30 days. | The webui checks it on every request, and the forwarder keeps no login state of its own. |
+| The login cookie is named `hermes_session_` and the first 12 characters of the device id: the hub sets the name in the webui's `HERMES_WEBUI_COOKIE_NAME` and sends it as `cookie_name`, and the forwarder reads and sets that name. | A browser keeps a cookie per host, not per port. Two Hermes WebUI pages of two machines, open at two local ports of one client, keep both logins only under two names: under the webui's default, `hermes_session`, the second login replaces the first one's cookie. |
 | The token is the one every page behind a forwarder takes, made from the module's secret, verified on the device and spent once ([module_template.md](../module_template.md), "The run"). | The hub generates a token on each `service` ask, and the device checks it with no call to the hub. |
 
 The module runs one instance per machine, for one person. Its sessions,
@@ -150,7 +155,7 @@ packages, the agent's dependencies among them. uv reads its index from
 
 | Rule | Reason |
 | --- | --- |
-| The module's `container` entries list one source set, `source_sets: ["pypi"]`. Before the agent writes a container's file, it probes the set and writes each of the set's three variables, with the fastest index, into the container's environment ([module_install.md](../module_install.md), "Source sets"). | The index is the one download of the first start, and which index is fastest depends on the machine's own network. |
+| The module's `container` entries list one source set, `source_sets: ["pypi"]`. Before the agent writes a container's environment file, it probes the set and writes each of the set's three variables, with the fastest index, into the container's environment ([module_install.md](../module_install.md), "Source sets"). | The index is the one download of the first start, and which index is fastest depends on the machine's own network. |
 | The `pypi` set holds PyPI and its mirrors at Tsinghua, Aliyun and Tencent, the publisher's first. | Each serves the same packages under the same hashes, and every module that fetches Python packages chooses from the same list. |
 | From the install, and after a version change, the module reads `installing` until `config.yaml` holds the keys with the current base URL and `/health` first returns 200. The state is applied again every 30 seconds meanwhile. | The first start took 30 seconds on the lab machine with pypi.org, and a slow index takes minutes. The entry appears when the page can serve a chat. |
 | The two images take about 3.2 GB, and the two caches about 2.4 GB, on the disk of Podman's storage. | The agent image is 2.8 GB, and `agent` and `app` hold copies of its code and of the packages built for the webui. |

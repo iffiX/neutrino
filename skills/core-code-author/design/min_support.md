@@ -175,8 +175,8 @@ releases a supported family provides.
 
 | Program | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
-| podman on Linux | 3.4 | a container becomes a plain unit below 4.6 and a Quadlet `.container` file from 4.6, which adds the host with `PodmanArgs=` below 5.3 and `AddHost=` from 5.3; the floor is Linux's alone | `agent/neutrino_agent/modules/podman/constants.py:6-9`, `agent/neutrino_agent/modules/podman/applier.py:171-175` |
-| Podman on Windows and macOS | the tested version each platform entry of `podman.json` names, or the version the machine chose: 6.1.4 for Windows amd64, a 6.x release for macOS arm64, a 5.8.x release for macOS amd64 | Containers there; Podman inside the machine is the machine image's own, always 4.6 or later, so every container there is a Quadlet file | `hub/neutrino_hub/data/manifests/podman.json` |
+| podman on Linux | 3.4 | every container is one systemd unit that runs `podman run` with flags Podman 3.4 has, and reads its environment with `--env-file`; nothing splits by Podman version; the floor is Linux's alone | `agent/neutrino_agent/modules/podman/renderer.py` |
+| Podman on Windows and macOS | the tested version each platform entry of `podman.json` names, or the version the machine chose: 6.1.4 for Windows amd64, a 6.x release for macOS arm64, a 5.8.x release for macOS amd64 | Containers there; Podman inside the machine is the machine image's own, and runs the same units as Linux | `hub/neutrino_hub/data/manifests/podman.json` |
 | WSL | 2, from the WSL msi the Windows entry pins at 3.0.3, on Windows 10 2004, build 19041, or later | the Podman machine on Windows; Podman's msi refuses an older build, and the entry's `min_version` is 19041 | `hub/neutrino_hub/data/manifests/podman.json` |
 | macOS, for Containers | 13 | the Podman machine on applehv; the macOS entries' `min_version` | `hub/neutrino_hub/data/manifests/podman.json` |
 | Samba | 4.15 | the session list; `smbstatus --json` exists from 4.16, and below it the text tables of `-p` and `-S` are parsed | `agent/neutrino_agent/modules/samba/applier.py:356` |

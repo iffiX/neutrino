@@ -126,7 +126,9 @@ after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
 Terminal, Gitea, Containers, Hermes WebUI, VS Code, code-server, CloudCLI,
 Codeg, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
-reported state reports `queued`, until the agent reaches it.
+reported state reports `queued`, until the agent reaches it. The module it
+installs reads `installing`, and a read of every module taken meanwhile
+leaves that row as it is.
 
 **The agent is handed conclusions, never a table to search.** The recipes it
 receives are already resolved for its platform; it has no manifest logic and
@@ -523,7 +525,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/`, `gitea_data/` and `podman/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, `podman/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |

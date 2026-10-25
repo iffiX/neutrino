@@ -1507,9 +1507,11 @@ images and the named volumes `neutrino_<module>_<volume>`.
 
 The `hermes_webui` module runs Hermes WebUI as two hub containers, the
 agent's gateway and the webui ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md)).
-Its configuration is `{port, secret, password}`: the forwarder's port, 8787
-by default; the token secret; and the webui's password. The hub generates
-both secrets the first time the module is installed or its port is set,
+Its configuration is `{port, secret, password, cookie_name}`: the
+forwarder's port, 8787 by default; the token secret; the webui's password;
+and the name of the webui's login cookie, `hermes_session_` and the first 12
+characters of the device id, which the hub also sets in the webui's
+environment. The hub generates both secrets the first time the module is installed or its port is set,
 keeps them sealed in
 `config/devices/<id>/hermes_webui.json` beside the module's gateway key, and
 sends them opened inside the state, as it sends CloudCLI's. Its manifest
@@ -1517,7 +1519,8 @@ names two `image` artifacts, `webui` and `agent`, no `releases`, and
 `source_sets: ["pypi"]`. It reads `running` while both containers run and
 the webui's `/health` returns 200, and `installing` from the install, or a
 version change, until the first such read. `details` is `{version, port}`. An
-apply refuses `port_invalid {port}`.
+apply refuses `port_invalid {port}`. `cookie_name` is an added field and keeps
+`PROTOCOL`; an agent given none uses the webui's default, `hermes_session`.
 
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes

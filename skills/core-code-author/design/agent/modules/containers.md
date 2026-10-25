@@ -27,10 +27,13 @@ packages").
 
 | Rule | Reason |
 | --- | --- |
-| From Podman 4.6 a declared container is a Quadlet file, `/etc/containers/systemd/<name>.container`; below 4.6 it is a plain unit, `/etc/systemd/system/<name>.service`, that runs `podman run`. | A Podman older than 4.4 reads no `.container` file, and one older than 4.6 reads no key that adds a host to a container: Podman's release notes give `PodmanArgs=` to 4.6 and `AddHost=` to 5.3. Quadlet refuses a whole file for one key it does not know. The supported distributions have 3.4 and later ([min_support.md](../../min_support.md)). |
-| Every apply runs `systemctl enable --no-reload` on the plain unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed plain unit is disabled before its file goes. | Quadlet's generator links a `.container` file that has `WantedBy=` into `multi-user.target` itself, and a plain unit's `[Install]` section starts nothing at boot until the unit is enabled. |
-| After its `daemon-reload` every apply restarts each container whose file changed when it starts with the box or its unit is active, and starts each other container that starts with the box and whose unit is not active. | An apply makes the declared containers true, and a container that starts with the box runs after it whether or not its file changed. |
-| Every rendered file starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
+| Every declared container and every hub container is a systemd unit, `/etc/systemd/system/<name>.service`, whose `ExecStart` runs `podman run`. The unit uses only what Podman 3.4 has, and is the same on every Podman version. | The supported distributions have Podman 3.4 and later ([min_support.md](../../min_support.md)), so one unit format serves every machine. |
+| The unit has `Wants=` and `After=network-online.target` and a `RequiresMountsFor=` for each host folder a volume binds; `Type=notify`, `NotifyAccess=all`, `Delegate=yes`, `KillMode=mixed`, `Environment=PODMAN_SYSTEMD_UNIT=%n`, `Restart=on-failure`, `TimeoutStartSec=900` and `TimeoutStopSec=70`; `ExecStartPre=-/bin/rm -f %t/%N.cid`; `ExecStart=podman run --cidfile=%t/%N.cid --cgroups=split --sdnotify=conmon -d --replace --rm --name <name>`; `ExecStop=podman stop --ignore -t 10 --cidfile=%t/%N.cid`; and `ExecStopPost=-podman rm -f --ignore --cidfile=%t/%N.cid`. | These are the settings `podman generate systemd --new` and Quadlet write. `conmon` is the unit's main process, so a stopped unit's container stays stopped, a container killed from outside fails the unit and systemd starts it again, and a container a hard stop left is replaced at the next start. A first pull takes longer than the default start timeout. Podman 3.4's `podman rm` has no `-t`, and its `podman run` fails on a cid file that is already there. |
+| A container's environment is one root-only file, `/var/lib/neutrino/agent/podman/env/<name>.env`, mode 0600 in a directory of mode 0700, which the unit's `podman run` reads with `--env-file`. The unit file is mode 0644 and holds no value of the environment, and neither does the command line. | Every account on the machine reads a unit file and a process's command line, and the environment holds secrets, such as Hermes WebUI's password and the module's gateway key. Podman reads an environment file the same way from 3.4 on: one `KEY=value` per line, the value as written, and `#` starting a comment line. |
+| Every apply runs `systemctl enable --no-reload` on the unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed unit is disabled before its file goes. | A unit's `[Install]` section starts nothing at boot until the unit is enabled. |
+| After its `daemon-reload` every apply restarts each container whose unit or environment file changed when it starts with the box or its unit is active, and starts each other container that starts with the box and whose unit is not active. | An apply makes the declared containers true, and a container that starts with the box runs after it whether or not its files changed. |
+| Every rendered file, the environment file among them, starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
+| An apply first stops and removes each marked Quadlet file an earlier build wrote, `<name>.container` in `/etc/containers/systemd/` or `/usr/share/containers/systemd/`, and starts again, after its `daemon-reload`, each container whose unit was active. | Earlier builds wrote a container as a Quadlet file on a newer Podman, and the unit Quadlet generates from it has the name of the container's unit. |
 | The registry mirrors are one drop-in, `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf`. | The distribution's own `registries.conf` stays as it is. |
 | The module's `is_active` is the state of `podman.socket`. | Podman has no daemon, and its API socket is the engine. |
 | The install, and every apply while the module's `want` is `running`, run `systemctl enable --now podman.socket`. | Podman starts with the machine from its install on, on a distribution that ships the socket disabled too. |
@@ -52,10 +55,10 @@ per protocol, from it ([agent.md](../../agent.md), "The connect stream").
 `PodmanMachineModuleRunner`, `name` `podman` and runner `podman_machine`, is
 the second runner in the same directory, and the engine builds it under
 `hub_packages` on Windows and macOS. It renders the Linux files with the
-Linux renderers, `PodmanQuadletRenderer` and `PodmanRegistriesRenderer`, and
+Linux renderers, `PodmanUnitRenderer` and `PodmanRegistriesRenderer`, and
 writes them inside the Podman machine. Podman inside the machine is the
-machine image's own, always 4.6 or later, so every declared container is a
-Quadlet file there. In this section "the machine" is the Podman machine and
+machine image's own, and runs the same units as Linux. In this section "the
+machine" is the Podman machine and
 "the computer" is the Windows or macOS system the agent runs on;
 `C:\Users\<account>` means the account's profile, the home the
 platform layer resolves from `ProfileList`.
@@ -154,35 +157,21 @@ when the account signs in or out; on macOS this is not proven.
 | A container a person started by hand starts, stops and restarts through the read's command, as SYSTEM or root. | Linux drives such a container through `podman` itself, and it has no unit in the machine. |
 | The read output goes through the Linux reader, given this command in place of `podman`. | One parser for `ps` and `inspect` on every system. |
 | The module's `is_active` is whether the machine answers the read. | The machine's Podman is the engine there, as `podman.socket` is on Linux. |
-| The script holds every file base64-encoded, compares each with the file in the machine, writes the changed ones, removes the stale marked files, runs `systemctl daemon-reload`, restarts and starts the units as an apply on Linux does and prints one `changed: <file>` line per change. | Each call costs about 3 seconds, so an apply is one call. |
+| The script holds every file base64-encoded, removes an earlier build's Quadlet files as an apply on Linux does, compares each file with the one in the machine, writes the changed ones with their modes, removes the stale marked files, enables and disables the units, runs `systemctl daemon-reload`, restarts and starts the units as an apply on Linux does and prints one `changed: <file>` line per change. | Each call costs about 3 seconds, so an apply is one call. |
 
 ### Files in the machine
 
 | Rule | Reason |
 | --- | --- |
-| On Windows the Quadlet files are in `/usr/share/containers/systemd/` in the machine. | In the WSL machine `/etc/containers` is the account's `%APPDATA%\containers` on Windows, mounted after systemd's generators run, so a file in `/etc/containers/systemd/` starts nothing at boot. |
-| On macOS the Quadlet files are in `/etc/containers/systemd/` in the machine, the Linux directory. | The applehv machine is Fedora CoreOS, whose `/usr` is read-only, so a file under `/usr/share` is refused with "Read-only file system". |
-| Every `.container` file the module renders for the machine has `CgroupsMode=enabled` under `[Container]`, added by the renderer when it renders for a machine, and a Linux file has no such line. | The WSL machine runs systemd under cgroupfs, where Quadlet's default split mode fails with "controller pids is not available"; the applehv machine runs systemd's own cgroups v2, where the line works too, and the Linux files keep their bytes. |
+| The units are in `/etc/systemd/system/` in the machine, and the environment files in `/var/lib/neutrino/agent/podman/env/`, the Linux paths. | Both are on the machine's own disk, where systemd reads a unit at boot. In the WSL machine `/etc/containers` is the account's `%APPDATA%\containers`, and Podman 6 on macOS mounts the account's `~/.config/containers` there, each after boot. |
+| A unit rendered for the machine runs `podman run --cgroups=enabled`, and a Linux unit `--cgroups=split`. | The WSL machine runs systemd under cgroupfs, where split mode fails with "controller pids is not available"; the applehv machine runs systemd's own cgroups v2, where `enabled` works too. |
 | The mirrors drop-in is `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf` in the machine. | Podman reads it at a pull, after the mount, so the account's folder under that path serves. |
-| macOS uses the same drop-in path and the same cgroups line. | One code path writes into every Podman machine, the Quadlet directory apart. |
-| Where the Quadlet folder is under `/etc/containers` and the machine's own unit `/etc/systemd/system/etc-containers.mount` exists, the root script writes the boot unit `/etc/systemd/system/neutrino_containers.service` and turns it on. After the mount it runs `systemctl daemon-reload`, then `systemctl start --no-block multi-user.target`. | systemd's generators read the Quadlet folder before that mount, and a reload alone starts nothing `multi-user.target` wants. |
-| The script removes its boot unit from a machine without that mount unit, and when no container is declared; a unit of that name without the generated marker stays. | The unit is the module's file, and a person's file is theirs. |
+| macOS uses the same paths and the same cgroups mode. | One code path writes into every Podman machine. |
+| The root script stops, disables and removes the boot unit `/etc/systemd/system/neutrino_containers.service` an earlier build wrote with the generated marker, as it removes every marked unit the configuration does not name. | A unit in `/etc/systemd/system/` starts at boot from its link in `multi-user.target.wants/`, so no unit has to start the containers after the mount. |
 
-Podman 5.8 leaves `/etc/containers` on the macOS machine's own disk, where
-systemd's generators read it at boot. Podman 6 mounts the account's
-`~/.config/containers` there with `etc-containers.mount`, as it mounts
-`%APPDATA%\containers` on WSL. On arm64 a Quadlet file is then the account's
-file on the Mac, and the boot unit starts it. Windows writes into
-`/usr/share/containers/systemd/`, outside the mount, and has no boot unit.
-
-The qemu build of the pinned image's release, Fedora CoreOS 44 with Podman
-6.1.4 inside, booted on Linux, refused a file under
-`/usr/share/containers/systemd/`. Two files in `/etc/containers/systemd/`,
-one with the cgroups line and one without, served and came back after a
-reboot. With a folder mounted on `/etc/containers` by a unit of Podman's
-name after the generators, the agent's root script wrote the boot unit. The
-container started at boot came back after a reboot, the one not started at
-boot stayed stopped, and the script for no containers removed the unit. The
+Podman 5.8 leaves `/etc/containers` on the macOS machine's own disk, and
+Podman 6 mounts the account's `~/.config/containers` there with
+`etc-containers.mount`, as it mounts `%APPDATA%\containers` on WSL. The
 `podman_macos` job read each entry's machine settings: Podman 6.1.4 lists
 the mount on `/etc/containers`, and Podman 5.8.9 does not. No applehv
 machine has started under the agent, and the boot on a real Apple silicon
@@ -236,7 +225,7 @@ the machine while it still runs:
 
 | What | After the uninstall |
 | --- | --- |
-| The declared containers, their files in the machine, the mirrors drop-in and the boot unit | stopped and removed, by one root script |
+| The declared containers, their units and environment files in the machine, and the mirrors drop-in | stopped and removed, by one root script |
 | The keeper, its script and its log | removed, so nothing starts the machine again |
 | The machine | stopped, and kept with its disk, images and named volumes in the account's profile; on Windows its WSL system stays registered |
 | Podman | uninstalled: on Windows the msi by `installers.uninstall_msi`; on macOS `/opt/podman/` and the two files the pkg's scripts write deleted, and the receipt forgotten with `pkgutil --forget com.redhat.podman` |
@@ -263,8 +252,8 @@ a feature off owes another restart.
 | The machine key | `C:\Users\<account>\.local\share\containers\podman\machine\machine` | `~/.local/share/containers/podman/machine/machine` |
 | The running machine's sockets | `%TEMP%\podman\` of the account | `podman/` under the account's own temporary directory |
 | The WSL resources | `C:\Users\<account>\.wslconfig` | none |
-| The Quadlet files | `/usr/share/containers/systemd/` in the machine | `/etc/containers/systemd/` in the machine, which is `~/.config/containers/systemd/` with Podman 6 |
-| The boot unit | none | `/etc/systemd/system/neutrino_containers.service` in the machine, with Podman 6 |
+| The units | `/etc/systemd/system/` in the machine | `/etc/systemd/system/` in the machine |
+| The environment files | `/var/lib/neutrino/agent/podman/env/` in the machine | `/var/lib/neutrino/agent/podman/env/` in the machine |
 | The mirrors drop-in | `/etc/containers/registries.conf.d/` in the machine, which is `C:\Users\<account>\AppData\Roaming\containers\registries.conf.d\` | `/etc/containers/registries.conf.d/` in the machine, which is `~/.config/containers/registries.conf.d/` with Podman 6 |
 
 ## Hub containers
@@ -278,9 +267,9 @@ container on the same system.
 | Rule | Reason |
 | --- | --- |
 | A hub container is `{module, name, image, ports, volumes, environment, command, is_autostart, services, source_sets, after, page_port}`, `image` as `{digest, sources}`; the agent adds the label `neutrino.module=<module>` and joins it to the network `neutrino_<module>`, which an apply makes when it is missing. | The label names the container's module on the machine, and the containers of one module reach each other by name. |
-| `source_sets` is the list of source sets the container's tools fetch from, copied from its module's `container` entry, empty where it lists none. Before the agent writes the container's file, it probes each set and writes every variable of the set, with the fastest source, into the container's environment; an `environment` value `{<set>}` is that set's fastest source ([module_install.md](../module_install.md), "Source sets"). | Which source is fastest depends on the machine's own network, and the container's tools read the address from their environment. |
+| `source_sets` is the list of source sets the container's tools fetch from, copied from its module's `container` entry, empty where it lists none. Before the agent writes the container's environment file, it probes each set and writes every variable of the set, with the fastest source, into the container's environment; an `environment` value `{<set>}` is that set's fastest source ([module_install.md](../module_install.md), "Source sets"). | Which source is fastest depends on the machine's own network, and the container's tools read the address from their environment. |
 | `after` lists the module's hub containers this one starts after, by name, and its unit names each of theirs in `Requires=` and `After=`. | A container that mounts a volume another container fills from its image at the first mount has to start second ([hermes_webui.md](hermes_webui.md)). |
-| `page_port`, where present, is the container's port that the module's forwarder serves. The agent publishes it on `127.0.0.1` at a loopback port it picks at the first apply and keeps in the module's record, and puts the forwarder in front of it at the module's configured port. | The forwarder holds the configured port, and a port picked one time keeps the container's file the same across applies. |
+| `page_port`, where present, is the container's port that the module's forwarder serves. The agent publishes it on `127.0.0.1` at a loopback port it picks at the first apply and keeps in the module's record, and puts the forwarder in front of it at the module's configured port. | The forwarder holds the configured port, and a port picked one time keeps the container's unit the same across applies. |
 | The port a `page_port` is published at is in no entry, and the `connect` stream does not serve it. | Every request from a client reaches the page through the forwarder's check. |
 | The agent renders a hub container's image as the reference it finds in Podman's store with the image's digest, under one of its `sources`. | Podman stores an image pulled from a mirror under the mirror's name. |
 | Containers renders the hub containers of a module only after that module's install has pulled its images: an apply of Containers leaves out the containers of a module whose images are not on the machine yet, and the module's install, once its last image is pulled, marks Containers to be applied again. | Containers is applied before the container modules, and a unit that named an image the machine lacks would have Podman pull it from a source the module's install did not choose. |
@@ -297,7 +286,7 @@ Every container reaches the agent's `127.0.0.1` listeners at
 
 | System | How `host.containers.internal` reaches the listeners |
 | --- | --- |
-| Linux | the renderer writes `host.containers.internal:<gateway>` into every declared and hub container, `<gateway>` being the gateway address of the container's network: as `AddHost=` from Podman 5.3, as `PodmanArgs=--add-host=` from 4.6, and as `--add-host` in a plain unit below 4.6. The agent relays its listeners on that address, with a rule in ufw or firewalld for each relay where either runs. |
+| Linux | the renderer writes `host.containers.internal:<gateway>` into every declared and hub container, `<gateway>` being the gateway address of the container's network, as `--add-host` on the unit's `podman run`. The agent relays its listeners on that address, with a rule in ufw or firewalld for each relay where either runs. |
 | Windows | Podman maps `host.containers.internal` in the NAT-mode machine to the computer's address on WSL's vEthernet adapter, `172.20.208.1` on the lab machine. The agent relays its listeners on that address, with one inbound Windows Firewall rule for each relayed port, scoped to the adapter. |
 | macOS | the Podman machine's gvproxy maps `host.containers.internal` to the Mac's loopback, where every container reaches every port: the agent's listeners and every other program's |
 

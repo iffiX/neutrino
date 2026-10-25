@@ -93,5 +93,5 @@ Run containers through podman, declared as configuration
 <six paragraphs of rationale>
 
 # GOOD
-Add podman module: declared containers via Quadlet, registry mirrors, live list with exec shell.
+Add podman module: declared containers as systemd units, registry mirrors, live list with exec shell.
 ```
