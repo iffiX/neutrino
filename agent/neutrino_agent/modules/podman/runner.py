@@ -28,8 +28,7 @@ from neutrino_agent.modules.podman.applier import (
     PodmanContainerController,
     PodmanRegistriesApplier,
     PodmanStatusReader,
-    container_applier,
-    container_renderer,
+    PodmanUnitApplier,
     ensure_network,
     fastest_sources,
     image_references,
@@ -57,6 +56,7 @@ from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
     PodmanRegistriesRenderer,
     PodmanRenderContext,
+    PodmanUnitRenderer,
 )
 from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
@@ -153,9 +153,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 PodmanRegistriesRenderer(config=parsed).render()
             )
             rendered, context = self._rendered_config(parsed)
-            renderer = container_renderer(rendered, context)
-            note = container_applier().apply(
+            renderer = PodmanUnitRenderer(config=rendered, context=context)
+            note = PodmanUnitApplier().apply(
                 renderer.render(),
+                renderer.environment_files(),
                 autostart_names=[
                     container.name
                     for container in [*rendered.containers, *rendered.hub_containers]
@@ -193,7 +194,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         Raises:
             ModuleApplyError: ``apply_failed`` when systemd refuses the socket.
         """
-        container_applier().stop_all()
+        PodmanUnitApplier().stop_all()
         try:
             run(["systemctl", "disable", "--now", PODMAN_UNIT])
         except (OSError, subprocess.SubprocessError) as error:
@@ -204,12 +205,12 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def remove_configuration(self) -> None:
         """Take the rendered units and the mirror drop-in away; keep the data.
 
-        Every declared and hub container is stopped, its plain unit disabled
-        and its unit file removed; images, volumes and containers somebody
-        started by hand stay.
+        Every declared and hub container is stopped, its unit disabled and
+        its unit and environment files removed; images, volumes and
+        containers somebody started by hand stay.
         """
         self._config = None
-        container_applier().remove_all()
+        PodmanUnitApplier().remove_all()
         with contextlib.suppress(OSError, subprocess.SubprocessError):
             run(["systemctl", "daemon-reload"], is_checked=False)
         PodmanRegistriesApplier().apply("")
@@ -344,7 +345,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             ValueError: For an action outside those.
             subprocess.CalledProcessError: If systemd refuses a unit.
         """
-        container_applier().drive(names, action)
+        PodmanUnitApplier().drive(names, action)
 
     def drop_hub_containers(self, module: str) -> None:
         """Stop and delete the units of one module's hub containers, and forget them.
@@ -353,7 +354,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             module: The container module.
         """
         names = self.hub_names().get(module, [])
-        container_applier().remove(names)
+        PodmanUnitApplier().remove(names)
         if self._config is not None:
             self._config = self._config.with_hub_containers(
                 [

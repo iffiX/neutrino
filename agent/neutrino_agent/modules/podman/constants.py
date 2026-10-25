@@ -1,12 +1,6 @@
 """Fixed values of the container engine module."""
 
-# From 4.6 a rendered .container file becomes a unit that can add a host;
-# Quadlet reads no file below 4.4 and no key that adds a host below 4.6, so
-# below 4.6 the applier writes plain .service units running `podman run`.
-PODMAN_QUADLET_VERSION = "4.6"
-# Quadlet's AddHost= key comes with 5.3; from 4.6 to 5.2 the host goes
-# through PodmanArgs=, and Quadlet refuses a file with a key it lacks.
-PODMAN_ADD_HOST_VERSION = "5.3"
+from neutrino_agent.constants import AGENT_VAR_DIR
 
 # Podman has no daemon; the API socket stands for the engine.
 PODMAN_UNIT = "podman.socket"
@@ -14,11 +8,37 @@ PODMAN_UNIT = "podman.socket"
 # Units name the binary in full: systemd runs them with a minimal PATH.
 PODMAN_BINARY = "/usr/bin/podman"
 
-# Where a unit rendered for a podman without Quadlet lands.
+# Where each container's unit lands, on Linux and inside a Podman machine.
 PODMAN_UNIT_DIR = "/etc/systemd/system"
+PODMAN_UNIT_SUFFIX = ".service"
+PODMAN_UNIT_FILE_MODE = 0o644
 
-# Where Quadlet reads declared containers from.
-PODMAN_QUADLET_DIR = "/etc/containers/systemd"
+# Where each container's environment file lands, root only, on Linux and
+# inside a Podman machine; the unit's ``podman run`` reads it with
+# ``--env-file``.
+PODMAN_ENV_DIR = AGENT_VAR_DIR + "/podman/env"
+PODMAN_ENV_SUFFIX = ".env"
+PODMAN_ENV_FILE_MODE = 0o600
+PODMAN_ENV_DIR_MODE = 0o700
+
+# What a unit runs: the cid file it keeps under the runtime directory, the
+# seconds ``podman stop`` gives the container, how long systemd waits for a
+# stop and for a start, a first pull among it, and the cgroups mode: split
+# on Linux, and enabled inside a Podman machine, whose WSL systemd runs
+# under cgroupfs, where split mode finds no pids controller.
+PODMAN_CID_FILE = "%t/%N.cid"
+PODMAN_STOP_TIMEOUT_S = 10
+PODMAN_UNIT_STOP_TIMEOUT_S = 70
+PODMAN_UNIT_START_TIMEOUT_S = 900
+PODMAN_CGROUPS = "split"
+PODMAN_MACHINE_CGROUPS = "enabled"
+PODMAN_RM_BINARY = "/bin/rm"
+
+# Where earlier builds wrote a container as a Quadlet ``.container`` file:
+# the Linux directory, and the one inside the WSL machine. An apply stops
+# and removes each such file that carries the generated marker.
+PODMAN_QUADLET_DIRS = ("/etc/containers/systemd", "/usr/share/containers/systemd")
+PODMAN_QUADLET_SUFFIX = ".container"
 
 # Where the docker.io mirror list lands. A drop-in, so the distribution's
 # own registries.conf stays untouched.
@@ -35,34 +55,6 @@ PODMAN_MACHINE_RUNNER = "podman_machine"
 
 # The account's default machine, the one its own ``podman`` reaches.
 PODMAN_MACHINE_NAME = "podman-machine-default"
-
-# Where Quadlet reads declared containers from inside a machine, by the
-# computer's system. In the WSL machine ``/etc/containers`` is a Windows
-# folder mounted after systemd's generators run, so the files go on the
-# machine's own disk; the applehv machine is Fedora CoreOS, whose ``/usr`` is
-# read-only, so they go where Linux has them.
-PODMAN_MACHINE_QUADLET_DIRS = {
-    "windows": "/usr/share/containers/systemd",
-    "darwin": PODMAN_QUADLET_DIR,
-}
-
-# Podman 6 mounts the account's containers folder on the machine's
-# /etc/containers with this unit, after systemd's generators run. Where the
-# Quadlet folder is under that mount, the root script writes the boot unit,
-# which reloads systemd and starts multi-user.target's containers after the
-# mount, and turns it on with the link.
-PODMAN_MACHINE_CONFIG_MOUNT_POINT = "/etc/containers"
-PODMAN_MACHINE_CONFIG_MOUNT_UNIT = "/etc/systemd/system/etc-containers.mount"
-PODMAN_MACHINE_BOOT_UNIT_NAME = "neutrino_containers.service"
-PODMAN_MACHINE_BOOT_UNIT_PATH = "/etc/systemd/system/neutrino_containers.service"
-PODMAN_MACHINE_BOOT_UNIT_LINK = (
-    "/etc/systemd/system/multi-user.target.wants/neutrino_containers.service"
-)
-
-# What every .container file rendered for a machine carries under
-# [Container]: the machine runs systemd under cgroupfs, where Quadlet's
-# default split mode finds no controllers.
-PODMAN_MACHINE_CGROUPS_LINE = "CgroupsMode=enabled"
 
 # The machine providers, and the variable that names one to ``podman``.
 PODMAN_MACHINE_PROVIDER_WSL = "wsl"

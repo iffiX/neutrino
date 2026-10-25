@@ -1,5 +1,7 @@
 """The container applier's effects, with podman and systemd replaced."""
 
+import os
+import stat
 import subprocess
 
 import pytest
@@ -10,14 +12,10 @@ from neutrino_agent.modules.podman.applier import (
     PodmanRegistriesApplier,
     PodmanStatusReader,
     PodmanUnitApplier,
-    container_applier,
-    container_renderer,
     ensure_network,
     fastest_sources,
     fix_cni_version,
     image_references,
-    is_quadlet_supported,
-    is_version_at_least,
     journal_lines,
     network_gateway,
     owner_of,
@@ -25,15 +23,11 @@ from neutrino_agent.modules.podman.applier import (
     stored_reference,
 )
 from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN, PodmanConfig
-from neutrino_agent.modules.podman.renderer import (
-    PodmanQuadletRenderer,
-    PodmanRenderContext,
-    PodmanUnitRenderer,
-)
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_ENV_DIR,
     PODMAN_GENERATED_MARKER,
-    PODMAN_QUADLET_DIR,
+    PODMAN_QUADLET_DIRS,
     PODMAN_UNIT_DIR,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
@@ -65,120 +59,141 @@ def commands(monkeypatch):
     return held
 
 
-def test_version_comparison_reads_distribution_suffixes():
-    assert is_version_at_least("4.3.1+ds1-8+deb12u1+b3", "4.4") is False
-    assert is_version_at_least("4.9.4-rhel", "4.4") is True
-    assert is_version_at_least("5.0", "4.4") is True
-    assert is_version_at_least("", "4.4") is False
+def rendered(body: str = "x") -> str:
+    return f"{PODMAN_GENERATED_MARKER}\n[Service]\n{body}\n"
 
 
-def test_the_version_line_podman_prints_decides_which_applier(commands):
-    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 3.4.4\n")
-    assert is_quadlet_supported() is False
-    assert container_applier().directory == PODMAN_UNIT_DIR
-
-    commands.answers[("/usr/bin/podman", "--version")] = (
-        0,
-        "podman version 4.9.4-rhel\n",
-    )
-    assert is_quadlet_supported() is True
-    assert container_applier().directory == PODMAN_QUADLET_DIR
+def env(body: str = "A=1") -> str:
+    return f"{PODMAN_GENERATED_MARKER}\n{body}\n"
 
 
-def test_below_podman_4_6_a_container_is_a_plain_unit(commands):
-    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.5.1\n")
+class Dirs:
+    """A unit directory, an environment directory and two Quadlet directories under ``tmp_path``."""
 
-    assert is_quadlet_supported() is False
-    assert container_applier().directory == PODMAN_UNIT_DIR
-    assert isinstance(container_renderer(PodmanConfig()), PodmanUnitRenderer)
+    def __init__(self, tmp_path):
+        self.units = tmp_path / "system"
+        self.envs = tmp_path / "state" / "podman" / "env"
+        self.quadlets = (tmp_path / "containers_systemd", tmp_path / "share_systemd")
 
-
-@pytest.mark.parametrize(
-    ("version", "line"),
-    [
-        ("podman version 4.9.3\n", "PodmanArgs=--add-host=host.containers.internal"),
-        ("podman version 5.2.2\n", "PodmanArgs=--add-host=host.containers.internal"),
-        ("podman version 5.3.0\n", "AddHost=host.containers.internal"),
-        ("podman version 6.1.4\n", "AddHost=host.containers.internal"),
-    ],
-)
-def test_the_quadlet_version_decides_how_the_host_is_written(commands, version, line):
-    commands.answers[("/usr/bin/podman", "--version")] = (0, version)
-    config = PodmanConfig.from_dict(
-        {"containers": [{"name": "web", "image": "docker.io/library/nginx"}]}
-    )
-    context = PodmanRenderContext(gateways={"podman": "10.88.0.1"})
-
-    renderer = container_renderer(config, context)
-
-    assert isinstance(renderer, PodmanQuadletRenderer)
-    text = renderer.render()["web.container"]
-    assert f"{line}:10.88.0.1" in text.splitlines()
+    def applier(self) -> PodmanUnitApplier:
+        return PodmanUnitApplier(
+            directory=str(self.units),
+            env_directory=str(self.envs),
+            quadlet_directories=tuple(str(path) for path in self.quadlets),
+        )
 
 
-def test_a_podman_that_will_not_run_gets_the_unit_that_works_everywhere(commands):
-    commands.answers[("/usr/bin/podman", "--version")] = subprocess.CalledProcessError(
-        1, ["podman"], stderr="gone"
+@pytest.fixture
+def dirs(tmp_path):
+    return Dirs(tmp_path)
+
+
+def files(*names, body="x") -> tuple:
+    """Units and environment files for some containers, keyed as the renderer keys them."""
+    return (
+        {f"{name}.service": rendered(body) for name in names},
+        {f"{name}.env": env() for name in names},
     )
 
-    assert is_quadlet_supported() is False
+
+def test_the_default_applier_writes_where_linux_keeps_the_files():
+    applier = PodmanUnitApplier()
+
+    assert applier.directory == PODMAN_UNIT_DIR == "/etc/systemd/system"
+    assert applier._env_directory == PODMAN_ENV_DIR
+    assert PODMAN_ENV_DIR == "/var/lib/neutrino/agent/podman/env"
+    assert applier._quadlet_directories == PODMAN_QUADLET_DIRS
 
 
-def rendered(name: str, body: str = "x") -> str:
-    return f"{PODMAN_GENERATED_MARKER}\n[Container]\n{body}\n"
+def test_apply_writes_changed_files_drops_stale_ones_and_restarts(commands, dirs):
+    dirs.units.mkdir()
+    dirs.envs.mkdir(parents=True)
+    (dirs.units / "old.service").write_text(rendered())
+    (dirs.envs / "old.env").write_text(env())
+    (dirs.units / "keep.service").write_text(rendered())
+    (dirs.envs / "keep.env").write_text(env())
+    (dirs.units / "hand.service").write_text("[Service]\nmine\n")
+    units, envs = files("keep", "web")
 
+    note = dirs.applier().apply(units, envs, autostart_names=["web"])
 
-def test_apply_writes_changed_files_drops_stale_ones_and_restarts(commands, tmp_path):
-    directory = tmp_path / "systemd"
-    directory.mkdir()
-    (directory / "old.container").write_text(rendered("old"))
-    (directory / "keep.container").write_text(rendered("keep"))
-    (directory / "hand.container").write_text("[Container]\nmine\n")
-    applier = PodmanUnitApplier(directory=str(directory), suffix=".container")
-
-    note = applier.apply(
-        {"keep.container": rendered("keep"), "web.container": rendered("web")},
-        autostart_names=["web"],
-    )
-
-    assert "web.container" in note and "-old.container" in note
-    assert not (directory / "old.container").exists()
-    assert (directory / "hand.container").exists()
+    assert "web.service" in note and "web.env" in note and "-old.service" in note
+    assert not (dirs.units / "old.service").exists()
+    assert not (dirs.envs / "old.env").exists()
+    assert (dirs.units / "hand.service").exists()
     assert ["systemctl", "stop", "old.service"] in commands.calls
-    assert not any(call[1] == "disable" for call in commands.calls)
+    assert ["systemctl", "disable", "--no-reload", "old.service"] in commands.calls
     assert ["systemctl", "daemon-reload"] in commands.calls
     assert ["systemctl", "restart", "web.service"] in commands.calls
     assert ["systemctl", "restart", "keep.service"] not in commands.calls
 
 
-def test_a_changed_non_autostart_container_restarts_only_if_running(
-    commands, tmp_path, monkeypatch
-):
-    directory = tmp_path / "systemd"
-    applier = PodmanUnitApplier(directory=str(directory), suffix=".service")
+def test_the_unit_is_world_readable_and_the_environment_root_only(commands, dirs):
+    units, envs = files("web")
 
-    applier.apply({"web.service": rendered("web")}, autostart_names=[])
+    dirs.applier().apply(units, envs, autostart_names=["web"])
+
+    assert stat.S_IMODE(os.stat(dirs.units / "web.service").st_mode) == 0o644
+    assert stat.S_IMODE(os.stat(dirs.envs / "web.env").st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(dirs.envs).st_mode) == 0o700
+    assert (dirs.envs / "web.env").read_text() == env()
+    assert not list(dirs.envs.glob("*.new"))
+
+
+def test_an_environment_file_written_wider_is_made_root_only_when_rewritten(
+    commands, dirs
+):
+    dirs.envs.mkdir(parents=True)
+    (dirs.envs / "web.env").write_text(env("A=0"))
+    os.chmod(dirs.envs / "web.env", 0o644)
+    os.chmod(dirs.envs, 0o755)
+    units, envs = files("web")
+
+    dirs.applier().apply(units, envs, autostart_names=["web"])
+
+    assert stat.S_IMODE(os.stat(dirs.envs / "web.env").st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(dirs.envs).st_mode) == 0o700
+
+
+def test_a_changed_environment_alone_restarts_its_container(
+    commands, dirs, monkeypatch
+):
+    units, envs = files("web")
+    applier = dirs.applier()
+    applier.apply(units, envs, autostart_names=[])
+    commands.calls.clear()
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+
+    note = applier.apply(units, {"web.env": env("A=2")}, autostart_names=[])
+
+    assert note == "containers: web.env"
+    assert ["systemctl", "restart", "web.service"] in commands.calls
+
+
+def test_a_changed_non_autostart_container_restarts_only_if_running(
+    commands, dirs, monkeypatch
+):
+    applier = dirs.applier()
+
+    applier.apply(*files("web"), autostart_names=[])
     assert ["systemctl", "restart", "web.service"] not in commands.calls
 
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
-    applier.apply({"web.service": rendered("web", "changed")}, autostart_names=[])
+    applier.apply(*files("web", body="changed"), autostart_names=[])
     assert ["systemctl", "restart", "web.service"] in commands.calls
 
 
 def test_an_unchanged_container_that_starts_with_the_box_is_started_when_down(
-    commands, tmp_path, monkeypatch
+    commands, dirs, monkeypatch
 ):
-    """The upgrade case: the file is as the last apply wrote it, the unit is
-    enabled and not running, and the apply starts it."""
-    directory = tmp_path / "system"
-    applier = PodmanUnitApplier(
-        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
-    )
-    files = {"web.service": rendered("web"), "tool.service": rendered("tool")}
-    applier.apply(files, autostart_names=["web"])
+    """The upgrade case: the files are as the last apply wrote them, the unit
+    is enabled and not running, and the apply starts it."""
+    applier = dirs.applier()
+    units, envs = files("web", "tool")
+    applier.apply(units, envs, autostart_names=["web"])
     commands.calls.clear()
 
-    applier.apply(files, autostart_names=["web"])
+    applier.apply(units, envs, autostart_names=["web"])
 
     reload_at = commands.calls.index(["systemctl", "daemon-reload"])
     assert commands.calls.index(["systemctl", "start", "web.service"]) > reload_at
@@ -187,24 +202,21 @@ def test_an_unchanged_container_that_starts_with_the_box_is_started_when_down(
     commands.calls.clear()
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
 
-    applier.apply(files, autostart_names=["web"])
+    applier.apply(units, envs, autostart_names=["web"])
 
     assert not any(call[1] in ("start", "restart") for call in commands.calls)
 
 
-def test_a_plain_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply(
-    commands, tmp_path
+def test_a_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply(
+    commands, dirs
 ):
-    directory = tmp_path / "system"
-    applier = PodmanUnitApplier(
-        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
-    )
-    files = {"web.service": rendered("web"), "tool.service": rendered("tool")}
+    applier = dirs.applier()
+    units, envs = files("web", "tool")
 
-    applier.apply(files, autostart_names=["web"])
+    applier.apply(units, envs, autostart_names=["web"])
     first = list(commands.calls)
     commands.calls.clear()
-    applier.apply(files, autostart_names=["web"])
+    applier.apply(units, envs, autostart_names=["web"])
 
     reload_at = first.index(["systemctl", "daemon-reload"])
     assert (
@@ -217,51 +229,86 @@ def test_a_plain_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply
     assert ["systemctl", "disable", "--no-reload", "tool.service"] in commands.calls
 
 
-def test_a_quadlet_file_is_neither_enabled_nor_disabled(commands, tmp_path):
-    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
+def test_an_earlier_build_s_quadlet_files_are_stopped_and_removed_first(
+    commands, dirs, monkeypatch
+):
+    """A marked file goes from each directory, a person's stays, and a
+    declared container whose unit was active runs again from its new unit."""
+    for directory in dirs.quadlets:
+        directory.mkdir()
+    (dirs.quadlets[0] / "web.container").write_text(rendered())
+    (dirs.quadlets[1] / "tool.container").write_text(rendered())
+    (dirs.quadlets[1] / "gone.container").write_text(rendered())
+    (dirs.quadlets[0] / "mine.container").write_text("[Container]\nImage=mine\n")
+    stopped: set = set()
+    real = commands.__call__
 
-    applier.apply({"web.container": rendered("web")}, autostart_names=["web"])
+    def tracked(command, **kwargs):
+        if command[:2] == ["systemctl", "stop"]:
+            stopped.add(command[2])
+        if command[:2] in (["systemctl", "start"], ["systemctl", "restart"]):
+            stopped.discard(command[2])
+        return real(command, **kwargs)
 
-    assert not any(call[1] in ("enable", "disable") for call in commands.calls)
+    monkeypatch.setattr(applier_module, "run", tracked)
+    monkeypatch.setattr(
+        applier_module,
+        "unit_state",
+        lambda unit: "inactive" if unit in stopped else "active",
+    )
+    units, envs = files("web", "tool")
+
+    note = dirs.applier().apply(units, envs, autostart_names=["web"])
+
+    assert not (dirs.quadlets[0] / "web.container").exists()
+    assert not (dirs.quadlets[1] / "tool.container").exists()
+    assert not (dirs.quadlets[1] / "gone.container").exists()
+    assert (dirs.quadlets[0] / "mine.container").exists()
+    assert "-web.container" in note and "-gone.container" in note
+    calls = commands.calls
+    reload_at = calls.index(["systemctl", "daemon-reload"])
+    assert calls.index(["systemctl", "stop", "web.service"]) < reload_at
+    assert calls.index(["systemctl", "stop", "gone.service"]) < reload_at
+    assert ["systemctl", "stop", "mine.service"] not in calls
+    assert calls.index(["systemctl", "start", "tool.service"]) > reload_at
+    assert ["systemctl", "start", "gone.service"] not in calls
 
 
-def test_only_the_plain_unit_applier_enables(commands):
-    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.3.1\n")
-    assert container_applier()._is_enabled_by_systemctl is True
+def test_remove_all_stops_disables_and_deletes_every_generated_file(commands, dirs):
+    dirs.units.mkdir()
+    dirs.envs.mkdir(parents=True)
+    (dirs.units / "web.service").write_text(rendered())
+    (dirs.envs / "web.env").write_text(env())
+    (dirs.envs / "orphan.env").write_text(env())
+    (dirs.units / "hand.service").write_text("[Service]\nmine\n")
 
-    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.6.0\n")
-    assert container_applier()._is_enabled_by_systemctl is False
-
-
-def test_remove_all_stops_disables_and_deletes_a_plain_unit(commands, tmp_path):
-    directory = tmp_path / "system"
-    directory.mkdir()
-    (directory / "web.service").write_text(rendered("web"))
-    (directory / "hand.service").write_text("[Service]\nmine\n")
-
-    PodmanUnitApplier(
-        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
-    ).remove_all()
+    dirs.applier().remove_all()
 
     assert commands.calls == [
         ["systemctl", "stop", "web.service"],
         ["systemctl", "disable", "--no-reload", "web.service"],
     ]
-    assert sorted(path.name for path in directory.iterdir()) == ["hand.service"]
+    assert sorted(path.name for path in dirs.units.iterdir()) == ["hand.service"]
+    assert list(dirs.envs.iterdir()) == []
 
 
-def test_stop_all_takes_down_every_generated_unit_and_keeps_the_files(
-    commands, tmp_path
-):
-    directory = tmp_path / "systemd"
-    directory.mkdir()
-    (directory / "web.container").write_text(rendered("web"))
-    (directory / "hand.container").write_text("[Container]\nmine\n")
+def test_stop_all_takes_down_every_generated_unit_and_keeps_the_files(commands, dirs):
+    dirs.units.mkdir()
+    (dirs.units / "web.service").write_text(rendered())
+    (dirs.units / "hand.service").write_text("[Service]\nmine\n")
 
-    PodmanUnitApplier(directory=str(directory), suffix=".container").stop_all()
+    dirs.applier().stop_all()
 
     assert commands.calls == [["systemctl", "stop", "web.service"]]
-    assert (directory / "web.container").exists()
+    assert (dirs.units / "web.service").exists()
+
+
+def test_the_unit_file_check_reads_the_unit_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(applier_module, "PODMAN_UNIT_DIR", str(tmp_path))
+    (tmp_path / "web.service").write_text(rendered())
+
+    assert applier_module.has_unit_file("web") is True
+    assert applier_module.has_unit_file("tool") is False
 
 
 def test_the_mirror_drop_in_is_written_and_removed(tmp_path, monkeypatch):
@@ -736,10 +783,13 @@ def test_each_set_names_its_fastest_source_and_its_variables():
     assert variables == {"pypi": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"]}
 
 
-def test_drive_and_remove_reach_only_the_generated_files(commands, tmp_path):
-    (tmp_path / "neutrino_demo.container").write_text(rendered("x"))
-    (tmp_path / "theirs.container").write_text("[Container]\n")
-    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
+def test_drive_and_remove_reach_only_the_generated_files(commands, dirs):
+    dirs.units.mkdir()
+    dirs.envs.mkdir(parents=True)
+    (dirs.units / "neutrino_demo.service").write_text(rendered())
+    (dirs.envs / "neutrino_demo.env").write_text(env())
+    (dirs.units / "theirs.service").write_text("[Service]\n")
+    applier = dirs.applier()
 
     applier.drive(["neutrino_demo", "theirs"], "start")
     removed = applier.remove(["neutrino_demo", "theirs"])
@@ -748,29 +798,35 @@ def test_drive_and_remove_reach_only_the_generated_files(commands, tmp_path):
     assert ["systemctl", "start", "theirs.service"] not in commands.calls
     assert removed == ["neutrino_demo"]
     assert ["systemctl", "stop", "neutrino_demo.service"] in commands.calls
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["theirs.container"]
+    assert [
+        "systemctl",
+        "disable",
+        "--no-reload",
+        "neutrino_demo.service",
+    ] in commands.calls
+    assert sorted(path.name for path in dirs.units.iterdir()) == ["theirs.service"]
+    assert list(dirs.envs.iterdir()) == []
 
 
-def test_a_file_whose_only_change_is_a_source_set_value_is_kept(commands, tmp_path):
-    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
-    first = rendered("x", "Environment=PIP_INDEX_URL=https://pypi.org/simple")
+def test_a_file_whose_only_change_is_a_source_set_value_is_kept(commands, dirs):
+    applier = dirs.applier()
+    units = {"neutrino_demo.service": rendered()}
+    first = env("PIP_INDEX_URL=https://pypi.org/simple")
     applier.apply(
-        {"neutrino_demo.container": first},
+        units,
+        {"neutrino_demo.env": first},
         autostart_names=["neutrino_demo"],
         source_keys={"neutrino_demo": ["PIP_INDEX_URL"]},
     )
     commands.calls.clear()
 
     note = applier.apply(
-        {
-            "neutrino_demo.container": rendered(
-                "x", "Environment=PIP_INDEX_URL=https://mirror.example/simple"
-            )
-        },
+        units,
+        {"neutrino_demo.env": env("PIP_INDEX_URL=https://mirror.example/simple")},
         autostart_names=["neutrino_demo"],
         source_keys={"neutrino_demo": ["PIP_INDEX_URL"]},
     )
 
     assert note == "containers unchanged"
-    assert (tmp_path / "neutrino_demo.container").read_text() == first
+    assert (dirs.envs / "neutrino_demo.env").read_text() == first
     assert not any(call[1] == "restart" for call in commands.calls)

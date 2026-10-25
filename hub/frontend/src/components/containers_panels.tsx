@@ -44,7 +44,7 @@ import "./containers_panels.css";
 /**
  * Containers on one machine, declared and live.
  *
- * A declared container is configuration: it renders to a Quadlet unit, so
+ * A declared container is configuration: it renders to a systemd unit, so
  * systemd supervises it and it comes back after a reboot. The live list below
  * shows every container podman knows — including ones started by hand at a
  * shell — each with start/stop/restart and a shell of its own.

@@ -109,7 +109,10 @@ class FakeUnitApplier:
     driven: list = []
     removed: list = []
 
-    def apply(self, rendered, *, autostart_names, source_keys=None):
+    def apply(self, rendered, environments, *, autostart_names, source_keys=None):
+        assert sorted(environments) == [
+            name[: -len(".service")] + ".env" for name in sorted(rendered)
+        ]
         FakeUnitApplier.applied.append((sorted(rendered), autostart_names))
         return "containers: web"
 
@@ -178,15 +181,20 @@ class FakeRenderer:
 
     seen: list = []
 
-    def __init__(self, config, context=None):
+    def __init__(self, *, config, context=None):
         FakeRenderer.seen.append((config, context))
         self._config = config
 
-    def render(self):
-        names = [
+    def _names(self):
+        return [
             c.name for c in [*self._config.containers, *self._config.hub_containers]
         ]
-        return {f"{name}.container": "x" for name in names}
+
+    def render(self):
+        return {f"{name}.service": "x" for name in self._names()}
+
+    def environment_files(self):
+        return {f"{name}.env": "x" for name in self._names()}
 
     def source_keys(self):
         return {}
@@ -231,14 +239,14 @@ def runner(monkeypatch, system, tmp_path):
     FakeController.error = None
     FakeProbe.asked = []
     monkeypatch.setattr(runner_module, "PodmanServiceProbe", FakeProbe)
-    monkeypatch.setattr(runner_module, "container_applier", FakeUnitApplier)
+    monkeypatch.setattr(runner_module, "PodmanUnitApplier", FakeUnitApplier)
     monkeypatch.setattr(runner_module, "PodmanRegistriesApplier", FakeRegistries)
     monkeypatch.setattr(runner_module, "PodmanStatusReader", FakeReader)
     monkeypatch.setattr(runner_module, "PodmanContainerController", FakeController)
     monkeypatch.setattr(runner_module, "podman_version", lambda: "4.9.3")
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "journal_lines", lambda name, lines: ["a", "b"])
-    monkeypatch.setattr(runner_module, "container_renderer", FakeRenderer)
+    monkeypatch.setattr(runner_module, "PodmanUnitRenderer", FakeRenderer)
     return PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
 
 
@@ -252,12 +260,12 @@ def test_validate_refuses_typed(runner):
 def test_apply_renders_the_units_and_the_mirrors(runner):
     runner.apply(CONFIG)
 
-    assert FakeUnitApplier.applied == [(["web.container"], ["web"])]
+    assert FakeUnitApplier.applied == [(["web.service"], ["web"])]
     assert 'location = "mirror.example"' in FakeRegistries.written[0]
 
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
-    def refuse(self, rendered, *, autostart_names, source_keys=None):
+    def refuse(self, rendered, environments, *, autostart_names, source_keys=None):
         raise subprocess.CalledProcessError(1, ["systemctl"], stderr="bad unit")
 
     monkeypatch.setattr(FakeUnitApplier, "apply", refuse)
@@ -329,7 +337,7 @@ def test_a_declaration_is_surveyed_while_its_start_still_waits(runner, monkeypat
     so a report taken during an image pull lists the container."""
     seen: list = []
 
-    def start(self, rendered, *, autostart_names, source_keys=None):
+    def start(self, rendered, environments, *, autostart_names, source_keys=None):
         seen.append(runner.details({})["containers"])
 
     monkeypatch.setattr(FakeUnitApplier, "apply", start)
@@ -467,12 +475,15 @@ def test_the_details_mark_the_containers_the_hub_declares(runner, monkeypatch):
 def test_removing_the_configuration_drops_the_units_and_the_mirrors(
     runner, monkeypatch, tmp_path
 ):
-    units = tmp_path / "systemd"
+    units = tmp_path / "system"
     units.mkdir()
-    (units / "web.container").write_text(
-        applier_module.PODMAN_GENERATED_MARKER + "\n[Container]\n"
+    envs = tmp_path / "env"
+    envs.mkdir()
+    (units / "web.service").write_text(
+        applier_module.PODMAN_GENERATED_MARKER + "\n[Service]\n"
     )
-    (units / "theirs.container").write_text("[Container]\n")
+    (envs / "web.env").write_text(applier_module.PODMAN_GENERATED_MARKER + "\n")
+    (units / "theirs.service").write_text("[Service]\n")
     mirrors = tmp_path / "99_neutrino_mirrors.conf"
     mirrors.write_text("[[registry]]")
     monkeypatch.setattr(applier_module, "PODMAN_REGISTRIES_CONF_PATH", str(mirrors))
@@ -482,16 +493,17 @@ def test_removing_the_configuration_drops_the_units_and_the_mirrors(
     )
     monkeypatch.setattr(
         runner_module,
-        "container_applier",
+        "PodmanUnitApplier",
         lambda: applier_module.PodmanUnitApplier(
-            directory=str(units), suffix=".container"
+            directory=str(units), env_directory=str(envs), quadlet_directories=()
         ),
     )
     monkeypatch.setattr(applier_module, "run", lambda command, **kwargs: None)
 
     runner.remove_configuration()
 
-    assert sorted(path.name for path in units.iterdir()) == ["theirs.container"]
+    assert sorted(path.name for path in units.iterdir()) == ["theirs.service"]
+    assert list(envs.iterdir()) == []
     assert not mirrors.exists()
 
 
@@ -609,7 +621,7 @@ def test_a_module_s_containers_are_rendered_once_its_images_are_in_the_store(
     assert context.page_ports == {"neutrino_demo": 40123}
     assert context.sources == {"pypi": "https://p.example"}
     assert FakeUnitApplier.applied[-1] == (
-        ["neutrino_demo.container", "web.container"],
+        ["neutrino_demo.service", "web.service"],
         ["web", "neutrino_demo"],
     )
     assert hub_runner.hub_names() == {"demo": ["neutrino_demo"]}

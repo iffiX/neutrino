@@ -1,10 +1,12 @@
-"""The rendered container files, checked for what systemd will read, and the
-root script that carries them into a Podman machine, run with ``sh`` against
-a temporary root."""
+"""The rendered container units and environment files, checked for what
+systemd and Podman will read, and the root script that carries them into a
+Podman machine, run with ``sh`` against a temporary root."""
 
 import base64
 import os
 import re
+import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -14,11 +16,9 @@ from neutrino_agent.modules.podman.config import PodmanConfig, PodmanContainer
 from neutrino_agent.modules.podman.constants import PODMAN_GENERATED_MARKER
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
-    PodmanQuadletRenderer,
     PodmanRegistriesRenderer,
     PodmanRenderContext,
     PodmanUnitRenderer,
-    machine_boot_unit,
     machine_control_script,
     machine_drop_script,
     machine_journal_script,
@@ -27,11 +27,21 @@ from neutrino_agent.modules.podman.renderer import (
     source_neutral,
 )
 
+ENV_DIR = "/var/lib/neutrino/agent/podman/env"
 
-def render(containers: list) -> dict:
+
+def renderer_of(containers: list, **kwargs) -> PodmanUnitRenderer:
     config = PodmanConfig.from_dict({"containers": containers})
     config.validate()
-    return PodmanQuadletRenderer(config=config).render()
+    return PodmanUnitRenderer(config=config, **kwargs)
+
+
+def render(containers: list) -> dict:
+    return renderer_of(containers).render()
+
+
+def environments(containers: list) -> dict:
+    return renderer_of(containers).environment_files()
 
 
 FULL = {
@@ -44,34 +54,89 @@ FULL = {
 }
 
 
-def test_one_file_per_container_named_for_it():
-    assert set(render([FULL, {"name": "redis", "image": "r"}])) == {
-        "webdav.container",
-        "redis.container",
+def exec_start(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("ExecStart="):
+            return line
+    raise AssertionError("the unit has no ExecStart")
+
+
+def test_one_unit_and_one_environment_file_per_container_named_for_it():
+    containers = [FULL, {"name": "redis", "image": "r"}]
+
+    assert set(render(containers)) == {"webdav.service", "redis.service"}
+    assert set(environments(containers)) == {"webdav.env", "redis.env"}
+
+
+def test_the_unit_carries_podman_s_lifecycle_settings_and_no_environment_value():
+    assert render([FULL])["webdav.service"].splitlines() == [
+        PODMAN_GENERATED_MARKER,
+        "",
+        "[Unit]",
+        "Description=webdav container",
+        "Wants=network-online.target",
+        "After=network-online.target",
+        "RequiresMountsFor=/srv/share",
+        "",
+        "[Service]",
+        "Environment=PODMAN_SYSTEMD_UNIT=%n",
+        "Type=notify",
+        "NotifyAccess=all",
+        "Delegate=yes",
+        "KillMode=mixed",
+        "Restart=on-failure",
+        "TimeoutStartSec=900",
+        "TimeoutStopSec=70",
+        "ExecStartPre=-/bin/rm -f %t/%N.cid",
+        "ExecStart=/usr/bin/podman run --cidfile=%t/%N.cid --cgroups=split"
+        " --sdnotify=conmon -d --replace --rm --name webdav -p 8081:80"
+        " -v /srv/share:/usr/share/nginx/html"
+        f" --env-file {ENV_DIR}/webdav.env docker.io/library/nginx:1",
+        "ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%N.cid",
+        "ExecStopPost=-/usr/bin/podman rm -f --ignore --cidfile=%t/%N.cid",
+        "",
+        "[Install]",
+        "WantedBy=multi-user.target",
+    ]
+
+
+def test_the_environment_is_in_its_file_as_written_and_nowhere_in_the_unit():
+    container = {
+        "name": "app",
+        "image": "nginx",
+        "environment": ["TZ=UTC", "JAVA_OPTS=-Xmx1g -Xms512m", 'PASS=p%a$s"w #1'],
+    }
+
+    unit = render([container])["app.service"]
+
+    assert environments([container])["app.env"] == (
+        f"{PODMAN_GENERATED_MARKER}\n"
+        "TZ=UTC\n"
+        "JAVA_OPTS=-Xmx1g -Xms512m\n"
+        'PASS=p%a$s"w #1\n'
+    )
+    assert " -e " not in exec_start(unit)
+    for value in ("UTC", "Xmx1g", "p%a"):
+        assert value not in unit
+
+
+def test_a_container_with_no_environment_has_a_file_with_the_marker_alone():
+    assert environments([{"name": "redis", "image": "r"}]) == {
+        "redis.env": PODMAN_GENERATED_MARKER + "\n"
     }
 
 
-def test_every_declared_knob_lands_in_the_unit():
-    text = render([FULL])["webdav.container"]
-
-    assert "ContainerName=webdav" in text
-    assert "Image=docker.io/library/nginx:1" in text
-    assert "PublishPort=8081:80" in text
-    assert "Volume=/srv/share:/usr/share/nginx/html" in text
-    assert "Environment=TZ=Asia/Shanghai" in text
-    assert "WantedBy=multi-user.target" in text
-    assert "TimeoutStartSec=900" in text
-
-
 def test_no_autostart_means_no_install_section():
-    text = render([{**FULL, "is_autostart": False}])["webdav.container"]
+    text = render([{**FULL, "is_autostart": False}])["webdav.service"]
 
     assert "[Install]" not in text
+    assert "WantedBy=" not in text
 
 
 def test_every_file_carries_the_marker_that_makes_removal_safe():
-    for text in render([FULL, {"name": "redis", "image": "r"}]).values():
-        assert text.startswith(PODMAN_GENERATED_MARKER)
+    containers = [FULL, {"name": "redis", "image": "r"}]
+    for text in [*render(containers).values(), *environments(containers).values()]:
+        assert text.startswith(PODMAN_GENERATED_MARKER + "\n")
 
 
 def test_short_image_names_are_qualified_in_the_unit():
@@ -97,92 +162,71 @@ def test_mirrors_render_in_order_and_none_renders_nothing():
     assert PodmanRegistriesRenderer(config=PodmanConfig()).render() == ""
 
 
-def test_a_command_overrides_the_images_own_and_absent_stays_absent():
-    with_command = render(
-        [{"name": "py", "image": "python:3.12", "command": "python3 -m http.server"}]
-    )["py.container"]
-    without = render([{"name": "py", "image": "python:3.12"}])["py.container"]
-
-    assert "Exec=python3 -m http.server" in with_command
-    assert "Exec=" not in without
-
-
-def unit(container: PodmanContainer) -> str:
-    config = PodmanConfig(containers=[container], mirrors=[])
-    return PodmanUnitRenderer(config=config).render()[f"{container.name}.service"]
-
-
-def exec_start(container: PodmanContainer) -> str:
-    for line in unit(container).splitlines():
-        if line.startswith("ExecStart="):
-            return line
-    raise AssertionError("the unit has no ExecStart")
-
-
-def test_a_unit_is_named_the_same_as_its_quadlet_file_would_be():
-    container = PodmanContainer(name="redis", image="redis:7")
-    config = PodmanConfig(containers=[container], mirrors=[])
-    assert set(PodmanUnitRenderer(config=config).render()) == {"redis.service"}
-    assert set(PodmanQuadletRenderer(config=config).render()) == {"redis.container"}
-
-
-def test_the_six_container_properties_reach_the_command_line():
-    line = exec_start(
-        PodmanContainer(
-            name="app",
-            image="nginx",
-            ports=["8080:80", "5353:53/udp"],
-            volumes=["/srv/data:/data", "cache:/cache"],
-            environment=["TZ=UTC"],
-        )
-    )
-    assert "--name app" in line
-    assert "-p 8080:80" in line and "-p 5353:53/udp" in line
-    assert "-v /srv/data:/data" in line and "-v cache:/cache" in line
-    assert "-e TZ=UTC" in line
-    assert line.endswith("docker.io/library/nginx")
-
-
-def test_an_environment_value_with_spaces_stays_one_argument():
-    line = exec_start(
-        PodmanContainer(
-            name="app", image="nginx", environment=["JAVA_OPTS=-Xmx1g -Xms512m"]
-        )
-    )
-    assert '-e "JAVA_OPTS=-Xmx1g -Xms512m"' in line
-
-
 def test_a_command_is_passed_through_for_systemd_to_split():
+    with_command = render(
+        [{"name": "py", "image": "python:3.12", "command": 'sh -c "sleep 3600"'}]
+    )["py.service"]
+    without = render([{"name": "py", "image": "python:3.12"}])["py.service"]
+
+    assert exec_start(with_command).endswith(
+        'docker.io/library/python:3.12 sh -c "sleep 3600"'
+    )
+    assert exec_start(without).endswith("docker.io/library/python:3.12")
+
+
+def test_the_container_s_properties_reach_the_command_line():
     line = exec_start(
-        PodmanContainer(name="app", image="python:3.12", command='sh -c "sleep 3600"')
+        render(
+            [
+                {
+                    "name": "app",
+                    "image": "nginx",
+                    "ports": ["8080:80", "5353:53/udp"],
+                    "volumes": ["/srv/data:/data", "cache:/cache"],
+                }
+            ]
+        )["app.service"]
     )
-    assert line.endswith('docker.io/library/python:3.12 sh -c "sleep 3600"')
+
+    assert "--name app" in line
+    assert "-p 8080:80 -p 5353:53/udp" in line
+    assert "-v /srv/data:/data -v cache:/cache" in line
+    assert line.endswith(f"--env-file {ENV_DIR}/app.env docker.io/library/nginx")
 
 
-def test_a_leftover_container_does_not_block_the_next_start():
-    text = unit(PodmanContainer(name="app", image="nginx"))
-    assert "ExecStartPre=-/usr/bin/podman rm -f app" in text
-    assert "ExecStop=/usr/bin/podman stop -t 10 app" in text
+def test_each_host_folder_a_volume_binds_is_a_mount_the_unit_requires():
+    text = render(
+        [
+            {
+                "name": "app",
+                "image": "nginx",
+                "volumes": ["/srv/data:/data:ro", "cache:/cache", "/srv/my files:/f"],
+            }
+        ]
+    )["app.service"]
+
+    assert [line for line in text.splitlines() if "RequiresMountsFor" in line] == [
+        "RequiresMountsFor=/srv/data",
+        'RequiresMountsFor="/srv/my files"',
+    ]
+    assert '-v "/srv/my files:/f"' in exec_start(text)
 
 
-def test_only_an_autostart_container_is_wanted_by_the_boot_target():
-    assert "WantedBy=multi-user.target" in unit(
-        PodmanContainer(name="app", image="nginx", is_autostart=True)
-    )
-    assert "WantedBy=" not in unit(
-        PodmanContainer(name="app", image="nginx", is_autostart=False)
-    )
-    assert unit(PodmanContainer(name="app", image="nginx")).startswith(
-        PODMAN_GENERATED_MARKER
-    )
+def test_a_volume_s_specifiers_and_variables_reach_podman_as_written():
+    text = render([{"name": "app", "image": "nginx", "volumes": ["/srv/a%b$c:/d"]}])[
+        "app.service"
+    ]
+
+    assert "-v /srv/a%%b$$c:/d" in exec_start(text)
+    assert "RequiresMountsFor=/srv/a%%b$c" in text
 
 
 def publishes(container: dict) -> list:
-    text = render([container])[f"{container['name']}.container"]
-    return [line for line in text.splitlines() if line.startswith("PublishPort=")]
+    words = exec_start(render([container])[f"{container['name']}.service"]).split()
+    return [words[index + 1] for index, word in enumerate(words) if word == "-p"]
 
 
-def test_no_services_and_every_port_auto_render_the_same_file():
+def test_no_services_and_every_port_auto_render_the_same_files():
     plain = {"name": "app", "image": "nginx", "ports": ["8080:80", "5353:53/udp"]}
     auto = {
         **plain,
@@ -190,7 +234,8 @@ def test_no_services_and_every_port_auto_render_the_same_file():
     }
 
     assert render([plain]) == render([auto])
-    assert publishes(plain) == ["PublishPort=8080:80", "PublishPort=5353:53/udp"]
+    assert environments([plain]) == environments([auto])
+    assert publishes(plain) == ["8080:80", "5353:53/udp"]
 
 
 def test_a_web_port_publishes_tcp():
@@ -201,7 +246,7 @@ def test_a_web_port_publishes_tcp():
         "services": [{"port": 8443, "kind": "web", "scheme": "https"}],
     }
 
-    assert publishes(container) == ["PublishPort=8443:443"]
+    assert publishes(container) == ["8443:443"]
 
 
 def test_a_port_port_publishes_each_checked_protocol_once():
@@ -215,26 +260,16 @@ def test_a_port_port_publishes_each_checked_protocol_once():
         ],
     }
 
-    assert publishes(container) == [
-        "PublishPort=53:53",
-        "PublishPort=53:53/udp",
-        "PublishPort=9000:9000",
-    ]
+    assert publishes(container) == ["53:53", "53:53/udp", "9000:9000"]
 
 
-def test_a_checked_udp_reaches_the_command_line_of_an_old_podman():
-    line = exec_start(
-        PodmanContainer.from_dict(
-            {
-                "name": "dns",
-                "image": "coredns",
-                "ports": ["53:53"],
-                "services": [{"port": 53, "kind": "port", "protocols": ["tcp", "udp"]}],
-            }
-        )
+def test_a_unit_made_from_a_container_object_is_the_same():
+    container = PodmanContainer(name="redis", image="redis:7")
+    config = PodmanConfig(containers=[container], mirrors=[])
+
+    assert PodmanUnitRenderer(config=config).render() == render(
+        [{"name": "redis", "image": "redis:7"}]
     )
-
-    assert "-p 53:53 -p 53:53/udp" in line
 
 
 # --- the Podman machine on Windows and macOS ---
@@ -251,6 +286,7 @@ MACHINE_CONTAINERS = [
         "image": "nginx",
         "ports": ["8080:80", "5353:53"],
         "volumes": ["C:\\www:/usr/share/nginx/html:ro", "webdata:/data"],
+        "environment": ["TZ=UTC"],
         "services": [{"port": 5353, "kind": "port", "protocols": ["tcp"]}],
     },
     {"name": "batch", "image": "alpine", "command": "sleep 60", "is_autostart": False},
@@ -269,26 +305,23 @@ def machine_config(containers=None, mirrors=()) -> PodmanConfig:
     return config
 
 
-def test_a_machine_file_has_the_cgroups_line_and_the_folder_as_wsl_mounts_it():
-    config = machine_config()
-
-    text = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()[
-        "web.container"
-    ]
-
-    assert text.splitlines()[6:14] == [
-        "[Container]",
-        "ContainerName=web",
-        "Image=docker.io/library/nginx",
-        "PublishPort=8080:80",
-        "PublishPort=5353:53",
-        "Volume=/mnt/c/www:/usr/share/nginx/html:ro",
-        "Volume=webdata:/data",
-        "CgroupsMode=enabled",
-    ]
+def machine_renderer(config, os_name="windows", context=None) -> PodmanUnitRenderer:
+    return PodmanUnitRenderer(config=config, machine_os_name=os_name, context=context)
 
 
-def test_a_mac_machine_file_keeps_the_folder_and_adds_the_cgroups_line():
+def test_a_machine_unit_runs_cgroups_enabled_with_the_folder_as_wsl_mounts_it():
+    text = machine_renderer(machine_config()).render()["web.service"]
+
+    assert "RequiresMountsFor=/mnt/c/www" in text.splitlines()
+    assert exec_start(text) == (
+        "ExecStart=/usr/bin/podman run --cidfile=%t/%N.cid --cgroups=enabled"
+        " --sdnotify=conmon -d --replace --rm --name web -p 8080:80 -p 5353:53"
+        " -v /mnt/c/www:/usr/share/nginx/html:ro -v webdata:/data"
+        f" --env-file {ENV_DIR}/web.env docker.io/library/nginx"
+    )
+
+
+def test_a_mac_machine_unit_keeps_the_folder():
     config = PodmanConfig.from_dict(
         {
             "containers": [
@@ -297,33 +330,19 @@ def test_a_mac_machine_file_keeps_the_folder_and_adds_the_cgroups_line():
         }
     )
 
-    text = PodmanQuadletRenderer(config=config, machine_os_name="darwin").render()[
-        "site.container"
-    ]
+    text = machine_renderer(config, "darwin").render()["site.service"]
 
-    assert "Volume=/Users/me:/s\nCgroupsMode=enabled\n" in text
+    assert "RequiresMountsFor=/Users/me" in text.splitlines()
+    assert " --cgroups=enabled " in exec_start(text)
+    assert " -v /Users/me:/s " in exec_start(text)
 
 
-def test_the_linux_file_has_no_cgroups_line_and_is_byte_for_byte_as_before():
-    linux = PodmanQuadletRenderer(config=machine_config()).render()
+def test_the_linux_unit_runs_cgroups_split():
+    linux = PodmanUnitRenderer(config=machine_config()).render()
 
-    assert "CgroupsMode" not in "".join(linux.values())
-    assert linux["batch.container"] == (
-        f"{PODMAN_GENERATED_MARKER}\n"
-        "\n"
-        "[Unit]\n"
-        "Description=batch container\n"
-        "After=network-online.target\n"
-        "\n"
-        "[Container]\n"
-        "ContainerName=batch\n"
-        "Image=docker.io/library/alpine\n"
-        "Exec=sleep 60\n"
-        "\n"
-        "[Service]\n"
-        "TimeoutStartSec=900\n"
-        "Restart=on-failure\n"
-    )
+    for text in linux.values():
+        assert " --cgroups=split " in exec_start(text)
+        assert "cgroups=enabled" not in text
 
 
 def test_the_root_script_renders_the_golden_text_around_each_files_base64():
@@ -334,45 +353,39 @@ def test_the_root_script_renders_the_golden_text_around_each_files_base64():
     assert ENCODED_PATTERN.sub("'BASE64'", script) == (
         GOLDEN / "machine_script.sh"
     ).read_text(encoding="utf-8")
-    rendered = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()
+    renderer = machine_renderer(config)
+    units = renderer.render()
+    envs = renderer.environment_files()
     assert [base64.b64decode(payload).decode() for payload in payloads] == [
-        rendered["web.container"],
-        rendered["batch.container"],
+        units["web.service"],
+        envs["web.env"],
+        units["batch.service"],
+        envs["batch.env"],
         PodmanRegistriesRenderer(config=config).render(),
     ]
 
 
-def test_the_mac_script_writes_where_linux_has_the_files_with_the_cgroups_line(
-    tmp_path,
-):
-    shell = MachineShell(tmp_path, "darwin")
-    config = machine_config()
-
-    done, _calls = shell.run(config)
-
-    assert done.returncode == 0, done.stderr
-    assert shell.quadlet == shell.root / "etc/containers/systemd"
-    text = (shell.quadlet / "web.container").read_text()
-    assert text == (
-        PodmanQuadletRenderer(config=config, machine_os_name="darwin").render()[
-            "web.container"
-        ]
-    )
-    assert "\nCgroupsMode=enabled\n" in text
-    assert not (shell.root / "usr").exists()
-
-
-# A systemctl that records each call, reads a unit active when ACTIVE names
-# it, and refuses a restart of a unit REFUSED names.
+# A systemctl that records each call and refuses a start or restart of a unit
+# REFUSED names. A unit reads active when ACTIVE names it, until the script
+# stops it; one the script starts or restarts reads active.
 SYSTEMCTL_STUB = """#!/bin/sh
 echo "$*" >> "$SYSTEMCTL_LOG"
-if [ "$1" = is-active ]; then
+state="$SYSTEMCTL_LOG.d"
+mkdir -p "$state"
+case "$1" in
+is-active)
+    [ -e "$state/$3.stopped" ] && exit 3
+    [ -e "$state/$3.started" ] && exit 0
     case " $ACTIVE " in *" $3 "*) exit 0 ;; esac
-    exit 3
-fi
-if [ "$1" = restart ]; then
+    exit 3 ;;
+stop)
+    rm -f "$state/$2.started"
+    touch "$state/$2.stopped" ;;
+start|restart)
     case " $REFUSED " in *" $2 "*) echo "Job for $2 failed." >&2; exit 1 ;; esac
-fi
+    rm -f "$state/$2.stopped"
+    touch "$state/$2.started" ;;
+esac
 exit 0
 """
 
@@ -383,11 +396,8 @@ class MachineShell:
     def __init__(self, tmp_path, os_name="windows"):
         self.os_name = os_name
         self.root = tmp_path / "machine"
-        self.quadlet = self.root / (
-            "usr/share/containers/systemd"
-            if os_name == "windows"
-            else "etc/containers/systemd"
-        )
+        self.units = self.root / "etc/systemd/system"
+        self.envs = self.root / ENV_DIR.lstrip("/")
         self.mirrors = (
             self.root / "etc/containers/registries.conf.d/99_neutrino_mirrors.conf"
         )
@@ -403,6 +413,7 @@ class MachineShell:
         self, config: PodmanConfig, *, active="", refused="", context=None
     ) -> tuple:
         self.log.write_text("")
+        shutil.rmtree(f"{self.log}.d", ignore_errors=True)
         script = PodmanMachineScriptRenderer(
             config=config, os_name=self.os_name, root=str(self.root), context=context
         ).render()
@@ -421,35 +432,65 @@ class MachineShell:
         )
         return done, self.log.read_text().splitlines()
 
+    def run_script(self, script: str):
+        self.log.write_text("")
+        shutil.rmtree(f"{self.log}.d", ignore_errors=True)
+        done = subprocess.run(
+            ["sh", "-s"],
+            input=script,
+            capture_output=True,
+            text=True,
+            env={"PATH": self.path, "SYSTEMCTL_LOG": str(self.log)},
+            timeout=60,
+        )
+        return done, self.log.read_text().splitlines()
+
 
 def changed_lines(done) -> list:
     return [line for line in done.stdout.splitlines() if line.startswith("changed: ")]
 
 
-def test_the_script_writes_every_file_and_restarts_what_starts_at_boot(tmp_path):
+def mode_of(path) -> int:
+    return stat.S_IMODE(os.stat(path).st_mode)
+
+
+def test_the_script_writes_every_file_with_its_mode_and_restarts_what_starts_at_boot(
+    tmp_path,
+):
     shell = MachineShell(tmp_path)
     config = machine_config(mirrors=["mirror.example"])
 
     done, calls = shell.run(config)
 
     assert done.returncode == 0, done.stderr
-    rendered = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()
-    assert (shell.quadlet / "web.container").read_text() == rendered["web.container"]
-    assert (shell.quadlet / "batch.container").read_text() == rendered[
-        "batch.container"
-    ]
+    renderer = machine_renderer(config)
+    for name in ("web", "batch"):
+        assert (shell.units / f"{name}.service").read_text() == renderer.render()[
+            f"{name}.service"
+        ]
+        assert (shell.envs / f"{name}.env").read_text() == (
+            renderer.environment_files()[f"{name}.env"]
+        )
+        assert mode_of(shell.units / f"{name}.service") == 0o644
+        assert mode_of(shell.envs / f"{name}.env") == 0o600
+    assert mode_of(shell.envs) == 0o700
     assert shell.mirrors.read_text() == PodmanRegistriesRenderer(config=config).render()
     assert changed_lines(done) == [
-        f"changed: {shell.quadlet}/web.container",
-        f"changed: {shell.quadlet}/batch.container",
+        f"changed: {shell.units}/web.service",
+        f"changed: {shell.envs}/web.env",
+        f"changed: {shell.units}/batch.service",
+        f"changed: {shell.envs}/batch.env",
         f"changed: {shell.mirrors}",
     ]
     assert calls == [
+        "enable --no-reload web.service",
+        "disable --no-reload batch.service",
         "daemon-reload",
         "is-active --quiet batch.service",
         "restart web.service",
     ]
-    assert not list(shell.quadlet.glob("*.new"))
+    assert not list(shell.units.glob("*.new"))
+    assert not list(shell.envs.glob("*.new"))
 
 
 def test_an_unchanged_configuration_changes_nothing_and_restarts_nothing(tmp_path):
@@ -461,7 +502,12 @@ def test_an_unchanged_configuration_changes_nothing_and_restarts_nothing(tmp_pat
 
     assert done.returncode == 0, done.stderr
     assert changed_lines(done) == []
-    assert calls == ["daemon-reload", "is-active --quiet web.service"]
+    assert calls == [
+        "enable --no-reload web.service",
+        "disable --no-reload batch.service",
+        "daemon-reload",
+        "is-active --quiet web.service",
+    ]
 
 
 def test_an_unchanged_container_started_at_boot_is_started_when_down(tmp_path):
@@ -473,11 +519,7 @@ def test_an_unchanged_container_started_at_boot_is_started_when_down(tmp_path):
 
     assert done.returncode == 0, done.stderr
     assert changed_lines(done) == []
-    assert calls == [
-        "daemon-reload",
-        "is-active --quiet web.service",
-        "start web.service",
-    ]
+    assert calls[-2:] == ["is-active --quiet web.service", "start web.service"]
 
 
 def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_path):
@@ -487,8 +529,8 @@ def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_p
 
     done, calls = shell.run(machine_config(changed), active="batch.service")
 
-    assert changed_lines(done) == [f"changed: {shell.quadlet}/batch.container"]
-    assert calls == [
+    assert changed_lines(done) == [f"changed: {shell.units}/batch.service"]
+    assert calls[2:] == [
         "daemon-reload",
         "is-active --quiet batch.service",
         "restart batch.service",
@@ -497,25 +539,86 @@ def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_p
     ]
 
 
+def test_a_changed_environment_alone_restarts_the_container(tmp_path):
+    shell = MachineShell(tmp_path)
+    shell.run(machine_config())
+    changed = [dict(MACHINE_CONTAINERS[0], environment=["TZ=Asia/Shanghai"])]
+
+    done, calls = shell.run(machine_config(changed), active="web.service")
+
+    assert f"changed: {shell.envs}/web.env" in changed_lines(done)
+    assert f"changed: {shell.units}/web.service" not in changed_lines(done)
+    assert "restart web.service" in calls
+
+
 def test_stale_generated_files_go_and_a_persons_own_file_stays(tmp_path):
     shell = MachineShell(tmp_path)
-    shell.quadlet.mkdir(parents=True)
-    (shell.quadlet / "old.container").write_text(
-        f"{PODMAN_GENERATED_MARKER}\n[Container]\n"
-    )
-    (shell.quadlet / "mine.container").write_text("[Container]\nImage=mine\n")
+    shell.units.mkdir(parents=True)
+    shell.envs.mkdir(parents=True)
+    (shell.units / "old.service").write_text(f"{PODMAN_GENERATED_MARKER}\n[Unit]\n")
+    (shell.envs / "old.env").write_text(f"{PODMAN_GENERATED_MARKER}\nA=1\n")
+    (shell.envs / "orphan.env").write_text(f"{PODMAN_GENERATED_MARKER}\nA=1\n")
+    (shell.units / "mine.service").write_text("[Unit]\nDescription=mine\n")
     shell.mirrors.parent.mkdir(parents=True)
     shell.mirrors.write_text(f"{PODMAN_GENERATED_MARKER}\n")
 
     done, calls = shell.run(machine_config())
 
-    assert not (shell.quadlet / "old.container").exists()
-    assert (shell.quadlet / "mine.container").read_text() == "[Container]\nImage=mine\n"
+    assert done.returncode == 0, done.stderr
+    assert not (shell.units / "old.service").exists()
+    assert not (shell.envs / "old.env").exists()
+    assert not (shell.envs / "orphan.env").exists()
+    assert (shell.units / "mine.service").read_text() == "[Unit]\nDescription=mine\n"
     assert not shell.mirrors.exists()
-    assert f"changed: -{shell.quadlet}/old.container" in changed_lines(done)
+    assert f"changed: -{shell.units}/old.service" in changed_lines(done)
+    assert f"changed: -{shell.envs}/orphan.env" in changed_lines(done)
     assert f"changed: -{shell.mirrors}" in changed_lines(done)
     assert "stop old.service" in calls
+    assert "disable --no-reload old.service" in calls
     assert "stop mine.service" not in calls
+
+
+def test_the_boot_unit_of_an_earlier_build_is_stopped_disabled_and_removed(tmp_path):
+    shell = MachineShell(tmp_path, "darwin")
+    shell.units.mkdir(parents=True)
+    boot = shell.units / "neutrino_containers.service"
+    boot.write_text(f"{PODMAN_GENERATED_MARKER}\n\n[Unit]\n")
+
+    done, calls = shell.run(machine_config())
+
+    assert done.returncode == 0, done.stderr
+    assert not boot.exists()
+    assert "stop neutrino_containers.service" in calls
+    assert "disable --no-reload neutrino_containers.service" in calls
+
+
+@pytest.mark.parametrize(
+    "directory", ["usr/share/containers/systemd", "etc/containers/systemd"]
+)
+def test_an_earlier_build_s_quadlet_files_are_stopped_and_removed(tmp_path, directory):
+    shell = MachineShell(tmp_path)
+    quadlet = shell.root / directory
+    quadlet.mkdir(parents=True)
+    for name in ("web", "batch", "gone"):
+        (quadlet / f"{name}.container").write_text(
+            f"{PODMAN_GENERATED_MARKER}\n[Container]\n"
+        )
+    (quadlet / "mine.container").write_text("[Container]\nImage=mine\n")
+
+    done, calls = shell.run(
+        machine_config(), active="web.service batch.service gone.service"
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert sorted(path.name for path in quadlet.iterdir()) == ["mine.container"]
+    for name in ("web", "batch", "gone"):
+        assert f"stop {name}.service" in calls
+        assert f"changed: -{quadlet}/{name}.container" in changed_lines(done)
+    assert "stop mine.service" not in calls
+    assert calls.index("stop batch.service") < calls.index("daemon-reload")
+    assert "start gone.service" not in calls
+    assert calls.index("start batch.service") > calls.index("daemon-reload")
+    assert "start web.service" not in calls
 
 
 def test_an_empty_configuration_takes_every_generated_file_away(tmp_path):
@@ -525,9 +628,16 @@ def test_an_empty_configuration_takes_every_generated_file_away(tmp_path):
     done, calls = shell.run(PodmanConfig())
 
     assert done.returncode == 0, done.stderr
-    assert list(shell.quadlet.iterdir()) == []
+    assert list(shell.units.iterdir()) == []
+    assert list(shell.envs.iterdir()) == []
     assert not shell.mirrors.exists()
-    assert calls == ["stop batch.service", "stop web.service", "daemon-reload"]
+    assert calls == [
+        "stop batch.service",
+        "disable --no-reload batch.service",
+        "stop web.service",
+        "disable --no-reload web.service",
+        "daemon-reload",
+    ]
 
 
 def test_a_refused_restart_fails_the_script_with_systemds_words(tmp_path):
@@ -548,118 +658,19 @@ def test_the_verbs_scripts_name_the_containers_unit():
         machine_control_script("web", "kill")
 
 
-@pytest.mark.parametrize("os_name", ["windows", "darwin"])
-def test_the_stop_script_stops_each_generated_container_and_keeps_its_file(
-    tmp_path, os_name
-):
-    shell = MachineShell(tmp_path, os_name)
-    shell.run(machine_config())
-    (shell.quadlet / "mine.container").write_text("[Container]\n")
-    shell.log.write_text("")
-
-    subprocess.run(
-        ["sh", "-s"],
-        input=machine_stop_script(os_name=os_name, root=str(shell.root)),
-        text=True,
-        env={"PATH": shell.path, "SYSTEMCTL_LOG": str(shell.log)},
-        check=True,
-        timeout=60,
-    )
-
-    assert shell.log.read_text().splitlines() == [
-        "stop batch.service",
-        "stop web.service",
-    ]
-    assert (shell.quadlet / "web.container").exists()
-
-
-# --- the boot unit, where the machine mounts the computer's /etc/containers ---
-
-BOOT_UNIT = "etc/systemd/system/neutrino_containers.service"
-BOOT_LINK = "etc/systemd/system/multi-user.target.wants/neutrino_containers.service"
-
-
-def mounted_machine(tmp_path) -> "MachineShell":
-    """A macOS machine whose own unit mounts the computer's folder on /etc/containers."""
-    shell = MachineShell(tmp_path, "darwin")
-    mount_unit = shell.root / "etc/systemd/system/etc-containers.mount"
-    mount_unit.parent.mkdir(parents=True)
-    mount_unit.write_text("[Mount]\nWhere=/etc/containers\n")
-    return shell
-
-
-def test_the_boot_unit_reloads_systemd_and_starts_multi_user_after_the_mount():
-    unit = machine_boot_unit()
-
-    assert unit.startswith(PODMAN_GENERATED_MARKER + "\n")
-    assert "RequiresMountsFor=/etc/containers\n" in unit
-    assert unit.index("ExecStart=/usr/bin/systemctl daemon-reload\n") < unit.index(
-        "ExecStart=/usr/bin/systemctl start --no-block multi-user.target\n"
-    )
-    assert unit.endswith("[Install]\nWantedBy=multi-user.target\n")
-
-
-def test_a_mounted_machine_gets_the_boot_unit_turned_on_once(tmp_path):
-    shell = mounted_machine(tmp_path)
-
-    done, _calls = shell.run(machine_config())
-    again, _calls = shell.run(machine_config())
-
-    assert done.returncode == 0, done.stderr
-    assert (shell.root / BOOT_UNIT).read_text() == machine_boot_unit()
-    assert os.readlink(shell.root / BOOT_LINK) == "../neutrino_containers.service"
-    assert changed_lines(done)[-2:] == [
-        f"changed: {shell.root / BOOT_UNIT}",
-        f"changed: {shell.root / BOOT_LINK}",
-    ]
-    assert again.returncode == 0, again.stderr
-    assert changed_lines(again) == []
-
-
-def test_a_machine_without_the_mount_has_no_boot_unit_and_loses_a_stale_one(
+def test_the_stop_script_stops_each_generated_container_and_keeps_its_files(
     tmp_path,
 ):
-    shell = MachineShell(tmp_path, "darwin")
-    stale = shell.root / BOOT_UNIT
-    stale.parent.mkdir(parents=True)
-    stale.write_text(machine_boot_unit())
-
-    done, _calls = shell.run(machine_config())
-
-    assert done.returncode == 0, done.stderr
-    assert not stale.exists()
-    assert changed_lines(done)[-1] == f"changed: -{stale}"
-
-
-def test_no_containers_take_the_boot_unit_and_its_link_away(tmp_path):
-    shell = mounted_machine(tmp_path)
+    shell = MachineShell(tmp_path)
     shell.run(machine_config())
+    (shell.units / "mine.service").write_text("[Unit]\n")
 
-    done, _calls = shell.run(PodmanConfig())
-
-    assert done.returncode == 0, done.stderr
-    assert not (shell.root / BOOT_UNIT).exists()
-    assert not os.path.lexists(shell.root / BOOT_LINK)
-
-
-def test_a_person_s_unit_of_the_same_name_is_left(tmp_path):
-    shell = MachineShell(tmp_path, "darwin")
-    mine = shell.root / BOOT_UNIT
-    mine.parent.mkdir(parents=True)
-    mine.write_text("[Unit]\nDescription=mine\n")
-
-    done, _calls = shell.run(machine_config())
+    done, calls = shell.run_script(machine_stop_script(root=str(shell.root)))
 
     assert done.returncode == 0, done.stderr
-    assert mine.read_text() == "[Unit]\nDescription=mine\n"
-
-
-def test_the_windows_script_has_no_boot_unit():
-    script = PodmanMachineScriptRenderer(
-        config=machine_config(), os_name="windows"
-    ).render()
-
-    assert "neutrino_containers" not in script
+    assert calls == ["stop batch.service", "stop web.service"]
+    assert (shell.units / "web.service").exists()
+    assert (shell.envs / "web.env").exists()
 
 
 # --- hub containers ---
@@ -684,7 +695,7 @@ HUB_CONTAINERS = [
             "sources": ["ghcr.io/acme/webui", "ghcr.nju.edu.cn/acme/webui"],
         },
         "volumes": ["neutrino_demo_home:/home/web/.data"],
-        "environment": ["EXTRA_INDEX={pypi}/extra"],
+        "environment": ["PASSWORD=s3cret", "EXTRA_INDEX={pypi}/extra"],
         "is_autostart": False,
         "source_sets": ["pypi"],
         "after": ["neutrino_demo_agent"],
@@ -726,96 +737,61 @@ def other_sources() -> PodmanRenderContext:
 
 
 def test_a_hub_container_has_its_label_network_gateway_image_and_page_port():
-    text = PodmanQuadletRenderer(config=hub_config(), context=HUB_CONTEXT).render()[
-        "neutrino_demo.container"
-    ]
+    renderer = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT)
+    text = renderer.render()["neutrino_demo.service"]
 
-    assert text.splitlines() == [
-        PODMAN_GENERATED_MARKER,
-        "",
-        "[Unit]",
+    assert text.splitlines()[3:8] == [
         "Description=neutrino_demo container",
+        "Wants=network-online.target",
         "After=network-online.target",
         "Requires=neutrino_demo_agent.service",
         "After=neutrino_demo_agent.service",
-        "",
-        "[Container]",
-        "ContainerName=neutrino_demo",
-        "Image=ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST,
-        "Label=neutrino.module=demo",
-        "Network=neutrino_demo",
-        "AddHost=host.containers.internal:10.89.0.1",
-        "PublishPort=127.0.0.1:40123:8787",
-        "Volume=neutrino_demo_home:/home/web/.data",
-        "Environment=EXTRA_INDEX=https://pypi.tuna.example/simple/extra",
-        "Environment=PIP_INDEX_URL=https://pypi.tuna.example/simple",
-        "Environment=UV_DEFAULT_INDEX=https://pypi.tuna.example/simple",
-        "",
-        "[Service]",
-        "TimeoutStartSec=900",
-        "Restart=on-failure",
     ]
+    assert exec_start(text) == (
+        "ExecStart=/usr/bin/podman run --cidfile=%t/%N.cid --cgroups=split"
+        " --sdnotify=conmon -d --replace --rm --name neutrino_demo"
+        " --label neutrino.module=demo --network neutrino_demo"
+        " --add-host host.containers.internal:10.89.0.1"
+        " -p 127.0.0.1:40123:8787 -v neutrino_demo_home:/home/web/.data"
+        f" --env-file {ENV_DIR}/neutrino_demo.env"
+        " ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST
+    )
+    assert renderer.environment_files()["neutrino_demo.env"] == (
+        f"{PODMAN_GENERATED_MARKER}\n"
+        "PASSWORD=s3cret\n"
+        "EXTRA_INDEX=https://pypi.tuna.example/simple/extra\n"
+        "PIP_INDEX_URL=https://pypi.tuna.example/simple\n"
+        "UV_DEFAULT_INDEX=https://pypi.tuna.example/simple\n"
+    )
+    assert "s3cret" not in text
 
 
 def test_a_declared_container_reaches_the_machine_at_its_network_s_gateway():
-    rendered = PodmanQuadletRenderer(
+    rendered = PodmanUnitRenderer(
         config=hub_config([FULL], hub=[]), context=HUB_CONTEXT
     ).render()
+    line = exec_start(rendered["webdav.service"])
 
-    assert "AddHost=host.containers.internal:10.88.0.1" in rendered["webdav.container"]
-    assert "Label=" not in rendered["webdav.container"]
-    assert "Network=" not in rendered["webdav.container"]
-
-
-def test_below_podman_5_3_the_host_goes_into_podman_args():
-    rendered = PodmanQuadletRenderer(
-        config=hub_config([FULL]), context=HUB_CONTEXT, is_add_host_key=False
-    ).render()
-
-    for text in rendered.values():
-        assert "AddHost" not in text
-    assert (
-        "PodmanArgs=--add-host=host.containers.internal:10.89.0.1"
-        in rendered["neutrino_demo.container"].splitlines()
-    )
-    assert (
-        "PodmanArgs=--add-host=host.containers.internal:10.88.0.1"
-        in rendered["webdav.container"].splitlines()
-    )
+    assert " --add-host host.containers.internal:10.88.0.1 " in line
+    assert "--label" not in line
+    assert "--network" not in line
 
 
-def test_no_gateway_known_writes_no_addhost():
-    rendered = PodmanQuadletRenderer(config=hub_config([FULL])).render()
+def test_no_gateway_known_writes_no_add_host():
+    rendered = PodmanUnitRenderer(config=hub_config([FULL])).render()
 
-    assert not any("AddHost" in text for text in rendered.values())
+    assert not any("--add-host" in text for text in rendered.values())
 
 
 def test_a_hub_container_with_no_stored_image_names_its_first_source_by_digest():
-    text = PodmanQuadletRenderer(config=hub_config()).render()[
-        "neutrino_demo.container"
-    ]
+    text = PodmanUnitRenderer(config=hub_config()).render()["neutrino_demo.service"]
 
-    assert "Image=ghcr.io/acme/webui@" + HUB_DIGEST in text
-    assert "PublishPort=" not in text
-
-
-def test_the_plain_unit_carries_the_same_hub_knobs():
-    text = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT).render()[
-        "neutrino_demo.service"
-    ]
-    start = next(line for line in text.splitlines() if line.startswith("ExecStart="))
-
-    assert "Requires=neutrino_demo_agent.service" in text
-    assert "--label neutrino.module=demo" in start
-    assert "--network neutrino_demo" in start
-    assert "--add-host host.containers.internal:10.89.0.1" in start
-    assert "-p 127.0.0.1:40123:8787" in start
-    assert "-e PIP_INDEX_URL=https://pypi.tuna.example/simple" in start
-    assert start.endswith("ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST)
+    assert exec_start(text).endswith(" ghcr.io/acme/webui@" + HUB_DIGEST)
+    assert " -p " not in exec_start(text)
 
 
 def test_the_source_keys_are_the_variables_a_set_fills_in():
-    renderer = PodmanQuadletRenderer(config=hub_config(), context=HUB_CONTEXT)
+    renderer = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT)
 
     assert renderer.source_keys() == {
         "neutrino_demo_agent": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"],
@@ -823,44 +799,44 @@ def test_the_source_keys_are_the_variables_a_set_fills_in():
     }
 
 
-def test_two_files_that_differ_in_a_set_s_value_alone_read_the_same():
+def test_two_environment_files_that_differ_in_a_set_s_value_alone_read_the_same():
     keys = ["EXTRA_INDEX", "PIP_INDEX_URL", "UV_DEFAULT_INDEX"]
-    for renderer_class, name in (
-        (PodmanQuadletRenderer, "neutrino_demo.container"),
-        (PodmanUnitRenderer, "neutrino_demo.service"),
-    ):
-        first = renderer_class(config=hub_config(), context=HUB_CONTEXT).render()[name]
-        second = renderer_class(config=hub_config(), context=other_sources()).render()[
-            name
-        ]
+    first = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT)
+    second = PodmanUnitRenderer(config=hub_config(), context=other_sources())
+    first_env = first.environment_files()["neutrino_demo.env"]
+    second_env = second.environment_files()["neutrino_demo.env"]
 
-        assert first != second
-        assert source_neutral(first, keys) == source_neutral(second, keys)
+    assert first.render() == second.render()
+    assert first_env != second_env
+    assert source_neutral(first_env, keys) == source_neutral(second_env, keys)
+    assert source_neutral(first_env, keys) != source_neutral(
+        first_env.replace("s3cret", "other"), keys
+    )
 
 
-def test_the_machine_file_of_a_hub_container_has_no_addhost_and_the_cgroups_line():
-    text = PodmanQuadletRenderer(
-        config=hub_config(), machine_os_name="darwin", context=HUB_CONTEXT
-    ).render()["neutrino_demo.container"]
+def test_the_machine_unit_of_a_hub_container_has_no_add_host_and_cgroups_enabled():
+    text = machine_renderer(hub_config(), "darwin", HUB_CONTEXT).render()[
+        "neutrino_demo.service"
+    ]
 
-    assert "AddHost" not in text
-    assert "CgroupsMode=enabled" in text
-    assert "PublishPort=127.0.0.1:40123:8787" in text
+    assert "--add-host" not in text
+    assert " --cgroups=enabled " in exec_start(text)
+    assert " -p 127.0.0.1:40123:8787 " in exec_start(text)
 
 
 def test_the_root_script_keeps_a_file_whose_only_change_is_a_set_s_value(tmp_path):
     shell = MachineShell(tmp_path, "darwin")
     done, _calls = shell.run(hub_config(), context=HUB_CONTEXT)
     assert done.returncode == 0, done.stderr
-    first = (shell.quadlet / "neutrino_demo.container").read_text()
+    first = (shell.envs / "neutrino_demo.env").read_text()
 
     done, calls = shell.run(
-        hub_config(), context=other_sources(), active="neutrino_demo"
+        hub_config(), context=other_sources(), active="neutrino_demo.service"
     )
 
     assert done.returncode == 0, done.stderr
     assert changed_lines(done) == []
-    assert (shell.quadlet / "neutrino_demo.container").read_text() == first
+    assert (shell.envs / "neutrino_demo.env").read_text() == first
     assert not any(call.startswith("restart") for call in calls)
 
 
@@ -877,25 +853,18 @@ def test_the_root_script_starts_a_hub_container_that_starts_with_the_box(tmp_pat
 def test_the_drop_script_removes_only_the_named_generated_files(tmp_path):
     shell = MachineShell(tmp_path, "windows")
     shell.run(hub_config(), context=HUB_CONTEXT)
-    (shell.quadlet / "theirs.container").write_text("[Container]\n")
-    shell.log.write_text("")
+    (shell.units / "theirs.service").write_text("[Unit]\n")
 
-    done = subprocess.run(
-        ["sh", "-s"],
-        input=machine_drop_script(
-            ["neutrino_demo", "neutrino_demo_agent", "theirs"],
-            os_name="windows",
-            root=str(shell.root),
-        ),
-        capture_output=True,
-        text=True,
-        env={"PATH": shell.path, "SYSTEMCTL_LOG": str(shell.log)},
-        timeout=60,
+    done, calls = shell.run_script(
+        machine_drop_script(
+            ["neutrino_demo", "neutrino_demo_agent", "theirs"], root=str(shell.root)
+        )
     )
 
     assert done.returncode == 0, done.stderr
-    assert sorted(path.name for path in shell.quadlet.iterdir()) == ["theirs.container"]
-    calls = shell.log.read_text().splitlines()
+    assert sorted(path.name for path in shell.units.iterdir()) == ["theirs.service"]
+    assert list(shell.envs.iterdir()) == []
     assert "stop neutrino_demo.service" in calls
+    assert "disable --no-reload neutrino_demo.service" in calls
     assert "stop theirs.service" not in calls
     assert calls[-1] == "daemon-reload"

@@ -1,12 +1,13 @@
 """Making the declared and hub containers true on the machine, and reading what runs.
 
-Declared and hub containers live as unit files and are driven through
-systemd; containers someone started by hand at a shell are still listed and
-still controllable, through podman directly. Each container's owner is read
-in one order: the label ``neutrino.module`` makes it a hub container of that
-module, a declared name makes it declared, and any other is a person's own.
+Declared and hub containers live as units with their environment files and
+are driven through systemd; containers someone started by hand at a shell
+are still listed and still controllable, through podman directly. Each
+container's owner is read in one order: the label ``neutrino.module`` makes
+it a hub container of that module, a declared name makes it declared, and
+any other is a person's own.
 
-Not pure: writes unit files, runs podman and drives systemd.
+Not pure: writes unit and environment files, runs podman and drives systemd.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -17,41 +18,38 @@ import contextlib
 import ipaddress
 import json
 import os
-import re
 import subprocess
 import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import (
-    PODMAN_ADD_HOST_VERSION,
     PODMAN_BINARY,
     PODMAN_CNI_DIR,
     PODMAN_CNI_SUFFIX,
     PODMAN_CNI_VERSION,
     PODMAN_CONTAINER_ACTIONS,
+    PODMAN_ENV_DIR,
+    PODMAN_ENV_DIR_MODE,
+    PODMAN_ENV_FILE_MODE,
+    PODMAN_ENV_SUFFIX,
     PODMAN_GENERATED_MARKER,
     PODMAN_MODULE_LABEL,
     PODMAN_PROBE_ADDRESS,
     PODMAN_PROTOCOL_TCP,
-    PODMAN_QUADLET_DIR,
-    PODMAN_QUADLET_VERSION,
+    PODMAN_QUADLET_DIRS,
+    PODMAN_QUADLET_SUFFIX,
     PODMAN_REGISTRIES_CONF_PATH,
     PODMAN_SOURCE_DECLARED,
     PODMAN_SOURCE_HUB,
     PODMAN_SOURCE_MANUAL,
     PODMAN_UNIT_DIR,
+    PODMAN_UNIT_FILE_MODE,
+    PODMAN_UNIT_SUFFIX,
 )
-from neutrino_agent.modules.podman.renderer import (
-    PodmanQuadletRenderer,
-    PodmanRenderContext,
-    PodmanUnitRenderer,
-    source_neutral,
-)
+from neutrino_agent.modules.podman.renderer import source_neutral
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
-
-VERSION_NUMBER_PATTERN = re.compile(r"\d+")
 
 # The order a survey lists the containers in, by where each comes from.
 SOURCE_ORDER = (PODMAN_SOURCE_DECLARED, PODMAN_SOURCE_HUB, PODMAN_SOURCE_MANUAL)
@@ -98,44 +96,6 @@ class PodmanContainerState:
     host_bindings: list = field(default_factory=list)
 
 
-def is_version_at_least(version: str, floor: str) -> bool:
-    """Whether a version string reaches a floor, comparing numeric parts.
-
-    Args:
-        version: What ``podman --version`` printed last, distribution
-            suffixes allowed.
-        floor: The version to reach.
-
-    Returns:
-        True when ``version`` is the floor or above.
-    """
-    have = [int(part) for part in VERSION_NUMBER_PATTERN.findall(version.split("-")[0])]
-    want = [int(part) for part in VERSION_NUMBER_PATTERN.findall(floor)]
-    if not have:
-        return False
-    width = max(len(have), len(want))
-    have += [0] * (width - len(have))
-    want += [0] * (width - len(want))
-    return have >= want
-
-
-def is_quadlet_supported() -> bool:
-    """Whether the installed podman turns a ``.container`` file into a unit.
-
-    Returns:
-        True from podman 4.6, the first Quadlet that adds a host; False
-        below it or when podman cannot run.
-    """
-    try:
-        result = run([PODMAN_BINARY, "--version"], is_checked=False, timeout_s=30)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    if not result.is_success:
-        return False
-    words = result.stdout.split()
-    return is_version_at_least(words[-1] if words else "", PODMAN_QUADLET_VERSION)
-
-
 def podman_version(*, podman: tuple = (PODMAN_BINARY,)) -> str:
     """The version podman prints, empty when it cannot run.
 
@@ -152,29 +112,6 @@ def podman_version(*, podman: tuple = (PODMAN_BINARY,)) -> str:
         return ""
     words = result.stdout.split()
     return words[-1] if result.is_success and words else ""
-
-
-def container_renderer(
-    config: PodmanConfig, context: "PodmanRenderContext | None" = None
-):
-    """The renderer whose output this machine's podman understands.
-
-    Args:
-        config: The containers to render.
-        context: What the apply found; None renders with nothing found.
-
-    Returns:
-        A :class:`PodmanQuadletRenderer` from podman 4.6, writing the host
-        as ``AddHost=`` from 5.3; else a :class:`PodmanUnitRenderer`.
-    """
-    version = podman_version()
-    if is_version_at_least(version, PODMAN_QUADLET_VERSION):
-        return PodmanQuadletRenderer(
-            config=config,
-            context=context,
-            is_add_host_key=is_version_at_least(version, PODMAN_ADD_HOST_VERSION),
-        )
-    return PodmanUnitRenderer(config=config, context=context)
 
 
 def ensure_network(name: str, *, podman: tuple = (PODMAN_BINARY,)) -> bool:
@@ -314,15 +251,6 @@ def stored_reference(digest: str, sources: list, references: set) -> str:
     return ""
 
 
-def container_applier() -> "PodmanUnitApplier":
-    """The applier for whichever files :func:`container_renderer` produced."""
-    if is_quadlet_supported():
-        return PodmanUnitApplier(directory=PODMAN_QUADLET_DIR, suffix=".container")
-    return PodmanUnitApplier(
-        directory=PODMAN_UNIT_DIR, suffix=".service", is_enabled_by_systemctl=True
-    )
-
-
 def ready_hub_containers(config: PodmanConfig, references: set) -> tuple:
     """The hub containers whose module has every image in the store.
 
@@ -383,32 +311,36 @@ def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -
 
 
 class PodmanUnitApplier:
-    """Installs rendered container units and reconciles systemd with them."""
+    """Installs rendered container units and environment files, and reconciles systemd with them."""
 
     def __init__(
-        self, *, directory: str, suffix: str, is_enabled_by_systemctl: bool = False
+        self,
+        *,
+        directory: str = PODMAN_UNIT_DIR,
+        env_directory: str = PODMAN_ENV_DIR,
+        quadlet_directories: tuple = PODMAN_QUADLET_DIRS,
     ):
         """
         Args:
-            directory: Where the files are written.
-            suffix: What the rendered files are called, ``.container`` for
-                Quadlet and ``.service`` without it.
-            is_enabled_by_systemctl: Whether a unit that starts with the
-                box is turned on with ``systemctl enable``: a plain unit;
-                Quadlet's generator links a ``.container`` file itself.
+            directory: Where the units are written.
+            env_directory: Where the environment files are written, root
+                only.
+            quadlet_directories: Where earlier builds wrote Quadlet files,
+                which an apply stops and removes.
         """
         self._directory = directory
-        self._suffix = suffix
-        self._is_enabled_by_systemctl = is_enabled_by_systemctl
+        self._env_directory = env_directory
+        self._quadlet_directories = tuple(quadlet_directories)
 
     @property
     def directory(self) -> str:
-        """Where this applier writes."""
+        """Where this applier writes the units."""
         return self._directory
 
     def apply(
         self,
         rendered: dict,
+        environments: dict,
         *,
         autostart_names: list,
         source_keys: "dict | None" = None,
@@ -417,13 +349,17 @@ class PodmanUnitApplier:
         and start what starts with the box.
 
         Only files carrying the generated marker are ever removed: a file a
-        person wrote by hand beside these is theirs. A plain unit is
-        enabled when its container starts with the box and disabled when
-        it does not. A file whose only change is a source set's value is
-        kept as it is.
+        person wrote by hand beside these is theirs. Each Quadlet file an
+        earlier build wrote is stopped and removed first, and its container
+        started again at the end when its unit was active. A unit is
+        enabled when its container starts with the box and disabled when it
+        does not. An environment file whose only change is a source set's
+        value is kept as it is.
 
         Args:
-            rendered: File contents keyed by file name.
+            rendered: Unit contents keyed by file name, ``<name>.service``.
+            environments: Environment file contents keyed by file name,
+                ``<name>.env``.
             autostart_names: Containers that should be running; a changed
                 one of these is restarted even if it was stopped, and an
                 unchanged one that is not active is started.
@@ -435,44 +371,65 @@ class PodmanUnitApplier:
 
         Raises:
             subprocess.CalledProcessError: If systemd refuses a unit.
+            OSError: When a file cannot be written.
         """
+        names = [file_name[: -len(PODMAN_UNIT_SUFFIX)] for file_name in rendered]
+        retired, was_active = self._retire_quadlet()
+        was_active = [name for name in was_active if name in names]
         os.makedirs(self._directory, exist_ok=True)
+        os.makedirs(self._env_directory, mode=PODMAN_ENV_DIR_MODE, exist_ok=True)
+        os.chmod(self._env_directory, PODMAN_ENV_DIR_MODE)
         keys = dict(source_keys or {})
-        changed = []
-        for file_name, text in rendered.items():
-            path = os.path.join(self._directory, file_name)
-            held = _read(path)
-            name_keys = keys.get(file_name[: -len(self._suffix)], ())
-            if held is not None and name_keys:
-                if source_neutral(held, name_keys) == source_neutral(text, name_keys):
-                    continue
-            if held != text:
-                with open(path, "w", encoding="utf-8") as stream:
-                    stream.write(text)
-                changed.append(file_name)
+        changed_names = []
+        notes = [f"-{file_name}" for file_name in retired]
+        for name in names:
+            unit_name = name + PODMAN_UNIT_SUFFIX
+            env_name = name + PODMAN_ENV_SUFFIX
+            is_changed = _write_changed(
+                os.path.join(self._directory, unit_name),
+                rendered[unit_name],
+                mode=PODMAN_UNIT_FILE_MODE,
+            )
+            if is_changed:
+                notes.append(unit_name)
+            if _write_changed(
+                os.path.join(self._env_directory, env_name),
+                environments.get(env_name, PODMAN_GENERATED_MARKER + "\n"),
+                mode=PODMAN_ENV_FILE_MODE,
+                kept_keys=keys.get(name, ()),
+            ):
+                is_changed = True
+                notes.append(env_name)
+            if is_changed:
+                changed_names.append(name)
         for file_name in self.generated_names():
             if file_name in rendered:
                 continue
-            self._retire_unit(f"{file_name[: -len(self._suffix)]}.service")
-            os.unlink(os.path.join(self._directory, file_name))
-            changed.append(f"-{file_name}")
-        if self._is_enabled_by_systemctl:
-            for file_name in rendered:
-                name = file_name[: -len(self._suffix)]
-                verb = "enable" if name in autostart_names else "disable"
-                run(["systemctl", verb, "--no-reload", f"{name}.service"])
+            name = file_name[: -len(PODMAN_UNIT_SUFFIX)]
+            self._retire_unit(name)
+            notes.append(f"-{file_name}")
+        for name in self._stale_environments(names):
+            with contextlib.suppress(OSError):
+                os.unlink(os.path.join(self._env_directory, name + PODMAN_ENV_SUFFIX))
+            notes.append(f"-{name}{PODMAN_ENV_SUFFIX}")
+        for name in names:
+            verb = "enable" if name in autostart_names else "disable"
+            run(["systemctl", verb, "--no-reload", name + PODMAN_UNIT_SUFFIX])
         run(["systemctl", "daemon-reload"])
-        for file_name in rendered:
-            name = file_name[: -len(self._suffix)]
-            unit = f"{name}.service"
-            if file_name in changed:
+        for name in names:
+            unit = name + PODMAN_UNIT_SUFFIX
+            if name in changed_names:
                 if name in autostart_names or unit_state(unit) == "active":
                     run(["systemctl", "restart", unit], timeout_s=900)
             elif name in autostart_names and unit_state(unit) != "active":
                 run(["systemctl", "start", unit], timeout_s=900)
-        if not changed:
+        for name in was_active:
+            unit = name + PODMAN_UNIT_SUFFIX
+            if unit_state(unit) != "active":
+                run(["systemctl", "start", unit], timeout_s=900)
+        if not notes:
             return "containers unchanged"
-        return f"containers: {', '.join(sorted(changed))}"
+        return f"containers: {', '.join(sorted(notes))}"
 
     def drive(self, names: list, action: str) -> None:
         """Start, stop or restart the units of some containers, each that has a file.
@@ -489,8 +446,8 @@ class PodmanUnitApplier:
             raise ValueError(action)
         owned = set(self.generated_names())
         for name in names:
-            if f"{name}{self._suffix}" in owned:
-                run(["systemctl", action, f"{name}.service"], timeout_s=900)
+            if name + PODMAN_UNIT_SUFFIX in owned:
+                run(["systemctl", action, name + PODMAN_UNIT_SUFFIX], timeout_s=900)
 
     def remove(self, names: list) -> list:
         """Stop the units of some containers and delete their generated files.
@@ -499,60 +456,76 @@ class PodmanUnitApplier:
             names: The containers.
 
         Returns:
-            The names whose file was removed.
+            The names whose unit was removed.
         """
         owned = set(self.generated_names())
         removed = []
         for name in names:
-            file_name = f"{name}{self._suffix}"
-            if file_name not in owned:
+            if name + PODMAN_UNIT_SUFFIX not in owned:
                 continue
-            self._retire_unit(f"{name}.service")
-            with contextlib.suppress(OSError):
-                os.unlink(os.path.join(self._directory, file_name))
+            self._retire_unit(name)
             removed.append(name)
         if removed:
             run(["systemctl", "daemon-reload"], is_checked=False)
         return removed
 
     def stop_all(self) -> None:
-        """Stop every generated unit, leaving its file in place."""
+        """Stop every generated unit, leaving its files in place."""
         for file_name in self.generated_names():
-            unit = f"{file_name[: -len(self._suffix)]}.service"
-            run(["systemctl", "stop", unit], is_checked=False)
+            run(["systemctl", "stop", file_name], is_checked=False)
 
     def remove_all(self) -> None:
-        """Stop every generated unit, disable a plain one, and delete its file."""
-        self.stop_all()
+        """Stop and disable every generated unit, and delete its files."""
         for file_name in self.generated_names():
-            if self._is_enabled_by_systemctl:
-                unit = f"{file_name[: -len(self._suffix)]}.service"
-                run(["systemctl", "disable", "--no-reload", unit], is_checked=False)
+            self._retire_unit(file_name[: -len(PODMAN_UNIT_SUFFIX)])
+        for name in self._stale_environments(()):
             with contextlib.suppress(OSError):
-                os.unlink(os.path.join(self._directory, file_name))
+                os.unlink(os.path.join(self._env_directory, name + PODMAN_ENV_SUFFIX))
 
     def generated_names(self) -> list:
-        """The rendered files this applier owns in its directory."""
-        if not os.path.isdir(self._directory):
-            return []
-        names = []
-        for file_name in sorted(os.listdir(self._directory)):
-            if not file_name.endswith(self._suffix):
-                continue
-            text = _read(os.path.join(self._directory, file_name))
-            if text is not None and text.startswith(PODMAN_GENERATED_MARKER):
-                names.append(file_name)
-        return names
+        """The units this applier owns in its directory, ``<name>.service`` each."""
+        return _marked_files(self._directory, PODMAN_UNIT_SUFFIX)
 
-    def _retire_unit(self, unit: str) -> None:
-        """Stop one unit whose file goes, and disable it where it is a plain unit.
+    def _stale_environments(self, names) -> list:
+        """The containers whose marked environment file is there and whose name is not among these."""
+        return [
+            file_name[: -len(PODMAN_ENV_SUFFIX)]
+            for file_name in _marked_files(self._env_directory, PODMAN_ENV_SUFFIX)
+            if file_name[: -len(PODMAN_ENV_SUFFIX)] not in names
+        ]
 
-        systemd refuses to disable a unit Quadlet generates, and stops
-        nothing when a disable with ``--now`` is refused.
-        """
+    def _retire_unit(self, name: str) -> None:
+        """Stop and disable one container's unit, and delete its unit and environment file."""
+        unit = name + PODMAN_UNIT_SUFFIX
         run(["systemctl", "stop", unit], is_checked=False)
-        if self._is_enabled_by_systemctl:
-            run(["systemctl", "disable", "--no-reload", unit], is_checked=False)
+        run(["systemctl", "disable", "--no-reload", unit], is_checked=False)
+        for path in (
+            os.path.join(self._directory, unit),
+            os.path.join(self._env_directory, name + PODMAN_ENV_SUFFIX),
+        ):
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+
+    def _retire_quadlet(self) -> tuple:
+        """Stop and delete each marked Quadlet file an earlier build wrote.
+
+        Returns:
+            ``(removed, was_active)``: the files removed, and the containers
+            whose unit was active before it stopped.
+        """
+        removed = []
+        was_active = []
+        for directory in self._quadlet_directories:
+            for file_name in _marked_files(directory, PODMAN_QUADLET_SUFFIX):
+                name = file_name[: -len(PODMAN_QUADLET_SUFFIX)]
+                unit = name + PODMAN_UNIT_SUFFIX
+                if unit_state(unit) == "active":
+                    was_active.append(name)
+                run(["systemctl", "stop", unit], is_checked=False)
+                with contextlib.suppress(OSError):
+                    os.unlink(os.path.join(directory, file_name))
+                removed.append(file_name)
+        return removed, was_active
 
 
 class PodmanRegistriesApplier:
@@ -738,17 +711,15 @@ class PodmanStatusReader:
 
 
 def has_unit_file(name: str) -> bool:
-    """Whether a rendered unit stands for one container, Quadlet or plain.
+    """Whether a rendered unit stands for one container.
 
     Args:
         name: The container's name.
 
     Returns:
-        True when either directory holds its file.
+        True when the unit directory holds its file.
     """
-    return os.path.isfile(
-        os.path.join(PODMAN_QUADLET_DIR, f"{name}.container")
-    ) or os.path.isfile(os.path.join(PODMAN_UNIT_DIR, f"{name}.service"))
+    return os.path.isfile(os.path.join(PODMAN_UNIT_DIR, name + PODMAN_UNIT_SUFFIX))
 
 
 class PodmanContainerController:
@@ -963,3 +934,49 @@ def _read(path: str) -> "str | None":
             return stream.read()
     except OSError:
         return None
+
+
+def _marked_files(directory: str, suffix: str) -> list:
+    """The files with a suffix in a directory that start with the generated marker, sorted."""
+    if not os.path.isdir(directory):
+        return []
+    names = []
+    for file_name in sorted(os.listdir(directory)):
+        if not file_name.endswith(suffix):
+            continue
+        held = _read(os.path.join(directory, file_name))
+        if held is not None and held.startswith(PODMAN_GENERATED_MARKER):
+            names.append(file_name)
+    return names
+
+
+def _write_changed(path: str, text: str, *, mode: int, kept_keys=()) -> bool:
+    """Write one file with a mode when its text differs from the one there.
+
+    Args:
+        path: The file.
+        text: What it holds.
+        mode: Its mode.
+        kept_keys: Variables whose values alone differing keep the file.
+
+    Returns:
+        True when the file was written.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    held = _read(path)
+    if held == text:
+        return False
+    if held is not None and kept_keys:
+        if source_neutral(held, kept_keys) == source_neutral(text, kept_keys):
+            return False
+    temporary = path + ".new"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    try:
+        os.fchmod(descriptor, mode)
+        os.write(descriptor, text.encode("utf-8"))
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, path)
+    return True

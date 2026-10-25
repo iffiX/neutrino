@@ -688,15 +688,11 @@ def test_no_kept_image_is_machine_image_missing(rig):
 
 def test_the_root_scripts_changed_lines_are_logged(rig):
     rig.keep_image()
-    rig.world.shell_answers = [
-        (0, "changed: /usr/share/containers/systemd/web.container\n")
-    ]
+    rig.world.shell_answers = [(0, "changed: /etc/systemd/system/web.service\n")]
 
     rig.runner.apply(CONFIG)
 
-    assert rig.lines[-1].endswith(
-        "containers: /usr/share/containers/systemd/web.container"
-    )
+    assert rig.lines[-1].endswith("containers: /etc/systemd/system/web.service")
 
 
 def test_a_refused_script_fails_the_apply_with_systemds_words(rig):
@@ -1055,7 +1051,7 @@ def test_stop_stops_the_declared_containers_and_leaves_the_machine(rig):
 
     rig.runner.stop()
 
-    assert rig.world.scripts[-1][2] == machine_stop_script(os_name="darwin")
+    assert rig.world.scripts[-1][2] == machine_stop_script()
     assert rig.world.calls == []
 
 
@@ -1199,7 +1195,5 @@ def test_a_container_module_drives_and_drops_its_containers_in_the_machine(rig):
     rig.runner.drop_hub_containers("demo")
 
     assert rig.world.scripts[-2][2] == "systemctl restart neutrino_demo.service\n"
-    assert rig.world.scripts[-1][2] == machine_drop_script(
-        ["neutrino_demo"], os_name="darwin"
-    )
+    assert rig.world.scripts[-1][2] == machine_drop_script(["neutrino_demo"])
     assert rig.runner.hub_names() == {"late": ["neutrino_late"]}

@@ -1,15 +1,14 @@
 """Rendering declared containers and hub containers into systemd units.
 
-Quadlet turns a ``.container`` file into an ordinary systemd unit, so a
-declared container is supervised, journalled and comes back with the
-machine. From podman 4.6 Quadlet can add a host to a container;
-:class:`PodmanUnitRenderer` writes the unit Quadlet would have generated for
-an older podman. The unit is
-called ``<name>.service`` either way. A hub container is rendered the same
-way with its module's label and network, the units it starts after, the
-image reference the store holds and its page port on loopback. On Windows
-and macOS the same files go into a Podman machine, carried by one root
-script that :class:`PodmanMachineScriptRenderer` writes.
+Each container is one unit, ``<name>.service``, whose ``ExecStart`` runs
+``podman run`` with the flags Podman 3.4 already has, and one root-only
+environment file, ``<name>.env``, which the unit reads with ``--env-file``,
+so no value of the environment is in the unit or on a command line. A hub
+container is rendered the same way with its module's label and network, the
+units it starts after, the image reference the store holds and its page
+port on loopback. On Windows and macOS the same files go into a Podman
+machine, carried by one root script that :class:`PodmanMachineScriptRenderer`
+writes.
 
 Pure: config in, one file's text per container out.
 """
@@ -20,7 +19,6 @@ from __future__ import annotations
 
 import base64
 import re
-import textwrap
 from dataclasses import dataclass, field
 
 from neutrino_agent.modules.podman.config import (
@@ -30,30 +28,37 @@ from neutrino_agent.modules.podman.config import (
 )
 from neutrino_agent.modules.podman.constants import (
     PODMAN_BINARY,
+    PODMAN_CGROUPS,
+    PODMAN_CID_FILE,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_DEFAULT_NETWORK,
+    PODMAN_ENV_DIR,
+    PODMAN_ENV_SUFFIX,
     PODMAN_GENERATED_MARKER,
     PODMAN_HOST_ALIAS,
-    PODMAN_MACHINE_BOOT_UNIT_LINK,
-    PODMAN_MACHINE_BOOT_UNIT_NAME,
-    PODMAN_MACHINE_BOOT_UNIT_PATH,
-    PODMAN_MACHINE_CGROUPS_LINE,
-    PODMAN_MACHINE_CONFIG_MOUNT_POINT,
-    PODMAN_MACHINE_CONFIG_MOUNT_UNIT,
-    PODMAN_MACHINE_QUADLET_DIRS,
+    PODMAN_MACHINE_CGROUPS,
     PODMAN_MODULE_LABEL,
     PODMAN_PAGE_ADDRESS,
+    PODMAN_QUADLET_DIRS,
+    PODMAN_QUADLET_SUFFIX,
     PODMAN_REGISTRIES_CONF_PATH,
+    PODMAN_RM_BINARY,
+    PODMAN_STOP_TIMEOUT_S,
+    PODMAN_UNIT_DIR,
+    PODMAN_UNIT_START_TIMEOUT_S,
+    PODMAN_UNIT_STOP_TIMEOUT_S,
+    PODMAN_UNIT_SUFFIX,
 )
-from neutrino_agent.modules.podman.machine_paths import to_machine
+from neutrino_agent.modules.podman.machine_paths import split_volume, to_machine
 
 # What every root script begins with: where the files go, how a generated
 # file is told apart, and ``put``, which writes one file from its base64
-# text when it differs and prints ``changed:`` for it. A third argument is a
-# sed expression that blanks the source sets' values: a file whose only
-# change is one of them is kept.
+# text with a mode when it differs and prints ``changed:`` for it. A fourth
+# argument is a sed expression that blanks the source sets' values: a file
+# whose only change is one of them is kept.
 _MACHINE_SCRIPT_HEAD = """{marker_comment}
-quadlet={quadlet}
+units={units}
+envs={envs}
 mirrors={mirrors}
 marker={marker}
 restart=''
@@ -62,80 +67,74 @@ start=''
 status=0
 put() {{
     printf '%s' "$2" | base64 -d > "$1.new" || exit 1
+    chmod "$3" "$1.new" || exit 1
     if cmp -s "$1.new" "$1"; then
         rm -f "$1.new"
         return 1
     fi
-    if [ -n "$3" ] && [ -f "$1" ] && [ "$(sed -E "$3" "$1.new")" = "$(sed -E "$3" "$1")" ]; then
+    if [ -n "$4" ] && [ -f "$1" ] && [ "$(sed -E "$4" "$1.new")" = "$(sed -E "$4" "$1")" ]; then
         rm -f "$1.new"
         return 1
     fi
     mv -f "$1.new" "$1" || exit 1
     echo "changed: $1"
 }}
-mkdir -p "$quadlet" || exit 1
+umask 077
+mkdir -p "$units" "$envs" || exit 1
+chmod 700 "$envs" || exit 1
 """
 
-# Every generated file the configuration no longer names is stopped and
-# removed; a file a person wrote there is left.
-_MACHINE_SCRIPT_STALE = """for file in "$quadlet"/*.container; do
+# Each marked Quadlet file an earlier build wrote is stopped and removed; a
+# declared container whose unit was active is started again at the end.
+_MACHINE_SCRIPT_QUADLET = """for file in {files}; do
     [ -f "$file" ] || continue
-    name=$(basename "$file" .container)
-    case {declared} in
-    *" $name "*) continue ;;
-    esac
     [ "$(head -n 1 "$file")" = "$marker" ] || continue
+    name=$(basename "$file" {suffix})
+    if systemctl is-active --quiet "$name.service"; then
+        case {declared} in
+        *" $name "*) start="$start $name" ;;
+        esac
+    fi
     systemctl stop "$name.service"
     rm -f "$file"
     echo "changed: -$file"
 done
 """
 
+# Every marked unit and environment file the configuration no longer names
+# is stopped, disabled and removed; a file a person wrote there is left.
+_MACHINE_SCRIPT_STALE = """for file in "$units"/*.service; do
+    [ -f "$file" ] || continue
+    name=$(basename "$file" .service)
+    case {declared} in
+    *" $name "*) continue ;;
+    esac
+    [ "$(head -n 1 "$file")" = "$marker" ] || continue
+    systemctl stop "$name.service"
+    systemctl disable --no-reload "$name.service"
+    rm -f "$file" "$envs/$name.env"
+    echo "changed: -$file"
+done
+for file in "$envs"/*.env; do
+    [ -f "$file" ] || continue
+    name=$(basename "$file" .env)
+    case {declared} in
+    *" $name "*) continue ;;
+    esac
+    [ "$(head -n 1 "$file")" = "$marker" ] || continue
+    rm -f "$file"
+    echo "changed: -$file"
+done
+"""
+
 _MACHINE_SCRIPT_MIRRORS_PUT = """mkdir -p "$(dirname "$mirrors")" || exit 1
-put "$mirrors" {encoded} || :
+put "$mirrors" {encoded} 644 || :
 """
 
 _MACHINE_SCRIPT_MIRRORS_REMOVE = """if [ -f "$mirrors" ]; then
     rm -f "$mirrors"
     echo "changed: -$mirrors"
 fi
-"""
-
-# The boot unit is written and turned on while the machine's own mount unit
-# puts the computer's folder on /etc/containers, and removed otherwise.
-_MACHINE_SCRIPT_BOOT_REMOVE = """if [ -f {unit} ] && [ "$(head -n 1 {unit})" = "$marker" ]; then
-    rm -f {unit} {link}
-    echo "changed: -"{unit}
-fi
-"""
-
-_MACHINE_SCRIPT_BOOT_PUT = """if [ -f {mount_unit} ]; then
-    mkdir -p "$(dirname {link})" || exit 1
-    put {unit} {encoded} || :
-    if [ ! -L {link} ]; then
-        ln -s ../{name} {link} || exit 1
-        echo "changed: "{link}
-    fi
-else
-{remove}fi
-"""
-
-# The boot unit: after the mount, systemd reads the Quadlet folder again and
-# starts what multi-user.target wants, which a reload alone does not.
-_MACHINE_BOOT_UNIT = """{marker}
-
-[Unit]
-Description=Start the declared containers after {mount_point} is mounted
-RequiresMountsFor={mount_point}
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl daemon-reload
-ExecStart=/usr/bin/systemctl start --no-block multi-user.target
-
-[Install]
-WantedBy=multi-user.target
 """
 
 # A changed container that is not started at boot is restarted only while
@@ -159,25 +158,27 @@ exit "$status"
 """
 
 # Stops the named containers and removes their generated files.
-_MACHINE_SCRIPT_DROP = """quadlet={quadlet}
+_MACHINE_SCRIPT_DROP = """units={units}
+envs={envs}
 marker={marker}
 for name in {names}; do
-    file="$quadlet/$name.container"
+    file="$units/$name.service"
     [ -f "$file" ] || continue
     [ "$(head -n 1 "$file")" = "$marker" ] || continue
     systemctl stop "$name.service"
-    rm -f "$file"
+    systemctl disable --no-reload "$name.service"
+    rm -f "$file" "$envs/$name.env"
     echo "changed: -$file"
 done
 systemctl daemon-reload
 """
 
-_MACHINE_SCRIPT_STOP = """quadlet={quadlet}
+_MACHINE_SCRIPT_STOP = """units={units}
 marker={marker}
-for file in "$quadlet"/*.container; do
+for file in "$units"/*.service; do
     [ -f "$file" ] || continue
     [ "$(head -n 1 "$file")" = "$marker" ] || continue
-    systemctl stop "$(basename "$file" .container).service"
+    systemctl stop "$(basename "$file")"
 done
 """
 
@@ -200,6 +201,18 @@ def qualified_image(image: str) -> str:
     if "/" not in image:
         return f"docker.io/library/{image}"
     return f"docker.io/{image}"
+
+
+def environment_path(name: str) -> str:
+    """Where one container's environment file is, on Linux and in a Podman machine.
+
+    Args:
+        name: The container's name.
+
+    Returns:
+        ``<env dir>/<name>.env``.
+    """
+    return f"{PODMAN_ENV_DIR}/{name}{PODMAN_ENV_SUFFIX}"
 
 
 def hub_environment(
@@ -256,23 +269,21 @@ def hub_source_keys(
 
 
 def source_neutral(text: str, keys) -> str:
-    """A rendered file with the values of the given variables blanked.
+    """An environment file with the values of the given variables blanked.
 
     Two files that read the same through this differ only in what the
     source sets chose, and the older one is kept.
 
     Args:
-        text: A Quadlet file or a plain unit.
+        text: An environment file.
         keys: The variables whose values are blanked.
 
     Returns:
-        The text, each ``Environment=KEY=value`` line and each ``-e
-        KEY=value`` argument of those variables ending at its ``=``.
+        The text, each ``KEY=value`` line of those variables ending at its
+        ``=``.
     """
     for key in keys:
-        name = re.escape(key)
-        text = re.sub(rf"(?m)^(Environment={name}=).*$", r"\1", text)
-        text = re.sub(rf'(-e "?{name}=)[^"\s]*"?', r"\1", text)
+        text = re.sub(rf"(?m)^({re.escape(key)}=).*$", r"\1", text)
     return text
 
 
@@ -283,63 +294,44 @@ def source_sed(keys) -> str:
         keys: The variables, each a plain environment name.
 
     Returns:
-        ``s/^(Environment=(K1|K2)=).*/\\1/``; empty for no variable.
+        ``s/^((K1|K2)=).*/\\1/``; empty for no variable.
     """
     if not keys:
         return ""
-    return "s/^(Environment=(" + "|".join(keys) + r")=).*/\1/"
+    return "s/^((" + "|".join(keys) + r")=).*/\1/"
 
 
-def machine_boot_unit() -> str:
-    """The unit that starts a machine's containers at boot after its ``/etc/containers`` is mounted.
-
-    Returns:
-        The systemd unit's text, the generated marker first.
-    """
-    return _MACHINE_BOOT_UNIT.format(
-        marker=PODMAN_GENERATED_MARKER,
-        mount_point=PODMAN_MACHINE_CONFIG_MOUNT_POINT,
-    )
-
-
-def machine_stop_script(*, os_name: str, root: str = "") -> str:
+def machine_stop_script(*, root: str = "") -> str:
     """The root script that stops every generated container in a machine.
 
     Args:
-        os_name: The computer's system, ``windows`` or ``darwin``.
         root: A directory every path in the machine is under; empty is the
             machine's own ``/``.
 
     Returns:
         The POSIX sh text; the files stay.
-
-    Raises:
-        KeyError: For a system with no Podman machine.
     """
     return _MACHINE_SCRIPT_STOP.format(
-        quadlet=_shell_quoted(root + PODMAN_MACHINE_QUADLET_DIRS[os_name]),
+        units=_shell_quoted(root + PODMAN_UNIT_DIR),
         marker=_shell_quoted(PODMAN_GENERATED_MARKER),
     )
 
 
-def machine_drop_script(names: list, *, os_name: str, root: str = "") -> str:
+def machine_drop_script(names: list, *, root: str = "") -> str:
     """The root script that stops some containers and removes their generated files.
 
     Args:
         names: The containers, each already checked against
             ``CONTAINER_NAME_PATTERN``.
-        os_name: The computer's system, ``windows`` or ``darwin``.
         root: A directory every path in the machine is under; empty is the
             machine's own ``/``.
 
     Returns:
-        The POSIX sh text; a file without the generated marker stays.
-
-    Raises:
-        KeyError: For a system with no Podman machine.
+        The POSIX sh text; a unit without the generated marker stays.
     """
     return _MACHINE_SCRIPT_DROP.format(
-        quadlet=_shell_quoted(root + PODMAN_MACHINE_QUADLET_DIRS[os_name]),
+        units=_shell_quoted(root + PODMAN_UNIT_DIR),
+        envs=_shell_quoted(root + PODMAN_ENV_DIR),
         marker=_shell_quoted(PODMAN_GENERATED_MARKER),
         names=" ".join(names),
     )
@@ -387,7 +379,7 @@ class PodmanRenderContext:
 
     Attributes:
         gateways: Network name to its gateway address; a container on a
-            network it does not name gets no ``AddHost``.
+            network it does not name gets no ``--add-host``.
         images: Hub container name to the image reference Podman's store
             holds with its digest.
         page_ports: Hub container name to the loopback port its
@@ -405,11 +397,11 @@ class PodmanRenderContext:
 
 @dataclass(frozen=True)
 class _RenderedContainer:
-    """One container as both renderers write it: the declared knobs and what a hub container adds.
+    """One container as the renderer writes it: the declared knobs and what a hub container adds.
 
     Attributes:
         container: The knobs a declared container has.
-        image: The image reference the file names.
+        image: The image reference the unit names.
         environment: The ``KEY=value`` lines, source sets filled in.
         add_host: The gateway ``host.containers.internal`` names; empty
             for none.
@@ -429,33 +421,60 @@ class _RenderedContainer:
     page_publish: str = ""
 
 
-class _PodmanContainerFiles:
-    """What both renderers share: every container as a :class:`_RenderedContainer`."""
+class PodmanUnitRenderer:
+    """Builds one systemd unit and one environment file per declared and hub container."""
 
     def __init__(
         self,
         *,
         config: PodmanConfig,
+        machine_os_name: str = "",
         context: "PodmanRenderContext | None" = None,
-        is_host_added: bool = True,
     ):
         """
         Args:
-            config: The declared containers and the hub containers to render.
+            config: The declared containers and the hub containers.
+            machine_os_name: The computer's system when the files go into
+                a Podman machine, which writes each volume's folder as the
+                machine names it, runs the machine's cgroups mode and adds
+                no host; empty renders this machine's own files.
             context: What the apply found; None renders with nothing found.
-            is_host_added: Whether each container gets ``AddHost`` for the
-                gateway of its network, as on Linux.
         """
         self._config = config
+        self._machine_os_name = machine_os_name
         self._context = context if context is not None else PodmanRenderContext()
-        self._is_host_added = is_host_added
 
-    def source_keys(self) -> dict:
-        """The variables a source set fills in, by the file that holds them.
+    def render(self) -> dict:
+        """Render the unit of every declared container and every hub container.
 
         Returns:
-            File name, without its suffix, to its variables; a container
-            whose environment no set fills in is left out.
+            File contents keyed by file name, ``<name>.service``.
+        """
+        return {
+            f"{held.container.name}{PODMAN_UNIT_SUFFIX}": self._render_unit(held)
+            for held in self._rendered()
+        }
+
+    def environment_files(self) -> dict:
+        """Render the environment file of every declared and hub container.
+
+        Returns:
+            File contents keyed by file name, ``<name>.env``: the generated
+            marker, then one ``KEY=value`` line per variable.
+        """
+        return {
+            f"{held.container.name}{PODMAN_ENV_SUFFIX}": "\n".join(
+                [PODMAN_GENERATED_MARKER, *held.environment, ""]
+            )
+            for held in self._rendered()
+        }
+
+    def source_keys(self) -> dict:
+        """The variables a source set fills in, by the container whose file holds them.
+
+        Returns:
+            Container name to its variables; a container whose environment
+            no set fills in is left out.
         """
         keys = {}
         for container in self._config.hub_containers:
@@ -488,7 +507,7 @@ class _PodmanContainerFiles:
                     add_host=self._gateway(hub.network),
                     label=f"{PODMAN_MODULE_LABEL}={hub.module}",
                     network=hub.network,
-                    after=tuple(f"{name}.service" for name in hub.after),
+                    after=tuple(f"{name}{PODMAN_UNIT_SUFFIX}" for name in hub.after),
                     page_publish=(
                         f"{PODMAN_PAGE_ADDRESS}:{page}:{hub.page_port}"
                         if hub.page_port and page
@@ -500,161 +519,77 @@ class _PodmanContainerFiles:
 
     def _gateway(self, network: str) -> str:
         """The gateway ``host.containers.internal`` names on one network, empty for none."""
-        if not self._is_host_added:
+        if self._machine_os_name:
             return ""
         return str(self._context.gateways.get(network, "") or "")
 
+    def _volumes(self, container: PodmanContainer) -> list:
+        """The container's volumes, each folder as the machine names it."""
+        if not self._machine_os_name:
+            return list(container.volumes)
+        return [
+            to_machine(volume, os_name=self._machine_os_name)
+            for volume in container.volumes
+        ]
 
-class PodmanQuadletRenderer(_PodmanContainerFiles):
-    """Builds one Quadlet ``.container`` file per declared and hub container."""
-
-    def __init__(
-        self,
-        *,
-        config: PodmanConfig,
-        machine_os_name: str = "",
-        context: "PodmanRenderContext | None" = None,
-        is_add_host_key: bool = True,
-    ):
-        """
-        Args:
-            config: The declared containers and the hub containers.
-            machine_os_name: The computer's system when the files go into
-                a Podman machine, which writes each volume's folder as the
-                machine names it, adds the machine's cgroups line and writes
-                no host; empty renders this machine's own files.
-            context: What the apply found; None renders with nothing found.
-            is_add_host_key: Whether Quadlet reads ``AddHost=``, from
-                Podman 5.3; otherwise the host goes into ``PodmanArgs=``.
-        """
-        super().__init__(
-            config=config, context=context, is_host_added=not machine_os_name
-        )
-        self._machine_os_name = machine_os_name
-        self._is_add_host_key = is_add_host_key
-
-    def render(self) -> dict:
-        """Render every declared container and every hub container.
-
-        Returns:
-            File contents keyed by file name, ``<name>.container``.
-        """
-        return {
-            f"{held.container.name}.container": self._render_container(held)
-            for held in self._rendered()
-        }
-
-    def _render_container(self, held: _RenderedContainer) -> str:
+    def _render_unit(self, held: _RenderedContainer) -> str:
         container = held.container
+        volumes = self._volumes(container)
         lines = [
             PODMAN_GENERATED_MARKER,
             "",
             "[Unit]",
             f"Description={container.name} container",
+            "Wants=network-online.target",
             "After=network-online.target",
         ]
         for unit in held.after:
             lines += [f"Requires={unit}", f"After={unit}"]
-        lines += [
-            "",
-            "[Container]",
-            f"ContainerName={container.name}",
-            f"Image={held.image}",
-        ]
-        if held.label:
-            lines.append(f"Label={held.label}")
-        if held.network:
-            lines.append(f"Network={held.network}")
-        if held.add_host and self._is_add_host_key:
-            lines.append(f"AddHost={PODMAN_HOST_ALIAS}:{held.add_host}")
-        elif held.add_host:
-            lines.append(f"PodmanArgs=--add-host={PODMAN_HOST_ALIAS}:{held.add_host}")
-        for port in container.publish_ports:
-            lines.append(f"PublishPort={port}")
-        if held.page_publish:
-            lines.append(f"PublishPort={held.page_publish}")
-        for volume in container.volumes:
-            if self._machine_os_name:
-                volume = to_machine(volume, os_name=self._machine_os_name)
-            lines.append(f"Volume={volume}")
-        for entry in held.environment:
-            lines.append(f"Environment={entry}")
-        if container.command:
-            lines.append(f"Exec={container.command}")
-        if self._machine_os_name:
-            lines.append(PODMAN_MACHINE_CGROUPS_LINE)
+        for volume in volumes:
+            source, _ = split_volume(volume, os_name="linux")
+            if source.startswith("/"):
+                lines.append(f"RequiresMountsFor={_mount_word(source)}")
+        cid = PODMAN_CID_FILE
         lines += [
             "",
             "[Service]",
-            # Pulling a large image on first start takes longer than the
-            # default start timeout allows.
-            "TimeoutStartSec=900",
+            "Environment=PODMAN_SYSTEMD_UNIT=%n",
+            "Type=notify",
+            "NotifyAccess=all",
+            "Delegate=yes",
+            "KillMode=mixed",
             "Restart=on-failure",
+            # A first pull of a large image takes longer than the default
+            # start timeout allows.
+            f"TimeoutStartSec={PODMAN_UNIT_START_TIMEOUT_S}",
+            f"TimeoutStopSec={PODMAN_UNIT_STOP_TIMEOUT_S}",
+            # Podman 3.4's run fails on a cid file that is already there.
+            f"ExecStartPre=-{PODMAN_RM_BINARY} -f {cid}",
+            f"ExecStart={' '.join(self._run_command(held, volumes))}",
+            f"ExecStop={PODMAN_BINARY} stop --ignore -t {PODMAN_STOP_TIMEOUT_S} "
+            f"--cidfile={cid}",
+            f"ExecStopPost=-{PODMAN_BINARY} rm -f --ignore --cidfile={cid}",
         ]
         if container.is_autostart:
             lines += ["", "[Install]", "WantedBy=multi-user.target"]
         lines.append("")
         return "\n".join(lines)
 
-
-class PodmanUnitRenderer(_PodmanContainerFiles):
-    """Builds one systemd ``.service`` file per declared and hub container.
-
-    For a podman too old for Quadlet: the container is described on the
-    ``podman run`` command line, and the same properties carry across.
-    """
-
-    def __init__(
-        self, *, config: PodmanConfig, context: "PodmanRenderContext | None" = None
-    ):
-        """
-        Args:
-            config: The declared containers and the hub containers.
-            context: What the apply found; None renders with nothing found.
-        """
-        super().__init__(config=config, context=context)
-
-    def render(self) -> dict:
-        """Render every declared container and every hub container.
-
-        Returns:
-            File contents keyed by file name, ``<name>.service``.
-        """
-        return {
-            f"{held.container.name}.service": self._render_container(held)
-            for held in self._rendered()
-        }
-
-    def _render_container(self, held: _RenderedContainer) -> str:
+    def _run_command(self, held: _RenderedContainer, volumes: list) -> list:
         container = held.container
-        lines = [
-            PODMAN_GENERATED_MARKER,
-            "",
-            "[Unit]",
-            f"Description={container.name} container",
-            "After=network-online.target",
+        cgroups = PODMAN_MACHINE_CGROUPS if self._machine_os_name else PODMAN_CGROUPS
+        command = [
+            PODMAN_BINARY,
+            "run",
+            f"--cidfile={PODMAN_CID_FILE}",
+            f"--cgroups={cgroups}",
+            "--sdnotify=conmon",
+            "-d",
+            "--replace",
+            "--rm",
+            "--name",
+            container.name,
         ]
-        for unit in held.after:
-            lines += [f"Requires={unit}", f"After={unit}"]
-        lines += [
-            "",
-            "[Service]",
-            "TimeoutStartSec=900",
-            "Restart=on-failure",
-            # A container left behind by a hard stop would make the next
-            # start fail on the name alone.
-            f"ExecStartPre=-{PODMAN_BINARY} rm -f {container.name}",
-            f"ExecStart={' '.join(self._run_command(held))}",
-            f"ExecStop={PODMAN_BINARY} stop -t 10 {container.name}",
-        ]
-        if container.is_autostart:
-            lines += ["", "[Install]", "WantedBy=multi-user.target"]
-        lines.append("")
-        return "\n".join(lines)
-
-    def _run_command(self, held: _RenderedContainer) -> list:
-        container = held.container
-        command = [PODMAN_BINARY, "run", "--rm", "--name", container.name]
         if held.label:
             command += ["--label", held.label]
         if held.network:
@@ -665,14 +600,13 @@ class PodmanUnitRenderer(_PodmanContainerFiles):
             command += ["-p", port]
         if held.page_publish:
             command += ["-p", held.page_publish]
-        for volume in container.volumes:
-            command += ["-v", volume]
-        for entry in held.environment:
-            command += ["-e", _quoted(entry)]
-        command.append(held.image)
+        for volume in volumes:
+            command += ["-v", _unit_word(volume)]
+        command += ["--env-file", environment_path(container.name)]
+        command.append(_unit_word(held.image))
         if container.command:
-            # Passed through rather than split, so systemd parses it the way
-            # Quadlet's own Exec= would.
+            # Passed through, so systemd splits it into the container's
+            # command and its arguments.
             command.append(container.command)
         return command
 
@@ -712,16 +646,16 @@ class PodmanRegistriesRenderer:
 class PodmanMachineScriptRenderer:
     """Builds the one root script that makes the declared and hub containers true in a Podman machine.
 
-    The script carries every Quadlet file and the mirrors drop-in
-    base64-encoded, writes the ones that differ, keeping a file whose only
-    change is a source set's value, removes the generated files
-    the configuration no longer names, reloads systemd, restarts each
-    changed container that starts at boot or runs, and starts each unchanged
-    one that starts at boot and does not run. Where the Quadlet folder
-    is under ``/etc/containers``, it also writes the boot unit while the
-    machine mounts that folder. It prints one ``changed: <file>`` line per
-    change, ``-<file>`` for a removal, and exits non-zero when systemd
-    refuses.
+    The script carries every unit, every environment file and the mirrors
+    drop-in base64-encoded. It stops and removes the Quadlet files an
+    earlier build wrote, writes the files that differ with their modes,
+    keeping an environment file whose only change is a source set's value,
+    removes the generated files the configuration no longer names, enables
+    and disables the units, reloads systemd, restarts each changed
+    container that starts at boot or runs, and starts each unchanged one
+    that starts at boot and does not run. It prints one ``changed: <file>``
+    line per change, ``-<file>`` for a removal, and exits non-zero when
+    systemd refuses.
     """
 
     def __init__(
@@ -751,67 +685,62 @@ class PodmanMachineScriptRenderer:
 
         Returns:
             The POSIX sh text, read by ``sh -s`` as root in the machine.
-
-        Raises:
-            KeyError: For a system with no Podman machine.
         """
-        quadlet = PodmanQuadletRenderer(
+        renderer = PodmanUnitRenderer(
             config=self._config, machine_os_name=self._os_name, context=self._context
         )
-        rendered = quadlet.render()
-        source_keys = quadlet.source_keys()
-        quadlet_dir = PODMAN_MACHINE_QUADLET_DIRS[self._os_name]
+        units = renderer.render()
+        environments = renderer.environment_files()
+        source_keys = renderer.source_keys()
+        containers = [*self._config.containers, *self._config.hub_containers]
+        names = [container.name for container in containers]
+        declared = _shell_quoted(" ".join(["", *names, ""]))
         parts = [
             _MACHINE_SCRIPT_HEAD.format(
                 marker_comment=PODMAN_GENERATED_MARKER,
-                quadlet=_shell_quoted(self._root + quadlet_dir),
+                units=_shell_quoted(self._root + PODMAN_UNIT_DIR),
+                envs=_shell_quoted(self._root + PODMAN_ENV_DIR),
                 mirrors=_shell_quoted(self._root + PODMAN_REGISTRIES_CONF_PATH),
                 marker=_shell_quoted(PODMAN_GENERATED_MARKER),
-            )
+            ),
+            _MACHINE_SCRIPT_QUADLET.format(
+                files=" ".join(
+                    f"{_shell_quoted(self._root + directory)}/*{PODMAN_QUADLET_SUFFIX}"
+                    for directory in PODMAN_QUADLET_DIRS
+                ),
+                suffix=PODMAN_QUADLET_SUFFIX,
+                declared=declared,
+            ),
         ]
-        containers = [*self._config.containers, *self._config.hub_containers]
         for container in containers:
-            text = rendered[f"{container.name}.container"]
-            sed = source_sed(source_keys.get(container.name, ()))
+            name = container.name
+            sed = source_sed(source_keys.get(name, ()))
             kept = f" {_shell_quoted(sed)}" if sed else ""
             variable = "restart" if container.is_autostart else "changed"
+            verb = "enable" if container.is_autostart else "disable"
             parts.append(
-                f'if put "$quadlet/{container.name}.container" '
-                f"{_encoded(text)}{kept}; then\n"
-                f'    {variable}="${variable} {container.name}"\n'
+                "is_changed=''\n"
+                f'put "$units/{name}{PODMAN_UNIT_SUFFIX}" '
+                f"{_encoded(units[name + PODMAN_UNIT_SUFFIX])} 644 && is_changed=1\n"
+                f'put "$envs/{name}{PODMAN_ENV_SUFFIX}" '
+                f"{_encoded(environments[name + PODMAN_ENV_SUFFIX])} 600{kept} "
+                "&& is_changed=1\n"
+                'if [ -n "$is_changed" ]; then\n'
+                f'    {variable}="${variable} {name}"\n'
             )
             if container.is_autostart:
-                parts.append(f'else\n    start="$start {container.name}"\n')
-            parts.append("fi\n")
-        names = [container.name for container in containers]
-        declared = " ".join(["", *names, ""])
-        parts.append(_MACHINE_SCRIPT_STALE.format(declared=_shell_quoted(declared)))
+                parts.append(f'else\n    start="$start {name}"\n')
+            parts.append(
+                f"fi\nsystemctl {verb} --no-reload {name}{PODMAN_UNIT_SUFFIX} || exit 1\n"
+            )
+        parts.append(_MACHINE_SCRIPT_STALE.format(declared=declared))
         mirrors = PodmanRegistriesRenderer(config=self._config).render()
         if mirrors:
             parts.append(_MACHINE_SCRIPT_MIRRORS_PUT.format(encoded=_encoded(mirrors)))
         else:
             parts.append(_MACHINE_SCRIPT_MIRRORS_REMOVE)
-        if quadlet_dir.startswith(PODMAN_MACHINE_CONFIG_MOUNT_POINT + "/"):
-            parts.append(self._boot_unit_part())
         parts.append(_MACHINE_SCRIPT_TAIL)
         return "".join(parts)
-
-    def _boot_unit_part(self) -> str:
-        """The script's lines that write or remove the boot unit."""
-        paths = {
-            "unit": _shell_quoted(self._root + PODMAN_MACHINE_BOOT_UNIT_PATH),
-            "link": _shell_quoted(self._root + PODMAN_MACHINE_BOOT_UNIT_LINK),
-        }
-        remove = _MACHINE_SCRIPT_BOOT_REMOVE.format(**paths)
-        if not self._config.containers and not self._config.hub_containers:
-            return remove
-        return _MACHINE_SCRIPT_BOOT_PUT.format(
-            mount_unit=_shell_quoted(self._root + PODMAN_MACHINE_CONFIG_MOUNT_UNIT),
-            name=PODMAN_MACHINE_BOOT_UNIT_NAME,
-            encoded=_encoded(machine_boot_unit()),
-            remove=textwrap.indent(remove, "    "),
-            **paths,
-        )
 
 
 def _encoded(text: str) -> str:
@@ -824,9 +753,21 @@ def _shell_quoted(text: str) -> str:
     return "'" + text.replace("'", "'\\''") + "'"
 
 
-def _quoted(value: str) -> str:
-    """One argument of a unit's command line, quoted if systemd needs it."""
-    if not any(character.isspace() for character in value) and '"' not in value:
-        return value
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+def _unit_word(value: str) -> str:
+    """One argument of a unit's command line: specifiers and variables
+    escaped, and quoted where systemd would split it."""
+    escaped = value.replace("%", "%%").replace("$", "$$")
+    if escaped and not any(
+        character.isspace() or character in "\"'\\;" for character in escaped
+    ):
+        return escaped
+    return '"' + escaped.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _mount_word(path: str) -> str:
+    """One path of ``RequiresMountsFor=``: specifiers escaped, and quoted
+    where systemd would split it."""
+    escaped = path.replace("%", "%%")
+    if not any(character.isspace() or character in "\"'\\" for character in escaped):
+        return escaped
+    return '"' + escaped.replace("\\", "\\\\").replace('"', '\\"') + '"'

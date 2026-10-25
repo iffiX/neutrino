@@ -43,19 +43,19 @@ class _MachineController(SystemPackageController):
         return "1.0" if package in self._offered else ""
 
 
-# What `podman` reports, per distribution, against the 4.4 floor Quadlet sets.
+# What `podman` reports, per distribution, against the 3.4 floor Containers sets.
 PODMAN_VERSIONS = {
-    "4.3.1+ds1-8+deb12u1+b3": False,
-    "3.4.4+ds1-1ubuntu1.22.04.3": False,
-    "4.9": True,
+    "4.3.1+ds1-8+deb12u1+b3": True,
+    "3.4.4+ds1-1ubuntu1.22.04.3": True,
+    "3.3.1": False,
     "5.6.2": True,
     "6.1.0-1": True,
 }
 
 
 @pytest.mark.parametrize("found,is_met", PODMAN_VERSIONS.items())
-def test_the_quadlet_floor_reads_every_distributions_podman(found, is_met):
-    assert is_version_at_least(found, "4.4") is is_met
+def test_the_podman_floor_reads_every_distributions_podman(found, is_met):
+    assert is_version_at_least(found, "3.4") is is_met
 
 
 def test_an_epoch_does_not_win_the_comparison():
@@ -65,14 +65,14 @@ def test_an_epoch_does_not_win_the_comparison():
 
 
 def test_a_longer_floor_is_not_met_by_a_shorter_version():
-    assert is_version_at_least("4.4", "4.4.1") is False
-    assert is_version_at_least("4.4", "4.4") is True
+    assert is_version_at_least("3.4", "3.4.1") is False
+    assert is_version_at_least("3.4", "3.4") is True
 
 
 def test_a_version_with_no_numbers_meets_nothing():
     """apt-cache prints `(none)` for a package the distribution does not have."""
-    assert is_version_at_least("(none)", "4.4") is False
-    assert is_version_at_least("", "4.4") is False
+    assert is_version_at_least("(none)", "3.4") is False
+    assert is_version_at_least("", "3.4") is False
 
 
 def test_the_upstream_part_ends_where_the_distribution_decoration_starts():

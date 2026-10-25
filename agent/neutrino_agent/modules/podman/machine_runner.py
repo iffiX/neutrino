@@ -480,7 +480,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 return
             self._run_quietly(
                 self._machine_of_record(record),
-                machine_stop_script(os_name=self._platform.os_name),
+                machine_stop_script(),
             )
 
     def remove_configuration(self) -> None:
@@ -729,7 +729,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         if record and names:
             self._run_quietly(
                 self._machine_of_record(record),
-                machine_drop_script(names, os_name=self._platform.os_name),
+                machine_drop_script(names),
             )
         if self._config is not None:
             self._config = self._config.with_hub_containers(
