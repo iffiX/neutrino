@@ -285,7 +285,6 @@
   "ui.gitea.admin_title": "Administrator",
   "ui.gitea.admin_username": "username",
   "ui.gitea.not_installed": "Gitea is not installed on this machine.",
-  "ui.gitea.open": "Open Gitea",
   "ui.gitea.port": "Port",
   "ui.gitea.registration": "Open registration",
   "ui.gitea.registration_hint": "Whether visitors can create their own accounts.",

@@ -13,8 +13,6 @@ import json
 import threading
 import time
 
-import httpx
-
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_AUTH_RELATIVE,
@@ -46,7 +44,6 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_HTTP_SCHEMES,
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
-    SERVICES_ANSWER_TIMEOUT_S,
     SERVICES_LIST_TTL_S,
 )
 from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
@@ -304,7 +301,8 @@ class PublishedServiceCache:
 
         An instance of a program run as an account is listed only while the
         device reports it running, and Hermes WebUI only while the device
-        reports the module running.
+        reports the module running. Gitea listens on the device's loopback
+        alone, so its health is the device's word that the server runs.
         """
         if not isinstance(status, dict):
             return None
@@ -345,11 +343,9 @@ class PublishedServiceCache:
                 },
             }
         if name == "gitea":
-            url = str(details.get("url", "") or "")
             return {
-                "is_healthy": bool(details.get("is_running"))
-                and self._is_answering(url),
-                "url": url,
+                "is_healthy": bool(details.get("is_running")),
+                "url": str(details.get("url", "") or ""),
             }
         running = {
             str(instance.get("account", ""))
@@ -404,17 +400,6 @@ class PublishedServiceCache:
                 ]
             }
         return None
-
-    def _is_answering(self, url: str) -> bool:
-        if not url:
-            return False
-        try:
-            response = httpx.get(
-                url, timeout=SERVICES_ANSWER_TIMEOUT_S, follow_redirects=True
-            )
-        except httpx.HTTPError:
-            return False
-        return response.status_code < 500
 
     def _is_ai_served(self) -> bool:
         """Whether the gateway has anything to serve a device with.

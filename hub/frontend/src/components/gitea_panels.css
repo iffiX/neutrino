@@ -55,8 +55,3 @@
 .gitea_admin_reset {
   margin-left: auto;
 }
-
-/* The Open button sits at the far end of its panel header. */
-.gitea_open {
-  margin-left: auto;
-}

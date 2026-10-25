@@ -152,7 +152,6 @@ SERVICES_PUBLISHED_MODULES = (
 )
 
 SERVICES_LIST_TTL_S = 10.0
-SERVICES_ANSWER_TIMEOUT_S = 2.0
 
 # The provenance line each module-declared entry carries. A description is
 # data the declarer words, so these live beside the entries they describe.

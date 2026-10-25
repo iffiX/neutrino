@@ -24,8 +24,6 @@ On Linux, the install brings git from the machine's own packages. On a Mac, git 
 
 ![The Gitea tab with its Access section](/guide/en/gitea.webp)
 
-**Open Gitea** beside the section title opens the server in a new browser tab while the service runs.
-
 ## Create the administrator
 
 A new Gitea has no account, and **Create administrator** is available after **Configure** starts the service.
@@ -41,4 +39,4 @@ The section then offers **Reset password**.
 - Gitea runs as the hidden account `neutrino_gitea` on a Mac, and as LocalSystem on Windows.
 - **Uninstall** keeps the data folder and the account, so a later install serves the same repositories.
 
-The hub configures only the Gitea it installed; one installed by hand reports its port and keeps its own settings. Gitea is a row under **Web** on the [Services](../../hub/services.md) page, and a client opens it with **Open** on its **Web** page.
+The hub configures only the Gitea it installed; one installed by hand reports its port and keeps its own settings. Gitea is a row under **Web** on the [Services](../../hub/services.md) page, and a client opens it with **Open** on its **Web** page. Gitea listens on its machine's loopback address alone, so a browser on any other machine opens it through a client.

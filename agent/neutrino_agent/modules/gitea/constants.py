@@ -10,6 +10,9 @@ GITEA_UNIT_SOURCE_NAME = "neutrino_gitea.service"
 GITEA_SYSTEMD_DIR = "/etc/systemd/system"
 
 GITEA_DEFAULT_PORT = 3000
+# The one address the server listens on; a client reaches it through the
+# agent's connect stream.
+GITEA_LISTEN_HOST = "127.0.0.1"
 
 # Machine secrets app.ini needs: session signing, internal auth, JWTs. The
 # hub generates them once per device and hands them down in the desired

@@ -1,7 +1,9 @@
 """Rendering the whole of ``app.ini`` from the git server's configuration.
 
 The whole file, with ``INSTALL_LOCK`` already set: Gitea's browser install
-wizard asks questions the hub already knows the answers to.
+wizard asks questions the hub already knows the answers to. The server
+listens on ``127.0.0.1`` alone, where the agent's ``connect`` stream dials
+it.
 
 Pure: text in, text out.
 """
@@ -13,7 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neutrino_agent.modules.gitea.config import GiteaConfig
-from neutrino_agent.modules.gitea.constants import GITEA_DIR, GITEA_USER
+from neutrino_agent.modules.gitea.constants import (
+    GITEA_DIR,
+    GITEA_LISTEN_HOST,
+    GITEA_USER,
+)
 
 
 @dataclass
@@ -80,7 +86,7 @@ WORK_PATH = {work}
 
 [server]
 PROTOCOL = http
-HTTP_ADDR = 0.0.0.0
+HTTP_ADDR = {GITEA_LISTEN_HOST}
 HTTP_PORT = {config.listen_port}
 DOMAIN = {domain}
 ROOT_URL = {root_url}

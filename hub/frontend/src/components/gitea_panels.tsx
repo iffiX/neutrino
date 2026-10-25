@@ -24,13 +24,13 @@ import type {
 import "./gitea_panels.css";
 
 /**
- * The git server on one machine: the seams the hub owns, and a door into the
- * rest.
+ * The git server on one machine: the seams the hub owns.
  *
  * Deliberately thin. Gitea has a complete admin UI of its own, so these
  * panels manage only what must agree with the hub — the port, the advertised
  * URL, the sign-up switch — plus the one thing Gitea cannot do for itself:
- * its first administrator.
+ * its first administrator. Gitea listens on the machine's loopback alone and
+ * a client opens it, so the panel shows no link to it.
  */
 
 interface GiteaPanelsProps {
@@ -99,12 +99,6 @@ export function GiteaPanels({
     return <div className="skeleton" style={{ height: 320 }} />;
   }
 
-  // The host the browser reached this panel by is a host Gitea answers on
-  // too, whatever root_url advertises — right on the LAN and over an overlay.
-  // Through a client's forward that host is the client's own, and the hub is
-  // named by a placeholder.
-  const openUrl = `http://${host}:${saved.listen_port}/`;
-
   return (
     <>
       {!saved.is_installed && (
@@ -122,24 +116,6 @@ export function GiteaPanels({
           {saved.version !== "" && (
             <span className="badge">v{saved.version}</span>
           )}
-          <div className="gitea_open">
-            {saved.is_active ? (
-              <a
-                className="button button--primary"
-                href={openUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Icon name="server" size={14} />
-                {t("ui.gitea.open")}
-              </a>
-            ) : (
-              <button type="button" className="button button--primary" disabled>
-                <Icon name="server" size={14} />
-                {t("ui.gitea.open")}
-              </button>
-            )}
-          </div>
         </div>
         <p className="field_hint">{t("ui.gitea.access_hint")}</p>
         <div className="gitea_fields">

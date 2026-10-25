@@ -87,3 +87,30 @@ def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
         "\n[git]\nPATH = C:/Program Files/Git/cmd/git.exe\n"
         "\n[windows]\nSERVICE_NAME = neutrino_gitea\n"
     )
+
+
+def test_the_server_listens_on_loopback_alone_on_every_system():
+    """The agent's connect stream dials 127.0.0.1, so no firewall port is
+    opened for the server anywhere."""
+    config = GiteaConfig.from_dict({"secrets": SECRETS, "address": "192.168.100.7"})
+    layouts = (
+        GiteaLayout(),
+        GiteaLayout(
+            run_user="neutrino_gitea",
+            work_path="/Library/Application Support/Neutrino/agent/state/gitea_data",
+            git_path="/opt/homebrew/bin/git",
+            is_ssh_served=False,
+        ),
+        GiteaLayout(
+            run_user="NMXWIN$",
+            work_path="C:/ProgramData/Neutrino/agent/state/gitea_data",
+            git_path="C:/Program Files/Git/cmd/git.exe",
+            is_ssh_served=False,
+            windows_service_name="neutrino_gitea",
+        ),
+    )
+
+    for layout in layouts:
+        rendered = GiteaConfigRenderer(config=config, layout=layout).render()
+        assert "\nHTTP_ADDR = 127.0.0.1\n" in rendered
+        assert "0.0.0.0" not in rendered

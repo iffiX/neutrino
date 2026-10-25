@@ -100,6 +100,25 @@ def test_apply_starts_a_stopped_server_on_an_unchanged_file(box):
     assert ["systemctl", "enable", "--now", "neutrino_gitea.service"] in commands.calls
 
 
+def test_an_app_ini_listening_on_every_address_moves_to_loopback(box, monkeypatch):
+    """A server an earlier build left on every address is restarted on the
+    loopback file at the next apply."""
+    commands, _, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/app.ini").write_text(
+        "[server]\nHTTP_ADDR = 0.0.0.0\nHTTP_PORT = 3000\n"
+    )
+
+    note = GiteaConfigApplier().apply(
+        "[server]\nHTTP_ADDR = 127.0.0.1\nHTTP_PORT = 3000\n"
+    )
+
+    assert note == "restarted"
+    assert "HTTP_ADDR = 127.0.0.1" in (tmp_path / "etc/app.ini").read_text()
+    assert ["systemctl", "restart", "neutrino_gitea.service"] in commands.calls
+
+
 def test_apply_without_the_git_account_leaves_the_work_root_alone(box, monkeypatch):
     _, chowns, tmp_path = box
 

@@ -285,7 +285,6 @@
   "ui.gitea.admin_title": "管理员",
   "ui.gitea.admin_username": "用户名",
   "ui.gitea.not_installed": "这台机器上没有装 Gitea。",
-  "ui.gitea.open": "打开 Gitea",
   "ui.gitea.port": "端口",
   "ui.gitea.registration": "开放注册",
   "ui.gitea.registration_hint": "访客是否可以自己创建账号。",

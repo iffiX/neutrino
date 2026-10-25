@@ -183,15 +183,12 @@ def test_a_module_that_is_on_but_not_installed_publishes_nothing(box):
     assert entries == []
 
 
-def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
+def test_a_devices_gitea_and_containers_come_from_its_report(box):
     """A report with no ``host_bindings``, as an agent before 0.5.0 sends
     it, gives each ``host_ports`` number as TCP."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "gitea", "running")
     store.set_want(DEVICE, "podman", "running")
-    monkeypatch.setattr(
-        PublishedServiceCache, "_is_answering", lambda self, url: url.endswith(":3000/")
-    )
     sessions = StubSessions(
         {
             DEVICE: report(
@@ -222,6 +219,35 @@ def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
         "port": 8080,
         "protocol": "tcp",
     }
+
+
+@pytest.mark.parametrize("is_running", [True, False])
+def test_a_devices_gitea_is_healthy_while_it_runs_with_nothing_dialled(
+    box, monkeypatch, is_running
+):
+    """Gitea listens on the device's loopback alone, so the hub judges it by
+    the report and opens no connection to the device."""
+
+    def refuse_dial(*args, **kwargs):
+        raise AssertionError("the hub dialled the device")
+
+    monkeypatch.setattr("socket.create_connection", refuse_dial)
+    monkeypatch.setattr("httpx.get", refuse_dial)
+    DesiredStateStore().set_want(DEVICE, "gitea", "running")
+    sessions = StubSessions(
+        {
+            DEVICE: report(
+                gitea={"is_running": is_running, "url": "http://192.168.100.7:3000/"}
+            )
+        }
+    )
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    (entry,) = [e for e in entries if e["id"] == "gitea_device-one"]
+    assert entry["is_healthy"] is is_running
 
 
 def test_a_declared_record_is_published_with_its_probe_health(box):

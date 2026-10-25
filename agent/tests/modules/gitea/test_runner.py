@@ -153,6 +153,7 @@ def test_apply_renders_and_keeps_the_url(runner):
     runner.apply(CONFIG)
 
     assert "HTTP_PORT = 3000" in FakeApplier.applied[0]
+    assert "HTTP_ADDR = 127.0.0.1\n" in FakeApplier.applied[0]
     details = runner.details({})
     assert details["url"] == "http://192.168.100.7:3000/"
     assert details["is_running"] is True
@@ -376,6 +377,7 @@ def test_the_git_found_is_named_in_app_ini_and_ssh_is_off(tmp_path):
     ((rendered, git_path),) = applier.applied
     assert git_path == "/opt/homebrew/bin/git"
     assert "RUN_USER = neutrino_gitea" in rendered
+    assert "HTTP_ADDR = 127.0.0.1\n" in rendered
     assert "DISABLE_SSH = true" in rendered
     assert "PATH = /state/gitea_data/data/gitea.db" in rendered
     assert "[git]\nPATH = /opt/homebrew/bin/git\n" in rendered
