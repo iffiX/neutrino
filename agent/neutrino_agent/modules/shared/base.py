@@ -138,6 +138,21 @@ class ModuleRunner:
             recipe: ``{runner, method, params}``.
         """
 
+    def take_config(self, config: dict) -> None:
+        """Take the configuration the state names for this module, before any apply of it.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Take the state's ``source_sets`` section.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``, each set a
+                recipe of the state names.
+        """
+
     def install(self, recipe: dict) -> None:
         """Install what the recipe names by name: a ``hub`` entry's system packages.
 
@@ -242,6 +257,12 @@ class ModuleRunner:
         Raises:
             ModuleApplyError: When the configuration is refused or the
                 machine will not take it.
+        """
+
+    def start(self) -> None:
+        """Bring the module's service up once its configuration applied, under ``running``.
+
+        A module whose apply already starts what it runs leaves this as it is.
         """
 
     def stop(self) -> None:

@@ -11,11 +11,20 @@ from neutrino_agent.modules.podman.applier import (
     PodmanStatusReader,
     PodmanUnitApplier,
     container_applier,
+    ensure_network,
+    fastest_sources,
+    fix_cni_version,
+    image_references,
     is_quadlet_supported,
     is_version_at_least,
     journal_lines,
+    network_gateway,
+    owner_of,
+    ready_hub_containers,
+    stored_reference,
 )
-from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN
+from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN, PodmanConfig
+from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.podman.constants import (
     PODMAN_GENERATED_MARKER,
     PODMAN_QUADLET_DIR,
@@ -98,7 +107,8 @@ def test_apply_writes_changed_files_drops_stale_ones_and_restarts(commands, tmp_
     assert "web.container" in note and "-old.container" in note
     assert not (directory / "old.container").exists()
     assert (directory / "hand.container").exists()
-    assert ["systemctl", "disable", "--now", "old.service"] in commands.calls
+    assert ["systemctl", "stop", "old.service"] in commands.calls
+    assert not any(call[1] == "disable" for call in commands.calls)
     assert ["systemctl", "daemon-reload"] in commands.calls
     assert ["systemctl", "restart", "web.service"] in commands.calls
     assert ["systemctl", "restart", "keep.service"] not in commands.calls
@@ -241,7 +251,7 @@ def test_a_declared_but_never_started_container_still_appears(commands):
 
     by_name = {state.name: state for state in states}
     assert by_name["python"].status == "not created yet"
-    assert by_name["python"].is_declared is True
+    assert by_name["python"].source == "declared"
     assert by_name["webdav"].is_running is True
     assert by_name["webdav"].host_ports == [8081]
 
@@ -384,16 +394,18 @@ def test_no_podman_surveys_as_nothing(commands):
 def test_each_container_is_driven_through_its_rightful_owner(commands):
     controller = PodmanContainerController()
 
-    controller.control("web", "restart", is_declared=True)
-    controller.control("adhoc", "stop", is_declared=False)
+    controller.control("web", "restart", source="declared")
+    controller.control("neutrino_demo", "start", source="hub")
+    controller.control("adhoc", "stop", source="manual")
 
     assert ["systemctl", "restart", "web.service"] in commands.calls
+    assert ["systemctl", "start", "neutrino_demo.service"] in commands.calls
     assert ["/usr/bin/podman", "stop", "adhoc"] in commands.calls
 
 
 def test_an_action_outside_the_list_is_refused():
     with pytest.raises(ValueError):
-        PodmanContainerController().control("web", "rm", is_declared=True)
+        PodmanContainerController().control("web", "rm", source="declared")
 
 
 def test_the_journal_is_read_by_unit(commands):
@@ -478,3 +490,250 @@ def test_the_probe_is_asked_for_each_tcp_binding_of_a_running_container(commands
         "",
     ]
     assert old.host_bindings[0]["detected"] == ""
+
+
+# --- hub containers: owners, networks, the store ---
+
+LABELLED_PS = (
+    '[{"Names": ["neutrino_demo"], "Image": "ghcr.io/o/demo@sha256:aa", '
+    '"State": "running", "Status": "Up", "Labels": {"neutrino.module": "demo"}},'
+    ' {"Names": ["web"], "Image": "nginx", "State": "running", "Status": "Up"},'
+    ' {"Names": ["adhoc"], "Image": "alpine", "State": "exited", "Status": "Exited"}]'
+)
+
+
+def test_the_owner_is_the_label_then_the_declared_names_then_manual():
+    assert owner_of("neutrino_demo", "demo", ["neutrino_demo"]) == "hub"
+    assert owner_of("web", "", ["web"]) == "declared"
+    assert owner_of("adhoc", "", ["web"]) == "manual"
+
+
+def test_a_survey_names_each_container_s_owner_and_module(commands):
+    commands.answers[("/usr/bin/podman", "ps")] = (0, LABELLED_PS)
+
+    states = PodmanStatusReader().survey(
+        declared_names=["web"],
+        hub_names={"demo": ["neutrino_demo", "neutrino_demo_db"]},
+    )
+
+    by_name = {state.name: (state.source, state.module) for state in states}
+    assert by_name == {
+        "web": ("declared", ""),
+        "neutrino_demo": ("hub", "demo"),
+        "neutrino_demo_db": ("hub", "demo"),
+        "adhoc": ("manual", ""),
+    }
+    assert [state.name for state in states][:1] == ["web"]
+    assert {state.name: state.status for state in states}["neutrino_demo_db"] == (
+        "not created yet"
+    )
+
+
+def test_a_label_inspect_carries_is_read_when_ps_has_none(commands):
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["neutrino_demo"], "Image": "x", "State": "running"}]',
+    )
+    commands.answers[("/usr/bin/podman", "inspect")] = (
+        0,
+        '[{"Name": "neutrino_demo", "Config": {"Labels": {"neutrino.module": "demo"}}}]',
+    )
+
+    (state,) = PodmanStatusReader().survey(declared_names=[])
+
+    assert (state.source, state.module) == ("hub", "demo")
+
+
+class NetworkCommands(FakeCommands):
+    """Answers ``network exists`` as told and takes every ``network create``."""
+
+    def __init__(self, *, is_there):
+        super().__init__()
+        self.is_there = is_there
+
+    def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
+        self.calls.append(list(command))
+        is_refused = "exists" in command and not self.is_there
+        return CommandResult(list(command), 1 if is_refused else 0, "", "")
+
+
+def test_a_network_is_made_only_when_podman_has_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(applier_module, "PODMAN_CNI_DIR", str(tmp_path))
+    absent = NetworkCommands(is_there=False)
+    monkeypatch.setattr(applier_module, "run", absent)
+
+    assert ensure_network("neutrino_demo") is True
+    assert ["/usr/bin/podman", "network", "create", "neutrino_demo"] in absent.calls
+
+    there = NetworkCommands(is_there=True)
+    monkeypatch.setattr(applier_module, "run", there)
+    assert ensure_network("neutrino_demo") is False
+    assert there.calls == [["/usr/bin/podman", "network", "exists", "neutrino_demo"]]
+
+
+def test_a_cni_network_is_given_the_version_its_plugins_read(tmp_path):
+    conflist = tmp_path / "neutrino_demo.conflist"
+    conflist.write_text(
+        '{"cniVersion": "1.0.0", "name": "neutrino_demo", "plugins": []}'
+    )
+
+    assert fix_cni_version(str(conflist)) is True
+    assert '"cniVersion": "0.4.0"' in conflist.read_text()
+    assert fix_cni_version(str(conflist)) is False
+    assert fix_cni_version(str(tmp_path / "netavark.conflist")) is False
+
+
+def test_a_new_network_on_podman_3_4_gets_its_cni_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(applier_module, "PODMAN_CNI_DIR", str(tmp_path))
+    monkeypatch.setattr(applier_module, "run", NetworkCommands(is_there=False))
+    (tmp_path / "neutrino_demo.conflist").write_text('{"cniVersion": "1.0.0"}')
+
+    ensure_network("neutrino_demo")
+
+    assert '"0.4.0"' in (tmp_path / "neutrino_demo.conflist").read_text()
+
+
+def test_a_network_in_a_podman_machine_has_no_cni_file_to_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(applier_module, "PODMAN_CNI_DIR", str(tmp_path))
+    held = NetworkCommands(is_there=False)
+    monkeypatch.setattr(applier_module, "run", held)
+    (tmp_path / "neutrino_demo.conflist").write_text('{"cniVersion": "1.0.0"}')
+
+    ensure_network("neutrino_demo", podman=("podman.exe", "--url", "ssh://x"))
+
+    assert held.calls[-1] == [
+        "podman.exe",
+        "--url",
+        "ssh://x",
+        "network",
+        "create",
+        "neutrino_demo",
+    ]
+    assert '"1.0.0"' in (tmp_path / "neutrino_demo.conflist").read_text()
+
+
+def test_the_gateway_is_read_from_netavark_and_from_cni(commands):
+    commands.answers[("/usr/bin/podman", "network")] = (
+        0,
+        '[{"name": "podman", "subnets": [{"subnet": "10.88.0.0/16", '
+        '"gateway": "10.88.0.1"}]}]',
+    )
+    assert network_gateway("podman") == "10.88.0.1"
+
+    commands.answers[("/usr/bin/podman", "network")] = (
+        0,
+        '[{"cniVersion": "0.4.0", "name": "podman", "plugins": [{"type": "bridge", '
+        '"ipam": {"ranges": [[{"subnet": "10.88.0.0/16", "gateway": "10.88.0.1"}]]}}]}]',
+    )
+    assert network_gateway("podman") == "10.88.0.1"
+
+    commands.answers[("/usr/bin/podman", "network")] = (1, "")
+    assert network_gateway("podman") == ""
+
+
+DIGEST = "sha256:" + "a" * 64
+OTHER = "sha256:" + "b" * 64
+
+
+def test_the_store_is_read_by_digest_under_each_source(commands):
+    commands.answers[("/usr/bin/podman", "images")] = (
+        0,
+        '[{"RepoDigests": ["ghcr.nju.edu.cn/o/demo@' + DIGEST + '"], "Names": []},'
+        ' {"Names": ["docker.io/library/nginx:1"]}]',
+    )
+
+    references = image_references()
+
+    assert references == {"ghcr.nju.edu.cn/o/demo@" + DIGEST}
+    assert (
+        stored_reference(
+            DIGEST, ["ghcr.io/o/demo", "ghcr.nju.edu.cn/o/demo"], references
+        )
+        == "ghcr.nju.edu.cn/o/demo@" + DIGEST
+    )
+    assert stored_reference(OTHER, ["ghcr.io/o/demo"], references) == ""
+
+
+def hub(name, module="demo", digest=DIGEST):
+    return {
+        "module": module,
+        "name": name,
+        "image": {"digest": digest, "sources": ["ghcr.io/o/" + module]},
+    }
+
+
+def test_a_module_with_one_image_missing_is_left_out_whole():
+    config = PodmanConfig.from_dict(
+        {
+            "hub_containers": [
+                hub("neutrino_demo"),
+                hub("neutrino_demo_db", digest=OTHER),
+                hub("neutrino_box", module="box"),
+            ]
+        }
+    )
+    references = {"ghcr.io/o/demo@" + DIGEST, "ghcr.io/o/box@" + DIGEST}
+
+    ready, images = ready_hub_containers(config, references)
+
+    assert [container.name for container in ready] == ["neutrino_box"]
+    assert images == {"neutrino_box": "ghcr.io/o/box@" + DIGEST}
+
+
+def test_each_set_names_its_fastest_source_and_its_variables():
+    def probe_one(url, *, source=""):
+        speed = 9.0 if "tuna" in source else 1.0
+        return SourceProbe(source=source, is_answered=True, speed=speed)
+
+    sets = {
+        "pypi": {
+            "probe": "/pip/",
+            "sources": ["https://pypi.org/simple", "https://pypi.tuna.example/simple"],
+            "variables": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"],
+        }
+    }
+
+    sources, variables = fastest_sources(["pypi", "npm"], sets, probe_one=probe_one)
+
+    assert sources == {"pypi": "https://pypi.tuna.example/simple"}
+    assert variables == {"pypi": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"]}
+
+
+def test_drive_and_remove_reach_only_the_generated_files(commands, tmp_path):
+    (tmp_path / "neutrino_demo.container").write_text(rendered("x"))
+    (tmp_path / "theirs.container").write_text("[Container]\n")
+    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
+
+    applier.drive(["neutrino_demo", "theirs"], "start")
+    removed = applier.remove(["neutrino_demo", "theirs"])
+
+    assert ["systemctl", "start", "neutrino_demo.service"] in commands.calls
+    assert ["systemctl", "start", "theirs.service"] not in commands.calls
+    assert removed == ["neutrino_demo"]
+    assert ["systemctl", "stop", "neutrino_demo.service"] in commands.calls
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["theirs.container"]
+
+
+def test_a_file_whose_only_change_is_a_source_set_value_is_kept(commands, tmp_path):
+    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
+    first = rendered("x", "Environment=PIP_INDEX_URL=https://pypi.org/simple")
+    applier.apply(
+        {"neutrino_demo.container": first},
+        autostart_names=["neutrino_demo"],
+        source_keys={"neutrino_demo": ["PIP_INDEX_URL"]},
+    )
+    commands.calls.clear()
+
+    note = applier.apply(
+        {
+            "neutrino_demo.container": rendered(
+                "x", "Environment=PIP_INDEX_URL=https://mirror.example/simple"
+            )
+        },
+        autostart_names=["neutrino_demo"],
+        source_keys={"neutrino_demo": ["PIP_INDEX_URL"]},
+    )
+
+    assert note == "containers unchanged"
+    assert (tmp_path / "neutrino_demo.container").read_text() == first
+    assert not any(call[1] == "restart" for call in commands.calls)

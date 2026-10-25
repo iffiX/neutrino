@@ -12,6 +12,10 @@ put() {
         rm -f "$1.new"
         return 1
     fi
+    if [ -n "$3" ] && [ -f "$1" ] && [ "$(sed -E "$3" "$1.new")" = "$(sed -E "$3" "$1")" ]; then
+        rm -f "$1.new"
+        return 1
+    fi
     mv -f "$1.new" "$1" || exit 1
     echo "changed: $1"
 }

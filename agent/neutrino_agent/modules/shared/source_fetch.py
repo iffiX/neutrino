@@ -1,12 +1,14 @@
 """Probing and ranking the sources of what the agent hands to a tool.
 
 The agent downloads no file itself: it chooses the npm registry an install
-runs against and the host an npm setting names. Every source is probed at
-once, and a probe waits at most ``AGENT_SOURCE_PROBE_TIMEOUT_S`` for an
-answer. The sources that answered are ranked by the probe's speed, measured
-from its first byte to its last, and two speeds within a tenth of each
-other go to the earlier first byte. A source that did not answer in time is
-not ranked. Nothing is remembered: each ranking probes again.
+runs against, the host an npm setting names, the registry Podman pulls an
+image from, and the source of a source set a container's tools read. Every
+source is probed at once, and a probe waits at most
+``AGENT_SOURCE_PROBE_TIMEOUT_S`` for an answer. The sources that answered
+are ranked by the probe's speed, measured from its first byte to its last,
+and two speeds within a tenth of each other go to the earlier first byte. A
+source that did not answer in time is not ranked. Nothing is remembered:
+each ranking probes again.
 
 Not pure: opens connections.
 """
@@ -18,6 +20,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
 import socket
 import ssl
 import threading
@@ -28,8 +31,12 @@ import urllib.request
 from dataclasses import dataclass
 
 from neutrino_agent.constants import (
+    AGENT_SOURCE_DOCKER_HUB,
+    AGENT_SOURCE_DOCKER_LIBRARY,
+    AGENT_SOURCE_DOCKER_REGISTRY,
     AGENT_SOURCE_DOCUMENT_LIMIT_BYTES,
     AGENT_SOURCE_HEADERS,
+    AGENT_SOURCE_MANIFEST_ACCEPT,
     AGENT_SOURCE_NEAR_TIE,
     AGENT_SOURCE_PROBE_TIMEOUT_S,
 )
@@ -39,10 +46,14 @@ REASON_UNREACHABLE = "unreachable"
 REASON_TIMEOUT = "timeout"
 REASON_DIGEST_MISMATCH = "digest_mismatch"
 REASON_HTTP_PREFIX = "http_"
+REASON_PULL_FAILED = "pull_failed"
 # Where macOS keeps the certificate authorities when the interpreter's own
 # store holds none.
 SYSTEM_CA_FILE = "/etc/ssl/cert.pem"
 DETAIL_CHARS = 200
+# A registry that wants a token answers 401 with this challenge.
+BEARER_CHALLENGE_PATTERN = re.compile(r'(\w+)="([^"]*)"')
+HTTP_UNAUTHORIZED = 401
 
 
 @dataclass
@@ -59,6 +70,8 @@ class SourceProbe:
         body: What it answered, up to the probe's limit.
         reason: Why it failed, empty when it answered.
         detail: The error's own words, empty when it answered.
+        challenge: The ``WWW-Authenticate`` a 401 answer carried; empty for
+            any other answer.
     """
 
     source: str
@@ -69,6 +82,7 @@ class SourceProbe:
     body: bytes = b""
     reason: str = ""
     detail: str = ""
+    challenge: str = ""
 
     def failure(self) -> dict:
         """The source as ``download_failed`` lists it.
@@ -101,6 +115,7 @@ def probe(
     is_error_answer: bool = False,
     clock=time.monotonic,
     context: "ssl.SSLContext | None" = None,
+    headers: "dict | None" = None,
 ) -> SourceProbe:
     """GET one address and time its answer.
 
@@ -115,12 +130,15 @@ def probe(
             names no page.
         clock: Monotonic seconds.
         context: The TLS context; None verifies with :func:`public_context`.
+        headers: Headers sent beside the agent's own; None sends none.
 
     Returns:
         The probe.
     """
     found = SourceProbe(source=source or url)
-    request = urllib.request.Request(url, headers=dict(AGENT_SOURCE_HEADERS))
+    request = urllib.request.Request(
+        url, headers={**AGENT_SOURCE_HEADERS, **(headers or {})}
+    )
     started = clock()
     try:
         response = urllib.request.urlopen(
@@ -130,6 +148,8 @@ def probe(
         )
     except urllib.error.HTTPError as error:
         if not is_error_answer:
+            if error.code == HTTP_UNAUTHORIZED and error.headers is not None:
+                found.challenge = str(error.headers.get("WWW-Authenticate", "") or "")
             error.close()
             found.status = error.code
             found.reason = f"{REASON_HTTP_PREFIX}{error.code}"
@@ -283,6 +303,156 @@ def rank_hosts(hosts: list, *, probe_one=probe) -> list:
     )
     order = [found.source for found in ranked(probes)]
     return order + [host for host in hosts if host not in order]
+
+
+def set_document(source: str, probe_path: str) -> str:
+    """The address one source of a source set is probed at. Pure.
+
+    Args:
+        source: The source, such as ``https://pypi.org/simple``.
+        probe_path: The set's ``probe``, such as ``/pip/``.
+
+    Returns:
+        The source with the path after it, one slash between them.
+    """
+    return source.rstrip("/") + "/" + probe_path.lstrip("/")
+
+
+def rank_set(sources: list, *, probe_path: str, probe_one=probe) -> list:
+    """Rank the sources of one source set by speed.
+
+    Args:
+        sources: The set's sources, the publisher's first.
+        probe_path: The path probed under each source.
+        probe_one: Called with ``url, source=``; returns a
+            :class:`SourceProbe`.
+
+    Returns:
+        The sources that answered, fastest first, then those that did not,
+        in their order; the first is the one a container's tools read.
+    """
+    probes = probe_all(
+        [(source, set_document(source, probe_path)) for source in sources],
+        probe_one=probe_one,
+    )
+    order = [found.source for found in ranked(probes)]
+    return order + [source for source in sources if source not in order]
+
+
+def manifest_document(source: str, digest: str) -> str:
+    """The registry's address of one image's manifest by its digest. Pure.
+
+    Args:
+        source: An image reference with no tag, such as
+            ``ghcr.io/owner/image`` or ``docker.io/library/mongo``.
+        digest: The image's digest.
+
+    Returns:
+        ``https://<registry>/v2/<repository>/manifests/<digest>``, docker.io
+        asked at its registry's own host and a one-name repository there in
+        its ``library`` namespace.
+    """
+    host, _, repository = source.partition("/")
+    if host == AGENT_SOURCE_DOCKER_HUB:
+        host = AGENT_SOURCE_DOCKER_REGISTRY
+        if "/" not in repository:
+            repository = f"{AGENT_SOURCE_DOCKER_LIBRARY}/{repository}"
+    return f"https://{host}/v2/{repository}/manifests/{digest}"
+
+
+def probe_image(source: str, digest: str, *, probe_one=probe) -> SourceProbe:
+    """Ask one registry for an image's manifest by its digest, with a token when it wants one.
+
+    A registry that answers 401 with a bearer challenge is asked its token
+    service for an anonymous token, and the manifest is asked again with it.
+
+    Args:
+        source: The image reference with no tag.
+        digest: The image's digest.
+        probe_one: Called with ``url, source=, headers=``; returns a
+            :class:`SourceProbe`.
+
+    Returns:
+        The probe of the last request for the manifest.
+    """
+    url = manifest_document(source, digest)
+    accept = {"Accept": AGENT_SOURCE_MANIFEST_ACCEPT}
+    found = probe_one(url, source=source, headers=accept)
+    if found.status != HTTP_UNAUTHORIZED or not found.challenge:
+        return found
+    token = _bearer_token(found.challenge, source=source, probe_one=probe_one)
+    if not token:
+        return found
+    return probe_one(
+        url, source=source, headers={**accept, "Authorization": f"Bearer {token}"}
+    )
+
+
+def rank_images(
+    sources: list, digest: str, *, is_docker_mirrored: bool = False, probe_one=probe
+) -> tuple:
+    """Rank the registries that serve one image by the speed of their manifest.
+
+    Args:
+        sources: The image's references with no tag, the publisher's first.
+        digest: The image's digest.
+        is_docker_mirrored: Whether the Containers module names docker.io
+            mirrors, through which Podman reaches a ``docker.io`` source
+            whatever its own probe gives.
+        probe_one: Called with ``url, source=, headers=``; returns a
+            :class:`SourceProbe`.
+
+    Returns:
+        ``(chosen, failures)``: the sources to pull from in order, those that
+        answered fastest first and then a ``docker.io`` source that did not
+        while mirrors are named; and each source that did not answer as
+        ``{source, reason, detail}``.
+    """
+    probes: list = [None] * len(sources)
+
+    def ask(index: int, source: str) -> None:
+        probes[index] = probe_image(source, digest, probe_one=probe_one)
+
+    threads = [
+        threading.Thread(target=ask, args=(index, source), daemon=True)
+        for index, source in enumerate(sources)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    chosen = [found.source for found in ranked(probes)]
+    if is_docker_mirrored:
+        chosen += [
+            source
+            for source in sources
+            if source.split("/", 1)[0] == AGENT_SOURCE_DOCKER_HUB
+            and source not in chosen
+        ]
+    failures = [found.failure() for found in probes if not found.is_answered]
+    return chosen, failures
+
+
+def _bearer_token(challenge: str, *, source: str, probe_one) -> str:
+    """An anonymous token from the service a bearer challenge names, empty for none."""
+    if not challenge.lower().startswith("bearer "):
+        return ""
+    fields = dict(BEARER_CHALLENGE_PATTERN.findall(challenge))
+    realm = fields.pop("realm", "")
+    if not realm:
+        return ""
+    query = urllib.parse.urlencode(fields)
+    found = probe_one(f"{realm}?{query}" if query else realm, source=source)
+    if not found.is_answered:
+        return ""
+    try:
+        document = json.loads(found.body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return ""
+    if not isinstance(document, dict):
+        return ""
+    token = document.get("token") or document.get("access_token")
+    return token if isinstance(token, str) else ""
 
 
 def _integrity_of(body: bytes) -> str:

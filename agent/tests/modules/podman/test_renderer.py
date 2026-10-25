@@ -16,12 +16,15 @@ from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
     PodmanQuadletRenderer,
     PodmanRegistriesRenderer,
+    PodmanRenderContext,
     PodmanUnitRenderer,
     machine_boot_unit,
     machine_control_script,
+    machine_drop_script,
     machine_journal_script,
     machine_stop_script,
     qualified_image,
+    source_neutral,
 )
 
 
@@ -396,10 +399,12 @@ class MachineShell:
         stub.chmod(0o755)
         self.path = f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}"
 
-    def run(self, config: PodmanConfig, *, active="", refused="") -> tuple:
+    def run(
+        self, config: PodmanConfig, *, active="", refused="", context=None
+    ) -> tuple:
         self.log.write_text("")
         script = PodmanMachineScriptRenderer(
-            config=config, os_name=self.os_name, root=str(self.root)
+            config=config, os_name=self.os_name, root=str(self.root), context=context
         ).render()
         done = subprocess.run(
             ["sh", "-s"],
@@ -655,3 +660,225 @@ def test_the_windows_script_has_no_boot_unit():
     ).render()
 
     assert "neutrino_containers" not in script
+
+
+# --- hub containers ---
+
+HUB_DIGEST = "sha256:" + "e" * 64
+
+HUB_CONTAINERS = [
+    {
+        "module": "demo",
+        "name": "neutrino_demo_agent",
+        "image": {"digest": HUB_DIGEST, "sources": ["docker.io/acme/agent"]},
+        "volumes": ["neutrino_demo_home:/opt/data"],
+        "environment": ["HOME_DIR=/opt/data"],
+        "command": "gateway run",
+        "source_sets": ["pypi"],
+    },
+    {
+        "module": "demo",
+        "name": "neutrino_demo",
+        "image": {
+            "digest": HUB_DIGEST,
+            "sources": ["ghcr.io/acme/webui", "ghcr.nju.edu.cn/acme/webui"],
+        },
+        "volumes": ["neutrino_demo_home:/home/web/.data"],
+        "environment": ["EXTRA_INDEX={pypi}/extra"],
+        "is_autostart": False,
+        "source_sets": ["pypi"],
+        "after": ["neutrino_demo_agent"],
+        "page_port": 8787,
+    },
+]
+
+HUB_CONTEXT = PodmanRenderContext(
+    gateways={"podman": "10.88.0.1", "neutrino_demo": "10.89.0.1"},
+    images={
+        "neutrino_demo_agent": "docker.io/acme/agent@" + HUB_DIGEST,
+        "neutrino_demo": "ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST,
+    },
+    page_ports={"neutrino_demo": 40123},
+    sources={"pypi": "https://pypi.tuna.example/simple"},
+    variables={"pypi": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"]},
+)
+
+
+def hub_config(containers=None, hub=None) -> PodmanConfig:
+    config = PodmanConfig.from_dict(
+        {
+            "containers": [] if containers is None else containers,
+            "hub_containers": HUB_CONTAINERS if hub is None else hub,
+        }
+    )
+    config.validate()
+    return config
+
+
+def other_sources() -> PodmanRenderContext:
+    return PodmanRenderContext(
+        gateways=HUB_CONTEXT.gateways,
+        images=HUB_CONTEXT.images,
+        page_ports=HUB_CONTEXT.page_ports,
+        sources={"pypi": "https://pypi.org/simple"},
+        variables=HUB_CONTEXT.variables,
+    )
+
+
+def test_a_hub_container_has_its_label_network_gateway_image_and_page_port():
+    text = PodmanQuadletRenderer(config=hub_config(), context=HUB_CONTEXT).render()[
+        "neutrino_demo.container"
+    ]
+
+    assert text.splitlines() == [
+        PODMAN_GENERATED_MARKER,
+        "",
+        "[Unit]",
+        "Description=neutrino_demo container",
+        "After=network-online.target",
+        "Requires=neutrino_demo_agent.service",
+        "After=neutrino_demo_agent.service",
+        "",
+        "[Container]",
+        "ContainerName=neutrino_demo",
+        "Image=ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST,
+        "Label=neutrino.module=demo",
+        "Network=neutrino_demo",
+        "AddHost=host.containers.internal:10.89.0.1",
+        "PublishPort=127.0.0.1:40123:8787",
+        "Volume=neutrino_demo_home:/home/web/.data",
+        "Environment=EXTRA_INDEX=https://pypi.tuna.example/simple/extra",
+        "Environment=PIP_INDEX_URL=https://pypi.tuna.example/simple",
+        "Environment=UV_DEFAULT_INDEX=https://pypi.tuna.example/simple",
+        "",
+        "[Service]",
+        "TimeoutStartSec=900",
+        "Restart=on-failure",
+    ]
+
+
+def test_a_declared_container_reaches_the_machine_at_its_network_s_gateway():
+    rendered = PodmanQuadletRenderer(
+        config=hub_config([FULL], hub=[]), context=HUB_CONTEXT
+    ).render()
+
+    assert "AddHost=host.containers.internal:10.88.0.1" in rendered["webdav.container"]
+    assert "Label=" not in rendered["webdav.container"]
+    assert "Network=" not in rendered["webdav.container"]
+
+
+def test_no_gateway_known_writes_no_addhost():
+    rendered = PodmanQuadletRenderer(config=hub_config([FULL])).render()
+
+    assert not any("AddHost" in text for text in rendered.values())
+
+
+def test_a_hub_container_with_no_stored_image_names_its_first_source_by_digest():
+    text = PodmanQuadletRenderer(config=hub_config()).render()[
+        "neutrino_demo.container"
+    ]
+
+    assert "Image=ghcr.io/acme/webui@" + HUB_DIGEST in text
+    assert "PublishPort=" not in text
+
+
+def test_the_plain_unit_carries_the_same_hub_knobs():
+    text = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT).render()[
+        "neutrino_demo.service"
+    ]
+    start = next(line for line in text.splitlines() if line.startswith("ExecStart="))
+
+    assert "Requires=neutrino_demo_agent.service" in text
+    assert "--label neutrino.module=demo" in start
+    assert "--network neutrino_demo" in start
+    assert "--add-host host.containers.internal:10.89.0.1" in start
+    assert "-p 127.0.0.1:40123:8787" in start
+    assert "-e PIP_INDEX_URL=https://pypi.tuna.example/simple" in start
+    assert start.endswith("ghcr.nju.edu.cn/acme/webui@" + HUB_DIGEST)
+
+
+def test_the_source_keys_are_the_variables_a_set_fills_in():
+    renderer = PodmanQuadletRenderer(config=hub_config(), context=HUB_CONTEXT)
+
+    assert renderer.source_keys() == {
+        "neutrino_demo_agent": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"],
+        "neutrino_demo": ["EXTRA_INDEX", "PIP_INDEX_URL", "UV_DEFAULT_INDEX"],
+    }
+
+
+def test_two_files_that_differ_in_a_set_s_value_alone_read_the_same():
+    keys = ["EXTRA_INDEX", "PIP_INDEX_URL", "UV_DEFAULT_INDEX"]
+    for renderer_class, name in (
+        (PodmanQuadletRenderer, "neutrino_demo.container"),
+        (PodmanUnitRenderer, "neutrino_demo.service"),
+    ):
+        first = renderer_class(config=hub_config(), context=HUB_CONTEXT).render()[name]
+        second = renderer_class(config=hub_config(), context=other_sources()).render()[
+            name
+        ]
+
+        assert first != second
+        assert source_neutral(first, keys) == source_neutral(second, keys)
+
+
+def test_the_machine_file_of_a_hub_container_has_no_addhost_and_the_cgroups_line():
+    text = PodmanQuadletRenderer(
+        config=hub_config(), machine_os_name="darwin", context=HUB_CONTEXT
+    ).render()["neutrino_demo.container"]
+
+    assert "AddHost" not in text
+    assert "CgroupsMode=enabled" in text
+    assert "PublishPort=127.0.0.1:40123:8787" in text
+
+
+def test_the_root_script_keeps_a_file_whose_only_change_is_a_set_s_value(tmp_path):
+    shell = MachineShell(tmp_path, "darwin")
+    done, _calls = shell.run(hub_config(), context=HUB_CONTEXT)
+    assert done.returncode == 0, done.stderr
+    first = (shell.quadlet / "neutrino_demo.container").read_text()
+
+    done, calls = shell.run(
+        hub_config(), context=other_sources(), active="neutrino_demo"
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert changed_lines(done) == []
+    assert (shell.quadlet / "neutrino_demo.container").read_text() == first
+    assert not any(call.startswith("restart") for call in calls)
+
+
+def test_the_root_script_starts_a_hub_container_that_starts_with_the_box(tmp_path):
+    shell = MachineShell(tmp_path, "windows")
+
+    done, calls = shell.run(hub_config(), context=HUB_CONTEXT)
+
+    assert done.returncode == 0, done.stderr
+    assert "restart neutrino_demo_agent.service" in calls
+    assert "restart neutrino_demo.service" not in calls
+
+
+def test_the_drop_script_removes_only_the_named_generated_files(tmp_path):
+    shell = MachineShell(tmp_path, "windows")
+    shell.run(hub_config(), context=HUB_CONTEXT)
+    (shell.quadlet / "theirs.container").write_text("[Container]\n")
+    shell.log.write_text("")
+
+    done = subprocess.run(
+        ["sh", "-s"],
+        input=machine_drop_script(
+            ["neutrino_demo", "neutrino_demo_agent", "theirs"],
+            os_name="windows",
+            root=str(shell.root),
+        ),
+        capture_output=True,
+        text=True,
+        env={"PATH": shell.path, "SYSTEMCTL_LOG": str(shell.log)},
+        timeout=60,
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert sorted(path.name for path in shell.quadlet.iterdir()) == ["theirs.container"]
+    calls = shell.log.read_text().splitlines()
+    assert "stop neutrino_demo.service" in calls
+    assert "stop theirs.service" not in calls
+    assert calls[-1] == "daemon-reload"

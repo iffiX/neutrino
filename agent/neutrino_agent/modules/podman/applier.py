@@ -1,8 +1,10 @@
-"""Making the declared containers true on the machine, and reading what runs.
+"""Making the declared and hub containers true on the machine, and reading what runs.
 
-Declared containers live as unit files and are driven through systemd;
-containers someone started by hand at a shell are still listed and still
-controllable, through podman directly.
+Declared and hub containers live as unit files and are driven through
+systemd; containers someone started by hand at a shell are still listed and
+still controllable, through podman directly. Each container's owner is read
+in one order: the label ``neutrino.module`` makes it a hub container of that
+module, a declared name makes it declared, and any other is a person's own.
 
 Not pure: writes unit files, runs podman and drives systemd.
 """
@@ -23,22 +25,35 @@ from dataclasses import dataclass, field
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import (
     PODMAN_BINARY,
+    PODMAN_CNI_DIR,
+    PODMAN_CNI_SUFFIX,
+    PODMAN_CNI_VERSION,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_GENERATED_MARKER,
+    PODMAN_MODULE_LABEL,
     PODMAN_PROBE_ADDRESS,
     PODMAN_PROTOCOL_TCP,
     PODMAN_QUADLET_DIR,
     PODMAN_QUADLET_VERSION,
     PODMAN_REGISTRIES_CONF_PATH,
+    PODMAN_SOURCE_DECLARED,
+    PODMAN_SOURCE_HUB,
+    PODMAN_SOURCE_MANUAL,
     PODMAN_UNIT_DIR,
 )
 from neutrino_agent.modules.podman.renderer import (
     PodmanQuadletRenderer,
+    PodmanRenderContext,
     PodmanUnitRenderer,
+    source_neutral,
 )
+from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 VERSION_NUMBER_PATTERN = re.compile(r"\d+")
+
+# The order a survey lists the containers in, by where each comes from.
+SOURCE_ORDER = (PODMAN_SOURCE_DECLARED, PODMAN_SOURCE_HUB, PODMAN_SOURCE_MANUAL)
 
 
 @dataclass
@@ -50,7 +65,11 @@ class PodmanContainerState:
         image: The image it runs.
         status: Podman's own words, for example ``Up 2 hours``.
         is_running: Whether it is running.
-        is_declared: Whether the hub declares it.
+        source: Where it comes from: ``hub`` for one a container module
+            runs, ``declared`` for one the hub declares, ``manual`` for one
+            a person started by hand.
+        module: The module its label ``neutrino.module`` names; empty for
+            any other container.
         host_ports: The published host ports.
         ports: Every published port as ``host:container``, from inspect.
         volumes: Every mount as ``source:destination``, from inspect.
@@ -68,7 +87,8 @@ class PodmanContainerState:
     image: str
     status: str
     is_running: bool
-    is_declared: bool
+    source: str
+    module: str = ""
     host_ports: list = field(default_factory=list)
     ports: list = field(default_factory=list)
     volumes: list = field(default_factory=list)
@@ -132,11 +152,159 @@ def podman_version(*, podman: tuple = (PODMAN_BINARY,)) -> str:
     return words[-1] if result.is_success and words else ""
 
 
-def container_renderer(config: PodmanConfig):
-    """The renderer whose output this machine's podman understands."""
+def container_renderer(
+    config: PodmanConfig, context: "PodmanRenderContext | None" = None
+):
+    """The renderer whose output this machine's podman understands.
+
+    Args:
+        config: The containers to render.
+        context: What the apply found; None renders with nothing found.
+
+    Returns:
+        A :class:`PodmanQuadletRenderer` from podman 4.4, else a
+        :class:`PodmanUnitRenderer`.
+    """
     if is_quadlet_supported():
-        return PodmanQuadletRenderer(config=config)
-    return PodmanUnitRenderer(config=config)
+        return PodmanQuadletRenderer(config=config, context=context)
+    return PodmanUnitRenderer(config=config, context=context)
+
+
+def ensure_network(name: str, *, podman: tuple = (PODMAN_BINARY,)) -> bool:
+    """Make one network when Podman has none of that name.
+
+    Where Podman's backend is CNI, as with Podman 3.4, the new network's
+    ``cniVersion`` is set to the one its plugins read.
+
+    Args:
+        name: The network.
+        podman: The podman command: the program and the options before
+            its verb.
+
+    Returns:
+        True when the network was made now.
+
+    Raises:
+        subprocess.CalledProcessError: If podman refuses to make it.
+        OSError: When podman cannot start.
+    """
+    found = run([*podman, "network", "exists", name], is_checked=False, timeout_s=30)
+    if found.is_success:
+        return False
+    run([*podman, "network", "create", name], timeout_s=60)
+    if podman == (PODMAN_BINARY,):
+        fix_cni_version(os.path.join(PODMAN_CNI_DIR, name + PODMAN_CNI_SUFFIX))
+    return True
+
+
+def fix_cni_version(path: str) -> bool:
+    """Set a CNI network's ``cniVersion`` to the one Podman 3.4's plugins read.
+
+    Args:
+        path: The network's ``.conflist``; a missing one is netavark's
+            network, which has none.
+
+    Returns:
+        True when the file was rewritten.
+
+    Raises:
+        OSError: When the file is there and cannot be rewritten.
+    """
+    text = _read(path)
+    if text is None:
+        return False
+    try:
+        held = json.loads(text)
+    except ValueError:
+        return False
+    if not isinstance(held, dict) or held.get("cniVersion") == PODMAN_CNI_VERSION:
+        return False
+    held["cniVersion"] = PODMAN_CNI_VERSION
+    with open(path + ".new", "w", encoding="utf-8") as stream:
+        json.dump(held, stream, indent=2)
+        stream.write("\n")
+    os.replace(path + ".new", path)
+    return True
+
+
+def network_gateway(name: str, *, podman: tuple = (PODMAN_BINARY,)) -> str:
+    """The gateway address of one network, as ``podman network inspect`` gives it.
+
+    Args:
+        name: The network.
+        podman: The podman command.
+
+    Returns:
+        The first gateway netavark's ``subnets`` or CNI's bridge ``ipam``
+        names; empty when Podman cannot say.
+    """
+    try:
+        result = run(
+            [*podman, "network", "inspect", name], is_checked=False, timeout_s=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if not result.is_success:
+        return ""
+    try:
+        found = json.loads(result.stdout or "[]")
+    except ValueError:
+        return ""
+    entry = found[0] if isinstance(found, list) and found else found
+    return _gateway_of(entry) if isinstance(entry, dict) else ""
+
+
+def image_references(*, podman: tuple = (PODMAN_BINARY,)) -> set:
+    """Every image reference with a digest in Podman's store.
+
+    Args:
+        podman: The podman command.
+
+    Returns:
+        ``<repository>@<digest>`` for each name and digest of each image,
+        the digest of the index it was pulled by among them; empty when
+        Podman cannot say.
+    """
+    try:
+        result = run(
+            [*podman, "images", "--format", "json"], is_checked=False, timeout_s=60
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if not result.is_success:
+        return set()
+    try:
+        entries = json.loads(result.stdout or "[]")
+    except ValueError:
+        return set()
+    references: set = set()
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        for key in ("RepoDigests", "Names"):
+            for name in entry.get(key) or []:
+                if isinstance(name, str) and "@" in name:
+                    references.add(name)
+    return references
+
+
+def stored_reference(digest: str, sources: list, references: set) -> str:
+    """The reference an image with a digest is stored under, among its sources.
+
+    Args:
+        digest: The image's digest.
+        sources: Its references with no tag, in the module's order.
+        references: What :func:`image_references` read.
+
+    Returns:
+        ``<source>@<digest>`` for the first source the store holds it
+        under; empty when the store holds it under none.
+    """
+    for source in sources:
+        reference = f"{source}@{digest}"
+        if reference in references:
+            return reference
+    return ""
 
 
 def container_applier() -> "PodmanUnitApplier":
@@ -146,6 +314,65 @@ def container_applier() -> "PodmanUnitApplier":
     return PodmanUnitApplier(
         directory=PODMAN_UNIT_DIR, suffix=".service", is_enabled_by_systemctl=True
     )
+
+
+def ready_hub_containers(config: PodmanConfig, references: set) -> tuple:
+    """The hub containers whose module has every image in the store.
+
+    Args:
+        config: The configuration.
+        references: The store's references, as
+            :func:`~neutrino_agent.modules.podman.applier.image_references`
+            reads them.
+
+    Returns:
+        ``(ready, images)``: the hub containers of each module all of whose
+        images the store holds, in order, and each one's stored reference
+        by name. A module with one image missing is left out whole.
+    """
+    images = {}
+    missing: set = set()
+    for container in config.hub_containers:
+        reference = stored_reference(container.digest, container.sources, references)
+        if reference:
+            images[container.name] = reference
+        else:
+            missing.add(container.module)
+    ready = [
+        container
+        for container in config.hub_containers
+        if container.module not in missing
+    ]
+    return ready, {container.name: images[container.name] for container in ready}
+
+
+def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -> tuple:
+    """Each named source set's fastest source, and its variables.
+
+    Args:
+        names: The sets the rendered containers list.
+        source_sets: The state's ``source_sets`` section, ``{name: {probe,
+            sources, variables}}``.
+        probe_one: Called with ``url, source=``; returns a probe.
+
+    Returns:
+        ``(sources, variables)``, each by set name, for every named set the
+        section holds; a set none of whose sources answers names its first.
+    """
+    sources = {}
+    variables = {}
+    for name in names:
+        held = source_sets.get(name)
+        if not isinstance(held, dict) or not held.get("sources"):
+            continue
+        order = source_fetch.rank_set(
+            [str(source) for source in held["sources"]],
+            probe_path=str(held.get("probe", "") or "/"),
+            probe_one=probe_one,
+        )
+        sources[name] = order[0]
+        variables[name] = [str(variable) for variable in held.get("variables") or []]
+    return sources, variables
 
 
 class PodmanUnitApplier:
@@ -172,20 +399,29 @@ class PodmanUnitApplier:
         """Where this applier writes."""
         return self._directory
 
-    def apply(self, rendered: dict, *, autostart_names: list) -> str:
+    def apply(
+        self,
+        rendered: dict,
+        *,
+        autostart_names: list,
+        source_keys: "dict | None" = None,
+    ) -> str:
         """Write the rendered files, drop stale ones, recreate what changed,
         and start what starts with the box.
 
         Only files carrying the generated marker are ever removed: a file a
         person wrote by hand beside these is theirs. A plain unit is
         enabled when its container starts with the box and disabled when
-        it does not.
+        it does not. A file whose only change is a source set's value is
+        kept as it is.
 
         Args:
             rendered: File contents keyed by file name.
             autostart_names: Containers that should be running; a changed
                 one of these is restarted even if it was stopped, and an
                 unchanged one that is not active is started.
+            source_keys: Container name to the variables a source set fills
+                in; None or a name it does not hold has none.
 
         Returns:
             A short summary of what changed.
@@ -194,18 +430,23 @@ class PodmanUnitApplier:
             subprocess.CalledProcessError: If systemd refuses a unit.
         """
         os.makedirs(self._directory, exist_ok=True)
+        keys = dict(source_keys or {})
         changed = []
         for file_name, text in rendered.items():
             path = os.path.join(self._directory, file_name)
-            if _read(path) != text:
+            held = _read(path)
+            name_keys = keys.get(file_name[: -len(self._suffix)], ())
+            if held is not None and name_keys:
+                if source_neutral(held, name_keys) == source_neutral(text, name_keys):
+                    continue
+            if held != text:
                 with open(path, "w", encoding="utf-8") as stream:
                     stream.write(text)
                 changed.append(file_name)
         for file_name in self.generated_names():
             if file_name in rendered:
                 continue
-            unit = f"{file_name[: -len(self._suffix)]}.service"
-            run(["systemctl", "disable", "--now", unit], is_checked=False)
+            self._retire_unit(f"{file_name[: -len(self._suffix)]}.service")
             os.unlink(os.path.join(self._directory, file_name))
             changed.append(f"-{file_name}")
         if self._is_enabled_by_systemctl:
@@ -225,6 +466,47 @@ class PodmanUnitApplier:
         if not changed:
             return "containers unchanged"
         return f"containers: {', '.join(sorted(changed))}"
+
+    def drive(self, names: list, action: str) -> None:
+        """Start, stop or restart the units of some containers, each that has a file.
+
+        Args:
+            names: The containers.
+            action: One of :data:`PODMAN_CONTAINER_ACTIONS`.
+
+        Raises:
+            ValueError: For an action outside the list.
+            subprocess.CalledProcessError: If systemd refuses a unit.
+        """
+        if action not in PODMAN_CONTAINER_ACTIONS:
+            raise ValueError(action)
+        owned = set(self.generated_names())
+        for name in names:
+            if f"{name}{self._suffix}" in owned:
+                run(["systemctl", action, f"{name}.service"], timeout_s=900)
+
+    def remove(self, names: list) -> list:
+        """Stop the units of some containers and delete their generated files.
+
+        Args:
+            names: The containers.
+
+        Returns:
+            The names whose file was removed.
+        """
+        owned = set(self.generated_names())
+        removed = []
+        for name in names:
+            file_name = f"{name}{self._suffix}"
+            if file_name not in owned:
+                continue
+            self._retire_unit(f"{name}.service")
+            with contextlib.suppress(OSError):
+                os.unlink(os.path.join(self._directory, file_name))
+            removed.append(name)
+        if removed:
+            run(["systemctl", "daemon-reload"], is_checked=False)
+        return removed
 
     def stop_all(self) -> None:
         """Stop every generated unit, leaving its file in place."""
@@ -254,6 +536,16 @@ class PodmanUnitApplier:
             if text is not None and text.startswith(PODMAN_GENERATED_MARKER):
                 names.append(file_name)
         return names
+
+    def _retire_unit(self, unit: str) -> None:
+        """Stop one unit whose file goes, and disable it where it is a plain unit.
+
+        systemd refuses to disable a unit Quadlet generates, and stops
+        nothing when a disable with ``--now`` is refused.
+        """
+        run(["systemctl", "stop", unit], is_checked=False)
+        if self._is_enabled_by_systemctl:
+            run(["systemctl", "disable", "--no-reload", unit], is_checked=False)
 
 
 class PodmanRegistriesApplier:
@@ -317,15 +609,19 @@ class PodmanStatusReader:
         self._host_volume = host_volume
         self._probe = probe
 
-    def survey(self, *, declared_names: list) -> list:
-        """List every container, running or not.
+    def survey(self, *, declared_names: list, hub_names: "dict | None" = None) -> list:
+        """List every container, running or not, each with its owner.
 
         Args:
-            declared_names: The names the hub declares, to mark ownership.
+            declared_names: The names the hub declares.
+            hub_names: The hub containers' names by module, as the last
+                apply rendered them; None names none.
 
         Returns:
             One :class:`PodmanContainerState` per container podman knows,
-            declared ones first. Empty when podman is absent.
+            and one per declared or hub container that has no container
+            yet; declared ones first, then hub ones, then a person's own.
+            Empty when podman is absent.
         """
         try:
             result = run(
@@ -356,13 +652,15 @@ class PodmanStatusReader:
             )
             if is_running:
                 probed += _probed_bindings(entry, bindings)
+            module = _module_label(entry, detail)
             states.append(
                 PodmanContainerState(
                     name=names[0],
                     image=entry.get("Image", ""),
                     status=entry.get("Status", ""),
                     is_running=is_running,
-                    is_declared=names[0] in declared_names,
+                    source=owner_of(names[0], module, declared_names),
+                    module=module,
                     host_ports=_host_ports(entry.get("Ports") or []),
                     host_bindings=bindings,
                     ports=_inspected_ports(detail),
@@ -380,21 +678,27 @@ class PodmanStatusReader:
             )
             for key, binding in probed:
                 binding["detected"] = found.get(key, "")
-        # A declared container with autostart off exists only as a unit
-        # until its first start, so podman has no row for it yet.
+        # A declared or hub container with autostart off exists only as a
+        # unit until its first start, so podman has no row for it yet.
         present = {state.name for state in states}
-        for name in declared_names:
-            if name not in present:
-                states.append(
-                    PodmanContainerState(
-                        name=name,
-                        image="",
-                        status="not created yet",
-                        is_running=False,
-                        is_declared=True,
-                    )
+        waiting = [(name, "") for name in declared_names]
+        for module, names in (hub_names or {}).items():
+            waiting += [(name, str(module)) for name in names]
+        for name, module in waiting:
+            if name in present:
+                continue
+            present.add(name)
+            states.append(
+                PodmanContainerState(
+                    name=name,
+                    image="",
+                    status="not created yet",
+                    is_running=False,
+                    source=PODMAN_SOURCE_HUB if module else PODMAN_SOURCE_DECLARED,
+                    module=module,
                 )
-        states.sort(key=_declared_first)
+            )
+        states.sort(key=_by_source)
         return states
 
     def _inspect(self, names: list) -> dict:
@@ -443,16 +747,17 @@ def has_unit_file(name: str) -> bool:
 class PodmanContainerController:
     """Starts and stops containers, each through its rightful owner."""
 
-    def control(self, name: str, action: str, *, is_declared: bool) -> None:
+    def control(self, name: str, action: str, *, source: str) -> None:
         """Start, stop or restart one container.
 
-        A declared container is driven through systemd, which supervises
-        it; an ad-hoc container has no unit, so podman is the only handle.
+        A declared or hub container is driven through systemd, which
+        supervises it; one a person started by hand has no unit, so podman
+        is the only handle.
 
         Args:
             name: The container's name.
             action: One of :data:`PODMAN_CONTAINER_ACTIONS`.
-            is_declared: Whether the hub declares it.
+            source: Where it comes from, ``hub``, ``declared`` or ``manual``.
 
         Raises:
             ValueError: For an action outside the list.
@@ -460,7 +765,7 @@ class PodmanContainerController:
         """
         if action not in PODMAN_CONTAINER_ACTIONS:
             raise ValueError(action)
-        if not is_declared:
+        if source == PODMAN_SOURCE_MANUAL:
             run([PODMAN_BINARY, action, name], timeout_s=120)
             return
         try:
@@ -503,8 +808,52 @@ def journal_lines(name: str, lines: int) -> list:
     return (result.stdout or result.stderr).splitlines()
 
 
-def _declared_first(state: PodmanContainerState) -> tuple:
-    return (not state.is_declared, state.name)
+def owner_of(name: str, module: str, declared_names: list) -> str:
+    """Where one container comes from, by the owner rule.
+
+    Args:
+        name: The container's name.
+        module: The module its label ``neutrino.module`` names, empty for none.
+        declared_names: The names the hub declares.
+
+    Returns:
+        ``hub`` for a container with the label, ``declared`` for a declared
+        name, ``manual`` for any other.
+    """
+    if module:
+        return PODMAN_SOURCE_HUB
+    if name in declared_names:
+        return PODMAN_SOURCE_DECLARED
+    return PODMAN_SOURCE_MANUAL
+
+
+def _by_source(state: PodmanContainerState) -> tuple:
+    return (SOURCE_ORDER.index(state.source), state.name)
+
+
+def _module_label(entry: dict, detail: dict) -> str:
+    """The module the label ``neutrino.module`` names, from ``ps`` or else ``inspect``."""
+    for labels in (
+        entry.get("Labels"),
+        (detail.get("Config") or {}).get("Labels"),
+    ):
+        if isinstance(labels, dict) and labels.get(PODMAN_MODULE_LABEL):
+            return str(labels[PODMAN_MODULE_LABEL])
+    return ""
+
+
+def _gateway_of(network: dict) -> str:
+    """The first gateway of one inspected network, netavark's or CNI's."""
+    for subnet in network.get("subnets") or []:
+        if isinstance(subnet, dict) and subnet.get("gateway"):
+            return str(subnet["gateway"])
+    for plugin in network.get("plugins") or []:
+        ranges = ((plugin or {}).get("ipam") or {}).get("ranges") or []
+        for group in ranges:
+            for held in group if isinstance(group, list) else []:
+                if isinstance(held, dict) and held.get("gateway"):
+                    return str(held["gateway"])
+    return ""
 
 
 def _inspected_ports(detail: dict) -> list:

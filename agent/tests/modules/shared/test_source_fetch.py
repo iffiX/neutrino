@@ -22,11 +22,16 @@ import pytest
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.source_fetch import (
     SourceProbe,
+    manifest_document,
     probe,
+    probe_image,
     rank_hosts,
+    rank_images,
     rank_registries,
+    rank_set,
     ranked,
     registry_document,
+    set_document,
 )
 
 PACKAGE = "@cloudcli-ai/cloudcli"
@@ -223,3 +228,140 @@ def test_the_probes_run_at_once():
 
     assert time.monotonic() - began < 0.5
     assert max(started) - min(started) < 0.15
+
+
+# --- images and source sets ---
+
+DIGEST = "sha256:" + "a" * 64
+
+
+class ChallengingRegistry:
+    """A loopback registry that answers 401 with a bearer challenge, and records the headers."""
+
+    def __init__(self):
+        self.headers: list = []
+        owner = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                owner.headers.append(dict(self.headers))
+                self.send_response(401)
+                self.send_header(
+                    "WWW-Authenticate",
+                    'Bearer realm="https://auth.example/token",service="r",'
+                    'scope="repository:acme/demo:pull"',
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args):
+                """Quiet."""
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.server.daemon_threads = True
+        threading.Thread(
+            target=self.server.serve_forever,
+            kwargs={"poll_interval": 0.02},
+            daemon=True,
+        ).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_a_401_keeps_its_challenge_and_headers_go_out_with_the_request():
+    registry = ChallengingRegistry()
+    try:
+        found = probe(registry.url + "/v2/x", headers={"Accept": "application/x"})
+    finally:
+        registry.close()
+
+    assert (found.status, found.reason) == (401, "http_401")
+    assert found.challenge.startswith('Bearer realm="https://auth.example/token"')
+    assert registry.headers[0]["Accept"] == "application/x"
+
+
+def test_an_image_is_asked_at_its_registry_s_manifest_address():
+    assert manifest_document("ghcr.io/acme/demo", DIGEST) == (
+        f"https://ghcr.io/v2/acme/demo/manifests/{DIGEST}"
+    )
+    assert manifest_document("docker.io/library/mongo", DIGEST) == (
+        f"https://registry-1.docker.io/v2/library/mongo/manifests/{DIGEST}"
+    )
+    assert manifest_document("docker.io/mongo", DIGEST) == (
+        f"https://registry-1.docker.io/v2/library/mongo/manifests/{DIGEST}"
+    )
+    assert manifest_document("localhost:5000/acme/demo", DIGEST) == (
+        f"https://localhost:5000/v2/acme/demo/manifests/{DIGEST}"
+    )
+
+
+def test_a_registry_that_wants_a_token_is_asked_again_with_an_anonymous_one():
+    asked: list = []
+
+    def probe_one(url, *, source="", headers=None):
+        asked.append((url, dict(headers or {})))
+        if url.startswith("https://auth.example/token"):
+            return SourceProbe(
+                source=source, is_answered=True, body=b'{"token": "anon"}', speed=1.0
+            )
+        if (headers or {}).get("Authorization") == "Bearer anon":
+            return SourceProbe(source=source, is_answered=True, status=200, speed=5.0)
+        return SourceProbe(
+            source=source,
+            status=401,
+            reason="http_401",
+            challenge='Bearer realm="https://auth.example/token",service="ghcr.io",'
+            'scope="repository:acme/demo:pull"',
+        )
+
+    found = probe_image("ghcr.io/acme/demo", DIGEST, probe_one=probe_one)
+
+    assert found.is_answered is True
+    assert asked[1][0] == (
+        "https://auth.example/token?service=ghcr.io&scope=repository%3Aacme%2Fdemo%3Apull"
+    )
+    assert asked[0][1]["Accept"].startswith("application/vnd.oci.image.index.v1+json")
+    assert asked[2][1]["Authorization"] == "Bearer anon"
+
+
+def test_images_are_ranked_by_their_manifest_and_a_docker_source_kept_under_mirrors():
+    speeds = {"ghcr.io/acme/demo": 1.0, "ghcr.nju.edu.cn/acme/demo": 8.0}
+
+    def probe_one(url, *, source="", headers=None):
+        if source in speeds:
+            return SourceProbe(source=source, is_answered=True, speed=speeds[source])
+        return SourceProbe(source=source, reason="timeout", detail="slow")
+
+    sources = ["ghcr.io/acme/demo", "ghcr.nju.edu.cn/acme/demo", "docker.io/acme/demo"]
+
+    plain = rank_images(sources, DIGEST, probe_one=probe_one)
+    mirrored = rank_images(
+        sources, DIGEST, is_docker_mirrored=True, probe_one=probe_one
+    )
+
+    assert plain == (
+        ["ghcr.nju.edu.cn/acme/demo", "ghcr.io/acme/demo"],
+        [{"source": "docker.io/acme/demo", "reason": "timeout", "detail": "slow"}],
+    )
+    assert mirrored[0] == [
+        "ghcr.nju.edu.cn/acme/demo",
+        "ghcr.io/acme/demo",
+        "docker.io/acme/demo",
+    ]
+
+
+def test_a_set_is_probed_at_its_path_under_each_source_fastest_first(sources):
+    slow = sources(body=b"x" * 200_000, chunks=20, pause_s=0.01)
+    fast = sources(body=b"x" * 200_000)
+    gone = closed_port()
+
+    order = rank_set([slow.url, gone, fast.url], probe_path="/pip/")
+
+    assert order == [fast.url, slow.url, gone]
+    assert slow.asked == ["/pip/"] and fast.asked == ["/pip/"]
+    assert set_document("https://pypi.org/simple", "/pip/") == (
+        "https://pypi.org/simple/pip/"
+    )

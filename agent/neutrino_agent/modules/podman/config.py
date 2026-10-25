@@ -1,10 +1,13 @@
-"""The declared containers: what this machine runs, as configuration.
+"""The declared containers and the hub containers: what this machine runs, as configuration.
 
 A container declared here becomes a systemd unit, so it survives reboots
 and appears to systemd like any other service. The knobs are few: image,
 ports, volumes, environment, a command, whether it starts at boot, and the
-service type of each host port. On Windows and macOS the containers run in
-one account's Podman machine, which the Run settings, ``machine``, name.
+service type of each host port. A hub container is one a container module
+runs: the hub composes it with its module, its image by digest and sources,
+the source sets its tools fetch from, the containers it starts after and the
+port its module's forwarder serves. On Windows and macOS the containers run
+in one account's Podman machine, which the Run settings, ``machine``, name.
 
 Pure: parsing and validation only.
 """
@@ -18,6 +21,8 @@ from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_DIGEST_PATTERN,
+    PODMAN_HUB_PREFIX,
     PODMAN_PROTOCOL_TCP,
     PODMAN_PROTOCOL_UDP,
     PODMAN_PROTOCOLS,
@@ -40,6 +45,17 @@ ENVIRONMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=[^\n]*\Z")
 
 # A registry mirror is a host, optionally with a port and path, never a URL.
 MIRROR_PATTERN = re.compile(r"^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?\Z")
+
+# A module's name, which names its label, its network and its volumes.
+MODULE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,47}\Z")
+
+# A hub container's image: a digest, and each source an image reference
+# with no tag and no digest.
+DIGEST_PATTERN = re.compile(PODMAN_DIGEST_PATTERN + r"\Z")
+IMAGE_SOURCE_PATTERN = re.compile(r"^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+\Z")
+
+# A source set's name, as a hub container lists it.
+SOURCE_SET_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\Z")
 
 
 def _tcp_only() -> list:
@@ -181,6 +197,106 @@ class PodmanContainer:
 
 
 @dataclass
+class PodmanHubContainer:
+    """One container a container module runs on Containers.
+
+    Attributes:
+        module: The container module that runs it.
+        name: The container's and its systemd unit's name.
+        digest: The digest of its image, the index of every architecture.
+        sources: The image references that serve the image, with no tag.
+        ports: Published ports, as a declared container writes them.
+        volumes: Named volumes as ``name:destination``.
+        environment: Variables as ``KEY=value`` lines; a value ``{<set>}``
+            of a set the container lists is that set's fastest source.
+        command: What to run instead of the image's own command.
+        is_autostart: Whether it comes up with the machine.
+        services: One :class:`PodmanService` per host port it names.
+        source_sets: The source sets whose variables its environment gets.
+        after: The containers of its module it starts after, by name.
+        page_port: The container's port its module's forwarder serves; 0
+            for none.
+    """
+
+    module: str
+    name: str
+    digest: str
+    sources: list = field(default_factory=list)
+    ports: list = field(default_factory=list)
+    volumes: list = field(default_factory=list)
+    environment: list = field(default_factory=list)
+    command: str = ""
+    is_autostart: bool = True
+    services: list = field(default_factory=list)
+    source_sets: list = field(default_factory=list)
+    after: list = field(default_factory=list)
+    page_port: int = 0
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PodmanHubContainer":
+        image = data.get("image") if isinstance(data.get("image"), dict) else {}
+        return cls(
+            module=str(data.get("module", "") or ""),
+            name=str(data.get("name", "") or ""),
+            digest=str(image.get("digest", "") or ""),
+            sources=[str(source) for source in image.get("sources") or []],
+            ports=[str(port) for port in data.get("ports") or []],
+            volumes=[str(volume) for volume in data.get("volumes") or []],
+            environment=[str(entry) for entry in data.get("environment") or []],
+            command=str(data.get("command", "") or ""),
+            is_autostart=bool(data.get("is_autostart", True)),
+            services=[
+                PodmanService.from_dict(entry)
+                for entry in data.get("services") or []
+                if isinstance(entry, dict)
+            ],
+            source_sets=[str(name) for name in data.get("source_sets") or []],
+            after=[str(name) for name in data.get("after") or []],
+            page_port=_count(data.get("page_port", 0)),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "module": self.module,
+            "name": self.name,
+            "image": {"digest": self.digest, "sources": list(self.sources)},
+            "ports": list(self.ports),
+            "volumes": list(self.volumes),
+            "environment": list(self.environment),
+            "command": self.command,
+            "is_autostart": self.is_autostart,
+            "services": [service.to_dict() for service in self.services],
+            "source_sets": list(self.source_sets),
+            "after": list(self.after),
+            "page_port": self.page_port,
+        }
+
+    @property
+    def network(self) -> str:
+        """The network the containers of its module join, ``neutrino_<module>``."""
+        return PODMAN_HUB_PREFIX + self.module
+
+    def as_container(self) -> PodmanContainer:
+        """The knobs a hub container shares with a declared one.
+
+        Returns:
+            Its name, ports, volumes, environment, command, autostart and
+            services; ``image`` holds the digest, since the reference is
+            the one found in Podman's store.
+        """
+        return PodmanContainer(
+            name=self.name,
+            image=self.digest,
+            ports=list(self.ports),
+            volumes=list(self.volumes),
+            environment=list(self.environment),
+            command=self.command,
+            is_autostart=self.is_autostart,
+            services=list(self.services),
+        )
+
+
+@dataclass
 class PodmanMachineSettings:
     """The Run settings: whose Podman machine runs the containers, and its size.
 
@@ -229,11 +345,14 @@ class PodmanConfig:
         mirrors: Registry mirrors for docker.io, tried in order.
         machine: The Run settings on Windows and macOS; None where the
             state names none, which a Linux state never does.
+        hub_containers: The hub containers the container modules compose,
+            one :class:`PodmanHubContainer` each.
     """
 
     containers: list = field(default_factory=list)
     mirrors: list = field(default_factory=list)
     machine: "PodmanMachineSettings | None" = None
+    hub_containers: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "PodmanConfig":
@@ -248,12 +367,20 @@ class PodmanConfig:
                 if isinstance(machine, dict)
                 else None
             ),
+            hub_containers=[
+                PodmanHubContainer.from_dict(entry)
+                for entry in data.get("hub_containers") or []
+                if isinstance(entry, dict)
+            ],
         )
 
     def to_dict(self) -> dict:
         data = {
             "containers": [container.to_dict() for container in self.containers],
             "mirrors": list(self.mirrors),
+            "hub_containers": [
+                container.to_dict() for container in self.hub_containers
+            ],
         }
         if self.machine is not None:
             data["machine"] = self.machine.to_dict()
@@ -263,6 +390,33 @@ class PodmanConfig:
     def declared_names(self) -> list:
         """The declared containers' names, in order."""
         return [container.name for container in self.containers]
+
+    def hub_names(self) -> dict:
+        """The hub containers' names by module, each module's in order.
+
+        Returns:
+            Module name to its containers' names.
+        """
+        names: dict = {}
+        for container in self.hub_containers:
+            names.setdefault(container.module, []).append(container.name)
+        return names
+
+    def with_hub_containers(self, hub_containers: list) -> "PodmanConfig":
+        """The same configuration with another list of hub containers.
+
+        Args:
+            hub_containers: The hub containers it holds instead.
+
+        Returns:
+            A new configuration; this one is left as it is.
+        """
+        return PodmanConfig(
+            containers=list(self.containers),
+            mirrors=list(self.mirrors),
+            machine=self.machine,
+            hub_containers=list(hub_containers),
+        )
 
     def validate(
         self,
@@ -323,6 +477,8 @@ class PodmanConfig:
             self._validate_services(container)
             if os_name == "windows":
                 self._validate_windows_ports(container)
+        for container in self.hub_containers:
+            self._validate_hub_container(container, seen, os_name=os_name)
         for mirror in self.mirrors:
             if not MIRROR_PATTERN.match(mirror):
                 raise ModuleApplyError("mirror_invalid", {"mirror": mirror})
@@ -332,6 +488,73 @@ class PodmanConfig:
                 host_cpus=host_cpus,
                 host_memory_gib=host_memory_gib,
                 disk_gib_now=disk_gib_now,
+            )
+
+    def _validate_hub_container(
+        self, container: PodmanHubContainer, seen: set, *, os_name: str
+    ) -> None:
+        """Refuse a hub container the agent cannot render; its name joins ``seen``."""
+        name = container.name
+        module = container.module
+        is_named = CONTAINER_NAME_PATTERN.match(name) is not None and (
+            name == PODMAN_HUB_PREFIX + module
+            or name.startswith(PODMAN_HUB_PREFIX + module + "_")
+        )
+        if not MODULE_NAME_PATTERN.match(module) or not is_named:
+            raise ModuleApplyError("container_name_invalid", {"name": name})
+        if name in seen:
+            raise ModuleApplyError("container_name_duplicate", {"name": name})
+        seen.add(name)
+        is_image_sound = (
+            DIGEST_PATTERN.match(container.digest) is not None
+            and bool(container.sources)
+            and all(IMAGE_SOURCE_PATTERN.match(source) for source in container.sources)
+        )
+        if not is_image_sound:
+            raise ModuleApplyError(
+                "image_invalid", {"name": name, "image": container.digest}
+            )
+        for port in container.ports:
+            if not PORT_MAPPING_PATTERN.match(port):
+                raise ModuleApplyError(
+                    "port_mapping_invalid", {"name": name, "port": port}
+                )
+        volume_prefix = PODMAN_HUB_PREFIX + module + "_"
+        for volume in container.volumes:
+            source, _, destination = volume.partition(":")
+            is_sound = (
+                CONTAINER_NAME_PATTERN.match(source) is not None
+                and source.startswith(volume_prefix)
+                and destination.startswith("/")
+                and "\n" not in volume
+            )
+            if not is_sound:
+                raise ModuleApplyError(
+                    "volume_invalid", {"name": name, "volume": volume}
+                )
+        for line in container.environment:
+            if not ENVIRONMENT_PATTERN.match(line):
+                raise ModuleApplyError(
+                    "environment_invalid", {"name": name, "entry": line}
+                )
+        if "\n" in container.command:
+            raise ModuleApplyError("command_invalid", {"name": name})
+        self._validate_services(container.as_container())
+        if os_name == "windows":
+            self._validate_windows_ports(container.as_container())
+        for set_name in container.source_sets:
+            if not SOURCE_SET_PATTERN.match(set_name):
+                raise ModuleApplyError(
+                    "environment_invalid", {"name": name, "entry": set_name}
+                )
+        siblings = self.hub_names().get(module, [])
+        for other in container.after:
+            if other == name or other not in siblings:
+                raise ModuleApplyError("container_unknown", {"name": other})
+        if not 0 <= container.page_port <= 65535:
+            raise ModuleApplyError(
+                "port_mapping_invalid",
+                {"name": name, "port": str(container.page_port)},
             )
 
     def _validate_machine(
@@ -360,7 +583,7 @@ class PodmanConfig:
                 "machine_disk_shrink",
                 {"disk_gib": settings.disk_gib, "current_gib": disk_gib_now},
             )
-        if self.containers and not settings.account:
+        if (self.containers or self.hub_containers) and not settings.account:
             raise ModuleApplyError("machine_account_missing", {})
 
     def _validate_machine_volume(self, name: str, volume: str, os_name: str) -> None:

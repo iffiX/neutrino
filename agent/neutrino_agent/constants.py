@@ -424,6 +424,11 @@ AGENT_METHOD_AGENT = "agent"
 AGENT_METHOD_BUILTIN = "builtin"
 AGENT_METHOD_SYSTEM = "system"
 AGENT_METHOD_HUB = "hub"
+AGENT_METHOD_CONTAINER = "container"
+# The runner of every module of the ``container`` method, and the module
+# that runs its containers.
+AGENT_CONTAINER_RUNNER = "container"
+AGENT_CONTAINERS_MODULE = "podman"
 # The kinds of artifact a ``hub`` recipe names: the two archives unpacked
 # under the module's directory, a program kept as the publisher's bytes, the
 # two installer packages, the two zstd files kept as they came, and an npm
@@ -452,3 +457,17 @@ AGENT_SOURCE_PROBE_TIMEOUT_S = 5.0
 AGENT_SOURCE_DOCUMENT_LIMIT_BYTES = 4 * 1024 * 1024
 AGENT_SOURCE_NEAR_TIE = 0.1
 AGENT_SOURCE_HEADERS = {"User-Agent": "neutrino-agent"}
+# An image's source: the manifest kinds a registry may answer the request
+# for a digest with, the host docker.io's registry answers on, and the
+# namespace a docker.io image of one name lives in.
+AGENT_SOURCE_MANIFEST_ACCEPT = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
+AGENT_SOURCE_DOCKER_HUB = "docker.io"
+AGENT_SOURCE_DOCKER_REGISTRY = "registry-1.docker.io"
+AGENT_SOURCE_DOCKER_LIBRARY = "library"

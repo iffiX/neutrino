@@ -6,8 +6,10 @@ system's installer; the machine image stays a file for ``podman machine
 init``. An apply makes the account's default machine exist, rootful, on
 WSL's NAT network on Windows and the size the Run settings name, writes and
 starts the keeper that brings it up at boot, waits until the machine answers
-the read, and writes the declared containers into it with one root script. What differs between Windows and
-macOS around the machine is the system's applier, a
+the read, and writes the declared containers, and the hub containers of each
+module whose images are in the machine's store, into it with one root
+script. What differs between Windows and macOS around the machine is the
+system's applier, a
 :class:`PodmanSystemApplier`. A root-only record of the last apply lets the
 reads, the journal and the verbs go on after the agent restarts.
 
@@ -31,7 +33,14 @@ from neutrino_agent.exceptions import (
     ModuleInstallPending,
     PlatformUnsupportedError,
 )
-from neutrino_agent.modules.podman.applier import PodmanStatusReader, podman_version
+from neutrino_agent.modules.podman.applier import (
+    PodmanStatusReader,
+    ensure_network,
+    fastest_sources,
+    image_references,
+    podman_version,
+    ready_hub_containers,
+)
 from neutrino_agent.modules.podman.config import (
     CONTAINER_NAME_PATTERN,
     PodmanConfig,
@@ -55,13 +64,17 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RUNNER,
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
+    PODMAN_SOURCE_MANUAL,
 )
 from neutrino_agent.modules.podman.machine import PodmanMachine
 from neutrino_agent.modules.podman.machine_keeper import keeper_service
 from neutrino_agent.modules.podman.machine_paths import to_host_source
+from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
+    PodmanRenderContext,
     machine_control_script,
+    machine_drop_script,
     machine_journal_script,
     machine_stop_script,
 )
@@ -99,6 +112,14 @@ def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
 
         return PodmanDarwinApplier(platform=platform)
     return PodmanSystemApplier()
+
+
+def _unit_names(declared: list, hub_names: dict) -> list:
+    """The containers a unit file stands for in the machine: every declared and hub one."""
+    names = list(declared)
+    for module_names in hub_names.values():
+        names += module_names
+    return names
 
 
 def _whole(value) -> int:
@@ -296,6 +317,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # One apply, stop or removal at a time.
         self._apply_lock = threading.Lock()
         self._config: "PodmanConfig | None" = None
+        self._wanted: "PodmanConfig | None" = None
+        self._source_sets: dict = {}
+        self._page_ports = PodmanPagePortStore(directory=platform.agent_data_dir())
         # The last reading of the machine: ``(at, account, command, info)``,
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
@@ -401,9 +425,17 @@ class PodmanMachineModuleRunner(ModuleRunner):
                     {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
                 ) from error
             self._wait_for_machine(machine)
-            self._write_record(settings, disk_gib, parsed)
+            try:
+                rendered, context = self._rendered_config(machine, parsed)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise ModuleApplyError(
+                    "apply_failed",
+                    {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
+                ) from error
+            self._config = rendered
+            self._write_record(settings, disk_gib, rendered)
             script = PodmanMachineScriptRenderer(
-                config=parsed, os_name=self._platform.os_name
+                config=rendered, os_name=self._platform.os_name, context=context
             ).render()
             done = machine.shell(script)
             output = f"{done.stdout or ''}{done.stderr or ''}"
@@ -424,8 +456,24 @@ class PodmanMachineModuleRunner(ModuleRunner):
             )
             self._log(f"podman: {'; '.join(notes)}")
 
+    def take_config(self, config: dict) -> None:
+        """Take the configuration the state names, before any apply of it.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+        self._wanted = PodmanConfig.from_dict(config)
+
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Take the state's ``source_sets`` section.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+        self._source_sets = dict(source_sets)
+
     def stop(self) -> None:
-        """Stop every declared container in the machine, leaving images and volumes."""
+        """Stop every declared and hub container in the machine, leaving images and volumes."""
         with self._apply_lock:
             record = self._record()
             if not record:
@@ -532,15 +580,16 @@ class PodmanMachineModuleRunner(ModuleRunner):
         command, info = self._read(machine)
         if info is None:
             return details
+        hub_names = self.hub_names()
         states = PodmanStatusReader(
             podman=command,
-            has_unit=frozenset(names).__contains__,
+            has_unit=frozenset(_unit_names(names, hub_names)).__contains__,
             is_address_kept=False,
             host_volume=functools.partial(
                 to_host_source, os_name=self._platform.os_name
             ),
             probe=self._probe,
-        ).survey(declared_names=names)
+        ).survey(declared_names=names, hub_names=hub_names)
         host = info.get("host") if isinstance(info.get("host"), dict) else {}
         details["containers"] = [vars(state) for state in states]
         details["is_active"] = True
@@ -602,6 +651,169 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 1, "verb_unknown", {"module": self.name, "verb": action}
             )
         return self._control(machine, record, name, action)
+
+    # --- what a container module asks of the engine ---
+
+    def podman_command(self) -> tuple:
+        """The podman command a container module reaches the engine with.
+
+        Returns:
+            The read's command into the last applied account's machine;
+            empty while no machine was applied.
+
+        Raises:
+            ModuleApplyError: ``machine_unreachable`` when the machine's
+                settings file names no port; ``account_unknown {account}``
+                when the computer no longer has the account.
+        """
+        return self.read_command()
+
+    def mirrors(self) -> list:
+        """The docker.io mirrors the state names, else the last apply's."""
+        config = self._wanted or self._config or PodmanConfig()
+        return list(config.mirrors)
+
+    def hub_names(self) -> dict:
+        """The hub containers the last apply wrote into the machine, by module.
+
+        Returns:
+            Module name to its containers' names: the last apply's in this
+            process, else the record's after a start.
+        """
+        if self._config is not None:
+            return self._config.hub_names()
+        held = self._record().get("hub_names")
+        if not isinstance(held, dict):
+            return {}
+        return {
+            str(module): [str(name) for name in names]
+            for module, names in held.items()
+            if isinstance(names, list)
+        }
+
+    def is_engine_active(self) -> bool:
+        """Whether the machine answers the read."""
+        return self.is_active()
+
+    def drive_hub_containers(self, names: list, action: str) -> None:
+        """Start, stop or restart the units of some hub containers in the machine.
+
+        Args:
+            names: The containers.
+            action: ``start``, ``stop`` or ``restart``.
+
+        Raises:
+            ValueError: For an action outside those.
+            ModuleApplyError: ``command_failed`` with systemd's words when it
+                refuses, the machine's own code when it cannot be reached.
+        """
+        record = self._record()
+        if not record or not names:
+            return
+        script = "".join(machine_control_script(name, action) for name in names)
+        done = self._machine_of_record(record).shell(script)
+        if done.returncode != 0:
+            said = f"{done.stdout or ''}{done.stderr or ''}".strip()
+            raise ModuleApplyError(
+                "command_failed", {"detail": said[-PODMAN_MACHINE_DETAIL_CHARS:]}
+            )
+
+    def drop_hub_containers(self, module: str) -> None:
+        """Stop and delete one module's hub containers' files in the machine, and forget them.
+
+        Args:
+            module: The container module.
+        """
+        names = self.hub_names().get(module, [])
+        record = self._record()
+        if record and names:
+            self._run_quietly(
+                self._machine_of_record(record),
+                machine_drop_script(names, os_name=self._platform.os_name),
+            )
+        if self._config is not None:
+            self._config = self._config.with_hub_containers(
+                [
+                    container
+                    for container in self._config.hub_containers
+                    if container.module != module
+                ]
+            )
+        if record:
+            held = dict(record.get("hub_names") or {})
+            held.pop(module, None)
+            try:
+                self._records.write({**record, "hub_names": held})
+            except OSError as error:
+                self._log(f"podman: the record was not written: {error}")
+        self._page_ports.remove(module)
+
+    def hub_journal(self, names: list, lines: int) -> list:
+        """The journals of some hub containers' units in the machine, one after another.
+
+        Args:
+            names: The containers, in the order their journals come.
+            lines: How many lines of each to read at most.
+
+        Returns:
+            The lines, each container's oldest first; empty while no
+            machine was applied or the machine cannot be reached.
+        """
+        record = self._record()
+        if not record or not names:
+            return []
+        script = "".join(machine_journal_script(name, lines) for name in names)
+        try:
+            done = self._machine_of_record(record).shell(script)
+        except ModuleApplyError as error:
+            self._log(f"podman: the journal was not read: {error}")
+            return []
+        return (done.stdout or "").splitlines()
+
+    def page_port(self, module: str, name: str) -> int:
+        """The loopback port a hub container's page is published at.
+
+        Args:
+            module: The container module.
+            name: The hub container.
+
+        Returns:
+            The port its module's record keeps, picked the first time.
+
+        Raises:
+            OSError: When no port can be picked or kept.
+        """
+        return self._page_ports.port_for(module, name)
+
+    def _record(self) -> dict:
+        """The last apply's record, empty when none is held."""
+        records = self._records.read_all()
+        return records[0] if records else {}
+
+    def _machine_of(self, account: str, password: str) -> PodmanMachine:
+        return self._machine_class(
+            platform=self._platform,
+            account=account,
+            password=password,
+            binary=self._system.binary,
+            provider=self._system.provider,
+            environment=self._system.machine_environment(account),
+        )
+
+    def _machine_of_record(self, record: dict) -> PodmanMachine:
+        return self._machine_of(
+            str(record.get("account", "") or ""), str(record.get("password", "") or "")
+        )
+
+    def _keeper_of(self, account: str, password: str):
+        return keeper_service(
+            os_name=self._platform.os_name,
+            module_dir=self._service_machine.module_dir,
+            account=account,
+            password=password,
+            binary=self._system.binary,
+            provider=self._system.provider,
+        )
 
     def _checked(self, config: dict) -> tuple:
         """The configuration parsed and checked against this computer.
@@ -796,17 +1008,19 @@ class PodmanMachineModuleRunner(ModuleRunner):
         person started by hand through the read's command.
         """
         names = self._declared_names(record)
+        hub_names = self.hub_names()
         command, info = self._read(machine)
         if info is None:
             return command_outcome(1, "machine_unreachable", {"detail": ""})
         states = PodmanStatusReader(
-            podman=command, has_unit=frozenset(names).__contains__
-        ).survey(declared_names=names)
+            podman=command,
+            has_unit=frozenset(_unit_names(names, hub_names)).__contains__,
+        ).survey(declared_names=names, hub_names=hub_names)
         state = next((entry for entry in states if entry.name == name), None)
         if state is None:
             return command_outcome(1, "container_unknown", {"name": name})
         try:
-            if state.is_declared:
+            if state.source != PODMAN_SOURCE_MANUAL:
                 done = machine.shell(machine_control_script(name, action))
                 if done.returncode != 0:
                     said = f"{done.stdout or ''}{done.stderr or ''}".strip()
@@ -889,7 +1103,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def _write_record(
         self, settings: PodmanMachineSettings, disk_gib: int, parsed: PodmanConfig
     ) -> None:
-        """Keep the last apply: the account, its login, the Run settings, the disk's size and the declared names.
+        """Keep the last apply: the account, its login, the Run settings, the disk's size, the declared names and the hub names by module.
 
         Raises:
             ModuleApplyError: ``apply_failed`` when the record cannot be written.
@@ -903,6 +1117,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                     "memory_gib": settings.memory_gib,
                     "disk_gib": disk_gib,
                     "names": parsed.declared_names,
+                    "hub_names": parsed.hub_names(),
                 }
             )
         except OSError as error:
@@ -916,32 +1131,46 @@ class PodmanMachineModuleRunner(ModuleRunner):
             return self._config.declared_names
         return [str(name) for name in record.get("names") or []]
 
-    def _record(self) -> dict:
-        """The last apply's record, empty when none is held."""
-        records = self._records.read_all()
-        return records[0] if records else {}
+    def _rendered_config(self, machine: PodmanMachine, parsed: PodmanConfig) -> tuple:
+        """The configuration this apply writes into the machine, and what its files name.
 
-    def _machine_of(self, account: str, password: str) -> PodmanMachine:
-        return self._machine_class(
-            platform=self._platform,
-            account=account,
-            password=password,
-            binary=self._system.binary,
-            provider=self._system.provider,
-            environment=self._system.machine_environment(account),
-        )
+        Returns:
+            ``(config, context)``: the configuration with the hub containers
+            whose module has every image in the machine's store, and their
+            stored images, page ports and source sets' sources. The
+            machine's own Podman maps ``host.containers.internal``, so no
+            gateway is named.
 
-    def _machine_of_record(self, record: dict) -> PodmanMachine:
-        return self._machine_of(
-            str(record.get("account", "") or ""), str(record.get("password", "") or "")
+        Raises:
+            ModuleApplyError: ``machine_unreachable`` when the machine's
+                settings file names no port.
+            subprocess.CalledProcessError: If Podman refuses to make a
+                network.
+            OSError: When Podman cannot start or a page port cannot be kept.
+        """
+        if not parsed.hub_containers:
+            return parsed, PodmanRenderContext()
+        command = machine.read_command()
+        ready, images = ready_hub_containers(parsed, image_references(podman=command))
+        networks = []
+        for container in ready:
+            if container.network not in networks:
+                networks.append(container.network)
+        for network in networks:
+            if ensure_network(network, podman=command):
+                self._log(f"podman: made the network {network}")
+        page_ports = {
+            container.name: self.page_port(container.module, container.name)
+            for container in ready
+            if container.page_port
+        }
+        set_names = []
+        for container in ready:
+            set_names += [
+                name for name in container.source_sets if name not in set_names
+            ]
+        sources, variables = fastest_sources(set_names, self._source_sets)
+        context = PodmanRenderContext(
+            images=images, page_ports=page_ports, sources=sources, variables=variables
         )
-
-    def _keeper_of(self, account: str, password: str):
-        return keeper_service(
-            os_name=self._platform.os_name,
-            module_dir=self._service_machine.module_dir,
-            account=account,
-            password=password,
-            binary=self._system.binary,
-            provider=self._system.provider,
-        )
+        return parsed.with_hub_containers(ready), context

@@ -73,12 +73,13 @@ def published_ports(
         the Gitea module reports, each configured editor or CloudCLI
         instance's port, and each port a running container publishes on
         TCP. On UDP: each port a running container publishes on UDP, and
-        nothing else. A container's port goes to the one address it is
+        nothing else. The port a hub container's ``page_port`` is published
+        at is never one. A container's port goes to the one address it is
         published on when it names one; every other to loopback. A binding
         that names no protocol is TCP.
     """
     if protocol != AGENT_CONNECT_TCP:
-        return _container_ports(modules, protocol)
+        return _container_ports(modules, desired_modules, protocol)
     ports: dict = {}
     samba = _configured(modules.get("samba"))
     if samba is not None and samba.get("shares"):
@@ -101,7 +102,7 @@ def published_ports(
             port = _port(instance.get("port") if isinstance(instance, dict) else 0)
             if port:
                 ports[port] = AGENT_CONNECT_LOOPBACK
-    ports.update(_container_ports(modules, protocol))
+    ports.update(_container_ports(modules, desired_modules, protocol))
     return ports
 
 
@@ -264,22 +265,51 @@ class ConnectStream:
             connection.shutdown(socket.SHUT_RDWR)
 
 
-def _container_ports(modules: dict, protocol: str) -> dict:
-    """The ports the Podman module's running containers publish on one protocol."""
+def _container_ports(modules: dict, desired_modules: dict, protocol: str) -> dict:
+    """The ports the Podman module's running containers publish on one protocol,
+    the port a hub container's ``page_port`` is published at left out."""
     ports: dict = {}
     podman = _configured(modules.get("podman"))
+    pages = _page_ports(desired_modules)
     for container in (podman or {}).get("containers") or []:
         if not isinstance(container, dict) or not container.get("is_running"):
             continue
+        page_hosts = _page_hosts(container, pages.get(str(container.get("name", ""))))
         for binding in container.get("host_bindings") or []:
             if not isinstance(binding, dict):
                 continue
             if str(binding.get("protocol", "") or AGENT_CONNECT_TCP) != protocol:
                 continue
             port = _port(binding.get("port"))
-            if port:
+            if port and port not in page_hosts:
                 ports[port] = dial_address(str(binding.get("address", "") or ""))
     return ports
+
+
+def _page_ports(desired_modules: dict) -> dict:
+    """Each hub container's ``page_port`` the state names, by container name."""
+    entry = desired_modules.get("podman")
+    config = entry.get("config") if isinstance(entry, dict) else None
+    if not isinstance(config, dict):
+        return {}
+    pages = {}
+    for container in config.get("hub_containers") or []:
+        if isinstance(container, dict) and _port(container.get("page_port")):
+            pages[str(container.get("name", ""))] = container["page_port"]
+    return pages
+
+
+def _page_hosts(container: dict, page_port) -> set:
+    """The host ports one reported container publishes its ``page_port`` at."""
+    if not page_port:
+        return set()
+    hosts = set()
+    for mapping in container.get("ports") or []:
+        host, _, rest = str(mapping).partition(":")
+        inside = rest.partition("/")[0]
+        if host.isdigit() and inside == str(page_port):
+            hosts.add(int(host))
+    return hosts
 
 
 def _configured(status) -> "dict | None":

@@ -106,13 +106,25 @@ CONFIG = {
 class FakeUnitApplier:
     applied: list = []
     stops = 0
+    driven: list = []
+    removed: list = []
 
-    def apply(self, rendered, *, autostart_names):
+    def apply(self, rendered, *, autostart_names, source_keys=None):
         FakeUnitApplier.applied.append((sorted(rendered), autostart_names))
         return "containers: web"
 
     def stop_all(self):
         FakeUnitApplier.stops += 1
+
+    def drive(self, names, action):
+        FakeUnitApplier.driven.append((list(names), action))
+
+    def remove(self, names):
+        FakeUnitApplier.removed.append(list(names))
+        return list(names)
+
+    def remove_all(self):
+        FakeUnitApplier.removed.append(["*"])
 
 
 class FakeRegistries:
@@ -127,12 +139,17 @@ class FakeReader:
     def __init__(self, *, probe=None):
         self.probe = probe
 
-    def survey(self, *, declared_names):
+    def survey(self, *, declared_names, hub_names=None):
         return [
             PodmanContainerState(
-                "web", "nginx", "Up", True, "web" in declared_names, [8080]
+                "web",
+                "nginx",
+                "Up",
+                True,
+                "declared" if "web" in declared_names else "manual",
+                host_ports=[8080],
             ),
-            PodmanContainerState("adhoc", "alpine", "Exited", False, False, []),
+            PodmanContainerState("adhoc", "alpine", "Exited", False, "manual"),
         ]
 
 
@@ -150,16 +167,65 @@ class FakeController:
     calls: list = []
     error = None
 
-    def control(self, name, action, *, is_declared):
+    def control(self, name, action, *, source):
         if FakeController.error is not None:
             raise FakeController.error
-        FakeController.calls.append((name, action, is_declared))
+        FakeController.calls.append((name, action, source))
+
+
+class FakeRenderer:
+    """Renders one file per container it is given, and remembers the context."""
+
+    seen: list = []
+
+    def __init__(self, config, context=None):
+        FakeRenderer.seen.append((config, context))
+        self._config = config
+
+    def render(self):
+        names = [
+            c.name for c in [*self._config.containers, *self._config.hub_containers]
+        ]
+        return {f"{name}.container": "x" for name in names}
+
+    def source_keys(self):
+        return {}
+
+
+class FakeSystem:
+    """Records every command the runner itself runs; podman's answers are canned."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.error = None
+
+    def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
+        self.calls.append(list(command))
+        if self.error is not None:
+            raise self.error
+        return CommandResult(list(command), 0, "", "")
 
 
 @pytest.fixture
-def runner(monkeypatch):
+def system(monkeypatch):
+    """Every command the runner runs, ``systemctl`` and podman's network and
+    image reads among them, recorded and never started."""
+    held = FakeSystem()
+    monkeypatch.setattr(runner_module, "run", held)
+    monkeypatch.setattr(runner_module, "network_gateway", lambda name: "10.88.0.1")
+    monkeypatch.setattr(runner_module, "ensure_network", lambda name: False)
+    monkeypatch.setattr(runner_module, "image_references", lambda: set())
+    monkeypatch.setattr(runner_module, "fastest_sources", lambda names, sets: ({}, {}))
+    return held
+
+
+@pytest.fixture
+def runner(monkeypatch, system, tmp_path):
     FakeUnitApplier.applied = []
     FakeUnitApplier.stops = 0
+    FakeUnitApplier.driven = []
+    FakeUnitApplier.removed = []
+    FakeRenderer.seen = []
     FakeRegistries.written = []
     FakeController.calls = []
     FakeController.error = None
@@ -172,11 +238,7 @@ def runner(monkeypatch):
     monkeypatch.setattr(runner_module, "podman_version", lambda: "4.9.3")
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "journal_lines", lambda name, lines: ["a", "b"])
-    monkeypatch.setattr(
-        runner_module,
-        "container_renderer",
-        lambda config: type("R", (), {"render": lambda self: {"web.container": "x"}})(),
-    )
+    monkeypatch.setattr(runner_module, "container_renderer", FakeRenderer)
     return PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
 
 
@@ -195,7 +257,7 @@ def test_apply_renders_the_units_and_the_mirrors(runner):
 
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
-    def refuse(self, rendered, *, autostart_names):
+    def refuse(self, rendered, *, autostart_names, source_keys=None):
         raise subprocess.CalledProcessError(1, ["systemctl"], stderr="bad unit")
 
     monkeypatch.setattr(FakeUnitApplier, "apply", refuse)
@@ -206,10 +268,38 @@ def test_a_refused_apply_is_typed(runner, monkeypatch):
     assert refused.value.code == "apply_failed"
 
 
-def test_stop_takes_every_declared_container_down(runner):
+def test_stop_takes_every_container_down_then_turns_the_socket_off(runner, system):
     runner.stop()
 
     assert FakeUnitApplier.stops == 1
+    assert system.calls == [["systemctl", "disable", "--now", "podman.socket"]]
+
+
+def test_start_turns_the_socket_on(runner, system):
+    runner.start()
+
+    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
+
+
+def test_a_refused_socket_is_apply_failed(runner, system):
+    system.error = subprocess.CalledProcessError(1, ["systemctl"], stderr="denied")
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.start()
+
+    assert refused.value.code == "apply_failed"
+
+
+def test_the_install_turns_the_socket_on_after_the_packages(runner, system):
+    installed: list = []
+    runner._platform.install_system_packages = (
+        lambda names: installed.append(names) or ""
+    )
+
+    runner.install({"method": "system", "params": {"packages": ["podman"]}})
+
+    assert installed == [["podman"]]
+    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
 
 
 def test_is_active_is_the_units_word(runner, monkeypatch):
@@ -239,25 +329,25 @@ def test_a_declaration_is_surveyed_while_its_start_still_waits(runner, monkeypat
     so a report taken during an image pull lists the container."""
     seen: list = []
 
-    def start(self, rendered, *, autostart_names):
+    def start(self, rendered, *, autostart_names, source_keys=None):
         seen.append(runner.details({})["containers"])
 
     monkeypatch.setattr(FakeUnitApplier, "apply", start)
 
     runner.apply(CONFIG)
 
-    assert [c["name"] for c in seen[0] if c["is_declared"]] == ["web"]
+    assert [c["name"] for c in seen[0] if c["source"] == "declared"] == ["web"]
 
 
-def test_details_separate_declared_from_ad_hoc(runner):
+def test_details_separate_declared_from_manual(runner):
     runner.apply(CONFIG)
 
     details = runner.details({})
 
     by_name = {c["name"]: c for c in details["containers"]}
-    assert by_name["web"]["is_declared"] is True
+    assert by_name["web"]["source"] == "declared"
     assert by_name["web"]["host_ports"] == [8080]
-    assert by_name["adhoc"]["is_declared"] is False
+    assert by_name["adhoc"]["source"] == "manual"
     assert details["mirrors"] == ["mirror.example"]
     assert details["version"] == "4.9.3"
     assert details["is_active"] is True
@@ -271,7 +361,7 @@ def test_control_drives_a_known_container_and_refuses_an_unknown(runner):
     verb = runner.command("control", {"name": "web", "action": "rm"})
 
     assert good["exit_code"] == 0
-    assert FakeController.calls == [("web", "restart", True)]
+    assert FakeController.calls == [("web", "restart", "declared")]
     assert ghost["code"] == "container_unknown"
     assert verb["code"] == "verb_unknown"
     assert verb["params"] == {"module": "podman", "verb": "rm"}
@@ -334,7 +424,8 @@ def test_the_details_read_what_podman_itself_says_of_each_container(
         "image": "docker.io/library/nginx:1.27",
         "status": "Up 2 hours",
         "is_running": True,
-        "is_declared": False,
+        "source": "manual",
+        "module": "",
         "host_ports": [8080],
         "ports": ["8080:80"],
         "volumes": [
@@ -369,8 +460,8 @@ def test_the_details_mark_the_containers_the_hub_declares(runner, monkeypatch):
 
     by_name = {c["name"]: c for c in runner.details({})["containers"]}
 
-    assert by_name["web"]["is_declared"] is True
-    assert by_name["adhoc"]["is_declared"] is False
+    assert by_name["web"]["source"] == "declared"
+    assert by_name["adhoc"]["source"] == "manual"
 
 
 def test_removing_the_configuration_drops_the_units_and_the_mirrors(
@@ -442,3 +533,143 @@ def test_a_journal_naming_no_container_is_the_modules_own(runner, monkeypatch):
 
     assert outcome == {"exit_code": 0, "code": "", "params": {}, "output": "line"}
     assert asked == [["podman.socket", "web.service"]]
+
+
+# --- hub containers on Linux ---
+
+HUB_DIGEST = "sha256:" + "d" * 64
+
+HUB_CONFIG = {
+    "containers": [{"name": "web", "image": "nginx", "ports": ["8080:80"]}],
+    "mirrors": [],
+    "hub_containers": [
+        {
+            "module": "demo",
+            "name": "neutrino_demo",
+            "image": {"digest": HUB_DIGEST, "sources": ["ghcr.io/acme/demo"]},
+            "volumes": ["neutrino_demo_data:/data"],
+            "source_sets": ["pypi"],
+            "page_port": 8787,
+        },
+        {
+            "module": "late",
+            "name": "neutrino_late",
+            "image": {
+                "digest": HUB_DIGEST.replace("d", "f"),
+                "sources": ["ghcr.io/a/l"],
+            },
+        },
+    ],
+}
+
+
+@pytest.fixture
+def hub_runner(runner, monkeypatch):
+    """The runner with demo's image in the store and late's missing."""
+    made: list = []
+    monkeypatch.setattr(
+        runner_module, "image_references", lambda: {"ghcr.io/acme/demo@" + HUB_DIGEST}
+    )
+    monkeypatch.setattr(
+        runner_module, "ensure_network", lambda name: made.append(name) or True
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "fastest_sources",
+        lambda names, sets: (
+            {name: sets[name]["sources"][0] for name in names if name in sets},
+            {name: sets[name]["variables"] for name in names if name in sets},
+        ),
+    )
+    runner._page_ports._pick = lambda: 40123
+    runner.made = made
+    return runner
+
+
+def test_a_module_s_containers_are_rendered_once_its_images_are_in_the_store(
+    hub_runner,
+):
+    hub_runner.take_source_sets(
+        {
+            "pypi": {
+                "probe": "/pip/",
+                "sources": ["https://p.example"],
+                "variables": ["V"],
+            }
+        }
+    )
+
+    hub_runner.apply(HUB_CONFIG)
+
+    rendered, context = FakeRenderer.seen[-1]
+    assert [c.name for c in rendered.hub_containers] == ["neutrino_demo"]
+    assert hub_runner.made == ["neutrino_demo"]
+    assert context.gateways == {"podman": "10.88.0.1", "neutrino_demo": "10.88.0.1"}
+    assert context.images == {"neutrino_demo": "ghcr.io/acme/demo@" + HUB_DIGEST}
+    assert context.page_ports == {"neutrino_demo": 40123}
+    assert context.sources == {"pypi": "https://p.example"}
+    assert FakeUnitApplier.applied[-1] == (
+        ["neutrino_demo.container", "web.container"],
+        ["web", "neutrino_demo"],
+    )
+    assert hub_runner.hub_names() == {"demo": ["neutrino_demo"]}
+
+
+def test_the_page_port_is_picked_once_and_kept_in_the_module_s_record(hub_runner):
+    hub_runner.apply(HUB_CONFIG)
+    hub_runner._page_ports._pick = lambda: 50000
+    hub_runner.apply(HUB_CONFIG)
+
+    assert FakeRenderer.seen[-1][1].page_ports == {"neutrino_demo": 40123}
+    assert hub_runner.page_port("demo", "neutrino_demo") == 40123
+
+
+def test_the_record_names_the_declared_and_hub_containers_after_a_start(
+    hub_runner, tmp_path
+):
+    hub_runner.apply(HUB_CONFIG)
+
+    restarted = PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+
+    assert restarted._declared_names() == ["web"]
+    assert restarted.hub_names() == {"demo": ["neutrino_demo"]}
+    assert restarted.journal_units() == [
+        "podman.socket",
+        "web.service",
+        "neutrino_demo.service",
+    ]
+
+
+def test_dropping_a_module_removes_its_units_and_forgets_it(hub_runner):
+    hub_runner.apply(HUB_CONFIG)
+
+    hub_runner.drop_hub_containers("demo")
+
+    assert FakeUnitApplier.removed == [["neutrino_demo"]]
+    assert hub_runner.hub_names() == {}
+    restarted = PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+    assert restarted.hub_names() == {}
+    assert hub_runner._page_ports.ports("demo") == {}
+
+
+def test_a_container_module_reaches_podman_and_the_mirrors_through_the_runner(
+    runner,
+):
+    runner.take_config({"mirrors": ["mirror.example"]})
+
+    assert runner.podman_command() == ("/usr/bin/podman",)
+    assert runner.mirrors() == ["mirror.example"]
+    assert runner.is_engine_active() is True
+    runner.drive_hub_containers(["neutrino_demo"], "start")
+    assert FakeUnitApplier.driven == [(["neutrino_demo"], "start")]
+    assert runner.hub_journal(["a", "b"], 5) == ["a", "b", "a", "b"]
+
+
+def test_a_removed_configuration_forgets_the_record(hub_runner):
+    hub_runner.apply(HUB_CONFIG)
+    hub_runner.remove_configuration()
+
+    restarted = PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+
+    assert restarted.hub_names() == {}
+    assert restarted._declared_names() == []

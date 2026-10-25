@@ -397,3 +397,109 @@ def test_windows_takes_a_port_on_tcp_and_a_web_service():
 
 
 FULL_CONTAINER = {"name": "redis", "image": "docker.io/library/redis:7"}
+
+
+# --- hub containers ---
+
+HUB_DIGEST = "sha256:" + "c" * 64
+
+
+def hub_container(**overrides) -> dict:
+    container = {
+        "module": "demo",
+        "name": "neutrino_demo",
+        "image": {"digest": HUB_DIGEST, "sources": ["ghcr.io/acme/demo"]},
+        "ports": [],
+        "volumes": ["neutrino_demo_data:/data"],
+        "environment": ["INDEX={pypi}"],
+        "command": "",
+        "is_autostart": True,
+        "services": [],
+        "source_sets": ["pypi"],
+        "after": [],
+        "page_port": 8080,
+    }
+    container.update(overrides)
+    return container
+
+
+def hub_with(*containers) -> PodmanConfig:
+    return PodmanConfig.from_dict(
+        {"containers": [], "hub_containers": list(containers)}
+    )
+
+
+def test_a_hub_container_parses_and_survives_a_round_trip():
+    config = hub_with(
+        hub_container(),
+        hub_container(name="neutrino_demo_db", after=["neutrino_demo"], page_port=0),
+    )
+
+    config.validate()
+
+    assert PodmanConfig.from_dict(config.to_dict()).to_dict() == config.to_dict()
+    assert config.to_dict()["hub_containers"][0]["image"] == {
+        "digest": HUB_DIGEST,
+        "sources": ["ghcr.io/acme/demo"],
+    }
+    assert config.hub_names() == {"demo": ["neutrino_demo", "neutrino_demo_db"]}
+    assert config.hub_containers[0].network == "neutrino_demo"
+
+
+@pytest.mark.parametrize(
+    "overrides, code",
+    [
+        ({"name": "demo"}, "container_name_invalid"),
+        ({"name": "neutrino_other"}, "container_name_invalid"),
+        ({"module": "Demo"}, "container_name_invalid"),
+        (
+            {"image": {"digest": "sha256:short", "sources": ["ghcr.io/a/b"]}},
+            "image_invalid",
+        ),
+        ({"image": {"digest": HUB_DIGEST, "sources": []}}, "image_invalid"),
+        (
+            {"image": {"digest": HUB_DIGEST, "sources": ["ghcr.io/a/b:1"]}},
+            "image_invalid",
+        ),
+        ({"volumes": ["/srv:/data"]}, "volume_invalid"),
+        ({"volumes": ["other_data:/data"]}, "volume_invalid"),
+        ({"environment": ["not an entry"]}, "environment_invalid"),
+        ({"after": ["neutrino_demo_ghost"]}, "container_unknown"),
+        ({"after": ["neutrino_demo"]}, "container_unknown"),
+        ({"page_port": 70000}, "port_mapping_invalid"),
+        ({"source_sets": ["PyPI"]}, "environment_invalid"),
+    ],
+)
+def test_a_hub_container_the_agent_cannot_render_is_refused(overrides, code):
+    assert refused_code(hub_with(hub_container(**overrides))) == code
+
+
+def test_a_hub_container_cannot_share_a_declared_container_s_name():
+    config = PodmanConfig.from_dict(
+        {
+            "containers": [{"name": "neutrino_demo", "image": "nginx"}],
+            "hub_containers": [hub_container()],
+        }
+    )
+
+    assert refused_code(config) == "container_name_duplicate"
+
+
+def test_a_machine_with_hub_containers_needs_an_account():
+    config = PodmanConfig.from_dict(
+        {"hub_containers": [hub_container()], "machine": {"account": "", "disk_gib": 9}}
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate(os_name="windows")
+
+    assert refused.value.code == "machine_account_missing"
+
+
+def test_with_hub_containers_leaves_the_configuration_as_it_was():
+    config = hub_with(hub_container())
+
+    narrowed = config.with_hub_containers([])
+
+    assert narrowed.hub_containers == []
+    assert len(config.hub_containers) == 1

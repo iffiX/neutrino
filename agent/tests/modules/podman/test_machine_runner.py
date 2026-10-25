@@ -34,7 +34,9 @@ from neutrino_agent.modules.podman.machine_runner import (
 )
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
+    PodmanRenderContext,
     machine_control_script,
+    machine_drop_script,
     machine_journal_script,
     machine_stop_script,
 )
@@ -619,6 +621,7 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
             "memory_gib": 4,
             "disk_gib": 100,
             "names": ["web"],
+            "hub_names": {},
         }
     ]
     assert rig.lines[-1] == "podman: made the machine of me; containers unchanged"
@@ -866,14 +869,14 @@ def test_details_read_the_machine_through_the_ssh_url(tmp_path, _reads):
     details = rig.runner.details({})
 
     by_name = {container["name"]: container for container in details["containers"]}
-    assert by_name["web"]["is_declared"] is True
+    assert by_name["web"]["source"] == "declared"
     assert by_name["web"]["has_unit"] is True
     assert by_name["web"]["volumes"] == ["C:\\www:/usr/share/nginx/html"]
     assert by_name["web"]["host_bindings"] == [
         {"address": "", "port": 8080, "protocol": "tcp", "detected": "http"}
     ]
     assert FakeProbe.asked[0][0][1:] == ("127.0.0.1", 8080)
-    assert by_name["adhoc"]["is_declared"] is False
+    assert by_name["adhoc"]["source"] == "manual"
     assert by_name["adhoc"]["has_unit"] is False
     assert details["machine"] == {
         "account": "ann",
@@ -1110,6 +1113,93 @@ def test_a_restarted_agent_reads_on_from_the_record(rig):
 
     assert details["machine"]["account"] == "me"
     by_name = {container["name"]: container for container in details["containers"]}
-    assert by_name["web"]["is_declared"] is True
+    assert by_name["web"]["source"] == "declared"
     assert outcome["exit_code"] == 0
     assert rig.world.scripts[-1][2] == machine_control_script("web", "stop")
+
+
+# --- hub containers in the machine ---
+
+HUB_DIGEST = "sha256:" + "9" * 64
+
+HUB_CONFIG = {
+    **CONFIG,
+    "hub_containers": [
+        {
+            "module": "demo",
+            "name": "neutrino_demo",
+            "image": {"digest": HUB_DIGEST, "sources": ["ghcr.io/acme/demo"]},
+            "page_port": 8787,
+            "source_sets": ["pypi"],
+        },
+        {
+            "module": "late",
+            "name": "neutrino_late",
+            "image": {
+                "digest": HUB_DIGEST.replace("9", "8"),
+                "sources": ["ghcr.io/a/l"],
+            },
+        },
+    ],
+}
+
+
+def test_the_machine_gets_the_hub_containers_whose_images_its_store_holds(
+    rig, monkeypatch
+):
+    made: list = []
+    monkeypatch.setattr(
+        machine_runner_module,
+        "image_references",
+        lambda *, podman: {"ghcr.io/acme/demo@" + HUB_DIGEST},
+    )
+    monkeypatch.setattr(
+        machine_runner_module,
+        "ensure_network",
+        lambda name, *, podman: made.append((name, podman[0])) or True,
+    )
+    monkeypatch.setattr(
+        machine_runner_module,
+        "fastest_sources",
+        lambda names, sets: (
+            {"pypi": "https://p.example"},
+            {"pypi": ["PIP_INDEX_URL"]},
+        ),
+    )
+    rig.runner._page_ports._pick = lambda: 40999
+    rig.keep_image()
+
+    rig.runner.apply(HUB_CONFIG)
+
+    script = rig.world.scripts[-1][2]
+    rendered = PodmanConfig.from_dict(HUB_CONFIG)
+    expected = PodmanMachineScriptRenderer(
+        config=rendered.with_hub_containers(rendered.hub_containers[:1]),
+        os_name="darwin",
+        context=PodmanRenderContext(
+            images={"neutrino_demo": "ghcr.io/acme/demo@" + HUB_DIGEST},
+            page_ports={"neutrino_demo": 40999},
+            sources={"pypi": "https://p.example"},
+            variables={"pypi": ["PIP_INDEX_URL"]},
+        ),
+    ).render()
+    assert script == expected
+    assert made == [("neutrino_demo", rig.system.binary)]
+    assert rig.record()[0]["hub_names"] == {"demo": ["neutrino_demo"]}
+    assert rig.runner.hub_names() == {"demo": ["neutrino_demo"]}
+    assert rig.make_runner().hub_names() == {"demo": ["neutrino_demo"]}
+
+
+def test_a_container_module_drives_and_drops_its_containers_in_the_machine(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner._config = PodmanConfig.from_dict(HUB_CONFIG)
+
+    rig.runner.drive_hub_containers(["neutrino_demo"], "restart")
+    rig.runner.drop_hub_containers("demo")
+
+    assert rig.world.scripts[-2][2] == "systemctl restart neutrino_demo.service\n"
+    assert rig.world.scripts[-1][2] == machine_drop_script(
+        ["neutrino_demo"], os_name="darwin"
+    )
+    assert rig.runner.hub_names() == {"late": ["neutrino_late"]}

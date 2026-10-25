@@ -183,7 +183,8 @@ PODMAN_WINDOWS_DISK_PARTS = (
     "ext4.vhdx",
 )
 
-# The fields the runner keeps of the last apply, root-only.
+# The fields the runner keeps of the last apply, root-only: the declared
+# containers' names, and the hub containers' names by module.
 PODMAN_MACHINE_RECORD_FIELDS = (
     "account",
     "password",
@@ -191,7 +192,11 @@ PODMAN_MACHINE_RECORD_FIELDS = (
     "memory_gib",
     "disk_gib",
     "names",
+    "hub_names",
 )
+# On Linux root's Podman runs the containers, and its record is root's.
+PODMAN_RECORD_FIELDS = ("account", "names", "hub_names")
+PODMAN_RECORD_ACCOUNT = "root"
 
 # Every rendered file starts with this, which is how apply tells its own
 # files from any a person drops beside them.
@@ -200,6 +205,36 @@ PODMAN_GENERATED_MARKER = (
 )
 
 PODMAN_CONTAINER_ACTIONS = ("start", "stop", "restart")
+
+# A hub container: the label naming its module, the start of every name the
+# hub keeps for its modules, and the network each module's containers join,
+# ``neutrino_<module>``.
+PODMAN_MODULE_LABEL = "neutrino.module"
+PODMAN_HUB_PREFIX = "neutrino_"
+# The network a declared container joins.
+PODMAN_DEFAULT_NETWORK = "podman"
+# The name every container reaches the machine's listeners at.
+PODMAN_HOST_ALIAS = "host.containers.internal"
+# How long one pull of a container module's image may take: an image of
+# several GB on a slow source.
+PODMAN_CONTAINER_PULL_TIMEOUT_S = 3600
+# Where a hub container's page port is published on the machine.
+PODMAN_PAGE_ADDRESS = "127.0.0.1"
+# The file under a container module's directory in the configuration root
+# that keeps the loopback port each of its pages is published at.
+PODMAN_PAGE_PORTS_NAME = "page_ports.json"
+# An image's digest, as a hub container names it.
+PODMAN_DIGEST_PATTERN = r"sha256:[0-9a-f]{64}"
+# Where a container comes from, by the owner rule: the label, then the
+# declared names, else a person's own.
+PODMAN_SOURCE_HUB = "hub"
+PODMAN_SOURCE_DECLARED = "declared"
+PODMAN_SOURCE_MANUAL = "manual"
+# Where Podman's CNI backend keeps a network, and the cniVersion the
+# plugins of Podman 3.4 read.
+PODMAN_CNI_DIR = "/etc/cni/net.d"
+PODMAN_CNI_SUFFIX = ".conflist"
+PODMAN_CNI_VERSION = "0.4.0"
 
 # The verbs a ``command {module: podman}`` names, beside ``validate``.
 PODMAN_COMMAND_CONTROL = "control"

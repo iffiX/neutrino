@@ -349,3 +349,39 @@ def test_the_services_bytes_go_up_only_as_the_hubs_credit_allows():
     assert before == []
     assert partway == [b"PI"]
     assert b"".join(f for f in session.frames if isinstance(f, bytes)) == b"PING"
+
+
+def test_the_port_a_hub_container_s_page_is_published_at_is_never_served():
+    podman = {
+        "state": "running",
+        "details": {
+            "containers": [
+                {
+                    "name": "neutrino_demo",
+                    "module": "demo",
+                    "is_running": True,
+                    "ports": ["40123:8787", "9000:9000"],
+                    "host_bindings": [
+                        {"address": "127.0.0.1", "port": 40123},
+                        {"address": "", "port": 9000},
+                    ],
+                }
+            ]
+        },
+    }
+    desired = {
+        "podman": {
+            "want": "running",
+            "config": {
+                "hub_containers": [
+                    {"module": "demo", "name": "neutrino_demo", "page_port": 8787}
+                ]
+            },
+        }
+    }
+
+    assert published_ports({"podman": podman}, desired, None) == {9000: "127.0.0.1"}
+    assert published_ports({"podman": podman}, {}, None) == {
+        40123: "127.0.0.1",
+        9000: "127.0.0.1",
+    }
