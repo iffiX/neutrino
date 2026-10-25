@@ -18,9 +18,9 @@ from neutrino_agent.platforms.windows_relay import (
 
 WSL = "vEthernet (WSL (Hyper-V firewall))"
 ADAPTERS = [
-    {"name": "Ethernet Instance 0 2", "mac": "52:54:00:00:00:46", "addresses": ["192.168.122.46"]},
-    {"name": WSL, "mac": "00:15:5d:00:00:01", "addresses": ["fe80::1", "172.20.208.1"]},
-    {"name": "vEthernet (Default Switch)", "mac": "00:15:5d:00:00:02", "addresses": ["172.29.0.1"]},
+    {"name": "Ethernet Instance 0 2", "mac": "", "addresses": ["192.168.122.46"]},
+    {"name": WSL, "mac": "", "addresses": ["fe80::1", "172.20.208.1"]},
+    {"name": "vEthernet (Default Switch)", "mac": "", "addresses": ["172.29.0.1"]},
 ]  # fmt: skip
 
 
