@@ -114,3 +114,9 @@ def test_the_server_listens_on_loopback_alone_on_every_system():
         rendered = GiteaConfigRenderer(config=config, layout=layout).render()
         assert "\nHTTP_ADDR = 127.0.0.1\n" in rendered
         assert "0.0.0.0" not in rendered
+
+
+def test_links_and_clone_addresses_follow_the_address_the_page_is_opened_at():
+    """A client opens Gitea at its own forward, so a link built from ROOT_URL
+    would name an address that serves nothing."""
+    assert "PUBLIC_URL_DETECTION = auto" in render()

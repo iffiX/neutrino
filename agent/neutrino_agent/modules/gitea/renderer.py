@@ -90,6 +90,7 @@ HTTP_ADDR = {GITEA_LISTEN_HOST}
 HTTP_PORT = {config.listen_port}
 DOMAIN = {domain}
 ROOT_URL = {root_url}
+PUBLIC_URL_DETECTION = auto
 DISABLE_SSH = {ssh_disabled}
 START_SSH_SERVER = false
 SSH_DOMAIN = {domain}

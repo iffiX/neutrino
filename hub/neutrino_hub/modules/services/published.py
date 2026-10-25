@@ -12,6 +12,7 @@ import hashlib
 import json
 import threading
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.cliproxyapi.constants import (
@@ -49,6 +50,29 @@ from neutrino_hub.modules.services.constants import (
 from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
 from neutrino_hub.utils import constants as utils_constants
 from neutrino_hub.utils import json_file
+
+
+def gitea_url(details: dict) -> str:
+    """Gitea's URL as a device reports it, at the port its server listens on.
+
+    Args:
+        details: The Gitea row's ``details``: ``url`` from ``ROOT_URL`` and
+            ``port``, the server's ``HTTP_PORT``.
+
+    Returns:
+        The URL with the listen port in place of any port it named, which is
+        the port the agent's end of a ``connect`` stream dials; the URL as
+        reported when either part is missing.
+    """
+    url = str(details.get("url", "") or "")
+    port = details.get("port")
+    parts = urlsplit(url)
+    if not parts.hostname or not isinstance(port, int) or isinstance(port, bool):
+        return url
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    return urlunsplit(
+        (parts.scheme, f"{host}:{port}", parts.path, parts.query, parts.fragment)
+    )
 
 
 class PublishedServiceCache:
@@ -345,7 +369,7 @@ class PublishedServiceCache:
         if name == "gitea":
             return {
                 "is_healthy": bool(details.get("is_running")),
-                "url": str(details.get("url", "") or ""),
+                "url": gitea_url(details),
             }
         running = {
             str(instance.get("account", ""))

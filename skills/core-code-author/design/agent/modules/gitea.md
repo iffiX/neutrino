@@ -21,8 +21,12 @@ system.
 
 **Gitea listens on loopback alone.** `app.ini` names `HTTP_ADDR =
 127.0.0.1`, and the `web` entry is reached through the agent's end of a
-`connect` stream, which dials `127.0.0.1` at the port of the URL the module
-reports ([agent.md](../../agent.md), "The connect stream"). The module
+`connect` stream, which dials `127.0.0.1` at the port the server listens on,
+`HTTP_PORT`, which the module reports as `port`; the hub puts that port in
+the URL the module reports ([agent.md](../../agent.md), "The connect
+stream"). `app.ini` also names `PUBLIC_URL_DETECTION = auto`, so the links
+and clone addresses Gitea shows name the address the page was opened at, a
+client's own forward, in place of `ROOT_URL`. The module
 opens no port in any firewall, and the hub dials nothing on the machine: the
 entry is healthy while the machine reports the server running. A Gitea that
 listened on every address moves to loopback at the next apply, which an
