@@ -1867,6 +1867,11 @@
         "software": {
           "title": "Software",
           "type": "string"
+        },
+        "time": {
+          "default": 0.0,
+          "title": "Time",
+          "type": "number"
         }
       },
       "required": [

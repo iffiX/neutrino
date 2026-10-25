@@ -46,6 +46,7 @@ from neutrino_agent.exceptions import (
     StreamClosed,
     StreamRefused,
 )
+from neutrino_agent.modules.shared.hub_clock import welcome_time
 from neutrino_agent.streams import STREAM_KIND_COMMAND, STREAM_KINDS
 from neutrino_agent.streams.channel import StreamChannel
 
@@ -63,6 +64,8 @@ class AgentSession:
         hub_id: The hub's id, from the welcome; empty until it arrived.
         hub_name: The hub's name, from the welcome.
         hub_software: The hub's ``software``, from the welcome.
+        hub_time: The hub's clock the welcome named, in seconds since the
+            epoch; None until it arrived, and for a welcome naming none.
         state_hash: The hash the last state frame named.
     """
 
@@ -122,6 +125,7 @@ class AgentSession:
         self.hub_id = ""
         self.hub_name = ""
         self.hub_software = ""
+        self.hub_time: "float | None" = None
         self.state_hash = ""
         self._lock = threading.Lock()
         self._is_closed = threading.Event()
@@ -162,6 +166,7 @@ class AgentSession:
         self.hub_id = str(welcome.get("id", "") or "")
         self.hub_name = str(welcome.get("name", "") or "")
         self.hub_software = str(welcome.get("software", "") or "")
+        self.hub_time = welcome_time(welcome)
         self._reader = threading.Thread(
             target=self._read_forever, name="agent_session_reader", daemon=True
         )

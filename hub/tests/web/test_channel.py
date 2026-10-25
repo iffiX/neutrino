@@ -569,8 +569,10 @@ def test_a_good_hello_is_welcomed_with_the_hubs_identity_card(api):
     client, runtime = api
     binding = joined_device(client, runtime)
 
+    before = time.time()
     socket, welcome = welcomed(client, binding)
     try:
+        sent_at = welcome.pop("time")
         assert welcome == {
             "type": "welcome",
             "protocol": PROTOCOL,
@@ -579,6 +581,7 @@ def test_a_good_hello_is_welcomed_with_the_hubs_identity_card(api):
             "name": "hub-one",
             "software": "neutrino_hub/1.2.3",
         }
+        assert before <= sent_at <= time.time()
         assert runtime.agent_sessions.is_online(binding["id"])
         session = runtime.agent_sessions.get(binding["id"])
         assert (session.name, session.software) == ("box", "neutrino_agent/1.2.3")

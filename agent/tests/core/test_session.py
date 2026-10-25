@@ -250,7 +250,19 @@ def test_connect_says_hello_with_the_card_and_takes_the_welcome():
     assert session.hub_id == "hub-1"
     assert session.hub_name == "hub"
     assert session.hub_software == "neutrino_hub/0.2.0"
+    assert session.hub_time is None
     assert session.is_open
+    session.close()
+
+
+def test_the_welcomes_time_is_the_hubs_clock_the_session_keeps():
+    client = ScriptedClient()
+    session, _, _ = make_session(client)
+    client.feed(welcome(time=1_800_000_000.5))
+
+    session.connect()
+
+    assert session.hub_time == 1_800_000_000.5
     session.close()
 
 

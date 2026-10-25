@@ -9,6 +9,7 @@ else, and every link carries the certificate fingerprint the peer pins.
 import asyncio
 import contextlib
 import math
+import time
 
 from fastapi import (
     APIRouter,
@@ -252,7 +253,7 @@ async def socket(websocket: WebSocket) -> None:
 
 
 def _welcome() -> dict:
-    """The hub's identity card."""
+    """The hub's identity card, with the hub's clock an agent checks tokens by."""
     return {
         "type": "welcome",
         "protocol": PROTOCOL,
@@ -260,6 +261,7 @@ def _welcome() -> dict:
         "id": hub_id(),
         "name": hub_name(),
         "software": f"neutrino_hub/{HUB_VERSION}",
+        "time": time.time(),
     }
 
 

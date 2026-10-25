@@ -6,9 +6,9 @@ configured marks and the package directory all land in ``tmp_path``, and
 the AI gateway forward an agent builds listens on a port the system picks.
 A guard on every process a test starts refuses by name the firewalls, the
 network tools, the service and package managers, Podman and every other
-program that reads or changes the machine or asks for authorization to, and
-an agent a test builds on this system's own platform observes none of its
-modules. The fakes here are the ones more than one directory drives:
+program that reads or changes the machine or asks for authorization to, an
+agent a test builds on this system's own platform observes none of its
+modules, and each test has a hub clock of its own. The fakes here are the ones more than one directory drives:
 the control channel's platform and agent, the injected clock, the link
 builder and the log sink.
 """
@@ -31,6 +31,8 @@ import neutrino_agent.core.store as store_module
 import neutrino_agent.modules.remote_desktop.darwin_applier as darwin_applier_module
 import neutrino_agent.modules.remote_desktop.linux_applier as linux_applier_module
 import neutrino_agent.modules.remote_desktop.windows_applier as windows_applier_module
+import neutrino_agent.modules.shared.hub_clock as hub_clock_module
+from neutrino_agent.modules.shared.hub_clock import HubClock
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.platforms.darwin as darwin_module
@@ -282,6 +284,13 @@ def _no_powershell_host(monkeypatch):
         "_AGENT_HOST",
         WindowsPowerShellHost(start_process=_no_powershell),
     )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_hub_clock(monkeypatch):
+    """Each test starts with a hub clock of its own at offset zero, so an
+    offset one test's welcome set reaches no other test."""
+    monkeypatch.setattr(hub_clock_module, "_HUB_CLOCK", HubClock())
 
 
 @pytest.fixture

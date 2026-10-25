@@ -12,8 +12,10 @@ forwarder in front of one instance: it listens on loopback once the
 hooks say the page is ready, trying again while it is not; a token is
 spent once and what follows is the hooks' decision; a request the hooks
 admit reaches the page, a WebSocket relayed both ways; a taken port is
-reported until it frees; and a forwarder follows the record fields the
-hooks name.
+reported until it frees; a forwarder follows the record fields the
+hooks name; and a token's expiry is judged by the hub's time, so a machine
+whose clock is hours off, or is set while the socket stays open, accepts a
+fresh one.
 """
 
 import base64
@@ -25,6 +27,10 @@ import socketserver
 import threading
 import time
 
+import pytest
+
+import neutrino_agent.modules.shared.hub_clock as hub_clock_module
+from neutrino_agent.modules.shared.hub_clock import HubClock
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwarderServer,
@@ -493,3 +499,50 @@ def test_a_forwarder_matches_a_record_by_the_hooks_fields():
     assert forwarder.matches(dict(record, database="b")) is True
     assert forwarder.matches(dict(record, secret="other")) is False
     assert forwarder.matches(dict(record, port=1)) is False
+
+
+class SkewedMachine:
+    """This machine's clock, some seconds off the hub's, which can be set."""
+
+    def __init__(self, skew_s: float):
+        self.skew_s = skew_s
+
+    def time(self) -> float:
+        return time.time() + self.skew_s
+
+
+def hub_minted_token() -> str:
+    """A token as the hub mints it, by the hub's own clock."""
+    return mint_token(SECRET, expiry=int(time.time()) + 60, nonce=os.urandom(16))
+
+
+@pytest.mark.parametrize("skew_s", [-13 * 3600, 13 * 3600])
+def test_a_fresh_token_works_on_a_machine_whose_clock_is_hours_off(monkeypatch, skew_s):
+    """The forwarder judges the expiry by the hub's time, which the last
+    welcome gave; by the machine's own clock the token reads expired or too
+    far ahead."""
+    machine = SkewedMachine(skew_s)
+    clock = HubClock(clock=machine.time)
+    clock.take(time.time())
+    monkeypatch.setattr(hub_clock_module, "_HUB_CLOCK", clock)
+    forwarder = forwarder_for(DemoHooks(1), free_port())
+    on_own_clock = forwarder_for(DemoHooks(1), free_port(), clock=machine.time)
+
+    assert forwarder.take_token(hub_minted_token()) is True
+    assert on_own_clock.take_token(hub_minted_token()) is False
+
+
+def test_a_token_works_after_the_machines_clock_is_set_while_the_socket_stays_open(
+    monkeypatch,
+):
+    machine = SkewedMachine(-13 * 3600)
+    clock = HubClock(clock=machine.time)
+    clock.take(time.time())
+    monkeypatch.setattr(hub_clock_module, "_HUB_CLOCK", clock)
+    forwarder = forwarder_for(DemoHooks(1), free_port())
+    assert forwarder.take_token(hub_minted_token()) is True
+
+    machine.skew_s = 0.0
+
+    assert forwarder.take_token(hub_minted_token()) is True
+    assert abs(clock.offset) < 1.0

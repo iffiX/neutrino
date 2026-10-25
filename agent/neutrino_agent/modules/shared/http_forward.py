@@ -9,13 +9,13 @@ words, relaying a request and its answer, a WebSocket included, and
 hooks what each request is allowed and how the page is reached.
 
 A token is ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
-nonce))``, checked here with no call to the hub. A login cookie, which a
-module's rule trades a token for, is ``base64url(expiry || HMAC-SHA256(key,
-expiry))`` with a key the module derives from the instance's secret. Each
-connection carries
-one request: an ordinary request is passed on with ``Connection: close`` in
-place of its own and its body cut at its ``Content-Length``; a WebSocket is
-passed on unchanged and relayed both ways until either side closes.
+nonce))``, checked here against the hub's time with no call to the hub. A
+login cookie, which a module's rule trades a token for, is
+``base64url(expiry || HMAC-SHA256(key, expiry))`` with a key the module
+derives from the instance's secret. Each connection carries one request: an
+ordinary request is passed on with ``Connection: close`` in place of its own
+and its body cut at its ``Content-Length``; a WebSocket is passed on
+unchanged and relayed both ways until either side closes.
 
 Not pure: opens sockets.
 """
@@ -33,7 +33,6 @@ import os
 import socket
 import socketserver
 import threading
-import time
 import urllib.parse
 from dataclasses import dataclass
 
@@ -51,6 +50,7 @@ from neutrino_agent.constants import (
     AGENT_FORWARD_TOKEN_PARAMETER,
     AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
 )
+from neutrino_agent.modules.shared.hub_clock import hub_time
 
 HEAD_END = b"\r\n\r\n"
 # The answers a forwarder writes itself.
@@ -518,7 +518,7 @@ class InstanceForwarder:
         record: dict,
         hooks,
         listen_host: str = AGENT_FORWARD_LISTEN_HOST,
-        clock=time.time,
+        clock=hub_time,
         log=print,
         ready_poll_s: float = AGENT_FORWARD_READY_POLL_S,
         retry_s: float = AGENT_FORWARD_RETRY_S,
@@ -532,7 +532,8 @@ class InstanceForwarder:
             hooks: The module's hooks: ``on_first_start``, ``admit``,
                 ``connect`` and ``forwarder_fields``.
             listen_host: The address the forwarder listens on.
-            clock: Seconds since the epoch.
+            clock: The hub's time in seconds since the epoch, which a
+                token's expiry is judged by.
             log: Callable used for progress messages.
             ready_poll_s: How often the page is asked whether it answers.
             retry_s: How long a refused first start or a failed bind waits

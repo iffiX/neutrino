@@ -419,6 +419,11 @@ AGENT_FORWARD_TOKEN_EXPIRY_BYTES = 8
 AGENT_FORWARD_TOKEN_NONCE_BYTES = 16
 AGENT_FORWARD_TOKEN_MAC_BYTES = 32
 AGENT_FORWARD_TOKEN_HORIZON_S = 300
+# The token's expiry is judged by the hub's time: this machine's clock plus
+# the offset the last welcome gave. A move of this machine's clock that
+# differs from the monotonic clock's by this many seconds or more, between
+# two readings, is the clock being set, and the offset takes it up.
+AGENT_HUB_CLOCK_JUMP_S = 2.0
 # The install methods a module's recipe names.
 AGENT_METHOD_AGENT = "agent"
 AGENT_METHOD_BUILTIN = "builtin"

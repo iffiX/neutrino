@@ -1725,6 +1725,9 @@ class ChannelWelcome(BaseModel):
     id: str
     name: str
     software: str
+    # The hub's clock as it sends the card, in seconds since the epoch; an
+    # added field.
+    time: float = 0.0
 
 
 class ChannelRefused(BaseModel):

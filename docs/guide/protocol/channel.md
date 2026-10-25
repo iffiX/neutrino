@@ -95,16 +95,17 @@ The socket is `wss://<hub-address>:8443/api/channel/socket`, where `<hub-address
 
 The first frame each way is an identity card of one shape. `hello` goes up within ten seconds of the socket opening, and `welcome` or `refused` comes down.
 
-| Field      | `hello`, up                                       | `welcome`, down                  |
-| ---------- | ------------------------------------------------- | -------------------------------- |
-| `protocol` | the number this build speaks, `4`                 | the hub's number, `4`            |
-| `role`     | `agent` or `client`                               | `hub`                            |
-| `id`       | the binding id                                    | the hub's own id, a uuid         |
-| `name`     | the hostname, or the binding's name               | the hub's name from **Settings** |
-| `software` | `neutrino_agent/0.6.0` or `neutrino_client/0.6.0` | `neutrino_hub/0.6.0`             |
-| `token`    | the binding token                                 | absent                           |
+| Field      | `hello`, up                                       | `welcome`, down                                                  |
+| ---------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `protocol` | the number this build speaks, `4`                 | the hub's number, `4`                                            |
+| `role`     | `agent` or `client`                               | `hub`                                                            |
+| `id`       | the binding id                                    | the hub's own id, a uuid                                         |
+| `name`     | the hostname, or the binding's name               | the hub's name from **Settings**                                 |
+| `software` | `neutrino_agent/0.6.0` or `neutrino_client/0.6.0` | `neutrino_hub/0.6.0`                                             |
+| `token`    | the binding token                                 | absent                                                           |
+| `time`     | absent                                            | the hub's clock as it sends the card, in seconds since the epoch |
 
-A client joined to several hubs groups them by the hub's `id` and labels them by its `name`. A rejected `hello` gets `refused {code, params}` and close 4000. `hello_invalid` marks a first frame that is late, binary, of another type, or unreadable, and `channel_full {limit}` a port that already holds its most admitted sockets.
+A client joined to several hubs groups them by the hub's `id` and labels them by its `name`. An agent keeps the difference between `time` and its own clock, and checks the expiry of every token the hub mints against the hub's clock, so a machine whose clock is wrong still accepts a fresh token. A rejected `hello` gets `refused {code, params}` and close 4000. `hello_invalid` marks a first frame that is late, binary, of another type, or unreadable, and `channel_full {limit}` a port that already holds its most admitted sockets.
 
 ### The frames
 

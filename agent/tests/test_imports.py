@@ -156,6 +156,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.shared.account_service.windows",
     "neutrino_agent.modules.shared.base",
     "neutrino_agent.modules.shared.http_forward",
+    "neutrino_agent.modules.shared.hub_clock",
     "neutrino_agent.modules.shared.installers",
     "neutrino_agent.modules.shared.instances",
     "neutrino_agent.modules.shared.log_tail",

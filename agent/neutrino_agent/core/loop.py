@@ -79,6 +79,7 @@ from neutrino_agent.modules.podman.constants import PODMAN_BINARY, PODMAN_MODULE
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
+from neutrino_agent.modules.shared.hub_clock import hub_clock
 from neutrino_agent.streams import (
     STREAM_KIND_CONNECT,
     STREAM_KIND_EXEC,
@@ -477,7 +478,8 @@ class Agent:
         hub's order, from the top on every round. An address the name resolves to that is
         not a stored one and fails the fingerprint check is not this hub and
         is skipped; a stored address failing it is logged and the round goes
-        on. The address that answers is written onto the binding.
+        on. The hub's time its welcome names sets the hub clock's offset,
+        and the address that answers is written onto the binding.
 
         Returns:
             The connected session, its welcome taken.
@@ -512,6 +514,7 @@ class Agent:
             except GatewayUnreachable as error:
                 failure = error
             else:
+                hub_clock().take(session.hub_time)
                 self._note_url(url)
                 return session
         if untrusted is not None:
@@ -666,7 +669,9 @@ class Agent:
     def _tick(self) -> None:
         """Between reports: adopt a binding written on disk, look at the
         network, listen on the AI gateway forward's port if it could not,
-        and write the seat password into RustDesk again if it was replaced.
+        write the seat password into RustDesk again if it was replaced, and
+        read the hub clock, so a setting of this machine's clock is taken up
+        within one interval.
 
         A live socket stays where it is, whatever the network does; the
         next round starts from the top of the hub's addresses.
@@ -675,6 +680,7 @@ class Agent:
         self._watch_network()
         self._ai_forward.ensure()
         self._rdp.repair_password()
+        hub_clock().now()
 
     def _watch_network(self) -> bool:
         """Look at the route to the hub.

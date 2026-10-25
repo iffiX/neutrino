@@ -37,6 +37,7 @@ import pytest
 
 import neutrino_agent.core.enrollment as enrollment_module
 import neutrino_agent.core.loop as loop_module
+import neutrino_agent.modules.shared.hub_clock as hub_clock_module
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
@@ -58,6 +59,7 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
+from neutrino_agent.modules.shared.hub_clock import HubClock, hub_clock, hub_time
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.streams.shell_session import ShellSession
 from tests.conftest import BINDING_ID, BINDING_TOKEN, bind
@@ -1328,6 +1330,63 @@ def test_a_live_socket_stays_when_the_name_is_elsewhere(
 
     assert not script.clients[0].is_closed
     agent._session.close()
+
+
+# --- the hub's time ---
+
+
+def test_the_welcomes_time_sets_the_hub_clocks_offset(config_path, monkeypatch):
+    """A machine 13 hours behind the hub checks tokens by the hub's time."""
+    ahead_s = 13 * 3600
+    agent, _ = scripted_agent(
+        config_path, monkeypatch, [[dict(WELCOME, time=time.time() + ahead_s)]]
+    )
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+
+    session = agent._connect_round()
+    try:
+        assert abs(hub_clock().offset - ahead_s) < 5
+        assert abs(hub_time() - (time.time() + ahead_s)) < 5
+    finally:
+        session.close()
+
+
+def test_a_welcome_without_time_puts_the_hub_clock_back_on_this_machines(
+    config_path, monkeypatch
+):
+    hub_clock().take(time.time() + 3600)
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+
+    session = agent._connect_round()
+    try:
+        assert hub_clock().offset == 0.0
+    finally:
+        session.close()
+
+
+def test_each_tick_reads_the_hub_clock(config_path, monkeypatch):
+    """A reading every interval keeps the span between two readings short,
+    so a setting of this machine's clock is taken up within one interval."""
+    readings: list = []
+
+    class RecordingClock(HubClock):
+        def now(self) -> float:
+            readings.append(True)
+            return super().now()
+
+    monkeypatch.setattr(hub_clock_module, "_HUB_CLOCK", RecordingClock())
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+    sources(monkeypatch, "10.0.0.5")
+
+    agent._tick()
+    agent._tick()
+
+    assert len(readings) == 2
 
 
 # --- the welcome's software ---
