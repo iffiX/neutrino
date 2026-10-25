@@ -117,12 +117,12 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机
 
 被控端驱动的程序有以下最低版本：
 
-| 程序               | 最低版本                                     |
-| ------------------ | -------------------------------------------- |
-| Podman             | Linux 上 3.4；从 4.4 起容器写成 Quadlet 文件 |
-| Samba              | 4.15                                         |
-| ZFS                | 2.1                                          |
-| git                | 2.0，Gitea 用；macOS 和 Windows 上要自己装   |
-| Windows PowerShell | 5.1，Windows 上的文件共享用                  |
-| macOS              | 12，macOS 上的文件共享用；13，容器用         |
-| Windows            | 10 内部版本 19041，Windows 上的容器用        |
+| 程序               | 最低版本                                   |
+| ------------------ | ------------------------------------------ |
+| Podman             | Linux 上 3.4，每个版本都一样               |
+| Samba              | 4.15                                       |
+| ZFS                | 2.1                                        |
+| git                | 2.0，Gitea 用；macOS 和 Windows 上要自己装 |
+| Windows PowerShell | 5.1，Windows 上的文件共享用                |
+| macOS              | 12，macOS 上的文件共享用；13，容器用       |
+| Windows            | 10 内部版本 19041，Windows 上的容器用      |

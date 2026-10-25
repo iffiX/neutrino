@@ -12,11 +12,11 @@ Each host port a container publishes becomes an entry that clients open on their
 
 ## What each system needs
 
-| System  | Requirements                                                                                                               | Podman                                                                               |
-| ------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Linux   | any system the agent installs on                                                                                           | the distribution's own package, 3.4 or newer; from 4.4 a container is a Quadlet file |
-| Windows | x86-64, Windows 10 version 2004 (build 19041) or newer, or Windows 11; virtualisation turned on in the computer's firmware | Podman 6 on WSL 2, both installed by the module                                      |
-| macOS   | macOS 13 or newer                                                                                                          | Podman 6 on Apple silicon, Podman 5.8 on Intel, installed by the module              |
+| System  | Requirements                                                                                                               | Podman                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Linux   | any system the agent installs on                                                                                           | the distribution's own package, 3.4 or newer, run the same way on every version |
+| Windows | x86-64, Windows 10 version 2004 (build 19041) or newer, or Windows 11; virtualisation turned on in the computer's firmware | Podman 6 on WSL 2, both installed by the module                                 |
+| macOS   | macOS 13 or newer                                                                                                          | Podman 6 on Apple silicon, Podman 5.8 on Intel, installed by the module         |
 
 On an older system, the module picker greys **Containers** out. On Windows, the first install turns on WSL's two Windows features when they are off, and Windows then needs one restart.
 

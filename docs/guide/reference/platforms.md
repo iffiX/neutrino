@@ -110,7 +110,7 @@ The agent drives these programs at these versions or newer:
 
 | Program            | Oldest version                                         |
 | ------------------ | ------------------------------------------------------ |
-| Podman             | 3.4 on Linux; from 4.4 a container is a Quadlet file   |
+| Podman             | 3.4 on Linux, run the same way on every version        |
 | Samba              | 4.15                                                   |
 | ZFS                | 2.1                                                    |
 | git                | 2.0, for Gitea; on Windows and macOS the machine's own |
