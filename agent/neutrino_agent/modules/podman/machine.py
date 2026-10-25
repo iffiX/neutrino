@@ -60,10 +60,13 @@ class PodmanMachineState:
     Attributes:
         state: Podman's word, ``running``, ``stopped`` or ``starting``.
         is_rootful: Whether the machine's API is root's.
+        has_user_mode_networking: Whether a WSL machine runs on user-mode
+            networking rather than WSL's NAT.
     """
 
     state: str
     is_rootful: bool
+    has_user_mode_networking: bool = False
 
     @property
     def is_running(self) -> bool:
@@ -257,7 +260,8 @@ class PodmanMachine:
         """What the machine is now, as the account's Podman says.
 
         Returns:
-            Its state and whether it is rootful.
+            Its state, whether it is rootful, and whether it runs on
+            user-mode networking.
 
         Raises:
             ModuleApplyError: ``machine_unreachable`` when Podman cannot say;
@@ -281,6 +285,7 @@ class PodmanMachine:
         return PodmanMachineState(
             state=str(entry.get("State", "") or ""),
             is_rootful=bool(entry.get("Rootful", False)),
+            has_user_mode_networking=bool(entry.get("UserModeNetworking", False)),
         )
 
     def init(
@@ -319,6 +324,19 @@ class PodmanMachine:
         """
         self._machine(
             ["set", "--rootful", PODMAN_MACHINE_NAME],
+            code="machine_set_failed",
+            timeout_s=PODMAN_MACHINE_COMMAND_TIMEOUT_S,
+        )
+
+    def set_nat_networking(self) -> None:
+        """Take the stopped WSL machine off user-mode networking, back to WSL's NAT.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when Podman refuses;
+                ``credential_invalid`` when Windows refuses the login.
+        """
+        self._machine(
+            ["set", "--user-mode-networking=false", PODMAN_MACHINE_NAME],
             code="machine_set_failed",
             timeout_s=PODMAN_MACHINE_COMMAND_TIMEOUT_S,
         )

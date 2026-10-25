@@ -501,6 +501,17 @@ def test_a_halt_shuts_wsl_down_as_the_account(rig):
     ]
 
 
+def test_a_terminate_ends_the_machine_s_wsl_system_alone_as_the_account(rig):
+    machine = Machine()
+
+    rig.applier.terminate(machine)
+
+    assert wsl_lines(machine) == [
+        "$env:WSL_UTF8 = '1'; & 'C:\\Windows\\System32\\wsl.exe' '--terminate' "
+        "'podman-machine-default'; exit $LASTEXITCODE"
+    ]
+
+
 def test_wsls_own_words_come_back_with_a_refusal(rig):
     machine = Machine(answers=[(1, "The operation timed out.\r\n")])
 

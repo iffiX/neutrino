@@ -107,6 +107,7 @@ def test_every_machine_command_runs_as_the_account_with_its_login_and_provider()
     assert state.state == "stopped"
     assert not state.is_rootful
     assert not state.is_running
+    assert not state.has_user_mode_networking
     assert platform.calls == [
         {
             "account": "lab",
@@ -195,6 +196,32 @@ def test_the_machines_variables_go_with_every_command_and_the_provider_wins(
         }
 
 
+def test_a_machine_on_user_mode_networking_says_so_and_is_set_back_to_nat():
+    inspected = json.dumps(
+        [
+            {
+                "Name": "podman-machine-default",
+                "State": "running",
+                "Rootful": True,
+                "UserModeNetworking": True,
+            }
+        ]
+    )
+    platform = RecordingPlatform(answers=[(0, inspected)])
+    machine = windows_machine(platform)
+
+    state = machine.inspect()
+    machine.set_nat_networking()
+
+    assert state.has_user_mode_networking
+    assert platform.calls[1]["argv"][1:] == [
+        "machine",
+        "set",
+        "--user-mode-networking=false",
+        "podman-machine-default",
+    ]
+
+
 def test_rootful_resources_start_stop_and_remove_are_podman_machine_verbs(tmp_path):
     platform = RecordingPlatform("darwin", str(tmp_path / "me"))
     machine = mac_machine(tmp_path, platform)
@@ -223,6 +250,7 @@ def test_rootful_resources_start_stop_and_remove_are_podman_machine_verbs(tmp_pa
             "machine_init_failed",
         ),
         (lambda machine: machine.set_rootful(), "machine_set_failed"),
+        (lambda machine: machine.set_nat_networking(), "machine_set_failed"),
         (lambda machine: machine.remove(), "machine_set_failed"),
         (lambda machine: machine.start(), "machine_unreachable"),
         (lambda machine: machine.inspect(), "machine_unreachable"),

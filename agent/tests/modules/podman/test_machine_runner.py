@@ -116,6 +116,7 @@ class World:
         self.present: set = set()
         self.running: set = set()
         self.rootful: set = set()
+        self.user_mode: set = set()
         self.scripts: list = []
         self.shell_answers: list = []
         self.answers_after = 0
@@ -148,6 +149,7 @@ def machine_class_for(world: World):
             return PodmanMachineState(
                 state="running" if self.account in world.running else "stopped",
                 is_rootful=self.account in world.rootful,
+                has_user_mode_networking=self.account in world.user_mode,
             )
 
         def init(self, image_path, *, cpus, memory_gib, disk_gib):
@@ -160,6 +162,10 @@ def machine_class_for(world: World):
         def set_rootful(self):
             world.calls.append((self.account, "set_rootful"))
             world.rootful.add(self.account)
+
+        def set_nat_networking(self):
+            world.calls.append((self.account, "set_nat_networking"))
+            world.user_mode.discard(self.account)
 
         def stop(self):
             world.calls.append((self.account, "stop", self.password))
@@ -237,6 +243,9 @@ class FakeSystem(PodmanSystemApplier):
 
     def halt(self, machine):
         self.calls.append(("halt", machine.account))
+
+    def terminate(self, machine):
+        self.calls.append(("terminate", machine.account))
 
     def write_resources(self, machine, *, cpus, memory_gib):
         self.calls.append(("resources", machine.account, cpus, memory_gib))
@@ -741,6 +750,27 @@ def test_a_machine_taken_over_is_made_rootful_and_sized_with_the_keeper_stopped(
     assert rig.system.calls == [("halt", "me"), ("resources", "me", 2, 4)]
     assert rig.launchctl.verbs() == ["bootout", "bootout", "bootstrap"]
     assert rig.record()[0]["disk_gib"] == 300
+
+
+def test_a_wsl_machine_on_user_mode_networking_is_set_back_to_nat_and_ended(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.world.present.add("me")
+    rig.world.rootful.add("me")
+    rig.world.running.add("me")
+    rig.world.user_mode.add("me")
+    rig.system.disk = 100
+
+    rig.runner.apply(CONFIG)
+
+    assert rig.world.calls[:3] == [
+        ("me", "inspect"),
+        ("me", "stop", ""),
+        ("me", "set_nat_networking"),
+    ]
+    assert rig.system.calls[0] == ("terminate", "me")
+    assert rig.launchctl.verbs()[0] == "bootout"
+    assert "set the machine back to WSL's NAT networking" in rig.lines[-1]
+    assert rig.world.user_mode == set()
 
 
 def test_an_unchanged_apply_sizes_nothing_and_leaves_the_keeper_running(rig):

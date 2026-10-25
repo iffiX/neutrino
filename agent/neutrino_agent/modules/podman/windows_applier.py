@@ -559,6 +559,19 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         """
         self._wsl_as(machine, ["--shutdown"])
 
+    def terminate(self, machine) -> None:
+        """End the stopped machine's WSL system, as the account, so its next
+        start takes WSL's NAT network and resolver anew.
+
+        Args:
+            machine: The machine.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when ``wsl --terminate``
+                fails; ``credential_invalid`` when Windows refuses the login.
+        """
+        self._wsl_as(machine, ["--terminate", PODMAN_MACHINE_NAME])
+
     def write_resources(self, machine, *, cpus: int, memory_gib: int) -> None:
         """Write the processors and the memory into the account's ``.wslconfig``, as the account.
 

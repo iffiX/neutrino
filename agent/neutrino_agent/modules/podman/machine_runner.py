@@ -3,10 +3,10 @@
 The install keeps each artifact the hub sent as the publisher's file under
 ``podman/<directory>/`` in the state root, and hands an msi or a pkg to the
 system's installer; the machine image stays a file for ``podman machine
-init``. An apply makes the account's default machine exist, rootful and the
-size the Run settings name, writes and starts the keeper that brings it up
-at boot, waits until the machine answers the read, and writes the declared
-containers into it with one root script. What differs between Windows and
+init``. An apply makes the account's default machine exist, rootful, on
+WSL's NAT network on Windows and the size the Run settings name, writes and
+starts the keeper that brings it up at boot, waits until the machine answers
+the read, and writes the declared containers into it with one root script. What differs between Windows and
 macOS around the machine is the system's applier, a
 :class:`PodmanSystemApplier`. A root-only record of the last apply lets the
 reads, the journal and the verbs go on after the agent restarts.
@@ -187,6 +187,17 @@ class PodmanSystemApplier:
             PlatformUnsupportedError: On a system with no applier.
         """
         raise PlatformUnsupportedError("no Podman machine here")
+
+    def terminate(self, machine: PodmanMachine) -> None:
+        """End the stopped machine's own system where the computer keeps it
+        after a stop, so its next start takes the computer's network anew.
+
+        Args:
+            machine: The machine.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when the system refuses.
+        """
 
     def write_resources(
         self, machine: PodmanMachine, *, cpus: int, memory_gib: int
@@ -670,14 +681,19 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 or record.get("memory_gib") != settings.memory_gib
                 or bool(settings.disk_gib and settings.disk_gib != disk_gib)
             )
-            if not state.is_rootful or is_resized:
+            is_set = not state.is_rootful or state.has_user_mode_networking
+            if is_set or is_resized:
                 # The keeper would start the machine in the middle of the change.
                 account_service.stop(keeper, self._service_machine)
+            if is_set and state.is_running:
+                machine.stop()
             if not state.is_rootful:
-                if state.is_running:
-                    machine.stop()
                 machine.set_rootful()
                 notes.append("made the machine rootful")
+            if state.has_user_mode_networking:
+                machine.set_nat_networking()
+                self._system.terminate(machine)
+                notes.append("set the machine back to WSL's NAT networking")
             if is_resized:
                 self._system.halt(machine)
                 self._system.write_resources(machine, cpus=cpus, memory_gib=memory_gib)
