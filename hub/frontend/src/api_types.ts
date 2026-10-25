@@ -1705,6 +1705,23 @@ export interface RemoteDesktopConfigUpdate {
   is_enabled: boolean;
 }
 
+/** One machine's Hermes WebUI: the forwarder's port and where the module stands. */
+export interface HermesWebuiDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The forwarder's port as stored, 8787 until the person sets another. */
+  port: number;
+  /** The version the machine reports; empty before it reports one. */
+  version: string;
+  /** What the machine last reported: `{version, port}`. */
+  details: Record<string, unknown>;
+}
+
+export interface HermesWebuiConfigUpdate {
+  device_id: string;
+  port: number;
+}
+
 export interface CodeServerConfigUpdate {
   device_id: string;
   instances: CodeServerInstance[];

@@ -9,6 +9,7 @@ import { ContainersPanels } from "../components/containers_panels";
 import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
 import { GiteaPanels } from "../components/gitea_panels";
+import { HermesWebuiPanels } from "../components/hermes_webui_panels";
 import { Icon } from "../components/icon";
 import { InstancesPanel } from "../components/instances_panel";
 import { ModuleIcon } from "../components/module_icon";
@@ -121,6 +122,14 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       manifestTitles={target.manifestTitles}
     />
   ),
+  hermes_webui: (target) => (
+    <HermesWebuiPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+      want={target.want}
+    />
+  ),
   ...Object.fromEntries(
     Object.values(MODULE_DESCRIPTORS).map((descriptor) => [
       descriptor.name,
@@ -161,6 +170,7 @@ const TAB_ORDER = [
   "cloudcli",
   "codeg",
   "podman",
+  "hermes_webui",
   "zfs",
 ];
 const PAGE_MODULES = TAB_ORDER.filter((name) => name in MODULE_PANELS);
