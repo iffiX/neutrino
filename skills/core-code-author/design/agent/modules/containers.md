@@ -27,7 +27,7 @@ packages").
 
 | Rule | Reason |
 | --- | --- |
-| From Podman 4.4 a declared container is a Quadlet file, `/etc/containers/systemd/<name>.container`; below 4.4 it is a plain unit, `/etc/systemd/system/<name>.service`, that runs `podman run`. | A Podman older than 4.4 reads no `.container` file, and the supported distributions have 3.4 and later ([min_support.md](../../min_support.md)). |
+| From Podman 4.6 a declared container is a Quadlet file, `/etc/containers/systemd/<name>.container`; below 4.6 it is a plain unit, `/etc/systemd/system/<name>.service`, that runs `podman run`. | A Podman older than 4.4 reads no `.container` file, and one older than 4.6 reads no key that adds a host to a container: Podman's release notes give `PodmanArgs=` to 4.6 and `AddHost=` to 5.3. Quadlet refuses a whole file for one key it does not know. The supported distributions have 3.4 and later ([min_support.md](../../min_support.md)). |
 | Every apply runs `systemctl enable --no-reload` on the plain unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed plain unit is disabled before its file goes. | Quadlet's generator links a `.container` file that has `WantedBy=` into `multi-user.target` itself, and a plain unit's `[Install]` section starts nothing at boot until the unit is enabled. |
 | After its `daemon-reload` every apply restarts each container whose file changed when it starts with the box or its unit is active, and starts each other container that starts with the box and whose unit is not active. | An apply makes the declared containers true, and a container that starts with the box runs after it whether or not its file changed. |
 | Every rendered file starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
@@ -54,7 +54,7 @@ the second runner in the same directory, and the engine builds it under
 `hub_packages` on Windows and macOS. It renders the Linux files with the
 Linux renderers, `PodmanQuadletRenderer` and `PodmanRegistriesRenderer`, and
 writes them inside the Podman machine. Podman inside the machine is the
-machine image's own, always 4.4 or later, so every declared container is a
+machine image's own, always 4.6 or later, so every declared container is a
 Quadlet file there. In this section "the machine" is the Podman machine and
 "the computer" is the Windows or macOS system the agent runs on;
 `C:\Users\<account>` means the account's profile, the home the
@@ -297,7 +297,7 @@ Every container reaches the agent's `127.0.0.1` listeners at
 
 | System | How `host.containers.internal` reaches the listeners |
 | --- | --- |
-| Linux | the renderer writes `AddHost=host.containers.internal:<gateway>` into every declared and hub container, `<gateway>` being the gateway address of the container's network, and `--add-host` into a plain unit below Podman 4.4. The agent relays its listeners on that address, with a rule in ufw or firewalld for each relay where either runs. |
+| Linux | the renderer writes `host.containers.internal:<gateway>` into every declared and hub container, `<gateway>` being the gateway address of the container's network: as `AddHost=` from Podman 5.3, as `PodmanArgs=--add-host=` from 4.6, and as `--add-host` in a plain unit below 4.6. The agent relays its listeners on that address, with a rule in ufw or firewalld for each relay where either runs. |
 | Windows | Podman maps `host.containers.internal` in the NAT-mode machine to the computer's address on WSL's vEthernet adapter, `172.20.208.1` on the lab machine. The agent relays its listeners on that address, with one inbound Windows Firewall rule for each relayed port, scoped to the adapter. |
 | macOS | the Podman machine's gvproxy maps `host.containers.internal` to the Mac's loopback, where every container reaches every port: the agent's listeners and every other program's |
 

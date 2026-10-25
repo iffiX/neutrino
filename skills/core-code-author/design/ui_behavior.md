@@ -619,7 +619,7 @@ A module's tab shows a version line under its state line, from `GET
 | **Update** (`ui.modules.update`) | a bordered `button` beside the line, live while the newest version differs from the one installed and the module is installed and not in transit; it sends `POST /api/agent/module/version/set` with the newest version |
 | **Install another version…** (`ui.modules.install_version`) | a bordered `button` beside it, live under the same conditions; it opens a dialog listing the versions newest first, the tested one marked `ui.modules.version_tested` and each newer one `ui.modules.version_untested`, with **Follow the tested version** (`ui.modules.version_follow_tested`) at the top; a press on a row sends `version/set` with that version, or empty for the top row, and closes the dialog |
 | A version older than the one installed | on a module whose manifest says `is_data_forward_only`, the press asks through `useConfirm` first (`ui.modules.downgrade_title`, `ui.modules.downgrade_body`) |
-| A locked version | a module of the `agent`, `builtin` or `system` method shows the version line alone, with neither button |
+| A locked version | a module of the `agent`, `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the version line alone, with neither button |
 
 There is no switch that updates a module by itself. A `version_switch_failed`
 shows as the tab's error notice, as any `failed` module's code does, with the
@@ -627,7 +627,7 @@ old version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, Remote desktop, Gitea, VS
-Code, code-server, CloudCLI, Codeg, Containers, ZFS storage. VS Code,
+Code, code-server, CloudCLI, Codeg, Containers, Hermes WebUI, ZFS storage. VS Code,
 code-server, CloudCLI and Codeg are drawn by one `instances_panel.tsx` from
 the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
@@ -642,6 +642,19 @@ output box, since the agent's package carries them:
 | --- | --- | --- |
 | Terminal | **Account**, a picker over the human accounts the machine reported with the agent's own first (`ui.terminal_module.account_agent`); **Shell program**, a text field with **Browse…** beside it, which opens the panel's path window on that machine in its file mode, where a press on a file picks it | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply`; on a Windows machine **Account** is disabled with the line `ui.terminal_module.account_windows` under it |
 | Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step is the module's notice with its code's words, and the apply bar's Apply tries again |
+
+The Hermes WebUI tab draws one configurable `settings_group`, as the
+Remote desktop tab does, under the line `ui.hermes_webui.owner_notice`, or
+`ui.hermes_webui.owner_notice_version` once the machine reports the version:
+
+| Control | Idiom |
+| --- | --- |
+| **Port** (`ui.hermes_webui.port`) | a number field from 1024 to 65535, `ui.hermes_webui.port_hint` under it; a value outside the range disables the apply bar and shows `code.port_invalid` in place of the hint |
+| The apply bar, `ui.hermes_webui.apply` | sends `POST /api/agent/module/hermes_webui/set`, and with nothing changed `POST /api/agent/module/hermes_webui/apply`; it stays busy after its press until the machine reports the module where its `want` asks, at most two minutes, as `instances_panel.tsx` waits, and a failure shows as the tab's notice |
+
+The tab holds no link to the page: a client opens it from its **Web** page
+with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
+"The page").
 
 The path window is the one Samba's share folders use
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or

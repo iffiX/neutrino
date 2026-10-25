@@ -280,6 +280,21 @@ Chinese.
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
 | `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
 
+## The Hermes WebUI tab's words
+
+[ui_behavior.md](ui_behavior.md), "The Modules page", places them. The keys
+are in `locales/<language>/modules.json`; `code.port_invalid` is the one
+`codes.json` already holds.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
+| `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
+| `ui.hermes_webui.port` | Port | 端口 |
+| `ui.hermes_webui.port_hint` | The port clients open the page at on this machine. | 客户端在这台机器的这个端口上打开网页。 |
+| `ui.hermes_webui.apply` | Apply Hermes WebUI | 应用 Hermes WebUI |
+| `ui.hermes_webui.apply_hint` | Saves the port and serves the page on it. | 保存端口，并在这个端口上提供网页。 |
+
 ## The Containers tab's words
 
 The Run settings, the container editor's **Services** row, the restart
