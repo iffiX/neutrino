@@ -4,14 +4,16 @@ What these pin: the rows come in the order the Modules page lists them and
 every row's kind is one of the four; the programs run as an account are the
 rows the shared router, panel and state composition are driven by, each
 with its own sealed fields, published code and title; a row's file and
-panel are named after the module unless the table says otherwise; and a
-name the table does not hold is a ``KeyError``.
+panel are named after the module unless the table says otherwise; the
+modules that use the AI gateway are the rows that say so; and a name the
+table does not hold is a ``KeyError``.
 """
 
 import dataclasses
 
 import pytest
 
+from neutrino_hub.modules.devices import module_table
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
@@ -184,3 +186,12 @@ def test_a_row_is_frozen_and_an_unknown_name_is_refused():
         module_row("samba").sealed_field("token_sealed")
     with pytest.raises(KeyError):
         module_row("vscode").sealed_field("secret_sealed")
+
+
+def test_the_modules_that_use_the_gateway_are_the_rows_that_say_so(monkeypatch):
+    rows = DEVICE_MODULE_ROWS + (
+        dataclasses.replace(module_row("podman"), name="webui", is_gateway_used=True),
+    )
+    monkeypatch.setattr(module_table, "DEVICE_MODULE_ROWS", rows)
+
+    assert module_table.gateway_module_names() == ("webui",)

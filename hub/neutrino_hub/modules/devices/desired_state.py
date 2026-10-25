@@ -46,7 +46,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_WANTS,
 )
-from neutrino_hub.modules.clients.ai_keys import device_gateway
+from neutrino_hub.modules.clients.ai_keys import device_gateway, gateway_port
 from neutrino_hub.modules.devices.ai_tools import (
     clean_tool_configs,
     resolved_tool_configs,
@@ -82,6 +82,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_program_names,
+    gateway_module_names,
     module_row,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
@@ -191,7 +192,9 @@ def ai_tools_agent_config(
     switcher_version: str = "",
     *,
     switcher_artifact: "dict | None" = None,
-    is_forwarded: bool = True,
+    is_hub_machine: bool = False,
+    is_gateway_module: bool = False,
+    listen_port: int = 0,
 ) -> dict:
     """What the agent is sent for the machine's AI tools.
 
@@ -207,23 +210,37 @@ def ai_tools_agent_config(
         switcher_version: The cc-switch version the hub's manifest pins.
         switcher_artifact: Its artifact for the machine's platform, ``{name,
             kind, digest}``; None where the manifest names none.
-        is_forwarded: Whether the agent opens its AI gateway forward: true on
-            a managed machine, false on the hub's own.
+        is_hub_machine: Whether the device is the hub's own machine, whose
+            agent opens no forward.
+        is_gateway_module: Whether a container module that uses the gateway
+            is installed on the device.
+        listen_port: The gateway's own port, which the hub's own machine
+            relays to its containers while such a module is installed there.
 
     Returns:
-        ``{is_enabled: false, cc_switch_version, cc_switch_artifact}`` while
-        the setting is off, the gateway serves no model, or the device has
-        no key for it, the version and the artifact each left out when none
-        is given; else ``{is_enabled, is_forwarded, base_url, api_key,
+        ``{is_enabled: false, is_forwarded, gateway_port,
+        cc_switch_version, cc_switch_artifact}`` while the setting is off,
+        the gateway serves no model, or the device has no key for it, the
+        version and the artifact each left out when none is given; else
+        ``{is_enabled, is_forwarded, gateway_port, base_url, api_key,
         tool_configs, accounts: [{account, password}], cc_switch_version,
         cc_switch_artifact}``, every Claude slot filled with the first
         served model where none was chosen and ``password`` sent to a
-        Windows machine alone.
+        Windows machine alone. ``is_forwarded`` is true on a managed machine
+        while the setting is on or a container module that uses the gateway
+        is installed, and false on the hub's own; ``gateway_port`` is
+        ``listen_port`` on the hub's own machine while such a module is
+        installed there, and 0 otherwise.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
-    if not stored.get("is_enabled") or not models or not base_url or not api_key:
-        off = {"is_enabled": False}
+    is_on = bool(stored.get("is_enabled") and models and base_url and api_key)
+    forward = {
+        "is_forwarded": not is_hub_machine and (is_on or is_gateway_module),
+        "gateway_port": listen_port if is_hub_machine and is_gateway_module else 0,
+    }
+    if not is_on:
+        off = {"is_enabled": False, **forward}
         if switcher_version:
             off["cc_switch_version"] = switcher_version
         if switcher_artifact:
@@ -238,7 +255,7 @@ def ai_tools_agent_config(
         sent_accounts.append(sent)
     section = {
         "is_enabled": True,
-        "is_forwarded": is_forwarded,
+        **forward,
         "base_url": base_url,
         "api_key": api_key,
         "tool_configs": resolved_tool_configs(
@@ -721,6 +738,23 @@ class DesiredStateStore:
         """Whether one device's AI tools setting is on."""
         return self.ai_tools(key)["is_enabled"]
 
+    def has_gateway_module(self, key: str) -> bool:
+        """Whether a container module that uses the AI gateway is installed on one device.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            True while ``modules.json`` names such a module with a ``want``
+            other than ``absent``.
+        """
+        modules = self.modules(key)
+        return any(
+            modules[name]["want"] != CHANNEL_MODULE_STATE_ABSENT
+            for name in gateway_module_names()
+            if name in modules
+        )
+
     def agent_config(
         self,
         key: str,
@@ -852,6 +886,7 @@ class DesiredStateStore:
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         switcher = load_tool_manifests().get(DEVICE_AI_SWITCHER_NAME, {})
+        is_gateway_module = self.has_gateway_module(key)
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
@@ -864,7 +899,11 @@ class DesiredStateStore:
                 list(ai_models),
                 str(switcher.get("version", "") or ""),
                 switcher_artifact=switcher_artifact(switcher, platform),
-                is_forwarded=not is_hub_machine,
+                is_hub_machine=is_hub_machine,
+                is_gateway_module=is_gateway_module,
+                listen_port=(
+                    gateway_port() if is_hub_machine and is_gateway_module else 0
+                ),
             ),
         }
         if marks.get(DEVICE_AI_TOOLS_NAME):

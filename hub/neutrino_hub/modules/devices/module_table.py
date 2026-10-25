@@ -95,6 +95,10 @@ class DeviceModuleRow:
             open, or is the field's own value.
         config_head: The fields that lead the module's configuration in the
             state, as ``(key, value)`` pairs.
+        is_gateway_used: Whether the module's containers call the AI
+            gateway, which opens the agent's AI gateway forward, or on the
+            hub's own machine relays the gateway's port, while the module is
+            installed.
     """
 
     name: str
@@ -109,6 +113,7 @@ class DeviceModuleRow:
     token_field: str = ""
     is_token_minted: bool = False
     config_head: tuple = ()
+    is_gateway_used: bool = False
 
     def sealed_field(self, key: str) -> SealedField:
         """The sealed field stored under one key.
@@ -273,6 +278,15 @@ def account_program_rows() -> tuple:
         The rows.
     """
     return rows_of_kind(DEVICE_MODULE_KIND_ACCOUNT_PROGRAM)
+
+
+def gateway_module_names() -> tuple:
+    """The names of the container modules whose containers call the AI gateway, in the table's order.
+
+    Returns:
+        The names.
+    """
+    return tuple(row.name for row in DEVICE_MODULE_ROWS if row.is_gateway_used)
 
 
 def account_program_names() -> tuple:

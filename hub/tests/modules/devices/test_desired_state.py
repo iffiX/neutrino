@@ -31,6 +31,8 @@ CC_SWITCH_LINUX = {
 # artifact beside it.
 AI_TOOLS_OFF = {
     "is_enabled": False,
+    "is_forwarded": False,
+    "gateway_port": 0,
     "cc_switch_version": "5.10.4",
     "cc_switch_artifact": CC_SWITCH_LINUX,
 }
@@ -490,6 +492,7 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
     assert desired["ai_tools"] == {
         "is_enabled": True,
         "is_forwarded": True,
+        "gateway_port": 0,
         "base_url": "http://127.0.0.1:8317",
         "api_key": "dev-key",
         "tool_configs": {
@@ -518,7 +521,12 @@ def test_a_platform_cc_switch_names_no_entry_for_is_sent_no_artifact(
     store.set_ai_tools(DEVICE, is_enabled=True)
     on, _ = store.compose(DEVICE, windows_arm, ai_models=models)
 
-    assert off["ai_tools"] == {"is_enabled": False, "cc_switch_version": "5.10.4"}
+    assert off["ai_tools"] == {
+        "is_enabled": False,
+        "is_forwarded": False,
+        "gateway_port": 0,
+        "cc_switch_version": "5.10.4",
+    }
     assert on["ai_tools"]["cc_switch_version"] == "5.10.4"
     assert "cc_switch_artifact" not in on["ai_tools"]
 
@@ -549,6 +557,58 @@ def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
     assert managed["ai_tools"]["is_forwarded"] is True
     assert own["ai_tools"]["base_url"] == "http://127.0.0.1:9417"
     assert own["ai_tools"]["is_forwarded"] is False
+    assert own["ai_tools"]["gateway_port"] == 0
+
+
+def gateway_module_box(monkeypatch, *, want="running"):
+    """A device whose AI tools setting is off, with a container module that
+    uses the gateway, ``hermes_webui`` standing in, at ``want``."""
+    from neutrino_hub.modules.devices import desired_state
+
+    store, models = ai_tools_box(monkeypatch)
+    monkeypatch.setattr(
+        desired_state, "gateway_module_names", lambda: ("hermes_webui",)
+    )
+    monkeypatch.setattr(desired_state, "gateway_port", lambda: 9417)
+    store.set_want(DEVICE, "hermes_webui", want)
+    return store, models
+
+
+def test_a_container_module_that_uses_the_gateway_opens_the_forward_the_setting_off(
+    config, monkeypatch
+):
+    store, models = gateway_module_box(monkeypatch)
+
+    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+
+    assert managed["ai_tools"] == {
+        **AI_TOOLS_OFF,
+        "is_forwarded": True,
+        "gateway_port": 0,
+    }
+
+
+def test_on_the_hubs_own_machine_such_a_module_has_the_gateways_port_relayed(
+    config, monkeypatch
+):
+    store, models = gateway_module_box(monkeypatch)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+
+    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
+
+    assert own["ai_tools"]["is_forwarded"] is False
+    assert own["ai_tools"]["gateway_port"] == 9417
+
+
+def test_a_container_module_wanted_absent_opens_nothing(config, monkeypatch):
+    store, models = gateway_module_box(monkeypatch, want="absent")
+
+    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
+
+    assert store.has_gateway_module(DEVICE) is False
+    assert managed["ai_tools"] == AI_TOOLS_OFF
+    assert own["ai_tools"] == AI_TOOLS_OFF
 
 
 def test_a_composed_state_is_the_channels_agent_state(config, monkeypatch):

@@ -156,6 +156,15 @@ def device_gateway(device_id: str, *, is_hub_machine: bool = False) -> dict:
     return {"gateway_url": url, "gateway_key": material}
 
 
+def gateway_port() -> int:
+    """The port the gateway listens on, on the hub's loopback.
+
+    Returns:
+        The gateway's ``listen_port``.
+    """
+    return load_config().listen_port
+
+
 def gateway_models(served_models) -> list:
     """The names the gateway serves now, probed with the hub's own key.
 

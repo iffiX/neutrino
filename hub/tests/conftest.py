@@ -630,6 +630,9 @@ class StubDesiredStates:
     def is_ai_tools_enabled(self, key: str) -> bool:
         return False
 
+    def has_gateway_module(self, key: str) -> bool:
+        return False
+
     def remote_desktop(self, key: str) -> dict:
         return {"is_enabled": self.desktop_switches.get(key.lower()) is True}
 

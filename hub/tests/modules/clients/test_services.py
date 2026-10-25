@@ -102,9 +102,13 @@ class StubDesiredStates:
     def __init__(self):
         self.tokens = {("dev", "alice"): "tkn-alice"}
         self.ai_tools_on: set = set()
+        self.gateway_modules: set = set()
 
     def is_ai_tools_enabled(self, key):
         return key in self.ai_tools_on
+
+    def has_gateway_module(self, key):
+        return key in self.gateway_modules
 
     def seat_password(self, key):
         return "seat-pass" if key == "dev" else ""  # scan: allow
@@ -589,7 +593,7 @@ def test_an_agents_connect_goes_to_the_gateway_while_its_ai_tools_are_on(
     assert (target.kind, target.provider, target.protocol) == ("ai", "dev", "tcp")
 
 
-def test_an_agents_connect_is_refused_while_its_ai_tools_are_off(
+def test_an_agents_connect_is_refused_while_its_ai_tools_are_off_and_no_module_uses_it(
     config_dir, gateway_port
 ):
     runtime = FakeRuntime()
@@ -599,6 +603,18 @@ def test_an_agents_connect_is_refused_while_its_ai_tools_are_off(
         {"kind": "ai"},
         None,
     )
+
+
+def test_an_agents_connect_goes_to_the_gateway_for_a_container_module_alone(
+    config_dir, gateway_port
+):
+    runtime = FakeRuntime()
+    runtime.desired_states.gateway_modules.add("dev")
+
+    code, params, target = agent_connect_target(runtime, "dev", {"id": "ai"})
+
+    assert (code, params) == ("", {})
+    assert target == ConnectTarget("", "127.0.0.1", 8317)
 
 
 @pytest.mark.parametrize("args", [{"id": "web_gitea"}, {"port": 8317}, {}])

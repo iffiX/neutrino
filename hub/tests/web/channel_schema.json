@@ -316,6 +316,11 @@
               "title": "Is Forwarded",
               "type": "boolean"
             },
+            "gateway_port": {
+              "default": 0,
+              "title": "Gateway Port",
+              "type": "integer"
+            },
             "base_url": {
               "default": "",
               "title": "Base Url",
@@ -479,6 +484,11 @@
           "default": false,
           "title": "Is Forwarded",
           "type": "boolean"
+        },
+        "gateway_port": {
+          "default": 0,
+          "title": "Gateway Port",
+          "type": "integer"
         },
         "base_url": {
           "default": "",

@@ -1799,8 +1799,12 @@ class ChannelAiToolsState(BaseModel):
 
     is_enabled: bool = False
     # Whether the agent opens its AI gateway forward on 127.0.0.1:8317: true
-    # on a managed machine, false on the hub's own.
+    # on a managed machine while the setting is on or a container module
+    # that uses the gateway is installed, false on the hub's own.
     is_forwarded: bool = False
+    # The gateway's own port, which the hub's own agent relays to its
+    # containers while such a module is installed there; 0 otherwise.
+    gateway_port: int = 0
     # What the tools are pointed at: the forward, or the gateway itself on
     # the hub's own machine.
     base_url: str = ""
