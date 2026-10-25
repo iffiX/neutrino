@@ -94,6 +94,11 @@ REFUSED_PROGRAMS = {
     "powershell.exe",
     "pwsh",
     "pwsh.exe",
+    "podman",
+    "virsh",
+    "systemd-run",
+    "yum",
+    "zypper",
 }
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
 # firewalld's tools, and the starts of the options that change its rules.

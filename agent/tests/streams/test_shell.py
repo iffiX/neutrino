@@ -317,7 +317,7 @@ def test_a_containers_shell_that_does_not_start_sweeps_nothing(monkeypatch):
     swept = []
     monkeypatch.setattr(shell_module, "run", lambda *args, **kwargs: swept.append(args))
     stream = ContainerShellStream(
-        FakeChannel(), {"container": "kuma"}, podman=("/nonexistent/podman",)
+        FakeChannel(), {"container": "kuma"}, podman=("/nonexistent/container-engine",)
     )
 
     stream.open()

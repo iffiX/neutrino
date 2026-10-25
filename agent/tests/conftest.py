@@ -4,9 +4,11 @@ The autouse redirect keeps every store off the real machine: the binding
 file, the machine's own state store, the credentials directory, the
 configured marks and the package directory all land in ``tmp_path``, and
 the AI gateway forward an agent builds listens on a port the system picks.
-A guard on every process a test starts refuses the firewalls and the
-network tools by name, so no test reads or changes the machine's firewall
-or its network. The fakes here are the ones more than one directory drives:
+A guard on every process a test starts refuses by name the firewalls, the
+network tools, the service and package managers, Podman and every other
+program that reads or changes the machine or asks for authorization to, and
+an agent a test builds on this system's own platform observes none of its
+modules. The fakes here are the ones more than one directory drives:
 the control channel's platform and agent, the injected clock, the link
 builder and the log sink.
 """
@@ -15,6 +17,7 @@ import base64
 import functools
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import zlib
@@ -31,6 +34,7 @@ import neutrino_agent.modules.remote_desktop.windows_applier as windows_applier_
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.platforms.darwin as darwin_module
+import neutrino_agent.platforms.detect as detect_module
 import neutrino_agent.platforms.linux as linux_module
 import neutrino_agent.platforms.powershell_host as powershell_host_module
 import neutrino_agent.platforms.windows as windows_module
@@ -46,9 +50,12 @@ from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.platforms.windows_processes import WindowsProcessEntry
 from neutrino_agent.streams.ai_forward import AiGatewayForward
 
-# The programs no test may start: the firewalls the relays' rules go to, the
-# tools that read or change the machine's network, and PowerShell, which a
-# test runs only on a script it wrote under the temporary directory.
+# The programs no test may start on the real machine: the firewalls the
+# relays' rules go to, the tools that read or change the machine's network,
+# the service managers, package managers, container engines and account
+# tools that change it or ask for authorization to, and the system services
+# a test fakes. A program of one of these names that a test placed under the
+# temporary directory, a fake on its own PATH, runs.
 REFUSED_PROGRAMS = frozenset(
     {
         "ufw",
@@ -59,47 +66,157 @@ REFUSED_PROGRAMS = frozenset(
         "ip6tables",
         "netsh",
         "ip",
+        "systemctl",
+        "systemd-run",
+        "journalctl",
+        "loginctl",
+        "podman",
+        "sudo",
+        "pkexec",
+        "runuser",
+        "su",
+        "apt",
+        "apt-get",
+        "dpkg",
+        "dnf",
+        "yum",
+        "rpm",
+        "zypper",
+        "pacman",
+        "virsh",
+        "useradd",
+        "userdel",
+        "usermod",
+        "groupadd",
+        "groupdel",
+        "chpasswd",
+        "passwd",
+        "smbpasswd",
+        "pdbedit",
+        "zfs",
+        "zpool",
+        "modprobe",
+        "sysctl",
+        "mount",
+        "umount",
+        "reboot",
+        "shutdown",
+        "poweroff",
+        "launchctl",
+        "installer",
+        "pkgutil",
+        "dscl",
+        "sysadminctl",
+        "msiexec",
+        "msiexec.exe",
+        "wsl",
+        "wsl.exe",
+        "dism",
+        "dism.exe",
+        "schtasks",
+        "sc",
+        "sc.exe",
     }
 )
+# PowerShell, which a test runs only on a script it wrote under the
+# temporary directory.
 POWERSHELL_PROGRAMS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.exe"})
 
 _real_popen = subprocess.Popen
+_real_system = os.system
 
 
-def _refuses(command) -> "str | None":
-    """Why a test must not start a command, or None when it may."""
+def _refuses(command, environment=None) -> "str | None":
+    """Why a test must not start a command on the real machine, or None when it may.
+
+    Args:
+        command: The argument vector, or a shell line.
+        environment: The environment it starts with; None is the test's own.
+
+    Returns:
+        The reason naming the program; None for a program of no refused
+        name, one found under the temporary directory, and PowerShell on a
+        script there.
+    """
     if isinstance(command, (str, bytes)):
         words = os.fsdecode(command).split()
     else:
         words = [os.fsdecode(word) for word in command]
     if not words:
         return None
-    program = os.path.basename(words[0]).lower()
-    if program in REFUSED_PROGRAMS:
-        return f"{program} reads or changes the machine's firewall or network"
-    if program in POWERSHELL_PROGRAMS:
+    program = words[0]
+    name = os.path.basename(program).lower()
+    under_temp = os.path.realpath(tempfile.gettempdir()) + os.sep
+    if name in POWERSHELL_PROGRAMS:
         script = words[words.index("-File") + 1] if "-File" in words[:-1] else ""
-        if not script.startswith(tempfile.gettempdir() + os.sep):
-            return f"{program} runs only a script a test wrote"
-    return None
+        if script and os.path.realpath(script).startswith(under_temp):
+            return None
+        return f"{name} runs only a script a test wrote"
+    if name not in REFUSED_PROGRAMS:
+        return None
+    path = (environment or os.environ).get("PATH", os.defpath)
+    found = program if os.sep in program else shutil.which(program, path=path)
+    if found and os.path.realpath(found).startswith(under_temp):
+        return None
+    return f"{name} changes or reads the machine, or asks for authorization to"
 
 
 @pytest.fixture(autouse=True)
-def _no_test_reaches_the_firewall(monkeypatch):
-    """Refuse, by name, a process a test would start on the real firewall or
-    network; ``subprocess.run`` starts every process through ``Popen``."""
+def _no_test_reaches_the_machine(monkeypatch):
+    """Fail a test at once when it would start a refused program on the real machine.
+
+    ``subprocess.run``, ``call`` and ``check_output`` start every process
+    through ``Popen``. Code under test catches ``Exception`` in places, so
+    the refusal is a pytest failure, which it does not catch, and the test
+    also fails at its end when something swallowed it.
+    """
+    refused: list = []
+
+    def refuse(reason: str, command) -> None:
+        test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+        refused.append(reason)
+        pytest.fail(
+            f"{test} would start {command!r} on this machine ({reason}); "
+            "patch the module's run, or put a fake on PATH under tmp_path",
+            pytrace=True,
+        )
 
     class GuardedPopen(_real_popen):
         def __init__(self, command, *arguments, **keywords):
-            reason = _refuses(command)
+            reason = _refuses(command, keywords.get("env"))
             if reason is not None:
-                test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
-                raise AssertionError(
-                    f"{test} started {command!r} ({reason}); stub what ran it"
-                )
+                refuse(reason, command)
             super().__init__(command, *arguments, **keywords)
 
+    def guarded_system(command):
+        reason = _refuses(command)
+        if reason is not None:
+            refuse(reason, command)
+        return _real_system(command)
+
     monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+    monkeypatch.setattr(os, "system", guarded_system)
+    yield refused
+    if refused:
+        pytest.fail(f"the test tried to start a refused program: {refused}")
+
+
+def _moduleless_platform():
+    """This system's platform without the capabilities that build package runners.
+
+    An agent a test builds on its own platform then observes no module of
+    the machine the suite runs on: no Samba, no Podman, no ZFS.
+    """
+    platform = detect_module.detect_platform()
+    platform.capabilities = frozenset(
+        platform.capabilities - {"packages", "hub_packages", "smb_server"}
+    )
+    return platform
+
+
+@pytest.fixture(autouse=True)
+def _agent_observes_no_module_of_this_machine(monkeypatch):
+    monkeypatch.setattr(loop_module, "detect_platform", _moduleless_platform)
 
 
 @pytest.fixture(autouse=True)
