@@ -1243,6 +1243,60 @@ def test_a_module_mid_operation_keeps_its_transient_row_when_queued(tmp_path):
     assert engine.report()["samba"]["state"] == "installing"
 
 
+def test_an_install_s_row_stays_installing_when_a_read_begun_before_it_ends(
+    tmp_path,
+):
+    """A read of every module takes seconds; one begun while a module was
+    queued does not put ``queued`` over the install that began meanwhile."""
+    reading = threading.Event()
+    read_release = threading.Event()
+    installing = threading.Event()
+    install_release = threading.Event()
+
+    class SlowRunner(ConfigurableRunner):
+        def details(self, recipe):
+            reading.set()
+            read_release.wait(5)
+            return {}
+
+    class PullingRunner(ConfigurableRunner):
+        runner = "gitea"
+        name = "gitea"
+
+        def install(self, recipe):
+            installing.set()
+            install_release.wait(5)
+            self.is_installed = True
+
+    pulling = PullingRunner(is_installed=False)
+    engine = module_engine(SlowRunner(), tmp_path=tmp_path)
+    engine._module_runners["gitea"] = pulling
+    engine._runners_by_name["gitea"] = pulling
+    engine._wanted["gitea"] = {
+        "want": "installed",
+        "config": {},
+        "install": {"runner": "gitea", "method": "builtin", "params": {}},
+    }
+    engine.set_queued(["gitea"])
+    read = threading.Thread(target=engine._refresh, kwargs={"is_forced": True})
+    read.start()
+    assert reading.wait(5)
+
+    engine.set_queued(())
+    install = threading.Thread(
+        target=engine.install, args=("gitea",), kwargs={"receive": None}
+    )
+    install.start()
+    assert installing.wait(5)
+    read_release.set()
+    read.join(5)
+
+    assert engine.report()["gitea"]["state"] == "installing"
+    install_release.set()
+    install.join(5)
+    assert engine.report()["gitea"]["state"] == "installed"
+
+
 def test_a_runner_that_cannot_read_the_machine_is_failed_typed():
     class BrokenRunner(ConfigurableRunner):
         def verify(self, recipe):

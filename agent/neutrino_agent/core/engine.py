@@ -456,13 +456,12 @@ class ModuleEngine(ReconcileWorker):
             queued = set(names)
             left = self._queued - queued
             self._queued = queued
-            in_transit = set(self._in_transit)
             observed = self._observed()
-        for name in sorted(queued - in_transit):
-            self._publish(name, _typed(AGENT_MODULE_STATE_QUEUED))
-        for name in sorted(left - in_transit):
+        for name in sorted(queued):
+            self._publish_observed(name, _typed(AGENT_MODULE_STATE_QUEUED))
+        for name in sorted(left):
             if name in observed:
-                self._publish(name, self._read_one(name, observed[name]))
+                self._publish_observed(name, self._read_one(name, observed[name]))
 
     def refresh_now(self) -> None:
         """Report every module again from what is true right now."""
@@ -716,21 +715,40 @@ class ModuleEngine(ReconcileWorker):
                 default=str,
             )
             is_stale = self._is_stale(signature)
-            in_transit = set(self._in_transit)
-            queued = set(self._queued)
         is_due = time.monotonic() - self._details_at > AGENT_MODULE_DETAILS_TTL_S
         if not (is_stale or is_forced or is_due):
             return
         self._details_at = time.monotonic()
         for name, wanted in observed.items():
-            if name in in_transit:
+            with self._lock:
+                is_held = name in self._in_transit or name in self._queued
+            if is_held:
+                self._publish_observed(name, _typed(AGENT_MODULE_STATE_QUEUED))
                 continue
-            if name in queued:
-                self._publish(name, _typed(AGENT_MODULE_STATE_QUEUED))
-                continue
-            self._publish(name, self._read_one(name, wanted))
+            self._publish_observed(name, self._read_one(name, wanted))
         # A module no runner and no state names stops being reported.
         self._keep_only(observed)
+
+    def _publish_observed(self, name: str, status: dict) -> None:
+        """Record one module's status as read, unless an operation or the queue holds its row.
+
+        A module mid-operation keeps its transient row, and a queued one
+        reads ``queued``, as they stand when the row is written: a read of
+        every module takes seconds, and an install can begin meanwhile.
+
+        Args:
+            name: The module name.
+            status: What a read found.
+        """
+        with self._lock:
+            if name in self._in_transit:
+                return
+            if name in self._queued:
+                status = _typed(AGENT_MODULE_STATE_QUEUED)
+            is_news = self._statuses.get(name) != status
+            self._statuses[name] = status
+        if is_news and self._on_change is not None:
+            self._on_change()
 
     def _read_one(self, name: str, wanted: "dict | None") -> dict:
         """What one module actually is on this machine, acting on nothing.
