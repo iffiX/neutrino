@@ -713,3 +713,44 @@ def test_a_web_service_is_a_web_entry_alone_with_its_chosen_scheme(box):
     assert by_id["podman_device-one_app_8443"]["payload"] == {
         "url": "https://192.168.100.7:8443/"
     }
+
+
+def test_a_hub_container_s_ports_give_no_entry(box):
+    """A container module's page is its own entry, behind its forwarder."""
+    DesiredStateStore().set_want(DEVICE, "podman", "running")
+    sessions = StubSessions(
+        {
+            DEVICE: report(
+                podman={
+                    "containers": [
+                        {
+                            "name": "neutrino_demo",
+                            "image": "ghcr.io/acme/demo",
+                            "module": "demo",
+                            "is_running": True,
+                            "host_bindings": [
+                                {
+                                    "address": "127.0.0.1",
+                                    "port": 41000,
+                                    "protocol": "tcp",
+                                }
+                            ],
+                        },
+                        {
+                            "name": "web",
+                            "image": "nginx",
+                            "module": "",
+                            "is_running": True,
+                            "host_bindings": [{"address": "", "port": 8080}],
+                        },
+                    ]
+                },
+            )
+        }
+    )
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    assert [entry["id"] for entry in entries] == ["podman_device-one_web_8080"]

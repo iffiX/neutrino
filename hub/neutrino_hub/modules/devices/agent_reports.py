@@ -5,16 +5,18 @@ every few seconds. Both land in the runtime's memory alone, which is what
 the panel reads: a machine's presence is true only while this hub runs.
 
 A report is read by its sections: ``machine``, ``network``, ``modules``,
-``desktop`` and ``error``. It writes four things. The seat password: a
+``desktop`` and ``error``. It writes five things. The seat password: a
 machine reporting the remote desktop host present is given one, sealed
 under the vault's data key, the first time it says so. The MAC its socket
 runs on, noted on the device's row when it is new. ``modules.json``: a
 module the hub wanted ``absent`` that the machine now reports absent is
 settled there, so the hub's state stops naming software it took off while
-the module's row goes on saying what the person asked for. And, at the
+the module's row goes on saying what the person asked for. At the
 first report on a socket, the hub's record of each module it holds no
 ``want`` for: what the machine hosts becomes the hub's configuration and
-its want, and the hub's copy is the one truth from then on.
+its want, and the hub's copy is the one truth from then on. And at any report,
+a hub container whose module ``modules.json`` does not name joins the
+declared containers in ``podman.json``.
 """
 
 import logging
@@ -29,10 +31,13 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
+    DEVICE_PODMAN_CONTAINERS_KEY,
+    DEVICE_PODMAN_MODULE,
 )
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
     import_module_config,
+    labelled_containers,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
@@ -90,6 +95,7 @@ def record_report(
     runtime.device_modules[key] = modules
     is_settled = _settle_absent(runtime, key, modules)
     is_adopted = is_first and _adopt_modules(runtime, key, modules)
+    is_adopted = _import_labelled(runtime, key, modules) or is_adopted
     is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
     is_seated = _ensure_seat_password(runtime, key)
     if is_settled or is_adopted or is_shared or is_seated:
@@ -301,6 +307,56 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
         LOGGER.info("device %s: %s reported %s, adopted as %s", key, name, state, want)
         is_changed = True
     return is_changed
+
+
+def _import_labelled(runtime, key: str, modules: dict) -> bool:
+    """Take over the hub containers of a module the hub no longer names as declared ones.
+
+    A container with the label ``neutrino.module`` whose module
+    ``modules.json`` does not name, or names with a settled ``absent``, joins
+    the declared containers with its name, image, ports, volumes and
+    environment, at the report that shows it.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        modules: The module states the report carries.
+
+    Returns:
+        True when ``podman.json`` changed, so the state is pushed again.
+    """
+    status = modules.get(DEVICE_PODMAN_MODULE)
+    details = status.get("details") if isinstance(status, dict) else None
+    if not isinstance(details, dict):
+        return False
+    store = runtime.desired_states
+    named = {
+        name for name, entry in store.modules(key).items() if not entry["is_settled"]
+    }
+    config = store.read(key, DEVICE_PODMAN_MODULE)
+    held = [
+        container
+        for container in config.get(DEVICE_PODMAN_CONTAINERS_KEY) or []
+        if isinstance(container, dict)
+    ]
+    declared = {str(container.get("name", "")) for container in held}
+    taken = labelled_containers(details, named, declared)
+    if not taken:
+        return False
+    try:
+        store.write(
+            key,
+            DEVICE_PODMAN_MODULE,
+            {**config, DEVICE_PODMAN_CONTAINERS_KEY: held + taken},
+        )
+    except OSError:
+        return False
+    LOGGER.info(
+        "device %s: took over %s as declared containers",
+        key,
+        ", ".join(container["name"] for container in taken),
+    )
+    return True
 
 
 def _import(store, key: str, name: str, status: dict) -> bool:

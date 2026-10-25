@@ -374,8 +374,14 @@ class PublishedServiceCache:
                         "name": str(container.get("name", "")),
                         "image": str(container.get("image", "")),
                         "is_running": bool(container.get("is_running")),
-                        "bindings": container_bindings(
-                            container, services.get(str(container["name"]), [])
+                        # A container module's page is its own entry, behind
+                        # its forwarder; its containers' ports give none.
+                        "bindings": (
+                            []
+                            if container.get("module")
+                            else container_bindings(
+                                container, services.get(str(container["name"]), [])
+                            )
                         ),
                     }
                     for container in details.get("containers") or []

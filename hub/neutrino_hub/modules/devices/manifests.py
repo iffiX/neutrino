@@ -24,6 +24,7 @@ import json
 import re
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_DIRECTORY_KINDS,
     DEVICE_ARTIFACT_FILE_KINDS,
@@ -74,11 +75,12 @@ PARAMS_REQUIRED = {
     DEVICE_METHOD_BUILTIN: set(),
     DEVICE_METHOD_SYSTEM: {"version", "packages", "verify", "uninstall"},
     DEVICE_METHOD_HUB: {"version", "releases", "artifacts", "verify", "uninstall"},
-    DEVICE_METHOD_CONTAINER: {"version", "releases", "artifacts"},
+    DEVICE_METHOD_CONTAINER: {"version", "artifacts"},
 }
 PARAMS_OPTIONAL = {
     DEVICE_METHOD_SYSTEM: {"pre_install"},
     DEVICE_METHOD_HUB: {"packages"},
+    DEVICE_METHOD_CONTAINER: {"releases", "source_sets"},
 }
 UNINSTALL_KEYS = {
     DEVICE_METHOD_SYSTEM: {"packages", "post_uninstall"},
@@ -86,7 +88,7 @@ UNINSTALL_KEYS = {
 }
 # The artifact keys each kind names, beside ``name``, ``kind`` and ``digest``.
 FILE_ARTIFACT_KEYS = {"name", "kind", "digest", "file", "sources", "directory"}
-NPM_ARTIFACT_KEYS = {"name", "kind", "digest", "package", "sources", "hosts"}
+NPM_ARTIFACT_KEYS = {"name", "kind", "digest", "package", "source_set", "hosts"}
 IMAGE_ARTIFACT_KEYS = {"name", "kind", "digest", "sources"}
 # What the recipe keeps of a hub artifact the agent takes from the package
 # stream: the bytes come down the stream, so no source is sent.
@@ -560,12 +562,19 @@ def _check_params(file_name: str, where: str, method: str, params) -> None:
                 _check_texts(file_name, f"{where} uninstall {field}", removal[field])
         if "is_data_kept" in keys and not isinstance(removal["is_data_kept"], bool):
             _refuse(file_name, f"{where} is_data_kept", "must be true or false")
-    if "releases" in required:
+    if "releases" in params:
         feeds = params["releases"]
         if not isinstance(feeds, list) or not feeds:
             _refuse(file_name, f"{where} releases", "must list at least one feed")
         for feed in feeds:
             _check_feed(file_name, f"{where} releases", feed)
+    if "source_sets" in params:
+        sets = params["source_sets"]
+        _check_texts(file_name, f"{where} source_sets", sets)
+        defined = load_source_sets()
+        for name in sets:
+            if name not in defined:
+                _refuse(file_name, f"{where} source_sets", f"names no set, {name!r}")
     if "artifacts" in required:
         kinds = (
             (DEVICE_ARTIFACT_KIND_IMAGE,)
@@ -632,12 +641,10 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 artifact["digest"],
                 pattern=MANIFEST_INTEGRITY_PATTERN,
             )
-            _check_texts(
-                file_name,
-                f"{named} sources",
-                artifact["sources"],
-                is_empty_allowed=False,
-            )
+            if artifact["source_set"] != DEVICE_ARTIFACT_KIND_NPM:
+                _refuse(file_name, f"{named} source_set", "must be the npm set")
+            if artifact["source_set"] not in load_source_sets():
+                _refuse(file_name, f"{named} source_set", "names no set")
             for setting, hosts in (artifact.get("hosts") or {}).items():
                 _check_texts(
                     file_name, f"{named} hosts {setting}", hosts, is_empty_allowed=False

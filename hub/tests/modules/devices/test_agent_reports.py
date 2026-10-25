@@ -569,3 +569,91 @@ def test_a_socket_ending_withdraws_the_share(box):
     agent_reports.record_offline(runtime, device)
 
     assert runtime.device_shares.live() == []
+
+
+# --- a hub container whose module the hub no longer names ---
+
+
+def podman_report(*containers) -> dict:
+    return report(
+        modules={
+            "podman": {
+                "state": "running",
+                "is_active": True,
+                "details": {"containers": list(containers), "mirrors": []},
+            }
+        }
+    )
+
+
+LABELLED = {
+    "name": "neutrino_demo",
+    "image": "ghcr.io/acme/demo@sha256:" + "d" * 64,
+    "ports": ["127.0.0.1:41000:8080"],
+    "volumes": ["neutrino_demo_data:/srv"],
+    "environment": ["DEMO_PASSWORD=pw"],
+    "has_unit": True,
+    "source": "hub",
+    "module": "demo",
+}
+
+
+def test_a_hub_container_of_a_module_not_named_joins_the_declared_ones(box):
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "podman")] = "running"
+    runtime.desired_states.files[(DEVICE, "podman")] = {
+        "containers": [{"name": "web", "image": "nginx"}],
+        "mirrors": [],
+    }
+
+    agent_reports.record_report(runtime, device, podman_report(LABELLED))
+
+    assert runtime.desired_states.files[(DEVICE, "podman")]["containers"] == [
+        {"name": "web", "image": "nginx"},
+        {
+            "name": "neutrino_demo",
+            "image": "ghcr.io/acme/demo@sha256:" + "d" * 64,
+            "ports": ["127.0.0.1:41000:8080"],
+            "volumes": ["neutrino_demo_data:/srv"],
+            "environment": ["DEMO_PASSWORD=pw"],
+            "command": "",
+            "is_autostart": True,
+        },
+    ]
+    assert runtime.pushed == [DEVICE]
+
+
+def test_a_module_settled_absent_counts_as_not_named(box):
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "demo")] = "absent"
+    runtime.desired_states.settled.append((DEVICE, "demo"))
+
+    agent_reports.record_report(runtime, device, podman_report(LABELLED))
+
+    held = runtime.desired_states.files[(DEVICE, "podman")]["containers"]
+    assert [container["name"] for container in held] == ["neutrino_demo"]
+
+
+@pytest.mark.parametrize("want", ["installed", "running", "absent"])
+def test_a_hub_container_of_a_named_module_stays_its_module_s(box, want):
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "demo")] = want
+
+    agent_reports.record_report(runtime, device, podman_report(LABELLED))
+
+    assert (DEVICE, "podman") not in runtime.desired_states.files
+    assert runtime.pushed == []
+
+
+def test_a_hub_container_already_declared_is_taken_once(box):
+    runtime, device = box
+    runtime.desired_states.files[(DEVICE, "podman")] = {
+        "containers": [{"name": "neutrino_demo", "image": "x"}]
+    }
+
+    agent_reports.record_report(runtime, device, podman_report(LABELLED))
+
+    assert runtime.desired_states.files[(DEVICE, "podman")]["containers"] == [
+        {"name": "neutrino_demo", "image": "x"}
+    ]
+    assert runtime.pushed == []

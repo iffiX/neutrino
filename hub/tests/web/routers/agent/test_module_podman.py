@@ -56,7 +56,7 @@ def box(monkeypatch, tmp_path):
                 "image": "nginx",
                 "status": "Up",
                 "is_running": True,
-                "is_declared": True,
+                "source": "declared",
                 "host_ports": [8080],
             },
             {
@@ -64,7 +64,7 @@ def box(monkeypatch, tmp_path):
                 "image": "alpine",
                 "status": "Exited",
                 "is_running": False,
-                "is_declared": False,
+                "source": "manual",
                 "host_ports": [],
             },
         ],
@@ -90,7 +90,7 @@ def test_import_declares_the_containers_the_machine_runs(box):
                 "image": "docker.io/library/nginx:1.27",
                 "status": "Up",
                 "is_running": True,
-                "is_declared": False,
+                "source": "manual",
                 "host_ports": [8080],
                 "ports": ["8080:80"],
                 "volumes": ["/srv/web:/usr/share/nginx/html"],
@@ -102,7 +102,7 @@ def test_import_declares_the_containers_the_machine_runs(box):
                 "image": "alpine",
                 "status": "Exited",
                 "is_running": False,
-                "is_declared": False,
+                "source": "manual",
                 "host_ports": [],
                 "has_unit": False,
             },
@@ -148,15 +148,16 @@ def test_a_running_engine_reads_as_installed(box):
     assert payload["state"] == "running"
 
 
-def test_the_view_separates_declared_from_ad_hoc(box):
+def test_the_view_separates_declared_from_manual(box):
     client, _ = box
 
     payload = client.get(BASE, params={"device_id": DEVICE}).json()
 
     assert [c["name"] for c in payload["containers"]] == ["web"]
     by_name = {c["name"]: c for c in payload["running"]}
-    assert by_name["web"]["is_declared"] is True
-    assert by_name["adhoc"]["is_declared"] is False
+    assert by_name["web"]["source"] == "declared"
+    assert by_name["adhoc"]["source"] == "manual"
+    assert payload["hub_containers"] == []
     assert payload["is_installed"] is True
     assert payload["is_active"] is True
     assert payload["version"] == "4.9.3"
@@ -246,7 +247,7 @@ def test_the_view_holds_what_the_machine_detected_on_each_port(box):
                 "image": "nginx",
                 "status": "Up",
                 "is_running": True,
-                "is_declared": True,
+                "source": "declared",
                 "host_ports": [8080, 5353],
                 "host_bindings": [
                     {
@@ -625,3 +626,123 @@ def test_the_run_settings_are_empty_on_windows_and_macos_until_stored_and_none_o
     assert darwin["machine_state"] is None
     assert linux["machine"] is None
     assert linux["machine_state"] is None
+
+
+# --- owners and hub containers ---
+
+
+@pytest.fixture
+def hub_box(box, demo_container_module):
+    """The box with the test-only container module wanted running, and its
+    container reported with its label."""
+    client, runtime = box
+    runtime.device_platform[DEVICE] = LINUX
+    runtime.desired_states.set_want(DEVICE, "demo", "running")
+    held = runtime.device_modules[DEVICE]["podman"]["details"]["containers"]
+    held.append(
+        {
+            "name": "neutrino_demo",
+            "image": "ghcr.io/acme/demo@sha256:" + "d" * 64,
+            "status": "Up",
+            "is_running": True,
+            "source": "hub",
+            "module": "demo",
+            "host_ports": [41000],
+        }
+    )
+    return client, runtime
+
+
+def test_each_running_container_names_where_it_comes_from(hub_box):
+    client, _ = hub_box
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    by_name = {c["name"]: (c["source"], c["module"]) for c in payload["running"]}
+    assert by_name == {
+        "web": ("declared", ""),
+        "adhoc": ("manual", ""),
+        "neutrino_demo": ("hub", "demo"),
+    }
+
+
+def test_the_view_holds_the_hub_containers_the_modules_compose(hub_box):
+    client, _ = hub_box
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert [(c["module"], c["name"]) for c in payload["hub_containers"]] == [
+        ("demo", "neutrino_demo_worker"),
+        ("demo", "neutrino_demo"),
+    ]
+    assert payload["hub_containers"][1]["image"]["sources"][0] == "ghcr.io/acme/demo"
+    assert payload["hub_containers"][0]["volumes"] == ["neutrino_demo_data:/data"]
+
+
+def test_a_new_declared_name_may_not_start_with_neutrino(box):
+    client, runtime = box
+
+    refused = client.post(
+        f"{BASE}/container/set",
+        json={
+            "device_id": DEVICE,
+            "containers": [
+                {"name": "web", "image": "nginx"},
+                {"name": "neutrino_mine", "image": "alpine"},
+            ],
+        },
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "container_name_reserved",
+        "params": {"name": "neutrino_mine"},
+    }
+    assert runtime.agent_sessions.validations == []
+
+
+def test_a_declared_container_from_an_import_keeps_its_name(box):
+    client, runtime = box
+    runtime.desired_states.write(
+        DEVICE,
+        "podman",
+        {"containers": [{"name": "neutrino_old", "image": "alpine"}], "mirrors": []},
+    )
+
+    kept = client.post(
+        f"{BASE}/container/set",
+        json={
+            "device_id": DEVICE,
+            "containers": [{"name": "neutrino_old", "image": "alpine:3"}],
+        },
+    )
+
+    assert kept.status_code == 200
+
+
+@pytest.mark.parametrize("action", ["start", "stop", "restart"])
+@pytest.mark.parametrize("name", ["neutrino_demo", "neutrino_demo_worker"])
+def test_a_hub_container_takes_no_press_of_its_own(hub_box, action, name):
+    client, runtime = hub_box
+
+    refused = client.post(
+        f"{BASE}/container/{action}", json={"device_id": DEVICE, "name": name}
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "container_hub_owned",
+        "params": {"name": name},
+    }
+    assert runtime.agent_sessions.commands == []
+
+
+def test_a_hub_container_s_journal_is_read_as_any_container_s(hub_box):
+    client, _ = hub_box
+
+    answer = client.get(
+        f"{BASE}/container/journal",
+        params={"device_id": DEVICE, "name": "neutrino_demo"},
+    )
+
+    assert answer.status_code == 200

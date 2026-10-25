@@ -28,6 +28,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from neutrino_hub.exceptions import AgentOfflineError
+from neutrino_hub.modules.devices.constants import DEVICE_PODMAN_MODULE
+from neutrino_hub.modules.devices.hub_containers import (
+    compose_hub_containers,
+    is_hub_container,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_SESSION_NOT_OWNED,
     CHANNEL_SHELL_CONTAINER_MODULE,
@@ -61,6 +66,8 @@ router = APIRouter()
 
 POLICY_VIOLATION_CODE = 1008
 INTERNAL_ERROR_CODE = 1011
+# What a container's shell closes with when a module runs the container.
+CODE_CONTAINER_HUB_OWNED = "container_hub_owned"
 # What starlette's close raises when the browser is already gone.
 ABNORMAL_CLOSURE_CODE = 1006
 DNS_LOG_POLL_INTERVAL_S = 1.0
@@ -137,7 +144,8 @@ async def terminal_socket(
         websocket: The client socket.
         device_id: Which device to open the shell on, from the query.
         container: A container on the device to open the shell inside of,
-            from the query; empty opens a root shell on the device itself.
+            from the query; empty opens a root shell on the device itself. A
+            container a module runs closes ``container_hub_owned {name}``.
         session_id: The session the page generated for the shell, from the
             query.
         is_resumed: Whether the page attaches to a session the machine
@@ -153,12 +161,46 @@ async def terminal_socket(
         if is_resumed:
             args["is_resumed"] = True
     if container:
+        runtime = websocket.app.state.runtime
+        if await asyncio.to_thread(_is_hub_owned, runtime, device_id, container):
+            await _refuse_hub_container(websocket, container)
+            return
         args = {
             "module": CHANNEL_SHELL_CONTAINER_MODULE,
             "container": container,
             **args,
         }
     await _serve_agent_stream(websocket, device_id, args)
+
+
+def _is_hub_owned(runtime, device_id: str, container: str) -> bool:
+    """Whether a container of one device is run by a container module."""
+    reported = runtime.device_modules.get(device_id, {}).get(DEVICE_PODMAN_MODULE)
+    details = (reported or {}).get("details")
+    composed = compose_hub_containers(
+        runtime.desired_states,
+        device_id,
+        runtime.device_platform.get(device_id, {}),
+        is_hub_machine=runtime.is_hub_machine(device_id),
+    )
+    return is_hub_container(
+        container, details if isinstance(details, dict) else {}, composed
+    )
+
+
+async def _refuse_hub_container(websocket: WebSocket, container: str) -> None:
+    """Close a container's shell a module's container may not have, ``container_hub_owned``."""
+    if not await _accept(websocket):
+        return
+    with contextlib.suppress(RuntimeError):
+        await websocket.send_json(
+            {
+                "type": "closing",
+                "code": CODE_CONTAINER_HUB_OWNED,
+                "params": {"name": container},
+            }
+        )
+    await _close(websocket, code=INTERNAL_ERROR_CODE, reason=CODE_CONTAINER_HUB_OWNED)
 
 
 async def _push_stats(websocket: WebSocket) -> None:

@@ -251,7 +251,9 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     assert (package["name"], package["kind"]) == ("cloudcli", "npm")
     assert package["package"] == "@cloudcli-ai/cloudcli"
     assert package["digest"].startswith("sha512-")
-    assert package["sources"] == [
+    assert package["source_set"] == "npm"
+    assert "sources" not in package
+    assert desired["source_sets"]["npm"]["sources"][:2] == [
         "https://registry.npmjs.org",
         "https://registry.npmmirror.com",
     ]

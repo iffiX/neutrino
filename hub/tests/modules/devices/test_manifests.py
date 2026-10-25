@@ -350,7 +350,8 @@ def sample_manifest() -> dict:
                                 kind="npm",
                                 package="@vendor/cli",
                                 digest="sha512-" + "b" * 86 + "==",
-                                sources=["https://registry.example"],
+                                source_set="npm",
+                                sources=None,
                                 hosts={
                                     "npm_config_cli_binary_host": ["https://h.example"]
                                 },
@@ -756,7 +757,7 @@ def test_cloudcli_pins_node_and_its_npm_package_on_six_platforms():
             "kind": "npm",
             "package": "@cloudcli-ai/cloudcli",
             "digest": CLOUDCLI_INTEGRITY,
-            "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+            "source_set": "npm",
             "hosts": {
                 "npm_config_better_sqlite3_binary_host": [
                     "https://github.com/WiseLibs/better-sqlite3/releases/download",
@@ -1066,7 +1067,7 @@ def test_the_recipe_drops_the_feeds_and_the_sources_the_package_stream_serves():
                     "kind": "npm",
                     "package": "@vendor/cli",
                     "digest": "sha512-" + "b" * 86 + "==",
-                    "sources": ["https://registry.example"],
+                    "source_set": "npm",
                     "hosts": {"npm_config_cli_binary_host": ["https://h.example"]},
                 },
             ],
@@ -1407,3 +1408,94 @@ def test_the_loader_refuses_a_tool_manifest_outside_its_shape(
 
     assert "tool.json" in str(refusal.value)
     assert said in str(refusal.value)
+
+
+# --- container entries and source sets ---
+
+
+def container_manifest(**params) -> dict:
+    """The sample module with one ``container`` entry on Linux of these params."""
+    manifest = valid_manifest()
+    manifest["platforms"] = {
+        "linux": {
+            "runner": "container",
+            "install": {
+                "method": "container",
+                "params": {
+                    "version": "1.0",
+                    "artifacts": [
+                        {
+                            "name": "web",
+                            "kind": "image",
+                            "digest": "sha256:" + "e" * 64,
+                            "sources": ["ghcr.io/acme/web"],
+                        }
+                    ],
+                    **params,
+                },
+            },
+        }
+    }
+    return manifest
+
+
+def test_a_container_entry_with_no_releases_and_its_source_sets_loads(manifests_dir):
+    write_manifest(manifests_dir, "sample", container_manifest(source_sets=["pypi"]))
+
+    loaded = load_module_manifests()["sample"]
+    recipe = module_recipe(loaded["platforms"]["linux"])
+
+    assert recipe["params"]["source_sets"] == ["pypi"]
+    assert "releases" not in entry_params(loaded["platforms"]["linux"])
+
+
+def test_a_container_entry_naming_a_set_the_file_does_not_define_is_refused(
+    manifests_dir,
+):
+    write_manifest(manifests_dir, "sample", container_manifest(source_sets=["conda"]))
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "conda" in str(refusal.value)
+
+
+def _npm_with_sources(manifest):
+    artifact = hub_params(manifest)["artifacts"][1]
+    artifact["sources"] = ["https://registry.example"]
+
+
+def _npm_without_its_set(manifest):
+    del hub_params(manifest)["artifacts"][1]["source_set"]
+
+
+def _npm_of_another_set(manifest):
+    hub_params(manifest)["artifacts"][1]["source_set"] = "pypi"
+
+
+@pytest.mark.parametrize(
+    "spoil, said",
+    [
+        (_npm_with_sources, "sources"),
+        (_npm_without_its_set, "source_set"),
+        (_npm_of_another_set, "npm set"),
+    ],
+)
+def test_an_npm_artifact_names_the_npm_set_alone(spoil, said, manifests_dir):
+    manifest = valid_manifest()
+    spoil(manifest)
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert said in str(refusal.value)
+
+
+def test_every_shipped_npm_artifact_names_the_npm_set():
+    for manifest in load_module_manifests().values():
+        for entry in manifest["platforms"].values():
+            for artifact in entry_params(entry).get("artifacts") or []:
+                if artifact["kind"] == "npm":
+                    assert artifact["source_set"] == "npm"
+                    assert "sources" not in artifact

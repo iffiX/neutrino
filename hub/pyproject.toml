@@ -54,6 +54,7 @@ include = ["neutrino_hub*"]
 neutrino_hub = [
     "data/services/*",
     "data/manifests/*.json",
+    "data/source_sets.json",
     "data/examples/*/*.json",
     "data/examples/*/*/*.json",
     "data/frontend/**/*",

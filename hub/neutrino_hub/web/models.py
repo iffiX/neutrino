@@ -2392,14 +2392,35 @@ class PodmanHostBindingView(BaseModel):
 
 
 class PodmanContainerStateView(BaseModel):
-    """One container as podman sees it right now, declared or not."""
+    """One container as podman sees it right now, whoever runs it."""
 
     name: str
     image: str
     status: str
     is_running: bool
-    is_declared: bool
+    # hub for a container a module runs, declared for one the hub declares,
+    # manual for one a person started by hand.
+    source: str = "manual"
+    # The module its label neutrino.module names; empty for any other.
+    module: str = ""
     host_bindings: list[PodmanHostBindingView] = Field(default_factory=list)
+
+
+class PodmanHubImageView(BaseModel):
+    """A hub container's image: its digest and the references that serve it."""
+
+    digest: str
+    sources: list[str] = Field(default_factory=list)
+
+
+class PodmanHubContainerView(BaseModel):
+    """One container a container module runs, as the hub composes it."""
+
+    module: str
+    name: str
+    image: PodmanHubImageView
+    ports: list[str] = Field(default_factory=list)
+    volumes: list[str] = Field(default_factory=list)
 
 
 class PodmanMachineView(BaseModel):
@@ -2429,6 +2450,8 @@ class PodmanSettingsView(BaseModel):
     """The Containers tab: declarations beside what actually runs."""
 
     containers: list[PodmanContainerView]
+    # The containers the machine's container modules run, read only.
+    hub_containers: list[PodmanHubContainerView] = Field(default_factory=list)
     mirrors: list[str] = Field(default_factory=list)
     running: list[PodmanContainerStateView]
     is_installed: bool

@@ -73,12 +73,17 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
+    DEVICE_HUB_CONTAINERS_KEY,
     DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MACHINE_OS,
+    DEVICE_PODMAN_MODULE,
+    DEVICE_SOURCE_SETS_KEY,
     DEVICE_RDP_FILE,
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
+from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
+from neutrino_hub.modules.devices.source_sets import state_source_sets
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_program_names,
@@ -764,6 +769,7 @@ class DesiredStateStore:
         *,
         address: str = "",
         allowed_subnets: "list | tuple" = (),
+        is_hub_machine: bool = False,
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -779,13 +785,16 @@ class DesiredStateStore:
             platform: The tuple the agent reported.
             address: Where the device is, for the URLs it derives.
             allowed_subnets: The networks its shares answer.
+            is_hub_machine: Whether the device is the hub's own machine, which
+                a container module's composition may read.
 
         Returns:
             The configuration: Samba with the networks its shares answer,
             Gitea with its address and the secrets it signs with, Containers
-            as :func:`podman_agent_config` composes it, and a program run as
-            an account with its sealed fields and logins opened, as its row
-            says.
+            as :func:`podman_agent_config` composes it with the hub
+            containers of the machine's container modules, and a program run
+            as an account with its sealed fields and logins opened, as its
+            row says.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -796,8 +805,11 @@ class DesiredStateStore:
         elif name == "gitea":
             config["address"] = address
             config["secrets"] = self.gitea_secrets(key)
-        elif name == "podman":
+        elif name == DEVICE_PODMAN_MODULE:
             config = podman_agent_config(config, platform)
+            config[DEVICE_HUB_CONTAINERS_KEY] = compose_hub_containers(
+                self, key, platform, is_hub_machine=is_hub_machine
+            )
         elif name in account_program_names():
             config = instances_agent_config(module_row(name), config, platform)
         elif name == DEVICE_TERMINAL_MODULE:
@@ -842,7 +854,8 @@ class DesiredStateStore:
 
         Returns:
             ``(desired, hash)``, the document being
-            ``{modules, desktop, urls, ai_tools}``.
+            ``{modules, desktop, urls, ai_tools, source_sets}``,
+            ``source_sets`` holding each set the modules' recipes name.
         """
         resolved = resolved_modules(platform)
         marks = dict(retry_marks or {})
@@ -857,6 +870,7 @@ class DesiredStateStore:
                 platform,
                 address=address,
                 allowed_subnets=allowed_subnets,
+                is_hub_machine=is_hub_machine,
             )
             modules[name] = {
                 "want": entry["want"],
@@ -908,6 +922,7 @@ class DesiredStateStore:
         }
         if marks.get(DEVICE_AI_TOOLS_NAME):
             desired["ai_tools"][DEVICE_RETRY_MARK_KEY] = marks[DEVICE_AI_TOOLS_NAME]
+        desired[DEVICE_SOURCE_SETS_KEY] = state_source_sets(modules)
         return desired, state_hash(desired)
 
     def forget(self, key: str) -> None:

@@ -347,5 +347,8 @@
   "code.mirror_invalid": "The mirror {mirror} needs a registry host, with an optional port and path and no http://, such as mirror.ccs.tencentyun.com.",
   "code.download_failed": "No source served {file}: {sources}",
   "code.runner_unknown": "This agent cannot run {runner}; update the agent.",
-  "code.method_unknown": "This agent cannot install by {method}; update the agent."
+  "code.method_unknown": "This agent cannot install by {method}; update the agent.",
+  "code.container_name_reserved": "The name {name} starts with neutrino_, which the hub keeps for the containers of its modules.",
+  "code.module_in_use": "{modules} run on Containers; uninstall them first.",
+  "code.container_hub_owned": "{name} is run by a module of the hub; change it in that module's tab."
 }

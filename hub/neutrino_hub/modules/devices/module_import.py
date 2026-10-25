@@ -90,24 +90,17 @@ def podman_import_config(details: dict) -> dict:
         now, rounded up to whole GiB, and Podman's default CPUs and memory,
         where a machine is reported; a container comes up with the machine
         where a unit already stands for it, and keeps its ``services``
-        where they are reported.
+        where they are reported. A container with a module's label is a
+        hub container and is left out: :func:`labelled_containers` takes
+        it over when its module is not named.
     """
-    containers = []
-    for container in details.get("containers") or []:
-        if not isinstance(container, dict) or not container.get("name"):
-            continue
-        imported = {
-            "name": str(container.get("name", "")),
-            "image": str(container.get("image", "")),
-            "ports": [str(port) for port in container.get("ports") or []],
-            "volumes": [str(mount) for mount in container.get("volumes") or []],
-            "environment": [str(line) for line in container.get("environment") or []],
-            "command": "",
-            "is_autostart": bool(container.get("has_unit", False)),
-        }
-        if isinstance(container.get("services"), list):
-            imported["services"] = _imported_services(container["services"])
-        containers.append(imported)
+    containers = [
+        imported_container(container)
+        for container in details.get("containers") or []
+        if isinstance(container, dict)
+        and container.get("name")
+        and not container.get("module")
+    ]
     config = {
         "containers": containers,
         "mirrors": [str(mirror) for mirror in details.get("mirrors") or []],
@@ -122,6 +115,56 @@ def podman_import_config(details: dict) -> dict:
             "disk_gib": _whole_gib(machine.get("disk_gib")),
         }
     return config
+
+
+def imported_container(container: dict) -> dict:
+    """One reported container as a declared one in the hub's shape.
+
+    Args:
+        container: The container as the Podman report's ``details`` give it.
+
+    Returns:
+        ``{name, image, ports, volumes, environment, command, is_autostart}``
+        and its ``services`` where they are reported; it comes up with the
+        machine where a unit stands for it.
+    """
+    imported = {
+        "name": str(container.get("name", "")),
+        "image": str(container.get("image", "")),
+        "ports": [str(port) for port in container.get("ports") or []],
+        "volumes": [str(mount) for mount in container.get("volumes") or []],
+        "environment": [str(line) for line in container.get("environment") or []],
+        "command": "",
+        "is_autostart": bool(container.get("has_unit", False)),
+    }
+    if isinstance(container.get("services"), list):
+        imported["services"] = _imported_services(container["services"])
+    return imported
+
+
+def labelled_containers(details: dict, named_modules, declared_names) -> list:
+    """The hub containers whose module the hub no longer names, as declared containers.
+
+    Args:
+        details: The Podman report's ``details``.
+        named_modules: The modules ``modules.json`` names with a ``want``
+            other than a settled ``absent``.
+        declared_names: The declared containers ``podman.json`` holds.
+
+    Returns:
+        Each container with the label ``neutrino.module`` of a module not
+        named and a name not declared, in the declared shape with its name,
+        image, ports, volumes and environment.
+    """
+    return [
+        imported_container(container)
+        for container in details.get("containers") or []
+        if isinstance(container, dict)
+        and container.get("name")
+        and container.get("module")
+        and container["module"] not in named_modules
+        and container["name"] not in declared_names
+    ]
 
 
 def _whole_gib(value) -> int:

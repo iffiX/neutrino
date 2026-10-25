@@ -1,5 +1,5 @@
 {
-  "_comment": "CloudCLI, the npm package @cloudcli-ai/cloudcli, installed per account with the module's own Node.js. The node artifact is the nodejs.org standalone build of Node.js 22 LTS at one pinned release for every version, unpacked under cloudcli/node without the archive's top directory; each digest is what nodejs.org/dist/v22.23.3/SHASUMS256.txt names, and npmmirror serves the same files. The cloudcli artifact is the npm package, its digest the integrity registry.npmjs.org gives the tested version; its hosts are the ones better-sqlite3's prebuild-install fetches its binary from, the GitHub release first. node-pty and bcrypt carry their binaries inside their npm packages.",
+  "_comment": "CloudCLI, the npm package @cloudcli-ai/cloudcli, installed per account with the module's own Node.js. The node artifact is the nodejs.org standalone build of Node.js 22 LTS at one pinned release for every version, unpacked under cloudcli/node without the archive's top directory; each digest is what nodejs.org/dist/v22.23.3/SHASUMS256.txt names, and npmmirror serves the same files. The cloudcli artifact is the npm package, fetched from the npm source set, its digest the integrity registry.npmjs.org gives the tested version; its hosts are the ones better-sqlite3's prebuild-install fetches its binary from, the GitHub release first. node-pty and bcrypt carry their binaries inside their npm packages.",
   "name": "cloudcli",
   "title": "CloudCLI",
   "description": "AI coding sessions in the browser, one per account, opened from a client with a token",
@@ -28,7 +28,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],
@@ -58,7 +58,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],
@@ -88,7 +88,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],
@@ -118,7 +118,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],
@@ -148,7 +148,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],
@@ -178,7 +178,7 @@
               "kind": "npm",
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
-              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "source_set": "npm",
               "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
             }
           ],

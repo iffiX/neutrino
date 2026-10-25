@@ -1,0 +1,18 @@
+{
+  "_comment": "One list of sources per software ecosystem the modules fetch from, each by its name. probe is a small document every source of the set serves, fetched under each source; sources are the addresses, the publisher's first; variables are the environment variables the ecosystem's tools read the address from. A recipe that names a set carries it in the state's source_sets section, and the agent probes it.", "_sources_scan": "scan: allow",
+  "pypi": {
+    "probe": "/pip/",
+    "sources": ["https://pypi.org/simple", "https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple", "https://mirrors.cloud.tencent.com/pypi/simple"], "_pypi_scan": "scan: allow",
+    "variables": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX_URL"]
+  },
+  "npm": {
+    "probe": "/npm/latest",
+    "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com", "https://mirrors.cloud.tencent.com/npm"], "_npm_scan": "scan: allow",
+    "variables": ["npm_config_registry", "YARN_NPM_REGISTRY_SERVER", "BUN_CONFIG_REGISTRY"]
+  },
+  "huggingface": {
+    "probe": "/openai-community/gpt2/resolve/main/config.json",
+    "sources": ["https://huggingface.co", "https://hf-mirror.com"], "_huggingface_scan": "scan: allow",
+    "variables": ["HF_ENDPOINT"]
+  }
+}

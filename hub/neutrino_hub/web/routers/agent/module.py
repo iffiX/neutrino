@@ -43,6 +43,8 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
     DEVICE_METHOD_AGENT,
+    DEVICE_METHOD_CONTAINER,
+    DEVICE_PODMAN_MODULE,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -50,6 +52,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
 from neutrino_hub.modules.devices.catalog import resolve_module
+from neutrino_hub.modules.devices.hub_containers import container_modules
 from neutrino_hub.modules.devices.manifests import (
     entry_params,
     load_module_manifests,
@@ -86,6 +89,7 @@ CODE_NO_PLATFORM_BUILD = "no_platform_build"
 CODE_MODULE_CONFIGURED = "module_configured"
 CODE_TERMS_NOT_ACCEPTED = "terms_not_accepted"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
+CODE_MODULE_IN_USE = "module_in_use"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -242,6 +246,9 @@ def install_module(
             the device's platform nothing, 409 ``terms_not_accepted`` for
             VS Code on a machine whose terms the person has not accepted,
             409 ``agent_offline`` when the device has no socket.
+
+    Note:
+        A container module's install wants Containers ``running`` first.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
 
@@ -298,7 +305,8 @@ def uninstall_module(
         The modules after ``want: absent`` was written and pushed.
 
     Raises:
-        HTTPException: As :func:`install_module`.
+        HTTPException: As :func:`install_module`, and 409 ``module_in_use
+            {modules}`` on Containers while a container module is installed.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
 
@@ -728,6 +736,8 @@ def _set_want(
     On a module whose last report is ``failed`` or ``install_failed``, or a
     steady state other than the ``want`` written, the press also puts a
     fresh retry mark into the state, so the agent applies the module again.
+    A container module's install or start first wants Containers
+    ``running``, whose Podman runs it.
 
     Args:
         runtime: The shared runtime.
@@ -744,8 +754,10 @@ def _set_want(
             ``no_platform_build`` when the manifest offers the device's
             platform nothing, 409 ``terms_not_accepted`` when installing or
             starting VS Code on a machine whose terms are not accepted, 409
-            ``agent_offline`` when the device has no socket, 502 when the
-            socket did not take the state in time.
+            ``module_in_use {modules}`` when uninstalling Containers while a
+            container module is installed, 409 ``agent_offline`` when the
+            device has no socket, 502 when the socket did not take the state
+            in time.
     """
     manifest = load_module_manifests().get(request.module)
     module = request.module
@@ -762,10 +774,19 @@ def _set_want(
         raise _refusal(status.HTTP_409_CONFLICT, CODE_NO_PLATFORM_BUILD, module=module)
     if want in (CHANNEL_MODULE_STATE_INSTALLED, CHANNEL_MODULE_STATE_RUNNING):
         require_terms(runtime, key, module)
+    if module == DEVICE_PODMAN_MODULE and want == CHANNEL_MODULE_STATE_ABSENT:
+        _refuse_containers_in_use(runtime, key)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    is_container = DEVICE_METHOD_CONTAINER in manifest_methods(manifest)
+    is_engine_wanted = is_container and want in (
+        CHANNEL_MODULE_STATE_INSTALLED,
+        CHANNEL_MODULE_STATE_RUNNING,
+    )
     is_retried = _is_retried(runtime, key, module, want)
     try:
+        if is_engine_wanted:
+            _want_containers_running(runtime, key)
         runtime.desired_states.set_want(key, module, want)
         if is_retried:
             DeviceRetryMarks().mark(key, module)
@@ -774,6 +795,47 @@ def _set_want(
     push_state(runtime, key)
     _recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
+
+
+def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
+    """Want Containers running ahead of a container module's install or start.
+
+    A Containers module that reads anything but its new ``want`` takes a
+    retry mark, as a press of its own **Start** would.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+
+    Raises:
+        OSError: When the want or the mark cannot be written.
+    """
+    store = runtime.desired_states
+    if store.want_of(key, DEVICE_PODMAN_MODULE) == CHANNEL_MODULE_STATE_RUNNING:
+        return
+    is_retried = _is_retried(
+        runtime, key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING
+    )
+    store.set_want(key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING)
+    if is_retried:
+        DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
+
+
+def _refuse_containers_in_use(runtime: PanelRuntime, key: str) -> None:
+    """Refuse Containers' uninstall while a container module is installed.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+
+    Raises:
+        HTTPException: 409 ``module_in_use {modules}``, ``modules`` the
+            container modules ``modules.json`` names with a ``want`` other
+            than ``absent``.
+    """
+    users = container_modules(runtime.desired_states.modules(key))
+    if users:
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_MODULE_IN_USE, modules=users)
 
 
 def mark_retry(runtime: PanelRuntime, key: str, name: str) -> bool:

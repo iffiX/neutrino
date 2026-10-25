@@ -615,6 +615,8 @@ class StubDesiredStates:
         ensured: Every device a report asked a seat password for.
         wants: ``(key, module)`` to the want held, what a report reads.
         settled: Every ``(key, module)`` a report settled in the file.
+        files: ``(key, module)`` to the module's file, what a report reads
+            and writes.
     """
 
     def __init__(self):
@@ -622,6 +624,20 @@ class StubDesiredStates:
         self.wants: dict = {}
         self.settled: list = []
         self.desktop_switches: dict = {}
+        self.files: dict = {}
+
+    def modules(self, key: str) -> dict:
+        return {
+            module: {"want": want, "is_settled": (held, module) in self.settled}
+            for (held, module), want in self.wants.items()
+            if held == key.lower()
+        }
+
+    def read(self, key: str, module: str) -> dict:
+        return dict(self.files.get((key.lower(), module), {}))
+
+    def write(self, key: str, module: str, config: dict) -> None:
+        self.files[(key.lower(), module)] = dict(config)
 
     def ensure_seat_password(self, key: str) -> bool:
         key = key.lower()
@@ -706,6 +722,9 @@ class FakeModuleRuntime:
 
     def network(self):
         return _Network(self.lan_addresses)
+
+    def is_hub_machine(self, key: str) -> bool:
+        return False
 
     def module_agent_config(self, key: str, name: str, stored: dict) -> dict:
         return self.desired_states.agent_config(
@@ -1615,3 +1634,89 @@ class FakeSourceFetcher:
         return SourceProbe(
             source=source, is_answered=True, is_resumable=True, size=len(body)
         )
+
+
+# A test-only container module, ``demo``: two images, two hub containers, the
+# second after the first and serving a page, the pypi source set listed.
+DEMO_WEB_DIGEST = "sha256:" + "d" * 64
+DEMO_WORKER_DIGEST = "sha256:" + "e" * 64
+DEMO_ENTRY = {
+    "runner": "container",
+    "install": {
+        "method": "container",
+        "params": {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "name": "web",
+                    "kind": "image",
+                    "digest": DEMO_WEB_DIGEST,
+                    "sources": ["ghcr.io/acme/demo", "ghcr.nju.edu.cn/acme/demo"],
+                },
+                {
+                    "name": "worker",
+                    "kind": "image",
+                    "digest": DEMO_WORKER_DIGEST,
+                    "sources": ["docker.io/acme/worker"],
+                },
+            ],
+            "source_sets": ["pypi"],
+        },
+    },
+}
+DEMO_MANIFEST = {
+    "name": "demo",
+    "title": "Demo",
+    "description": "A container module the tests compose",
+    "publisher": "acme/demo",
+    "license": "MIT",
+    "corresponding_source": "https://acme.invalid/demo/{version}",
+    "platforms": {
+        key: DEMO_ENTRY
+        for key in ("linux", "windows-amd64", "darwin-arm64", "darwin-amd64")
+    },
+}
+
+
+def compose_demo(request) -> tuple:
+    """The demo module's containers, its password read from its own file."""
+    from neutrino_hub.modules.devices.hub_containers import HubContainer
+
+    password = str(request.store.read(request.key, "demo").get("password", ""))
+    return (
+        HubContainer(
+            name="neutrino_demo_worker",
+            image="worker",
+            volumes=("neutrino_demo_data:/data",),
+            environment=("EXTRA_INDEX={pypi}/extra",),
+            command="worker run",
+        ),
+        HubContainer(
+            name="neutrino_demo",
+            image="web",
+            volumes=("neutrino_demo_data:/srv",),
+            environment=(f"DEMO_PASSWORD={password}",),
+            after=("neutrino_demo_worker",),
+            page_port=8080,
+        ),
+    )
+
+
+@pytest.fixture
+def demo_container_module(monkeypatch, tmp_path):
+    """The shipped manifests and ``demo.json`` beside them, with demo's composition.
+
+    Returns:
+        The directory the loader reads the manifests from.
+    """
+    import json
+    import shutil
+
+    from neutrino_hub.modules.devices import hub_containers, manifests
+
+    directory = tmp_path / "manifests"
+    shutil.copytree(manifests.MANIFESTS_DIR, directory)
+    (directory / "demo.json").write_text(json.dumps(DEMO_MANIFEST), encoding="utf-8")
+    monkeypatch.setattr(manifests, "MANIFESTS_DIR", directory)
+    monkeypatch.setitem(hub_containers.HUB_CONTAINER_COMPOSERS, "demo", compose_demo)
+    return directory

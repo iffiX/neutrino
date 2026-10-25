@@ -74,6 +74,12 @@ DEVICE_ARTIFACT_FILE_KINDS = (
 DEVICE_ARTIFACT_DIRECTORY_KINDS = ("msi", "pkg", "tar_zst", "raw_zst")
 DEVICE_ARTIFACT_KIND_NPM = "npm"
 DEVICE_ARTIFACT_KIND_IMAGE = "image"
+# A source set's name, and a variable its ecosystem's tools read the
+# address from (design/agent/module_install.md, "Source sets").
+DEVICE_SOURCE_SET_NAME_PATTERN = r"[a-z][a-z0-9_]*"
+DEVICE_SOURCE_SET_VARIABLE_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
+# The state's section of the source sets its recipes name.
+DEVICE_SOURCE_SETS_KEY = "source_sets"
 # The keys each kind of release feed names beside ``kind`` and ``sources``.
 DEVICE_FEED_KEYS = {
     "github": ("repository", "tag"),
@@ -245,6 +251,18 @@ DEVICE_TERMINAL_ACCOUNT_OS = ("linux", "darwin")
 # are sent the Run settings, ``machine`` in ``podman.json``.
 DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")
 DEVICE_PODMAN_MACHINE_KEY = "machine"
+# The Containers module, which runs every container module's containers; the
+# key its state holds them under, the start of every name the hub keeps for
+# them, and the declared containers' key in ``podman.json``.
+DEVICE_PODMAN_MODULE = "podman"
+DEVICE_HUB_CONTAINERS_KEY = "hub_containers"
+DEVICE_HUB_CONTAINER_PREFIX = "neutrino_"
+DEVICE_PODMAN_CONTAINERS_KEY = "containers"
+# Where a container comes from, by the owner rule: the label, the declared
+# names, else a person's own.
+DEVICE_CONTAINER_SOURCE_HUB = "hub"
+DEVICE_CONTAINER_SOURCE_DECLARED = "declared"
+DEVICE_CONTAINER_SOURCE_MANUAL = "manual"
 DEVICE_CODE_SERVER_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODE_SERVER_SECRET_AAD = b"device_code_server:secret"
 DEVICE_CODE_SERVER_SECRET_BYTES = 32

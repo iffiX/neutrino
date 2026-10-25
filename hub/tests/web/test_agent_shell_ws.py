@@ -30,7 +30,7 @@ from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
-from tests.conftest import FakeChannelSessions
+from tests.conftest import FakeChannelSessions, StubDesiredStates
 
 MAC = "aa:bb:cc:dd:ee:ff"
 SESSION_TOKEN = "panel-session"
@@ -52,6 +52,12 @@ class FakeRuntime:
         self.agent_sessions = FakeChannelSessions(online=[MAC])
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.shell_ledger = ShellSessionLedger()
+        self.device_modules: dict = {}
+        self.device_platform: dict = {}
+        self.desired_states = StubDesiredStates()
+
+    def is_hub_machine(self, key: str) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -403,3 +409,27 @@ def test_the_panels_unshare_closes_every_clients_stream_on_its_session(
         assert viewer.closed == [(4, "session_not_owned", {"session_id": "4f1c2a"})]
     finally:
         socket.__exit__(None, None, None)
+
+
+def test_a_container_a_module_runs_takes_no_shell(api):
+    client, runtime = api
+    runtime.device_modules[MAC] = {
+        "podman": {
+            "state": "running",
+            "details": {"containers": [{"name": "neutrino_demo", "module": "demo"}]},
+        }
+    }
+
+    socket = open_terminal(
+        client, f"/ws/agent/terminal?device_id={MAC}&container=neutrino_demo"
+    )
+    try:
+        assert socket.receive_json() == {
+            "type": "closing",
+            "code": "container_hub_owned",
+            "params": {"name": "neutrino_demo"},
+        }
+        assert closed_with(socket) == (INTERNAL_ERROR_CODE, "container_hub_owned")
+    finally:
+        socket.__exit__(None, None, None)
+    assert runtime.agent_sessions.streams == []

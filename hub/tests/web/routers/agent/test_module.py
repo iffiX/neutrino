@@ -1080,3 +1080,88 @@ def test_no_press_applies_to_a_module_the_agent_carries(
         "params": {"name": name},
     }
     assert modules_file(tmp_path) == {}
+
+
+# --- container modules depend on Containers alone ---
+
+
+@pytest.fixture
+def containers_api(api, monkeypatch, demo_container_module):
+    """The page over the shipped manifests and the test-only container module."""
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = {
+        "os": "linux",
+        "family": "debian",
+        "arch": "amd64",
+        "version": "2.36",
+    }
+    return client, runtime
+
+
+@pytest.mark.parametrize(
+    "press, want", [("install", "installed"), ("start", "running")]
+)
+def test_a_container_module_s_install_or_start_wants_containers_running_first(
+    containers_api, tmp_path, press, want
+):
+    client, runtime = containers_api
+    runtime.device_modules[DEVICE] = {"podman": {"state": "stopped"}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "demo"}
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path) == {
+        "podman": {"want": "running", "is_settled": False},
+        "demo": {"want": want, "is_settled": False},
+    }
+    assert set(retry_marks()) == {"podman"}
+    assert len(runtime.agent_sessions.pushes) == 1
+
+
+def test_containers_already_wanted_running_is_left_as_it_is(containers_api, tmp_path):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.device_modules[DEVICE] = {"podman": {"state": "running"}}
+
+    client.post(f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "demo"})
+
+    assert modules_file(tmp_path)["podman"] == {"want": "running", "is_settled": False}
+    assert retry_marks() == {}
+
+
+def test_stopping_a_container_module_leaves_containers_as_it_is(
+    containers_api, tmp_path
+):
+    client, _runtime = containers_api
+
+    client.post(f"{MODULE_PATH}/stop", json={"device_id": DEVICE, "module": "demo"})
+
+    assert "podman" not in modules_file(tmp_path)
+
+
+def test_containers_cannot_be_uninstalled_while_a_container_module_is_installed(
+    containers_api, tmp_path
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.desired_states.set_want(DEVICE, "demo", "stopped")
+
+    refused = client.post(
+        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "podman"}
+    )
+    runtime.desired_states.set_want(DEVICE, "demo", "absent")
+    taken = client.post(
+        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "podman"}
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "module_in_use",
+        "params": {"modules": ["demo"]},
+    }
+    assert taken.status_code == 200
+    assert modules_file(tmp_path)["podman"]["want"] == "absent"

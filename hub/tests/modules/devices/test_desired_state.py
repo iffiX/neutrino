@@ -170,7 +170,7 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
         DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
     )
 
-    assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
+    assert set(desired) == {"modules", "desktop", "urls", "ai_tools", "source_sets"}
     assert desired["ai_tools"] == AI_TOOLS_OFF
     assert set(desired["modules"]) == {"samba", "gitea", "terminal", "remote_desktop"}
     samba = desired["modules"]["samba"]
@@ -207,8 +207,9 @@ def shipped(monkeypatch, tmp_path):
 def test_a_recipe_carries_each_artifact_without_where_it_comes_from(shipped):
     """The agent opens ``package {module, artifact, digest}`` for each file
     the hub serves and is told its kind, directory and digest; the sources
-    and the release feeds stay the hub's. An npm artifact keeps its
-    registries and hosts, since the machine fetches it."""
+    and the release feeds stay the hub's. An npm artifact keeps its source
+    set and hosts, since the machine fetches it, and the state carries the
+    set."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "cloudcli", "running")
     store.write(DEVICE, "cloudcli", {"instances": []})
@@ -225,10 +226,9 @@ def test_a_recipe_carries_each_artifact_without_where_it_comes_from(shipped):
         "directory": "node",
         "digest": "sha256:1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",  # scan: allow
     }
-    assert package["sources"] == [
-        "https://registry.npmjs.org",
-        "https://registry.npmmirror.com",
-    ]
+    assert package["source_set"] == "npm"
+    assert set(desired["source_sets"]) == {"npm"}
+    assert desired["source_sets"]["npm"]["probe"] == "/npm/latest"
     assert "nodejs.org" not in json.dumps(recipe)
     assert recipe["params"]["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
 
@@ -359,7 +359,7 @@ def test_compose_names_the_hubs_addresses_under_the_hash(config):
     moved = store.compose(DEVICE, PLATFORM, urls=urls[:1])
 
     assert desired["urls"] == urls
-    assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
+    assert set(desired) == {"modules", "desktop", "urls", "ai_tools", "source_sets"}
     assert desired["ai_tools"] == AI_TOOLS_OFF
     assert digest == state_hash(desired)
     assert moved[0]["urls"] == urls[:1]
@@ -983,7 +983,10 @@ def test_a_linux_podman_entry_names_no_machine_whatever_the_run_settings(
     store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
     after, after_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
 
-    assert before["modules"]["podman"]["config"] == PODMAN_STORED
+    assert before["modules"]["podman"]["config"] == {
+        **PODMAN_STORED,
+        "hub_containers": [],
+    }
     assert after == before
     assert after_hash == before_hash
 
@@ -1046,3 +1049,36 @@ def test_the_podman_section_checked_on_an_apply_is_the_one_a_windows_state_carri
     assert checked == desired["modules"]["podman"]["config"]
     assert checked["machine"] == {**PODMAN_SENT_MACHINE, "password": "pw-l-lab"}
     assert moved != digest
+
+
+def test_the_containers_state_carries_the_container_modules_hub_containers(
+    podman_config, demo_container_module
+):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.write(DEVICE, "podman", PODMAN_STORED)
+    store.set_want(DEVICE, "demo", "running")
+    store.write(DEVICE, "demo", {"password": "pw"})
+
+    desired, _ = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
+
+    hub = desired["modules"]["podman"]["config"]["hub_containers"]
+    assert [(c["module"], c["name"], c["is_autostart"]) for c in hub] == [
+        ("demo", "neutrino_demo_worker", True),
+        ("demo", "neutrino_demo", True),
+    ]
+    assert desired["modules"]["demo"]["install"]["method"] == "container"
+    assert desired["modules"]["demo"]["install"]["params"]["source_sets"] == ["pypi"]
+    assert list(desired["source_sets"]) == ["pypi"]
+
+
+def test_a_container_module_wanted_absent_leaves_the_containers_state(
+    podman_config, demo_container_module
+):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.set_want(DEVICE, "demo", "absent")
+
+    desired, _ = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
+
+    assert desired["modules"]["podman"]["config"]["hub_containers"] == []

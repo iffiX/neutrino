@@ -859,7 +859,7 @@ class PanelRuntime:
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
             urls=self._device_urls(key),
-            is_hub_machine=self._is_hub_machine(key),
+            is_hub_machine=self.is_hub_machine(key),
             ai_models=ai_models,
             retry_marks=DeviceRetryMarks().marks(key),
         )
@@ -886,6 +886,7 @@ class PanelRuntime:
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
+            is_hub_machine=self.is_hub_machine(key),
         )
 
     def _device_urls(self, key: str) -> list:
@@ -898,11 +899,11 @@ class PanelRuntime:
             :func:`own_agent_urls` for the device on the hub's own machine,
             :func:`channel_urls` for every other.
         """
-        if self._is_hub_machine(key):
+        if self.is_hub_machine(key):
             return own_agent_urls(self)
         return channel_urls(self)
 
-    def _is_hub_machine(self, key: str) -> bool:
+    def is_hub_machine(self, key: str) -> bool:
         """Whether a device is the machine the hub runs on."""
         device = DeviceRegistry().get(key)
         own_machine = machine_id()

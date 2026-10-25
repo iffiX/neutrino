@@ -347,5 +347,8 @@
   "code.mirror_invalid": "非法镜像源：{mirror} 要写成镜像仓库的主机名，可带端口和路径，不带 http://，例如 mirror.ccs.tencentyun.com。",
   "code.download_failed": "没有来源能提供 {file}：{sources}",
   "code.runner_unknown": "被控端不能运行 {runner}，先更新被控端。",
-  "code.method_unknown": "被控端不能用 {method} 方式安装，先更新被控端。"
+  "code.method_unknown": "被控端不能用 {method} 方式安装，先更新被控端。",
+  "code.container_name_reserved": "容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。",
+  "code.module_in_use": "{modules} 运行在容器模块上，先卸载它们。",
+  "code.container_hub_owned": "{name} 由中枢的模块运行，要改就到那个模块的标签页里改。"
 }

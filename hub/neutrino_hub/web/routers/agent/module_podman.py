@@ -2,10 +2,12 @@
 
 A declared container is the device's desired state, checked on the agent,
 stored and pushed, and comes out the other side as a systemd unit on the
-device. The live list shows every container the device's podman knows,
-including ones started by hand at a shell, each with start, stop and
-restart and its unit's journal. On Windows and macOS the containers run in
-one account's Podman machine, which the Run settings name.
+device. A hub container is one a container module runs, composed by the hub
+and shown read only. The live list shows every container the device's
+podman knows with where it comes from, including ones started by hand at a
+shell, each with start, stop and restart and its unit's journal, a hub
+container with its journal alone. On Windows and macOS the containers run
+in one account's Podman machine, which the Run settings name.
 """
 
 import httpx
@@ -14,9 +16,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_CONTAINER_SOURCE_DECLARED,
+    DEVICE_CONTAINER_SOURCE_HUB,
+    DEVICE_CONTAINER_SOURCE_MANUAL,
+    DEVICE_HUB_CONTAINER_PREFIX,
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MACHINE_OS,
+)
+from neutrino_hub.modules.devices.hub_containers import (
+    compose_hub_containers,
+    is_hub_container,
 )
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.modules.devices.module_import import podman_import_config
@@ -28,6 +38,7 @@ from neutrino_hub.web.models import (
     PodmanContainerStateView,
     PodmanContainerView,
     PodmanDeviceView,
+    PodmanHubContainerView,
     PodmanMachineStateView,
     PodmanMachineUpdate,
     PodmanMachineView,
@@ -58,6 +69,8 @@ CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
 CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
 CODE_CREDENTIAL_MISSING = "credential_missing"
 CODE_MACHINE_DISK_INVALID = "machine_disk_invalid"
+CODE_CONTAINER_NAME_RESERVED = "container_name_reserved"
+CODE_CONTAINER_HUB_OWNED = "container_hub_owned"
 
 
 def device_view(
@@ -70,13 +83,19 @@ def device_view(
         context: The device.
 
     Returns:
-        Declared containers as configured, every container the device's
-        podman knows, the engine's own state, and the human accounts the
-        machine reported; on Windows and macOS the stored Run settings, and
-        the Podman machine wherever the machine reports one.
+        Declared containers as configured, the hub containers the machine's
+        container modules compose, every container the device's podman
+        knows with its owner, the engine's own state, and the human accounts
+        the machine reported; on Windows and macOS the stored Run settings,
+        and the Podman machine wherever the machine reports one.
     """
     details = context.details
     config = context.config
+    declared = {
+        str(container.get("name", ""))
+        for container in config.get("containers") or []
+        if isinstance(container, dict)
+    }
     is_machine_run = (
         runtime.device_platform.get(context.key, {}).get("os")
         in DEVICE_PODMAN_MACHINE_OS
@@ -89,9 +108,13 @@ def device_view(
             PodmanContainerView(**container)
             for container in config.get("containers", [])
         ],
+        hub_containers=[
+            PodmanHubContainerView(**container)
+            for container in hub_containers_of(runtime, context.key)
+        ],
         mirrors=[str(mirror) for mirror in config.get("mirrors", [])],
         running=[
-            PodmanContainerStateView(**state)
+            PodmanContainerStateView(**{**state, "source": source_of(state, declared)})
             for state in details.get("containers") or []
             if isinstance(state, dict)
         ],
@@ -122,6 +145,42 @@ router: APIRouter = module_router(
 )
 
 
+def hub_containers_of(runtime: PanelRuntime, key: str) -> list:
+    """The hub containers one machine's container modules compose now.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+
+    Returns:
+        The composed ``hub_containers``, as the Containers state carries them.
+    """
+    return compose_hub_containers(
+        runtime.desired_states,
+        key,
+        runtime.device_platform.get(key, {}),
+        is_hub_machine=runtime.is_hub_machine(key),
+    )
+
+
+def source_of(state: dict, declared: set) -> str:
+    """Where one reported container comes from, by the owner rule.
+
+    Args:
+        state: The container as the machine reported it.
+        declared: The names of the declared containers the hub holds.
+
+    Returns:
+        ``hub`` for a container with a module's label, ``declared`` for a
+        declared name, ``manual`` for any other.
+    """
+    if state.get("module"):
+        return DEVICE_CONTAINER_SOURCE_HUB
+    if str(state.get("name", "")) in declared:
+        return DEVICE_CONTAINER_SOURCE_DECLARED
+    return DEVICE_CONTAINER_SOURCE_MANUAL
+
+
 @router.post("/container/set", response_model=PodmanDeviceView)
 def update_containers(
     update: PodmanContainerListUpdate,
@@ -137,10 +196,20 @@ def update_containers(
         The device's view afterwards.
 
     Raises:
-        HTTPException: 409 ``agent_offline``, 400 with the agent's code when
-            the configuration does not hold together.
+        HTTPException: 400 ``container_name_reserved {name}`` for a new name
+            that starts with ``neutrino_``, 409 ``agent_offline``, 400 with
+            the agent's code when the configuration does not hold together.
     """
     context = device_context(runtime, MODULE, update.device_id)
+    held = {
+        str(container.get("name", ""))
+        for container in context.config.get("containers") or []
+        if isinstance(container, dict)
+    }
+    for container in update.containers:
+        is_new = container.name not in held
+        if is_new and container.name.startswith(DEVICE_HUB_CONTAINER_PREFIX):
+            raise _refusal(CODE_CONTAINER_NAME_RESERVED, name=container.name)
     config = dict(context.config)
     config["containers"] = [container.model_dump() for container in update.containers]
     store_config(runtime, context, config)
@@ -268,8 +337,9 @@ def start_container(
         The device's view afterwards.
 
     Raises:
-        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
-            ``container_unknown``, ``command_failed``.
+        HTTPException: 409 ``agent_offline``, 409 ``container_hub_owned
+            {name}`` for a container a module runs, 502 with the agent's
+            code: ``container_unknown``, ``command_failed``.
     """
     return _control(runtime, request, CONTROL_START)
 
@@ -288,8 +358,9 @@ def stop_container(
         The device's view afterwards.
 
     Raises:
-        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
-            ``container_unknown``, ``command_failed``.
+        HTTPException: 409 ``agent_offline``, 409 ``container_hub_owned
+            {name}`` for a container a module runs, 502 with the agent's
+            code: ``container_unknown``, ``command_failed``.
     """
     return _control(runtime, request, CONTROL_STOP)
 
@@ -308,8 +379,9 @@ def restart_container(
         The device's view afterwards.
 
     Raises:
-        HTTPException: 409 ``agent_offline``, 502 with the agent's code:
-            ``container_unknown``, ``command_failed``.
+        HTTPException: 409 ``agent_offline``, 409 ``container_hub_owned
+            {name}`` for a container a module runs, 502 with the agent's
+            code: ``container_unknown``, ``command_failed``.
     """
     return _control(runtime, request, CONTROL_RESTART)
 
@@ -317,8 +389,23 @@ def restart_container(
 def _control(
     runtime: PanelRuntime, request: PodmanContainerRequest, action: str
 ) -> PodmanDeviceView:
-    """Run one control verb on one container and answer the fresh view."""
+    """Run one control verb on one container and answer the fresh view.
+
+    Raises:
+        HTTPException: 409 ``container_hub_owned {name}`` for a container a
+            module runs.
+    """
     context = device_context(runtime, MODULE, request.device_id)
+    if is_hub_container(
+        request.name, context.details, hub_containers_of(runtime, context.key)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": CODE_CONTAINER_HUB_OWNED,
+                "params": {"name": request.name},
+            },
+        )
     run_command(
         runtime, context, COMMAND_CONTROL, {"name": request.name, "action": action}
     )
