@@ -559,6 +559,9 @@ class PodmanUnitRenderer:
             "Delegate=yes",
             "KillMode=mixed",
             "Restart=on-failure",
+            # A container that ends on the stop's SIGTERM exits 143; SIGKILL
+            # from outside stays a failure, which Restart answers.
+            "SuccessExitStatus=143",
             # A first pull of a large image takes longer than the default
             # start timeout allows.
             f"TimeoutStartSec={PODMAN_UNIT_START_TIMEOUT_S}",

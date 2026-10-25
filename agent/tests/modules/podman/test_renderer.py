@@ -85,6 +85,7 @@ def test_the_unit_carries_podman_s_lifecycle_settings_and_no_environment_value()
         "Delegate=yes",
         "KillMode=mixed",
         "Restart=on-failure",
+        "SuccessExitStatus=143",
         "TimeoutStartSec=900",
         "TimeoutStopSec=70",
         "ExecStartPre=-/bin/rm -f %t/%N.cid",
