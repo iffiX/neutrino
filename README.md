@@ -4,8 +4,7 @@
 
 # Your home machines. One scan. From anywhere.
 
-A hub panel that sets up your remote services in one step and gives you several ways in from outside<br>
-(also my test bed for how far agents can automate a large project)
+A hub panel that sets up your remote services in one step and gives you several ways in from outside
 
 **English** · [中文](README.zh-CN.md)
 
@@ -17,8 +16,8 @@ A hub panel that sets up your remote services in one step and gives you several 
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/iffiX/neutrino/main?label=coverage&labelColor=0a0e14)](https://app.codecov.io/gh/iffiX/neutrino)
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/iffiX/neutrino/main?label=coverage&labelColor=0a0e14)](https://app.codecov.io/gh/iffiX/neutrino)
 [![Tests](https://img.shields.io/endpoint?url=https://neutrino.beyond-infinity.top/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
