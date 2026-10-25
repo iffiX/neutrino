@@ -1697,7 +1697,7 @@ its code; the panel's are `binding_unknown`, `client_disabled` and
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, or a code-server, CloudCLI or Codeg instance whose secret does not open |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, or a code-server, CloudCLI or Codeg instance or Hermes WebUI whose secret does not open |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
 `service_id`, `permission_denied` puts the entry's type in `params` as
@@ -1709,7 +1709,7 @@ its code; the panel's are `binding_unknown`, `client_disabled` and
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module`, `cloudcli_module` or `codeg_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent/module_template.md](agent/module_template.md), "The run"); it works once |
+| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 

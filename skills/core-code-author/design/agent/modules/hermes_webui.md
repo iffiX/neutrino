@@ -116,7 +116,7 @@ signed in through the page, from a client the hub allows this entry.
 
 ## The gateway
 
-The agent points Hermes at the hub's AI gateway by writing three keys into
+The agent points Hermes at the hub's AI gateway by writing four keys into
 `config.yaml` in `home`:
 
 | Key | Value |
@@ -124,6 +124,7 @@ The agent points Hermes at the hub's AI gateway by writing three keys into
 | `model.provider` | `custom` |
 | `model.base_url` | `NEUTRINO_GATEWAY_URL` with `/v1` after it: `http://host.containers.internal:8317/v1` on a managed machine, and the gateway's `listen_port` in place of 8317 on the hub's own machine |
 | `model.key_env` | `NEUTRINO_GATEWAY_KEY` |
+| `model.api_key` | `${NEUTRINO_GATEWAY_KEY}`: the variable's name in the reference form Hermes expands, and never the key |
 | `model.default` | not written: the person picks it from the gateway's models, which the page lists under `custom` |
 
 | Rule | Reason |
@@ -131,6 +132,7 @@ The agent points Hermes at the hub's AI gateway by writing three keys into
 | The agent writes each key with `podman exec -u hermes -e HERMES_HOME=/opt/data neutrino_hermes_webui_agent hermes config set <key> <value>`. | Hermes reads a custom endpoint from `config.yaml` alone; `OPENAI_BASE_URL` picks no custom endpoint. `hermes config set` keeps every other line of the person's file. |
 | The keys are written after the install, when `config.yaml` exists in `home`, and again whenever the base URL differs from the one the module's record holds. | The agent image writes `config.yaml` at its first start, about 5 seconds in. The base URL changes with the gateway's `listen_port` on the hub's own machine. |
 | `model.default` is never written. | The model is the person's choice, made in the page from the models the gateway serves. |
+| `model.api_key` names the variable beside `model.key_env`. | The webui lists a bare `custom` provider's models from the gateway's `/v1/models` with `model.api_key` alone. In the lab, with `model.key_env` alone, the page listed only the image's own `model.default`, which the gateway does not serve, and a chat ended `unknown provider for model`; with both, it listed the gateway's models and a chat reached the provider. |
 | The key is in the containers' environment alone, and `config.yaml` names only its variable. | The hub rewrites the environment at every apply, so a new or voided key reaches Hermes with no edit of the person's file. |
 | The webui container is the one that calls the gateway, with the key from its own environment. | The webui runs the agent's code in its own process: in the lab a stand-in gateway saw every chat request come from the webui's address. |
 
