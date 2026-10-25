@@ -17,11 +17,11 @@
 
 ## 各部分装在哪里
 
-| 部分   | 装在哪里                                 | 支持的系统                                                                              |
-| ------ | ---------------------------------------- | --------------------------------------------------------------------------------------- |
-| 中枢   | 家里一台常开的机器                       | Debian 系 Linux（amd64、arm64）；Windows（x64）和 macOS（Apple 芯片）上以服务器形态运行 |
-| 被控端 | 每台要用的家里机器，在那台机器上提供服务 | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片）                    |
-| 客户端 | 你随身的电脑或手机                       | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片）、Android           |
+| 部分   | 装在哪里                                 | 支持的系统                                                                                                                                  |
+| ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 中枢   | 家里一台常开的机器                       | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Arch Linux（amd64）；Windows（x64）和 macOS（Apple 芯片、Intel 芯片）上以服务器形态运行 |
+| 被控端 | 每台要用的家里机器，在那台机器上提供服务 | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）                                         |
+| 客户端 | 你随身的电脑或手机                       | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）、Android                                |
 
 服务器形态的中枢只为别的机器提供服务，不改动所在网络的设置。中枢所在的机器上，设置向导会顺带装好被控端，所以这台机器自己的文件和服务也能用。
 
@@ -43,13 +43,17 @@ irm https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.ps
 
 也可以在发行版页面自己下载安装包。文件名里的 `<version>` 是页面上的版本号：
 
-| 系统                | 中枢                                          | 被控端                                          | 客户端                                           |
-| ------------------- | --------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| Linux amd64         | `neutrino-hub_<version>_amd64-cn.deb`         | `neutrino-agent_<version>_amd64-cn.deb`         | `neutrino-client_<version>_amd64-cn.deb`         |
-| Linux arm64         | `neutrino-hub_<version>_arm64-cn.deb`         | `neutrino-agent_<version>_arm64-cn.deb`         | `neutrino-client_<version>_arm64-cn.deb`         |
-| Windows x64         | `neutrino-hub-<version>-windows-amd64-cn.msi` | `neutrino-agent-<version>-windows-amd64-cn.msi` | `neutrino-client-<version>-windows-amd64-cn.msi` |
-| macOS（Apple 芯片） | `neutrino-hub-<version>-macos-arm64-cn.pkg`   | `neutrino-agent-<version>-macos-arm64-cn.pkg`   | `neutrino-client-<version>-macos-arm64-cn.pkg`   |
-| Android             |                                               |                                                 | `neutrino-client-<version>-android-cn.apk`       |
+| 系统                    | 中枢                                             | 被控端                                          | 客户端                                           |
+| ----------------------- | ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------ |
+| Debian 系 amd64         | `neutrino-hub_<version>_amd64-cn.deb`            | `neutrino-agent_<version>_amd64-cn.deb`         | `neutrino-client_<version>_amd64-cn.deb`         |
+| Debian 系 arm64         | `neutrino-hub_<version>_arm64-cn.deb`            | `neutrino-agent_<version>_arm64-cn.deb`         | `neutrino-client_<version>_arm64-cn.deb`         |
+| Fedora 和 RHEL 系 amd64 | `neutrino-hub-<version>-1.x86_64-cn.rpm`         | `neutrino-agent-<version>-1.x86_64-cn.rpm`      | `neutrino-client-<version>-1.x86_64-cn.rpm`      |
+| Fedora 和 RHEL 系 arm64 | `neutrino-hub-<version>-1.aarch64-cn.rpm`        | `neutrino-agent-<version>-1.aarch64-cn.rpm`     | `neutrino-client-<version>-1.aarch64-cn.rpm`     |
+| Arch Linux amd64        | `neutrino-hub-<version>-1-x86_64-cn.pkg.tar.zst` |                                                 |                                                  |
+| Windows x64             | `neutrino-hub-<version>-windows-amd64-cn.msi`    | `neutrino-agent-<version>-windows-amd64-cn.msi` | `neutrino-client-<version>-windows-amd64-cn.msi` |
+| macOS（Apple 芯片）     | `neutrino-hub-<version>-macos-arm64-cn.pkg`      | `neutrino-agent-<version>-macos-arm64-cn.pkg`   | `neutrino-client-<version>-macos-arm64-cn.pkg`   |
+| macOS（Intel 芯片）     | `neutrino-hub-<version>-macos-amd64-cn.pkg`      | `neutrino-agent-<version>-macos-amd64-cn.pkg`   | `neutrino-client-<version>-macos-amd64-cn.pkg`   |
+| Android                 |                                                  |                                                 | `neutrino-client-<version>-android-cn.apk`       |
 
 ## 装好之后
 
