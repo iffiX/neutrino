@@ -16,8 +16,11 @@ import venv_tree
 from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
 
 
-def _spec():
+def _spec(geodata="/var/lib/neutrino/hub/geodata\n"):
     """The spec as the build writes it.
+
+    Args:
+        geodata: The `%files` line of the geodata, empty for a hub without it.
 
     Returns:
         The rendered spec file.
@@ -28,6 +31,7 @@ def _spec():
         architecture="x86_64",
         packager="somebody",
         payload="/payload",
+        geodata=geodata,
         unit_dir=build_rpm.UNIT_DIR,
         requires="systemd",
         recommends="hostapd",
@@ -36,6 +40,25 @@ def _spec():
         first_install=venv_tree.FIRST_INSTALL,
         is_set_up=venv_tree.HUB_IS_SET_UP,
     )
+
+
+def test_the_rpm_lists_the_geodata_a_payload_carries(tmp_path):
+    """rpmbuild fails on a `%files` line naming a path the payload lacks."""
+    (tmp_path / str(venv_tree.GEODATA_DIR).lstrip("/")).mkdir(parents=True)
+
+    line = build_rpm.geodata_line(tmp_path)
+
+    assert line == f"{venv_tree.GEODATA_DIR}\n"
+    assert f"\n{venv_tree.GEODATA_DIR}\n" in _spec(line)
+
+
+def test_the_rpm_of_a_hub_without_the_proxy_lists_no_geodata(tmp_path):
+    """The cn hub carries no proxy, so its payload has no geodata."""
+    line = build_rpm.geodata_line(tmp_path)
+
+    assert line == ""
+    assert "/var/lib/neutrino/hub/geodata" not in _spec(line)
+    assert "/var/lib/neutrino/hub/agent_cache" in _spec(line)
 
 
 def test_the_deb_prunes_what_the_package_did_not_install(tmp_path):

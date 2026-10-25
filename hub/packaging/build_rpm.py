@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from venv_tree import (
+    GEODATA_DIR,
     PACKAGE_NAME,
     PRUNE_UNTRACKED,
     dependencies,
@@ -85,8 +86,7 @@ cp -a {payload}/. %{{buildroot}}/
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 %dir /var/lib/neutrino/hub
-/var/lib/neutrino/hub/geodata
-/var/lib/neutrino/hub/agent_cache
+{geodata}/var/lib/neutrino/hub/agent_cache
 %license /usr/share/doc/{name}/licenses/*
 %dir /usr/share/doc/{name}/licenses
 
@@ -196,6 +196,7 @@ def main() -> int:
                 architecture=arguments.architecture,
                 packager=arguments.packager,
                 payload=payload,
+                geodata=geodata_line(payload),
                 unit_dir=UNIT_DIR,
                 requires=" ".join(dependencies("rhel")),
                 recommends=" ".join(recommendations("rhel")),
@@ -210,6 +211,21 @@ def main() -> int:
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
+
+
+def geodata_line(payload: Path) -> str:
+    """The `%files` line of the geodata, when the payload carries any.
+
+    Args:
+        payload: The tree the package installs.
+
+    Returns:
+        The geodata directory and a newline, or nothing for an edition whose
+        hub carries no proxy and so no geodata.
+    """
+    if (payload / str(GEODATA_DIR).lstrip("/")).is_dir():
+        return f"{GEODATA_DIR}\n"
+    return ""
 
 
 def _build(
