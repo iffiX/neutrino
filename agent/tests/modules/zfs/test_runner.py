@@ -172,21 +172,22 @@ def test_a_verb_the_module_does_not_have_is_refused(runner):
     assert runner.command("control", {})["code"] == "verb_unknown"
 
 
-def test_observe_is_the_tools_the_kernel_module_and_the_picture(
+def test_the_runner_reads_the_tools_the_kernel_module_and_the_picture(
     runner, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(runner_module, "ZFS_KERNEL_MODULE_DIR", str(tmp_path / "zfs"))
 
-    unloaded = runner.observe({})
+    is_unloaded_active = runner.is_active()
     (tmp_path / "zfs").mkdir()
-    loaded = runner.observe({})
+    details = runner.details({})
 
-    assert (unloaded["is_installed"], unloaded["is_active"]) == (True, False)
-    assert loaded["is_active"] is True
-    assert set(loaded["details"]) == {"pools", "datasets", "disks", "importable"}
-    assert loaded["details"]["pools"][0]["name"] == "tank"
+    assert runner.verify({}) is True
+    assert is_unloaded_active is False
+    assert runner.is_active() is True
+    assert set(details) == {"pools", "datasets", "disks", "importable"}
+    assert details["pools"][0]["name"] == "tank"
     monkeypatch.setattr(runner_module, "is_zfs_installed", lambda: False)
-    assert runner.observe({})["is_installed"] is False
+    assert runner.verify({}) is False
 
 
 def test_removing_the_configuration_drops_the_arc_cap(runner, monkeypatch, tmp_path):

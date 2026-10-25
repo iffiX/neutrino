@@ -49,6 +49,7 @@ from neutrino_agent.modules.gitea.constants import (
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.samba.darwin_applier import tool_line
+from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.account_service import write_if_changed
@@ -224,10 +225,7 @@ class GiteaDarwinApplier:
         os.chmod(self.module_dir, 0o755)
         if self._is_loaded():
             self._unload()
-        temporary = self.binary_path + ".new"
-        shutil.copyfile(binary_path, temporary)
-        os.chmod(temporary, 0o755)
-        os.replace(temporary, self.binary_path)
+        place_binary(binary_path, self.binary_path)
 
     def uninstall(self) -> None:
         """Unload and delete the LaunchDaemon, the binary and ``app.ini``.

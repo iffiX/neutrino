@@ -49,6 +49,7 @@ from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunn
 class PodmanModuleRunner(SystemPackageModuleRunner):
     """Installs podman by package and keeps the declared containers running."""
 
+    runner = "podman"
     name = "podman"
     binary = PODMAN_BINARY
 
@@ -130,11 +131,11 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         config = self._config or PodmanConfig()
         return [PODMAN_UNIT] + [f"{name}.service" for name in config.declared_names]
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """Every container podman knows, and the engine's own state.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"containers", "mirrors", "version", "is_active"}``, each

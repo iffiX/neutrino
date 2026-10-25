@@ -5,7 +5,7 @@ module (absent uninstalls and clears the mark, installed puts the software
 there and nothing else, stopped and running install what is missing then
 configure and settle the unit, with the mark written on the first apply
 that took), a module the state does not mention untouched, an install's
-bytes asked for down a ``package {module}`` stream and its output sent up
+bytes asked for down a ``package {module, artifact, digest}`` stream and its output sent up
 a ``log {module}`` stream closed with the module's state, the applied
 hash moving only when every mentioned module applied, a failed module
 reported under the old hash and tried again only when its own entry changes
@@ -41,7 +41,17 @@ from neutrino_agent.exceptions import (
 )
 from tests.streams.fake_channel import FakeChannel
 
-INSTALL = {"kind": "system_package", "packages": ["x"], "verify": ""}
+INSTALL = {
+    "runner": "samba",
+    "method": "system",
+    "params": {
+        "packages": ["x"],
+        "verify": "",
+        "uninstall": {"packages": ["x"], "post_uninstall": []},
+    },
+}
+# The artifact a module's recipe receives in these tests.
+ARTIFACT = {"name": "gitea", "kind": "binary", "digest": "sha256:" + "ab" * 32}
 
 
 # The module whose recipe installs from bytes; the rest install by name.
@@ -104,7 +114,7 @@ class FakeEngine:
         }
 
     def install(self, name, *, receive, on_line=None):
-        received = receive(name) if name in BYTE_MODULES else {}
+        received = receive(name, ARTIFACT) if name in BYTE_MODULES else {}
         self.installs.append((name, received))
         if on_line is not None:
             on_line(f"{name}: installing")
@@ -179,7 +189,6 @@ def state(state_hash: str = "h1", **wants) -> dict:
                 "want": want,
                 "config": {"n": name},
                 "install": dict(INSTALL),
-                "uninstall": {"packages": ["x"], "is_data_kept": True},
             }
             for name, want in wants.items()
         },
@@ -403,7 +412,6 @@ def test_the_engine_observes_against_the_state_before_anything_applies(tmp_path)
                 "want": "running",
                 "config": {"n": "samba"},
                 "install": INSTALL,
-                "uninstall": {"packages": ["x"], "is_data_kept": True},
             }
         }
     ]
@@ -493,7 +501,10 @@ def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
 
     assert socket.opened == [
         ("log", {"module": "gitea"}),
-        ("package", {"module": "gitea"}),
+        (
+            "package",
+            {"module": "gitea", "artifact": "gitea", "digest": ARTIFACT["digest"]},
+        ),
     ]
     name, received = engine.installs[0]
     assert name == "gitea"
@@ -1275,7 +1286,7 @@ def test_a_tried_file_of_an_older_shape_reads_as_nothing_tried(tmp_path):
     assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
 
 
-def test_a_component_is_asked_for_by_name_and_a_whole_module_without_one(tmp_path):
+def test_an_artifact_is_asked_for_by_its_module_its_name_and_its_digest(tmp_path):
     runners = {"gitea": FakeRunner()}
     held, _ = applier(runners, tmp_path=tmp_path, open_stream=FakeSocket())
     opened = []
@@ -1289,12 +1300,15 @@ def test_a_component_is_asked_for_by_name_and_a_whole_module_without_one(tmp_pat
 
     held._open_stream = open_stream
 
-    whole = held._receive("gitea")
-    component = held._receive("codeg", "node")
+    whole = held._receive("gitea", ARTIFACT)
+    node = held._receive("codeg", {"name": "node", "digest": "sha256:cd"})
 
     assert opened == [
-        ("package", {"module": "gitea"}),
-        ("package", {"module": "codeg", "component": "node"}),
+        (
+            "package",
+            {"module": "gitea", "artifact": "gitea", "digest": ARTIFACT["digest"]},
+        ),
+        ("package", {"module": "codeg", "artifact": "node", "digest": "sha256:cd"}),
     ]
     assert whole["sha256"] == hashlib.sha256(b"bytes").hexdigest()
-    assert component["path"].startswith(str(tmp_path / "packages"))
+    assert node["path"].startswith(str(tmp_path / "packages"))

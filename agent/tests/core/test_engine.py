@@ -1,23 +1,28 @@
 """The module engine: observing against the state, and moving software.
 
 The engine is handed the state's modules section, each entry carrying the
-recipes resolved for this platform, and observes every module it has a
-runner for, named or not. What is pinned here is the state it derives from
-three facts (the software there, the unit active, the configured mark on
-disk), the five fields of every row, the mark written and cleared by
-name, an install and an uninstall run in the caller's thread with each
-output line handed on as it comes and the row transient meanwhile, a
-package's bytes asked for only by the kinds that install from bytes and
-the file deleted afterwards, the uninstall recipe's own packages and
-steps, results judged by the machine's own state, one package operation
-at a time, a module whose own install runs reading installing with the
-code its runner names for what holds it up, the modules
-waiting behind the one being applied reading queued, a failed install
-reading install_failed with its code whatever the machine has, any other
-failed step reading failed while the software is there, both kept
+recipe resolved for this platform, ``{runner, method, params}``, and
+observes every module it has a runner for, named or not. What is pinned
+here is the runner the recipe's ``runner`` chooses, an unknown one reading
+unsupported; the state derived from three facts (the software there by the
+method's one presence check, the unit active, the configured mark on disk)
+with the unit and the details read whenever that check passes, whatever the
+runner's own check says; the five fields of every row; the mark written and
+cleared by name; an install and an uninstall run in the caller's thread
+with each output line handed on as it comes and the row transient
+meanwhile; a ``hub`` recipe's system packages installed by name before its
+artifacts, each artifact asked for as ``{module, artifact, digest}``,
+checked against its digest and deleted afterwards, the hub's refusal
+passed on as it came; a ``system`` recipe installed by name and its
+uninstall's own packages and steps; results judged by the machine's own
+state; one package operation at a time; a module whose own install runs
+reading installing with the code its runner names for what holds it up;
+the modules waiting behind the one being applied reading queued; a failed
+install reading install_failed with its code whatever the machine has, any
+other failed step reading failed while the software is there, both kept
 root-only on disk and read the same by an engine that starts again, until
-the next attempt replaces them or a state stops naming the module, an
-uninstall of what a failed install left judged by the check afterwards,
+the next attempt replaces them or a state stops naming the module; an
+uninstall of what a failed install left judged by the check afterwards;
 and that nothing in it ever retries anything.
 """
 
@@ -38,53 +43,71 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
-DEB_RECIPE = {
-    "kind": "package",
-    "package_kind": "deb",
-    "package": "fakedesk",
-    "uninstall": "apt-get remove -y fakedesk",
+DIGEST = "ab" * 32
+ARTIFACT = {"name": "app", "kind": "binary", "digest": "sha256:" + DIGEST}
+HUB_RECIPE = {
+    "runner": "fakedesk",
+    "method": "hub",
+    "params": {
+        "version": "1.0",
+        "artifacts": [dict(ARTIFACT)],
+        "verify": "fakedesk --version",
+        "uninstall": {"post_uninstall": [], "is_data_kept": True},
+    },
 }
 
-WANTED = {
-    "fakedesk": {
-        "want": "installed",
-        "config": {},
-        "install": dict(DEB_RECIPE),
-        "uninstall": {},
-    }
-}
+WANTED = {"fakedesk": {"want": "installed", "config": {}, "install": HUB_RECIPE}}
 
 ROW_FIELDS = {"state", "is_active", "code", "params", "details"}
 
 
 class FakePlatform(AgentPlatform):
-    """A platform that records installs and refuses nothing else."""
+    """A platform whose package manager records what it is asked."""
 
     os_name = "linux"
 
-    def __init__(self, *, install_error=None):
-        self.installs: list = []
-        self.uninstalls: list = []
-        self._install_error = install_error
+    def __init__(self):
+        self.installed: list = []
 
-    def install_package(self, path, *, package_kind, entry):
-        self.installs.append((package_kind, entry, os.path.exists(path)))
-        if self._install_error is not None:
-            raise self._install_error
-
-    def uninstall_package(self, command):
-        self.uninstalls.append(command)
+    def install_system_packages(self, names):
+        self.installed.append(list(names))
+        return ""
 
 
-def bare_engine(*, platform=None, verified=None, tmp_path=None):
+class HubRunner(ModuleRunner):
+    """A ``hub`` module that records each artifact it is handed."""
+
+    runner = "fakedesk"
+    name = "fakedesk"
+
+    def __init__(self, *, platform=None, install_error=None):
+        super().__init__(
+            platform=platform if platform is not None else FakePlatform(),
+            log=lambda message: None,
+        )
+        self.install_error = install_error
+        self.landed: list = []
+        self.uninstalls = 0
+
+    def install_artifact(self, recipe, artifact, path):
+        self.landed.append((artifact["name"], os.path.exists(path)))
+        if self.install_error is not None:
+            raise self.install_error
+
+    def uninstall(self, recipe):
+        self.uninstalls += 1
+
+
+def bare_engine(*, runner=None, verified=None, tmp_path=None):
     """An engine with no worker thread, driven a pass at a time.
 
     Args:
-        platform: The machine's platform.
-        verified: Scripted answers for the package runner's verify; the
-            last one repeats.
+        runner: The one runner it has; a fresh :class:`HubRunner` by default.
+        verified: Scripted answers for the presence check; the last one
+            repeats. None leaves the engine's own check.
         tmp_path: Where the configured marks live.
 
     Returns:
@@ -110,37 +133,27 @@ def bare_engine(*, platform=None, verified=None, tmp_path=None):
     engine._wakeup = threading.Event()
     engine._failures = {}
     engine._details_at = 0.0
-    engine._module_runners = {}
+    runner = runner if runner is not None else HubRunner()
+    engine._module_runners = {runner.name: runner}
+    engine._runners_by_name = {runner.runner: runner}
+    if verified is not None:
+        answers = list(verified)
 
-    from neutrino_agent.modules.shared.package import PackageModuleRunner
-    from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
+        def is_present(runner, recipe):
+            return answers.pop(0) if len(answers) > 1 else answers[0]
 
-    platform = platform if platform is not None else FakePlatform()
-    engine._package = PackageModuleRunner(
-        platform=platform, log=engine._collect, publish=engine._publish
-    )
-    engine._system = SystemPackageModuleRunner(
-        platform=platform, log=engine._collect, publish=engine._publish
-    )
-    answers = list(verified or [])
-
-    def verify(resolved):
-        return (
-            answers.pop(0) if len(answers) > 1 else (answers[0] if answers else False)
-        )
-
-    engine._package.verify = verify
+        engine._is_present = is_present
     return engine
 
 
-def landing_receive(received, tmp_path):
-    """A receive that writes a package and records the module it was asked for."""
+def landing_receive(received, tmp_path, sha256=DIGEST):
+    """A receive that writes each artifact and records what was asked."""
 
-    def receive(name):
-        received.append(name)
-        path = tmp_path / f"{name}.deb"
-        path.write_bytes(b"!<arch>package")
-        return {"path": str(path)}
+    def receive(name, artifact):
+        received.append((name, artifact["name"], artifact["digest"]))
+        path = tmp_path / f"{artifact['name']}.bin"
+        path.write_bytes(b"\x7fELF")
+        return {"path": str(path), "sha256": sha256}
 
     return receive
 
@@ -148,25 +161,17 @@ def landing_receive(received, tmp_path):
 # --- an install ---
 
 
-def test_an_install_from_bytes_asks_for_the_package_and_deletes_it_after(tmp_path):
+def test_an_install_asks_for_each_artifact_checks_it_and_deletes_it_after(tmp_path):
     received: list = []
-    platform = FakePlatform()
-    engine = bare_engine(platform=platform, verified=[True], tmp_path=tmp_path)
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
 
     refusal = engine.install("fakedesk", receive=landing_receive(received, tmp_path))
 
-    assert received == ["fakedesk"]
-    # The recipe's entry is what the platform installs by: the header
-    # fields name the runner and the check, and are not part of it. The
-    # file was there for the install and is gone after it.
-    assert platform.installs == [
-        (
-            "deb",
-            {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"},
-            True,
-        )
-    ]
-    assert not (tmp_path / "fakedesk.deb").exists()
+    assert received == [("fakedesk", "app", "sha256:" + DIGEST)]
+    # The file was there for the install and is gone after it.
+    assert runner.landed == [("app", True)]
+    assert not (tmp_path / "app.bin").exists()
     assert refusal == {}
 
 
@@ -189,15 +194,14 @@ def test_the_row_is_installing_while_the_install_runs_and_read_again_after(
     engine = bare_engine(verified=[True], tmp_path=tmp_path)
     seen: list = []
 
-    def receive(name):
+    def receive(name, artifact):
         seen.append(engine.report()["fakedesk"]["state"])
         # A refresh under way keeps the transient row.
         engine._refresh(is_forced=True)
         seen.append(engine.report()["fakedesk"]["state"])
-        return landing_receive([], tmp_path)(name)
+        return landing_receive([], tmp_path)(name, artifact)
 
     assert engine.install("fakedesk", receive=receive) == {}
-
     assert seen == ["installing", "installing"]
     assert engine.report()["fakedesk"]["state"] == "installed"
 
@@ -211,8 +215,8 @@ def test_an_install_the_machine_cannot_confirm_is_failed_not_latched(tmp_path):
 
 
 def test_a_failed_install_hands_on_the_installers_own_words(tmp_path):
-    platform = FakePlatform(install_error=InstallError("dpkg failed: held broken"))
-    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
+    runner = HubRunner(install_error=InstallError("msiexec exited 1603: held"))
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
     lines: list = []
 
     refusal = engine.install(
@@ -220,40 +224,91 @@ def test_a_failed_install_hands_on_the_installers_own_words(tmp_path):
     )
 
     assert refusal["code"] == "install_failed"
-    assert "dpkg failed: held broken" in refusal["params"]["detail"]
-    # The vendor's own words, not only that something went wrong.
-    assert "dpkg failed: held broken" in lines
+    assert "msiexec exited 1603: held" in refusal["params"]["detail"]
+    # The installer's own words, not only that something went wrong.
+    assert "msiexec exited 1603: held" in lines
 
 
-def test_a_refused_package_is_reported_with_the_hubs_own_code(tmp_path):
-    def refuse(name):
-        return {"code": "module_artifact_unknown", "params": {"detail": "refused"}}
+def test_a_refused_artifact_is_reported_with_the_hubs_own_code(tmp_path):
+    refused = {
+        "code": "download_failed",
+        "params": {
+            "file": "app",
+            "sources": [{"source": "https://x", "reason": "timeout", "detail": ""}],
+        },
+    }
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
 
-    engine = bare_engine(verified=[False], tmp_path=tmp_path)
-    platform = engine._package._platform
+    refusal = engine.install("fakedesk", receive=lambda name, artifact: dict(refused))
 
-    refusal = engine.install("fakedesk", receive=refuse)
+    assert refusal == refused
+    assert runner.landed == []
+
+
+def test_bytes_that_are_not_the_artifacts_are_refused_and_deleted(tmp_path):
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
+
+    refusal = engine.install(
+        "fakedesk", receive=landing_receive([], tmp_path, sha256="cd" * 32)
+    )
 
     assert refusal == {
-        "code": "module_artifact_unknown",
-        "params": {"detail": "refused"},
+        "code": "package_digest_mismatch",
+        "params": {"artifact": "app"},
     }
-    assert platform.installs == []
+    assert runner.landed == []
+    assert not (tmp_path / "app.bin").exists()
 
 
 def test_an_install_that_names_its_step_is_reported_with_that_code(tmp_path):
-    platform = FakePlatform(
-        install_error=ModuleApplyError("cloudcli_node_download_failed", {"x": 1})
+    runner = HubRunner(
+        install_error=ModuleApplyError("podman_install_failed", {"exit_code": 1})
     )
-    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
 
     refusal = engine.install("fakedesk", receive=landing_receive([], tmp_path))
 
-    assert refusal == {"code": "cloudcli_node_download_failed", "params": {"x": 1}}
+    assert refusal == {"code": "podman_install_failed", "params": {"exit_code": 1}}
+
+
+def test_a_hub_entrys_packages_install_by_name_before_any_artifact(tmp_path):
+    platform = FakePlatform()
+    order: list = []
+    platform.install_system_packages = lambda names: order.append(names) or ""
+    runner = HubRunner(platform=platform)
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
+    recipe = dict(HUB_RECIPE, params=dict(HUB_RECIPE["params"], packages=["git"]))
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
+
+    def receive(name, artifact):
+        order.append(artifact["name"])
+        return landing_receive([], tmp_path)(name, artifact)
+
+    assert engine.install("fakedesk", receive=receive) == {}
+    assert order == [["git"], "app"]
+
+
+def test_an_npm_artifact_is_not_received(tmp_path):
+    received: list = []
+    engine = bare_engine(verified=[True], tmp_path=tmp_path)
+    npm = {"name": "cloudcli", "kind": "npm", "digest": "sha512-x", "sources": []}
+    recipe = dict(
+        HUB_RECIPE, params=dict(HUB_RECIPE["params"], artifacts=[ARTIFACT, npm])
+    )
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
+
+    engine.install("fakedesk", receive=landing_receive(received, tmp_path))
+
+    assert received == [("fakedesk", "app", "sha256:" + DIGEST)]
 
 
 def test_a_platform_that_installs_nothing_is_reported_not_raised(tmp_path):
-    engine = bare_engine(platform=AgentPlatform(), verified=[False], tmp_path=tmp_path)
+    runner = HubRunner(platform=AgentPlatform())
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
+    recipe = dict(HUB_RECIPE, params=dict(HUB_RECIPE["params"], packages=["git"]))
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
 
     refusal = engine.install("fakedesk", receive=landing_receive([], tmp_path))
 
@@ -271,8 +326,15 @@ def test_a_module_the_state_does_not_name_is_refused_not_attempted(tmp_path):
     assert refusal == {"code": "unknown_module", "params": {"module": "fakedesk"}}
 
 
-def test_the_module_the_agent_carries_takes_no_operation(tmp_path):
+def test_a_module_the_agent_carries_takes_no_operation(tmp_path):
     engine = bare_engine(tmp_path=tmp_path)
+    engine._wanted = {
+        "remote_desktop": {
+            "want": "running",
+            "config": {},
+            "install": {"runner": "remote_desktop", "method": "agent", "params": {}},
+        }
+    }
 
     refusal = engine.install("remote_desktop", receive=landing_receive([], tmp_path))
 
@@ -281,6 +343,32 @@ def test_the_module_the_agent_carries_takes_no_operation(tmp_path):
         "params": {"module": "remote_desktop"},
     }
     assert engine.uninstall("remote_desktop") == refusal
+
+
+def test_a_recipe_naming_a_runner_this_agent_lacks_is_refused(tmp_path):
+    engine = bare_engine(tmp_path=tmp_path)
+    recipe = dict(HUB_RECIPE, runner="container")
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
+
+    assert engine.install("fakedesk", receive=None) == {
+        "code": "runner_unknown",
+        "params": {"runner": "container"},
+    }
+    assert engine.uninstall("fakedesk") == {
+        "code": "runner_unknown",
+        "params": {"runner": "container"},
+    }
+
+
+def test_a_method_this_agent_does_not_install_by_is_refused(tmp_path):
+    engine = bare_engine(tmp_path=tmp_path)
+    recipe = dict(HUB_RECIPE, method="container")
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
+
+    assert engine.install("fakedesk", receive=None) == {
+        "code": "method_unknown",
+        "params": {"method": "container"},
+    }
 
 
 def test_an_idle_pass_reruns_nothing(tmp_path):
@@ -293,20 +381,20 @@ def test_an_idle_pass_reruns_nothing(tmp_path):
     for _ in range(5):
         engine._reconcile()
 
-    assert received == ["fakedesk"]
+    assert len(received) == 1
 
 
 # --- an uninstall ---
 
 
 def test_an_uninstall_is_run_and_confirmed(tmp_path):
-    platform = FakePlatform()
-    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
     engine.mark_configured("fakedesk")
 
     refusal = engine.uninstall("fakedesk")
 
-    assert platform.uninstalls == ["apt-get purge -y fakedesk"]
+    assert runner.uninstalls == 1
     assert refusal == {}
     assert engine.is_configured("fakedesk") is False
 
@@ -319,123 +407,28 @@ def test_an_uninstall_that_did_not_take_is_reported_failed(tmp_path):
     assert refusal == {"code": "uninstall_unconfirmed", "params": {}}
 
 
-def test_the_uninstall_recipe_names_its_own_packages_and_steps(tmp_path, monkeypatch):
-    ran: list = []
-    monkeypatch.setattr(
-        engine_module.installers,
-        "run_shell",
-        lambda command, **kwargs: ran.append(command) or "cleaned\n",
-    )
-    platform = SystemPackagePlatform()
-    engine = bare_engine(platform=platform, tmp_path=tmp_path)
-    engine._wanted = {
-        "samba_mount": {
-            "want": "absent",
-            "config": {},
-            "install": {"kind": "system_package", "packages": ["cifs-utils"]},
-            "uninstall": {
-                "packages": ["cifs-utils", "cifs-extra"],
-                "post_uninstall": ["rm -f /etc/cifs.neutrino"],
-                "is_data_kept": True,
-            },
-        }
-    }
-    engine._system.verify = lambda resolved: False
-    lines: list = []
+class MountRunner(SystemPackageModuleRunner):
+    """A module the machine's own package manager installs."""
 
-    refusal = engine.uninstall("samba_mount", on_line=lines.append)
-
-    assert refusal == {}
-    assert platform.removed == [["cifs-utils", "cifs-extra"]]
-    assert ran == ["rm -f /etc/cifs.neutrino"]
-    assert "cleaned" in lines
+    runner = "mount"
+    name = "samba_mount"
 
 
-@pytest.mark.parametrize("is_data_kept", [True, False])
-def test_the_data_goes_only_when_the_recipe_says_so(
-    tmp_path, monkeypatch, is_data_kept
-):
-    """``is_data_kept`` is the hub's word; the runner's ``remove_data`` is
-    the hook it reaches, and nothing reaches it otherwise."""
-    monkeypatch.setattr(
-        engine_module.installers, "run_shell", lambda command, **kwargs: ""
-    )
-    platform = SystemPackagePlatform()
-    engine = bare_engine(platform=platform, tmp_path=tmp_path)
-    engine._wanted = {
-        "samba_mount": {
-            "want": "absent",
-            "config": {},
-            "install": {"kind": "system_package", "packages": ["cifs-utils"]},
-            "uninstall": {
-                "packages": ["cifs-utils"],
-                "post_uninstall": [],
-                "is_data_kept": is_data_kept,
-            },
-        }
-    }
-    engine._system.verify = lambda resolved: False
-    removed: list = []
-    engine._system.remove_data = lambda: removed.append("data")
-    lines: list = []
-
-    assert engine.uninstall("samba_mount", on_line=lines.append) == {}
-
-    assert removed == ([] if is_data_kept else ["data"])
-    assert ("samba_mount: removing its data" in lines) is not is_data_kept
-
-
-def test_a_second_package_operation_waits_for_the_first(tmp_path):
-    platform = SystemPackagePlatform(delay_s=0.3)
-    engine = bare_engine(platform=platform, tmp_path=tmp_path)
-    engine._wanted = dict(SYSTEM_WANTED)
-    engine._system.verify = lambda resolved: True
-    journal: list = []
-
-    def first():
-        engine.install("samba_mount", receive=None)
-        journal.append(("first", time.monotonic()))
-
-    def second():
-        engine.uninstall("samba_mount")
-        journal.append(("second", time.monotonic()))
-
-    one = threading.Thread(target=first)
-    one.start()
-    time.sleep(0.05)
-    two = threading.Thread(target=second)
-    two.start()
-    one.join(timeout=5)
-    two.join(timeout=5)
-
-    assert [entry[0] for entry in journal] == ["first", "second"]
-    assert platform.journal == ["install", "remove"]
-
-
-def test_the_engine_runs_a_failed_install_again_never_by_itself(tmp_path):
-    platform = FakePlatform()
-    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
-
-    engine.install("fakedesk", receive=landing_receive([], tmp_path))
-    engine._refresh(is_forced=True)
-    engine._refresh(is_forced=True)
-
-    # The failure is kept for the row; there is no attempt count and no
-    # second install here.
-    assert len(platform.installs) == 1
-    assert engine.report()["fakedesk"]["state"] == "install_failed"
-    assert not hasattr(engine, "_attempts")
-
-
-# --- the by-name kind installs with the platform's own tooling ---
-
+SYSTEM_RECIPE = {
+    "runner": "mount",
+    "method": "system",
+    "params": {
+        "version": "system",
+        "packages": ["cifs-utils"],
+        "verify": "mount.cifs -V",
+        "uninstall": {
+            "packages": ["cifs-utils", "cifs-extra"],
+            "post_uninstall": ["rm -f /etc/cifs.neutrino"],
+        },
+    },
+}
 SYSTEM_WANTED = {
-    "samba_mount": {
-        "want": "installed",
-        "config": {},
-        "install": {"kind": "system_package", "packages": ["cifs-utils"]},
-        "uninstall": {"packages": ["cifs-utils"]},
-    }
+    "samba_mount": {"want": "installed", "config": {}, "install": SYSTEM_RECIPE}
 }
 
 
@@ -462,12 +455,107 @@ class SystemPackagePlatform(AgentPlatform):
         return ""
 
 
-def test_a_system_package_install_runs_by_name_and_asks_for_no_bytes(tmp_path):
+def system_engine(platform, tmp_path, verified):
+    engine = bare_engine(verified=verified, tmp_path=tmp_path)
+    runner = MountRunner(platform=platform, log=engine._collect)
+    engine._module_runners = {runner.name: runner}
+    engine._runners_by_name = {runner.runner: runner}
+    engine._wanted = {name: dict(entry) for name, entry in SYSTEM_WANTED.items()}
+    return engine, runner
+
+
+def test_the_uninstall_recipe_names_its_own_packages_and_steps(tmp_path, monkeypatch):
+    ran: list = []
+    monkeypatch.setattr(
+        engine_module.installers,
+        "run_shell",
+        lambda command, **kwargs: ran.append(command) or "cleaned\n",
+    )
+    platform = SystemPackagePlatform()
+    engine, _ = system_engine(platform, tmp_path, [False])
+    lines: list = []
+
+    refusal = engine.uninstall("samba_mount", on_line=lines.append)
+
+    assert refusal == {}
+    assert platform.removed == [["cifs-utils", "cifs-extra"]]
+    assert ran == ["rm -f /etc/cifs.neutrino"]
+    assert "cleaned" in lines
+
+
+@pytest.mark.parametrize("is_data_kept", [True, False])
+def test_the_data_goes_only_when_the_recipe_says_so(
+    tmp_path, monkeypatch, is_data_kept
+):
+    """``is_data_kept`` is the hub's word; the runner's ``remove_data`` is
+    the hook it reaches, and nothing reaches it otherwise."""
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
+    params = dict(
+        HUB_RECIPE["params"],
+        uninstall={"post_uninstall": [], "is_data_kept": is_data_kept},
+    )
+    engine._wanted = {
+        "fakedesk": dict(WANTED["fakedesk"], install=dict(HUB_RECIPE, params=params))
+    }
+    removed: list = []
+    runner.remove_data = lambda: removed.append("data")
+    lines: list = []
+
+    assert engine.uninstall("fakedesk", on_line=lines.append) == {}
+
+    assert removed == ([] if is_data_kept else ["data"])
+    assert ("fakedesk: removing its data" in lines) is not is_data_kept
+
+
+def test_a_second_package_operation_waits_for_the_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_module.installers, "run_shell", lambda c, **k: "")
+    platform = SystemPackagePlatform(delay_s=0.3)
+    engine, _ = system_engine(platform, tmp_path, [True])
+    journal: list = []
+
+    def first():
+        engine.install("samba_mount", receive=None)
+        journal.append(("first", time.monotonic()))
+
+    def second():
+        engine.uninstall("samba_mount")
+        journal.append(("second", time.monotonic()))
+
+    one = threading.Thread(target=first)
+    one.start()
+    time.sleep(0.05)
+    two = threading.Thread(target=second)
+    two.start()
+    one.join(timeout=5)
+    two.join(timeout=5)
+
+    assert [entry[0] for entry in journal] == ["first", "second"]
+    assert platform.journal == ["install", "remove"]
+
+
+def test_the_engine_runs_a_failed_install_again_never_by_itself(tmp_path):
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[False], tmp_path=tmp_path)
+
+    engine.install("fakedesk", receive=landing_receive([], tmp_path))
+    engine._refresh(is_forced=True)
+    engine._refresh(is_forced=True)
+
+    # The failure is kept for the row; there is no attempt count and no
+    # second install here.
+    assert len(runner.landed) == 1
+    assert engine.report()["fakedesk"]["state"] == "install_failed"
+    assert not hasattr(engine, "_attempts")
+
+
+# --- the system method installs with the platform's own tooling ---
+
+
+def test_a_system_install_runs_by_name_and_asks_for_no_bytes(tmp_path):
     platform = SystemPackagePlatform()
     received: list = []
-    engine = bare_engine(platform=platform, tmp_path=tmp_path)
-    engine._wanted = dict(SYSTEM_WANTED)
-    engine._system.verify = lambda resolved: True
+    engine, _ = system_engine(platform, tmp_path, [True])
     lines: list = []
 
     refusal = engine.install(
@@ -482,21 +570,8 @@ def test_a_system_package_install_runs_by_name_and_asks_for_no_bytes(tmp_path):
     assert "Setting up cifs-utils" in lines
 
 
-def test_a_system_package_uninstall_rides_the_package_manager_too(tmp_path):
-    platform = SystemPackagePlatform()
-    engine = bare_engine(platform=platform, tmp_path=tmp_path)
-    engine._wanted = dict(SYSTEM_WANTED)
-    engine._system.verify = lambda resolved: False
-
-    refusal = engine.uninstall("samba_mount")
-
-    assert platform.removed == [["cifs-utils"]]
-    assert refusal == {}
-
-
 def test_an_absent_capability_reports_unsupported_platform(tmp_path):
-    engine = bare_engine(platform=AgentPlatform(), tmp_path=tmp_path)
-    engine._wanted = dict(SYSTEM_WANTED)
+    engine, _ = system_engine(AgentPlatform(), tmp_path, [False])
 
     refusal = engine.install("samba_mount", receive=None)
 
@@ -507,9 +582,9 @@ def test_an_absent_capability_reports_unsupported_platform(tmp_path):
 
 
 class ConfigurableRunner(ModuleRunner):
-    """A module runner whose presence, unit and details a test scripts."""
+    """A module runner whose own check, unit and details a test scripts."""
 
-    kind = "system_package"
+    runner = "samba"
     name = "samba"
 
     def __init__(self, *, is_installed=True, is_active_now=False):
@@ -521,14 +596,14 @@ class ConfigurableRunner(ModuleRunner):
         self.stops = 0
         self.removals = 0
 
-    def verify(self, resolved):
-        self.verified.append(resolved)
+    def verify(self, recipe):
+        self.verified.append(recipe)
         return self.is_installed
 
     def is_active(self):
         return self.is_active_now
 
-    def details(self, resolved):
+    def details(self, recipe):
         self.detail_reads += 1
         return {"sessions": [self.detail_reads]}
 
@@ -538,34 +613,38 @@ class ConfigurableRunner(ModuleRunner):
     def remove_configuration(self):
         self.removals += 1
 
-    def uninstall(self, resolved):
+    def uninstall(self, recipe):
         self.is_installed = False
 
 
-def module_wanted(want: str) -> dict:
+def module_wanted(want: str, method: str = "builtin") -> dict:
+    """The file share named with a recipe; ``builtin`` is judged by the runner."""
+    params = {}
+    if method == "system":
+        params = {"packages": ["samba"], "verify": "smbd -V"}
     return {
         "samba": {
             "want": want,
             "config": {"shares": []},
-            "install": {"kind": "system_package", "packages": ["samba"]},
-            "uninstall": {"packages": ["samba"]},
+            "install": {"runner": "samba", "method": method, "params": params},
         }
     }
 
 
 def module_engine(runner, wanted=None, tmp_path=None):
-    engine = bare_engine(tmp_path=tmp_path)
+    engine = bare_engine(runner=runner, tmp_path=tmp_path)
     engine._wanted = wanted if wanted is not None else module_wanted("running")
-    engine._module_runners = {"samba": runner}
     return engine
 
 
-def test_a_module_runner_is_found_by_name_before_its_kind():
+def test_the_recipes_runner_chooses_the_runner():
     runner = ConfigurableRunner()
     engine = module_engine(runner)
 
-    assert engine._runner_for("system_package", "samba") is runner
-    assert engine._runner_for("system_package", "samba_mount") is engine._system
+    assert engine._runner_for("samba", {"runner": "samba"}) is runner
+    assert engine._runner_for("samba", {"runner": "samba_native"}) is None
+    assert engine._runner_for("samba", {}) is runner
+    assert engine._runner_for("zfs", {}) is None
 
 
 def test_every_row_has_the_five_fields():
@@ -651,7 +730,7 @@ def test_an_installing_row_carries_what_holds_the_install_up(tmp_path):
 
 
 def test_the_wait_s_params_are_copied_onto_the_row(tmp_path):
-    params = {"component": "image"}
+    params = {"artifact": "image"}
     engine = module_engine(
         WaitingRunner(
             is_installing_now=True, wait={"code": "install_waits", "params": params}
@@ -661,9 +740,9 @@ def test_the_wait_s_params_are_copied_onto_the_row(tmp_path):
     )
 
     engine._refresh(is_forced=True)
-    params["component"] = "changed"
+    params["artifact"] = "changed"
 
-    assert engine.report()["samba"]["params"] == {"component": "image"}
+    assert engine.report()["samba"]["params"] == {"artifact": "image"}
 
 
 def test_an_install_waiting_on_nothing_named_reads_installing_with_no_code(tmp_path):
@@ -722,12 +801,13 @@ def test_software_that_is_not_there_is_absent_whatever_the_mark(tmp_path):
         "params": {},
         "details": {},
     }
+    assert runner.detail_reads == 0
 
 
 class PartlyThereRunner(ConfigurableRunner):
     """A runner whose check fails and which names the part that is missing."""
 
-    def absent_reason(self, resolved):
+    def absent_reason(self, recipe):
         return {"code": "zfs_kernel_module_missing", "params": {"kernel": "6.1.0"}}
 
 
@@ -774,16 +854,20 @@ def test_a_module_the_state_does_not_name_is_observed_by_its_own_check():
 
     row = engine.report()["samba"]
     assert (row["state"], row["is_active"]) == ("installed", True)
-    assert runner.verified == [{"kind": "", "entry": {}, "verify": "", "package": ""}]
+    assert runner.verified == [{}]
 
 
-def test_the_recipes_verify_command_decides_presence_over_the_runner(
+# --- one presence check ---
+
+
+def test_the_recipes_verify_decides_presence_and_no_runner_check_stands_before_it(
     monkeypatch, tmp_path
 ):
-    runner = ConfigurableRunner(is_installed=False)
-    wanted = module_wanted("running")
-    wanted["samba"]["install"]["verify"] = "smbd -V"
-    engine = module_engine(runner, wanted, tmp_path)
+    """Containers on a machine with Docker CE: the runner's own check finds
+    no ``podman-docker``, the recipe's ``verify`` finds Podman, and the row
+    reads the unit and the details all the same."""
+    runner = ConfigurableRunner(is_installed=False, is_active_now=True)
+    engine = module_engine(runner, module_wanted("running", "system"), tmp_path)
     engine.mark_configured("samba")
     asked: list = []
     monkeypatch.setattr(
@@ -792,12 +876,47 @@ def test_the_recipes_verify_command_decides_presence_over_the_runner(
 
     engine._refresh(is_forced=True)
 
+    row = engine.report()["samba"]
     assert asked == ["smbd -V"]
-    assert engine.report()["samba"]["state"] == "stopped"
+    assert (row["state"], row["is_active"]) == ("running", True)
+    assert row["details"] == {"sessions": [1]}
+    assert runner.verified == []
     assert engine.is_installed("samba") is True
 
 
-def test_is_installed_answers_from_the_runner_when_no_command_is_named():
+def test_a_recipe_whose_verify_fails_is_absent_whatever_the_runner_says(
+    monkeypatch, tmp_path
+):
+    runner = ConfigurableRunner(is_installed=True, is_active_now=True)
+    engine = module_engine(runner, module_wanted("running", "system"), tmp_path)
+    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "absent"
+    assert runner.detail_reads == 0
+    assert engine.is_installed("samba") is False
+
+
+def test_a_module_the_agent_carries_is_there_without_any_check(monkeypatch):
+    runner = ConfigurableRunner(is_installed=False, is_active_now=True)
+    wanted = {
+        "samba": {
+            "want": "running",
+            "config": {},
+            "install": {"runner": "samba", "method": "agent", "params": {}},
+        }
+    }
+    engine = module_engine(runner, wanted)
+    monkeypatch.setattr(
+        engine_module, "verify_passes", lambda command: pytest.fail("no verify")
+    )
+
+    assert engine.is_installed("samba") is True
+    assert runner.verified == []
+
+
+def test_is_installed_answers_from_the_runner_for_a_builtin_recipe():
     runner = ConfigurableRunner(is_installed=True)
     engine = module_engine(runner)
 
@@ -807,8 +926,12 @@ def test_is_installed_answers_from_the_runner_when_no_command_is_named():
     assert engine.is_installed("nothing") is False
 
 
-def test_taking_a_state_wakes_the_worker_and_reports_against_it(tmp_path):
+def test_taking_a_state_wakes_the_worker_hands_each_runner_its_recipe_and_reports(
+    tmp_path,
+):
     runner = ConfigurableRunner(is_active_now=True)
+    taken: list = []
+    runner.take_recipe = taken.append
     engine = module_engine(runner, wanted={}, tmp_path=tmp_path)
     engine._refresh(is_forced=True)
     assert engine.report()["samba"]["state"] == "installed"
@@ -817,6 +940,7 @@ def test_taking_a_state_wakes_the_worker_and_reports_against_it(tmp_path):
     engine.take_state(module_wanted("running"))
 
     assert engine._wakeup.is_set()
+    assert taken == [{"runner": "samba", "method": "builtin", "params": {}}]
     engine._refresh(is_forced=False)
     assert engine.report()["samba"]["state"] == "running"
 
@@ -889,7 +1013,7 @@ def test_a_failed_install_reads_install_failed_whatever_the_machine_has(
     )
     engine.record_failure(
         "samba",
-        failure("install_failed", "code_server_download_failed", detail="refused"),
+        failure("install_failed", "download_failed", file="release", sources=[]),
     )
 
     engine._refresh(is_forced=True)
@@ -897,8 +1021,8 @@ def test_a_failed_install_reads_install_failed_whatever_the_machine_has(
     row = engine.report()["samba"]
     assert (row["state"], row["code"], row["params"]) == (
         "install_failed",
-        "code_server_download_failed",
-        {"detail": "refused"},
+        "download_failed",
+        {"file": "release", "sources": []},
     )
     assert engine.is_install_failed("samba") is True
 
@@ -930,7 +1054,7 @@ class InstallingRunner(ConfigurableRunner):
         self.install_error = install_error
         self.installs = 0
 
-    def install(self, resolved):
+    def install(self, recipe):
         self.installs += 1
         if self.install_error is not None:
             raise self.install_error
@@ -1055,7 +1179,7 @@ def test_an_uninstall_cleans_up_what_a_failed_install_left(tmp_path):
     the log, and the check afterwards is the outcome."""
 
     class LeftoverRunner(ConfigurableRunner):
-        def uninstall(self, resolved):
+        def uninstall(self, recipe):
             raise ModuleApplyError("uninstall_failed", {"detail": "not installed"})
 
     engine = module_engine(
@@ -1076,7 +1200,7 @@ def test_an_uninstall_step_that_fails_on_software_that_is_there_reads_failed(
     tmp_path,
 ):
     class StuckRunner(ConfigurableRunner):
-        def uninstall(self, resolved):
+        def uninstall(self, recipe):
             raise ModuleApplyError("uninstall_failed", {"detail": "held"})
 
     engine = module_engine(
@@ -1116,7 +1240,7 @@ def test_a_module_mid_operation_keeps_its_transient_row_when_queued(tmp_path):
 
 def test_a_runner_that_cannot_read_the_machine_is_failed_typed():
     class BrokenRunner(ConfigurableRunner):
-        def verify(self, resolved):
+        def verify(self, recipe):
             raise PlatformUnsupportedError("no package database here")
 
     engine = module_engine(BrokenRunner())
@@ -1131,7 +1255,12 @@ def test_a_module_this_agent_has_no_runner_for_is_reported_unsupported():
     """An older agent meeting a module a newer hub serves is a machine
     that cannot have it, not one that has not answered."""
     engine = bare_engine()
-    engine._wanted = {"thing": {"want": "running", "install": {"kind": "ai_tools"}}}
+    engine._wanted = {
+        "thing": {
+            "want": "running",
+            "install": {"runner": "container", "method": "container", "params": {}},
+        }
+    }
 
     engine._refresh(is_forced=True)
 
@@ -1145,13 +1274,13 @@ def test_a_module_this_agent_has_no_runner_for_is_reported_unsupported():
 
 
 def test_reporting_a_module_touches_nothing():
-    platform = FakePlatform()
-    engine = bare_engine(platform=platform, verified=[True])
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[True])
 
     engine._refresh(is_forced=True)
 
-    assert platform.installs == []
-    assert platform.uninstalls == []
+    assert runner.landed == []
+    assert runner.uninstalls == 0
     assert engine.report()["fakedesk"]["state"] == "installed"
 
 
@@ -1216,7 +1345,11 @@ def test_a_module_the_state_names_there_is_unsupported_never_failed(
     engine = ModuleEngine(
         platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
     )
-    samba = {"kind": "system_package", "package": "samba", "verify": "true"}
+    samba = {
+        "runner": "samba",
+        "method": "system",
+        "params": {"packages": ["samba"], "verify": "true"},
+    }
     engine.take_state(
         {
             "samba": {"want": "running", "config": {}, "install": samba},
@@ -1230,8 +1363,8 @@ def test_a_module_the_state_names_there_is_unsupported_never_failed(
     assert report["samba"]["state"] == "unsupported"
     assert report["fakedesk"]["state"] == "unsupported"
     assert engine.install("samba", receive=None) == {
-        "code": "unknown_kind",
-        "params": {"kind": "system_package"},
+        "code": "runner_unknown",
+        "params": {"runner": "samba"},
     }
 
 
@@ -1291,7 +1424,11 @@ def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
             "samba": {
                 "want": "running",
                 "config": {},
-                "install": {"kind": "system_package"},
+                "install": {
+                    "runner": "samba_native",
+                    "method": "builtin",
+                    "params": {},
+                },
             },
             "fakedesk": dict(WANTED["fakedesk"]),
         }
@@ -1321,23 +1458,29 @@ class HubPackagesPlatform(SmbServerPlatform):
 def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     monkeypatch, tmp_path
 ):
+    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
     engine = ModuleEngine(
         platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
         configured_dir=str(tmp_path / "configured"),
     )
+    cli = {"name": "cli", "kind": "zip", "digest": "sha256:" + DIGEST}
     engine.take_state(
         {
             "vscode": {
                 "want": "installed",
                 "config": {},
-                "install": {"kind": "vscode", "package_kind": "zip"},
+                "install": {
+                    "runner": "vscode",
+                    "method": "hub",
+                    "params": {"artifacts": [cli], "verify": "code --version"},
+                },
             }
         }
     )
     received = []
 
-    def receive(name):
-        received.append(name)
+    def receive(name, artifact):
+        received.append((name, artifact["name"]))
         return {"code": "hub_unreachable", "params": {}}
 
     engine._refresh(is_forced=True)
@@ -1352,13 +1495,13 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "terminal",
         "remote_desktop",
     }
-    assert engine.module_runners["podman"].kind == "podman_machine"
+    assert engine.module_runners["podman"].runner == "podman_machine"
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
         "code": "hub_unreachable",
         "params": {},
     }
-    assert received == ["vscode"]
+    assert received == [("vscode", "cli")]
 
 
 def test_code_server_runs_on_a_mac_beside_vs_code_and_not_on_windows(tmp_path):
@@ -1394,7 +1537,7 @@ def test_containers_run_in_a_podman_machine_on_windows_and_macos_alone(tmp_path)
         )
         runner = engine.module_runners["podman"]
         assert isinstance(runner, PodmanMachineModuleRunner)
-        assert runner.kind == "podman_machine"
+        assert runner.runner == "podman_machine"
     linux = ModuleEngine(
         platform=LinuxHubPackagesPlatform(str(tmp_path / "Neutrino")),
         configured_dir=str(tmp_path / "configured"),
@@ -1402,7 +1545,7 @@ def test_containers_run_in_a_podman_machine_on_windows_and_macos_alone(tmp_path)
     assert "podman" not in linux.module_runners
 
 
-def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
+def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
     class PackagesPlatform(FakePlatform):
         capabilities = frozenset({"packages"})
 
@@ -1423,160 +1566,110 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "remote_desktop",
     }
     assert type(engine.module_runners["podman"]) is PodmanModuleRunner
+    assert set(engine._runners_by_name) == {
+        "samba",
+        "gitea",
+        "podman",
+        "zfs",
+        "vscode",
+        "code_server",
+        "cloudcli",
+        "codeg",
+        "terminal",
+        "remote_desktop",
+    }
 
 
-# --- components ---
+# --- several artifacts ---
 
 
-class ComponentRunner(ModuleRunner):
-    """A module whose software comes as components, recorded as they land."""
-
-    kind = "demo"
-    name = "demo"
-    download_failure_code = "demo_download_failed"
-
-    def __init__(self):
-        super().__init__(platform=AgentPlatform(), log=lambda line: None)
-        self.landed: list = []
-        self.installed: list = []
-
-    def verify(self, resolved):
-        return bool(self.landed)
-
-    def install(self, resolved, package_path):
-        self.installed.append(package_path)
-        self.landed.append(("one", "", True))
-
-    def install_component(self, resolved, component, package_path):
-        self.landed.append(
-            (component["name"], component["directory"], os.path.exists(package_path))
-        )
-
-
-COMPONENT_RECIPE = {
-    "kind": "demo",
-    "verify": "",
-    "components": [
+def two_artifact_engine(runner, tmp_path):
+    artifacts = [
         {
             "name": "server",
-            "package_kind": "tar",
+            "kind": "tar_gz",
             "directory": "server",
-            "sha256": "a" * 64,
+            "digest": "sha256:" + "a" * 64,
         },
         {
             "name": "node",
-            "package_kind": "tar",
+            "kind": "tar_gz",
             "directory": "node",
-            "sha256": "b" * 64,
+            "digest": "sha256:" + "b" * 64,
         },
-    ],
-}
-COMPONENT_DIGESTS = {"server": "a" * 64, "node": "b" * 64}
-
-
-def component_engine(runner, recipe, tmp_path):
-    engine = bare_engine(tmp_path=tmp_path)
-    engine._wanted = {
-        "demo": {
-            "want": "installed",
-            "config": {},
-            "install": dict(recipe),
-            "uninstall": {},
-        }
-    }
-    engine._module_runners = {"demo": runner}
+    ]
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
+    recipe = dict(HUB_RECIPE, params=dict(HUB_RECIPE["params"], artifacts=artifacts))
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
     return engine
 
 
-def component_receive(received, tmp_path, digests):
-    """A receive that writes each component's archive and records what was asked."""
-
-    def receive(name, component=""):
-        received.append((name, component))
-        path = tmp_path / f"{component or name}.tar"
+def digest_receive(received, tmp_path, digests):
+    def receive(name, artifact):
+        received.append(artifact["name"])
+        path = tmp_path / f"{artifact['name']}.tar"
         path.write_bytes(b"archive")
-        return {"path": str(path), "sha256": digests.get(component, "")}
+        return {"path": str(path), "sha256": digests[artifact["name"]]}
 
     return receive
 
 
-def test_a_recipe_with_components_receives_each_and_unpacks_it_under_its_directory(
-    tmp_path,
-):
-    runner = ComponentRunner()
-    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
+def test_each_artifact_is_received_and_installed_in_the_recipes_order(tmp_path):
+    runner = HubRunner()
+    engine = two_artifact_engine(runner, tmp_path)
     received: list = []
 
     refusal = engine.install(
-        "demo", receive=component_receive(received, tmp_path, COMPONENT_DIGESTS)
+        "fakedesk",
+        receive=digest_receive(
+            received, tmp_path, {"server": "a" * 64, "node": "b" * 64}
+        ),
     )
 
     assert refusal == {}
-    assert received == [("demo", "server"), ("demo", "node")]
-    assert runner.landed == [("server", "server", True), ("node", "node", True)]
-    assert runner.installed == []
+    assert received == ["server", "node"]
+    assert runner.landed == [("server", True), ("node", True)]
     assert not (tmp_path / "server.tar").exists()
     assert not (tmp_path / "node.tar").exists()
 
 
-def test_a_component_whose_digest_is_not_the_recipes_is_refused_and_deleted(tmp_path):
-    runner = ComponentRunner()
-    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
-    digests = dict(COMPONENT_DIGESTS, node="x" * 64)
+def test_an_artifact_whose_digest_is_not_the_recipes_stops_the_install(tmp_path):
+    runner = HubRunner()
+    engine = two_artifact_engine(runner, tmp_path)
 
-    refusal = engine.install("demo", receive=component_receive([], tmp_path, digests))
+    refusal = engine.install(
+        "fakedesk",
+        receive=digest_receive([], tmp_path, {"server": "a" * 64, "node": "x" * 64}),
+    )
 
     assert refusal == {
         "code": "package_digest_mismatch",
-        "params": {"component": "node"},
+        "params": {"artifact": "node"},
     }
-    assert runner.landed == [("server", "server", True)]
+    assert runner.landed == [("server", True)]
     assert not (tmp_path / "node.tar").exists()
 
 
-def test_a_component_the_hub_could_not_hand_down_is_the_modules_own_code(tmp_path):
-    runner = ComponentRunner()
-    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
+def test_an_artifact_of_a_kind_no_shared_path_takes_is_install_failed(tmp_path):
+    class PlainRunner(ModuleRunner):
+        runner = "fakedesk"
+        name = "fakedesk"
 
-    def refuse(name, component=""):
-        return {"code": "module_fetch_failed", "params": {}}
-
-    refusal = engine.install("demo", receive=refuse)
-
-    assert refusal == {
-        "code": "demo_download_failed",
-        "params": {"detail": "module_fetch_failed"},
-    }
-    assert runner.landed == []
-
-
-def test_a_recipe_with_one_archive_asks_with_the_module_name_alone(tmp_path):
-    runner = ComponentRunner()
-    recipe = {"kind": "demo", "verify": "", "package_kind": "tar"}
-    engine = component_engine(runner, recipe, tmp_path)
-    received: list = []
-
-    def receive(name):
-        received.append(name)
-        path = tmp_path / "one.tar"
-        path.write_bytes(b"archive")
-        return {"path": str(path), "sha256": "c" * 64}
-
-    assert engine.install("demo", receive=receive) == {}
-    assert received == ["demo"]
-    assert runner.installed == [str(tmp_path / "one.tar")]
-
-
-def test_a_runner_that_unpacks_no_component_is_install_failed(tmp_path):
-    class BareRunner(ComponentRunner):
-        def install_component(self, resolved, component, package_path):
-            ModuleRunner.install_component(self, resolved, component, package_path)
-
-    engine = component_engine(BareRunner(), COMPONENT_RECIPE, tmp_path)
-
-    refusal = engine.install(
-        "demo", receive=component_receive([], tmp_path, COMPONENT_DIGESTS)
+    engine = bare_engine(
+        runner=PlainRunner(platform=FakePlatform(), log=lambda line: None),
+        verified=[False],
+        tmp_path=tmp_path,
     )
+    recipe = dict(
+        HUB_RECIPE,
+        params=dict(
+            HUB_RECIPE["params"],
+            artifacts=[{"name": "x", "kind": "rar", "digest": "sha256:" + DIGEST}],
+        ),
+    )
+    engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
+
+    refusal = engine.install("fakedesk", receive=landing_receive([], tmp_path))
 
     assert refusal["code"] == "install_failed"
-    assert "installs no component" in refusal["params"]["detail"]
+    assert "rar" in refusal["params"]["detail"]

@@ -1,23 +1,18 @@
 """Fixed values of the CloudCLI module."""
 
-# The recipe kind, the module's name on the wire, and the title its
+# The runner a recipe names, the module's name on the wire, and the title its
 # services carry.
-CLOUDCLI_KIND = "cloudcli"
+CLOUDCLI_RUNNER = "cloudcli"
 CLOUDCLI_NAME = "cloudcli"
 CLOUDCLI_TITLE = "CloudCLI"
-# What a failed download of Node.js reports.
-CLOUDCLI_NODE_DOWNLOAD_FAILED = "cloudcli_node_download_failed"
 
-# The npm package every instance runs, at the one version the hub pins.
-CLOUDCLI_PACKAGE = "@cloudcli-ai/cloudcli"
-CLOUDCLI_VERSION = "1.37.3"
-# Where the package lands under an app directory, and the server it starts.
+# Where the npm package lands under an app directory, and the server it starts.
 CLOUDCLI_PACKAGE_PARTS = ("node_modules", "@cloudcli-ai", "cloudcli")
 CLOUDCLI_SERVER_PARTS = ("dist-server", "server", "index.js")
 # The native modules npm fetches a prebuilt binary for during the install.
 CLOUDCLI_NATIVE_MODULES = ("better-sqlite3", "node-pty", "bcrypt")
 
-# Node.js is the module's ``node`` component, unpacked under this directory
+# Node.js is the module's ``node`` artifact, unpacked under this directory
 # without the archive's own top directory; an older build kept that top
 # directory, ``node-v<version>-<os>-<arch>``, which an install removes.
 CLOUDCLI_NODE_DIR_NAME = "node"

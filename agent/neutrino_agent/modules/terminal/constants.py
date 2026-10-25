@@ -1,8 +1,8 @@
 """Fixed values of the Terminal module."""
 
-# The module's name on the wire, and the kind its runner answers for.
+# The module's name on the wire, and the runner a recipe names for it.
 TERMINAL_NAME = "terminal"
-TERMINAL_KIND = "terminal"
+TERMINAL_RUNNER = "terminal"
 
 # The two settings of its configuration.
 TERMINAL_ACCOUNT_KEY = "account"

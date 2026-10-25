@@ -61,17 +61,18 @@ from neutrino_agent.modules.zfs.constants import (
 class ZfsModuleRunner(SystemPackageModuleRunner):
     """Installs the ZFS tools by package and drives pools on request."""
 
+    runner = "zfs"
     name = "zfs"
 
     def __init__(self, *, platform, log=print, publish=None):
         super().__init__(platform=platform, log=log, publish=publish)
         self._smart: dict = {}
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether the tools are on the machine.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True when ``zpool`` is on the path.
@@ -101,12 +102,12 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
         with contextlib.suppress(OSError):
             os.unlink(ZFS_MODPROBE_CONF)
 
-    def absent_reason(self, resolved: dict) -> dict:
+    def absent_reason(self, recipe: dict) -> dict:
         """``zfs_kernel_module_missing {kernel}`` while the tools are
         installed and the running kernel has no ZFS module.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"code", "params"}``, or empty when the tools are not there
@@ -127,14 +128,14 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
         """The event daemon's unit, the one place ZFS writes about itself."""
         return [ZFS_ZED_UNIT]
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """The whole storage picture.
 
         SMART verdicts come from the last ``zfs_scan``: asking every disk on
         every read would keep the machine busy doing nothing.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"pools", "datasets", "disks", "importable"}``.

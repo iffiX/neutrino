@@ -29,6 +29,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_UNIT_SOURCE_NAME,
     GITEA_USER,
 )
+from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 try:
@@ -76,8 +77,7 @@ class GiteaInstaller:
         """
         self.create_user()
         self.create_directories()
-        shutil.copyfile(binary_path, GITEA_BINARY_PATH)
-        os.chmod(GITEA_BINARY_PATH, 0o755)
+        place_binary(binary_path, GITEA_BINARY_PATH)
         self.install_unit()
 
     def uninstall(self) -> None:

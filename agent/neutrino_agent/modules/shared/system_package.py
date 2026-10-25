@@ -1,11 +1,12 @@
-"""Installing and uninstalling modules the machine's package manager carries.
+"""Installing and uninstalling the packages of a ``system`` entry.
 
-A system-package module names distro packages, never a download: its
-install asks the hub for no bytes and the platform installs the names with
-its own tooling. An entry may name ``pre_install`` shell steps, run before the
-packages, for a repository the distribution keeps the software in. With no
-packages named, a module is present when its own binary is on the path, so
-software somebody installed by hand is observed without a recipe.
+A ``system`` recipe names distro packages, never a download: its install
+asks the hub for no bytes and the platform installs the names with its own
+tooling, one operation at a time. A recipe may name ``pre_install`` shell
+steps, run before the packages, for a repository the distribution keeps the
+software in. Whether the software is there is the recipe's ``verify``; the
+runner's own check, its binary on the path, answers only for a module the
+state does not name, so software somebody installed by hand is observed.
 
 Not pure: runs the package manager.
 """
@@ -15,101 +16,81 @@ Not pure: runs the package manager.
 from __future__ import annotations
 
 import shutil
-import subprocess
 
 from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.base import ModuleRunner
-from neutrino_agent.modules.shared.package import DEB_INSTALLED_STATUS, VERIFY_TIMEOUT_S
+from neutrino_agent.modules.shared.package import params_of
 
 
-def _entry_packages(resolved: dict) -> list:
-    """The package names this module's entry asks for."""
-    entry = resolved.get("entry") or {}
-    return [str(name) for name in entry.get("packages") or []]
+def _recipe_packages(recipe: dict) -> list:
+    """The package names a recipe installs."""
+    return [str(name) for name in params_of(recipe).get("packages") or []]
 
 
-def _entry_steps(resolved: dict) -> list:
-    """The shell steps this module's entry runs before its packages."""
-    entry = resolved.get("entry") or {}
-    return [str(step) for step in entry.get("pre_install") or []]
+def _recipe_steps(recipe: dict) -> list:
+    """The shell steps a recipe runs before its packages."""
+    return [str(step) for step in params_of(recipe).get("pre_install") or []]
+
+
+def _removed_packages(recipe: dict) -> list:
+    """The package names a recipe's uninstall removes."""
+    removal = params_of(recipe).get("uninstall")
+    if not isinstance(removal, dict):
+        return []
+    return [str(name) for name in removal.get("packages") or []]
 
 
 class SystemPackageModuleRunner(ModuleRunner):
-    """Installs named distro packages, removes them, and says which it is.
+    """Installs named distro packages and removes them.
 
     Attributes:
-        binary: The program that says the software is there when the entry
-            names no package; empty for a runner with none of its own.
+        binary: The program that says the software is there for a module
+            the state does not name; empty for a runner with none of its own.
     """
 
-    kind = "system_package"
     binary = ""
 
-    def verify(self, resolved: dict) -> bool:
-        """Whether every named package is actually installed.
+    def verify(self, recipe: dict) -> bool:
+        """Whether the runner's own program is on the path.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe, empty for a module the state does
+                not name.
 
         Returns:
-            True when all the named packages are there; with none named,
-            whether the runner's own binary is on the path.
+            True when the binary is found.
         """
-        packages = _entry_packages(resolved)
-        if not packages:
-            return bool(self.binary) and shutil.which(self.binary) is not None
-        return all(self._is_installed(name) for name in packages)
+        return bool(self.binary) and shutil.which(self.binary) is not None
 
-    def install(self, resolved: dict) -> None:
-        """Install the named packages with the machine's own tooling.
+    def install(self, recipe: dict) -> None:
+        """Run the recipe's steps, then install its packages with the machine's own tooling.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Raises:
             InstallError: If a step or the package manager refuses.
             PlatformUnsupportedError: If this platform installs nothing.
         """
-        for step in _entry_steps(resolved):
+        for step in _recipe_steps(recipe):
             self._log(step)
             output = installers.run_shell(step)
             if output.strip():
                 self._log(output.strip())
-        output = self._platform.install_system_packages(_entry_packages(resolved))
+        output = self._platform.install_system_packages(_recipe_packages(recipe))
         if output.strip():
             self._log(output.strip())
 
-    def uninstall(self, resolved: dict) -> None:
-        """Take the named packages off this machine.
+    def uninstall(self, recipe: dict) -> None:
+        """Take the packages the recipe's uninstall names off this machine.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Raises:
             InstallError: If the uninstall refuses.
             PlatformUnsupportedError: If this platform removes nothing.
         """
-        output = self._platform.remove_system_packages(_entry_packages(resolved))
+        output = self._platform.remove_system_packages(_removed_packages(recipe))
         if output.strip():
             self._log(output.strip())
-
-    @staticmethod
-    def _is_installed(name: str) -> bool:
-        """Ask the machine's own package database about one name."""
-        if shutil.which("dpkg-query"):
-            command = ["dpkg-query", "-W", "-f=${Status}", name]
-            expected = DEB_INSTALLED_STATUS
-        elif shutil.which("rpm"):
-            command = ["rpm", "-q", name]
-            expected = ""
-        else:
-            return False
-        try:
-            result = subprocess.run(
-                command, capture_output=True, text=True, timeout=VERIFY_TIMEOUT_S
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        if result.returncode != 0:
-            return False
-        return not expected or result.stdout.strip() == expected

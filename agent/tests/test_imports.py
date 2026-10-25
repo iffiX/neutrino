@@ -157,6 +157,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.shared.instances",
     "neutrino_agent.modules.shared.log_tail",
     "neutrino_agent.modules.shared.package",
+    "neutrino_agent.modules.shared.source_fetch",
     "neutrino_agent.modules.shared.record_store",
     "neutrino_agent.modules.shared.subprocess_run",
     "neutrino_agent.modules.shared.system_package",

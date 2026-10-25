@@ -379,7 +379,36 @@ AGENT_FORWARD_TOKEN_EXPIRY_BYTES = 8
 AGENT_FORWARD_TOKEN_NONCE_BYTES = 16
 AGENT_FORWARD_TOKEN_MAC_BYTES = 32
 AGENT_FORWARD_TOKEN_HORIZON_S = 300
-# The archive kinds a module's software from the hub comes in, as its
-# manifest names them.
-AGENT_PACKAGE_KIND_TAR = "tar"
-AGENT_PACKAGE_KIND_ZIP = "zip"
+# The install methods a module's recipe names.
+AGENT_METHOD_AGENT = "agent"
+AGENT_METHOD_BUILTIN = "builtin"
+AGENT_METHOD_SYSTEM = "system"
+AGENT_METHOD_HUB = "hub"
+# The kinds of artifact a ``hub`` recipe names: the two archives unpacked
+# under the module's directory, a program kept as the publisher's bytes, the
+# two installer packages, the two zstd files kept as they came, and an npm
+# package the module's runner installs.
+AGENT_ARTIFACT_KIND_TAR_GZ = "tar_gz"
+AGENT_ARTIFACT_KIND_ZIP = "zip"
+AGENT_ARTIFACT_KIND_BINARY = "binary"
+AGENT_ARTIFACT_KIND_MSI = "msi"
+AGENT_ARTIFACT_KIND_PKG = "pkg"
+AGENT_ARTIFACT_KIND_NPM = "npm"
+AGENT_ARTIFACT_ARCHIVE_KINDS = (AGENT_ARTIFACT_KIND_TAR_GZ, AGENT_ARTIFACT_KIND_ZIP)
+# What a kept artifact's file is named after its artifact, by kind. Podman
+# reads an image's compression from the end of its name.
+AGENT_ARTIFACT_KEPT_SUFFIXES = {
+    AGENT_ARTIFACT_KIND_MSI: ".msi",
+    AGENT_ARTIFACT_KIND_PKG: ".pkg",
+    "tar_zst": ".tar.zst",
+    "raw_zst": ".raw.zst",
+}
+# A hub artifact's digest is this prefix and the SHA-256 of its bytes in hex.
+AGENT_DIGEST_SHA256_PREFIX = "sha256:"
+# The probe of a source: how long it waits for an answer, how much of a
+# document it reads, and the share of a speed within which two sources go
+# to the earlier first byte.
+AGENT_SOURCE_PROBE_TIMEOUT_S = 5.0
+AGENT_SOURCE_DOCUMENT_LIMIT_BYTES = 4 * 1024 * 1024
+AGENT_SOURCE_NEAR_TIE = 0.1
+AGENT_SOURCE_HEADERS = {"User-Agent": "neutrino-agent"}

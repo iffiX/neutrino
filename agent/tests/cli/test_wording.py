@@ -53,6 +53,7 @@ UNSTRUCTURED_CODES = (
 # What a module runner refuses with, raised by name rather than emitted as
 # a literal, and what the engine records against a built-in row.
 MODULE_CODES = (
+    "download_failed",
     "module_not_orderable",
     "rdp_takeover_failed",
     "rdp_restore_failed",
@@ -216,8 +217,31 @@ def test_the_codes_that_left_with_the_old_wire_are_gone():
         "no_download_named",
         "module_digest_mismatch",
         "agent_update_fetch_failed",
+        "unknown_kind",
+        "cc_switch_download_failed",
+        "cloudcli_node_download_failed",
+        "code_server_download_failed",
+        "codeg_download_failed",
     ):
         assert not is_worded(code)
+
+
+def test_a_failed_download_names_each_source_and_why():
+    params = {
+        "file": "code-server-4.140.0-linux-amd64.tar.gz",
+        "sources": [
+            {"source": "https://github.com", "reason": "timeout", "detail": ""},
+            {"source": "https://mirrors.example", "reason": "http_404", "detail": ""},
+        ],
+    }
+
+    assert wording.word_code("download_failed", params) == (
+        "no source served code-server-4.140.0-linux-amd64.tar.gz: "
+        "https://github.com (timeout), https://mirrors.example (http_404)"
+    )
+    assert wording.word_code("download_failed", {"file": "x", "sources": []}) == (
+        "no source served x: none"
+    )
 
 
 def test_a_code_outside_the_table_prints_as_itself():

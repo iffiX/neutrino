@@ -2,7 +2,8 @@
 
 What these pin: a tarball and a zip land whole; an unknown kind and a
 member outside the directory are refused; a sealed tree has no write bit
-left; and removing a sealed tree takes all of it.
+left; removing a sealed tree takes all of it; and an archive placed beside
+what a directory holds replaces its namesakes and leaves the rest.
 """
 
 import io
@@ -17,6 +18,7 @@ from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,
+    unpack_beside,
     unpack_into,
 )
 
@@ -36,7 +38,7 @@ def test_a_tarball_and_a_zip_land_whole(tmp_path):
     with zipfile.ZipFile(tmp_path / "b.zip", "w") as archive:
         archive.writestr("top/file.txt", "z")
 
-    extract_archive(tarball, "tar", str(tmp_path / "t"))
+    extract_archive(tarball, "tar_gz", str(tmp_path / "t"))
     extract_archive(str(tmp_path / "b.zip"), "zip", str(tmp_path / "z"))
 
     assert (tmp_path / "t" / "top" / "bin" / "run").read_bytes() == b"#!/bin/sh\n"
@@ -72,13 +74,13 @@ def test_a_sealed_tree_has_no_write_bit_and_removing_it_takes_all(tmp_path):
     assert not tree.exists()
 
 
-def test_a_components_archive_lands_without_its_one_top_directory(tmp_path):
+def test_an_artifacts_archive_lands_without_its_one_top_directory(tmp_path):
     archive = _tarball(
         tmp_path / "a.tar.gz",
         {"node-v22/bin/node": b"#!node", "node-v22/LICENSE": b"x"},
     )
 
-    unpack_into(archive, "tar", str(tmp_path / "cloudcli" / "node"))
+    unpack_into(archive, "tar_gz", str(tmp_path / "cloudcli" / "node"))
 
     node = tmp_path / "cloudcli" / "node"
     assert sorted(os.listdir(node)) == ["LICENSE", "bin"]
@@ -97,9 +99,9 @@ def test_an_archive_with_files_at_its_top_lands_as_it_is_and_replaces_what_was_t
     second = _tarball(tmp_path / "b.tar.gz", {"codeg-server": b"2"})
     target = str(tmp_path / "codeg" / "server")
 
-    unpack_into(first, "tar", target)
+    unpack_into(first, "tar_gz", target)
     assert sorted(os.listdir(target)) == ["codeg-server", "web"]
-    unpack_into(second, "tar", target)
+    unpack_into(second, "tar_gz", target)
 
     assert os.listdir(target) == ["codeg-server"]
     assert (tmp_path / "codeg" / "server" / "codeg-server").read_bytes() == b"2"
@@ -113,7 +115,35 @@ def test_a_broken_archive_leaves_the_directory_as_it_was(tmp_path):
     junk.write_bytes(b"not an archive")
 
     with pytest.raises(tarfile.TarError):
-        unpack_into(str(junk), "tar", str(target))
+        unpack_into(str(junk), "tar_gz", str(target))
 
     assert (target / "kept").read_text() == "x"
     assert sorted(os.listdir(tmp_path / "demo")) == ["node"]
+
+
+def test_an_archive_placed_beside_replaces_its_namesakes_and_keeps_the_rest(
+    tmp_path,
+):
+    module = tmp_path / "vscode"
+    (module / "tokens").mkdir(parents=True)
+    (module / "tokens" / "lab.token").write_text("secret")
+    (module / "code").write_text("old")
+    archive = _tarball(tmp_path / "cli.tar.gz", {"code": b"#!new"})
+
+    placed = unpack_beside(archive, "tar_gz", str(module))
+
+    assert placed == [str(module / "code")]
+    assert (module / "code").read_bytes() == b"#!new"
+    assert stat.S_IMODE((module / "code").stat().st_mode) & 0o222 == 0
+    assert (module / "tokens" / "lab.token").read_text() == "secret"
+    assert stat.S_IMODE(module.stat().st_mode) == 0o755
+    assert sorted(os.listdir(module)) == ["code", "tokens"]
+
+
+def test_an_archive_placed_beside_drops_its_one_top_directory(tmp_path):
+    with zipfile.ZipFile(tmp_path / "cli.zip", "w") as archive:
+        archive.writestr("top/code.exe", "MZ")
+
+    unpack_beside(str(tmp_path / "cli.zip"), "zip", str(tmp_path / "module"))
+
+    assert os.listdir(tmp_path / "module") == ["code.exe"]

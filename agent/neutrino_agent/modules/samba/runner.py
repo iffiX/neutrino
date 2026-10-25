@@ -54,6 +54,7 @@ from neutrino_agent.platforms.detect import platform_tuple
 class SambaModuleRunner(SystemPackageModuleRunner):
     """Installs Samba by package and keeps it serving what the hub says."""
 
+    runner = "samba"
     name = "samba"
     binary = SAMBA_BINARY_NAME
 
@@ -74,17 +75,17 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """The unit this machine's Samba runs as."""
         return self._unit
 
-    def install(self, resolved: dict) -> None:
+    def install(self, recipe: dict) -> None:
         """Install the package and the group every share account joins.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Raises:
             InstallError: If the package manager refuses.
             PlatformUnsupportedError: If this platform installs nothing.
         """
-        super().install(resolved)
+        super().install(recipe)
         ensure_share_group()
 
     def validate(self, config: dict) -> None:
@@ -142,7 +143,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """This machine's Samba unit."""
         return [self._unit]
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """What Samba serves, who it serves, and each account's state.
 
         The global section and the shares are what ``testparm -s`` prints
@@ -150,7 +151,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         the hub configures or Samba holds a credential for.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
@@ -213,8 +214,8 @@ class SambaNativeServerRunner(ModuleRunner):
     read at most every 30 seconds and again after every change.
     """
 
+    runner = "samba_native"
     name = "samba"
-    kind = "system_package"
 
     def __init__(self, *, platform, log=print, publish=None, clock=time.monotonic):
         """
@@ -243,29 +244,29 @@ class SambaNativeServerRunner(ModuleRunner):
             said = str(getattr(error, "stderr", "") or "").strip()
             self._log(f"samba: the fence did not load: {error} {said}".rstrip())
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether the system's SMB server is there.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True when the server answers for itself.
         """
         return bool(self._read_status().get("is_present"))
 
-    def install(self, resolved: dict) -> None:
+    def install(self, recipe: dict) -> None:
         """Install nothing: the system carries the server.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
         """
 
-    def uninstall(self, resolved: dict) -> None:
+    def uninstall(self, recipe: dict) -> None:
         """Remove nothing: the server stays with the system.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
         """
 
     def validate(self, config: dict) -> None:
@@ -364,11 +365,11 @@ class SambaNativeServerRunner(ModuleRunner):
         is_running = bool(self._read_status().get("is_running"))
         return is_running and bool(self._read_record()["is_served"])
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """What the server serves of the module's, and who uses it.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",

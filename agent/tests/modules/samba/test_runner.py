@@ -1,7 +1,8 @@
 """The file share runner: validate, apply, stop, verbs, and what it observes.
 
-What these pin beside the verbs: ``observe()`` reads the binary, the unit
-and the details in one go, and the details are what Samba itself says,
+What these pin beside the verbs: the runner's own check is the binary, and
+read with the unit and the details as the engine reads them, the details
+are what Samba itself says,
 ``testparm -s`` parsed into the global section and each share and
 ``pdbedit -L`` into the accounts, so a share somebody set up by hand is
 reported the way the hub imports it.
@@ -168,7 +169,7 @@ def test_the_own_check_is_the_server_binary(monkeypatch):
 
 
 def test_install_puts_the_package_and_the_share_group(runner):
-    runner.install({"entry": {"packages": ["samba"]}})
+    runner.install({"params": {"packages": ["samba"]}})
 
     assert runner._platform.installed == [["samba"]]
     assert runner.groups == [1]
@@ -296,6 +297,17 @@ def test_removing_the_configuration_deletes_the_rendered_file(
 # --- what a hand-written file share observes as ---
 
 
+def observed(runner) -> dict:
+    """The runner read as the engine reads a module the state does not name:
+    its own check, then its unit and its details while the check passes."""
+    is_installed = bool(runner.verify({}))
+    return {
+        "is_installed": is_installed,
+        "is_active": bool(runner.is_active()) if is_installed else False,
+        "details": runner.details({}) if is_installed else {},
+    }
+
+
 def samba_commands(monkeypatch, *, accounts=("ann",)):
     """Samba's own tools answered from the fixtures; ``id`` knows ``accounts``."""
     asked: list = []
@@ -328,10 +340,10 @@ def samba_commands(monkeypatch, *, accounts=("ann",)):
 def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch):
     asked = samba_commands(monkeypatch)
 
-    observed = runner.observe({})
+    observed_now = observed(runner)
 
-    assert (observed["is_installed"], observed["is_active"]) == (True, True)
-    details = observed["details"]
+    assert (observed_now["is_installed"], observed_now["is_active"]) == (True, True)
+    details = observed_now["details"]
     assert set(details) == {
         "is_active",
         "global",
@@ -370,7 +382,7 @@ def test_observe_lists_the_configured_users_first_then_the_rest(runner, monkeypa
     runner.apply({**CONFIG, "users": ["carol", "ann"]})
     samba_commands(monkeypatch, accounts=("ann", "carol"))
 
-    users = runner.observe({})["details"]["users"]
+    users = observed(runner)["details"]["users"]
 
     assert [user["name"] for user in users] == ["carol", "ann", "bob"]
     assert users[0] == {"name": "carol", "is_present": True, "has_password": False}
@@ -381,14 +393,9 @@ def test_observe_of_a_machine_without_samba_reads_nothing(runner, monkeypatch):
     monkeypatch.setattr(applier_module.shutil, "which", lambda name: None)
     monkeypatch.setattr(system_package_module.shutil, "which", lambda name: None)
 
-    observed = runner.observe({})
+    observed_now = observed(runner)
 
-    assert observed == {
-        "is_installed": False,
-        "is_installing": False,
-        "is_active": False,
-        "details": {},
-    }
+    assert observed_now == {"is_installed": False, "is_active": False, "details": {}}
 
 
 class FakeNativeApplier:
@@ -627,16 +634,16 @@ def test_a_removal_forgets_every_password(native):
 
 
 def test_the_server_is_read_once_per_half_minute_and_after_each_change(native):
-    native.observe({})
-    native.observe({})
+    observed(native)
+    observed(native)
     assert native.applier.reads == 1
 
     native.clock.now += 31
-    native.observe({})
+    observed(native)
     assert native.applier.reads == 2
 
     native.apply(WINDOWS_CONFIG)
-    native.observe({})
+    observed(native)
     assert native.applier.reads == 3
 
 
@@ -650,7 +657,7 @@ def test_the_details_have_the_linux_shape_and_the_fence(native):
         "fence": {"is_present": True, "is_enabled": True, "blocked": []},
     }
 
-    details = native.observe({})["details"]
+    details = observed(native)["details"]
 
     assert set(details) == {
         "is_active",

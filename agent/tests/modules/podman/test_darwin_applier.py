@@ -27,7 +27,7 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
 TEMP_DIR = "/var/folders/xy/abc123/T/"
-PKG = {"name": "installer", "package_kind": "pkg", "directory": "installer"}
+PKG = {"name": "podman", "kind": "pkg", "directory": "podman"}
 
 
 class RecordingPlatform(AgentPlatform):
@@ -125,9 +125,9 @@ def test_the_program_is_podmans_pkg_install_and_the_provider_applehv():
 def test_the_pkg_goes_to_the_systems_installer():
     install_pkg = RecordingInstaller()
 
-    applier(install_pkg=install_pkg).install_component(PKG, "/state/installer.pkg")
+    applier(install_pkg=install_pkg).install_artifact(PKG, "/state/podman.pkg")
 
-    assert install_pkg.paths == ["/state/installer.pkg"]
+    assert install_pkg.paths == ["/state/podman.pkg"]
 
 
 @pytest.mark.parametrize("exit_code, reported", [(1, 1), (None, 1), (143, 143)])
@@ -137,18 +137,18 @@ def test_a_failed_installer_is_podman_install_failed_with_its_exit_code(
     error = InstallError("installer failed: no space", exit_code=exit_code)
 
     with pytest.raises(ModuleApplyError) as refused:
-        applier(install_pkg=RecordingInstaller(error)).install_component(PKG, "/p.pkg")
+        applier(install_pkg=RecordingInstaller(error)).install_artifact(PKG, "/p.pkg")
 
     assert refused.value.code == "podman_install_failed"
-    assert refused.value.params == {"component": "installer", "exit_code": reported}
+    assert refused.value.params == {"artifact": "podman", "exit_code": reported}
 
 
-def test_a_component_that_is_not_a_pkg_is_refused_before_any_installer_runs():
+def test_an_artifact_that_is_not_a_pkg_is_refused_before_any_installer_runs():
     install_pkg = RecordingInstaller()
-    component = {"name": "installer", "package_kind": "msi"}
+    artifact = {"name": "podman", "kind": "msi"}
 
     with pytest.raises(ModuleApplyError) as refused:
-        applier(install_pkg=install_pkg).install_component(component, "/p.msi")
+        applier(install_pkg=install_pkg).install_artifact(artifact, "/p.msi")
 
     assert refused.value.code == "install_failed"
     assert install_pkg.paths == []

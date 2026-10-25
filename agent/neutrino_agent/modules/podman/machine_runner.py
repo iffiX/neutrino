@@ -1,7 +1,7 @@
 """Containers on Windows and macOS: Podman inside one account's Podman machine.
 
-The install keeps each component the hub sent as the publisher's file under
-``podman/<component>/`` in the state root, and hands an msi or a pkg to the
+The install keeps each artifact the hub sent as the publisher's file under
+``podman/<directory>/`` in the state root, and hands an msi or a pkg to the
 system's installer; the machine image stays a file for ``podman machine
 init``. An apply makes the account's default machine exist, rootful and the
 size the Run settings name, writes and starts the keeper that brings it up
@@ -21,11 +21,11 @@ from __future__ import annotations
 import functools
 import ntpath
 import os
-import shutil
 import subprocess
 import threading
 import time
 
+from neutrino_agent.constants import AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG
 from neutrino_agent.exceptions import (
     ModuleApplyError,
     ModuleInstallPending,
@@ -49,11 +49,10 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_DEFAULT_DISK_GIB,
     PODMAN_MACHINE_DEFAULT_MEMORY_GIB,
     PODMAN_MACHINE_DETAIL_CHARS,
-    PODMAN_MACHINE_IMAGE_COMPONENT,
+    PODMAN_MACHINE_IMAGE_ARTIFACT,
     PODMAN_MACHINE_INFO_TTL_S,
-    PODMAN_MACHINE_INSTALLED_KINDS,
-    PODMAN_MACHINE_KEPT_SUFFIXES,
-    PODMAN_MACHINE_KIND,
+    PODMAN_MACHINE_IMAGE_KINDS,
+    PODMAN_MACHINE_RUNNER,
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
 )
@@ -71,6 +70,7 @@ from neutrino_agent.modules.shared import account_service
 from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
 from neutrino_agent.modules.shared.instances import machine_for
 from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.package import keep_artifact, kept_artifact_path
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
@@ -101,15 +101,6 @@ def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
     return PodmanSystemApplier()
 
 
-def _is_plain(name: str) -> bool:
-    """Whether a name is one plain path component."""
-    return (
-        bool(name)
-        and name not in (".", "..")
-        and not any(separator in name for separator in ("/", "\\"))
-    )
-
-
 def _whole(value) -> int:
     """A whole number from ``podman info``, 0 for anything else."""
     try:
@@ -135,16 +126,16 @@ class PodmanSystemApplier:
     provider = ""
     binary = ""
 
-    def install_component(self, component: dict, path: str) -> None:
-        """Install one component the system's installer takes, an msi or a pkg.
+    def install_artifact(self, artifact: dict, path: str) -> None:
+        """Install one artifact the system's installer takes, an msi or a pkg.
 
         Args:
-            component: ``{name, package_kind, directory, sha256}``.
+            artifact: ``{name, kind, digest, directory}``.
             path: The kept file.
 
         Raises:
             ModuleApplyError: ``windows_feature_failed {feature, exit_code}``
-                or ``podman_install_failed {component, exit_code}``.
+                or ``podman_install_failed {artifact, exit_code}``.
             PlatformUnsupportedError: On a system with no applier.
         """
         raise PlatformUnsupportedError("no Podman machine here")
@@ -241,7 +232,7 @@ class PodmanSystemApplier:
 class PodmanMachineModuleRunner(ModuleRunner):
     """Installs Podman from the hub's bytes and keeps the declared containers running in one account's machine."""
 
-    kind = PODMAN_MACHINE_KIND
+    runner = PODMAN_MACHINE_RUNNER
     name = PODMAN_MODULE_NAME
 
     def __init__(
@@ -298,60 +289,50 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether Podman's program is on the computer.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True when the system applier's program exists.
         """
         return bool(self._system.binary) and os.path.isfile(self._system.binary)
 
-    def install_component(
-        self, resolved: dict, component: dict, package_path: str
-    ) -> None:
-        """Keep one component as the publisher's file, and install an msi or a pkg.
+    def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
+        """Keep one artifact as the publisher's file, and have the system install an msi or a pkg.
 
         Args:
-            resolved: The module as the hub resolved it.
-            component: ``{name, package_kind, directory, sha256}``.
-            package_path: The file on local disk; it is moved, not copied.
+            recipe: The module's recipe.
+            artifact: ``{name, kind, digest, directory}``.
+            path: The file on local disk; it is moved, not copied.
 
         Raises:
-            ModuleApplyError: ``install_failed`` for a component whose name,
-                directory or package kind the module does not take; the
-                system applier's codes for an msi or a pkg it cannot install.
+            ModuleApplyError: ``install_failed`` for an artifact whose name,
+                directory or kind the module does not keep; the system
+                applier's codes for an msi or a pkg it cannot install.
             OSError: When the file cannot be kept or opened to every account.
         """
-        name = str(component.get("name", "") or "")
-        directory = str(component.get("directory") or name)
-        kind = str(component.get("package_kind", "") or "")
-        suffix = PODMAN_MACHINE_KEPT_SUFFIXES.get(kind)
-        if suffix is None or not _is_plain(name) or not _is_plain(directory):
-            raise ModuleApplyError(
-                "install_failed",
-                {"detail": f"component {name!r} {directory!r} {kind!r}"},
-            )
-        target = self._join(self._service_machine.module_dir, directory)
-        remove_tree(target)
-        os.makedirs(target, exist_ok=True)
-        kept = self._join(target, name + suffix)
-        shutil.move(package_path, kept)
+        kept = keep_artifact(
+            artifact,
+            path,
+            module_dir=self._service_machine.module_dir,
+            join=self._join,
+        )
         self._platform.open_to_accounts(self._service_machine.module_dir)
-        self._log(f"podman: kept {name}")
-        if kind in PODMAN_MACHINE_INSTALLED_KINDS:
-            self._system.install_component(dict(component), kept)
+        self._log(f"podman: kept {artifact.get('name', '')}")
+        if artifact.get("kind") in (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG):
+            self._system.install_artifact(dict(artifact), kept)
 
-    def uninstall(self, resolved: dict) -> None:
-        """Uninstall Podman and delete the kept components; the machine stays.
+    def uninstall(self, recipe: dict) -> None:
+        """Uninstall Podman and delete the kept artifacts; the machine stays.
 
         A keeper an apply left behind goes first, with the containers'
         files in the machine.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Raises:
             PlatformUnsupportedError: On a system with no applier.
@@ -390,10 +371,6 @@ class PodmanMachineModuleRunner(ModuleRunner):
             parsed, settings = self._checked(config)
             if self._system.is_reboot_pending():
                 raise ModuleInstallPending("reboot_required")
-            if not self.verify({}):
-                raise ModuleApplyError(
-                    "apply_failed", {"detail": "Podman is not installed"}
-                )
             record = self._record()
             if record and record.get("account") != settings.account:
                 self._retire(record)
@@ -506,11 +483,11 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 "account_unknown", {"account": machine.account}
             ) from None
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """Every container in the machine, and the machine itself.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"containers", "mirrors", "version", "is_active", "machine"}``,
@@ -882,13 +859,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Raises:
             ModuleApplyError: ``machine_image_missing`` when none is kept.
         """
-        directory = self._join(
-            self._service_machine.module_dir, PODMAN_MACHINE_IMAGE_COMPONENT
-        )
-        for kind in ("tar_zst", "raw_zst"):
-            path = self._join(
-                directory,
-                PODMAN_MACHINE_IMAGE_COMPONENT + PODMAN_MACHINE_KEPT_SUFFIXES[kind],
+        for kind in PODMAN_MACHINE_IMAGE_KINDS:
+            path = kept_artifact_path(
+                self._service_machine.module_dir,
+                PODMAN_MACHINE_IMAGE_ARTIFACT,
+                kind,
+                self._join,
             )
             if os.path.isfile(path):
                 return path

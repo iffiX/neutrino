@@ -73,8 +73,11 @@ CLI_CODE_WORDS = {
     ),
     "module_missing": "install the {module} module first",
     "package_digest_mismatch": "what arrived did not match the hub's checksum",
+    "download_failed": "no source served {file}: {sources}",
+    "module_fetch_too_large": "the download is larger than the hub's {limit_mb} MB",
     "verify_failed": "this machine could not tell whether the software is there",
-    "unknown_kind": "the agent does not know this kind of module",
+    "runner_unknown": "this agent has no {runner} runner; update the agent",
+    "method_unknown": "this agent does not install by {method}; update the agent",
     "shell_failed": "the shell could not start: {detail}",
     "shell_unknown": "no shell stream {shell} is open",
     "path_invalid": "{path} is not a path this agent can act on",
@@ -168,7 +171,7 @@ CLI_CODE_WORDS = {
     "windows_feature_failed": (
         "Windows could not turn on {feature}; dism exited {exit_code}"
     ),
-    "podman_install_failed": "the {component} installer exited {exit_code}",
+    "podman_install_failed": "the {artifact} installer exited {exit_code}",
     "machine_account_missing": "choose the account whose Podman machine runs the containers",
     "machine_cpus_invalid": "CPUs must be between 0 and {max}, not {cpus}",
     "machine_memory_invalid": (
@@ -222,7 +225,31 @@ def word_code(code: str, params: "dict | None" = None) -> str:
     if not code:
         return ""
     word = CLI_CODE_WORDS.get(code)
-    return _fill(word, params or {}) if word else code
+    if not word:
+        return code
+    filled = dict(params or {})
+    sources = filled.get("sources")
+    if isinstance(sources, list):
+        filled["sources"] = _sources_text(sources)
+    return _fill(word, filled)
+
+
+def _sources_text(sources: list) -> str:
+    """Each source a download tried and why it failed, as one line.
+
+    Args:
+        sources: ``[{source, reason, detail}]``.
+
+    Returns:
+        ``<source> (<reason>)`` for each, comma-separated; ``none`` for an
+        empty list.
+    """
+    named = [
+        f"{entry.get('source', '')} ({entry.get('reason', '')})"
+        for entry in sources
+        if isinstance(entry, dict)
+    ]
+    return ", ".join(named) or "none"
 
 
 def word_state(state: str) -> str:

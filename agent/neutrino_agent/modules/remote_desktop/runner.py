@@ -17,7 +17,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.remote_desktop.config import RemoteDesktopConfig
 from neutrino_agent.modules.remote_desktop.constants import (
-    REMOTE_DESKTOP_KIND,
+    REMOTE_DESKTOP_RUNNER,
     REMOTE_DESKTOP_LINUX_UNIT,
     REMOTE_DESKTOP_NAME,
 )
@@ -26,7 +26,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
 class RemoteDesktopModuleRunner(ModuleRunner):
     """Applies the hub's desktop switch and reports whether the copy listens."""
 
-    kind = REMOTE_DESKTOP_KIND
+    runner = REMOTE_DESKTOP_RUNNER
     name = REMOTE_DESKTOP_NAME
 
     def __init__(self, *, platform, log=print, publish=None):
@@ -47,7 +47,7 @@ class RemoteDesktopModuleRunner(ModuleRunner):
         """
         self._host = host
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Always there: the agent's package carries it."""
         return True
 

@@ -132,7 +132,7 @@ def gitea_applier_for(platform):
 class GiteaModuleRunner(ModuleRunner):
     """Installs Gitea from the hub's bytes and keeps it serving what the hub says."""
 
-    kind = "gitea"
+    runner = "gitea"
     name = "gitea"
 
     def __init__(self, *, platform, log=print, publish=None, applier=None):
@@ -152,47 +152,42 @@ class GiteaModuleRunner(ModuleRunner):
         self._survey = None
         self._surveyed_at = 0.0
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether the binary is on the machine.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True when the binary exists.
         """
         return os.path.isfile(self._applier.binary_path)
 
-    def install(self, resolved: dict, package_path: str) -> None:
-        """Install git, the binary the hub handed down, its user and its unit.
+    def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
+        """Put the release binary the hub handed down in place, with its user and its unit.
 
         Args:
-            resolved: The module as the hub resolved it.
-            package_path: The release binary on local disk.
+            recipe: The module's recipe.
+            artifact: The ``binary`` artifact.
+            path: The release binary on local disk.
 
         Raises:
             ModuleApplyError: ``gitea_git_missing`` on macOS or Windows with
                 no git; ``user_create_failed`` when macOS will not make the
                 server's account.
-            InstallError: If the package manager refuses.
             subprocess.CalledProcessError: If a setup step refuses.
+            OSError: If a file cannot be written.
         """
         self._git_path()
-        entry = resolved.get("entry") or {}
-        packages = [str(name) for name in entry.get("packages") or []]
-        if packages:
-            output = self._platform.install_system_packages(packages)
-            if output.strip():
-                self._log(output.strip())
-        self._applier.install(package_path)
+        self._applier.install(path)
         self._survey = None
 
-    def uninstall(self, resolved: dict) -> None:
+    def uninstall(self, recipe: dict) -> None:
         """Take the service, the binary and the configuration off; keep the
         data and the account.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
         """
         self._applier.uninstall()
 
@@ -263,11 +258,11 @@ class GiteaModuleRunner(ModuleRunner):
         own = self._read_source(path, lambda: file_tail(path, lines))
         return self._with_agent_lines(own, lines)
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """Whether it runs, where it answers, and who administers it.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"is_running", "port", "url", "version", "admins"}``; the

@@ -1,7 +1,7 @@
-"""Codeg's hooks: the two components, each account's service, the forwarder, the journal.
+"""Codeg's hooks: the two artifacts, each account's service, the forwarder, the journal.
 
 What these pin: the server, its web UI and Node are found under the
-``server`` and ``node`` components, by system; each instance runs
+``server`` and ``node`` artifacts, by system; each instance runs
 ``codeg-server`` alone, with no ``--supervise``, from an environment written
 from scratch naming Codeg's host, loopback port, derived token, data
 directory, static directory, port bridge off, npm's prefix and cache under
@@ -120,7 +120,7 @@ def hooks_for(os_name, module_dir, *, home="/home/ann", **kwargs) -> CodegHooks:
 
 
 def install_server(module_dir: str) -> str:
-    """A server component with a server file and its web directory."""
+    """A server artifact with a server file and its web directory."""
     os.makedirs(os.path.join(module_dir, "server", "web"))
     os.makedirs(os.path.join(module_dir, "node", "bin"))
     server = os.path.join(module_dir, "server", "codeg-server")
@@ -129,10 +129,10 @@ def install_server(module_dir: str) -> str:
     return server
 
 
-# --- the components ---
+# --- the artifacts ---
 
 
-def test_the_server_the_web_ui_and_node_are_found_under_their_components():
+def test_the_server_the_web_ui_and_node_are_found_under_their_artifacts():
     linux = hooks_for("linux", LINUX_STATE)
     mac = hooks_for("darwin", MAC_STATE)
     windows = hooks_for("windows", WIN_STATE)
@@ -145,8 +145,7 @@ def test_the_server_the_web_ui_and_node_are_found_under_their_components():
     assert windows.server_path == f"{WIN_STATE}\\server\\codeg-server.exe"
     assert windows.static_dir == f"{WIN_STATE}\\server\\web"
     assert windows.node_dir == f"{WIN_STATE}\\node"
-    assert CodegHooks.kind == "codeg"
-    assert CodegHooks.download_failure_code == "codeg_download_failed"
+    assert CodegHooks.runner == "codeg"
 
 
 def test_verify_is_the_server_file_and_the_version_is_what_it_prints(tmp_path):

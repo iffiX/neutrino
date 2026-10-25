@@ -38,6 +38,7 @@ def test_a_windows_copy_is_unpacked_from_the_zip_and_replaces_the_old_one(tmp_pa
         str(archive),
         root=str(root),
         os_name="windows",
+        kind="zip",
         version="5.10.4",
         open_to_accounts=opened.append,
     )

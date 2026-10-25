@@ -4,9 +4,10 @@ The archive comes down a package stream, a tarball or a zip as its
 publisher ships it. It is unpacked whole into a directory, refusing any
 member that would land outside it, then sealed: owned by the agent's own
 account with every write bit taken away, so every account may read and run
-it and none may change it. A component's archive lands under the
-component's own directory, without the one top directory its publisher
-may have wrapped it in.
+it and none may change it. An artifact's archive lands under the artifact's
+own directory, without the one top directory its publisher may have wrapped
+it in; an artifact that names no directory puts its files directly in the
+module's directory, beside what else is there.
 
 Not pure: writes files.
 """
@@ -22,15 +23,18 @@ import tarfile
 import tempfile
 import zipfile
 
-from neutrino_agent.constants import AGENT_PACKAGE_KIND_TAR, AGENT_PACKAGE_KIND_ZIP
+from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KIND_TAR_GZ,
+    AGENT_ARTIFACT_KIND_ZIP,
+)
 
 
-def extract_archive(path: str, package_kind: str, directory: str) -> None:
+def extract_archive(path: str, kind: str, directory: str) -> None:
     """Unpack an archive whole into a directory, refusing a path outside it.
 
     Args:
         path: The archive on disk.
-        package_kind: ``tar`` or ``zip``.
+        kind: ``tar_gz`` or ``zip``.
         directory: Where it is unpacked.
 
     Raises:
@@ -39,7 +43,7 @@ def extract_archive(path: str, package_kind: str, directory: str) -> None:
         zipfile.BadZipFile: When a zip cannot be read.
         OSError: When the directory cannot be written.
     """
-    if package_kind == AGENT_PACKAGE_KIND_TAR:
+    if kind == AGENT_ARTIFACT_KIND_TAR_GZ:
         with tarfile.open(path, "r:*") as archive:
             if hasattr(tarfile, "data_filter"):
                 archive.extractall(directory, filter="data")
@@ -52,27 +56,27 @@ def extract_archive(path: str, package_kind: str, directory: str) -> None:
                         directory,
                     )
             archive.extractall(directory)
-    elif package_kind == AGENT_PACKAGE_KIND_ZIP:
+    elif kind == AGENT_ARTIFACT_KIND_ZIP:
         with zipfile.ZipFile(path) as archive:
             for name in archive.namelist():
                 _check_member(name, directory)
             archive.extractall(directory)
     else:
-        raise ValueError(f"unknown package kind {package_kind!r}")
+        raise ValueError(f"unknown archive kind {kind!r}")
 
 
-def unpack_into(path: str, package_kind: str, directory: str) -> None:
-    """Unpack a component's archive under its directory and seal it.
+def unpack_into(path: str, kind: str, directory: str) -> None:
+    """Unpack an artifact's archive under its directory and seal it.
 
     An archive whose members all sit under one top directory is unpacked
-    without it, so the component's files sit directly under the directory;
+    without it, so the artifact's files sit directly under the directory;
     one with files at its top is unpacked as it is. What the directory
     held before is replaced.
 
     Args:
         path: The archive on disk.
-        package_kind: ``tar`` or ``zip``.
-        directory: The component's directory.
+        kind: ``tar_gz`` or ``zip``.
+        directory: The artifact's directory.
 
     Raises:
         ValueError: For an unknown kind or a member outside the directory.
@@ -84,18 +88,77 @@ def unpack_into(path: str, package_kind: str, directory: str) -> None:
     os.makedirs(parent, mode=0o755, exist_ok=True)
     staging = tempfile.mkdtemp(prefix=".unpack_", dir=parent)
     try:
-        extract_archive(path, package_kind, staging)
-        names = os.listdir(staging)
-        source = staging
-        if len(names) == 1:
-            top = os.path.join(staging, names[0])
-            if os.path.isdir(top) and not os.path.islink(top):
-                source = top
+        source = _unpacked_top(path, kind, staging)
         remove_tree(directory)
         os.replace(source, directory)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     seal_tree(directory)
+
+
+def unpack_beside(path: str, kind: str, directory: str) -> list:
+    """Unpack an archive's files directly into a directory, each sealed.
+
+    The archive's single top directory is dropped as :func:`unpack_into`
+    drops it. Each file or directory it holds replaces its namesake in the
+    directory, and everything else the directory holds stays.
+
+    Args:
+        path: The archive on disk.
+        kind: ``tar_gz`` or ``zip``.
+        directory: The module's directory, made readable by every account.
+
+    Returns:
+        The paths placed, in name order.
+
+    Raises:
+        ValueError: For an unknown kind or a member outside the directory.
+        tarfile.TarError: When a tarball cannot be read.
+        zipfile.BadZipFile: When a zip cannot be read.
+        OSError: When the directory cannot be written.
+    """
+    os.makedirs(directory, mode=0o755, exist_ok=True)
+    os.chmod(directory, 0o755)
+    staging = tempfile.mkdtemp(prefix=".unpack_", dir=directory)
+    placed = []
+    try:
+        source = _unpacked_top(path, kind, staging)
+        for name in sorted(os.listdir(source)):
+            target = os.path.join(directory, name)
+            if os.path.isdir(target) and not os.path.islink(target):
+                remove_tree(target)
+            elif os.path.lexists(target):
+                os.unlink(target)
+            os.replace(os.path.join(source, name), target)
+            placed.append(target)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    for target in placed:
+        if os.path.isdir(target) and not os.path.islink(target):
+            seal_tree(target)
+        else:
+            _seal_file(target)
+    return placed
+
+
+def _unpacked_top(path: str, kind: str, staging: str) -> str:
+    """Unpack into staging and answer where the archive's files sit there."""
+    extract_archive(path, kind, staging)
+    names = os.listdir(staging)
+    if len(names) == 1:
+        top = os.path.join(staging, names[0])
+        if os.path.isdir(top) and not os.path.islink(top):
+            return top
+    return staging
+
+
+def _seal_file(path: str) -> None:
+    """Make one file the agent's own account's and take away its write bits."""
+    if os.path.islink(path):
+        return
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        os.chown(path, 0, 0)
+    os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) & ~0o222)
 
 
 def seal_tree(directory: str) -> None:

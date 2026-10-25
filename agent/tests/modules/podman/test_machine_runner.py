@@ -1,7 +1,7 @@
 """The Podman machine runner, driven through a fake system applier, a fake
 machine and a recorded launchd.
 
-What these pin: the components kept as the publisher's files with an msi or
+What these pin: the artifacts kept as the publisher's files with an msi or
 a pkg handed to the system's installer; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
@@ -220,8 +220,8 @@ class FakeSystem(PodmanSystemApplier):
         self.disk_error = None
         self.facts = (8, 16)
 
-    def install_component(self, component, path):
-        self.calls.append(("install", component["name"], os.path.basename(path)))
+    def install_artifact(self, artifact, path):
+        self.calls.append(("install", artifact["name"], os.path.basename(path)))
 
     def is_reboot_pending(self):
         return self.is_pending
@@ -399,14 +399,14 @@ def refusal(step) -> ModuleApplyError:
 def test_an_msi_or_a_pkg_is_kept_and_handed_to_the_systems_installer(rig, tmp_path):
     package = tmp_path / "download"
     package.write_text("pkg bytes")
-    component = {"name": "installer", "package_kind": "pkg", "directory": "installer"}
+    artifact = {"name": "podman", "kind": "pkg", "directory": "podman"}
 
-    rig.runner.install_component({}, component, str(package))
+    rig.runner.install_artifact({}, artifact, str(package))
 
-    kept = tmp_path / "state" / "podman" / "installer" / "installer.pkg"
+    kept = tmp_path / "state" / "podman" / "podman" / "podman.pkg"
     assert kept.read_text() == "pkg bytes"
     assert not package.exists()
-    assert rig.system.calls == [("install", "installer", "installer.pkg")]
+    assert rig.system.calls == [("install", "podman", "podman.pkg")]
     assert rig.platform.opened == [str(tmp_path / "state" / "podman")]
 
 
@@ -414,9 +414,9 @@ def test_the_image_is_kept_as_one_file_and_replaces_the_last(rig, tmp_path):
     old = rig.keep_image("image.tar.zst")
     package = tmp_path / "download"
     package.write_text("new image")
-    component = {"name": "image", "package_kind": "raw_zst", "directory": "image"}
+    artifact = {"name": "image", "kind": "raw_zst", "directory": "image"}
 
-    rig.runner.install_component({}, component, str(package))
+    rig.runner.install_artifact({}, artifact, str(package))
 
     assert not os.path.exists(old)
     kept = tmp_path / "state" / "podman" / "image" / "image.raw.zst"
@@ -425,19 +425,19 @@ def test_the_image_is_kept_as_one_file_and_replaces_the_last(rig, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "component",
+    "artifact",
     [
-        {"name": "image", "package_kind": "zip", "directory": "image"},
-        {"name": "image", "package_kind": "tar_zst", "directory": "../up"},
-        {"name": "", "package_kind": "msi"},
+        {"name": "image", "kind": "zip", "directory": "image"},
+        {"name": "image", "kind": "tar_zst", "directory": "../up"},
+        {"name": "", "kind": "msi"},
     ],
 )
-def test_a_component_the_module_does_not_take_is_refused(rig, tmp_path, component):
+def test_an_artifact_the_module_does_not_keep_is_refused(rig, tmp_path, artifact):
     package = tmp_path / "download"
     package.write_text("x")
 
     assert (
-        refusal(lambda: rig.runner.install_component({}, component, str(package))).code
+        refusal(lambda: rig.runner.install_artifact({}, artifact, str(package))).code
         == "install_failed"
     )
 
@@ -868,10 +868,11 @@ def test_one_reading_serves_the_rows_activity_and_its_details(rig):
     rig.now[0] += 60
     rig.world.calls.clear()
 
-    observed = rig.runner.observe({})
+    is_active = rig.runner.is_active()
+    details = rig.runner.details({})
 
-    assert observed["is_active"] is True
-    assert observed["details"]["machine"]["is_running"] is True
+    assert is_active is True
+    assert details["machine"]["is_running"] is True
     assert rig.world.calls.count(("me", "info")) == 1
 
 

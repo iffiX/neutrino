@@ -1,16 +1,13 @@
 """Fixed values of the VS Code module."""
 
-# The recipe kind, the module's name on the wire, and the title its
+# The runner a recipe names, the module's name on the wire, and the title its
 # services carry.
-VSCODE_KIND = "vscode"
+VSCODE_RUNNER = "vscode"
 VSCODE_NAME = "vscode"
 VSCODE_TITLE = "VS Code server"
 
 # The CLI's own name inside the archive Microsoft publishes, by system.
 VSCODE_CLI_NAMES = {"windows": "code.exe", "linux": "code", "darwin": "code"}
-# The archive kinds a manifest entry names in ``package_kind``.
-VSCODE_PACKAGE_TAR = "tar"
-VSCODE_PACKAGE_ZIP = "zip"
 # The token files' directory beside the CLI, which on Linux holds each
 # account's environment file too.
 VSCODE_TOKEN_DIR_NAME = "tokens"

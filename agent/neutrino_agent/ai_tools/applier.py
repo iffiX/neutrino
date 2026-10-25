@@ -45,10 +45,12 @@ from neutrino_agent.ai_tools.account_session import AiToolsAccountSession
 from neutrino_agent.ai_tools import switcher_copy
 from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APPS,
-    AI_TOOLS_CC_SWITCH_PACKAGE,
+    AI_TOOLS_CC_SWITCH_ARTIFACT_KEY,
+    AI_TOOLS_CC_SWITCH_MODULE,
     AI_TOOLS_CODE_ACCOUNT_UNKNOWN,
     AI_TOOLS_CODE_CREDENTIAL_MISSING,
     AI_TOOLS_CODE_DOWNLOAD_FAILED,
+    AI_TOOLS_CODE_NO_PLATFORM_BUILD,
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_DETAIL_LIMIT,
     AI_TOOLS_DIR_NAME,
@@ -61,6 +63,7 @@ from neutrino_agent.ai_tools.constants import (
 )
 from neutrino_agent.ai_tools.switcher import AiToolsAccountSwitcher
 from neutrino_agent.exceptions import ToolSwitchError
+from neutrino_agent.modules.shared.package import check_received, remove_received
 from neutrino_agent.streams.package import CODE_UNREACHABLE
 
 
@@ -109,8 +112,10 @@ class AiToolsApplier:
             state_hash: The state's hash; a hash applied before is not
                 applied again, and one whose copy of cc-switch could not be
                 had is not marked applied.
-            receive: Opens ``package {module}`` to the hub and returns
-                ``{"path"}`` or ``{"code", "params"}``; None fetches nothing.
+            receive: Called with the module and the artifact; opens
+                ``package {module, artifact, digest}`` to the hub and returns
+                ``{"path", "sha256"}`` or ``{"code", "params"}``; None
+                fetches nothing.
         """
         if not isinstance(section, dict):
             return
@@ -129,7 +134,10 @@ class AiToolsApplier:
             version = str(section.get("cc_switch_version", "") or "")
             if not is_enabled and os.path.isfile(self._binary):
                 version = ""
-            refusal = self._ensure_copy(version, receive)
+            artifact = section.get(AI_TOOLS_CC_SWITCH_ARTIFACT_KEY)
+            refusal = self._ensure_copy(
+                version, artifact if isinstance(artifact, dict) else {}, receive
+            )
             if refusal is not None:
                 with self._lock:
                     self._results = self._refused_all(names + leaving, refusal)
@@ -154,7 +162,7 @@ class AiToolsApplier:
             Each account's result.
         """
         accounts = self.switched_accounts()
-        refusal = self._ensure_copy("", None) if accounts else None
+        refusal = self._ensure_copy("", {}, None) if accounts else None
         if refusal is not None:
             results = self._refused_all(accounts, refusal)
         else:
@@ -281,18 +289,22 @@ class AiToolsApplier:
         self._log(f"ai_tools: {account} switched back: {', '.join(notes)}")
         return result(account, AI_TOOLS_STATE_SWITCHED_BACK)
 
-    def _ensure_copy(self, version: str, receive) -> "dict | None":
+    def _ensure_copy(self, version: str, artifact: dict, receive) -> "dict | None":
         """Have a copy of cc-switch of the version named, fetched when it is not there.
 
         Args:
             version: The version the section names; empty takes any copy.
+            artifact: The section's ``cc_switch_artifact``, ``{name, kind,
+                digest}``; empty when the hub has no build for the platform.
             receive: Opens a package stream to the hub; None fetches nothing.
 
         Returns:
             None when a copy is there, else ``{"code", "params"}``:
-            ``hub_unreachable`` with no hub to ask, and
-            ``cc_switch_download_failed {detail}`` when the hub refused or
-            the archive would not unpack.
+            ``hub_unreachable`` with no hub to ask, ``no_platform_build
+            {module}`` when the section names no artifact, the hub's own
+            refusal, ``package_digest_mismatch {artifact}`` for bytes that
+            are not the artifact's, and ``download_failed {file, sources}``
+            when the archive would not unpack.
         """
         is_there = os.path.isfile(self._binary)
         if is_there and (
@@ -301,29 +313,39 @@ class AiToolsApplier:
             return None
         if receive is None:
             return None if is_there else {"code": CODE_UNREACHABLE, "params": {}}
-        received = receive(AI_TOOLS_CC_SWITCH_PACKAGE)
+        name = str(artifact.get("name", "") or "")
+        if not name or not str(artifact.get("digest", "") or ""):
+            return {
+                "code": AI_TOOLS_CODE_NO_PLATFORM_BUILD,
+                "params": {"module": AI_TOOLS_CC_SWITCH_MODULE},
+            }
+        received = receive(AI_TOOLS_CC_SWITCH_MODULE, artifact)
         path = str(received.get("path", "") or "")
         if not path:
-            code = str(received.get("code", "") or "")
-            if code == CODE_UNREACHABLE:
-                return {"code": code, "params": {}}
-            return {"code": AI_TOOLS_CODE_DOWNLOAD_FAILED, "params": {"detail": code}}
+            return {
+                "code": str(received.get("code", "") or CODE_UNREACHABLE),
+                "params": dict(received.get("params") or {}),
+            }
         try:
+            refusal = check_received(artifact, received)
+            if refusal is not None:
+                return refusal
             switcher_copy.install_copy(
                 path,
                 root=self._root,
                 os_name=self._platform.os_name,
+                kind=str(artifact.get("kind", "") or ""),
                 version=version,
                 open_to_accounts=self._platform.open_to_accounts,
             )
         except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            self._log(f"ai_tools: {name} did not unpack: {str(error)[:200]}")
             return {
                 "code": AI_TOOLS_CODE_DOWNLOAD_FAILED,
-                "params": {"detail": str(error)[:AI_TOOLS_DETAIL_LIMIT]},
+                "params": {"file": name, "sources": []},
             }
         finally:
-            with contextlib.suppress(OSError):
-                os.unlink(path)
+            remove_received(path)
         named = f"cc-switch {version}" if version else "cc-switch"
         self._log(f"ai_tools: {named} fetched from the hub")
         return None

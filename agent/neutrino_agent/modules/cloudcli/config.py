@@ -31,26 +31,6 @@ from neutrino_agent.modules.cloudcli.constants import (
 # An account name that survives a unit name, a launchd label, a task name
 # and a command line.
 ACCOUNT_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\Z")
-# An npm setting the hub may name: npm reads it from the environment.
-NPM_SETTING_PATTERN = re.compile(r"^npm_config_[a-z0-9_]+\Z")
-
-
-def npm_settings_of(held) -> dict:
-    """The npm settings a state carries, those named ``npm_config_*`` alone.
-
-    Args:
-        held: The state's ``npm_environment``.
-
-    Returns:
-        Name to value, both text; anything else is left out.
-    """
-    if not isinstance(held, dict):
-        return {}
-    return {
-        str(name): str(value)
-        for name, value in held.items()
-        if NPM_SETTING_PATTERN.match(str(name)) and isinstance(value, str)
-    }
 
 
 def jwt_secret(token_secret: str) -> str:
@@ -118,24 +98,15 @@ class CloudcliConfig:
     """Everything the module's desired configuration holds.
 
     Attributes:
-        npm_registry: The npm registry of the hub's edition, which npm
-            installs CloudCLI from; empty for npm's own default.
-        npm_environment: More of npm's settings the hub's edition names,
-            such as where a native module fetches its prebuilt binary; only
-            names that start ``npm_config_`` are kept.
         instances: One CloudCLI per account.
     """
 
-    npm_registry: str = ""
-    npm_environment: dict = field(default_factory=dict)
     instances: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CloudcliConfig":
         instances = data.get("instances")
         return cls(
-            npm_registry=str(data.get("npm_registry", "") or ""),
-            npm_environment=npm_settings_of(data.get("npm_environment")),
             instances=[
                 CloudcliInstance.from_dict(entry)
                 for entry in (instances if isinstance(instances, list) else [])

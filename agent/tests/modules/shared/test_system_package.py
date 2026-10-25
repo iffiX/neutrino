@@ -14,9 +14,14 @@ class RecordingPlatform(AgentPlatform):
 
     def __init__(self):
         self.installed: list = []
+        self.removed: list = []
 
     def install_system_packages(self, names):
         self.installed.append(list(names))
+        return ""
+
+    def remove_system_packages(self, names):
+        self.removed.append(list(names))
         return ""
 
 
@@ -41,10 +46,12 @@ def test_pre_install_steps_run_before_the_packages(steps):
 
     runner.install(
         {
-            "entry": {
+            "runner": "zfs",
+            "method": "system",
+            "params": {
                 "pre_install": ["enable contrib", "apt-get update"],
                 "packages": ["zfsutils-linux"],
-            }
+            },
         }
     )
 
@@ -58,7 +65,7 @@ def test_a_failing_step_stops_the_install_before_any_package(steps):
     runner = SystemPackageModuleRunner(platform=platform, log=lambda m: None)
 
     with pytest.raises(InstallError):
-        runner.install({"entry": {"pre_install": ["fail"], "packages": ["x"]}})
+        runner.install({"params": {"pre_install": ["fail"], "packages": ["x"]}})
 
     assert platform.installed == []
 
@@ -67,15 +74,15 @@ def test_an_entry_without_steps_installs_its_packages_only(steps):
     platform = RecordingPlatform()
     runner = SystemPackageModuleRunner(platform=platform, log=lambda m: None)
 
-    runner.install({"entry": {"packages": ["samba"]}})
+    runner.install({"params": {"packages": ["samba"]}})
 
     assert steps == []
     assert platform.installed == [["samba"]]
 
 
-def test_verify_with_no_package_named_looks_for_the_runners_own_binary(monkeypatch):
-    """A module the state does not name has no recipe; the runner's own
-    binary says whether it is there, and a runner with none says no."""
+def test_the_runners_own_check_looks_for_its_binary(monkeypatch):
+    """The runner's own check, which answers for a module the state does
+    not name: its binary on the path, and no for a runner with none."""
     found: list = []
     monkeypatch.setattr(
         system_package_module.shutil,
@@ -89,3 +96,19 @@ def test_verify_with_no_package_named_looks_for_the_runners_own_binary(monkeypat
     assert NamedRunner(platform=RecordingPlatform()).verify({}) is True
     assert SystemPackageModuleRunner(platform=RecordingPlatform()).verify({}) is False
     assert found == ["smbd"]
+
+
+def test_an_uninstall_removes_the_packages_its_uninstall_names():
+    platform = RecordingPlatform()
+    runner = SystemPackageModuleRunner(platform=platform, log=lambda m: None)
+
+    runner.uninstall(
+        {
+            "params": {
+                "packages": ["podman"],
+                "uninstall": {"packages": ["podman", "podman-plugins"]},
+            }
+        }
+    )
+
+    assert platform.removed == [["podman", "podman-plugins"]]

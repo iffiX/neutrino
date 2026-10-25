@@ -26,8 +26,8 @@ PODMAN_REGISTRIES_CONF_PATH = (
 # and log on Windows and macOS.
 PODMAN_MODULE_NAME = "podman"
 
-# The recipe kind of the runner that runs Podman inside a Podman machine.
-PODMAN_MACHINE_KIND = "podman_machine"
+# The runner a recipe names to run Podman inside a Podman machine.
+PODMAN_MACHINE_RUNNER = "podman_machine"
 
 # The account's default machine, the one its own ``podman`` reaches.
 PODMAN_MACHINE_NAME = "podman-machine-default"
@@ -103,19 +103,10 @@ PODMAN_DARWIN_COMMAND_TIMEOUT_S = 30
 PODMAN_MACHINE_DEFAULT_MEMORY_GIB = 2
 PODMAN_MACHINE_DEFAULT_DISK_GIB = 100
 
-# The component that holds the machine image, as the manifest names it.
-PODMAN_MACHINE_IMAGE_COMPONENT = "image"
-
-# What a kept component's file ends in, by its package kind. Podman reads an
-# image's compression from the end of its name.
-PODMAN_MACHINE_KEPT_SUFFIXES = {
-    "msi": ".msi",
-    "pkg": ".pkg",
-    "tar_zst": ".tar.zst",
-    "raw_zst": ".raw.zst",
-}
-# The package kinds the system's installer installs; the rest stay files.
-PODMAN_MACHINE_INSTALLED_KINDS = ("msi", "pkg")
+# The artifact that holds the machine image, and its directory, as the
+# manifest names them, and the two kinds it comes in.
+PODMAN_MACHINE_IMAGE_ARTIFACT = "image"
+PODMAN_MACHINE_IMAGE_KINDS = ("tar_zst", "raw_zst")
 
 # How long the machine's own commands may take: an init unpacks the image,
 # about 40 seconds on the lab machine.
@@ -153,9 +144,9 @@ PODMAN_WINDOWS_FEATURES = (
     "Microsoft-Windows-Subsystem-Linux",
 )
 PODMAN_WINDOWS_PODMAN_PROPERTIES = ("ALLUSERS=1", "MACHINE_PROVIDER=wsl")
-# The component that holds the WSL msi, and the WSL the manifest's ``wsl``
-# component pins: a WSL installed at this version or newer is kept.
-PODMAN_WINDOWS_WSL_COMPONENT = "wsl"
+# The artifact that holds the WSL msi, and the WSL the manifest's ``wsl``
+# artifact pins: a WSL installed at this version or newer is kept.
+PODMAN_WINDOWS_WSL_ARTIFACT = "wsl"
 PODMAN_WINDOWS_WSL_VERSION = "3.0.3"
 # The products as Windows Installer lists them under the Uninstall key.
 PODMAN_WINDOWS_UNINSTALL_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"

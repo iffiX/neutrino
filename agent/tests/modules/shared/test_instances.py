@@ -1,7 +1,8 @@
 """The shared runner of the programs run as an account, driven through fake hooks.
 
-What these pin: an apply refuses an account the machine lacks and software
-that is not there before anything is written; it prepares each account,
+What these pin: an apply refuses an account the machine lacks before
+anything is written and puts no presence check of its own in front of the
+instances; it prepares each account,
 renders the template from the hooks' answer for ``%i``, writes and starts
 one service per instance, restarting a new or changed one and keeping an
 unchanged one up, and keeps a root-only record per instance written only
@@ -12,8 +13,9 @@ starts the forwarders from the records; a row runs only while its service
 runs and its forwarder listens; the details carry what the hooks add; the
 journal is the units' or the log files', the module's own log first
 where the hooks name one and nothing of a service whose output is
-discarded, the refusal last; an install and
-an uninstall go through the hooks and the module directory; and a record
+discarded, the refusal last; an artifact lands under its directory in
+the module's and the hooks tidy after it, a bad directory or archive being
+``install_failed``; an uninstall deletes the module directory; and a record
 changed by the hooks is applied again.
 """
 
@@ -81,8 +83,7 @@ class DemoHooks(InstanceHooks):
 
     name = "demo"
     title = "Demo"
-    kind = "demo"
-    download_failure_code = "demo_download_failed"
+    runner = "demo"
     instance_class = DemoInstance
     record_fields = ("account", "port", "secret", "upstream_port")
     forwarder_fields = ("account", "port", "secret")
@@ -105,13 +106,6 @@ class DemoHooks(InstanceHooks):
 
     def verify(self):
         return self.is_installed
-
-    def install(self, package_path, package_kind):
-        self.installed.append((package_path, package_kind))
-        os.makedirs(self.machine.module_dir, exist_ok=True)
-        with open(os.path.join(self.machine.module_dir, "demo"), "w") as stream:
-            stream.write("#!/bin/sh\n")
-        self.is_installed = True
 
     def prepare_module(self):
         return list(self.module_notes)
@@ -366,14 +360,14 @@ def test_an_account_the_machine_lacks_is_refused_before_anything_is_written(
     assert os.listdir(tmp_path / "systemd") == []
 
 
-def test_software_that_is_not_there_is_the_modules_download_failure(runner, systemd):
+def test_an_apply_puts_no_check_of_its_own_in_front_of_the_instances(runner, systemd):
+    """The presence check is the recipe's, which the engine runs before it
+    applies; the runner's own check does not refuse the apply."""
     runner.hooks.is_installed = False
 
-    with pytest.raises(ModuleApplyError) as caught:
-        runner.apply(CONFIG)
+    runner.apply(CONFIG)
 
-    assert caught.value.code == "demo_download_failed"
-    assert systemd.calls == []
+    assert ["systemctl", "daemon-reload"] in systemd.calls
 
 
 def test_a_refused_configuration_reaches_neither_the_machine_nor_a_record(
@@ -421,7 +415,6 @@ def test_an_install_the_hooks_leave_running_is_pending_and_reads_installing(
         runner.apply(CONFIG)
 
     assert runner.is_installing() is True
-    assert runner.observe({})["is_installing"] is True
     assert systemd.calls == []
     assert FakeForwarder.made == []
 
@@ -558,18 +551,11 @@ def test_removing_the_configuration_retires_every_instance_and_forgets(
     assert runner.details({})["instances"] == []
 
 
-def test_an_install_goes_through_the_hooks_and_opens_the_directory(
-    runner, platform, tmp_path
-):
-    runner.hooks.is_installed = False
-    assert runner.verify({}) is False
+def test_an_uninstall_deletes_the_modules_directory(runner, tmp_path):
+    (tmp_path / "state" / "demo" / "node").mkdir(parents=True)
 
-    runner.install({"entry": {"package_kind": "tar"}}, "/tmp/demo.tar.gz")
-
-    assert runner.hooks.installed == [("/tmp/demo.tar.gz", "tar")]
-    assert runner.verify({}) is True
-    assert platform.opened == [str(tmp_path / "state" / "demo")]
     runner.uninstall({})
+
     assert not (tmp_path / "state" / "demo").exists()
 
 
@@ -749,7 +735,7 @@ def test_the_machine_names_the_modules_directories_under_both_roots():
         windows.lookup_account("ghost")
 
 
-# --- components ---
+# --- artifacts ---
 
 
 def node_archive(path):
@@ -760,14 +746,14 @@ def node_archive(path):
     return str(path)
 
 
-def test_a_component_lands_under_its_directory_and_the_hooks_tidy_after(
+def test_an_artifact_lands_under_its_directory_and_the_hooks_tidy_after(
     runner, platform, tmp_path
 ):
     tidied = []
     runner.hooks.after_install = functools.partial(tidied.append, True)
-    component = {"name": "node", "package_kind": "tar", "directory": "node"}
+    artifact = {"name": "node", "kind": "tar_gz", "directory": "node"}
 
-    runner.install_component({}, component, node_archive(tmp_path / "node.tar.gz"))
+    runner.install_artifact({}, artifact, node_archive(tmp_path / "node.tar.gz"))
 
     node = tmp_path / "state" / "demo" / "node"
     assert (node / "bin" / "node").read_bytes() == b"hi"
@@ -775,22 +761,20 @@ def test_a_component_lands_under_its_directory_and_the_hooks_tidy_after(
     assert platform.opened == [str(tmp_path / "state" / "demo")]
 
 
-def test_a_component_directory_that_is_not_a_plain_name_is_refused(runner, tmp_path):
+def test_an_artifact_directory_that_is_not_a_plain_name_is_refused(runner, tmp_path):
     for directory in ("..", "a/b", "a\\b"):
-        component = {"name": "x", "package_kind": "tar", "directory": directory}
+        artifact = {"name": "x", "kind": "tar_gz", "directory": directory}
         with pytest.raises(ModuleApplyError) as caught:
-            runner.install_component({}, component, str(tmp_path / "none.tar"))
-        assert caught.value.code == "demo_download_failed"
+            runner.install_artifact({}, artifact, str(tmp_path / "none.tar"))
+        assert caught.value.code == "install_failed"
 
 
-def test_a_component_archive_that_cannot_be_read_is_the_modules_download_failure(
-    runner, tmp_path
-):
+def test_an_archive_that_cannot_be_read_is_install_failed(runner, tmp_path):
     junk = tmp_path / "junk.tar"
     junk.write_bytes(b"junk")
-    component = {"name": "node", "package_kind": "tar", "directory": "node"}
+    artifact = {"name": "node", "kind": "tar_gz", "directory": "node"}
 
     with pytest.raises(ModuleApplyError) as caught:
-        runner.install_component({}, component, str(junk))
+        runner.install_artifact({}, artifact, str(junk))
 
-    assert caught.value.code == "demo_download_failed"
+    assert caught.value.code == "install_failed"

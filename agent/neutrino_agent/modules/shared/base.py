@@ -20,13 +20,26 @@ import os
 import subprocess
 
 from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KEPT_SUFFIXES,
+    AGENT_ARTIFACT_KIND_BINARY,
+    AGENT_ARTIFACT_KIND_MSI,
+    AGENT_ARTIFACT_KIND_PKG,
     AGENT_LOG_ROTATED_SUFFIX,
     AGENT_MODULE_JOURNAL_LINES,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.log_tail import file_tail, mask_secrets
+from neutrino_agent.modules.shared.package import (
+    is_archive_kind,
+    joiner,
+    keep_artifact,
+    params_of,
+    place_binary,
+    unpack_artifact,
+)
 from neutrino_agent.modules.shared.subprocess_run import units_journal
 
 
@@ -60,16 +73,12 @@ class ModuleRunner:
     """Installs, configures, observes and answers for one kind of module.
 
     Attributes:
-        kind: The recipe kind this runner installs by.
-        name: The module's name on the wire; empty for a runner that
-            serves a kind rather than one module.
-        download_failure_code: The code an install reports when the hub
-            could not hand its package down; empty keeps the hub's own.
+        runner: The name a recipe's ``runner`` chooses this runner by.
+        name: The module's name on the wire.
     """
 
-    kind = ""
+    runner = ""
     name = ""
-    download_failure_code = ""
 
     def __init__(self, *, platform, log=print, publish=None):
         """
@@ -86,66 +95,133 @@ class ModuleRunner:
         # The log sources a journal could not read, each warned of once.
         self._unread_sources: set = set()
 
-    def verify(self, resolved: dict) -> bool:
+    @property
+    def module_dir(self) -> str:
+        """The module's directory under the state root, where its software lands."""
+        join = joiner(self._platform.os_name)
+        return join(self._platform.agent_var_dir(), self.name)
+
+    def verify(self, recipe: dict) -> bool:
         """Whether the software is on this machine, by the runner's own check.
 
+        Only a ``builtin`` recipe and a module the state does not name are
+        judged by it; every other method's check is its recipe's.
+
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe, empty for a module the state does
+                not name.
 
         Returns:
             False for a runner with no check of its own.
         """
         return False
 
-    def observe(self, resolved: dict) -> dict:
-        """What is true of this module right now, acting on nothing.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Returns:
-            ``{"is_installed", "is_installing", "is_active", "details"}``:
-            the runner's own presence check, whether an install of its own
-            still runs, its unit's word, and its live details; the last
-            three are not read for software that is not there.
-        """
-        is_installed = bool(self.verify(resolved))
-        return {
-            "is_installed": is_installed,
-            "is_installing": bool(self.is_installing()) if is_installed else False,
-            "is_active": bool(self.is_active()) if is_installed else False,
-            "details": self.details(resolved) if is_installed else {},
-        }
-
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """What the surfaces show beside this module's row.
 
         Bounded live reads a person looks at, never anything a wording
         table words. Empty for a module with nothing to add.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe, empty for a module the state does
+                not name.
 
         Returns:
             The details, empty by default.
         """
         return {}
 
-    def install_component(
-        self, resolved: dict, component: dict, package_path: str
-    ) -> None:
-        """Unpack one component the hub handed down.
+    def take_recipe(self, recipe: dict) -> None:
+        """Take the recipe the state names for this module.
 
         Args:
-            resolved: The module as the hub resolved it.
-            component: ``{name, package_kind, directory, sha256}`` as the
-                recipe lists it.
-            package_path: The archive on local disk.
+            recipe: ``{runner, method, params}``.
+        """
+
+    def install(self, recipe: dict) -> None:
+        """Install what the recipe names by name: a ``hub`` entry's system packages.
+
+        Args:
+            recipe: The module's recipe.
 
         Raises:
-            NotImplementedError: For a runner that installs no component.
+            InstallError: If the package manager refuses.
+            PlatformUnsupportedError: If this platform installs nothing.
         """
-        raise NotImplementedError(f"{self.name}: installs no component")
+        packages = [str(name) for name in params_of(recipe).get("packages") or []]
+        if not packages:
+            return
+        output = self._platform.install_system_packages(packages)
+        if output.strip():
+            self._log(output.strip())
+
+    def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
+        """Put one artifact the hub handed down on the machine, as its kind says.
+
+        An archive is unpacked under its directory in the module's own and
+        sealed, an msi or a pkg is kept there and installed, a zstd file is
+        kept there, and a program is kept at :meth:`binary_path`; the
+        module's directory is then opened to every account.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: ``{name, kind, digest, directory}`` as the recipe
+                names it.
+            path: The received file, whose digest was checked.
+
+        Raises:
+            ModuleApplyError: ``install_failed {detail}`` for an artifact
+                this module cannot put anywhere or an archive that cannot be
+                unpacked.
+            InstallError: When the system's installer refuses a package.
+            OSError: When the module's directory cannot be written.
+        """
+        kind = str(artifact.get("kind", "") or "")
+        join = joiner(self._platform.os_name)
+        module_dir = self.module_dir
+        if is_archive_kind(kind):
+            unpack_artifact(artifact, path, module_dir=module_dir, join=join)
+        elif kind in AGENT_ARTIFACT_KEPT_SUFFIXES:
+            kept = keep_artifact(artifact, path, module_dir=module_dir, join=join)
+            if kind == AGENT_ARTIFACT_KIND_MSI:
+                log_path = os.path.splitext(kept)[0] + ".log"
+                installers.install_msi(kept, log_path=log_path)
+            elif kind == AGENT_ARTIFACT_KIND_PKG:
+                installers.install_pkg(kept)
+        elif kind == AGENT_ARTIFACT_KIND_BINARY:
+            place_binary(path, self.binary_path(recipe, artifact))
+            return
+        else:
+            name = str(artifact.get("name", "") or "")
+            raise ModuleApplyError(
+                "install_failed", {"detail": f"artifact {name!r} of kind {kind!r}"}
+            )
+        self._platform.open_to_accounts(module_dir)
+
+    def binary_path(self, recipe: dict, artifact: dict) -> str:
+        """Where a ``binary`` artifact is kept, as the module's page says.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: The artifact.
+
+        Returns:
+            The program's path.
+
+        Raises:
+            ModuleApplyError: ``install_failed`` for a module that keeps no
+                program of its own.
+        """
+        raise ModuleApplyError(
+            "install_failed", {"detail": f"{self.name} keeps no program"}
+        )
+
+    def uninstall(self, recipe: dict) -> None:
+        """Take the module's software off this machine; its data stays.
+
+        Args:
+            recipe: The module's recipe.
+        """
 
     def validate(self, config: dict) -> None:
         """Check a configuration before the hub stores it.
@@ -203,11 +279,11 @@ class ModuleRunner:
         """
         return {}
 
-    def absent_reason(self, resolved: dict) -> dict:
+    def absent_reason(self, recipe: dict) -> dict:
         """What is missing of software whose check fails while part of it is there.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"code", "params"}`` naming the missing part; empty for a

@@ -1,8 +1,8 @@
 """Package bytes, down one stream the agent opens.
 
-The agent opens ``package {module}`` for a module's package from the hub's
-cache, ``package {module, component}`` for one component of it, and
-``package {}`` for its own. It grants credit as it writes each
+The agent opens ``package {module, artifact, digest}`` for one artifact of
+a module, or of cc-switch, from the hub's cache, and ``package {}`` for its
+own. It grants credit as it writes each
 piece to a temporary file under its data directory, waits for the hub's
 close, and checks the ``sha256`` the close's params carry against what
 landed. Only a file that matches is handed over, renamed from its

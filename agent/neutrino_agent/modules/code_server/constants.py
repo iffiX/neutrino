@@ -1,18 +1,14 @@
 """Fixed values of the code-server module."""
 
-# The recipe kind, the module's name on the wire, and the title its
+# The runner a recipe names, the module's name on the wire, and the title its
 # services carry.
-CODE_SERVER_KIND = "code_server"
+CODE_SERVER_RUNNER = "code_server"
 CODE_SERVER_NAME = "code_server"
 CODE_SERVER_TITLE = "code-server"
-# What a failed install of the release reports.
-CODE_SERVER_DOWNLOAD_FAILED = "code_server_download_failed"
 
-# The release the hub sends is coder's standalone tarball, holding one
-# ``code-server-<version>-<system>-<arch>`` directory with its own Node.js.
-# The agent keeps it under the module's directory as ``release``.
-CODE_SERVER_PACKAGE_TAR = "tar"
-CODE_SERVER_RELEASE_PREFIX = "code-server-"
+# The release the hub sends is coder's standalone tarball with its own
+# Node.js, the artifact the agent unpacks under the module's directory as
+# ``release``.
 CODE_SERVER_RELEASE_DIR_NAME = "release"
 # Inside the release: the launcher, the Node.js it runs, and the file that
 # names the version.

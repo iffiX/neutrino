@@ -26,12 +26,8 @@ WSL_CODE = "{2D92E6AF-35B2-4109-893F-59E4A4F2D550}"
 PODMAN_CODE = "{E8D285D4-F069-44B9-BF8A-C41ED47B02B8}"
 DISM_HEAD = ["/English", "/Online", "/Enable-Feature"]
 DISM_TAIL = ["/All", "/NoRestart"]
-WSL_COMPONENT = {"name": "wsl", "package_kind": "msi", "directory": "wsl"}
-PODMAN_COMPONENT = {
-    "name": "installer",
-    "package_kind": "msi",
-    "directory": "installer",
-}
+WSL_ARTIFACT = {"name": "wsl", "kind": "msi", "directory": "wsl"}
+PODMAN_ARTIFACT = {"name": "podman", "kind": "msi", "directory": "podman"}
 
 
 class Platform(AgentPlatform):
@@ -131,15 +127,15 @@ class Rig:
             raise InstallError(f"msiexec exited {answer}", exit_code=answer)
         return answer == 3010
 
-    def keep(self, component):
-        directory = self.tmp_path / "state" / "podman" / component["directory"]
+    def keep(self, artifact):
+        directory = self.tmp_path / "state" / "podman" / artifact["directory"]
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"{component['name']}.msi"
+        path = directory / f"{artifact['name']}.msi"
         path.write_bytes(b"msi")
         return str(path)
 
-    def install(self, component):
-        self.applier.install_component(dict(component), self.keep(component))
+    def install(self, artifact):
+        self.applier.install_artifact(dict(artifact), self.keep(artifact))
 
     def mark(self):
         return self.tmp_path / "state" / "podman" / "reboot_mark"
@@ -200,8 +196,8 @@ def test_windows_gets_the_wsl_applier_with_podmans_program_under_program_files(
 
 
 def test_both_features_are_turned_on_once_before_the_first_msi(rig):
-    rig.install(WSL_COMPONENT)
-    rig.install(PODMAN_COMPONENT)
+    rig.install(WSL_ARTIFACT)
+    rig.install(PODMAN_ARTIFACT)
 
     assert [call[1:] for call in rig.dism_calls] == [
         DISM_HEAD + ["/FeatureName:VirtualMachinePlatform"] + DISM_TAIL,
@@ -216,7 +212,7 @@ def test_both_features_are_turned_on_once_before_the_first_msi(rig):
 def test_a_feature_that_owes_a_restart_writes_the_mark_with_this_boot(rig):
     rig.dism_codes["VirtualMachinePlatform"] = 3010
 
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
 
     assert rig.mark().read_text().strip() == "1000000"
     assert rig.applier.is_reboot_pending()
@@ -229,7 +225,7 @@ def test_a_feature_dism_refuses_ends_the_install_with_its_exit_code(
 ):
     rig.dism_codes["Microsoft-Windows-Subsystem-Linux"] = answer
 
-    refused = refusal(lambda: rig.install(WSL_COMPONENT))
+    refused = refusal(lambda: rig.install(WSL_ARTIFACT))
 
     assert refused.code == "windows_feature_failed"
     assert refused.params == {
@@ -245,7 +241,7 @@ def test_the_wsl_msi_runs_when_no_wsl_or_an_older_one_is_installed(rig, version)
     if not version:
         rig.products.clear()
 
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
 
     name, log_path, properties = rig.installs[0]
     assert name == "wsl.msi"
@@ -258,7 +254,7 @@ def test_the_wsl_msi_runs_when_no_wsl_or_an_older_one_is_installed(rig, version)
 def test_the_wsl_msi_is_skipped_at_the_pinned_version_or_newer(rig, version):
     rig.products[0]["version"] = version
 
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
 
     assert rig.installs == []
     assert len(rig.dism_calls) == 2
@@ -268,45 +264,45 @@ def test_another_wsl_answered_by_msiexec_counts_as_installed(rig):
     rig.products.clear()
     rig.install_answers["wsl.msi"] = 1638
 
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
 
     assert len(rig.installs) == 1
     assert "podman: another WSL is installed; its msi is not run" in rig.lines
 
 
 def test_podmans_msi_is_installed_for_every_account_on_wsl(rig):
-    rig.install(PODMAN_COMPONENT)
+    rig.install(PODMAN_ARTIFACT)
 
     assert rig.installs == [
         (
-            "installer.msi",
-            str(rig.tmp_path / "state" / "podman" / "installer" / "installer.log"),
+            "podman.msi",
+            str(rig.tmp_path / "state" / "podman" / "podman" / "podman.log"),
             ("ALLUSERS=1", "MACHINE_PROVIDER=wsl"),
         )
     ]
 
 
-@pytest.mark.parametrize("component", [PODMAN_COMPONENT, WSL_COMPONENT])
-def test_an_msi_that_fails_names_its_component_and_exit_code(rig, component):
+@pytest.mark.parametrize("artifact", [PODMAN_ARTIFACT, WSL_ARTIFACT])
+def test_an_msi_that_fails_names_its_artifact_and_exit_code(rig, artifact):
     rig.products.clear()
-    rig.install_answers[f"{component['name']}.msi"] = 1603
+    rig.install_answers[f"{artifact['name']}.msi"] = 1603
 
-    refused = refusal(lambda: rig.install(component))
+    refused = refusal(lambda: rig.install(artifact))
 
     assert refused.code == "podman_install_failed"
-    assert refused.params == {"component": component["name"], "exit_code": 1603}
+    assert refused.params == {"artifact": artifact["name"], "exit_code": 1603}
 
 
 def test_an_msi_that_owes_a_restart_writes_the_mark(rig):
-    rig.install_answers["installer.msi"] = 3010
+    rig.install_answers["podman.msi"] = 3010
 
-    rig.install(PODMAN_COMPONENT)
+    rig.install(PODMAN_ARTIFACT)
 
     assert rig.applier.is_reboot_pending()
 
 
-def test_a_component_that_is_not_an_msi_is_refused(rig):
-    image = {"name": "image", "package_kind": "tar_zst", "directory": "image"}
+def test_an_artifact_that_is_not_an_msi_is_refused(rig):
+    image = {"name": "image", "kind": "tar_zst", "directory": "image"}
 
     assert refusal(lambda: rig.install(image)).code == "install_failed"
     assert rig.dism_calls == []
@@ -323,7 +319,7 @@ def test_no_mark_owes_no_restart_whatever_servicing_holds(rig):
 
 def test_the_mark_holds_this_boot_and_goes_once_windows_restarted(rig):
     rig.dism_codes["VirtualMachinePlatform"] = 3010
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
     rig.boot[0] += 12.5
 
     assert rig.applier.is_reboot_pending()
@@ -338,7 +334,7 @@ def test_the_mark_holds_this_boot_and_goes_once_windows_restarted(rig):
 
 def test_a_restart_servicing_still_waits_for_keeps_the_mark_after_a_boot(rig):
     rig.dism_codes["Microsoft-Windows-Subsystem-Linux"] = 3010
-    rig.install(WSL_COMPONENT)
+    rig.install(WSL_ARTIFACT)
     rig.boot[0] += 3600
     rig.is_key = True
 
@@ -351,8 +347,8 @@ def test_a_restart_servicing_still_waits_for_keeps_the_mark_after_a_boot(rig):
 
 
 def test_a_clock_set_back_is_still_the_same_boot(rig):
-    rig.install_answers["installer.msi"] = 3010
-    rig.install(PODMAN_COMPONENT)
+    rig.install_answers["podman.msi"] = 3010
+    rig.install(PODMAN_ARTIFACT)
     rig.boot[0] -= 600
 
     assert rig.applier.is_reboot_pending()

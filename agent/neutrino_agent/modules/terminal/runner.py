@@ -22,7 +22,7 @@ from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.terminal.config import TerminalConfig
-from neutrino_agent.modules.terminal.constants import TERMINAL_KIND, TERMINAL_NAME
+from neutrino_agent.modules.terminal.constants import TERMINAL_RUNNER, TERMINAL_NAME
 
 
 def kept_settings(path: str) -> dict:
@@ -49,7 +49,7 @@ def kept_settings(path: str) -> dict:
 class TerminalModuleRunner(ModuleRunner):
     """Holds the account and the shell program a new shell runs."""
 
-    kind = TERMINAL_KIND
+    runner = TERMINAL_RUNNER
     name = TERMINAL_NAME
 
     def __init__(self, *, platform, log=print, publish=None, state_path: str = ""):
@@ -68,11 +68,11 @@ class TerminalModuleRunner(ModuleRunner):
         self._lock = threading.Lock()
         self._config: "TerminalConfig | None" = None
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether the module is on the machine.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True: the agent carries it.

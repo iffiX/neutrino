@@ -38,6 +38,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_WINDOWS_STOP_TIMEOUT_S,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
+from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.account_service import write_if_changed
 
@@ -192,9 +193,7 @@ class GiteaWindowsApplier:
         os.makedirs(self.module_dir, exist_ok=True)
         if self._service_exists():
             self._stop_and_wait()
-        temporary = self.binary_path + ".new"
-        shutil.copyfile(binary_path, temporary)
-        os.replace(temporary, self.binary_path)
+        place_binary(binary_path, self.binary_path)
         command = _service_command(self.binary_path, self.conf_path)
         if self._service_exists():
             self._run(["sc.exe", "config", GITEA_WINDOWS_SERVICE, "binPath=", command])

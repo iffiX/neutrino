@@ -553,30 +553,6 @@ class LinuxPlatform(AgentPlatform):
                 return value
         return ""
 
-    def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
-        """Install one downloaded package.
-
-        Args:
-            path: The downloaded file.
-            package_kind: The package kind.
-            entry: The manifest's platform entry.
-
-        Raises:
-            InstallError: If the installer fails or the kind is unknown.
-        """
-        installers.install_package(path, package_kind=package_kind, entry=entry)
-
-    def uninstall_package(self, command: str) -> None:
-        """Remove a package the way its manifest says to.
-
-        Args:
-            command: The manifest's removal command.
-
-        Raises:
-            InstallError: If the removal fails.
-        """
-        installers.uninstall_package(command)
-
     def _account_env(self, account: str) -> "dict | None":
         """The environment a stepped-down child runs with.
 

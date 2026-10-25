@@ -1,14 +1,15 @@
-"""What VS Code adds to the shared runner: the CLI's unpack, each server's service.
+"""What VS Code adds to the shared runner: each server's service.
 
 The CLI comes from the hub's package stream as the archive Microsoft
-publishes, with the one executable inside, and lands in the module's own
-directory. Each instance is one account's ``code serve-web`` on its port,
-reached with the connection token the hub generated, which the CLI checks
-itself, so the module names no forwarder rule. On Linux the server reads
+publishes, with the one executable inside, and the shared unpack puts it
+directly in the module's own directory. Each instance is one account's
+``code serve-web`` on its port, reached with the connection token the hub
+generated, which the CLI checks itself, so the module names no forwarder
+rule. On Linux the server reads
 its address, port and token file from an environment file beside the token;
 on macOS and Windows the command line carries them.
 
-Not pure: writes the CLI and, on Linux, the inotify limits.
+Not pure: writes, on Linux, the inotify limits.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -18,10 +19,7 @@ from __future__ import annotations
 import contextlib
 import ntpath
 import os
-import tarfile
-import zipfile
 
-from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     AccountService,
@@ -31,14 +29,12 @@ from neutrino_agent.modules.shared.instances import InstanceHooks
 from neutrino_agent.modules.vscode.config import VscodeConfig, VscodeInstance
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
-    VSCODE_KIND,
+    VSCODE_RUNNER,
     VSCODE_LINUX_SYSCTL_FLOORS,
     VSCODE_LINUX_SYSCTL_PATH,
     VSCODE_LINUX_SYSCTL_PROC_DIR,
     VSCODE_LOOPBACK_ADDRESS,
     VSCODE_NAME,
-    VSCODE_PACKAGE_TAR,
-    VSCODE_PACKAGE_ZIP,
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_TITLE,
     VSCODE_TOKEN_DIR_NAME,
@@ -51,59 +47,12 @@ PORT_VARIABLE = "VSCODE_PORT"
 TOKEN_FILE_VARIABLE = "VSCODE_TOKEN_FILE"
 
 
-def unpack_cli(path: str, *, package_kind: str, directory: str, name: str) -> str:
-    """Take the CLI out of its archive into its directory.
-
-    Args:
-        path: The archive on disk.
-        package_kind: ``tar`` or ``zip``.
-        directory: Where the CLI goes; made readable by every account.
-        name: The CLI's file name inside the archive.
-
-    Returns:
-        The CLI's path.
-
-    Raises:
-        InstallError: When the kind is unknown, the archive cannot be read,
-            or it holds no file of that name.
-    """
-    try:
-        payload = _read_member(path, package_kind, name)
-    except (OSError, tarfile.TarError, zipfile.BadZipFile) as error:
-        raise InstallError(f"cannot read the VS Code archive: {error}") from error
-    os.makedirs(directory, mode=0o755, exist_ok=True)
-    target = os.path.join(directory, name)
-    temporary = target + ".new"
-    with open(temporary, "wb") as stream:
-        stream.write(payload)
-    os.chmod(temporary, 0o755)
-    os.replace(temporary, target)
-    return target
-
-
-def _read_member(path: str, package_kind: str, name: str) -> bytes:
-    """The bytes of the one file of that name, wherever it sits in the archive."""
-    if package_kind == VSCODE_PACKAGE_TAR:
-        with tarfile.open(path, "r:*") as archive:
-            for member in archive.getmembers():
-                if member.isfile() and os.path.basename(member.name) == name:
-                    return archive.extractfile(member).read()
-    elif package_kind == VSCODE_PACKAGE_ZIP:
-        with zipfile.ZipFile(path) as archive:
-            for member in archive.namelist():
-                if member.rsplit("/", 1)[-1] == name:
-                    return archive.read(member)
-    else:
-        raise InstallError(f"unknown package kind {package_kind!r}")
-    raise InstallError(f"the VS Code archive holds no {name}")
-
-
 class VscodeHooks(InstanceHooks):
     """VS Code's part of the shared runner."""
 
     name = VSCODE_NAME
     title = VSCODE_TITLE
-    kind = VSCODE_KIND
+    runner = VSCODE_RUNNER
     instance_class = VscodeInstance
     record_fields = ("account", "port", "host")
     is_forwarded = False
@@ -156,24 +105,6 @@ class VscodeHooks(InstanceHooks):
     def verify(self) -> bool:
         """Whether the CLI's file exists."""
         return os.path.isfile(self.cli_path)
-
-    def install(self, package_path: str, package_kind: str) -> None:
-        """Unpack the CLI the hub handed down.
-
-        Args:
-            package_path: The archive on local disk.
-            package_kind: ``tar`` or ``zip``.
-
-        Raises:
-            InstallError: When the archive is not one the CLI comes in.
-            OSError: When the CLI's directory cannot be written.
-        """
-        unpack_cli(
-            package_path,
-            package_kind=package_kind,
-            directory=self.machine.module_dir,
-            name=VSCODE_CLI_NAMES[self._os_name],
-        )
 
     def prepare_module(self) -> list:
         """Raise a Linux machine's inotify limits to the module's floors.

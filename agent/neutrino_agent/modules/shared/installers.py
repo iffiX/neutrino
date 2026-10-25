@@ -1,9 +1,8 @@
 """Installing a downloaded package, the way this machine installs things.
 
-One function per package kind, each doing what the machine's own tooling
-does unattended: dpkg with an apt fix-up on Debian family, dnf or yum on
-RHEL family, msiexec on Windows once the Windows Installer is free, and
-``installer`` for a macOS pkg.
+One function per artifact kind, each doing what the machine's own tooling
+does unattended: msiexec on Windows once the Windows Installer is free, and
+``installer`` for a macOS pkg; and the shell steps a recipe names.
 
 Not pure: runs installers.
 """
@@ -13,7 +12,6 @@ Not pure: runs installers.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 
 from neutrino_agent.constants import (
@@ -59,25 +57,6 @@ if ($code -eq {busy}) {{ $code = Invoke-Install }}
 # errors stay on standard error.
 _MSIEXEC_RUN_HEAD = "$ErrorActionPreference = 'Continue'\n"
 _MSIEXEC_RUN_TAIL = "if ($code -isnot [int]) { exit 1 }\nexit $code\n"
-
-
-def install_package(path: str, *, package_kind: str, entry: dict) -> None:
-    """Install one downloaded package.
-
-    Args:
-        path: The downloaded file.
-        package_kind: ``deb`` or ``rpm``.
-        entry: The manifest's platform entry.
-
-    Raises:
-        InstallError: If the installer fails or the kind is unknown.
-    """
-    if package_kind == "deb":
-        _install_deb(path)
-    elif package_kind == "rpm":
-        _install_rpm(path)
-    else:
-        raise InstallError(f"unknown package kind {package_kind!r}")
 
 
 def run_checked(command: list, *, timeout_s: int = COMMAND_TIMEOUT_S) -> str:
@@ -273,37 +252,6 @@ def run_shell(command: str, *, timeout_s: int = INSTALL_TIMEOUT_S) -> str:
     return result.stdout or ""
 
 
-def uninstall_package(command: str) -> None:
-    """Remove a package the way its manifest says to.
-
-    Every platform removes things differently — apt, dnf, an uninstaller the
-    vendor left behind, or deleting an app bundle — so the manifest carries
-    the command rather than this guessing from the package kind.
-
-    Args:
-        command: The manifest's uninstall command for this platform.
-
-    Raises:
-        InstallError: If the uninstall fails.
-    """
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=INSTALL_TIMEOUT_S,
-            env=_apt_env(),
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"uninstall could not run: {error}")
-    if result.returncode != 0:
-        output = (result.stderr or result.stdout or "").strip()
-        raise InstallError(
-            f"uninstall failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
-        )
-
-
 def _run_msiexec(arguments: str) -> int:
     """msiexec's exit code, 0 or 3010, run through :func:`msiexec_script`."""
     script = _MSIEXEC_RUN_HEAD + msiexec_script(arguments) + _MSIEXEC_RUN_TAIL
@@ -332,34 +280,3 @@ def _apt_env() -> dict:
     env = dict(os.environ)
     env["DEBIAN_FRONTEND"] = "noninteractive"
     return env
-
-
-def _install_deb(path: str) -> None:
-    # dpkg first, then apt to pull in whatever it named as missing: a vendor
-    # package usually depends on libraries the machine may not have, and
-    # `apt install ./file.deb` refuses relative paths on older releases.
-    result = subprocess.run(
-        ["dpkg", "-i", path],
-        capture_output=True,
-        text=True,
-        timeout=INSTALL_TIMEOUT_S,
-        env=_apt_env(),
-    )
-    if result.returncode != 0:
-        fix = subprocess.run(
-            ["apt-get", "-f", "install", "-y"],
-            capture_output=True,
-            text=True,
-            timeout=INSTALL_TIMEOUT_S,
-            env=_apt_env(),
-        )
-        if fix.returncode != 0:
-            output = (result.stderr or "") + (fix.stderr or "")
-            raise InstallError(
-                f"dpkg failed: {output.strip()[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}"
-            )
-
-
-def _install_rpm(path: str) -> None:
-    manager = "dnf" if shutil.which("dnf") else "yum"
-    run_checked([manager, "install", "-y", path], timeout_s=INSTALL_TIMEOUT_S)

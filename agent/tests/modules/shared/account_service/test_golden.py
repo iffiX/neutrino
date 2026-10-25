@@ -2,10 +2,11 @@
 
 The fixtures under ``golden/`` were rendered by the code before the shared
 account service layer existed, and the hooks of each module through the
-layer render the same texts now, with one change: CloudCLI's Node.js is its
-``node`` component, so every path that named ``node-v<version>-<os>-<arch>``
-names ``node``. Codeg's were rendered by its hooks through the layer when
-the module arrived. What these pin: the unit templates, the environment
+layer render the same texts now, with two changes: CloudCLI's Node.js is
+its ``node`` artifact, so every path that named
+``node-v<version>-<os>-<arch>`` names ``node``, and its npm runs with the
+registry the agent chose as ``--registry`` on its command line. Codeg's were
+rendered by its hooks through the layer when the module arrived. What these pin: the unit templates, the environment
 files, the LaunchDaemon plists, the Windows task arguments and scripts, and
 the install commands each module produces for fixed inputs.
 """
@@ -29,6 +30,7 @@ from neutrino_agent.modules.shared.account_service import darwin as darwin_layer
 from neutrino_agent.modules.shared.account_service import linux as linux_layer
 from neutrino_agent.modules.shared.account_service import windows as windows_layer
 from neutrino_agent.modules.shared.instances import NOBODY, TEMPLATE_ACCOUNT
+from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
@@ -43,7 +45,7 @@ MAC_CONFIG = "/Library/Application Support/Neutrino/agent/config"
 WIN_STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 WIN_CONFIG = "C:\\ProgramData\\Neutrino\\agent\\config"
 WIN_HOME = "C:\\Users\\ann"
-# The node component's directory, where the hub's archive lands without its
+# The node artifact's directory, where the hub's archive lands without its
 # own top directory.
 LINUX_NODE_DIR = "node"
 MAC_NODE_DIR = "node"
@@ -67,15 +69,44 @@ CLOUDCLI_INSTANCE = CloudcliConfig.from_dict(
 CLOUDCLI_RECORD = {"upstream_port": 41234, "database": "auth.db"}
 CLOUDCLI_CONFIG = CloudcliConfig.from_dict(
     {
-        "npm_registry": "https://registry.npmmirror.com",
-        "npm_environment": {
-            "npm_config_better_sqlite3_binary_host": "https://m.example/bs3"
-        },
         "instances": [
             {"account": "ann", "port": 3001, "web_password": "p", "token_secret": "s"}
         ],
     }
 )
+CLOUDCLI_INTEGRITY = "sha512-pinned"
+CLOUDCLI_RECIPE = {
+    "runner": "cloudcli",
+    "method": "hub",
+    "params": {
+        "version": "1.37.3",
+        "artifacts": [
+            {
+                "name": "cloudcli",
+                "kind": "npm",
+                "package": "@cloudcli-ai/cloudcli",
+                "digest": CLOUDCLI_INTEGRITY,
+                "sources": ["https://registry.npmmirror.com"],
+                "hosts": {
+                    "npm_config_better_sqlite3_binary_host": ["https://m.example/bs3"]
+                },
+            }
+        ],
+    },
+}
+
+
+def answering_probe(url, *, source="", is_error_answer=False):
+    """Every source answers at once, a registry with the pinned integrity."""
+    body = json.dumps({"dist": {"integrity": CLOUDCLI_INTEGRITY}}).encode()
+    return SourceProbe(source=source or url, is_answered=True, speed=1.0, body=body)
+
+
+def cloudcli_hooks(os_name, machine, **kwargs):
+    """CloudCLI's hooks bound to a machine, holding the recipe, every source answering."""
+    hooks = bound(CloudcliHooks, os_name, machine, probe=answering_probe, **kwargs)
+    hooks.take_recipe(CLOUDCLI_RECIPE)
+    return hooks
 
 
 class Platform(AgentPlatform):
@@ -301,14 +332,10 @@ def test_cloudcli_windows_install_script_and_arguments(tmp_path):
     machine = cloudcli_machine(
         "windows", WIN_CONFIG, tmp_path, WIN_NODE_DIR, powershell=host, run=granted
     )
-    hooks = bound(CloudcliHooks, "windows", machine)
+    hooks = cloudcli_hooks("windows", machine)
     texts = golden_json("cloudcli_windows.json")
     config = CloudcliConfig.from_dict(
         {
-            "npm_registry": "https://registry.npmmirror.com",
-            "npm_environment": {
-                "npm_config_better_sqlite3_binary_host": "https://m.example/bs3"
-            },
             "instances": [
                 {
                     "account": "ann",
@@ -433,7 +460,7 @@ def test_cloudcli_linux_install_commands(tmp_path):
         lookup_account=lambda account: None,
         run=recorder,
     )
-    hooks = bound(CloudcliHooks, "linux", machine)
+    hooks = cloudcli_hooks("linux", machine)
     home = os.path.join(root, "home", "ann")
 
     hooks.prepare(
@@ -460,7 +487,7 @@ def test_cloudcli_darwin_install_commands(tmp_path):
         lookup_account=lambda account: None,
     )
     account = AccountRecorder()
-    hooks = bound(CloudcliHooks, "darwin", machine, run_as=account)
+    hooks = cloudcli_hooks("darwin", machine, run_as=account)
     home = os.path.join(root, "Users", "ann")
 
     hooks.prepare(

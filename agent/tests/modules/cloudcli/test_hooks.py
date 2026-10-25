@@ -1,10 +1,15 @@
 """CloudCLI's hooks: Node.js, each account's install, the service, the login.
 
-What these pin: a tarball or a zip with one Node.js directory lands whole
-under the module's root, read-only, replacing the one before, and an
-archive that is not one is ``cloudcli_node_download_failed``; npm runs as
-the account with its cache inside the app directory and an empty file as
-the account's configuration, as a transient service that may take
+What these pin: the node artifact, a tarball or a zip with one Node.js
+directory, lands through the shared unpack under the module's root,
+read-only, replacing the one before, and an older build's directory goes;
+the npm artifact's registries are ranked and the first naming the pinned
+integrity is used with ``--registry``, each host of an npm setting is set
+in turn, a failure runs again on the next registry or host and the last
+failure is reported, and no registry naming the integrity is
+``download_failed`` naming each registry and why; npm runs as the account
+with its cache inside the app directory and an empty file as the
+account's configuration, as a transient service that may take
 ``OOMPolicy=stop`` on Linux and as the account's own process on a Mac, and a
 failure names its step; on Windows an install runs as a task left running,
 the account reads installing with the install's log meanwhile, and an
@@ -59,6 +64,8 @@ from neutrino_agent.modules.shared.account_service import (
     ServiceMachine,
 )
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder, mint_token
+from neutrino_agent.modules.shared.package import unpack_artifact
+from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 from tests.conftest import RecordingHost
@@ -74,13 +81,54 @@ INSTANCE = {
     "token_secret": SECRET,
     "password": "login-pw",
 }
-CONFIG = CloudcliConfig.from_dict(
-    {
-        "npm_registry": "https://registry.npmmirror.com",
-        "npm_environment": {"npm_config_better_sqlite3_binary_host": "https://m/bs3"},
-        "instances": [INSTANCE],
+CONFIG = CloudcliConfig.from_dict({"instances": [INSTANCE]})
+INTEGRITY = "sha512-pinned"
+REGISTRY = "https://registry.npmmirror.com"
+HOST = "https://m/bs3"
+HOST_SETTING = "npm_config_better_sqlite3_binary_host"
+
+
+def recipe(registries=(REGISTRY,), hosts=(HOST,)) -> dict:
+    """CloudCLI's recipe with its npm artifact naming these sources."""
+    return {
+        "runner": "cloudcli",
+        "method": "hub",
+        "params": {
+            "version": "1.37.3",
+            "artifacts": [
+                {"name": "node", "kind": "tar_gz", "directory": "node"},
+                {
+                    "name": "cloudcli",
+                    "kind": "npm",
+                    "package": "@cloudcli-ai/cloudcli",
+                    "digest": INTEGRITY,
+                    "sources": list(registries),
+                    "hosts": {HOST_SETTING: list(hosts)} if hosts else {},
+                },
+            ],
+        },
     }
-)
+
+
+class Probe:
+    """Sources answering as set: each registry's integrity and speed, each host's speed."""
+
+    def __init__(self, integrities=None, speeds=None):
+        self.integrities = dict(integrities or {})
+        self.speeds = dict(speeds or {})
+        self.asked: list = []
+
+    def __call__(self, url, *, source="", is_error_answer=False):
+        self.asked.append(url)
+        source = source or url
+        speed = self.speeds.get(source, 1.0)
+        if speed is None:
+            return SourceProbe(source=source, reason="unreachable", detail="refused")
+        integrity = self.integrities.get(source, INTEGRITY)
+        body = json.dumps({"dist": {"integrity": integrity}}).encode()
+        return SourceProbe(source=source, is_answered=True, speed=speed, body=body)
+
+
 ANN = AccountEntry(1000, 1000, "/home/ann", "/bin/bash")
 
 
@@ -110,9 +158,11 @@ def land_package(app: str) -> None:
         stream.write('{"version": "1.37.3"}')
 
 
-def hooks_for(os_name, module_dir, **kwargs) -> CloudcliHooks:
+def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
     tools = {key: kwargs.pop(key) for key in ("run", "powershell") if key in kwargs}
+    kwargs.setdefault("probe", Probe())
     hooks = CloudcliHooks(platform=Platform(os_name), log=lambda line: None, **kwargs)
+    hooks.take_recipe(held if held is not None else recipe())
     join = ntpath.join if os_name == "windows" else os.path.join
     machine = ServiceMachine(
         os_name=os_name,
@@ -139,11 +189,25 @@ def with_node(tmp_path, os_name="linux", directory="node") -> str:
 # --- Node.js ---
 
 
-def test_an_install_lands_node_under_node_without_the_archives_top_directory(tmp_path):
+NODE_ARTIFACT = {"name": "node", "kind": "tar_gz", "directory": "node"}
+
+
+def unpack(hooks, archive, kind="tar_gz"):
+    """The node artifact through the shared unpack, then the hooks' tidy."""
+    unpack_artifact(
+        dict(NODE_ARTIFACT, kind=kind),
+        archive,
+        module_dir=hooks.machine.module_dir,
+        join=os.path.join,
+    )
+    hooks.after_install()
+
+
+def test_node_lands_under_node_without_the_archives_top_directory(tmp_path):
     hooks = hooks_for("linux", str(tmp_path / "cloudcli"))
     assert hooks.verify() is False
 
-    hooks.install(tarball(tmp_path / "node.tar.gz"), "tar")
+    unpack(hooks, tarball(tmp_path / "node.tar.gz"))
 
     node = tmp_path / "cloudcli" / "node"
     assert sorted(os.listdir(tmp_path / "cloudcli")) == ["node"]
@@ -163,11 +227,9 @@ def test_a_new_node_replaces_the_one_before_and_an_older_builds_directory_goes(
     stale = tmp_path / "cloudcli" / "node-v22.22.0-linux-x64" / "bin"
     stale.mkdir(parents=True)
     (stale / "node").write_text("")
-    hooks.install(tarball(tmp_path / "a.tar.gz", extra=[(f"{NODE}/old", b"x")]), "tar")
-    hooks.after_install()
+    unpack(hooks, tarball(tmp_path / "a.tar.gz", extra=[(f"{NODE}/old", b"x")]))
 
-    hooks.install(tarball(tmp_path / "b.tar.gz", top="node-v22.24.0-linux-x64"), "tar")
-    hooks.after_install()
+    unpack(hooks, tarball(tmp_path / "b.tar.gz", top="node-v22.24.0-linux-x64"))
 
     assert os.listdir(tmp_path / "cloudcli") == ["node"]
     assert not (tmp_path / "cloudcli" / "node" / "old").exists()
@@ -190,60 +252,33 @@ def test_a_zip_lands_the_same(tmp_path):
         archive.writestr("node-v22.23.3-win-x64/node.exe", b"MZ")
     hooks = hooks_for("windows", str(tmp_path / "cloudcli"))
 
-    hooks.install(str(path), "zip")
+    unpack(hooks, str(path), kind="zip")
 
     node = str(tmp_path / "cloudcli" / "node")
     assert os.path.isfile(os.path.join(node, "node.exe"))
     assert hooks.node == ntpath.join(node, "node.exe")
 
 
-@pytest.mark.parametrize("kind", ["tar", "zip", "msi"])
-def test_an_archive_that_is_not_one_is_a_failed_node_download(tmp_path, kind):
-    path = tmp_path / "junk"
-    path.write_bytes(b"<html>")
-
-    with pytest.raises(ModuleApplyError) as caught:
-        hooks_for("linux", str(tmp_path / "c")).install(str(path), kind)
-
-    assert caught.value.code == "cloudcli_node_download_failed"
-
-
-def test_an_archive_without_node_or_outside_itself_is_refused(tmp_path):
-    hooks = hooks_for("linux", str(tmp_path / "c"))
-    with tarfile.open(tmp_path / "x.tar.gz", "w:gz") as archive:
-        info = tarfile.TarInfo("README")
-        info.size = 1
-        archive.addfile(info, io.BytesIO(b"x"))
-
-    with pytest.raises(ModuleApplyError) as caught:
-        hooks.install(str(tmp_path / "x.tar.gz"), "tar")
-    assert caught.value.code == "cloudcli_node_download_failed"
-    assert not (tmp_path / "c" / "node").exists()
-
-    with pytest.raises(ModuleApplyError):
-        hooks.install(
-            tarball(tmp_path / "y.tar.gz", extra=[("../escape", b"x")]), "tar"
-        )
-    assert not (tmp_path / "escape").exists()
-
-
 # --- npm ---
 
 
-def test_npm_keeps_to_the_app_directory_and_the_registry_the_state_names():
+def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
     app = "/home/ann/.local/share/neutrino/agent/cloudcli/app"
 
-    named = npm_environment(app, registry="https://registry.npmmirror.com")
+    named = npm_environment(app)
 
-    assert named["npm_config_registry"] == "https://registry.npmmirror.com"
-    assert "npm_config_registry" not in npm_environment(app)
+    assert "npm_config_registry" not in named
     assert named["npm_config_cache"] == app + "/.npm"
     assert named["npm_config_userconfig"] == app + "/.npmrc"
-    assert npm_arguments(app) == [
+    assert npm_arguments(
+        app, package="@cloudcli-ai/cloudcli", version="1.37.3", registry=REGISTRY
+    ) == [
         "install",
         "@cloudcli-ai/cloudcli@1.37.3",
         "--prefix",
         app,
+        "--registry",
+        REGISTRY,
     ]
     held = npm_environment(
         app, extra={"npm_config_x": "y", "npm_config_cache": "/elsewhere"}
@@ -358,10 +393,17 @@ def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_pa
     assert install[:6] == ["runuser", "-u", "ann", "--", "env", "-i"]
     assert f"npm_config_cache={app}/.npm" in install
     assert f"npm_config_userconfig={app}/.npmrc" in install
-    assert "npm_config_registry=https://registry.npmmirror.com" in install
+    assert not any(part.startswith("npm_config_registry=") for part in install)
     assert "npm_config_better_sqlite3_binary_host=https://m/bs3" in install
     assert f"HOME={entry.home}" in install
-    assert install[-4:] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix", app]
+    assert install[-6:] == [
+        "install",
+        "@cloudcli-ai/cloudcli@1.37.3",
+        "--prefix",
+        app,
+        "--registry",
+        REGISTRY,
+    ]
     assert 'rm -rf "$0/node_modules"' in install[install.index("sh") + 2]
     assert machine.installing_seen == [frozenset({"ann"})]
     assert hooks.installing == frozenset()
@@ -414,6 +456,198 @@ def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(linux):
     ] in machine.calls
 
 
+# --- the registries and the hosts ---
+
+
+class Attempts:
+    """npm and the native check as the account on Linux, answered per registry and host."""
+
+    def __init__(self, hooks, failures):
+        self.hooks = hooks
+        self.failures = dict(failures)
+        self.tried: list = []
+        self.calls: list = []
+
+    def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
+        self.calls.append(list(command))
+        if command[:2] == ["systemctl", "show"]:
+            return CommandResult(list(command), 0, "success\n", "")
+        if command[0] == "systemd-run":
+            registry = command[command.index("--registry") + 1]
+            host = next(
+                (
+                    part.split("=", 1)[1]
+                    for part in command
+                    if part.startswith(HOST_SETTING + "=")
+                ),
+                "",
+            )
+            self.tried.append((registry, host))
+            output = self.failures.get((registry, host), "")
+            if output:
+                return CommandResult(list(command), 1, output, "")
+            land_package(command[command.index("--prefix") + 1])
+        return CommandResult(list(command), 0, "", "")
+
+
+def attempted(tmp_path, held, probe, failures):
+    machine = Attempts(None, failures)
+    hooks = hooks_for("linux", with_node(tmp_path), run=machine, held=held, probe=probe)
+    entry = AccountEntry(1000, 1000, str(tmp_path / "home" / "ann"), "/bin/bash")
+    return hooks, machine, entry
+
+
+def test_the_fastest_registry_naming_the_integrity_is_used_with_the_fastest_host(
+    tmp_path,
+):
+    probe = Probe(
+        integrities={"https://wrong.example": "sha512-other"},
+        speeds={
+            "https://wrong.example": 100.0,
+            "https://slow.example": 1.0,
+            "https://fast.example": 10.0,
+            "https://h-slow": 1.0,
+            "https://h-fast": 10.0,
+        },
+    )
+    held = recipe(
+        registries=(
+            "https://slow.example",
+            "https://wrong.example",
+            "https://fast.example",
+        ),
+        hosts=("https://h-slow", "https://h-fast"),
+    )
+    hooks, machine, entry = attempted(tmp_path, held, probe, {})
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert machine.tried == [("https://fast.example", "https://h-fast")]
+    assert "https://wrong.example/@cloudcli-ai%2Fcloudcli/1.37.3" in probe.asked
+
+
+def test_a_failed_install_runs_again_on_the_next_registry_and_host(tmp_path):
+    probe = Probe(speeds={"https://a.example": 10.0, "https://b.example": 1.0})
+    held = recipe(registries=("https://b.example", "https://a.example"), hosts=(HOST,))
+    failures = {("https://a.example", HOST): "npm error code ECONNRESET"}
+    hooks, machine, entry = attempted(tmp_path, held, probe, failures)
+
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == [
+        "installed CloudCLI for ann"
+    ]
+
+    assert machine.tried == [("https://a.example", HOST), ("https://b.example", HOST)]
+
+
+def test_a_native_module_that_fails_on_one_host_runs_again_with_the_next(tmp_path):
+    probe = Probe(speeds={"https://h1": 10.0, "https://h2": 1.0})
+    held = recipe(hosts=("https://h2", "https://h1"))
+    failures = {
+        (REGISTRY, "https://h1"): "prebuild-install warn\ngyp ERR! better-sqlite3"
+    }
+    hooks, machine, entry = attempted(tmp_path, held, probe, failures)
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert machine.tried == [(REGISTRY, "https://h1"), (REGISTRY, "https://h2")]
+
+
+def test_the_last_failure_is_the_one_reported(tmp_path):
+    probe = Probe(speeds={"https://a.example": 10.0, "https://b.example": 1.0})
+    held = recipe(registries=("https://a.example", "https://b.example"), hosts=())
+    failures = {
+        ("https://a.example", ""): "npm error code ECONNRESET",
+        ("https://b.example", ""): "npm error code E404",
+    }
+    hooks, machine, entry = attempted(tmp_path, held, probe, failures)
+
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.code == "cloudcli_npm_install_failed"
+    assert caught.value.params["detail"] == "npm error code E404"
+    assert machine.tried == [("https://a.example", ""), ("https://b.example", "")]
+
+
+def test_no_registry_naming_the_integrity_is_download_failed(tmp_path):
+    probe = Probe(
+        integrities={"https://a.example": "sha512-other"},
+        speeds={"https://b.example": None},
+    )
+    held = recipe(registries=("https://a.example", "https://b.example"))
+    hooks, machine, entry = attempted(tmp_path, held, probe, {})
+
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.code == "download_failed"
+    assert caught.value.params == {
+        "file": "@cloudcli-ai/cloudcli@1.37.3",
+        "sources": [
+            {
+                "source": "https://a.example",
+                "reason": "digest_mismatch",
+                "detail": "the registry names sha512-other",
+            },
+            {
+                "source": "https://b.example",
+                "reason": "unreachable",
+                "detail": "refused",
+            },
+        ],
+    }
+    assert machine.tried == []
+
+
+def test_a_recipe_naming_no_npm_package_is_download_failed(tmp_path):
+    hooks, machine, entry = attempted(
+        tmp_path, {"runner": "cloudcli", "method": "hub", "params": {}}, Probe(), {}
+    )
+
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.code == "download_failed"
+    assert machine.tried == []
+
+
+def test_the_windows_script_tries_each_registry_and_host_in_turn(windows):
+    hooks, host, entry = windows
+    hooks._probe = Probe(speeds={"https://a.example": 10.0, "https://h1": 10.0})
+    hooks.take_recipe(
+        recipe(
+            registries=("https://b.example", "https://a.example"),
+            hosts=("https://h2", "https://h1"),
+        )
+    )
+
+    hooks.prepare_module()
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    script = hooks.machine.module_dir + "\\run\\install_ann.cmd"
+    with open(script, encoding="utf-8") as stream:
+        lines = stream.read().splitlines()
+    tried = [
+        line.split("--registry ", 1)[1].split(" ", 1)[0]
+        for line in lines
+        if "--registry" in line
+    ]
+    hosts = [line for line in lines if line.startswith(f'set "{HOST_SETTING}=')]
+    assert tried == [
+        "https://a.example",
+        "https://a.example",
+        "https://b.example",
+        "https://b.example",
+    ]
+    assert hosts == [
+        f'set "{HOST_SETTING}=https://h1"',
+        f'set "{HOST_SETTING}=https://h2"',
+        f'set "{HOST_SETTING}=https://h1"',
+        f'set "{HOST_SETTING}=https://h2"',
+    ]
+    assert lines[-1] == "exit /b %NEUTRINO_INSTALL_RESULT%"
+
+
 # --- the install on a Mac ---
 
 
@@ -433,7 +667,8 @@ def test_a_mac_install_runs_npm_as_the_account(tmp_path):
 
     install, check = calls
     assert install[0] is entry
-    assert install[1][-4:-1] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix"]
+    assert install[1][-6:-3] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix"]
+    assert install[1][-2:] == ["--registry", REGISTRY]
     assert install[2]["PATH"].endswith("node/bin:/usr/bin:/bin:/usr/sbin:/sbin")
     assert install[2]["npm_config_userconfig"].endswith("cloudcli/app/.npmrc")
     assert install[3] == 1800
@@ -465,7 +700,9 @@ def install_task(state, last_result=0):
 def ready(monkeypatch):
     """Whether the app directory holds CloudCLI and its native modules."""
     held = {"is_ready": False}
-    monkeypatch.setattr(hooks_module, "is_app_ready", lambda app: held["is_ready"])
+    monkeypatch.setattr(
+        hooks_module, "is_app_ready", lambda app, version: held["is_ready"]
+    )
     return held
 
 
@@ -505,7 +742,8 @@ def test_an_install_is_started_as_a_task_and_left_to_run(windows):
     with open(script, encoding="utf-8") as stream:
         text = stream.read()
     assert "@cloudcli-ai/cloudcli@1.37.3" in text
-    assert 'set "npm_config_registry=https://registry.npmmirror.com"' in text
+    assert f"--registry {REGISTRY} || goto :attempt_1" in text
+    assert 'set "npm_config_registry=' not in text
     with open(log, encoding="utf-8") as stream:
         assert stream.read() == ""
     assert [grant[1] for grant in GRANTS] == [script, log]

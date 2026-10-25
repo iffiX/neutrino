@@ -45,10 +45,8 @@ def keep_state(tmp_path, config):
 def test_the_module_is_there_and_running_with_nothing_installed(tmp_path):
     runner = runner_at(tmp_path)
 
-    observed = runner.observe({})
-
-    assert observed["is_installed"] is True
-    assert observed["is_active"] is True
+    assert runner.verify({}) is True
+    assert runner.is_active() is True
 
 
 def test_validate_answers_the_checks_codes(tmp_path):

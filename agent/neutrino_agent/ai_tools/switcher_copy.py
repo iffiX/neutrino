@@ -19,8 +19,6 @@ import tempfile
 
 from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_BIN_DIR_NAME,
-    AI_TOOLS_CC_SWITCH_KIND,
-    AI_TOOLS_CC_SWITCH_KINDS,
     AI_TOOLS_CC_SWITCH_NAME,
     AI_TOOLS_CC_SWITCH_NAMES,
     AI_TOOLS_VERSION_NAME,
@@ -60,7 +58,7 @@ def installed_version(root: str) -> str:
 
 
 def install_copy(
-    archive: str, *, root: str, os_name: str, version: str, open_to_accounts
+    archive: str, *, root: str, os_name: str, kind: str, version: str, open_to_accounts
 ) -> str:
     """Unpack the archive the hub sent as the copy, replacing any copy there.
 
@@ -68,6 +66,7 @@ def install_copy(
         archive: The release archive on disk.
         root: The records' directory.
         os_name: ``linux``, ``darwin`` or ``windows``.
+        kind: The artifact's kind, ``tar_gz`` or ``zip``.
         version: The version the state named, written beside the program;
             empty when the state named none.
         open_to_accounts: The platform's call that lets every account read
@@ -89,11 +88,7 @@ def install_copy(
     name = os.path.basename(binary_path(root, os_name))
     staging = tempfile.mkdtemp(prefix=".unpack_", dir=root)
     try:
-        extract_archive(
-            archive,
-            AI_TOOLS_CC_SWITCH_KINDS.get(os_name, AI_TOOLS_CC_SWITCH_KIND),
-            staging,
-        )
+        extract_archive(archive, kind, staging)
         if not os.path.isfile(os.path.join(staging, name)):
             raise ValueError(f"the archive holds no {name}")
         os.chmod(os.path.join(staging, name), 0o755)

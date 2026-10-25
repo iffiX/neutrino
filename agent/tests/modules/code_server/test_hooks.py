@@ -1,8 +1,8 @@
 """code-server's hooks: the release, each instance's socket, the login cookie.
 
-What these pin: the release's one directory lands as ``release``, read-only,
-a new one replaces the one before, and an archive that is not a release is
-the module's own download failure; the version is read from the release; a
+What these pin: the release artifact lands through the shared unpack as
+``release``, read-only, and a new one replaces the one before; the version
+is read from the release; a
 socket path the system cannot bind is refused before anything is written;
 each instance runs the launcher as the account on its socket with
 code-server's own login off, in the account's own run directory, with the
@@ -39,13 +39,13 @@ from neutrino_agent.modules.code_server.hooks import (
     launcher_path,
     mint_login,
     node_path,
-    unpack_release,
 )
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
 )
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder, mint_token
+from neutrino_agent.modules.shared.package import unpack_artifact
 from neutrino_agent.platforms.base import AgentPlatform
 
 SECRET = "instance-secret"  # scan: allow
@@ -93,11 +93,17 @@ def hooks_for(os_name, module_dir, **kwargs) -> CodeServerHooks:
 # --- the release ---
 
 
+RELEASE = {"name": "release", "kind": "tar_gz", "directory": "release"}
+
+
 def test_the_release_lands_as_release_read_only(tmp_path):
     root = str(tmp_path / "code_server")
 
-    target = unpack_release(
-        release_archive(tmp_path / "a.tar.gz"), package_kind="tar", root=root
+    target = unpack_artifact(
+        RELEASE,
+        release_archive(tmp_path / "a.tar.gz"),
+        module_dir=root,
+        join=os.path.join,
     )
 
     assert target == os.path.join(root, "release")
@@ -108,36 +114,19 @@ def test_the_release_lands_as_release_read_only(tmp_path):
     assert sorted(os.listdir(root)) == ["release"]
 
 
-def test_a_new_release_replaces_the_one_before_through_the_hooks(tmp_path):
-    hooks = hooks_for("linux", str(tmp_path / "code_server"))
+def test_a_new_release_replaces_the_one_before(tmp_path):
+    root = str(tmp_path / "code_server")
+    hooks = hooks_for("linux", root)
     assert hooks.verify() is False
 
-    hooks.install(release_archive(tmp_path / "a.tar.gz"), "tar")
-    hooks.install(release_archive(tmp_path / "b.tar.gz", "4.141.0"), "tar")
+    for archive in (
+        release_archive(tmp_path / "a.tar.gz"),
+        release_archive(tmp_path / "b.tar.gz", "4.141.0"),
+    ):
+        unpack_artifact(RELEASE, archive, module_dir=root, join=os.path.join)
 
     assert hooks.verify() is True
     assert hooks.module_details() == {"version": "4.141.0"}
-
-
-@pytest.mark.parametrize("kind", ["tar", "zip", "rar"])
-def test_an_archive_that_is_not_one_is_a_failed_download(tmp_path, kind):
-    junk = tmp_path / "junk"
-    junk.write_bytes(b"not an archive")
-
-    with pytest.raises(ModuleApplyError) as caught:
-        unpack_release(str(junk), package_kind=kind, root=str(tmp_path / "r"))
-
-    assert caught.value.code == "code_server_download_failed"
-
-
-def test_an_archive_without_one_release_is_refused(tmp_path):
-    archive = release_archive(tmp_path / "a.tar.gz", top="node-v22")
-
-    with pytest.raises(ModuleApplyError) as caught:
-        unpack_release(archive, package_kind="tar", root=str(tmp_path / "r"))
-
-    assert caught.value.code == "code_server_download_failed"
-    assert installed_version(str(tmp_path / "r")) == ""
 
 
 # --- the configuration and the service ---

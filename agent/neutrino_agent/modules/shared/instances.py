@@ -21,10 +21,8 @@ import json
 import ntpath
 import os
 import subprocess
-import tarfile
 import threading
 import time
-import zipfile
 
 from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
@@ -41,7 +39,7 @@ from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
-from neutrino_agent.modules.shared.unpacked_tree import remove_tree, unpack_into
+from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
 try:
     import pwd
@@ -123,9 +121,7 @@ class InstanceHooks:
     Attributes:
         name: The module's name on the wire and in every service's name.
         title: What the unit's description calls the program.
-        kind: The recipe kind the module installs by.
-        download_failure_code: The code an install reports when the hub
-            could not hand its package down; empty keeps the hub's own.
+        runner: The name a recipe's ``runner`` chooses the module by.
         instance_class: The module's instance dataclass, with ``from_dict``.
         record_fields: The fields one instance's record holds.
         forwarder_fields: The record fields a forwarder serves; a change
@@ -138,8 +134,7 @@ class InstanceHooks:
 
     name = ""
     title = ""
-    kind = ""
-    download_failure_code = ""
+    runner = ""
     instance_class = None
     record_fields = ("account", "port")
     forwarder_fields = None
@@ -208,20 +203,12 @@ class InstanceHooks:
         """
         raise NotImplementedError(f"{self.name}: verify")
 
-    def install(self, package_path: str, package_kind: str) -> None:
-        """Unpack a module's one archive where the module's page says.
+    def take_recipe(self, recipe: dict) -> None:
+        """Take the recipe the state names for the module.
 
         Args:
-            package_path: The archive on local disk.
-            package_kind: ``tar`` or ``zip``.
-
-        Raises:
-            ModuleApplyError: When the archive is not what the module comes
-                in, under the module's own download code.
-            OSError: When the module's directory cannot be written.
-            NotImplementedError: For a module with no archive of its own.
+            recipe: ``{runner, method, params}``.
         """
-        raise NotImplementedError(f"{self.name}: install")
 
     def after_install(self) -> None:
         """Tidy the module's directory once an archive landed.
@@ -421,9 +408,8 @@ class InstancesModuleRunner(ModuleRunner):
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._hooks = hooks_class(platform=platform, log=log)
-        self.kind = self._hooks.kind
+        self.runner = self._hooks.runner
         self.name = self._hooks.name
-        self.download_failure_code = self._hooks.download_failure_code
         self._machine = (
             machine if machine is not None else machine_for(platform, self.name)
         )
@@ -456,80 +442,53 @@ class InstancesModuleRunner(ModuleRunner):
         """The machine the account service layer reaches."""
         return self._machine
 
-    def verify(self, resolved: dict) -> bool:
+    def verify(self, recipe: dict) -> bool:
         """Whether the software is on the machine, by the module's own check.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             True when the hooks find it.
         """
         return bool(self._hooks.verify())
 
-    def install(self, resolved: dict, package_path: str) -> None:
-        """Unpack the archive the hub handed down and open it to every account.
+    @property
+    def module_dir(self) -> str:
+        """The module's directory under the state root, the machine's own."""
+        return self._machine.module_dir
+
+    def take_recipe(self, recipe: dict) -> None:
+        """Hand the recipe the state names to the module's hooks.
 
         Args:
-            resolved: The module as the hub resolved it; its entry names
-                ``package_kind``.
-            package_path: The archive on local disk.
+            recipe: ``{runner, method, params}``.
+        """
+        self._hooks.take_recipe(recipe)
+
+    def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
+        """Put one artifact on the machine as its kind says, then tidy the module's directory.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: ``{name, kind, digest, directory}``.
+            path: The received file.
 
         Raises:
-            ModuleApplyError: When the archive is not what the module comes
-                in, under the module's own download code.
+            ModuleApplyError: ``install_failed {detail}`` for an artifact
+                that cannot be put in place.
             OSError: When the module's directory cannot be written or
                 opened to every account.
         """
-        entry = resolved.get("entry") or {}
-        self._hooks.install(package_path, str(entry.get("package_kind", "")))
+        super().install_artifact(recipe, artifact, path)
         self._hooks.after_install()
-        self._platform.open_to_accounts(self._machine.module_dir)
         self._forget_states()
 
-    def install_component(
-        self, resolved: dict, component: dict, package_path: str
-    ) -> None:
-        """Unpack one component under its directory and open it to every account.
-
-        Args:
-            resolved: The module as the hub resolved it.
-            component: ``{name, package_kind, directory, sha256}``; the
-                directory is one plain name under the module's own.
-            package_path: The archive on local disk.
-
-        Raises:
-            ModuleApplyError: The module's download code when the archive
-                cannot be unpacked or the directory is not a plain name.
-            OSError: When the module's directory cannot be written or
-                opened to every account.
-        """
-        code = self.download_failure_code or "install_failed"
-        directory = str(component.get("directory") or component.get("name") or "")
-        if (
-            not directory
-            or directory in (".", "..")
-            or "/" in directory
-            or "\\" in directory
-        ):
-            raise ModuleApplyError(
-                code, {"detail": f"component directory {directory!r}"}
-            )
-        join = ntpath.join if self._platform.os_name == "windows" else os.path.join
-        target = join(self._machine.module_dir, directory)
-        try:
-            unpack_into(package_path, str(component.get("package_kind", "")), target)
-        except (tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
-            raise ModuleApplyError(code, {"detail": str(error)[:200]}) from error
-        self._hooks.after_install()
-        self._platform.open_to_accounts(self._machine.module_dir)
-        self._forget_states()
-
-    def uninstall(self, resolved: dict) -> None:
+    def uninstall(self, recipe: dict) -> None:
         """Delete the module's directory; each account's own data stays.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
         """
         self._close_forwarders()
         remove_tree(self._machine.module_dir)
@@ -645,11 +604,11 @@ class InstancesModuleRunner(ModuleRunner):
         held = self._with_agent_lines(own, lines)
         return (held + tail)[-lines:]
 
-    def details(self, resolved: dict) -> dict:
+    def details(self, recipe: dict) -> dict:
         """What the module adds, and each instance, its port and whether it runs.
 
         Args:
-            resolved: The module as the hub resolved it.
+            recipe: The module's recipe.
 
         Returns:
             ``{"instances": [{"account", "port", "is_running", "code",
@@ -664,11 +623,6 @@ class InstancesModuleRunner(ModuleRunner):
     def _apply(self, config: dict) -> None:
         """Make the configuration true, raising what it refused."""
         parsed = self._hooks.parse(config)
-        if not self._hooks.verify():
-            raise ModuleApplyError(
-                self.download_failure_code or "apply_failed",
-                {} if self.download_failure_code else {"detail": "not installed"},
-            )
         entries = {}
         for instance in parsed.instances:
             try:

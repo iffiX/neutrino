@@ -80,32 +80,3 @@ def test_the_login_secret_follows_the_instance_secret():
 def test_a_short_account_is_padded_to_cloudclis_minimum():
     assert username_of("ann") == "ann"
     assert username_of("al") == "al_"
-
-
-def test_the_npm_registry_is_read_from_the_state():
-    from neutrino_agent.modules.cloudcli.config import CloudcliConfig
-
-    config = CloudcliConfig.from_dict(
-        {"npm_registry": "https://registry.npmmirror.com"}
-    )
-
-    assert config.npm_registry == "https://registry.npmmirror.com"
-    assert CloudcliConfig.from_dict({}).npm_registry == ""
-
-
-def test_only_npm_settings_are_taken_from_the_state():
-    config = CloudcliConfig.from_dict(
-        {
-            "npm_environment": {
-                "npm_config_better_sqlite3_binary_host": "https://m.example/bs3",
-                "PATH": "/evil",
-                "npm_config_Upper": "x",
-                "npm_config_number": 3,
-            }
-        }
-    )
-
-    assert config.npm_environment == {
-        "npm_config_better_sqlite3_binary_host": "https://m.example/bs3"
-    }
-    assert CloudcliConfig.from_dict({"npm_environment": "x"}).npm_environment == {}

@@ -1,11 +1,13 @@
 """Reporting what each module is, and putting software on and off the machine.
 
-The hub's state names, per module, what is wanted and the install and
-uninstall recipes resolved for this platform. :class:`ModuleEngine`
-observes every module it has a runner for, named by the state or not, and
-derives one typed state from three facts: whether the software is there,
-whether its unit is active, and whether the hub has configured it, which
-is a root-only mark on disk. It also carries out the two package
+The hub's state names, per module, what is wanted and the recipe resolved
+for this platform, ``{runner, method, params}``. The recipe's ``runner``
+chooses the runner, and an agent with no runner of that name reports the
+module unsupported. :class:`ModuleEngine` observes every module it has a
+runner for, named by the state or not, and derives one typed state from
+three facts: whether the software is there, by the method's one presence
+check, whether its unit is active, and whether the hub has configured it,
+which is a root-only mark on disk. It also carries out the two package
 operations the reconcile asks for, one at a time, because one package
 manager holds the machine-wide lock. :class:`ReconcileWorker` is the
 shared pattern: a thread woken by news, a signature that skips unchanged
@@ -35,6 +37,10 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_CONFIGURED_DIR,
+    AGENT_METHOD_AGENT,
+    AGENT_METHOD_BUILTIN,
+    AGENT_METHOD_HUB,
+    AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
@@ -62,27 +68,27 @@ from neutrino_agent.modules.samba.runner import (
 )
 from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
-from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
-from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared.package import (
+    check_received,
+    params_of,
+    received_artifacts,
+    remove_received,
+    verify_passes,
+)
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
-from neutrino_agent.streams.package import CODE_DIGEST_MISMATCH, CODE_UNREACHABLE
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes
 # the worker, and running each module's verify command that often would keep
 # a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
 
-# The kinds whose install runs by name with the platform's own tooling; the
-# rest install from the bytes a package stream brings down.
-BY_NAME_KINDS = ("system_package",)
-
-# The recipe fields that are not part of the platform entry today's runners
-# read: the kind names the runner, the verify command decides presence, and
-# the package name is the entry's own.
-RECIPE_HEADER_FIELDS = ("kind", "verify", "package")
+# The methods whose presence check is the recipe's ``verify`` command.
+VERIFIED_METHODS = (AGENT_METHOD_SYSTEM, AGENT_METHOD_HUB)
+# The methods an install runs by; ``agent`` takes no operation.
+INSTALLED_METHODS = (AGENT_METHOD_BUILTIN, AGENT_METHOD_SYSTEM, AGENT_METHOD_HUB)
 
 # The programs run as a person's account, each the shared runner with the
 # module's own hooks.
@@ -94,9 +100,6 @@ CloudcliModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=CloudcliHooks
 )
 CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHooks)
-
-# The modules the agent's own package carries: no operation moves them.
-CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)
 
 # The states a kept failure reads as: an install's, and every other step's.
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)
@@ -203,7 +206,7 @@ class ModuleEngine(ReconcileWorker):
                 empty is beside the configured marks.
         """
         # The state's modules section as the hub last sent it, by name:
-        # ``{"want", "config", "install", "uninstall"}`` each.
+        # ``{"want", "config", "install"}`` each.
         self._wanted: dict = {}
         self._configured_dir = configured_dir or AGENT_CONFIGURED_DIR
         self._failures_dir = failures_dir or os.path.join(
@@ -223,21 +226,13 @@ class ModuleEngine(ReconcileWorker):
         # "params"}``, as kept on disk.
         self._failures: dict = {}
         self._details_at = 0.0
-        # A platform that installs no package has a runner only for what
-        # the system itself carries: every other module the state names
-        # reads as unsupported there.
-        self._package = None
-        self._system = None
         # The modules this agent applies the hub's configuration to, by
-        # name; each also answers its own verbs.
+        # name; each also answers its own verbs. A platform that installs no
+        # package has a runner only for what the system itself carries and
+        # what the hub's cache sends: every other module the state names
+        # reads as unsupported there.
         kinds = []
         if "packages" in platform.capabilities:
-            self._package = PackageModuleRunner(
-                platform=platform, log=self._collect, publish=self._publish
-            )
-            self._system = SystemPackageModuleRunner(
-                platform=platform, log=self._collect, publish=self._publish
-            )
             kinds = [
                 SambaModuleRunner,
                 GiteaModuleRunner,
@@ -263,9 +258,11 @@ class ModuleEngine(ReconcileWorker):
         kinds.append(TerminalModuleRunner)
         kinds.append(RemoteDesktopModuleRunner)
         self._module_runners = {}
+        self._runners_by_name = {}
         for kind in kinds:
             runner = kind(platform=platform, log=self._collect, publish=self._publish)
             self._module_runners[runner.name] = runner
+            self._runners_by_name[runner.runner] = runner
         self._failures = self._read_failures()
         super().__init__(log=log, on_change=on_change)
 
@@ -292,11 +289,12 @@ class ModuleEngine(ReconcileWorker):
     def take_state(self, modules: dict) -> None:
         """Take the modules section of the hub's state, and observe against it.
 
-        The failure kept for a module the state no longer names is deleted.
+        Each module's runner is handed its recipe. The failure kept for a
+        module the state no longer names is deleted.
 
         Args:
-            modules: ``{name: {"want", "config", "install", "uninstall"}}``;
-                empty when the machine belongs to no hub.
+            modules: ``{name: {"want", "config", "install"}}``; empty when
+                the machine belongs to no hub.
         """
         with self._lock:
             self._wanted = {
@@ -304,7 +302,13 @@ class ModuleEngine(ReconcileWorker):
                 for name, entry in modules.items()
                 if isinstance(entry, dict)
             }
+            wanted = dict(self._wanted)
             dropped = [name for name in self._failures if name not in self._wanted]
+        for name, entry in wanted.items():
+            recipe = _recipe_of(entry)
+            runner = self._runner_for(name, recipe)
+            if runner is not None:
+                runner.take_recipe(recipe)
         for name in dropped:
             self.record_failure(name, None)
         self._wakeup.set()
@@ -316,16 +320,15 @@ class ModuleEngine(ReconcileWorker):
             name: The module name.
 
         Returns:
-            True when the recipe's verify command passes, or the runner's
-            own check does where the state names no command; False for a
-            module this agent has no runner for or cannot read.
+            True when the method's presence check passes; False for a module
+            this agent has no runner for or cannot read.
         """
-        runner = self._module_runners.get(name)
+        recipe = _recipe_of(self._wanted_of(name))
+        runner = self._runner_for(name, recipe)
         if runner is None:
             return False
-        recipe = _recipe_of(self._wanted_of(name))
         try:
-            return self._verify(runner, recipe, runner.observe(_row(recipe)))
+            return self._is_present(runner, recipe)
         except Exception:  # noqa: BLE001 - an unreadable module is not installed
             return False
 
@@ -431,10 +434,9 @@ class ModuleEngine(ReconcileWorker):
 
         Args:
             name: The module name; its recipe is the one the state names.
-            receive: Called with the module name when the recipe installs
-                from bytes, and with the component's name as well for each
-                component a recipe lists; returns ``{"path", "sha256"}``
-                naming the package on disk and its digest, or ``{"code",
+            receive: Called with the module name and each artifact a
+                ``hub`` recipe receives; returns ``{"path", "sha256"}``
+                naming the file on disk and its digest, or ``{"code",
                 "params"}``. The file is deleted once the install ran.
             on_line: Called with each output line as the install produces
                 it.
@@ -501,11 +503,11 @@ class ModuleEngine(ReconcileWorker):
             Empty when the operation took, ``{"code", "params"}`` when not.
         """
         transient, failed_state = states
-        if name in CARRIED_MODULES:
-            return {"code": "module_not_orderable", "params": {"module": name}}
         wanted = self._wanted_of(name)
         if wanted is None:
             return {"code": "unknown_module", "params": {"module": name}}
+        if _recipe_of(wanted).get("method") == AGENT_METHOD_AGENT:
+            return {"code": "module_not_orderable", "params": {"module": name}}
         with self._operation_lock:
             with self._lock:
                 self._in_transit.add(name)
@@ -532,82 +534,69 @@ class ModuleEngine(ReconcileWorker):
         return refusal
 
     def _install(self, name: str, wanted: dict, receive) -> dict:
-        """Install by the recipe and check it took."""
+        """Install by the recipe's method and check it took."""
         recipe = _recipe_of(wanted)
-        resolved = _row(recipe)
-        kind = resolved["kind"]
-        runner = self._runner_for(kind, name)
+        method = str(recipe.get("method", "") or "")
+        runner = self._runner_for(name, recipe)
         if runner is None:
-            return {"code": "unknown_kind", "params": {"kind": kind}}
+            return {
+                "code": "runner_unknown",
+                "params": {"runner": str(recipe.get("runner", "") or "")},
+            }
+        if method not in INSTALLED_METHODS:
+            return {"code": "method_unknown", "params": {"method": method}}
         self._collect(f"{name}: installing")
-        components = [
-            component
-            for component in resolved["entry"].get("components") or []
-            if isinstance(component, dict)
-        ]
-        if kind in BY_NAME_KINDS:
-            runner.install(resolved)
-        elif components:
-            for component in components:
-                refusal = self._install_component(
-                    runner, resolved, component, name, receive
+        runner.install(recipe)
+        if method == AGENT_METHOD_HUB:
+            for artifact in received_artifacts(recipe):
+                refusal = self._install_artifact(
+                    runner, recipe, artifact, name, receive
                 )
                 if refusal:
                     return refusal
-        else:
-            received = receive(name)
-            if "path" not in received:
-                return _download_refusal(runner, received)
-            try:
-                runner.install(resolved, received["path"])
-            finally:
-                with contextlib.suppress(OSError):
-                    os.unlink(received["path"])
-        # Verify is the whole point of the step: a package manager that
+        # The check is the whole point of the step: a package manager that
         # exits zero and installs nothing is a thing that happens.
-        if not self._verify(runner, recipe, runner.observe(resolved)):
+        if not self._is_present(runner, recipe):
             return {"code": "install_unconfirmed", "params": {}}
         return {}
 
-    def _install_component(
-        self, runner, resolved: dict, component: dict, name: str, receive
+    def _install_artifact(
+        self, runner, recipe: dict, artifact: dict, name: str, receive
     ) -> dict:
-        """Receive one component, check its digest against the recipe, unpack it.
+        """Receive one artifact, check its digest against the recipe, install it.
 
         Returns:
-            Empty when it landed, ``{"code", "params"}`` when it did not.
+            Empty when it landed; the stream's own ``{"code", "params"}``
+            when the hub could not hand it down, ``package_digest_mismatch``
+            when its bytes are not the recipe's.
         """
-        component_name = str(component.get("name", "") or "")
-        received = receive(name, component_name)
+        received = receive(name, artifact)
         if "path" not in received:
-            return _download_refusal(runner, received)
+            return dict(received)
         try:
-            expected = str(component.get("sha256", "") or "")
-            if expected and received.get("sha256") != expected:
-                return {
-                    "code": CODE_DIGEST_MISMATCH,
-                    "params": {"component": component_name},
-                }
-            runner.install_component(resolved, dict(component), received["path"])
+            refusal = check_received(artifact, received)
+            if refusal:
+                return refusal
+            runner.install_artifact(recipe, dict(artifact), received["path"])
         finally:
-            with contextlib.suppress(OSError):
-                os.unlink(received["path"])
+            remove_received(received["path"])
         return {}
 
     def _uninstall(self, name: str, wanted: dict) -> dict:
         """Uninstall by the recipe, drop the hub's configuration and the mark."""
         recipe = _recipe_of(wanted)
-        removal = wanted.get("uninstall")
+        removal = params_of(recipe).get("uninstall")
         removal = dict(removal) if isinstance(removal, dict) else {}
-        resolved = _row(dict(recipe, **removal))
-        kind = resolved["kind"]
-        runner = self._runner_for(kind, name)
+        runner = self._runner_for(name, recipe)
         if runner is None:
-            return {"code": "unknown_kind", "params": {"kind": kind}}
+            return {
+                "code": "runner_unknown",
+                "params": {"runner": str(recipe.get("runner", "") or "")},
+            }
         is_leftover = not self.is_installed(name)
         self._collect(f"{name}: uninstalling")
         try:
-            self._remove(name, runner, resolved, removal)
+            self._remove(name, runner, recipe, removal)
         except Exception as error:  # noqa: BLE001 - logged; the check is the outcome
             if not is_leftover:
                 raise
@@ -619,18 +608,18 @@ class ModuleEngine(ReconcileWorker):
                 )
             self._collect(f"{name}: {said}"[:500])
         self.clear_configured(name)
-        if self._verify(runner, recipe, runner.observe(resolved)):
+        if self._is_present(runner, recipe):
             return {"code": "uninstall_unconfirmed", "params": {}}
         return {}
 
-    def _remove(self, name: str, runner, resolved: dict, removal: dict) -> None:
-        """The uninstall's steps: the hub's configuration, the package, the
+    def _remove(self, name: str, runner, recipe: dict, removal: dict) -> None:
+        """The uninstall's steps: the hub's configuration, the software, the
         recipe's own steps after it, and the data where the recipe says so."""
         if self.is_configured(name):
             with contextlib.suppress(Exception):
                 runner.stop()
             runner.remove_configuration()
-        runner.uninstall(resolved)
+        runner.uninstall(recipe)
         for step in removal.get("post_uninstall") or []:
             self._collect(str(step))
             output = installers.run_shell(str(step))
@@ -718,7 +707,7 @@ class ModuleEngine(ReconcileWorker):
             whatever is on the machine.
         """
         recipe = _recipe_of(wanted)
-        runner = self._runner_for(str(recipe.get("kind", "")), name)
+        runner = self._runner_for(name, recipe)
         if runner is None:
             return _typed(AGENT_MODULE_STATE_UNSUPPORTED)
         with self._lock:
@@ -731,27 +720,26 @@ class ModuleEngine(ReconcileWorker):
             status["params"] = dict(failure["params"])
             return status
         try:
-            observed = runner.observe(_row(recipe))
-            if not self._verify(runner, recipe, observed):
-                reason = runner.absent_reason(_row(recipe))
+            if not self._is_present(runner, recipe):
+                reason = runner.absent_reason(recipe)
                 status = _typed(
                     AGENT_MODULE_STATE_ABSENT, str(reason.get("code", "") or "")
                 )
                 status["params"] = dict(reason.get("params") or {})
                 return self._with_failure(name, status, is_present=False)
-            is_active = bool(observed.get("is_active", False))
+            is_active = bool(runner.is_active())
             status = _typed(
                 _steady_state(
                     is_active=is_active, is_configured=self.is_configured(name)
                 ),
                 is_active=is_active,
             )
-            if observed.get("is_installing"):
+            if runner.is_installing():
                 status["state"] = AGENT_MODULE_STATE_INSTALLING
                 wait = runner.install_wait()
                 status["code"] = str(wait.get("code", "") or "")
                 status["params"] = dict(wait.get("params") or {})
-            details = observed.get("details")
+            details = runner.details(recipe)
             status["details"] = dict(details) if isinstance(details, dict) else {}
         except PlatformUnsupportedError:
             return _typed(AGENT_MODULE_STATE_FAILED, "unsupported_platform")
@@ -833,33 +821,37 @@ class ModuleEngine(ReconcileWorker):
             self._log(f"{name}: could not keep its failure: {error}")
 
     @staticmethod
-    def _verify(runner, recipe: dict, observed: dict) -> bool:
-        """Whether the software is there.
+    def _is_present(runner, recipe: dict) -> bool:
+        """Whether the software is there, by the method's one presence check.
 
-        A module the hub named comes with ``install.verify``, and its exit
-        is the answer. A module only observed, one the state never mentions,
-        has no recipe, and the runner's own check answers for it.
+        A module the agent carries is always there; a ``system`` or a
+        ``hub`` recipe is there while its ``verify`` exits 0. A ``builtin``
+        recipe, and a module the state does not name, which comes with no
+        recipe, are judged by the runner's own check.
         """
-        command = str(recipe.get("verify", "") or "")
-        if command:
-            return verify_passes(command)
-        return bool(observed.get("is_installed", False))
+        method = str(recipe.get("method", "") or "")
+        if method == AGENT_METHOD_AGENT:
+            return True
+        if method in VERIFIED_METHODS:
+            return verify_passes(str(params_of(recipe).get("verify", "") or ""))
+        return bool(runner.verify(recipe))
 
-    def _runner_for(self, kind: str, name: str = ""):
-        """The runner for one module: its own by name, else its kind's.
+    def _runner_for(self, name: str, recipe: dict):
+        """The runner for one module: the one its recipe names, else its own by name.
 
         Args:
-            kind: The recipe's kind.
             name: The module name.
+            recipe: The module's recipe; empty for a module the state does
+                not name.
 
         Returns:
-            The runner, or None for a module this agent has no runner for,
-            which is every module on a platform that installs no package.
+            The runner, or None for a module whose recipe names a runner
+            this agent does not have.
         """
-        runner = self._module_runners.get(name)
-        if runner is not None and (not kind or runner.kind == kind):
-            return runner
-        return {"package": self._package, "system_package": self._system}.get(kind)
+        runner_name = str(recipe.get("runner", "") or "")
+        if not runner_name:
+            return self._module_runners.get(name)
+        return self._runners_by_name.get(runner_name)
 
 
 def _is_plain(name: str) -> bool:
@@ -895,50 +887,10 @@ def _failure(held) -> "dict | None":
     }
 
 
-def _download_refusal(runner, received: dict) -> dict:
-    """Why an install got no package, in the runner's own code when it names one.
-
-    Args:
-        runner: The module's runner.
-        received: The package stream's ``{"code", "params"}``.
-
-    Returns:
-        ``{"code", "params"}``: the runner's ``download_failure_code`` with
-        the hub's code as ``detail``, or the stream's own when the runner
-        names none or the socket went away, which the next state retries.
-    """
-    code = str(received.get("code", "") or "")
-    if not runner.download_failure_code or code == CODE_UNREACHABLE:
-        return dict(received)
-    return {"code": runner.download_failure_code, "params": {"detail": code}}
-
-
 def _recipe_of(wanted: "dict | None") -> dict:
     """The install recipe one state entry carries, empty when it carries none."""
     recipe = (wanted or {}).get("install")
     return dict(recipe) if isinstance(recipe, dict) else {}
-
-
-def _row(recipe: dict) -> dict:
-    """One recipe as the row today's runners read.
-
-    Args:
-        recipe: ``{"kind", "verify", "package", ...}``, the rest being the
-            platform entry: packages, steps, package kind.
-
-    Returns:
-        ``{"kind", "entry", "verify", "package"}``.
-    """
-    return {
-        "kind": str(recipe.get("kind", "") or ""),
-        "entry": {
-            key: value
-            for key, value in recipe.items()
-            if key not in RECIPE_HEADER_FIELDS
-        },
-        "verify": str(recipe.get("verify", "") or ""),
-        "package": str(recipe.get("package", "") or ""),
-    }
 
 
 def _steady_state(*, is_active: bool, is_configured: bool) -> str:

@@ -51,7 +51,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_WINDOWS_RESTART_KEY,
     PODMAN_WINDOWS_UNINSTALL_KEY,
     PODMAN_WINDOWS_UNKNOWN_PRODUCT_CODE,
-    PODMAN_WINDOWS_WSL_COMPONENT,
+    PODMAN_WINDOWS_WSL_ARTIFACT,
     PODMAN_WINDOWS_WSL_PRODUCT,
     PODMAN_WINDOWS_WSL_TIMEOUT_S,
     PODMAN_WINDOWS_WSL_VERSION,
@@ -425,29 +425,29 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         # The features are turned on once per install, before its first msi.
         self._has_features = False
 
-    def install_component(self, component: dict, path: str) -> None:
+    def install_artifact(self, artifact: dict, path: str) -> None:
         """Turn on the Windows features once, then install the WSL or Podman msi.
 
         Args:
-            component: ``{name, package_kind, directory, sha256}``.
+            artifact: ``{name, kind, digest, directory}``.
             path: The kept msi.
 
         Raises:
             ModuleApplyError: ``windows_feature_failed {feature, exit_code}``
                 when dism refuses a feature; ``podman_install_failed
-                {component, exit_code}`` when an msi fails; ``install_failed``
-                for a component that is not an msi.
+                {artifact, exit_code}`` when an msi fails; ``install_failed``
+                for an artifact that is not an msi.
         """
-        name = str(component.get("name", "") or "")
-        if component.get("package_kind") != "msi":
+        name = str(artifact.get("name", "") or "")
+        if artifact.get("kind") != "msi":
             raise ModuleApplyError(
-                "install_failed", {"detail": f"component {name!r} is not an msi"}
+                "install_failed", {"detail": f"artifact {name!r} is not an msi"}
             )
         if not self._has_features:
             for feature in PODMAN_WINDOWS_FEATURES:
                 self._enable_feature(feature)
             self._has_features = True
-        is_wsl = name == PODMAN_WINDOWS_WSL_COMPONENT
+        is_wsl = name == PODMAN_WINDOWS_WSL_ARTIFACT
         if is_wsl:
             installed = self._installed_wsl()
             if installed:
@@ -463,7 +463,7 @@ class PodmanWindowsApplier(PodmanSystemApplier):
                 return
             exit_code = -1 if error.exit_code is None else error.exit_code
             raise ModuleApplyError(
-                "podman_install_failed", {"component": name, "exit_code": exit_code}
+                "podman_install_failed", {"artifact": name, "exit_code": exit_code}
             ) from error
         self._log(f"podman: installed {name}")
         if is_owed:

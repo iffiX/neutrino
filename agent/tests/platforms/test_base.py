@@ -45,12 +45,6 @@ CONTRACT_CALLS = {
     "read_host_metrics": ("metrics", (), {}),
     "read_network_interfaces": ("network", (), {}),
     "read_machine_id": ("machine_id", (), {}),
-    "install_package": (
-        "packages",
-        ("/tmp/app.deb",),
-        {"package_kind": "deb", "entry": {}},
-    ),
-    "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
     "smb_server_applier": ("smb_server", (), {}),
     "terminate_process": ("process_terminate", (4242,), {}),
     "remove_added": ("removal", (), {}),
@@ -67,6 +61,11 @@ NOT_ON_LINUX = {
     "act_as",
     "self_removal",
 }
+
+# Capabilities no contract method stands behind: the engine builds the
+# runners of the modules a machine's own package manager installs on a
+# platform with ``packages``.
+FLAG_CAPABILITIES = {"packages"}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
@@ -88,6 +87,7 @@ def test_the_capability_table_names_every_contract_method():
 
     named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
     named |= {capability for capability in BASE_IMPLEMENTED.values() if capability}
+    named |= FLAG_CAPABILITIES
     assert named == LinuxPlatform().capabilities | NOT_ON_LINUX
 
 
@@ -118,6 +118,7 @@ def test_a_platform_implements_exactly_the_capabilities_it_advertises(
 def test_a_platform_advertises_only_capabilities_the_contract_names(platform_class):
     named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
     named |= {capability for capability in BASE_IMPLEMENTED.values() if capability}
+    named |= FLAG_CAPABILITIES
 
     assert platform_class.capabilities <= named
 

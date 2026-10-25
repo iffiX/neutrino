@@ -1,26 +1,24 @@
 """Fixed values of the Codeg module."""
 
-# The recipe kind, the module's name on the wire, and the title its
+# The runner a recipe names, the module's name on the wire, and the title its
 # services carry.
-CODEG_KIND = "codeg"
+CODEG_RUNNER = "codeg"
 CODEG_NAME = "codeg"
 CODEG_TITLE = "Codeg"
-# What a failed download or unpack of a component reports.
-CODEG_DOWNLOAD_FAILED = "codeg_download_failed"
 
-# The two components, each unpacked under its own directory in the
+# The two artifacts, each unpacked under its own directory in the
 # module's: the server bundle and the Node.js the agents Codeg installs run
 # on.
 CODEG_SERVER_DIR_NAME = "server"
 CODEG_NODE_DIR_NAME = "node"
-# Inside the server component: the server, by system, and the web UI.
+# Inside the server artifact: the server, by system, and the web UI.
 CODEG_SERVER_NAMES = {
     "linux": "codeg-server",
     "darwin": "codeg-server",
     "windows": "codeg-server.exe",
 }
 CODEG_WEB_DIR_NAME = "web"
-# Inside the node component: the directory the interpreter is in, by system.
+# Inside the node artifact: the directory the interpreter is in, by system.
 CODEG_NODE_BIN_PARTS = {"linux": ("bin",), "darwin": ("bin",), "windows": ()}
 # What the server prints its version with, and how long it may take.
 CODEG_VERSION_ARGUMENT = "--version"

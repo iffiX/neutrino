@@ -1,8 +1,9 @@
 """The git server runner: install from bytes, validate, apply, verbs, details.
 
-What these pin beside the verbs: ``observe()`` reads the binary, the unit
-and the details in one go, and the details name the port the server
-answers on, from the held configuration or the installed ``app.ini``.
+What these pin beside the verbs: the runner's own check is the binary on
+disk, the system packages a recipe names install before the binary, and
+the details name the port the server answers on, from the held
+configuration or the installed ``app.ini``.
 """
 
 import subprocess
@@ -97,8 +98,8 @@ def runner(monkeypatch):
     return GiteaModuleRunner(platform=RecordingPlatform(), log=lambda m: None)
 
 
-def test_the_runner_owns_the_gitea_kind(runner):
-    assert runner.kind == "gitea"
+def test_the_runner_is_chosen_by_its_name(runner):
+    assert runner.runner == "gitea"
     assert runner.name == "gitea"
 
 
@@ -122,8 +123,14 @@ def test_verify_is_the_binary_on_disk(runner, monkeypatch, tmp_path):
     assert runner.verify({}) is True
 
 
+BINARY = {"name": "gitea", "kind": "binary", "digest": "sha256:aa"}
+
+
 def test_install_puts_git_first_then_the_bytes(runner):
-    runner.install({"entry": {"packages": ["git"]}}, "/tmp/package.binary")
+    recipe = {"runner": "gitea", "method": "hub", "params": {"packages": ["git"]}}
+
+    runner.install(recipe)
+    runner.install_artifact(recipe, BINARY, "/tmp/package.binary")
 
     assert runner._platform.installed == [["git"]]
     assert FakeInstaller.installed == ["/tmp/package.binary"]
@@ -217,26 +224,20 @@ def test_validate_is_a_verb_every_module_answers(runner):
     assert (bad["exit_code"], bad["code"]) == (1, "port_reserved")
 
 
-def test_observe_reads_the_binary_the_unit_and_the_port(runner, monkeypatch, tmp_path):
-    binary = tmp_path / "gitea"
-    monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(binary))
+def test_the_details_read_the_unit_and_the_port(runner, monkeypatch, tmp_path):
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "read_listen_port", lambda: 3300)
 
-    absent = runner.observe({})
-    binary.write_text("")
-    present = runner.observe({})
+    details = runner.details({})
 
-    assert absent["is_installed"] is False
-    assert present["is_installed"] is True
-    assert present["is_active"] is True
+    assert runner.is_active() is True
     # A hand-installed instance reports as running on its port; the hub
     # imports nothing of it.
-    assert present["details"]["port"] == 3300
-    assert present["details"]["is_running"] is True
-    assert present["details"]["admins"] == []
+    assert details["port"] == 3300
+    assert details["is_running"] is True
+    assert details["admins"] == []
     runner.apply(CONFIG)
-    assert runner.observe({})["details"]["port"] == 3000
+    assert runner.details({})["port"] == 3000
 
 
 def test_the_survey_stands_for_a_minute(runner, monkeypatch, tmp_path):
@@ -245,10 +246,10 @@ def test_the_survey_stands_for_a_minute(runner, monkeypatch, tmp_path):
     clock = [1000.0]
     monkeypatch.setattr(runner_module.time, "monotonic", lambda: clock[0])
 
-    runner.observe({})
-    runner.observe({})
+    runner.details({})
+    runner.details({})
     clock[0] += 61.0
-    runner.observe({})
+    runner.details({})
 
     assert len(FakeAdmins.surveys) == 2
 
@@ -257,13 +258,13 @@ def test_a_new_administrator_is_surveyed_at_once(runner, monkeypatch, tmp_path):
     (tmp_path / "gitea").write_text("")
     monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea"))
     monkeypatch.setattr(runner_module.time, "monotonic", lambda: 1000.0)
-    runner.observe({})
+    runner.details({})
 
     runner.command("admin", {"username": "ann", "password": "pw", "email": "a@b"})
 
-    # The verb reads once for itself; the observe after it reads again
+    # The verb reads once for itself; the details after it read again
     # rather than answering from the survey taken before the account existed.
-    assert runner.observe({})["details"]["admins"] == ["ann"]
+    assert runner.details({})["admins"] == ["ann"]
     assert FakeAdmins.surveys == [[], [], ["ann"]]
 
 
@@ -353,7 +354,7 @@ def test_without_git_an_install_and_an_apply_are_refused(tmp_path):
     )
 
     for step in (
-        lambda: runner.install({"entry": {"packages": []}}, "/tmp/gitea"),
+        lambda: runner.install_artifact({}, BINARY, "/tmp/gitea"),
         lambda: runner.apply(CONFIG),
     ):
         with pytest.raises(ModuleApplyError) as refused:
@@ -369,7 +370,7 @@ def test_the_git_found_is_named_in_app_ini_and_ssh_is_off(tmp_path):
         platform=MacPlatform(), log=lambda m: None, applier=applier
     )
 
-    runner.install({"entry": {"packages": []}}, "/tmp/gitea")
+    runner.install_artifact({}, BINARY, "/tmp/gitea")
     runner.apply(CONFIG)
 
     ((rendered, git_path),) = applier.applied

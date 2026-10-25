@@ -318,13 +318,14 @@ def podman_commands(monkeypatch):
     return asked
 
 
-def test_observe_reads_what_podman_itself_says_of_each_container(runner, monkeypatch):
+def test_the_details_read_what_podman_itself_says_of_each_container(
+    runner, monkeypatch
+):
     asked = podman_commands(monkeypatch)
 
-    observed = runner.observe({})
+    details = runner.details({})
 
-    assert (observed["is_installed"], observed["is_active"]) == (True, True)
-    details = observed["details"]
+    assert runner.is_active() is True
     assert set(details) == {"containers", "mirrors", "version", "is_active"}
     assert details["version"] == "4.9.3"
     by_name = {container["name"]: container for container in details["containers"]}
@@ -362,11 +363,11 @@ def test_observe_reads_what_podman_itself_says_of_each_container(runner, monkeyp
     ]
 
 
-def test_observe_marks_the_containers_the_hub_declares(runner, monkeypatch):
+def test_the_details_mark_the_containers_the_hub_declares(runner, monkeypatch):
     podman_commands(monkeypatch)
     runner.apply(CONFIG)
 
-    by_name = {c["name"]: c for c in runner.observe({})["details"]["containers"]}
+    by_name = {c["name"]: c for c in runner.details({})["containers"]}
 
     assert by_name["web"]["is_declared"] is True
     assert by_name["adhoc"]["is_declared"] is False

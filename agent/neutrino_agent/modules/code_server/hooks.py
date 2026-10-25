@@ -1,15 +1,14 @@
 """What code-server adds to the shared runner: the release, each instance's socket, the cookie.
 
 The release comes from the hub's package stream as the tarball coder
-publishes, with one ``code-server-<version>-<system>-<arch>`` directory
-inside that carries its own Node.js, and lands whole as ``release`` under
-the module's directory. Each instance runs the launcher as its account on a
-socket in that account's run directory, with code-server's own login off,
-so root and the account alone can open it. The forwarder admits a browser
-by its own login cookie, ``neutrino_code_server_<port>``, traded once for
-the token the hub minted.
+publishes, which carries its own Node.js, and the shared unpack puts it
+under ``release`` in the module's directory. Each instance runs the
+launcher as its account on a socket in that account's run directory, with
+code-server's own login off, so root and the account alone can open it.
+The forwarder admits a browser by its own login cookie,
+``neutrino_code_server_<port>``, traded once for the token the hub minted.
 
-Not pure: writes the release and opens the socket.
+Not pure: opens the socket.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -18,13 +17,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import socket
-import tarfile
-import tempfile
 import time
 import urllib.parse
-import zipfile
 
 from neutrino_agent.constants import (
     AGENT_FORWARD_TOKEN_PARAMETER,
@@ -40,9 +35,8 @@ from neutrino_agent.modules.code_server.constants import (
     CODE_SERVER_COOKIE_PREFIX,
     CODE_SERVER_DARWIN_PATH,
     CODE_SERVER_DARWIN_SHELL,
-    CODE_SERVER_DOWNLOAD_FAILED,
     CODE_SERVER_FLAGS,
-    CODE_SERVER_KIND,
+    CODE_SERVER_RUNNER,
     CODE_SERVER_LAUNCHER_PARTS,
     CODE_SERVER_LOGIN_LIFETIME_S,
     CODE_SERVER_NAME,
@@ -50,7 +44,6 @@ from neutrino_agent.modules.code_server.constants import (
     CODE_SERVER_PACKAGE_JSON,
     CODE_SERVER_RECORD_FIELDS,
     CODE_SERVER_RELEASE_DIR_NAME,
-    CODE_SERVER_RELEASE_PREFIX,
     CODE_SERVER_RUN_DIR_NAME,
     CODE_SERVER_SOCKET_NAME,
     CODE_SERVER_SOCKET_PATH_MAX,
@@ -69,63 +62,6 @@ from neutrino_agent.modules.shared.http_forward import (
     refused,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.unpacked_tree import (
-    extract_archive,
-    remove_tree,
-    seal_tree,
-)
-
-
-def unpack_release(path: str, *, package_kind: str, root: str) -> str:
-    """Put the release's one directory under the module's root as ``release``.
-
-    A release the root already holds is replaced, and what lands is owned by
-    the agent's own account and read-only.
-
-    Args:
-        path: The archive on disk.
-        package_kind: ``tar``.
-        root: The module's directory.
-
-    Returns:
-        The release directory.
-
-    Raises:
-        ModuleApplyError: ``code_server_download_failed`` when the kind is
-            unknown, the archive cannot be read, or it holds no release.
-        OSError: When the root cannot be written.
-    """
-    os.makedirs(root, mode=0o755, exist_ok=True)
-    os.chmod(root, 0o755)
-    staging = tempfile.mkdtemp(prefix=".unpack_", dir=root)
-    try:
-        try:
-            extract_archive(path, package_kind, staging)
-        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
-            raise ModuleApplyError(
-                CODE_SERVER_DOWNLOAD_FAILED, {"detail": str(error)[:200]}
-            ) from error
-        names = [
-            name
-            for name in os.listdir(staging)
-            if name.startswith(CODE_SERVER_RELEASE_PREFIX)
-            and os.path.isdir(os.path.join(staging, name))
-        ]
-        unpacked = os.path.join(staging, names[0]) if len(names) == 1 else ""
-        if not unpacked or not os.path.isfile(
-            os.path.join(unpacked, *CODE_SERVER_LAUNCHER_PARTS)
-        ):
-            raise ModuleApplyError(
-                CODE_SERVER_DOWNLOAD_FAILED,
-                {"detail": "the archive holds no single code-server release"},
-            )
-        target = release_dir(root)
-        remove_tree(target)
-        os.replace(unpacked, target)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    seal_tree(target)
-    return target
 
 
 def release_dir(root: str) -> str:
@@ -237,8 +173,7 @@ class CodeServerHooks(InstanceHooks):
 
     name = CODE_SERVER_NAME
     title = CODE_SERVER_TITLE
-    kind = CODE_SERVER_KIND
-    download_failure_code = CODE_SERVER_DOWNLOAD_FAILED
+    runner = CODE_SERVER_RUNNER
     instance_class = CodeServerInstance
     record_fields = CODE_SERVER_RECORD_FIELDS
     secret_field = "secret"
@@ -279,26 +214,6 @@ class CodeServerHooks(InstanceHooks):
     def verify(self) -> bool:
         """Whether the release's launcher exists."""
         return os.path.isfile(launcher_path(self.machine.module_dir))
-
-    def install(self, package_path: str, package_kind: str) -> None:
-        """Unpack the release the hub handed down.
-
-        Args:
-            package_path: The archive on local disk.
-            package_kind: ``tar``.
-
-        Raises:
-            ModuleApplyError: ``code_server_download_failed`` when the
-                archive is not a code-server release.
-            OSError: When the module's directory cannot be written.
-        """
-        unpack_release(
-            package_path, package_kind=package_kind, root=self.machine.module_dir
-        )
-        self._log(
-            f"{self.name}: unpacked code-server "
-            + (installed_version(self.machine.module_dir) or "?")
-        )
 
     def service(
         self, instance: CodeServerInstance, entry: AccountEntry, record: dict

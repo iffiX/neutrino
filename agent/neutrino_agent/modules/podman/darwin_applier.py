@@ -67,29 +67,29 @@ class PodmanDarwinApplier(PodmanSystemApplier):
         self._installed_paths = tuple(installed_paths)
         self._temp_dirs: dict = {}
 
-    def install_component(self, component: dict, path: str) -> None:
+    def install_artifact(self, artifact: dict, path: str) -> None:
         """Install Podman's pkg with the system's installer.
 
         Args:
-            component: ``{name, package_kind, directory, sha256}``.
+            artifact: ``{name, kind, digest, directory}``.
             path: The kept file.
 
         Raises:
-            ModuleApplyError: ``install_failed`` for a component that is not
-                a pkg; ``podman_install_failed {component, exit_code}`` when
+            ModuleApplyError: ``install_failed`` for an artifact that is not
+                a pkg; ``podman_install_failed {artifact, exit_code}`` when
                 the installer fails, 1 when it did not start.
         """
-        name = str(component.get("name", "") or "")
-        if component.get("package_kind") != "pkg":
+        name = str(artifact.get("name", "") or "")
+        if artifact.get("kind") != "pkg":
             raise ModuleApplyError(
-                "install_failed", {"detail": f"component {name!r} is not a pkg"}
+                "install_failed", {"detail": f"artifact {name!r} is not a pkg"}
             )
         try:
             self._install_pkg(path)
         except InstallError as error:
             exit_code = error.exit_code if error.exit_code is not None else 1
             raise ModuleApplyError(
-                "podman_install_failed", {"component": name, "exit_code": exit_code}
+                "podman_install_failed", {"artifact": name, "exit_code": exit_code}
             ) from error
 
     def uninstall(self) -> None:

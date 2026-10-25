@@ -10,10 +10,13 @@ no login is ``credential_missing`` and the login it was switched with is
 kept, root's own, for the switch back; a refusing account does not stop the
 next; the report before any state is the accounts whose records stand; and
 the switch back before the agent goes takes every account. cc-switch is
-fetched from the hub when no copy is there or its version is not the
-section's, and a copy of that version is not fetched again; a fetch the hub
-refuses fails every account with ``cc_switch_download_failed`` and nothing
-run, and the same state is tried again; an unreachable hub is
+fetched from the hub by the artifact the section names when no copy is
+there or its version is not the section's, and a copy of that version is
+not fetched again; a fetch the hub refuses fails every account with the
+hub's ``download_failed`` and nothing run, and the same state is tried
+again; bytes that are not the artifact's are ``package_digest_mismatch``,
+an archive that does not unpack ``download_failed``, and a section naming
+no artifact ``no_platform_build``; an unreachable hub is
 ``hub_unreachable``; once the binding is gone no switch is made.
 """
 
@@ -326,24 +329,47 @@ def archive(tmp_path, *, name="cc-switch") -> str:
     return str(path)
 
 
-class Hub:
-    """The package stream, answering each ask with a path or a refusal."""
+DIGEST = "ab" * 32
+ARTIFACT = {"name": "cc_switch", "kind": "tar_gz", "digest": "sha256:" + DIGEST}
+REFUSAL = {
+    "code": "download_failed",
+    "params": {
+        "file": "cc-switch-cli-v5.10.4-linux-x64-musl.tar.gz",
+        "sources": [{"source": "https://x", "reason": "http_404", "detail": ""}],
+    },
+}
 
-    def __init__(self, tmp_path, *, refusal=None, name="cc-switch"):
+
+class Hub:
+    """The package stream, answering each ask with a checked file or a refusal."""
+
+    def __init__(self, tmp_path, *, refusal=None, name="cc-switch", sha256=DIGEST):
         self.asked: list = []
         self._tmp_path = tmp_path
         self._refusal = refusal
         self._name = name
+        self._sha256 = sha256
 
-    def receive(self, module):
-        self.asked.append(module)
+    def receive(self, module, artifact):
+        self.asked.append((module, artifact["name"], artifact["digest"]))
         if self._refusal is not None:
-            return {"code": self._refusal, "params": {}}
-        return {"path": archive(self._tmp_path, name=self._name)}
+            return dict(self._refusal)
+        return {
+            "path": archive(self._tmp_path, name=self._name),
+            "sha256": self._sha256,
+        }
 
 
 def versioned(**extra):
-    return {**section("ann"), "cc_switch_version": "5.10.4", **extra}
+    return {
+        **section("ann"),
+        "cc_switch_version": "5.10.4",
+        "cc_switch_artifact": dict(ARTIFACT),
+        **extra,
+    }
+
+
+ASKED = ("cc_switch", "cc_switch", "sha256:" + DIGEST)
 
 
 def test_cc_switch_is_fetched_from_the_hub_and_run_from_the_state_root(tmp_path):
@@ -353,7 +379,7 @@ def test_cc_switch_is_fetched_from_the_hub_and_run_from_the_state_root(tmp_path)
     applier.apply(versioned(), "h1", receive=hub.receive)
 
     copy = tmp_path / "state" / "ai_tools" / "bin"
-    assert hub.asked == ["cc_switch"]
+    assert hub.asked == [ASKED]
     assert (copy / "cc-switch").read_bytes() == b"#!cc-switch"
     assert (copy / "version").read_text() == "5.10.4"
     assert platform.opened == [str(copy)]
@@ -372,7 +398,7 @@ def test_a_copy_of_the_version_named_is_not_fetched_again(tmp_path):
 
     applier.apply(versioned(base_url=HUB + "/other"), "h2", receive=hub.receive)
 
-    assert hub.asked == ["cc_switch"]
+    assert hub.asked == [ASKED]
 
 
 def test_a_copy_of_another_version_is_replaced(tmp_path, binary):
@@ -382,27 +408,27 @@ def test_a_copy_of_another_version_is_replaced(tmp_path, binary):
     applier.apply(versioned(), "h1", receive=hub.receive)
 
     copy = tmp_path / "state" / "ai_tools" / "bin"
-    assert hub.asked == ["cc_switch"]
+    assert hub.asked == [ASKED]
     assert sorted(os.listdir(copy)) == ["cc-switch", "version"]
     assert (copy / "version").read_text() == "5.10.4"
 
 
 def test_a_fetch_the_hub_refuses_fails_every_account_and_is_tried_again(tmp_path):
     applier, platform = make(tmp_path, homes={"ann": "/home/ann", "bob": "/home/bob"})
-    hub = Hub(tmp_path, refusal="hub_release_file_gone")
-    state = {**section("ann", "bob"), "cc_switch_version": "5.10.4"}
+    hub = Hub(tmp_path, refusal=REFUSAL)
+    state = {**versioned(), **section("ann", "bob")}
 
     applier.apply(state, "h1", receive=hub.receive)
     applier.apply(state, "h1", receive=hub.receive)
 
-    assert hub.asked == ["cc_switch", "cc_switch"]
+    assert hub.asked == [ASKED, ASKED]
     assert platform.runs == []
     assert [entry for entry in applier.report()["accounts"]] == [
         {
             "account": name,
             "state": "failed",
-            "code": "cc_switch_download_failed",
-            "params": {"account": name, "detail": "hub_release_file_gone"},
+            "code": "download_failed",
+            "params": {"account": name, **REFUSAL["params"]},
             "has_records": False,
         }
         for name in ("ann", "bob")
@@ -415,9 +441,40 @@ def test_an_archive_without_the_program_is_a_failed_download(tmp_path):
     applier.apply(versioned(), "h1", receive=Hub(tmp_path, name="other").receive)
 
     (entry,) = applier.report()["accounts"]
-    assert entry["code"] == "cc_switch_download_failed"
-    assert "cc-switch" in entry["params"]["detail"]
+    assert entry["code"] == "download_failed"
+    assert entry["params"] == {"account": "ann", "file": "cc_switch", "sources": []}
     assert not (tmp_path / "state" / "ai_tools" / "bin").exists()
+    assert platform.runs == []
+
+
+def test_bytes_that_are_not_the_artifacts_are_refused(tmp_path):
+    applier, platform = make(tmp_path)
+
+    applier.apply(versioned(), "h1", receive=Hub(tmp_path, sha256="cd" * 32).receive)
+
+    (entry,) = applier.report()["accounts"]
+    assert (entry["code"], entry["params"]) == (
+        "package_digest_mismatch",
+        {"account": "ann", "artifact": "cc_switch"},
+    )
+    assert not (tmp_path / "state" / "ai_tools" / "bin").exists()
+    assert platform.runs == []
+
+
+def test_a_section_naming_no_artifact_is_no_platform_build(tmp_path):
+    applier, platform = make(tmp_path)
+    hub = Hub(tmp_path)
+    state = versioned()
+    del state["cc_switch_artifact"]
+
+    applier.apply(state, "h1", receive=hub.receive)
+
+    (entry,) = applier.report()["accounts"]
+    assert (entry["code"], entry["params"]) == (
+        "no_platform_build",
+        {"account": "ann", "module": "cc_switch"},
+    )
+    assert hub.asked == []
     assert platform.runs == []
 
 
@@ -425,7 +482,11 @@ def test_an_unreachable_hub_is_said_as_it_is(tmp_path):
     applier, _platform = make(tmp_path)
 
     applier.apply(
-        versioned(), "h1", receive=Hub(tmp_path, refusal="hub_unreachable").receive
+        versioned(),
+        "h1",
+        receive=Hub(
+            tmp_path, refusal={"code": "hub_unreachable", "params": {}}
+        ).receive,
     )
 
     assert states(applier) == {"ann": ("failed", "hub_unreachable")}
@@ -491,11 +552,17 @@ def test_a_copy_fetched_for_a_switch_back_is_the_one_the_next_switch_runs(tmp_pa
     applier._log = lines.append
 
     applier.apply(
-        {"is_enabled": False, "cc_switch_version": "5.10.4"}, "h2", receive=hub.receive
+        {
+            "is_enabled": False,
+            "cc_switch_version": "5.10.4",
+            "cc_switch_artifact": dict(ARTIFACT),
+        },
+        "h2",
+        receive=hub.receive,
     )
     applier.apply(versioned(), "h3", receive=hub.receive)
 
-    assert hub.asked == ["cc_switch", "cc_switch"]
+    assert hub.asked == [ASKED, ASKED]
     assert "ai_tools: cc-switch 5.10.4 fetched from the hub" in lines
 
 

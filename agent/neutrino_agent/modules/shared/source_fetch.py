@@ -1,0 +1,309 @@
+"""Probing and ranking the sources of what the agent hands to a tool.
+
+The agent downloads no file itself: it chooses the npm registry an install
+runs against and the host an npm setting names. Every source is probed at
+once, and a probe waits at most ``AGENT_SOURCE_PROBE_TIMEOUT_S`` for an
+answer. The sources that answered are ranked by the probe's speed, measured
+from its first byte to its last, and two speeds within a tenth of each
+other go to the earlier first byte. A source that did not answer in time is
+not ranked. Nothing is remembered: each ranking probes again.
+
+Not pure: opens connections.
+"""
+
+# PEP 604 unions below are annotations only; this keeps them lazy so the
+# agent still imports on the Python 3.9 that older Raspbian ships.
+from __future__ import annotations
+
+import functools
+import json
+import os
+import socket
+import ssl
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+
+from neutrino_agent.constants import (
+    AGENT_SOURCE_DOCUMENT_LIMIT_BYTES,
+    AGENT_SOURCE_HEADERS,
+    AGENT_SOURCE_NEAR_TIE,
+    AGENT_SOURCE_PROBE_TIMEOUT_S,
+)
+
+# The reasons a source fails, as ``download_failed`` names them.
+REASON_UNREACHABLE = "unreachable"
+REASON_TIMEOUT = "timeout"
+REASON_DIGEST_MISMATCH = "digest_mismatch"
+REASON_HTTP_PREFIX = "http_"
+# Where macOS keeps the certificate authorities when the interpreter's own
+# store holds none.
+SYSTEM_CA_FILE = "/etc/ssl/cert.pem"
+DETAIL_CHARS = 200
+
+
+@dataclass
+class SourceProbe:
+    """What one probe of one source found.
+
+    Attributes:
+        source: The source, as the recipe names it.
+        is_answered: Whether it answered in time; an HTTP error counts only
+            where the probe takes one.
+        first_byte_s: Seconds from the request to the first byte.
+        speed: Bytes per second from the first byte to the last.
+        status: The HTTP status; 0 when none came.
+        body: What it answered, up to the probe's limit.
+        reason: Why it failed, empty when it answered.
+        detail: The error's own words, empty when it answered.
+    """
+
+    source: str
+    is_answered: bool = False
+    first_byte_s: float = 0.0
+    speed: float = 0.0
+    status: int = 0
+    body: bytes = b""
+    reason: str = ""
+    detail: str = ""
+
+    def failure(self) -> dict:
+        """The source as ``download_failed`` lists it.
+
+        Returns:
+            ``{source, reason, detail}``.
+        """
+        return {"source": self.source, "reason": self.reason, "detail": self.detail}
+
+
+def public_context() -> ssl.SSLContext:
+    """The TLS context a probe of a public source verifies with.
+
+    Returns:
+        The system's certificate authorities, or macOS's file of them when
+        the interpreter's own store holds none.
+    """
+    context = ssl.create_default_context()
+    if not context.cert_store_stats().get("x509_ca") and os.path.isfile(SYSTEM_CA_FILE):
+        context.load_verify_locations(cafile=SYSTEM_CA_FILE)
+    return context
+
+
+def probe(
+    url: str,
+    *,
+    source: str = "",
+    timeout_s: float = AGENT_SOURCE_PROBE_TIMEOUT_S,
+    limit: int = AGENT_SOURCE_DOCUMENT_LIMIT_BYTES,
+    is_error_answer: bool = False,
+    clock=time.monotonic,
+    context: "ssl.SSLContext | None" = None,
+) -> SourceProbe:
+    """GET one address and time its answer.
+
+    Args:
+        url: What to ask.
+        source: The source the address belongs to; the address itself when
+            empty.
+        timeout_s: How long the probe waits for an answer.
+        limit: How much of the body is read.
+        is_error_answer: Whether an HTTP error status counts as an answer,
+            timed as any other, as it does for a host whose base address
+            names no page.
+        clock: Monotonic seconds.
+        context: The TLS context; None verifies with :func:`public_context`.
+
+    Returns:
+        The probe.
+    """
+    found = SourceProbe(source=source or url)
+    request = urllib.request.Request(url, headers=dict(AGENT_SOURCE_HEADERS))
+    started = clock()
+    try:
+        response = urllib.request.urlopen(
+            request,
+            timeout=timeout_s,
+            context=context if context is not None else public_context(),
+        )
+    except urllib.error.HTTPError as error:
+        if not is_error_answer:
+            error.close()
+            found.status = error.code
+            found.reason = f"{REASON_HTTP_PREFIX}{error.code}"
+            found.detail = str(error.reason or "")[:DETAIL_CHARS]
+            return found
+        response = error
+    except (socket.timeout, TimeoutError) as error:
+        found.reason = REASON_TIMEOUT
+        found.detail = str(error)[:DETAIL_CHARS]
+        return found
+    except (OSError, ValueError) as error:
+        cause = getattr(error, "reason", error)
+        is_timeout = isinstance(cause, (socket.timeout, TimeoutError))
+        found.reason = REASON_TIMEOUT if is_timeout else REASON_UNREACHABLE
+        found.detail = str(cause)[:DETAIL_CHARS]
+        return found
+    with response:
+        found.status = int(response.getcode() or 200)
+        try:
+            first = response.read(1)
+            first_at = clock()
+            rest = response.read(max(0, limit - len(first)))
+            last_at = clock()
+        except (OSError, ValueError) as error:
+            is_timeout = isinstance(error, (socket.timeout, TimeoutError))
+            found.reason = REASON_TIMEOUT if is_timeout else REASON_UNREACHABLE
+            found.detail = str(error)[:DETAIL_CHARS]
+            return found
+    found.body = first + rest
+    found.is_answered = True
+    found.first_byte_s = first_at - started
+    found.speed = len(found.body) / max(last_at - first_at, 1e-6)
+    return found
+
+
+def probe_all(urls: list, *, probe_one=probe) -> list:
+    """Probe every address at once.
+
+    Args:
+        urls: ``(source, url)`` pairs.
+        probe_one: Called with ``url, source=``; returns a
+            :class:`SourceProbe`.
+
+    Returns:
+        One probe per pair, in the pairs' order.
+    """
+    found: list = [None] * len(urls)
+
+    def ask(index: int, source: str, url: str) -> None:
+        found[index] = probe_one(url, source=source)
+
+    threads = [
+        threading.Thread(target=ask, args=(index, source, url), daemon=True)
+        for index, (source, url) in enumerate(urls)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return found
+
+
+def ranked(probes: list) -> list:
+    """The probes that answered, fastest first.
+
+    Args:
+        probes: The probes.
+
+    Returns:
+        The answered probes by speed, two speeds within a tenth of each
+        other ordered by the earlier first byte.
+    """
+    return sorted(
+        (found for found in probes if found.is_answered),
+        key=functools.cmp_to_key(_compare),
+    )
+
+
+def registry_document(registry: str, package: str, version: str) -> str:
+    """The address of one version's document on an npm registry. Pure.
+
+    Args:
+        registry: The registry, such as ``https://registry.npmjs.org``.
+        package: The package, such as ``@cloudcli-ai/cloudcli``.
+        version: The version.
+
+    Returns:
+        ``<registry>/<package, its slash escaped>/<version>``.
+    """
+    name = urllib.parse.quote(package, safe="@")
+    return f"{registry.rstrip('/')}/{name}/{urllib.parse.quote(version)}"
+
+
+def rank_registries(
+    registries: list, *, package: str, version: str, integrity: str, probe_one=probe
+) -> tuple:
+    """Rank npm registries by speed, keeping those whose integrity is the pinned one.
+
+    Args:
+        registries: The artifact's registries, in its order.
+        package: The npm package.
+        version: The version installed.
+        integrity: The artifact's digest, npm's ``integrity``.
+        probe_one: Called with ``url, source=``; returns a
+            :class:`SourceProbe`.
+
+    Returns:
+        ``(chosen, failures)``: the registries that answered with the
+        pinned integrity, fastest first, and each other one as
+        ``{source, reason, detail}``.
+    """
+    probes = probe_all(
+        [
+            (registry, registry_document(registry, package, version))
+            for registry in registries
+        ],
+        probe_one=probe_one,
+    )
+    for found in probes:
+        if not found.is_answered:
+            continue
+        named = _integrity_of(found.body)
+        if named != integrity:
+            found.is_answered = False
+            found.reason = REASON_DIGEST_MISMATCH
+            found.detail = f"the registry names {named or 'no integrity'}"[
+                :DETAIL_CHARS
+            ]
+    chosen = [found.source for found in ranked(probes)]
+    return chosen, [found.failure() for found in probes if not found.is_answered]
+
+
+def rank_hosts(hosts: list, *, probe_one=probe) -> list:
+    """Rank the hosts an npm setting names by speed.
+
+    A host's base address can answer with an error status and still be
+    there, so any HTTP answer counts.
+
+    Args:
+        hosts: The hosts, in the artifact's order.
+        probe_one: Called with ``url, source=, is_error_answer=``; returns
+            a :class:`SourceProbe`.
+
+    Returns:
+        The hosts that answered, fastest first, then those that did not, in
+        their order, to be tried after them.
+    """
+    probes = probe_all(
+        [(host, host) for host in hosts],
+        probe_one=functools.partial(probe_one, is_error_answer=True),
+    )
+    order = [found.source for found in ranked(probes)]
+    return order + [host for host in hosts if host not in order]
+
+
+def _integrity_of(body: bytes) -> str:
+    """The ``dist.integrity`` a version's document names, empty for none."""
+    try:
+        document = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return ""
+    dist = document.get("dist") if isinstance(document, dict) else None
+    integrity = dist.get("integrity") if isinstance(dist, dict) else None
+    return integrity if isinstance(integrity, str) else ""
+
+
+def _compare(first: SourceProbe, second: SourceProbe) -> int:
+    """The ranking's order of two answered probes."""
+    fastest = max(first.speed, second.speed)
+    if (
+        fastest <= 0
+        or abs(first.speed - second.speed) <= AGENT_SOURCE_NEAR_TIE * fastest
+    ):
+        return (first.first_byte_s > second.first_byte_s) - (
+            first.first_byte_s < second.first_byte_s
+        )
+    return -1 if first.speed > second.speed else 1

@@ -1,8 +1,9 @@
-"""VS Code's hooks: the CLI's unpack, each server's service, the inotify floors.
+"""VS Code's hooks: where the CLI is, each server's service, the inotify floors.
 
-What these pin: the one file of the CLI's name comes out of a tarball or a
-zip wherever it sits, runnable by every account, and an archive without it
-or of another kind is an install error; the CLI is there when its file is;
+What these pin: the CLI artifact, which names no directory, lands through
+the shared unpack directly in the module's directory beside the token
+files, runnable by every account and writable by none; the CLI is there
+when its file is;
 a configuration is checked for this system; each server's service runs the
 CLI as the account with its token in a file of the account's own, reading
 its address, port and token file from the environment on Linux and from
@@ -20,7 +21,7 @@ import zipfile
 
 import pytest
 
-from neutrino_agent.exceptions import InstallError, ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -28,7 +29,8 @@ from neutrino_agent.modules.shared.account_service import (
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.vscode.config import VscodeConfig
-from neutrino_agent.modules.vscode.hooks import VscodeHooks, unpack_cli
+from neutrino_agent.modules.shared.package import unpack_artifact
+from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
 
 CONFIG = {"address": "", "instances": [{"account": "ann", "port": 8000, "token": "t"}]}
@@ -90,59 +92,44 @@ def parsed_instance(hooks, **changes):
 # --- the CLI ---
 
 
-def test_the_cli_comes_out_of_a_tarball(tmp_path):
-    archive = tarball(tmp_path / "cli.tar.gz", {"code": b"\x7fELF", "LICENSE": b"x"})
+CLI = {"name": "cli", "kind": "tar_gz"}
 
-    target = unpack_cli(
-        archive, package_kind="tar", directory=str(tmp_path / "vscode"), name="code"
+
+def test_the_cli_lands_in_the_modules_directory_beside_the_tokens(tmp_path):
+    hooks = hooks_for("linux", tmp_path)
+    tokens = tmp_path / "state" / "vscode" / "tokens"
+    tokens.mkdir(parents=True)
+    (tokens / "ann.token").write_text("t")
+    assert hooks.verify() is False
+
+    unpack_artifact(
+        CLI,
+        tarball(tmp_path / "cli.tar.gz", {"code": b"\x7fELF"}),
+        module_dir=hooks.machine.module_dir,
+        join=os.path.join,
     )
 
-    assert target == str(tmp_path / "vscode" / "code")
-    assert open(target, "rb").read() == b"\x7fELF"
-    assert stat.S_IMODE(os.stat(target).st_mode) == 0o755
+    assert hooks.verify() is True
+    assert hooks.cli_path == str(tmp_path / "state" / "vscode" / "code")
+    assert open(hooks.cli_path, "rb").read() == b"\x7fELF"
+    assert stat.S_IMODE(os.stat(hooks.cli_path).st_mode) & 0o222 == 0
+    assert (tokens / "ann.token").read_text() == "t"
+    assert hooks_for("windows", tmp_path).cli_path.endswith("vscode\\code.exe")
 
 
-def test_the_cli_comes_out_of_a_zip_wherever_it_sits(tmp_path):
+def test_the_cli_comes_out_of_a_zip_with_its_one_top_directory_dropped(tmp_path):
     archive = tmp_path / "cli.zip"
     with zipfile.ZipFile(archive, "w") as packed:
         packed.writestr("bin/code.exe", b"MZ")
 
-    target = unpack_cli(
-        str(archive), package_kind="zip", directory=str(tmp_path / "v"), name="code.exe"
+    unpack_artifact(
+        {"name": "cli", "kind": "zip"},
+        str(archive),
+        module_dir=str(tmp_path / "v"),
+        join=os.path.join,
     )
 
-    assert open(target, "rb").read() == b"MZ"
-
-
-@pytest.mark.parametrize("package_kind", ["deb", "tar"])
-def test_an_archive_without_the_cli_or_of_another_kind_is_refused(
-    tmp_path, package_kind
-):
-    archive = tarball(tmp_path / "cli.tar.gz", {"README": b"x"})
-
-    with pytest.raises(InstallError):
-        unpack_cli(
-            archive, package_kind=package_kind, directory=str(tmp_path), name="code"
-        )
-
-
-def test_a_broken_archive_is_refused(tmp_path):
-    archive = tmp_path / "cli.zip"
-    archive.write_bytes(b"not a zip")
-
-    with pytest.raises(InstallError):
-        unpack_cli(str(archive), package_kind="zip", directory=str(tmp_path), name="c")
-
-
-def test_the_cli_is_there_when_its_file_is_and_an_install_puts_it_there(tmp_path):
-    hooks = hooks_for("linux", tmp_path)
-    assert hooks.verify() is False
-
-    hooks.install(tarball(tmp_path / "cli.tar.gz", {"code": b"hi"}), "tar")
-
-    assert hooks.verify() is True
-    assert hooks.cli_path == str(tmp_path / "state" / "vscode" / "code")
-    assert hooks_for("windows", tmp_path).cli_path.endswith("vscode\\code.exe")
+    assert (tmp_path / "v" / "code.exe").read_bytes() == b"MZ"
 
 
 # --- the configuration and the service ---
@@ -314,10 +301,7 @@ def test_the_runner_writes_the_token_the_environment_and_the_unit(tmp_path):
         log=lambda line: None,
         machine=machine,
     )
-    runner.install(
-        {"entry": {"package_kind": "tar"}},
-        tarball(tmp_path / "cli.tar.gz", {"code": b"hi"}),
-    )
+    runner.install_artifact({}, CLI, tarball(tmp_path / "cli.tar.gz", {"code": b"hi"}))
 
     runner.apply(CONFIG)
 

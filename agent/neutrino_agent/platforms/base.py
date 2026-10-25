@@ -357,30 +357,6 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("no machine id to read here")
 
-    def install_package(self, path: str, *, package_kind: str, entry: dict) -> None:
-        """Install one downloaded package of a kind.
-
-        Args:
-            path: The downloaded file.
-            package_kind: ``deb`` or ``rpm``.
-            entry: The manifest's platform entry.
-
-        Raises:
-            PlatformUnsupportedError: When the platform installs nothing.
-        """
-        raise PlatformUnsupportedError("cannot install packages here")
-
-    def uninstall_package(self, command: str) -> None:
-        """Remove a package the way its manifest says to.
-
-        Args:
-            command: The manifest's removal command for this platform.
-
-        Raises:
-            PlatformUnsupportedError: When the platform removes nothing.
-        """
-        raise PlatformUnsupportedError("cannot remove packages here")
-
     def install_system_packages(self, names: list) -> str:
         """Install packages by name with the machine's own package manager.
 

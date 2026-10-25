@@ -1,174 +1,103 @@
-"""Installing, removing and verifying a package module.
+"""Installing, removing and verifying one ``hub`` module.
 
-Execution only. The runner is handed a module the hub already resolved and
-bytes the hub already fetched; what is pinned here is that it does what it
-was told, judges the result by the machine's own state, and keeps nothing
-about how it went — no latch, no failure memory, no policy of any kind.
+What these pin: the recipe's ``verify`` is run and its exit read; a received
+file is checked against the artifact's ``sha256:`` digest; each artifact
+kind lands the one way every module shares: an archive unpacked under its
+directory and sealed, or beside what the module's directory holds when it
+names none, an msi or a pkg kept under its directory and handed to the
+system's installer, a zstd file kept as it came, a program kept where its
+runner says and made executable; an unknown kind is ``install_failed``; and
+a ``hub`` entry's system packages are installed by name before any
+artifact.
 """
 
+import io
 import os
+import stat
 import subprocess
+import tarfile
 
 import pytest
 
-from neutrino_agent.exceptions import InstallError
-from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
-from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared import base as base_module
+from neutrino_agent.modules.shared import package as package_module
+from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.package import (
+    artifacts_of,
+    check_received,
+    digest_hex,
+    keep_artifact,
+    npm_artifact,
+    place_binary,
+    received_artifacts,
+    verify_passes,
+)
 from neutrino_agent.platforms.base import AgentPlatform
 
-DEB_MODULE = {
-    "title": "FakeDesk",
-    "kind": "package",
-    "entry": {"package_kind": "deb", "uninstall": "apt-get remove -y fakedesk"},
-    "verify": "",
-    "package": "fakedesk",
+RECIPE = {
+    "runner": "demo",
+    "method": "hub",
+    "params": {
+        "version": "1.0",
+        "artifacts": [
+            {
+                "name": "node",
+                "kind": "tar_gz",
+                "directory": "node",
+                "digest": "sha256:aa",
+            },
+            {
+                "name": "demo",
+                "kind": "npm",
+                "package": "@demo/demo",
+                "digest": "sha512-x",
+                "sources": ["https://registry.example"],
+            },
+        ],
+        "packages": ["git"],
+        "verify": "demo --version",
+    },
 }
 
-COMMAND_MODULE = {
-    "title": "AnyDesk",
-    "kind": "package",
-    "entry": {"package_kind": "dmg", "uninstall": "rm -rf /Applications/AnyDesk.app"},
-    "verify": "test -d /Applications/AnyDesk.app",
-    "package": "anydesk",
-}
 
-
-class RecordingPlatform(AgentPlatform):
-    """Records installs and uninstalls instead of running them."""
+class StatePlatform(AgentPlatform):
+    """A platform whose state root is a temporary directory."""
 
     os_name = "linux"
 
-    def __init__(self, *, install_error=None, uninstall_error=None):
-        self.installs: list = []
-        self.uninstalls: list = []
-        self._install_error = install_error
-        self._uninstall_error = uninstall_error
+    def __init__(self, root):
+        self.root = str(root)
+        self.installed: list = []
+        self.opened: list = []
 
-    def install_package(self, path, *, package_kind, entry):
-        self.installs.append((os.path.basename(path), package_kind, entry))
-        if self._install_error is not None:
-            raise self._install_error
+    def agent_var_dir(self):
+        return self.root
 
-    def uninstall_package(self, command):
-        self.uninstalls.append(command)
-        if self._uninstall_error is not None:
-            raise self._uninstall_error
+    def install_system_packages(self, names):
+        self.installed.append(list(names))
+        return ""
 
-
-@pytest.fixture
-def runner():
-    """A runner over a platform that records rather than installs."""
-    platform = RecordingPlatform()
-    return PackageModuleRunner(platform=platform, log=lambda message: None), platform
+    def open_to_accounts(self, directory):
+        self.opened.append(directory)
 
 
-def test_install_hands_the_bytes_to_the_platform(runner, tmp_path):
-    package = tmp_path / "package.deb"
-    package.write_bytes(b"!<arch>")
-    module, platform = runner
+class DemoRunner(ModuleRunner):
+    runner = "demo"
+    name = "demo"
 
-    module.install(DEB_MODULE, str(package))
-
-    assert platform.installs == [
-        ("package.deb", "deb", DEB_MODULE["entry"]),
-    ]
+    def binary_path(self, recipe, artifact):
+        return os.path.join(self.module_dir, "bin", "demo")
 
 
-def test_install_that_refuses_is_left_to_the_engine_to_type(tmp_path):
-    platform = RecordingPlatform(install_error=InstallError("dpkg failed: held"))
-    module = PackageModuleRunner(platform=platform, log=lambda message: None)
-
-    with pytest.raises(InstallError):
-        module.install(DEB_MODULE, str(tmp_path / "package.deb"))
-
-
-def test_install_on_a_platform_that_installs_nothing_is_not_swallowed(tmp_path):
-    module = PackageModuleRunner(platform=AgentPlatform(), log=lambda message: None)
-
-    with pytest.raises(PlatformUnsupportedError):
-        module.install(DEB_MODULE, str(tmp_path / "package.deb"))
-
-
-def test_a_deb_uninstall_purges_the_resolved_package_name(runner):
-    module, platform = runner
-
-    module.uninstall(DEB_MODULE)
-
-    # apt-get remove leaves the `rc` state, whose remnant reads as installed.
-    assert platform.uninstalls == ["apt-get purge -y fakedesk"]
-
-
-def test_a_non_deb_uninstall_keeps_the_catalog_command(runner):
-    module, platform = runner
-
-    module.uninstall(COMMAND_MODULE)
-
-    assert platform.uninstalls == ["rm -rf /Applications/AnyDesk.app"]
-
-
-def test_an_uninstall_with_no_command_named_asks_the_platform_nothing(runner):
-    module, platform = runner
-
-    module.uninstall({"entry": {"package_kind": "dmg"}, "package": "x", "verify": ""})
-
-    assert platform.uninstalls == []
-
-
-def test_an_uninstall_that_refuses_is_left_to_the_engine_to_type():
-    platform = RecordingPlatform(uninstall_error=InstallError("uninstall failed: busy"))
-    module = PackageModuleRunner(platform=platform, log=lambda message: None)
-
-    with pytest.raises(InstallError):
-        module.uninstall(DEB_MODULE)
-
-
-@pytest.mark.parametrize(
-    "status, is_installed",
-    [
-        ("install ok installed", True),
-        ("deinstall ok config-files", False),
-        ("unknown ok not-installed", False),
-    ],
-)
-def test_deb_verify_reads_dpkgs_own_status_word(
-    runner, monkeypatch, status, is_installed
-):
-    module, _ = runner
-    seen = {}
-
-    def fake_run(command, **kwargs):
-        seen["command"] = command
-        return subprocess.CompletedProcess(command, 0, stdout=status, stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert module.verify(DEB_MODULE) is is_installed
-    assert seen["command"] == ["dpkg-query", "-W", "-f=${Status}", "fakedesk"]
-
-
-def test_deb_verify_an_unknown_package_is_absent(runner, monkeypatch):
-    module, _ = runner
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", ""),
-    )
-
-    assert module.verify(DEB_MODULE) is False
-
-
-@pytest.mark.parametrize(
-    "error", [OSError("no dpkg"), subprocess.TimeoutExpired("x", 1)]
-)
-def test_deb_verify_a_query_that_cannot_run_is_absent(runner, monkeypatch, error):
-    module, _ = runner
-
-    def raise_error(command, **kwargs):
-        raise error
-
-    monkeypatch.setattr(subprocess, "run", raise_error)
-
-    assert module.verify(DEB_MODULE) is False
+def tarball(path, members: dict) -> str:
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = 0o755
+            archive.addfile(info, io.BytesIO(data))
+    return str(path)
 
 
 def test_verify_passes_runs_the_recipes_command_and_reads_its_exit(monkeypatch):
@@ -186,47 +115,186 @@ def test_verify_passes_runs_the_recipes_command_and_reads_its_exit(monkeypatch):
     assert seen == ["smbd -V ok", "smbd -V"]
 
 
-def test_command_verify_runs_the_catalogs_own_command(runner, monkeypatch):
-    module, _ = runner
-    seen = {}
-
-    def fake_run(command, **kwargs):
-        seen["command"] = command
-        return subprocess.CompletedProcess(command, 0, b"", b"")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert module.verify(COMMAND_MODULE) is True
-    assert seen["command"] == "test -d /Applications/AnyDesk.app"
+def test_the_npm_artifact_is_not_received_and_is_found_by_its_kind():
+    assert [artifact["name"] for artifact in artifacts_of(RECIPE)] == ["node", "demo"]
+    assert [artifact["name"] for artifact in received_artifacts(RECIPE)] == ["node"]
+    assert npm_artifact(RECIPE)["package"] == "@demo/demo"
+    assert npm_artifact({"params": {}}) == {}
+    assert artifacts_of({}) == []
 
 
-def test_command_verify_non_zero_exit_is_absent(runner, monkeypatch):
-    module, _ = runner
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, b"", b""),
+def test_a_received_file_is_checked_against_the_artifacts_digest():
+    artifact = {"name": "node", "digest": "sha256:ABC"}
+
+    assert digest_hex("sha256:ABC") == "abc"
+    assert digest_hex("sha512-x") == ""
+    assert check_received(artifact, {"path": "/p", "sha256": "abc"}) is None
+    assert check_received(artifact, {"path": "/p", "sha256": "abd"}) == {
+        "code": "package_digest_mismatch",
+        "params": {"artifact": "node"},
+    }
+    assert check_received({"name": "x", "digest": ""}, {"sha256": ""})["code"] == (
+        "package_digest_mismatch"
     )
 
-    assert module.verify(COMMAND_MODULE) is False
+
+def test_an_archive_lands_under_its_directory_sealed_and_opened(tmp_path):
+    platform = StatePlatform(tmp_path / "state")
+    runner = DemoRunner(platform=platform)
+    archive = tarball(tmp_path / "node.tar.gz", {"node-v22/bin/node": b"#!node"})
+
+    runner.install_artifact(RECIPE, RECIPE["params"]["artifacts"][0], archive)
+
+    node = tmp_path / "state" / "demo" / "node"
+    assert (node / "bin" / "node").read_bytes() == b"#!node"
+    assert stat.S_IMODE(node.stat().st_mode) == 0o555
+    assert platform.opened == [str(tmp_path / "state" / "demo")]
 
 
-def test_verify_with_no_command_for_this_platform_is_absent(runner):
-    module, _ = runner
+def test_an_archive_that_names_no_directory_lands_beside_what_is_there(tmp_path):
+    platform = StatePlatform(tmp_path / "state")
+    runner = DemoRunner(platform=platform)
+    kept = tmp_path / "state" / "demo" / "tokens"
+    kept.mkdir(parents=True)
+    (kept / "lab.token").write_text("t")
+    archive = tarball(tmp_path / "cli.tar.gz", {"code": b"#!cli"})
 
-    assert module.verify({"entry": {"package_kind": "dmg"}, "verify": ""}) is False
+    runner.install_artifact(
+        RECIPE, {"name": "cli", "kind": "tar_gz", "digest": "sha256:aa"}, archive
+    )
+
+    module = tmp_path / "state" / "demo"
+    assert sorted(os.listdir(module)) == ["code", "tokens"]
+    assert (kept / "lab.token").read_text() == "t"
 
 
-def test_the_runner_keeps_no_memory_of_anything(runner, tmp_path):
-    module, _ = runner
-    package = tmp_path / "package.deb"
-    package.write_bytes(b"!<arch>")
+def test_a_broken_archive_is_install_failed(tmp_path):
+    runner = DemoRunner(platform=StatePlatform(tmp_path / "state"))
+    junk = tmp_path / "junk.tar.gz"
+    junk.write_bytes(b"not an archive")
 
-    module.install(DEB_MODULE, str(package))
-    module.uninstall(DEB_MODULE)
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.install_artifact(RECIPE, RECIPE["params"]["artifacts"][0], str(junk))
 
-    # No latch, no failure map, no set of names: policy is the hub's, and a
-    # runner that remembered would be a second opinion about retrying. The
-    # log sources a journal warned of are no policy.
-    assert [name for name in vars(module) if not name.startswith("_")] == []
-    assert set(vars(module)) == {"_platform", "_log", "_publish", "_unread_sources"}
+    assert refused.value.code == "install_failed"
+
+
+def test_a_directory_that_is_not_a_plain_name_is_install_failed(tmp_path):
+    runner = DemoRunner(platform=StatePlatform(tmp_path / "state"))
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.install_artifact(
+            RECIPE,
+            {"name": "node", "kind": "zip", "directory": "../x", "digest": ""},
+            str(tmp_path / "none.zip"),
+        )
+
+    assert refused.value.code == "install_failed"
+
+
+@pytest.mark.parametrize(
+    "kind, suffix, installer",
+    [("msi", ".msi", "install_msi"), ("pkg", ".pkg", "install_pkg")],
+)
+def test_an_installer_package_is_kept_then_handed_to_the_system(
+    tmp_path, monkeypatch, kind, suffix, installer
+):
+    handed: list = []
+    monkeypatch.setattr(
+        base_module.installers,
+        installer,
+        lambda path, **kwargs: handed.append((path, sorted(kwargs))),
+    )
+    runner = DemoRunner(platform=StatePlatform(tmp_path / "state"))
+    received = tmp_path / "received"
+    received.write_bytes(b"package")
+
+    runner.install_artifact(
+        RECIPE,
+        {"name": "app", "kind": kind, "directory": "app", "digest": "sha256:aa"},
+        str(received),
+    )
+
+    kept = tmp_path / "state" / "demo" / "app" / f"app{suffix}"
+    assert kept.read_bytes() == b"package"
+    assert not received.exists()
+    assert [path for path, _ in handed] == [str(kept)]
+    assert handed[0][1] == (["log_path"] if kind == "msi" else [])
+
+
+def test_a_zstd_file_is_kept_as_it_came_and_installed_by_nothing(tmp_path):
+    kept = keep_artifact(
+        {"name": "image", "kind": "raw_zst", "directory": "image"},
+        _received(tmp_path, b"\x28\xb5\x2f\xfd"),
+        module_dir=str(tmp_path / "podman"),
+        join=os.path.join,
+    )
+
+    assert kept == str(tmp_path / "podman" / "image" / "image.raw.zst")
+    assert (
+        package_module.kept_artifact_path(
+            str(tmp_path / "podman"), "image", "raw_zst", os.path.join
+        )
+        == kept
+    )
+
+
+def test_a_program_is_kept_where_its_runner_says_and_made_executable(tmp_path):
+    runner = DemoRunner(platform=StatePlatform(tmp_path / "state"))
+
+    runner.install_artifact(
+        RECIPE,
+        {"name": "demo", "kind": "binary", "digest": "sha256:aa"},
+        _received(tmp_path, b"\x7fELF"),
+    )
+
+    program = tmp_path / "state" / "demo" / "bin" / "demo"
+    assert program.read_bytes() == b"\x7fELF"
+    assert stat.S_IMODE(program.stat().st_mode) == 0o755
+
+
+def test_place_binary_replaces_the_program_in_one_rename(tmp_path):
+    target = tmp_path / "bin" / "gitea"
+    place_binary(_received(tmp_path, b"one"), str(target))
+    place_binary(_received(tmp_path, b"two"), str(target))
+
+    assert target.read_bytes() == b"two"
+    assert os.listdir(tmp_path / "bin") == ["gitea"]
+
+
+def test_a_runner_that_keeps_no_program_refuses_a_binary(tmp_path):
+    class PlainRunner(ModuleRunner):
+        name = "plain"
+
+    with pytest.raises(ModuleApplyError) as refused:
+        PlainRunner(platform=StatePlatform(tmp_path)).install_artifact(
+            {}, {"name": "x", "kind": "binary"}, _received(tmp_path, b"x")
+        )
+
+    assert refused.value.code == "install_failed"
+
+
+def test_an_unknown_kind_is_install_failed(tmp_path):
+    with pytest.raises(ModuleApplyError) as refused:
+        DemoRunner(platform=StatePlatform(tmp_path)).install_artifact(
+            {}, {"name": "x", "kind": "rar"}, _received(tmp_path, b"x")
+        )
+
+    assert refused.value.code == "install_failed"
+    assert "rar" in refused.value.params["detail"]
+
+
+def test_a_hub_entrys_system_packages_install_by_name(tmp_path):
+    platform = StatePlatform(tmp_path)
+    runner = DemoRunner(platform=platform, log=lambda message: None)
+
+    runner.install(RECIPE)
+    runner.install({"params": {}})
+
+    assert platform.installed == [["git"]]
+
+
+def _received(tmp_path, data: bytes) -> str:
+    path = tmp_path / f"received_{len(os.listdir(tmp_path))}"
+    path.write_bytes(data)
+    return str(path)

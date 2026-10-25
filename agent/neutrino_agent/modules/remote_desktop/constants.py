@@ -3,7 +3,7 @@ where it is registered under RustDesk's own names, what is kept aside, and
 the two user-tier products it detects."""
 
 REMOTE_DESKTOP_NAME = "remote_desktop"
-REMOTE_DESKTOP_KIND = "remote_desktop"
+REMOTE_DESKTOP_RUNNER = "remote_desktop"
 
 # Under the state root: what the module registered, and what it found
 # registered under RustDesk's names and moved aside.

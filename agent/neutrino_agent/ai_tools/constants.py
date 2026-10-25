@@ -106,13 +106,13 @@ AI_TOOLS_LOCK_WAIT_S = 300
 AI_TOOLS_LOCK_POLL_S = 0.2
 AI_TOOLS_LOCK_HELD_DETAIL = "another run holds the account"
 
-# cc-switch as the hub serves it: the name the agent asks the package
-# stream for, the archive's kind and the program's name in it on each
-# system, and the directory under the records' directory that holds the
-# copy with the version it was fetched for beside it.
-AI_TOOLS_CC_SWITCH_PACKAGE = "cc_switch"
-AI_TOOLS_CC_SWITCH_KINDS = {"windows": "zip"}
-AI_TOOLS_CC_SWITCH_KIND = "tar"
+# cc-switch as the hub serves it: the module the agent names on the package
+# stream, the section's key for the artifact of this machine's platform, the
+# program's name in the archive on each system, and the directory under the
+# records' directory that holds the copy with the version it was fetched for
+# beside it.
+AI_TOOLS_CC_SWITCH_MODULE = "cc_switch"
+AI_TOOLS_CC_SWITCH_ARTIFACT_KEY = "cc_switch_artifact"
 AI_TOOLS_CC_SWITCH_NAMES = {"windows": "cc-switch.exe"}
 AI_TOOLS_CC_SWITCH_NAME = "cc-switch"
 AI_TOOLS_BIN_DIR_NAME = "bin"
@@ -124,7 +124,8 @@ AI_TOOLS_STATE_SWITCHED_BACK = "switched_back"
 AI_TOOLS_STATE_FAILED = "failed"
 # The codes a failure carries.
 AI_TOOLS_CODE_SWITCH_FAILED = "switch_failed"
-AI_TOOLS_CODE_DOWNLOAD_FAILED = "cc_switch_download_failed"
+AI_TOOLS_CODE_DOWNLOAD_FAILED = "download_failed"
+AI_TOOLS_CODE_NO_PLATFORM_BUILD = "no_platform_build"
 AI_TOOLS_CODE_ACCOUNT_UNKNOWN = "account_unknown"
 AI_TOOLS_CODE_CREDENTIAL_MISSING = "credential_missing"
 AI_TOOLS_CODE_CREDENTIAL_INVALID = "credential_invalid"

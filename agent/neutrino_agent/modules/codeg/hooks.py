@@ -1,7 +1,7 @@
-"""What Codeg adds to the shared runner: the two components, each account's service, the token.
+"""What Codeg adds to the shared runner: each account's service, the token.
 
 The server bundle and Node.js come down the hub's package stream as the
-module's ``server`` and ``node`` components and land under those directories
+module's ``server`` and ``node`` artifacts and land under those directories
 in the module's own, never on a ``PATH``. Each instance runs ``codeg-server``
 as its account, from an environment written from scratch, on a loopback
 port the agent picks and keeps in the record, with its data directory
@@ -39,7 +39,6 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_BRIDGE_PORTS_OFF,
     CODEG_COOKIE_PREFIX,
     CODEG_DATA_PARTS,
-    CODEG_DOWNLOAD_FAILED,
     CODEG_ENV_BRIDGE_PORTS,
     CODEG_ENV_DATA_DIR,
     CODEG_ENV_HOST,
@@ -48,7 +47,7 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_ENV_PORT,
     CODEG_ENV_STATIC_DIR,
     CODEG_ENV_TOKEN,
-    CODEG_KIND,
+    CODEG_RUNNER,
     CODEG_LOG_DIR_NAME,
     CODEG_LOG_PREFIX,
     CODEG_LOG_SUFFIX,
@@ -129,7 +128,7 @@ def service_environment(
         home: The account's home.
         os_name: The system.
         node_dir: The directory Node's interpreter is in; it leads ``PATH``.
-        static_dir: The web UI inside the server component.
+        static_dir: The web UI inside the server artifact.
         join: How the system joins a path.
 
     Returns:
@@ -300,8 +299,7 @@ class CodegHooks(InstanceHooks):
 
     name = CODEG_NAME
     title = CODEG_TITLE
-    kind = CODEG_KIND
-    download_failure_code = CODEG_DOWNLOAD_FAILED
+    runner = CODEG_RUNNER
     instance_class = CodegInstance
     record_fields = CODEG_RECORD_FIELDS
     secret_field = "secret"
@@ -323,7 +321,7 @@ class CodegHooks(InstanceHooks):
 
     @property
     def server_path(self) -> str:
-        """The server inside the ``server`` component."""
+        """The server inside the ``server`` artifact."""
         return self._join(
             self.machine.module_dir,
             CODEG_SERVER_DIR_NAME,
@@ -332,14 +330,14 @@ class CodegHooks(InstanceHooks):
 
     @property
     def static_dir(self) -> str:
-        """The web UI inside the ``server`` component."""
+        """The web UI inside the ``server`` artifact."""
         return self._join(
             self.machine.module_dir, CODEG_SERVER_DIR_NAME, CODEG_WEB_DIR_NAME
         )
 
     @property
     def node_dir(self) -> str:
-        """The directory Node's interpreter is in, inside the ``node`` component."""
+        """The directory Node's interpreter is in, inside the ``node`` artifact."""
         return self._join(
             self.machine.module_dir,
             CODEG_NODE_DIR_NAME,

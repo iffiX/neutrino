@@ -1,8 +1,9 @@
 """The hub's state for this machine, kept and made true.
 
 The hub sends one state per device: ``{hash, modules, desktop}``, with one
-entry per module it has a say about, ``{want, config, install, uninstall}``,
-and the seat password this machine's desktop answers with. A copy lands
+entry per module it has a say about, ``{want, config, install}``, the
+recipe ``install`` being ``{runner, method, params}``, and the seat password
+this machine's desktop answers with. A copy lands
 here on every ``state`` frame, root-only on disk, and the applier makes
 each mentioned module's actual state equal its ``want``, in one fixed
 module order:
@@ -14,9 +15,10 @@ module order:
 | ``stopped`` | the software is there, the configuration applied, the unit stopped |
 | ``running`` | the software is there, the configuration applied, the unit up |
 
-A module the state does not mention is left as it is. An install's bytes
-come down a ``package {module}`` stream the applier opens, and an
-install's or an uninstall's output goes up a ``log {module}`` stream.
+A module the state does not mention is left as it is. Each artifact an
+install receives comes down a ``package {module, artifact, digest}`` stream
+the applier opens, and an install's or an uninstall's output goes up a
+``log {module}`` stream.
 
 The applied hash is what the hub compares against: it moves to the state's
 hash once no mentioned module's last step failed or waits. Each module's
@@ -578,25 +580,26 @@ class DesiredStateApplier:
         except GatewayUnreachable:
             return None
 
-    def _receive(self, name: str, component: str = "") -> dict:
-        """One module's package, down a ``package {module, component}`` stream.
+    def _receive(self, name: str, artifact: dict) -> dict:
+        """One artifact's bytes, down a ``package {module, artifact, digest}`` stream.
 
         Args:
-            name: The module name.
-            component: The component wanted; empty for a module with one
-                archive, and then the open carries no such field.
+            name: The module the artifact belongs to, or ``cc_switch``.
+            artifact: The recipe's artifact, ``{name, digest, ...}``.
 
         Returns:
-            ``{"path", "sha256"}`` naming the checked file and its digest,
-            or ``{"code", "params"}``.
+            ``{"path", "sha256"}`` naming the file the close's digest
+            checked and that digest, or ``{"code", "params"}``.
         """
         if self._open_stream is None:
             return {"code": RETRIED_CODE, "params": {}}
-        arguments = {"module": name}
-        if component:
-            arguments["component"] = component
         try:
-            channel = self._open_stream(STREAM_KIND_PACKAGE, **arguments)
+            channel = self._open_stream(
+                STREAM_KIND_PACKAGE,
+                module=name,
+                artifact=str(artifact.get("name", "") or ""),
+                digest=str(artifact.get("digest", "") or ""),
+            )
         except GatewayUnreachable:
             return {"code": RETRIED_CODE, "params": {}}
         return PackageStream(channel, directory=self._package_dir).receive()
