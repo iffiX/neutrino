@@ -86,6 +86,14 @@ REFUSED_PROGRAMS = {
     "reboot",
     "shutdown",
     "poweroff",
+    "ufw",
+    "iptables",
+    "ip6tables",
+    "netsh",
+    "powershell",
+    "powershell.exe",
+    "pwsh",
+    "pwsh.exe",
 }
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
 # firewalld's tools, and the starts of the options that change its rules.
