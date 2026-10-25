@@ -1,10 +1,11 @@
-"""``packaging/ci/publish_cn.py`` against a fake Gitee API.
+"""``packaging/ci/publish_cn.py`` against a fake CNB API.
 
-The fake keeps releases and their attachments in memory and records every
-call, so what is asserted is the order the publish works in: every limit
-checked before the first request that changes Gitee, the earlier releases'
-attachments deleted before the first upload, and a second run for the same
-tag reusing its release and uploading only what is missing.
+The fake keeps releases and their files in memory and records every call;
+a bare repository in a temporary directory stands in for CNB's git. What is
+asserted is every file of the release uploaded to the tag's release, the
+mainland tree and ``latest.json`` committed on ``main`` with the tag on it,
+and a second run for the same tag reusing its release and uploading nothing
+twice.
 """
 
 import hashlib
@@ -22,10 +23,13 @@ import pytest
 PUBLISH = Path(__file__).resolve().parents[3] / "packaging" / "ci" / "publish_cn.py"
 TOKEN = "fake-token-0123"  # scan: allow
 TAG = "v9.9.9"
+API = "https://api.cnb.invalid"
+REPOSITORY = "iffi-X/neutrino"
+UPLOADS = "https://uploads.cnb.invalid"
 
 
 # Stand-ins for the five pinned cc-switch files, small and pinned by their own
-# hashes, so a release can carry them without a download.
+# hashes, so a release can hold them without a download.
 CC_SWITCH_FILES = {
     f"cc-switch-cli-v5.10.4-{asset}": asset.encode()
     for asset in (
@@ -58,74 +62,89 @@ def pinned_cc_switch(publish_cn, monkeypatch):
     return pins
 
 
-class FakeGitee:
-    """Releases and their attachments, and every call made."""
+class FakeCnb:
+    """Releases and their files, and every call made."""
 
     def __init__(self):
         self.calls = []
         self.releases = {}
+        self._pending = {}
         self._next_id = 100
 
-    def add_release(self, tag, files=()):
+    def add_release(self, tag, assets=()):
         release_id = self._new_id()
         self.releases[release_id] = {
             "tag_name": tag,
-            "files": [
-                {"id": self._new_id(), "name": name, "size": size}
-                for name, size in files
-            ],
+            "assets": [{"name": name, "size": size} for name, size in assets],
         }
         return release_id
 
     def changes(self):
         return [call for call in self.calls if call[0] != "GET"]
 
+    def held(self, tag):
+        (release,) = [r for r in self.releases.values() if r["tag_name"] == tag]
+        return {asset["name"]: asset["size"] for asset in release["assets"]}
+
     def send(self, method, url, body, headers):
         parsed = urllib.parse.urlparse(url)
-        path = parsed.path.split("/repos/iffiX/neutrino", 1)[1]
-        query = urllib.parse.parse_qs(parsed.query)
+        if url.startswith(UPLOADS):
+            assert "Authorization" not in headers
+            token = parsed.path.strip("/")
+            data = body.read_bytes() if isinstance(body, Path) else body
+            assert int(headers["Content-Length"]) == len(data)
+            self._pending[token]["size"] = len(data)
+            self.calls.append((method, "upload"))
+            return 200, b""
+        assert url.startswith(f"{API}/{REPOSITORY}/-/releases")
+        assert headers["Authorization"] == f"Bearer {TOKEN}"
+        assert headers["Accept"] == "application/vnd.cnb.api+json"
+        path = parsed.path.split(f"/{REPOSITORY}/-/releases", 1)[1]
         self.calls.append((method, path))
-        if method == "GET":
-            assert query["access_token"] == [TOKEN]
-        else:
-            assert TOKEN.encode() in (body or b"") or query["access_token"] == [TOKEN]
-        page = int(query.get("page", ["1"])[0])
-        if method == "GET" and path == "/releases":
-            listed = [
-                {"id": key, "tag_name": value["tag_name"]}
-                for key, value in self.releases.items()
-            ]
-            return 200, json.dumps(listed if page == 1 else []).encode()
-        found = re.fullmatch(r"/releases/tags/(.+)", path)
+        found = re.fullmatch(r"/tags/(.+)", path)
         if method == "GET" and found:
+            tag = urllib.parse.unquote(found.group(1))
             for key, value in self.releases.items():
-                if value["tag_name"] == found.group(1):
-                    return (
-                        200,
-                        json.dumps({"id": key, "tag_name": found.group(1)}).encode(),
-                    )
-            return 404, b'{"message":"Not Found"}'
-        if method == "POST" and path == "/releases":
-            fields = urllib.parse.parse_qs(body.decode())
-            release_id = self.add_release(fields["tag_name"][0])
-            return 201, json.dumps({"id": release_id}).encode()
-        found = re.fullmatch(r"/releases/(\d+)/attach_files", path)
-        if found:
-            release = self.releases[int(found.group(1))]
-            if method == "GET":
-                return 200, json.dumps(release["files"] if page == 1 else []).encode()
-            name = re.search(rb'filename="([^"]+)"', body).group(1).decode()
-            content = body.split(b"\r\n\r\n", 2)[2].rsplit(b"\r\n--", 1)[0]
-            entry = {"id": self._new_id(), "name": name, "size": len(content)}
-            release["files"].append(entry)
-            return 201, json.dumps(entry).encode()
-        found = re.fullmatch(r"/releases/(\d+)/attach_files/(\d+)", path)
-        if method == "DELETE" and found:
-            release = self.releases[int(found.group(1))]
-            release["files"] = [
-                item for item in release["files"] if item["id"] != int(found.group(2))
-            ]
-            return 204, b""
+                if value["tag_name"] == tag:
+                    return 200, json.dumps({"id": str(key), **value}).encode()
+            return 404, b'{"errcode":404,"errmsg":"not found"}'
+        if method == "POST" and path == "":
+            fields = json.loads(body)
+            assert fields["draft"] is False and fields["prerelease"] is False
+            release_id = self.add_release(fields["tag_name"])
+            return 201, json.dumps({"id": str(release_id), "assets": []}).encode()
+        found = re.fullmatch(r"/(\d+)/asset-upload-url", path)
+        if method == "POST" and found:
+            fields = json.loads(body)
+            assert fields["overwrite"] is True and fields["ttl"] == 0
+            token = f"t{self._new_id()}"
+            self._pending[token] = {
+                "release": int(found.group(1)),
+                "name": fields["asset_name"],
+                "declared": fields["size"],
+            }
+            return (
+                201,
+                json.dumps(
+                    {
+                        "upload_url": f"{UPLOADS}/{token}",
+                        "verify_url": (
+                            f"/{REPOSITORY}/-/releases/{found.group(1)}"
+                            f"/asset-upload-confirmation/{token}/{fields['asset_name']}"
+                        ),
+                        "expires_in_sec": 43200,
+                    }
+                ).encode(),
+            )
+        found = re.fullmatch(r"/(\d+)/asset-upload-confirmation/([^/]+)/(.+)", path)
+        if method == "POST" and found:
+            pending = self._pending.pop(found.group(2))
+            assert pending["size"] == pending["declared"]
+            release = self.releases[pending["release"]]
+            release["assets"] = [
+                asset for asset in release["assets"] if asset["name"] != pending["name"]
+            ] + [{"name": pending["name"], "size": pending["size"]}]
+            return 200, b""
         return 500, f"unexpected {method} {path}".encode()
 
     def _new_id(self):
@@ -133,8 +152,9 @@ class FakeGitee:
         return self._next_id
 
 
-def _dist(tmp_path, extra=None):
-    """A directory of release files: a small mainland tree and two packages."""
+def _dist(tmp_path, *, latest_tag=TAG):
+    """A directory of release files: a small mainland tree, two packages of
+    each edition, the scripts, cc-switch and latest.json."""
     tree = tmp_path / "staged" / "neutrino-9.9.9"
     (tree / "hub").mkdir(parents=True)
     (tree / "hub" / "pyproject.toml").write_text('version = "9.9.9"\n')
@@ -145,312 +165,240 @@ def _dist(tmp_path, extra=None):
     dist.mkdir()
     with tarfile.open(dist / "neutrino-9.9.9-cn-source.tar.xz", "w:xz") as archive:
         archive.add(tree, arcname="neutrino-9.9.9")
+    (dist / "neutrino-9.9.9-source.tar.xz").write_bytes(b"full tree")
     (dist / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"hub package")
-    (dist / "install.sh").write_bytes(b'EDITION="cn"\n')
+    (dist / "neutrino-hub_9.9.9_amd64-cn.deb").write_bytes(b"cn hub package")
+    (dist / "install.sh").write_bytes(b'EDITION="intl"\n')
+    (dist / "install-cn.sh").write_bytes(b'EDITION="cn"\n')
     for name, data in CC_SWITCH_FILES.items():
         (dist / name).write_bytes(data)
     (dist / CC_SWITCH_LICENSE).write_text("MIT License\n")
-    for name, size in (extra or {}).items():
-        with open(dist / name, "wb") as handle:
-            handle.truncate(size)
+    (dist / "latest.json").write_text(
+        json.dumps({"tag": latest_tag, "version": latest_tag[1:]}) + "\n"
+    )
     return dist
 
 
-@pytest.fixture
-def run(publish_cn, tmp_path, monkeypatch):
-    pushed = []
-    monkeypatch.setattr(
-        publish_cn,
-        "push_tree",
-        lambda tree, tag, key, work: pushed.append((tree, tag)),
-    )
+def _git(*command, cwd):
+    return subprocess.run(
+        ["git", *command], cwd=cwd, capture_output=True, text=True, check=True
+    ).stdout
 
-    def invoke(gitee, dist, *, is_dry_run=False):
-        work = tmp_path / f"work{len(pushed)}{len(gitee.calls)}"
+
+@pytest.fixture
+def remote(tmp_path):
+    """CNB's repository: a bare repository holding one earlier commit."""
+    bare = tmp_path / "cnb.git"
+    _git(
+        "init", "--quiet", "--bare", "--initial-branch", "main", str(bare), cwd=tmp_path
+    )
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    (seed / "README.md").write_text("# Neutrino\n")
+    _git("init", "--quiet", "--initial-branch", "main", cwd=seed)
+    _git("add", "--all", cwd=seed)
+    _git(
+        "-c",
+        "user.name=seed",
+        "-c",
+        "user.email=seed@example.invalid",
+        "commit",
+        "--quiet",
+        "--no-gpg-sign",
+        "--message",
+        "seed",
+        cwd=seed,
+    )
+    _git("push", "--quiet", str(bare), "main", cwd=seed)
+    return bare
+
+
+@pytest.fixture
+def run(publish_cn, tmp_path, remote):
+    runs = []
+
+    def invoke(cnb, dist, *, is_dry_run=False):
+        work = tmp_path / f"work{len(runs)}"
         work.mkdir()
+        runs.append(work)
         publish_cn.publish(
             tag=TAG,
             notes="feature: something",
             files=publish_cn.release_files(dist),
             work=work,
-            client=publish_cn.GiteeReleaseClient(token=TOKEN, send=gitee.send),
-            ssh_key="key",
+            client=publish_cn.CnbReleaseClient(
+                token=TOKEN, api=API, repository=REPOSITORY, send=cnb.send
+            ),
+            git_url=str(remote),
+            git_token=TOKEN,
             is_dry_run=is_dry_run,
         )
 
-    invoke.pushed = pushed
     return invoke
 
 
-def test_an_attachment_over_100_mb_fails_before_anything_changes(run, tmp_path):
-    gitee = FakeGitee()
-    dist = _dist(tmp_path, {"neutrino-hub-9.9.9-macos-arm64.pkg": 100_000_001})
-
-    with pytest.raises(SystemExit) as refused:
-        run(gitee, dist)
-
-    assert str(refused.value) == (
-        "neutrino-hub-9.9.9-macos-arm64.pkg is 100000001 bytes, over Gitee's "
-        "limit of 100000000 bytes for one attachment"
-    )
-    assert gitee.calls == []
-    assert run.pushed == []
-
-
-def test_a_set_over_1_gb_fails_before_anything_changes(run, tmp_path):
-    gitee = FakeGitee()
-    dist = _dist(tmp_path, {f"part{index}.msi": 99_000_000 for index in range(11)})
-
-    with pytest.raises(SystemExit) as refused:
-        run(gitee, dist)
-
-    assert "over Gitee's limit of 1000000000 bytes for all attachments" in str(
-        refused.value
-    )
-    assert re.search(r"the 20 files are 10890\d+ bytes", str(refused.value))
-    assert gitee.calls == []
-    assert run.pushed == []
-
-
-def test_a_tree_file_over_50_mb_fails_before_anything_changes(
-    publish_cn, run, tmp_path
-):
-    gitee = FakeGitee()
+def test_every_file_of_the_release_goes_up_to_the_tags_release(run, tmp_path):
+    cnb = FakeCnb()
     dist = _dist(tmp_path)
-    work = tmp_path / "big"
-    work.mkdir()
-    tree = work / "neutrino-9.9.9"
-    tree.mkdir()
-    with open(tree / "blob.bin", "wb") as handle:
-        handle.truncate(50_000_001)
-    archive = dist / "neutrino-9.9.9-cn-source.tar.xz"
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(tree, arcname="neutrino-9.9.9")
 
-    with pytest.raises(SystemExit) as refused:
-        run(gitee, dist)
+    run(cnb, dist)
 
-    assert str(refused.value) == (
-        "blob.bin is 50000001 bytes, over Gitee's limit of 50000000 bytes "
-        "for one file"
+    assert cnb.held(TAG) == {path.name: path.stat().st_size for path in dist.iterdir()}
+    assert ("POST", "") in cnb.changes()
+
+
+def test_the_tree_and_latest_json_are_one_commit_on_main_tagged(run, tmp_path, remote):
+    run(FakeCnb(), _dist(tmp_path))
+
+    files = _git("ls-tree", "-r", "--name-only", "main", cwd=remote).split()
+    assert sorted(files) == ["EDITION", "hub/pyproject.toml", "latest.json"]
+    assert json.loads(_git("show", "main:latest.json", cwd=remote)) == {
+        "tag": TAG,
+        "version": "9.9.9",
+    }
+    assert _git("rev-parse", f"{TAG}^{{commit}}", cwd=remote) == _git(
+        "rev-parse", "main", cwd=remote
     )
-    assert gitee.calls == []
+    parents = _git("rev-list", "--parents", "-n", "1", "main", cwd=remote).split()
+    seed = _git("rev-list", "--max-parents=0", "main", cwd=remote).split()
+    assert parents[1:] == seed
 
 
-def test_the_earlier_attachments_go_before_the_first_upload(run, tmp_path):
-    gitee = FakeGitee()
-    gitee.add_release("v9.9.8", [("neutrino-hub_9.9.8_amd64.deb", 5), ("x", 1)])
-    gitee.add_release("v9.9.7", [("neutrino-hub_9.9.7_amd64.deb", 5)])
-
-    run(gitee, _dist(tmp_path))
-
-    changes = gitee.changes()
-    deletes = [index for index, call in enumerate(changes) if call[0] == "DELETE"]
-    uploads = [
-        index
-        for index, call in enumerate(changes)
-        if call[0] == "POST" and call[1].endswith("/attach_files")
-    ]
-    assert len(deletes) == 3
-    assert len(uploads) == 9
-    assert max(deletes) < min(uploads)
-    assert changes[max(deletes) + 1] == ("POST", "/releases")
-    assert run.pushed[0][1] == TAG
-    for release in gitee.releases.values():
-        if release["tag_name"] != TAG:
-            assert release["files"] == []
-
-
-def test_the_tree_is_pushed_without_third_party(publish_cn, run, tmp_path):
-    run(FakeGitee(), _dist(tmp_path))
-
-    tree = run.pushed[0][0]
-    assert (tree / "EDITION").read_text() == "cn\n"
-    assert not (tree / "third_party").exists()
-
-
-def test_a_second_run_for_the_tag_reuses_its_release_and_uploads_what_is_missing(
-    run, tmp_path
+def test_a_second_run_for_the_tag_reuses_its_release_and_uploads_nothing(
+    run, tmp_path, remote
 ):
-    gitee = FakeGitee()
+    cnb = FakeCnb()
+    dist = _dist(tmp_path)
+    run(cnb, dist)
+    head = _git("rev-parse", "main", cwd=remote)
+    cnb.calls.clear()
+
+    run(cnb, dist)
+
+    assert cnb.changes() == []
+    assert _git("rev-parse", "main", cwd=remote) == head
+
+
+def test_a_run_again_uploads_only_what_the_release_lacks(run, tmp_path):
+    cnb = FakeCnb()
     dist = _dist(tmp_path)
     held = dist / "neutrino-hub_9.9.9_amd64.deb"
-    release_id = gitee.add_release(TAG, [(held.name, held.stat().st_size)])
+    cnb.add_release(TAG, [(held.name, held.stat().st_size), ("install.sh", 1)])
 
-    run(gitee, dist)
+    run(cnb, dist)
 
-    changes = gitee.changes()
-    assert ("POST", "/releases") not in changes
-    uploaded = [call for call in changes if call[1].endswith("/attach_files")]
-    assert len(uploaded) == 8
-    names = sorted(item["name"] for item in gitee.releases[release_id]["files"])
-    assert names == sorted(path.name for path in dist.iterdir())
-
-    gitee.calls.clear()
-    run(gitee, dist)
-
-    assert gitee.changes() == []
+    uploads = [call for call in cnb.changes() if call[1].endswith("asset-upload-url")]
+    assert len(uploads) == len(list(dist.iterdir())) - 1
+    assert ("POST", "") not in cnb.changes()
+    assert cnb.held(TAG)["install.sh"] == (dist / "install.sh").stat().st_size
 
 
-def test_a_file_of_the_same_name_and_another_size_is_replaced(run, tmp_path):
-    gitee = FakeGitee()
+def test_a_dry_run_changes_nothing_and_pushes_nothing(run, tmp_path, remote):
+    cnb = FakeCnb()
+    head = _git("rev-parse", "main", cwd=remote)
+
+    run(cnb, _dist(tmp_path), is_dry_run=True)
+
+    assert cnb.changes() == []
+    assert _git("rev-parse", "main", cwd=remote) == head
+    assert _git("tag", cwd=remote) == ""
+
+
+def test_a_latest_json_naming_another_tag_stops_before_anything(run, tmp_path):
+    cnb = FakeCnb()
+
+    with pytest.raises(SystemExit) as refused:
+        run(cnb, _dist(tmp_path, latest_tag="v9.9.8"))
+
+    assert "latest.json names" in str(refused.value)
+    assert cnb.calls == []
+
+
+@pytest.mark.parametrize(
+    "change, said",
+    [
+        ("missing", "the release holds no cc-switch-cli-v5.10.4-darwin-x64.tar.gz"),
+        ("tampered", "cc-switch-cli-v5.10.4-darwin-x64.tar.gz hashes to "),
+        ("licence", "the release holds no cc-switch-cli-v5.10.4-LICENSE.txt"),
+    ],
+)
+def test_a_release_without_the_pinned_cc_switch_files_is_refused_before_anything(
+    run, tmp_path, change, said
+):
+    cnb = FakeCnb()
     dist = _dist(tmp_path)
-    release_id = gitee.add_release(TAG, [("install.sh", 1)])
+    if change == "missing":
+        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").unlink()
+    elif change == "tampered":
+        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").write_bytes(b"changed")
+    else:
+        (dist / CC_SWITCH_LICENSE).unlink()
 
-    run(gitee, dist)
+    with pytest.raises(SystemExit) as refused:
+        run(cnb, dist)
 
-    (entry,) = [
-        item
-        for item in gitee.releases[release_id]["files"]
-        if item["name"] == "install.sh"
-    ]
-    assert entry["size"] == (dist / "install.sh").stat().st_size
-
-
-def test_a_dry_run_changes_nothing_and_pushes_nothing(run, tmp_path):
-    gitee = FakeGitee()
-    gitee.add_release("v9.9.8", [("neutrino-hub_9.9.8_amd64.deb", 5)])
-
-    run(gitee, _dist(tmp_path), is_dry_run=True)
-
-    assert gitee.changes() == []
-    assert run.pushed == []
-
-
-def test_the_same_archive_makes_the_same_parentless_commit(publish_cn, tmp_path):
-    dist = _dist(tmp_path)
-    heads = []
-    for attempt in ("first", "second"):
-        work = tmp_path / attempt
-        work.mkdir()
-        tree, stamp = publish_cn.unpack_tree(publish_cn.release_files(dist), work)
-        publish_cn.commit_tree(tree, TAG, stamp)
-        heads.append(
-            subprocess.run(
-                ["git", "rev-list", "--parents", "-n", "1", TAG],
-                cwd=tree,
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.split()
-        )
-
-    assert heads[0] == heads[1]
-    assert len(heads[0]) == 1
-
-
-def test_the_push_checks_the_pinned_host_key(publish_cn, tmp_path, monkeypatch):
-    from shared.constants import PACKAGING_GITEE_PUSH_URL, PACKAGING_GITEE_SSH_HOST_KEY
-
-    seen = []
-    monkeypatch.setattr(
-        publish_cn,
-        "_git",
-        lambda command, tree, environment: seen.append((command, environment)),
-    )
-
-    publish_cn.push_tree(tmp_path, TAG, "-----KEY-----", tmp_path)
-
-    ((command, environment),) = seen
-    assert command[:4] == ["git", "push", "--force", PACKAGING_GITEE_PUSH_URL]
-    assert "HEAD:refs/heads/main" in command
-    assert f"refs/tags/{TAG}:refs/tags/{TAG}" in command
-    ssh = environment["GIT_SSH_COMMAND"]
-    assert "StrictHostKeyChecking=yes" in ssh
-    known_hosts = ssh.split("UserKnownHostsFile=")[1].split()[0]
-    assert Path(known_hosts).read_text().strip() == PACKAGING_GITEE_SSH_HOST_KEY
-    assert oct((tmp_path / "gitee_key").stat().st_mode & 0o777) == "0o600"
+    assert said in str(refused.value)
+    assert cnb.calls == []
 
 
 def test_a_refusal_names_the_call_and_never_the_token(publish_cn):
-    def refuse(method, url, body, headers):
-        return 403, f"token {TOKEN} lacks projects".encode()
+    def send(method, url, body, headers):
+        return 403, f"bad token {TOKEN}".encode()
 
-    client = publish_cn.GiteeReleaseClient(token=TOKEN, send=refuse)
+    client = publish_cn.CnbReleaseClient(
+        token=TOKEN, api=API, repository=REPOSITORY, send=send
+    )
 
     with pytest.raises(SystemExit) as refused:
-        client.delete_attachment(1, 2)
+        client.create_release(TAG, "")
 
-    assert str(refused.value) == (
-        "Gitee answered 403 to DELETE /releases/1/attach_files/2: "
-        "token *** lacks projects"
-    )
-
-
-def test_check_only_reads_the_files_and_reaches_nothing(
-    publish_cn, tmp_path, monkeypatch, capsys
-):
-    dist = _dist(tmp_path)
-    monkeypatch.delenv("GITEE_TOKEN", raising=False)
-    monkeypatch.setattr(
-        publish_cn.sys, "argv", ["publish_cn.py", "--check-only", "--dist", str(dist)]
-    )
-
-    assert publish_cn.main() == 0
-    assert capsys.readouterr().out.strip() == "9 files are within Gitee's limits"
+    message = str(refused.value)
+    assert "403" in message and f"/{REPOSITORY}/-/releases" in message
+    assert TOKEN not in message
 
 
-def test_check_only_needs_no_secret_and_no_network(tmp_path):
-    """The real pins: a cc-switch file that is not the pinned one is refused
-    by name, with no token and nothing fetched."""
-    dist = _dist(tmp_path)
+def test_the_push_carries_the_token_in_the_environment_alone(publish_cn):
+    remote = publish_cn.GitRemote("https://cnb.invalid/iffi-X/neutrino.git", TOKEN)
 
+    environment = remote._environment
+    assert environment["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+    assert TOKEN not in environment["GIT_CONFIG_VALUE_0"]
+    credential = environment["GIT_CONFIG_VALUE_0"].rsplit(" ", 1)[1]
+    import base64
+
+    assert base64.b64decode(credential).decode() == f"cnb:{TOKEN}"
+
+
+def test_a_pre_release_is_published_on_github_alone(tmp_path):
     result = subprocess.run(
-        [sys.executable, str(PUBLISH), "--check-only", "--dist", str(dist)],
+        [sys.executable, str(PUBLISH), "--tag", "v9.9.9-rc1", "--dist", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+
+    assert result.returncode == 0
+    assert (
+        result.stdout.strip()
+        == "v9.9.9-rc1 is a pre-release, published on GitHub alone"
+    )
+
+
+def test_a_publish_needs_the_token(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(PUBLISH), "--tag", TAG, "--dist", str(tmp_path)],
         capture_output=True,
         text=True,
         env={"PATH": "/usr/bin:/bin"},
     )
 
     assert result.returncode == 1
-    assert result.stderr.strip().startswith(
-        "cc-switch-cli-v5.10.4-darwin-arm64.tar.gz hashes to "
-    )
+    assert result.stderr.strip() == "CNB_TOKEN is needed to publish"
 
 
-@pytest.mark.parametrize(
-    "change, said",
-    [
-        (
-            "missing",
-            "the release carries no cc-switch-cli-v5.10.4-darwin-x64.tar.gz",
-        ),
-        ("tampered", "cc-switch-cli-v5.10.4-darwin-x64.tar.gz hashes to "),
-        ("licence", "the release carries no cc-switch-cli-v5.10.4-LICENSE.txt"),
-    ],
-)
-def test_a_release_without_the_pinned_cc_switch_files_is_refused_before_anything(
-    run, tmp_path, change, said
+def test_an_upload_streams_its_file_and_waits_longer_than_a_plain_call(
+    publish_cn, monkeypatch, tmp_path
 ):
-    gitee = FakeGitee()
-    dist = _dist(tmp_path)
-    if change == "missing":
-        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").unlink()
-    if change == "tampered":
-        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").write_bytes(b"other")
-    if change == "licence":
-        (dist / CC_SWITCH_LICENSE).unlink()
-
-    with pytest.raises(SystemExit) as refused:
-        run(gitee, dist)
-
-    assert str(refused.value).startswith(said)
-    assert gitee.calls == []
-    assert run.pushed == []
-
-
-def test_the_cc_switch_files_go_up_beside_the_packages(run, tmp_path):
-    gitee = FakeGitee()
-
-    run(gitee, _dist(tmp_path))
-
-    (release,) = [r for r in gitee.releases.values() if r["tag_name"] == TAG]
-    names = {item["name"] for item in release["files"]}
-    assert set(CC_SWITCH_FILES) <= names
-    assert CC_SWITCH_LICENSE in names
-
-
-def test_an_upload_waits_longer_than_a_plain_call(publish_cn, monkeypatch):
     seen = []
 
     class Reply:
@@ -466,19 +414,17 @@ def test_an_upload_waits_longer_than_a_plain_call(publish_cn, monkeypatch):
             return False
 
     def urlopen(request, timeout):
-        seen.append(timeout)
+        seen.append((timeout, request.data.read() if request.data else None))
         return Reply()
 
     monkeypatch.setattr(publish_cn.urllib.request, "urlopen", urlopen)
-    publish_cn._send_with_urllib(
-        "POST",
-        "https://example.invalid/x",
-        b"",
-        {"Content-Type": "multipart/form-data; boundary=b"},
-    )
+    package = tmp_path / "package.deb"
+    package.write_bytes(b"package bytes")
+
+    publish_cn._send_with_urllib("PUT", "https://uploads.invalid/x", package, {})
     publish_cn._send_with_urllib("GET", "https://example.invalid/x", None, {})
+
     assert seen == [
-        publish_cn.PUBLISH_UPLOAD_TIMEOUT_S,
-        publish_cn.PUBLISH_REQUEST_TIMEOUT_S,
+        (publish_cn.PUBLISH_UPLOAD_TIMEOUT_S, b"package bytes"),
+        (publish_cn.PUBLISH_REQUEST_TIMEOUT_S, None),
     ]
-    assert publish_cn.PUBLISH_UPLOAD_TIMEOUT_S > publish_cn.PUBLISH_REQUEST_TIMEOUT_S

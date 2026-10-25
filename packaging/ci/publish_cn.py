@@ -1,30 +1,30 @@
-"""Publish the mainland release on Gitee from what the release workflow built.
+"""Publish a release to CNB, the second release site, from what the release
+workflow built.
 
-    python3 packaging/ci/publish_cn.py --tag v0.5.0 --notes-file notes.md
-    python3 packaging/ci/publish_cn.py --check-only --dist dist_cn
+    python3 packaging/ci/publish_cn.py --tag v0.6.0 --notes-file notes.md
+    python3 packaging/ci/publish_cn.py --tag v0.6.0 --dist dist --dry-run
 
-Runs on: Linux with git, ssh and, unless ``--dist`` names the files, the
-``gh`` command with ``GH_TOKEN`` set. ``GITEE_TOKEN`` is a Gitee personal
-access token with the ``projects`` scope and ``GITEE_SSH_KEY`` the private
-key the push uses; ``--check-only`` needs neither.
+Runs on: Linux with git and, unless ``--dist`` names the files, the ``gh``
+command with ``GH_TOKEN`` set. ``CNB_TOKEN`` is a CNB access token with the
+repository's code and release scopes.
 
-In order: the workflow artifact ``release_dist_cn`` of the latest
-successful run of ``release.yml`` for the tag is downloaded; every file is
-checked against Gitee's limits, and the pinned cc-switch release files the
-mainland hubs fetch from the release against their pins, before anything
-changes on Gitee; the
-mainland source tree, without ``third_party/``, is committed as one commit
-with no parent and force-pushed to ``main`` with the tag on it; the
-attachments of every earlier release are deleted; the release for the tag is
-created, or the one it already has is reused; and each file the release
-does not already hold under the same name and size is uploaded.
-``--check-only`` stops after the checks, and ``--dry-run`` does everything
-but the push and the requests that change Gitee.
+A tag with a suffix is a pre-release, published on GitHub alone, and the
+script stops before it reads anything. Otherwise, in order: the workflow
+artifact ``release_dist`` of the latest successful run of ``release.yml``
+for the tag is downloaded; ``latest.json`` is checked to name the tag and
+the pinned cc-switch files against their pins; the mainland source tree,
+without ``third_party/``, and ``latest.json`` are committed as one commit on
+CNB's ``main`` and pushed with the tag on it, unless CNB already holds the
+tag; the tag's release is created, or the one it already has is reused; and
+each file the release does not already hold under the same name and size is
+uploaded. ``--dry-run`` does everything but the push and the requests that
+change CNB.
 
-Not pure: runs gh, git and ssh, and changes the repository on Gitee.
+Not pure: runs gh and git, and changes the repository on CNB.
 """
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -35,205 +35,181 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import cc_switch_assets  # noqa: E402
 from shared.constants import (  # noqa: E402
-    PACKAGING_GITEE_API,
-    PACKAGING_GITEE_ATTACHMENT_BYTES_MAX,
-    PACKAGING_GITEE_ATTACHMENTS_BYTES_MAX,
-    PACKAGING_GITEE_FILE_BYTES_MAX,
-    PACKAGING_GITEE_PUSH_URL,
-    PACKAGING_GITEE_REPOSITORY,
-    PACKAGING_GITEE_REPOSITORY_BYTES_MAX,
-    PACKAGING_GITEE_SSH_HOST_KEY,
+    PACKAGING_CNB_API,
+    PACKAGING_CNB_GIT_URL,
+    PACKAGING_CNB_REPOSITORY,
+    PACKAGING_LATEST_FILE,
 )
 
-# The workflow artifact the release workflow leaves the mainland files in.
-PUBLISH_ARTIFACT = "release_dist_cn"
+# The workflow artifact the release workflow leaves the release's files in.
+PUBLISH_ARTIFACT = "release_dist"
 PUBLISH_WORKFLOW = "release.yml"
 # The name the mainland source tree's archive ends with, and the directory
-# of it that stays off Gitee.
+# of it that stays off the repository.
 PUBLISH_SOURCE_SUFFIX = "-cn-source.tar.xz"
 PUBLISH_THIRD_PARTY_DIR = "third_party"
-# The branch the tree is pushed to, and the author of its one commit.
+# The branch the tree is committed on, and the author of its commit.
 PUBLISH_BRANCH = "main"
 PUBLISH_AUTHOR = ("Neutrino release", "release@neutrino.invalid")
-# How many entries one page of a Gitee listing holds.
-PUBLISH_PAGE_SIZE = 100
+# The account name CNB's git takes beside a token.
+PUBLISH_GIT_USER = "cnb"
+# The media type every CNB API call names.
+PUBLISH_API_ACCEPT = "application/vnd.cnb.api+json"
 PUBLISH_REQUEST_TIMEOUT_S = 600
 # An upload carries a whole package; it ends when the file is up, however
-# slowly the runner reaches Gitee.
+# slowly the runner reaches CNB.
 PUBLISH_UPLOAD_TIMEOUT_S = 3600
 
 
-class GiteeReleaseClient:
-    """The few release calls of Gitee's v5 API the publish makes."""
+class CnbReleaseClient:
+    """The few release calls of CNB's API the publish makes."""
 
     def __init__(
         self,
         *,
         token: str,
-        api: str = PACKAGING_GITEE_API,
-        repository: str = PACKAGING_GITEE_REPOSITORY,
+        api: str = PACKAGING_CNB_API,
+        repository: str = PACKAGING_CNB_REPOSITORY,
         send=None,
     ):
         """Bind the client to one repository.
 
         Args:
-            token: The personal access token every call carries.
+            token: The access token every API call carries.
             api: The API's base address.
             repository: ``<owner>/<name>``.
             send: What carries one request, ``(method, url, body, headers)``
-                to ``(status, bytes)``; urllib when not given.
+                to ``(status, bytes)``, the body bytes, a file to stream or
+                None; urllib when not given.
         """
         self._token = token
-        self._base = f"{api}/repos/{repository}"
+        self._api = api.rstrip("/")
+        self._base = f"{self._api}/{repository}/-/releases"
         self._send = send or _send_with_urllib
 
-    def releases(self) -> list:
-        """Every release of the repository.
-
-        Raises:
-            SystemExit: When Gitee refuses the call.
-        """
-        return self._pages("/releases")
-
     def release_for_tag(self, tag: str) -> "dict | None":
-        """The release a tag has, or None.
+        """The release a tag has, with the files it holds, or None.
 
         Args:
             tag: The tag.
 
+        Returns:
+            The release, ``assets`` among its keys, or None for a tag that
+            has none.
+
         Raises:
-            SystemExit: When Gitee refuses the call.
+            SystemExit: When CNB refuses the call.
         """
-        found = self._call("GET", f"/releases/tags/{urllib.parse.quote(tag)}")
+        found = self._call("GET", f"{self._base}/tags/{urllib.parse.quote(tag)}")
         if isinstance(found, dict) and found.get("id"):
             return found
         return None
 
     def create_release(self, tag: str, notes: str) -> dict:
-        """Create the release for a tag.
+        """Create the release of a tag CNB already holds.
 
         Args:
             tag: The tag, which also names the release.
             notes: The release's body.
 
         Returns:
-            The release Gitee made.
+            The release CNB made.
 
         Raises:
-            SystemExit: When Gitee refuses the call.
+            SystemExit: When CNB refuses the call.
         """
         fields = {
             "tag_name": tag,
             "name": tag,
             "body": notes,
             "target_commitish": PUBLISH_BRANCH,
-            "prerelease": "false",
+            "draft": False,
+            "prerelease": False,
+            "make_latest": "true",
         }
-        return self._call("POST", "/releases", fields=fields)
+        return self._call("POST", self._base, fields=fields)
 
-    def attachments(self, release_id: int) -> list:
-        """The files attached to a release.
-
-        Args:
-            release_id: The release.
-
-        Raises:
-            SystemExit: When Gitee refuses the call.
-        """
-        return self._pages(f"/releases/{release_id}/attach_files")
-
-    def delete_attachment(self, release_id: int, file_id: int) -> None:
-        """Delete one attached file.
-
-        Args:
-            release_id: The release.
-            file_id: The file.
-
-        Raises:
-            SystemExit: When Gitee refuses the call.
-        """
-        self._call("DELETE", f"/releases/{release_id}/attach_files/{file_id}")
-
-    def upload_attachment(self, release_id: int, path: Path) -> dict:
-        """Attach one file to a release.
+    def upload_asset(self, release_id: str, path: Path) -> None:
+        """Upload one file to a release under its own name, replacing one of
+        the same name.
 
         Args:
             release_id: The release.
             path: The file.
 
-        Returns:
-            What Gitee says it holds.
-
         Raises:
-            SystemExit: When Gitee refuses the call.
+            SystemExit: When CNB refuses a step of the upload.
         """
-        return self._call("POST", f"/releases/{release_id}/attach_files", upload=path)
-
-    def _pages(self, path: str) -> list:
-        """Every entry of a paged listing."""
-        entries = []
-        page = 1
-        while True:
-            found = self._call(
-                "GET", path, query={"page": page, "per_page": PUBLISH_PAGE_SIZE}
+        target = self._call(
+            "POST",
+            f"{self._base}/{release_id}/asset-upload-url",
+            fields={
+                "asset_name": path.name,
+                "size": path.stat().st_size,
+                "overwrite": True,
+                "ttl": 0,
+            },
+        )
+        status, answer = self._send(
+            "PUT",
+            str(target["upload_url"]),
+            path,
+            {
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(path.stat().st_size),
+            },
+        )
+        if not 200 <= status < 300:
+            raise SystemExit(
+                f"CNB answered {status} to the upload of {path.name}: "
+                f"{answer.decode('utf-8', errors='replace')[:300]}"
             )
-            entries += found or []
-            if not found or len(found) < PUBLISH_PAGE_SIZE:
-                return entries
-            page += 1
+        verify = str(target["verify_url"])
+        if verify.startswith("/"):
+            verify = f"{self._api}{verify}"
+        self._call("POST", verify)
 
-    def _call(self, method: str, path: str, *, query=None, fields=None, upload=None):
+    def _call(self, method: str, url: str, *, fields=None):
         """One API call, its JSON answer parsed.
 
         Raises:
-            SystemExit: When Gitee answers anything but success; the message
-                names the call and never the token.
+            SystemExit: When CNB answers anything but success, a GET's 404
+                aside; the message names the call and never the token.
         """
-        parameters = dict(query or {})
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Accept": PUBLISH_API_ACCEPT,
+            "Authorization": f"Bearer {self._token}",
+        }
         body = None
         if fields is not None:
-            body = urllib.parse.urlencode(
-                {"access_token": self._token, **fields}
-            ).encode()
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-        elif upload is not None:
-            body, headers["Content-Type"] = _multipart(
-                {"access_token": self._token}, "file", upload
-            )
-        else:
-            parameters["access_token"] = self._token
-        url = f"{self._base}{path}"
-        if parameters:
-            url += "?" + urllib.parse.urlencode(parameters)
+            body = json.dumps(fields).encode()
+            headers["Content-Type"] = "application/json"
         status, answer = self._send(method, url, body, headers)
         if status == 404 and method == "GET":
             return None
         if not 200 <= status < 300:
             text = answer.decode("utf-8", errors="replace").replace(self._token, "***")
-            raise SystemExit(
-                f"Gitee answered {status} to {method} {path}: {text[:300]}"
-            )
+            path = urllib.parse.urlparse(url).path
+            raise SystemExit(f"CNB answered {status} to {method} {path}: {text[:300]}")
         if not answer.strip():
             return None
         return json.loads(answer)
 
 
 def main() -> int:
-    """Publish, or only check, the mainland release.
+    """Publish the release to CNB.
 
     Returns:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tag", default="", help="the tag to publish, v<version>")
+    parser.add_argument("--tag", required=True, help="the tag to publish, v<version>")
     parser.add_argument("--notes-file", default="", help="the release notes")
     parser.add_argument(
         "--dist",
@@ -241,31 +217,17 @@ def main() -> int:
         help="a directory holding the files; downloaded when empty",
     )
     parser.add_argument(
-        "--check-only", action="store_true", help="check the limits and stop"
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="everything but the push and the requests that change Gitee",
+        help="everything but the push and the requests that change CNB",
     )
     arguments = parser.parse_args()
-    if arguments.check_only:
-        if not arguments.dist:
-            raise SystemExit("--check-only checks the files --dist names")
-        files = release_files(Path(arguments.dist))
-        with tempfile.TemporaryDirectory() as workdir:
-            tree, _stamp = unpack_tree(files, Path(workdir))
-            check_limits(files, tree)
-        check_cc_switch(files)
-        print(f"{len(files)} files are within Gitee's limits")
+    if "-" in arguments.tag:
+        print(f"{arguments.tag} is a pre-release, published on GitHub alone")
         return 0
-
-    if not arguments.tag:
-        raise SystemExit("--tag names the release to publish")
-    token = os.environ.get("GITEE_TOKEN", "")
-    ssh_key = os.environ.get("GITEE_SSH_KEY", "")
-    if not token or (not ssh_key and not arguments.dry_run):
-        raise SystemExit("GITEE_TOKEN and GITEE_SSH_KEY are needed to publish")
+    token = os.environ.get("CNB_TOKEN", "")
+    if not token:
+        raise SystemExit("CNB_TOKEN is needed to publish")
     notes = (
         Path(arguments.notes_file).read_text(encoding="utf-8")
         if arguments.notes_file
@@ -279,8 +241,9 @@ def main() -> int:
             notes=notes,
             files=release_files(dist),
             work=work,
-            client=GiteeReleaseClient(token=token),
-            ssh_key=ssh_key,
+            client=CnbReleaseClient(token=token),
+            git_url=PACKAGING_CNB_GIT_URL,
+            git_token=token,
             is_dry_run=arguments.dry_run,
         )
     return 0
@@ -292,42 +255,43 @@ def publish(
     notes: str,
     files: list,
     work: Path,
-    client: GiteeReleaseClient,
-    ssh_key: str,
+    client: CnbReleaseClient,
+    git_url: str,
+    git_token: str,
     is_dry_run: bool,
 ) -> None:
-    """Publish the mainland release, every check before the first change.
+    """Publish the release to CNB, every check before the first change.
 
     Args:
         tag: The tag, ``v<version>``.
         notes: The release's body.
-        files: Every file the release carries.
+        files: Every file of the release.
         work: A directory to work in.
-        client: The Gitee API.
-        ssh_key: The private key the push uses.
+        client: CNB's API.
+        git_url: The repository the tree is pushed to.
+        git_token: The token the push carries.
         is_dry_run: Whether to stop short of the push and every request
-            that changes Gitee.
+            that changes CNB.
 
     Raises:
-        SystemExit: When a file is over a limit, a cc-switch file is missing
-            or not its pin, the push fails, or Gitee refuses a call.
+        SystemExit: When ``latest.json`` names another tag, a cc-switch file
+            is missing or not its pin, git fails, or CNB refuses a call.
     """
-    tree, stamp = unpack_tree(files, work)
-    check_limits(files, tree)
+    latest = check_latest(files, tag)
     check_cc_switch(files)
-    commit_tree(tree, tag, stamp)
-    if is_dry_run:
-        print(f"would push the tree to {PUBLISH_BRANCH} and tag it {tag}")
-    else:
-        push_tree(tree, tag, ssh_key, work)
+    tree, stamp = unpack_tree(files, work)
+    (tree / PACKAGING_LATEST_FILE).write_bytes(latest.read_bytes())
 
-    for release in client.releases():
-        if release.get("tag_name") == tag:
-            continue
-        for attached in client.attachments(release["id"]):
-            print(f"  deleting {attached['name']} from {release.get('tag_name')}")
-            if not is_dry_run:
-                client.delete_attachment(release["id"], attached["id"])
+    git = GitRemote(git_url, git_token)
+    heads = git.heads(tree, tag)
+    if f"refs/tags/{tag}" in heads:
+        print(f"CNB already holds {tag}; nothing is pushed")
+    elif is_dry_run:
+        print(f"would commit the tree on {PUBLISH_BRANCH} and push it tagged {tag}")
+    else:
+        git.commit_and_push(
+            tree, tag, stamp, has_branch=f"refs/heads/{PUBLISH_BRANCH}" in heads
+        )
 
     release = client.release_for_tag(tag)
     if release is None:
@@ -335,21 +299,17 @@ def publish(
             print(f"would create the release {tag} and upload {len(files)} files")
             return
         release = client.create_release(tag, notes)
-    held = {item["name"]: item for item in client.attachments(release["id"])}
+    held = {
+        str(asset.get("name")): int(asset.get("size", -1))
+        for asset in release.get("assets") or []
+    }
     for path in files:
-        attached = held.get(path.name)
-        if (
-            attached is not None
-            and int(attached.get("size", -1)) == path.stat().st_size
-        ):
+        if held.get(path.name) == path.stat().st_size:
             continue
         print(f"  uploading {path.name}")
-        if is_dry_run:
-            continue
-        if attached is not None:
-            client.delete_attachment(release["id"], attached["id"])
-        client.upload_attachment(release["id"], path)
-    print(f"published {tag} on Gitee")
+        if not is_dry_run:
+            client.upload_asset(str(release["id"]), path)
+    print(f"published {tag} on CNB")
 
 
 def release_files(dist: Path) -> list:
@@ -358,8 +318,11 @@ def release_files(dist: Path) -> list:
     Args:
         dist: The directory.
 
+    Returns:
+        Their paths, sorted.
+
     Raises:
-        SystemExit: When it holds no mainland source tree.
+        SystemExit: When it is no directory or holds no mainland source tree.
     """
     if not dist.is_dir():
         raise SystemExit(f"{dist} is not a directory of release files")
@@ -369,8 +332,33 @@ def release_files(dist: Path) -> list:
     return files
 
 
+def check_latest(files: list, tag: str) -> Path:
+    """The release's ``latest.json``, checked to name the tag.
+
+    Args:
+        files: The release's files.
+        tag: The tag being published.
+
+    Returns:
+        Its path.
+
+    Raises:
+        SystemExit: When the release holds none or it names another tag.
+    """
+    held = {path.name: path for path in files}
+    if PACKAGING_LATEST_FILE not in held:
+        raise SystemExit(f"the release holds no {PACKAGING_LATEST_FILE}")
+    try:
+        named = json.loads(held[PACKAGING_LATEST_FILE].read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise SystemExit(f"{PACKAGING_LATEST_FILE} is no JSON: {error}") from error
+    if not isinstance(named, dict) or named.get("tag") != tag:
+        raise SystemExit(f"{PACKAGING_LATEST_FILE} names {named!r}, not {tag}")
+    return held[PACKAGING_LATEST_FILE]
+
+
 def check_cc_switch(files: list) -> None:
-    """Check that the release carries every pinned cc-switch file, as its pin
+    """Check that the release holds every pinned cc-switch file, as its pin
     says, and the licence beside them.
 
     Args:
@@ -382,59 +370,17 @@ def check_cc_switch(files: list) -> None:
     held = {path.name: path for path in files}
     for name, (_url, digest) in cc_switch_assets.release_files().items():
         if name not in held:
-            raise SystemExit(f"the release carries no {name}")
+            raise SystemExit(f"the release holds no {name}")
         found = hashlib.sha256(held[name].read_bytes()).hexdigest()
         if found != digest:
             raise SystemExit(f"{name} hashes to {found}, not the pinned {digest}")
     if cc_switch_assets.license_name() not in held:
-        raise SystemExit(f"the release carries no {cc_switch_assets.license_name()}")
-
-
-def check_limits(files: list, tree: Path) -> None:
-    """Check every file against Gitee's limits.
-
-    Args:
-        files: The release's files.
-        tree: The mainland source tree, unpacked as it is pushed.
-
-    Raises:
-        SystemExit: Naming the file, its size and the limit, for the first
-            one over.
-    """
-    total = 0
-    for path in files:
-        size = path.stat().st_size
-        total += size
-        if size > PACKAGING_GITEE_ATTACHMENT_BYTES_MAX:
-            raise SystemExit(
-                f"{path.name} is {size} bytes, over Gitee's limit of "
-                f"{PACKAGING_GITEE_ATTACHMENT_BYTES_MAX} bytes for one attachment"
-            )
-    if total > PACKAGING_GITEE_ATTACHMENTS_BYTES_MAX:
-        raise SystemExit(
-            f"the {len(files)} files are {total} bytes, over Gitee's limit of "
-            f"{PACKAGING_GITEE_ATTACHMENTS_BYTES_MAX} bytes for all attachments"
-        )
-    total = 0
-    for path in sorted(tree.rglob("*")):
-        if not path.is_file() or path.is_symlink():
-            continue
-        size = path.stat().st_size
-        total += size
-        if size > PACKAGING_GITEE_FILE_BYTES_MAX:
-            raise SystemExit(
-                f"{path.relative_to(tree)} is {size} bytes, over Gitee's limit "
-                f"of {PACKAGING_GITEE_FILE_BYTES_MAX} bytes for one file"
-            )
-    if total > PACKAGING_GITEE_REPOSITORY_BYTES_MAX:
-        raise SystemExit(
-            f"the mainland tree is {total} bytes, over Gitee's limit of "
-            f"{PACKAGING_GITEE_REPOSITORY_BYTES_MAX} bytes for a repository"
-        )
+        raise SystemExit(f"the release holds no {cc_switch_assets.license_name()}")
 
 
 def unpack_tree(files: list, work: Path) -> tuple:
-    """Unpack the mainland source tree as it is pushed, without third_party.
+    """Unpack the mainland source tree as it is committed, without
+    third_party.
 
     Args:
         files: The release's files, one of them the tree's archive.
@@ -455,7 +401,6 @@ def unpack_tree(files: list, work: Path) -> tuple:
         roots = {member.name.split("/", 1)[0] for member in members}
         if len(roots) != 1:
             raise SystemExit(f"{archive.name} does not hold one tree")
-        (root,) = roots
         kept = []
         stamp = 0
         for member in members:
@@ -471,80 +416,146 @@ def unpack_tree(files: list, work: Path) -> tuple:
     return target, int(stamp)
 
 
-def commit_tree(tree: Path, tag: str, stamp: int) -> None:
-    """Make the tree one commit with no parent, tagged, at a fixed time.
+class GitRemote:
+    """The repository on CNB, reached over HTTPS with the token."""
 
-    The same archive therefore makes the same commit on every run.
+    def __init__(self, url: str, token: str):
+        """Bind to one repository.
 
-    Args:
-        tree: The unpacked tree.
-        tag: The tag to put on the commit.
-        stamp: The commit's time, in seconds.
+        Args:
+            url: Its address.
+            token: The token, sent as a header git reads from the
+                environment and never on a command line.
+        """
+        self._url = url
+        credential = base64.b64encode(f"{PUBLISH_GIT_USER}:{token}".encode()).decode()
+        self._environment = {
+            **os.environ,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {credential}",
+        }
 
-    Raises:
-        SystemExit: When git fails.
-    """
-    date = f"{stamp} +0000"
-    name, email = PUBLISH_AUTHOR
-    environment = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": name,
-        "GIT_AUTHOR_EMAIL": email,
-        "GIT_COMMITTER_NAME": name,
-        "GIT_COMMITTER_EMAIL": email,
-        "GIT_AUTHOR_DATE": date,
-        "GIT_COMMITTER_DATE": date,
-    }
-    for command in (
-        ["git", "init", "--quiet", "--initial-branch", PUBLISH_BRANCH],
-        ["git", "add", "--all"],
-        ["git", "commit", "--quiet", "--no-gpg-sign", "--message", f"Neutrino {tag}"],
-        ["git", "tag", tag],
-    ):
-        _git(command, tree, environment)
+    def heads(self, directory: Path, tag: str) -> set:
+        """Which of the branch and the tag the repository holds.
 
+        Args:
+            directory: Where git runs.
+            tag: The tag.
 
-def push_tree(tree: Path, tag: str, ssh_key: str, work: Path) -> None:
-    """Force-push the commit to the branch and the tag, checking gitee.com's
-    host key against the one pinned.
+        Returns:
+            The refs among ``refs/heads/main`` and ``refs/tags/<tag>`` it
+            holds.
 
-    Args:
-        tree: The committed tree.
-        tag: The tag on the commit.
-        ssh_key: The private key.
-        work: A directory for the key and the known hosts file.
+        Raises:
+            SystemExit: When the repository cannot be read.
+        """
+        listed = self._git(
+            [
+                "git",
+                "ls-remote",
+                self._url,
+                f"refs/heads/{PUBLISH_BRANCH}",
+                f"refs/tags/{tag}",
+            ],
+            directory,
+        )
+        return {line.split()[1] for line in listed.splitlines() if line.strip()}
 
-    Raises:
-        SystemExit: When the push fails, a changed host key among the reasons.
-    """
-    key = work / "gitee_key"
-    key.write_text(ssh_key.strip() + "\n", encoding="utf-8")
-    key.chmod(0o600)
-    known_hosts = work / "known_hosts"
-    known_hosts.write_text(PACKAGING_GITEE_SSH_HOST_KEY + "\n", encoding="utf-8")
-    environment = {
-        **os.environ,
-        "GIT_SSH_COMMAND": (
-            f"ssh -i {key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "
-            f"-o UserKnownHostsFile={known_hosts}"
-        ),
-    }
-    _git(
-        [
-            "git",
-            "push",
-            "--force",
-            PACKAGING_GITEE_PUSH_URL,
-            f"HEAD:refs/heads/{PUBLISH_BRANCH}",
-            f"refs/tags/{tag}:refs/tags/{tag}",
-        ],
-        tree,
-        environment,
-    )
+    def commit_and_push(
+        self, tree: Path, tag: str, stamp: int, *, has_branch: bool
+    ) -> None:
+        """Commit the tree on the repository's branch and push it tagged.
+
+        Args:
+            tree: The tree to commit, ``latest.json`` in it.
+            tag: The tag to put on the commit.
+            stamp: The commit's time, in seconds.
+            has_branch: Whether the repository's branch exists, which the
+                commit then follows.
+
+        Raises:
+            SystemExit: When git fails, a branch moved since it was read
+                among the reasons.
+        """
+        date = f"{stamp} +0000"
+        name, email = PUBLISH_AUTHOR
+        environment = {
+            **self._environment,
+            "GIT_AUTHOR_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_COMMITTER_EMAIL": email,
+            "GIT_AUTHOR_DATE": date,
+            "GIT_COMMITTER_DATE": date,
+        }
+        self._git(["git", "init", "--quiet", "--initial-branch", PUBLISH_BRANCH], tree)
+        if has_branch:
+            self._git(
+                [
+                    "git",
+                    "fetch",
+                    "--quiet",
+                    "--depth",
+                    "1",
+                    self._url,
+                    f"refs/heads/{PUBLISH_BRANCH}",
+                ],
+                tree,
+            )
+            self._git(
+                ["git", "update-ref", f"refs/heads/{PUBLISH_BRANCH}", "FETCH_HEAD"],
+                tree,
+            )
+        for command in (
+            ["git", "add", "--all"],
+            [
+                "git",
+                "commit",
+                "--quiet",
+                "--no-gpg-sign",
+                "--message",
+                f"Neutrino {tag}",
+            ],
+            ["git", "tag", tag],
+            [
+                "git",
+                "push",
+                "--atomic",
+                self._url,
+                f"HEAD:refs/heads/{PUBLISH_BRANCH}",
+                f"refs/tags/{tag}:refs/tags/{tag}",
+            ],
+        ):
+            self._git(command, tree, environment)
+
+    def _git(self, command: list, directory: Path, environment=None) -> str:
+        """Run one git command.
+
+        Returns:
+            What it printed.
+
+        Raises:
+            SystemExit: When it fails.
+        """
+        result = subprocess.run(
+            command,
+            cwd=directory,
+            env=environment or self._environment,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit(
+                f"{' '.join(command[:2])} failed: "
+                f"{(result.stderr or result.stdout).strip()}"
+            )
+        return result.stdout
 
 
 def download(tag: str, work: Path) -> Path:
-    """Download the mainland files the release workflow built for a tag.
+    """Download the files the release workflow built for a tag.
 
     Args:
         tag: The tag whose run to take them from.
@@ -593,57 +604,27 @@ def download(tag: str, work: Path) -> Path:
 
 
 def _send_with_urllib(method: str, url: str, body, headers: dict) -> tuple:
-    """Carry one request with urllib; an upload waits ``PUBLISH_UPLOAD_TIMEOUT_S``.
+    """Carry one request with urllib; an upload streams its file and waits
+    ``PUBLISH_UPLOAD_TIMEOUT_S``.
 
     Returns:
         ``(status, body)``, an error status included.
     """
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
-    is_upload = str(headers.get("Content-Type", "")).startswith("multipart/form-data")
+    is_upload = isinstance(body, Path)
     timeout = PUBLISH_UPLOAD_TIMEOUT_S if is_upload else PUBLISH_REQUEST_TIMEOUT_S
     try:
+        if is_upload:
+            with body.open("rb") as stream:
+                request = urllib.request.Request(
+                    url, data=stream, headers=headers, method=method
+                )
+                with urllib.request.urlopen(request, timeout=timeout) as reply:
+                    return reply.status, reply.read()
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
         with urllib.request.urlopen(request, timeout=timeout) as reply:
             return reply.status, reply.read()
     except urllib.error.HTTPError as refused:
         return refused.code, refused.read()
-
-
-def _multipart(fields: dict, name: str, path: Path) -> tuple:
-    """A multipart form holding some fields and one file.
-
-    Returns:
-        ``(body, content type)``.
-    """
-    boundary = uuid.uuid4().hex
-    parts = []
-    for key, value in fields.items():
-        parts.append(
-            f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n'
-            f"{value}\r\n".encode()
-        )
-    parts.append(
-        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
-        f'filename="{path.name}"\r\n'
-        "Content-Type: application/octet-stream\r\n\r\n".encode()
-    )
-    parts.append(path.read_bytes())
-    parts.append(f"\r\n--{boundary}--\r\n".encode())
-    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
-
-
-def _git(command: list, tree: Path, environment: dict) -> None:
-    """Run one git command in the tree.
-
-    Raises:
-        SystemExit: When it fails.
-    """
-    result = subprocess.run(
-        command, cwd=tree, env=environment, capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise SystemExit(
-            f"{' '.join(command[:2])} failed: {(result.stderr or result.stdout).strip()}"
-        )
 
 
 def _gh(command: list) -> str:

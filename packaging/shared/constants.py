@@ -181,20 +181,8 @@ PACKAGING_INSTALL_SITES_LINES = {
 # The variable a build in a container reads its edition from.
 PACKAGING_EDITION_ENV = "NEUTRINO_EDITION"
 
-# The mainland release's repository on Gitee, where its API is, where the
-# tree is pushed, and the SSH host key gitee.com publishes, which the push
-# is checked against.
-PACKAGING_GITEE_REPOSITORY = "iffiX/neutrino"
-PACKAGING_GITEE_API = "https://gitee.com/api/v5"
-PACKAGING_GITEE_PUSH_URL = "git@gitee.com:iffiX/neutrino.git"
-PACKAGING_GITEE_SSH_HOST_KEY = (
-    "gitee.com ssh-ed25519 "
-    "AAAAC3NzaC1lZDI1NTE5AAAAIEKxHSJ7084RmkJ4YdEi5tngynE8aZe2uEoVVsB/OvYN"  # scan: allow
-)
-
-# Gitee's limits in bytes: one release attachment, all attachments of the
-# repository, one file in the repository, and the repository's git data.
-PACKAGING_GITEE_ATTACHMENT_BYTES_MAX = 100_000_000
-PACKAGING_GITEE_ATTACHMENTS_BYTES_MAX = 1_000_000_000
-PACKAGING_GITEE_FILE_BYTES_MAX = 50_000_000
-PACKAGING_GITEE_REPOSITORY_BYTES_MAX = 500_000_000
+# The second release site's repository on CNB, its API, and the address the
+# mainland source tree is pushed to.
+PACKAGING_CNB_REPOSITORY = "iffi-X/neutrino"
+PACKAGING_CNB_API = "https://api.cnb.cool"
+PACKAGING_CNB_GIT_URL = "https://cnb.cool/iffi-X/neutrino.git"
