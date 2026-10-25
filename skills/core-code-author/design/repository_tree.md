@@ -126,8 +126,12 @@ agent/
                      windows_net.py the network iphlpapi reports,
                      windows_accounts.py the local accounts through netapi32
                      and the impersonation of one, windows_processes.py the
-                     process table with command lines and trees, and
-                     powershell_host.py the one resident PowerShell host.
+                     process table with command lines and trees,
+                     linux_relay.py the Podman bridges and the relays'
+                     rules in ufw and firewalld, windows_relay.py WSL's
+                     vEthernet adapter and the relays' rules in Windows
+                     Firewall, and powershell_host.py the one resident
+                     PowerShell host.
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.
     data/            Ships inside the package: systemd/ its unit, windows/
