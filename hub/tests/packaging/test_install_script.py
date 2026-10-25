@@ -26,6 +26,14 @@ from shared.constants import PACKAGING_RELEASE_SITES
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.sh"
 RELATIVE = "packaging/install/install.sh"
 TAG = "v9.9.9"
+# The edition of the tree the suite runs in. The mainland tree is written
+# from the intl checkout, whose scripts hold the committed lines a build
+# stamps, and from nothing else.
+TREE_EDITION = (SCRIPT.parents[2] / "EDITION").read_text().strip()
+from_intl_tree = pytest.mark.skipif(
+    TREE_EDITION != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
 
 PACKAGES = (
     "neutrino-hub_9.9.9_amd64.deb",
@@ -481,8 +489,16 @@ def test_a_checkout_names_no_site_and_stops_with_one_sentence(stand_ins):
     assert asked == []
 
 
-def test_the_committed_script_names_no_site():
-    assert '\nRELEASE_SITES=""\n' in SCRIPT.read_text()
+def test_the_tree_s_script_names_the_sites_of_its_edition():
+    """The GitHub checkout's script names none; the mainland tree's, which
+    CNB serves, names every release site."""
+    sites = (
+        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)
+        if TREE_EDITION == "cn"
+        else ""
+    )
+
+    assert f'\nRELEASE_SITES="{sites}"\n' in SCRIPT.read_text()
 
 
 def test_the_fastest_site_serves_the_package(stand_ins):
@@ -691,6 +707,7 @@ def test_an_intl_script_never_takes_a_cn_package(stand_ins):
     assert _installs(asked) == []
 
 
+@from_intl_tree
 @pytest.mark.parametrize("edition", ["intl", "cn"])
 def test_a_release_build_stamps_the_edition_and_the_sites(edition):
     text = install_script_stamp.stamped_text(
@@ -703,13 +720,6 @@ def test_a_release_build_stamps_the_edition_and_the_sites(edition):
     )
     assert f'\nRELEASE_SITES="{sites}"\n' in text
     assert sites.split()[0].startswith("https://github.com/")
-
-
-# The mainland tree is written from the intl checkout, and from nothing else.
-from_intl_tree = pytest.mark.skipif(
-    (Path(__file__).resolve().parents[3] / "EDITION").read_text().strip() != "intl",
-    reason="the mainland tree is written from the intl checkout",
-)
 
 
 @pytest.fixture(scope="module")

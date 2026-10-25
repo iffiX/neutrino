@@ -27,6 +27,14 @@ SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "instal
 RELATIVE = "packaging/install/install.ps1"
 LAST_LINE = "Install-Neutrino @args"
 TAG = "v9.9.9"
+# The edition of the tree the suite runs in. The mainland tree is written
+# from the intl checkout, whose scripts hold the committed lines a build
+# stamps, and from nothing else.
+TREE_EDITION = (SCRIPT.parents[2] / "EDITION").read_text().strip()
+from_intl_tree = pytest.mark.skipif(
+    TREE_EDITION != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
 MSI = "neutrino-hub-9.9.9-windows-amd64.msi"
 
 PACKAGES = (
@@ -289,8 +297,16 @@ def test_a_checkout_names_no_site_and_stops_with_one_sentence(run):
     assert asked == []
 
 
-def test_the_committed_script_names_no_site():
-    assert "\n$script:NeutrinoReleaseSites = @()\n" in SCRIPT.read_text()
+def test_the_tree_s_script_names_the_sites_of_its_edition():
+    """The GitHub checkout's script names none; the mainland tree's, which
+    CNB serves, names every release site."""
+    sites = (
+        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)
+        if TREE_EDITION == "cn"
+        else ""
+    )
+
+    assert f"\n$script:NeutrinoReleaseSites = @({sites})\n" in SCRIPT.read_text()
 
 
 def test_the_fastest_site_serves_the_package(run):
@@ -399,6 +415,7 @@ def test_an_intl_script_never_takes_a_cn_msi(run):
     assert asked == []
 
 
+@from_intl_tree
 @pytest.mark.parametrize("edition", ["intl", "cn"])
 def test_a_release_build_stamps_sites_the_script_reads(tmp_path, edition):
     text = install_script_stamp.stamped_text(
@@ -427,13 +444,6 @@ def test_a_release_build_stamps_sites_the_script_reads(tmp_path, edition):
     stamped = json.loads(result.stdout.strip().splitlines()[-1])
     assert stamped["edition"] == edition
     assert stamped["sites"] == [dict(site) for site in PACKAGING_RELEASE_SITES]
-
-
-# The mainland tree is written from the intl checkout, and from nothing else.
-from_intl_tree = pytest.mark.skipif(
-    (Path(__file__).resolve().parents[3] / "EDITION").read_text().strip() != "intl",
-    reason="the mainland tree is written from the intl checkout",
-)
 
 
 @from_intl_tree
@@ -505,9 +515,11 @@ def test_a_script_run_from_invoke_expression_copies_itself_whole(tmp_path):
     """irm | iex has no file: the copy is the text the functions came from,
     the release sites the build stamped among it."""
     driver = tmp_path / "driver.ps1"
-    released = install_script_stamp.stamped_text(
-        SCRIPT.read_text(), RELATIVE, edition="intl", sites=PACKAGING_RELEASE_SITES
-    )
+    released = SCRIPT.read_text()
+    if TREE_EDITION == "intl":
+        released = install_script_stamp.stamped_text(
+            released, RELATIVE, edition="intl", sites=PACKAGING_RELEASE_SITES
+        )
     text = released.rstrip()[: -len(LAST_LINE)]
     whole = text + STAND_INS + LAST_LINE + "\n"
     (tmp_path / "whole.ps1").write_text(whole)

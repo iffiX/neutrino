@@ -17,6 +17,12 @@ SITES = (
     {"files": "https://one.invalid/d/{tag}/", "latest": "https://one.invalid/l.json"},
     {"files": "https://two.invalid/d/{tag}/", "latest": "https://two.invalid/l.json"},
 )
+# Only the intl checkout's scripts hold the committed lines: the mainland
+# tree's are stamped already.
+from_intl_tree = pytest.mark.skipif(
+    (REPO_ROOT / "EDITION").read_text().strip() != "intl",
+    reason="the mainland tree's scripts are stamped already",
+)
 
 
 @pytest.mark.parametrize(
@@ -46,6 +52,7 @@ def test_the_powershell_script_names_each_site_as_a_hashtable():
     )
 
 
+@from_intl_tree
 @pytest.mark.parametrize("relative", sorted(PACKAGING_INSTALL_EDITION_LINES))
 @pytest.mark.parametrize("edition", ["intl", "cn"])
 def test_the_committed_script_is_stamped_on_its_two_lines_alone(relative, edition):
@@ -83,6 +90,7 @@ def test_a_script_with_no_committed_line_is_refused():
     )
 
 
+@from_intl_tree
 def test_a_tree_s_scripts_are_written_stamped_under_their_release_names(tmp_path):
     for relative in PACKAGING_INSTALL_EDITION_LINES:
         (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
