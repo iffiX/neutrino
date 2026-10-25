@@ -124,7 +124,7 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
             val links = buildList {
                 add(source to Edition.sourceUrlOf(core))
                 if (core.patchUrl.isNotEmpty()) {
-                    add(patch to core.patchUrl.replace("{source}", Edition.sourceUrl).replace("{version}", version))
+                    add(patch to core.patchUrl.replace("{blob}", Edition.blobUrl).replace("{version}", version))
                 }
             }
             add(AboutFact("${core.name} ${core.version}", core.licence, links))

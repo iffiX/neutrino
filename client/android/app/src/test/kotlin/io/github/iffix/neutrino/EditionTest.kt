@@ -10,6 +10,15 @@ class EditionTest {
     fun theBuildNamesTheEditionTheRootFileNames() {
         assertEquals(RepositoryFiles.text("EDITION").trim(), BuildConfig.EDITION)
         assertEquals(CLIENT_SOURCE_URLS.getValue(BuildConfig.EDITION), Edition.sourceUrl)
+        assertEquals(CLIENT_BLOB_URLS.getValue(BuildConfig.EDITION), Edition.blobUrl)
+    }
+
+    @Test
+    fun eachEditionLinksItsOwnRepository() {
+        assertEquals("https://github.com/iffiX/neutrino", CLIENT_SOURCE_URLS.getValue(EDITION_INTL))
+        assertEquals("https://github.com/iffiX/neutrino/blob", CLIENT_BLOB_URLS.getValue(EDITION_INTL))
+        assertEquals("https://cnb.cool/iffi-X/neutrino", CLIENT_SOURCE_URLS.getValue(EDITION_CN))
+        assertEquals("https://cnb.cool/iffi-X/neutrino/-/blob", CLIENT_BLOB_URLS.getValue(EDITION_CN))
     }
 
     @Test

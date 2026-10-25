@@ -13,6 +13,10 @@ object Edition {
     val sourceUrl: String
         get() = CLIENT_SOURCE_URLS[current] ?: CLIENT_SOURCE_URLS.getValue(EDITION_INTL)
 
+    /** Where this edition's repository shows a file, the `{blob}` of a patch link. */
+    val blobUrl: String
+        get() = CLIENT_BLOB_URLS[current] ?: CLIENT_BLOB_URLS.getValue(EDITION_INTL)
+
     /**
      * The source of one carried core as this edition links it.
      *

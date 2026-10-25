@@ -51,13 +51,19 @@ const val CLIENT_LICENCE = "AGPL-3.0"
 /** The edition released on GitHub, as `BuildConfig.EDITION` names it. */
 const val EDITION_INTL = "intl"
 
-/** The mainland edition, released on Gitee. */
+/** The mainland edition, released on CNB. */
 const val EDITION_CN = "cn"
 
 /** The app's source, by edition: the repository each edition is released from. */
 val CLIENT_SOURCE_URLS: Map<String, String> = mapOf(
     EDITION_INTL to "https://github.com/iffiX/neutrino",
-    EDITION_CN to "https://gitee.com/iffiX/neutrino",
+    EDITION_CN to "https://cnb.cool/iffi-X/neutrino",
+)
+
+/** Where the app's source shows a file, by edition: `{blob}/<tag>/<path>` is the file at that tag. */
+val CLIENT_BLOB_URLS: Map<String, String> = mapOf(
+    EDITION_INTL to "https://github.com/iffiX/neutrino/blob",
+    EDITION_CN to "https://cnb.cool/iffi-X/neutrino/-/blob",
 )
 
 /** The carried core whose source and patch the About card links. */
@@ -67,10 +73,10 @@ const val CLIENT_RUSTDESK_CORE = "RustDesk"
 const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tree/1.4.9"
 
 /**
- * The patch the app's RustDesk core is built with, under the app's source `{source}` at its release
- * tag `v{version}`.
+ * The patch the app's RustDesk core is built with, in the app's source at its release tag `v{version}`,
+ * under the edition's `{blob}`.
  */
-const val CLIENT_RUSTDESK_PATCH_URL = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+const val CLIENT_RUSTDESK_PATCH_URL = "{blob}/v{version}/packaging/build/build_core_rustdesk.patch"
 
 /** The NetBird release the app's core is built from, as `build_core_netbird.py` pins it. */
 const val OVERLAY_NETBIRD_VERSION = "0.78.1"
@@ -91,7 +97,7 @@ val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
         "2.6.4",
         "LGPL-3.0",
         "https://github.com/EasyTier/EasyTier/tree/v2.6.4",
-        "{source}/blob/v{version}/packaging/build/build_core_easytier.patch",
+        "{blob}/v{version}/packaging/build/build_core_easytier.patch",
         "https://gitee.com/easytier/EasyTier/tree/v2.6.4",
     ),
     CarriedCore(

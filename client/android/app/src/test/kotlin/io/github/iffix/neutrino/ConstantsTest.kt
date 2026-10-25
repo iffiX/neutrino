@@ -44,7 +44,7 @@ class ConstantsTest {
             val patch = "packaging/build/build_core_${core.name.lowercase()}.patch"
             val hasPatch = RepositoryFiles.file(patch).exists()
             assertEquals(core.name, hasPatch, core.patchUrl.isNotEmpty())
-            if (hasPatch) assertEquals("{source}/blob/v{version}/$patch", core.patchUrl)
+            if (hasPatch) assertEquals("{blob}/v{version}/$patch", core.patchUrl)
         }
     }
 

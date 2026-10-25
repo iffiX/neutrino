@@ -53,7 +53,13 @@ enum Client {
     /// The app's source, by edition.
     static let sourceUrls = [
         editionIntl: "https://github.com/iffiX/neutrino",
-        editionCn: "https://gitee.com/iffiX/neutrino",
+        editionCn: "https://cnb.cool/iffi-X/neutrino",
+    ]
+
+    /// Where the app's source shows a file, by edition: `{blob}/<tag>/<path>` is the file at that tag.
+    static let blobUrls = [
+        editionIntl: "https://github.com/iffiX/neutrino/blob",
+        editionCn: "https://cnb.cool/iffi-X/neutrino/-/blob",
     ]
 
     /// The terminal view the app carries, for the About card.
@@ -111,8 +117,8 @@ enum Client {
         editionCn: "https://gitee.com/mirrors/rustdesk/tree/1.4.9",
     ]
 
-    /// The patch the core is built with, under the app's source `{source}` at its release tag `v{version}`.
-    static let rustDeskPatchUrl = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+    /// The patch the core is built with, at the app's release tag `v{version}` under the edition's `{blob}`.
+    static let rustDeskPatchUrl = "{blob}/v{version}/packaging/build/build_core_rustdesk.patch"
 
     /// How long an armed destructive button waits for its second press.
     static let armSeconds = 5.0

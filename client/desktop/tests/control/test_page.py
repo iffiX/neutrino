@@ -2094,7 +2094,7 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
     assert "text-transform: uppercase" in label_rule[: label_rule.index("}")]
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
     assert "intl: 'https://github.com/iffiX/neutrino'," in PAGE_JS
-    assert "cn: 'https://gitee.com/iffiX/neutrino'," in PAGE_JS
+    assert "cn: 'https://cnb.cool/iffi-X/neutrino'," in PAGE_JS
     assert "const CARRIED = [" in PAGE_JS
     for name, licence in (
         ("NetBird", "BSD-3-Clause"),

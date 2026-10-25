@@ -85,8 +85,8 @@ struct SettingsScreen: View {
     }
 
     private var rustDeskPatch: String {
-        let source = Client.sourceUrls[core.edition] ?? Client.sourceUrls[Client.editionIntl] ?? ""
-        return Client.rustDeskPatchUrl.replacingOccurrences(of: "{source}", with: source)
+        let blob = Client.blobUrls[core.edition] ?? Client.blobUrls[Client.editionIntl] ?? ""
+        return Client.rustDeskPatchUrl.replacingOccurrences(of: "{blob}", with: blob)
             .replacingOccurrences(of: "{version}", with: core.machine.version)
     }
 

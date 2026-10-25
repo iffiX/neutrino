@@ -35,7 +35,7 @@ const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 const CLIENT_LICENCE = 'MIT';
 const CLIENT_SOURCES = {
   intl: 'https://github.com/iffiX/neutrino',
-  cn: 'https://gitee.com/iffiX/neutrino',
+  cn: 'https://cnb.cool/iffi-X/neutrino',
 };
 const CARRIED = [
   { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
