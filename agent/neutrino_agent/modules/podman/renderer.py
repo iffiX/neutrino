@@ -43,6 +43,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_QUADLET_SUFFIX,
     PODMAN_REGISTRIES_CONF_PATH,
     PODMAN_RM_BINARY,
+    PODMAN_RUNTIME,
     PODMAN_STOP_TIMEOUT_S,
     PODMAN_UNIT_DIR,
     PODMAN_UNIT_START_TIMEOUT_S,
@@ -586,6 +587,10 @@ class PodmanUnitRenderer:
             "run",
             f"--cidfile={PODMAN_CID_FILE}",
             f"--cgroups={cgroups}",
+        ]
+        if not self._machine_os_name:
+            command += ["--runtime", PODMAN_RUNTIME]
+        command += [
             "--sdnotify=conmon",
             "-d",
             "--replace",

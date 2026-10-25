@@ -668,11 +668,6 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         return self.read_command()
 
-    def mirrors(self) -> list:
-        """The docker.io mirrors the state names, else the last apply's."""
-        config = self._wanted or self._config or PodmanConfig()
-        return list(config.mirrors)
-
     def hub_names(self) -> dict:
         """The hub containers the last apply wrote into the machine, by module.
 

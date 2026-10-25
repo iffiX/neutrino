@@ -254,8 +254,8 @@ def test_the_linux_containers_recipe_installs_podman_alone_by_the_system(
         "method": "system",
         "params": {
             "version": "system",
-            "packages": ["podman"],
-            "verify": "podman --version",
+            "packages": ["podman", "runc"],
+            "verify": "podman --version && runc --version",
             "uninstall": {"packages": ["podman"], "post_uninstall": []},
         },
     }

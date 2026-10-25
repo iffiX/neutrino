@@ -7,8 +7,10 @@ source is probed at once, and a probe waits at most
 ``AGENT_SOURCE_PROBE_TIMEOUT_S`` for an answer. The sources that answered
 are ranked by the probe's speed, measured from its first byte to its last,
 and two speeds within a tenth of each other go to the earlier first byte. A
-source that did not answer in time is not ranked. Nothing is remembered:
-each ranking probes again.
+source that did not answer in time is not ranked: an image's, a set's and
+a host's are tried after the ranked ones, and an npm registry's is not,
+since its probe checks the package's integrity. Nothing is remembered: each
+ranking probes again.
 
 Not pure: opens connections.
 """
@@ -388,25 +390,21 @@ def probe_image(source: str, digest: str, *, probe_one=probe) -> SourceProbe:
     )
 
 
-def rank_images(
-    sources: list, digest: str, *, is_docker_mirrored: bool = False, probe_one=probe
-) -> tuple:
+def rank_images(sources: list, digest: str, *, probe_one=probe) -> list:
     """Rank the registries that serve one image by the speed of their manifest.
+
+    Podman checks the digest of every pull, so a source whose probe got
+    no answer is still tried.
 
     Args:
         sources: The image's references with no tag, the publisher's first.
         digest: The image's digest.
-        is_docker_mirrored: Whether the Containers module names docker.io
-            mirrors, through which Podman reaches a ``docker.io`` source
-            whatever its own probe gives.
         probe_one: Called with ``url, source=, headers=``; returns a
             :class:`SourceProbe`.
 
     Returns:
-        ``(chosen, failures)``: the sources to pull from in order, those that
-        answered fastest first and then a ``docker.io`` source that did not
-        while mirrors are named; and each source that did not answer as
-        ``{source, reason, detail}``.
+        The sources to pull from in order: those that answered, fastest
+        first, then those that did not, in their order.
     """
     probes: list = [None] * len(sources)
 
@@ -421,16 +419,8 @@ def rank_images(
         thread.start()
     for thread in threads:
         thread.join()
-    chosen = [found.source for found in ranked(probes)]
-    if is_docker_mirrored:
-        chosen += [
-            source
-            for source in sources
-            if source.split("/", 1)[0] == AGENT_SOURCE_DOCKER_HUB
-            and source not in chosen
-        ]
-    failures = [found.failure() for found in probes if not found.is_answered]
-    return chosen, failures
+    order = [found.source for found in ranked(probes)]
+    return order + [source for source in sources if source not in order]
 
 
 def _bearer_token(challenge: str, *, source: str, probe_one) -> str:

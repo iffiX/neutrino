@@ -32,6 +32,10 @@ PODMAN_UNIT_STOP_TIMEOUT_S = 70
 PODMAN_UNIT_START_TIMEOUT_S = 900
 PODMAN_CGROUPS = "split"
 PODMAN_MACHINE_CGROUPS = "enabled"
+# The OCI runtime a Linux unit runs its container with; a Podman machine keeps
+# its image's own. Ubuntu 22.04's crun 0.17 answers EPERM to fchmodat2, which
+# an image built on glibc 2.39 or later calls.
+PODMAN_RUNTIME = "runc"
 PODMAN_RM_BINARY = "/bin/rm"
 
 # Where earlier builds wrote a container as a Quadlet ``.container`` file:

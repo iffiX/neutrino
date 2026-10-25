@@ -13,8 +13,8 @@
         "method": "system",
         "params": {
           "version": "system",
-          "packages": ["podman"],
-          "verify": "podman --version",
+          "packages": ["podman", "runc"],
+          "verify": "podman --version && runc --version",
           "uninstall": {"packages": ["podman"], "post_uninstall": []}
         }
       }
@@ -25,8 +25,8 @@
         "method": "system",
         "params": {
           "version": "system",
-          "packages": ["podman"],
-          "verify": "podman --version",
+          "packages": ["podman", "runc"],
+          "verify": "podman --version && runc --version",
           "uninstall": {"packages": ["podman"], "post_uninstall": []}
         }
       }
@@ -37,8 +37,8 @@
         "method": "system",
         "params": {
           "version": "system",
-          "packages": ["podman"],
-          "verify": "podman --version",
+          "packages": ["podman", "runc"],
+          "verify": "podman --version && runc --version",
           "uninstall": {"packages": ["podman"], "post_uninstall": []}
         }
       }

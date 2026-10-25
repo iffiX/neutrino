@@ -90,7 +90,7 @@ def test_the_unit_carries_podman_s_lifecycle_settings_and_no_environment_value()
         "TimeoutStopSec=70",
         "ExecStartPre=-/bin/rm -f %t/%N.cid",
         "ExecStart=/usr/bin/podman run --cidfile=%t/%N.cid --cgroups=split"
-        " --sdnotify=conmon -d --replace --rm --name webdav -p 8081:80"
+        " --runtime runc --sdnotify=conmon -d --replace --rm --name webdav -p 8081:80"
         " -v /srv/share:/usr/share/nginx/html"
         f" --env-file {ENV_DIR}/webdav.env docker.io/library/nginx:1",
         "ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%N.cid",
@@ -344,6 +344,18 @@ def test_the_linux_unit_runs_cgroups_split():
     for text in linux.values():
         assert " --cgroups=split " in exec_start(text)
         assert "cgroups=enabled" not in text
+
+
+def test_a_linux_unit_runs_runc_and_a_machine_unit_its_image_runtime():
+    linux = PodmanUnitRenderer(config=hub_config(), context=HUB_CONTEXT).render()
+    machine = machine_renderer(machine_config(), "windows").render()
+
+    assert linux
+    for text in linux.values():
+        assert " --runtime runc " in exec_start(text)
+    assert machine
+    for text in machine.values():
+        assert "--runtime" not in text
 
 
 def test_the_root_script_renders_the_golden_text_around_each_files_base64():
@@ -750,7 +762,7 @@ def test_a_hub_container_has_its_label_network_gateway_image_and_page_port():
     ]
     assert exec_start(text) == (
         "ExecStart=/usr/bin/podman run --cidfile=%t/%N.cid --cgroups=split"
-        " --sdnotify=conmon -d --replace --rm --name neutrino_demo"
+        " --runtime runc --sdnotify=conmon -d --replace --rm --name neutrino_demo"
         " --label neutrino.module=demo --network neutrino_demo"
         " --add-host host.containers.internal:10.89.0.1"
         " -p 127.0.0.1:40123:8787 -v neutrino_demo_home:/home/web/.data"

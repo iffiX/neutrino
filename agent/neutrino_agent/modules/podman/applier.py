@@ -72,7 +72,9 @@ class PodmanContainerState:
         host_ports: The published host ports.
         ports: Every published port as ``host:container``, from inspect.
         volumes: Every mount as ``source:destination``, from inspect.
-        environment: The container's environment, ``KEY=value`` each.
+        environment: The container's environment, ``KEY=value`` each;
+            empty for a hub container, whose environment holds its
+            module's secrets.
         has_unit: Whether a unit file this machine renders stands for it.
         host_bindings: Each published host port with the host address it
             is published on, its protocol and what answers on it,
@@ -645,7 +647,7 @@ class PodmanStatusReader:
                     host_bindings=bindings,
                     ports=_inspected_ports(detail),
                     volumes=_inspected_volumes(detail, host_volume=self._host_volume),
-                    environment=_inspected_environment(detail),
+                    environment=[] if module else _inspected_environment(detail),
                     has_unit=has_unit(names[0]),
                 )
             )
@@ -875,12 +877,26 @@ def _inspected_environment(detail: dict) -> list:
     return [str(entry) for entry in environment if "=" in str(entry)]
 
 
+def _mapped_port(entry: dict):
+    """The host port of one ``ps`` port mapping, as Podman 3.4 or a later version writes it."""
+    port = entry.get("host_port")
+    return port if port is not None else entry.get("hostPort")
+
+
+def _mapped_address(entry: dict) -> str:
+    """The host address of one ``ps`` port mapping, as Podman 3.4 or a later version writes it."""
+    address = entry.get("host_ip")
+    if address is None:
+        address = entry.get("hostIP")
+    return str(address or "")
+
+
 def _host_ports(entries: list) -> list:
     ports = set()
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        port = entry.get("host_port")
+        port = _mapped_port(entry)
         if isinstance(port, int) and port > 0:
             ports.add(port)
     return sorted(ports)
@@ -891,11 +907,11 @@ def _host_bindings(entries: list, *, is_address_kept: bool = True) -> list:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        port = entry.get("host_port")
+        port = _mapped_port(entry)
         protocol = str(entry.get("protocol", "") or "tcp").lower()
         if not isinstance(port, int) or port <= 0 or protocol not in ("tcp", "udp"):
             continue
-        address = str(entry.get("host_ip", "") or "") if is_address_kept else ""
+        address = _mapped_address(entry) if is_address_kept else ""
         binding = {
             "address": address,
             "port": port,

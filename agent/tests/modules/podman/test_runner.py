@@ -310,6 +310,26 @@ def test_the_install_turns_the_socket_on_after_the_packages(runner, system):
     assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
 
 
+def test_the_install_leaves_runc_out_where_a_runc_is_on_the_path(
+    runner, system, monkeypatch
+):
+    """Docker CE's containerd.io includes a runc and conflicts with the
+    distribution's package, which apt would remove Docker for."""
+    installed: list = []
+    runner._platform.install_system_packages = (
+        lambda names: installed.append(names) or ""
+    )
+    recipe = {"method": "system", "params": {"packages": ["podman", "runc"]}}
+
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
+    runner.install(recipe)
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: f"/usr/bin/{name}")
+    runner.install(recipe)
+
+    assert installed == [["podman", "runc"], ["podman"]]
+    assert recipe["params"]["packages"] == ["podman", "runc"]
+
+
 def test_is_active_is_the_units_word(runner, monkeypatch):
     asked: list = []
     monkeypatch.setattr(
@@ -664,13 +684,8 @@ def test_dropping_a_module_removes_its_units_and_forgets_it(hub_runner):
     assert hub_runner._page_ports.ports("demo") == {}
 
 
-def test_a_container_module_reaches_podman_and_the_mirrors_through_the_runner(
-    runner,
-):
-    runner.take_config({"mirrors": ["mirror.example"]})
-
+def test_a_container_module_reaches_podman_through_the_runner(runner):
     assert runner.podman_command() == ("/usr/bin/podman",)
-    assert runner.mirrors() == ["mirror.example"]
     assert runner.is_engine_active() is True
     runner.drive_hub_containers(["neutrino_demo"], "start")
     assert FakeUnitApplier.driven == [(["neutrino_demo"], "start")]

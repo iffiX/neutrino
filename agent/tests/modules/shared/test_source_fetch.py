@@ -327,7 +327,7 @@ def test_a_registry_that_wants_a_token_is_asked_again_with_an_anonymous_one():
     assert asked[2][1]["Authorization"] == "Bearer anon"
 
 
-def test_images_are_ranked_by_their_manifest_and_a_docker_source_kept_under_mirrors():
+def test_images_are_ranked_by_their_manifest_and_the_unanswered_follow_in_order():
     speeds = {"ghcr.io/acme/demo": 1.0, "ghcr.nju.edu.cn/acme/demo": 8.0}
 
     def probe_one(url, *, source="", headers=None):
@@ -335,21 +335,18 @@ def test_images_are_ranked_by_their_manifest_and_a_docker_source_kept_under_mirr
             return SourceProbe(source=source, is_answered=True, speed=speeds[source])
         return SourceProbe(source=source, reason="timeout", detail="slow")
 
-    sources = ["ghcr.io/acme/demo", "ghcr.nju.edu.cn/acme/demo", "docker.io/acme/demo"]
+    sources = [
+        "docker.io/acme/demo",
+        "ghcr.io/acme/demo",
+        "quay.io/acme/demo",
+        "ghcr.nju.edu.cn/acme/demo",
+    ]
 
-    plain = rank_images(sources, DIGEST, probe_one=probe_one)
-    mirrored = rank_images(
-        sources, DIGEST, is_docker_mirrored=True, probe_one=probe_one
-    )
-
-    assert plain == (
-        ["ghcr.nju.edu.cn/acme/demo", "ghcr.io/acme/demo"],
-        [{"source": "docker.io/acme/demo", "reason": "timeout", "detail": "slow"}],
-    )
-    assert mirrored[0] == [
+    assert rank_images(sources, DIGEST, probe_one=probe_one) == [
         "ghcr.nju.edu.cn/acme/demo",
         "ghcr.io/acme/demo",
         "docker.io/acme/demo",
+        "quay.io/acme/demo",
     ]
 
 

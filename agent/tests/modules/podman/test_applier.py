@@ -366,6 +366,50 @@ def test_each_host_port_is_bound_with_its_address_and_protocol(commands):
     assert state.host_ports == [53, 5353, 5432, 8080, 9899]
 
 
+def test_podman_3_4_port_spelling_is_read_as_the_later_one(commands):
+    """Podman 3.4 writes ``hostPort`` and ``hostIP``, as Ubuntu 22.04's
+    ``podman ps`` did in the lab."""
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["web"], "Image": "nginx", "Status": "Up", "State": "running", '
+        '"Ports": [{"hostPort": 8081, "containerPort": 80, "protocol": "tcp", '
+        '"hostIP": ""}, {"hostPort": 50813, "containerPort": 8787, '
+        '"protocol": "tcp", "hostIP": "127.0.0.1"}]}]',
+    )
+
+    (state,) = PodmanStatusReader().survey(declared_names=["web"])
+
+    assert state.host_ports == [8081, 50813]
+    assert state.host_bindings == [
+        {"address": "", "port": 8081, "protocol": "tcp", "detected": ""},
+        {"address": "127.0.0.1", "port": 50813, "protocol": "tcp", "detected": ""},
+    ]
+
+
+def test_a_hub_containers_environment_is_not_read_and_a_declared_ones_is(
+    commands,
+):
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["web"], "Image": "nginx", "State": "running"}, '
+        '{"Names": ["neutrino_demo"], "Image": "webui", "State": "running", '
+        '"Labels": {"neutrino.module": "demo"}}]',
+    )
+    commands.answers[("/usr/bin/podman", "inspect")] = (
+        0,
+        '[{"Name": "web", "Config": {"Env": ["TOKEN=mine"]}}, '
+        '{"Name": "neutrino_demo", "Config": {"Env": ["PASSWORD=hub"], '
+        '"Labels": {"neutrino.module": "demo"}}}]',
+    )
+
+    states = PodmanStatusReader().survey(declared_names=["web"])
+
+    by_name = {state.name: state for state in states}
+    assert by_name["neutrino_demo"].module == "demo"
+    assert by_name["neutrino_demo"].environment == []
+    assert by_name["web"].environment == ["TOKEN=mine"]
+
+
 SURVEYED = (
     '[{"Names": ["web"], "Image": "nginx", "Status": "Up", "State": "running", '
     '"Ports": [{"host_ip": "127.0.0.1", "host_port": 8080, "protocol": "tcp"}, '

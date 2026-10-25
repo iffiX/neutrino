@@ -165,7 +165,7 @@ class ContainerModuleRunner(ModuleRunner):
             platform: The machine's platform.
             name: The module's name.
             containers: The Containers runner: :meth:`podman_command`,
-                :meth:`mirrors`, :meth:`hub_names`, :meth:`is_engine_active`,
+                :meth:`hub_names`, :meth:`is_engine_active`,
                 :meth:`drive_hub_containers`, :meth:`drop_hub_containers`
                 and :meth:`hub_journal` reach Podman through it.
             log: Callable used for progress messages.
@@ -222,11 +222,10 @@ class ContainerModuleRunner(ModuleRunner):
                 "install_failed", {"detail": "Containers has no Podman to pull with"}
             )
         references = image_references(podman=command)
-        is_mirrored = bool(self._containers.mirrors())
         for image in recipe_images(recipe):
             if stored_reference(image["digest"], image["sources"], references):
                 continue
-            self._pull(command, image, is_docker_mirrored=is_mirrored)
+            self._pull(command, image)
         self._hooks.installed(str(params_of(recipe).get("version", "") or ""))
 
     def uninstall(self, recipe: dict) -> None:
@@ -330,20 +329,18 @@ class ContainerModuleRunner(ModuleRunner):
         """
         return self._containers.hub_journal(self._names(), lines)[-lines:]
 
-    def _pull(self, command: tuple, image: dict, *, is_docker_mirrored: bool) -> None:
-        """Pull one image from the fastest source that serves it.
+    def _pull(self, command: tuple, image: dict) -> None:
+        """Pull one image from the fastest source that serves it, a source the probe missed last.
 
         Raises:
-            ModuleApplyError: ``download_failed {file, sources}`` when no
-                source serves it.
+            ModuleApplyError: ``download_failed {file, sources}`` when every
+                source's pull fails, each pull's failure listed.
         """
         digest = image["digest"]
-        chosen, failures = source_fetch.rank_images(
-            image["sources"],
-            digest,
-            is_docker_mirrored=is_docker_mirrored,
-            probe_one=self._probe_one,
+        chosen = source_fetch.rank_images(
+            image["sources"], digest, probe_one=self._probe_one
         )
+        failures = []
         for source in chosen:
             reference = f"{source}@{digest}"
             self._log(f"{self.name}: pulling {reference}")

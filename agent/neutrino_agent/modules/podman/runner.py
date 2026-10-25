@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -50,6 +51,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_JOURNAL_LINES,
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
+    PODMAN_RUNTIME,
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
@@ -62,6 +64,26 @@ from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
+
+
+def without_present_runtime(recipe: dict) -> dict:
+    """A recipe whose packages leave out ``runc`` while a ``runc`` is on the path.
+
+    Docker CE's ``containerd.io`` includes its own ``runc`` and conflicts
+    with the distribution's package.
+
+    Args:
+        recipe: The module's recipe.
+
+    Returns:
+        A copy with ``runc`` out of ``params.packages`` where one is on the
+        path; the recipe as it is otherwise.
+    """
+    params = recipe.get("params") if isinstance(recipe, dict) else None
+    if not isinstance(params, dict) or shutil.which(PODMAN_RUNTIME) is None:
+        return recipe
+    packages = [name for name in params.get("packages") or [] if name != PODMAN_RUNTIME]
+    return {**recipe, "params": {**params, "packages": packages}}
 
 
 class PodmanModuleRunner(SystemPackageModuleRunner):
@@ -102,6 +124,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def install(self, recipe: dict) -> None:
         """Install the packages, then turn ``podman.socket`` on.
 
+        ``runc`` is left out where a ``runc`` is already on the path.
+
         Args:
             recipe: The module's recipe.
 
@@ -110,7 +134,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             PlatformUnsupportedError: If this platform installs nothing.
             subprocess.CalledProcessError: If systemd refuses the socket.
         """
-        super().install(recipe)
+        super().install(without_present_runtime(recipe))
         run(["systemctl", "enable", "--now", PODMAN_UNIT])
 
     def validate(self, config: dict) -> None:
@@ -305,11 +329,6 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             This machine's ``podman``.
         """
         return (PODMAN_BINARY,)
-
-    def mirrors(self) -> list:
-        """The docker.io mirrors the state names, else the last apply's."""
-        config = self._wanted or self._config or PodmanConfig()
-        return list(config.mirrors)
 
     def hub_names(self) -> dict:
         """The hub containers rendered by the last apply, by module.

@@ -46,9 +46,8 @@ RECIPE = {
 class FakeContainers:
     """The Containers runner as a container module reaches it."""
 
-    def __init__(self, *, mirrors=(), hub_names=None, is_active=True):
+    def __init__(self, *, hub_names=None, is_active=True):
         self.command = ("/usr/bin/podman",)
-        self._mirrors = list(mirrors)
         self.names = dict(hub_names or {})
         self.is_active = is_active
         self.driven: list = []
@@ -56,9 +55,6 @@ class FakeContainers:
 
     def podman_command(self):
         return self.command
-
-    def mirrors(self):
-        return list(self._mirrors)
 
     def hub_names(self):
         return dict(self.names)
@@ -188,9 +184,12 @@ def test_a_failed_pull_goes_on_to_the_next_source(store):
     ]
 
 
-def test_no_source_serving_an_image_is_download_failed_with_each_reason(store):
+def test_no_source_serving_an_image_is_download_failed_with_each_pull(store):
+    """Only a pull's own failure is listed; a probe that got no answer is not."""
     store.add("docker.io/acme/agent@" + AGENT)
-    podman = FakePodman(failing={"ghcr.io/acme/webui@" + WEB})
+    podman = FakePodman(
+        failing={"ghcr.io/acme/webui@" + WEB, "ghcr.nju.edu.cn/acme/webui@" + WEB}
+    )
     probe = answering({"ghcr.io/acme/webui": 1.0})
 
     with pytest.raises(ModuleApplyError) as refused:
@@ -201,12 +200,12 @@ def test_no_source_serving_an_image_is_download_failed_with_each_reason(store):
         "file": "ghcr.io/acme/webui@" + WEB,
         "sources": [
             {
-                "source": "ghcr.nju.edu.cn/acme/webui",
-                "reason": "unreachable",
-                "detail": "refused",
+                "source": "ghcr.io/acme/webui",
+                "reason": "pull_failed",
+                "detail": "Error: manifest unknown",
             },
             {
-                "source": "ghcr.io/acme/webui",
+                "source": "ghcr.nju.edu.cn/acme/webui",
                 "reason": "pull_failed",
                 "detail": "Error: manifest unknown",
             },
@@ -214,23 +213,20 @@ def test_no_source_serving_an_image_is_download_failed_with_each_reason(store):
     }
 
 
-def test_a_docker_io_source_stays_while_the_containers_module_names_mirrors(store):
-    store.add("ghcr.io/acme/webui@" + WEB)
-    podman = FakePodman()
+def test_a_source_the_probe_missed_is_pulled_after_the_ranked_ones(store):
+    """On Windows the probe of docker.io failed CERTIFICATE_VERIFY_FAILED while
+    Podman in the machine pulled the image."""
+    store.add("docker.io/acme/agent@" + AGENT)
+    podman = FakePodman(failing={"ghcr.io/acme/webui@" + WEB})
+    probe = answering({"ghcr.io/acme/webui": 1.0})
 
-    runner_for(FakeContainers(mirrors=["mirror.example"]), podman).install(RECIPE)
+    runner_for(FakeContainers(), podman, probe).install(RECIPE)
 
     pulls = [call[2] for call in podman.calls if call[1] == "pull"]
-    assert pulls == ["docker.io/acme/agent@" + AGENT]
-
-
-def test_without_mirrors_a_docker_io_source_that_does_not_answer_is_not_pulled(store):
-    store.add("ghcr.io/acme/webui@" + WEB)
-
-    with pytest.raises(ModuleApplyError) as refused:
-        runner_for(FakeContainers(), FakePodman()).install(RECIPE)
-
-    assert refused.value.code == "download_failed"
+    assert pulls == [
+        "ghcr.io/acme/webui@" + WEB,
+        "ghcr.nju.edu.cn/acme/webui@" + WEB,
+    ]
 
 
 def test_an_install_with_no_podman_is_install_failed(store):

@@ -489,7 +489,6 @@ def test_the_modules_that_left_are_not_shipped_any_more(name):
     "name, debian, rhel",
     [
         ("samba", ["samba"], ["samba", "samba-client"]),
-        ("podman", ["podman"], ["podman"]),
         (
             "zfs",
             ["zfsutils-linux", "zfs-zed", "smartmontools"],
@@ -507,15 +506,17 @@ def test_a_system_module_names_its_packages_per_family(name, debian, rhel):
         assert params["uninstall"] == {"packages": packages, "post_uninstall": []}
 
 
-def test_containers_on_linux_names_podman_alone():
-    """podman-docker adds a docker command and conflicts with Docker CE."""
+def test_containers_on_linux_names_podman_and_runc_and_keeps_runc():
+    """podman-docker adds a docker command and conflicts with Docker CE. Every
+    unit runs runc, since Ubuntu 22.04's crun 0.17 answers EPERM to
+    fchmodat2; an uninstall keeps runc, which another program can run on."""
     manifest = load_module_manifests()["podman"]
 
     for key in ("linux-debian", "linux-rhel", "linux-arch"):
         assert entry_params(manifest["platforms"][key]) == {
             "version": "system",
-            "packages": ["podman"],
-            "verify": "podman --version",
+            "packages": ["podman", "runc"],
+            "verify": "podman --version && runc --version",
             "uninstall": {"packages": ["podman"], "post_uninstall": []},
         }, key
     shipped = json.dumps(load_module_manifests())
