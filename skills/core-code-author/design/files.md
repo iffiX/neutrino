@@ -105,7 +105,10 @@ and the client with their own three directories.
 ```
 
 Static. Nothing writes here after the install, and an upgrade replaces the
-directory whole. Removing a package removes its directory entirely, which is
+directory whole. The hub's `neutrino_hub/data/` is part of it: `manifests/`,
+one file per device module, and `source_sets.json`, the one list of sources
+for each software ecosystem the modules fetch from
+([agent/module_install.md](agent/module_install.md), "Source sets"). Removing a package removes its directory entirely, which is
 the property that makes it the right place for everything a package holds
 and nobody configures. On macOS and Windows the hub is one compiled `nhub`
 beside its programs, and the agent and the client are compiled the same way.

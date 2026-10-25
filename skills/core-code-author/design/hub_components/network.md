@@ -195,6 +195,14 @@ is not among. So a closed uplink
 segment closes the hub's ports to the senders on it, and a sender on an
 exposed overlay still reaches the hub's ports at that uplink's address.
 
+Containers on the hub's own machine sit on Podman bridges, which take no
+role and no exposure. The chains know a bridge by its name:
+
+| Rule | Reason |
+| --- | --- |
+| The forward chain accepts every packet that arrives on or leaves by a Podman bridge, `podman*` and `cni-podman*` (`modules/router/nft_renderer.py:221-225`). | Each Podman network is a bridge of its own: netavark names them `podman0`, `podman1` and on, and CNI `cni-podman0` and on. Where the chain's policy is drop, a container on a module's network otherwise reaches nothing beyond the box. |
+| The input chain accepts a packet that arrives on a Podman bridge for port 53, over UDP and TCP, ahead of its drops (`modules/router/nft_renderer.py:260-314`). | A container's resolver is its own network's, aardvark-dns or CNI's dnsname on the bridge's gateway. Port 53 is a hub port in `router` and `side_gateway`, and its drop for a sender outside every exposed segment takes the container's queries. |
+
 An overlay's chip starts exposed: joining one is joining your own network,
 which is the whole reason somebody set it up. It answers the same single
 question and gets no matrix of its own, because a second mental model for

@@ -376,7 +376,7 @@ the next release's `.ipa`, signed and installed over the app.
 | File | For |
 | --- | --- |
 | `install.sh`, `install-cn.sh` | macOS and Linux: `curl -fsSL <url> \| sh -s -- hub\|agent\|client` |
-| `install.ps1`, `install-cn.ps1` | Windows: `irm <url> \| iex` in an administrator PowerShell |
+| `install.ps1`, `install-cn.ps1` | Windows: `irm <url> \| iex` in any PowerShell |
 
 `packaging/install/install.sh` and `packaging/install/install.ps1` hold
 their edition as `EDITION` near their top, `intl` in the committed files,
@@ -422,8 +422,10 @@ hub already set up, one whose panel settings hold a password hash, it runs
 neither and prints one line naming the panel's address. It runs `nhub` where
 its package put it, `/usr/bin/nhub`, `/usr/local/bin/nhub` or
 `C:\Program Files\Neutrino\hub\nhub.exe`, since a root shell's PATH can
-name none of them. `install.ps1` checks for an administrator first and exits
-with one sentence when it is not one.
+name none of them. Run without administrator rights, `install.ps1` asks
+Windows for them once and goes on in the PowerShell window Windows opens as
+administrator, which stays open for the next command; a refusal stops it
+with one sentence, and nothing is installed.
 
 ### Source archive
 

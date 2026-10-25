@@ -79,7 +79,8 @@ hub/
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, one file
                        per module, cloudcli.json, code_server.json and
-                       codeg.json among them, frontend/ the
+                       codeg.json among them, source_sets.json the one
+                       list of sources per software ecosystem, frontend/ the
                        built panel, resources/ the icons the build copies in
                        from images/icons/.
   frontend/          React and TypeScript source. `npm run build` writes into
@@ -101,8 +102,9 @@ password hash and device keys. What each file may contain is documented by the
 agent/
   neutrino_agent/    The agent: the channel to the hub, desired-state sync,
                      the modules it hosts, the streams the panel drives. No
-                     window; it listens on 127.0.0.1, and on Linux on the
-                     Podman bridges for the machine's containers.
+                     window; it listens on 127.0.0.1, and for the machine's
+                     containers on the Podman bridges on Linux and on WSL's
+                     vEthernet adapter on Windows.
     core/            The one WebSocket to the hub, enrollment, the desired
                      state store and engine, metrics, self-update.
     control/         The root-only local socket `nagent` talks to, and the
@@ -110,8 +112,8 @@ agent/
     streams/         Shell and file streams multiplexed over the channel;
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
-                     vscode/, cloudcli/, code_server/, codeg/, terminal/
-                     and remote_desktop/, with remote_desktop/rdp/ reading
+                     vscode/, cloudcli/, code_server/, codeg/,
+                     hermes_webui/, terminal/ and remote_desktop/, with remote_desktop/rdp/ reading
                      who is at the screen and writing RustDesk's files;
                      shared/ what every runner shares: the package and
                      unpack machinery, the account service layer, the

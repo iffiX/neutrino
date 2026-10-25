@@ -53,7 +53,7 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share, ZFS storage and Containers on Linux |
 | `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, Containers on Windows and macOS |
-| `container` | `{version, releases, artifacts}` | the registries each image's `sources` name | the Containers module's Podman | every module whose software is container images |
+| `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
 manager installs, such as a repository to add. A `hub` entry's `packages` is
@@ -67,7 +67,7 @@ before the artifacts, and an uninstall keeps them.
 | `running` means | the module's own rule ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) | the system's server runs the module's configuration | the module's unit is active | the module's service or instances run | every container of the module runs |
 | An uninstall removes | nothing: the four presses are refused `module_not_optional` | what the module's own page names; the system keeps its server | the named packages and the configuration the hub wrote, keeping the data | the module's files, its service definitions and the forwarder's records, keeping the data | the module's containers, their units, its network and its named volumes, and the images no other container uses |
 | A failed install reports | `reinstall_failed`, from the agent's own install | nothing, since nothing is installed | `install_failed {detail}` with the package manager's output | `download_failed {file, sources}` or `module_fetch_too_large` from the cache, then `install_failed {detail}` or the module's own code | `download_failed {file, sources}` when no source serves an image |
-| The version | the agent's | the system's | the system's, locked | the tested one or the machine's choice | the tested tag or the machine's choice |
+| The version | the agent's | the system's | the system's, locked | the tested one or the machine's choice | the tested tag or the machine's choice; the tested one, locked, where the entry names no `releases` |
 
 Terminal and Remote desktop are in the agent's package on every system.
 Their platform entries name the method `agent`, they are never in the Modules
@@ -78,7 +78,9 @@ page's picker, always a tab, and the four presses on them are refused
 
 An artifact is one file a `hub` or `container` entry installs:
 `{name, kind, digest, sources}`, with `file` where its sources name it and
-`directory` where its kind needs one.
+`directory` where its kind needs one. An artifact whose sources are an
+ecosystem's names `source_set`, the set's name, in place of `sources`
+("Source sets").
 
 | `kind` | The file | What happens to it on the machine |
 | --- | --- | --- |
@@ -89,7 +91,7 @@ An artifact is one file a `hub` or `container` entry installs:
 | `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `raw_zst` | a zstd-compressed disk image, such as Podman's machine image for applehv | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
-| `npm` | an npm package, named by `package`, its `sources` npm registries | installed by npm, as the module's own page says |
+| `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, as the module's own page says |
 
 | Rule | Reason |
 | --- | --- |
@@ -98,7 +100,7 @@ An artifact is one file a `hub` or `container` entry installs:
 | The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, and the two zstd kinds by `28 b5 2f fd`. | A source that answers with an error page passes no head check. |
 | An archive whose members all sit under one top directory is unpacked without it, so its files sit directly under `<directory>`. | A path in `verify` and in a service definition stays the same for every version. |
 | The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. | Every account runs the program, and none can change it. |
-| The recipe the state holds for a `hub` entry drops each artifact's `sources`, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps them, since the machine fetches it. | The agent fetches only what the hub cannot send. |
+| The recipe the state holds for a `hub` entry drops each artifact's `sources`, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
 
 A runtime a module needs, Node.js among them, is one of its artifacts,
 pinned in its own manifest. Two modules that need the same runtime each hold
@@ -108,7 +110,7 @@ it.
 
 | Rule | Reason |
 | --- | --- |
-| Every address that serves the same bytes is in the one `sources` list of its download. No key names a country's or an edition's address. | The digest makes every source equal, so the fastest one serves. |
+| Every address that serves the same bytes is in the one `sources` list of its download, or in the one source set of its ecosystem, which the download names ("Source sets"). No key names a country's or an edition's address. | The digest makes every source equal, so the fastest one serves. |
 | A source names a file as `{file}`, the artifact's `file` with `{version}` filled in. | One template lists the same file on the publisher and on every mirror. |
 | `{release}` names each release site the hub's build stamped, at the release the hub came from ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Release sites"). A checkout has no stamp, so `{release}` names no source there. | The project's own release has one address per site, and the hub learns them only from its build. |
 | The Containers module's docker.io mirrors stay the person's ordered list, which Podman applies under any `docker.io` source. | They are the person's configuration, and Podman already tries them in order. |
@@ -122,7 +124,8 @@ it.
 | cc-switch | the hub's cache | its publisher's GitHub release, then `{release}` |
 | another platform's agent package | the hub's agent cache | `{release}` ([../agent.md](../agent.md), "The agent's packages come from the hub") |
 | a container image | the agent, for Podman to pull | each image reference the artifact names, the publisher's registry first |
-| CloudCLI's npm package | the agent, for npm to install | `registry.npmjs.org`, then npmmirror's registry |
+| CloudCLI's npm package | the agent, for npm to install | the `npm` set |
+| the packages a container's own tools fetch | the agent, into the container's environment | each set the module lists: Hermes WebUI's `pypi` |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
 | a module's version list | the hub, once a day | the publisher's API ("Module versions") |
 | the hub's own update | the hub | the release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
@@ -132,6 +135,53 @@ Codeg installs the coding agents it runs with `--registry
 https://registry.npmjs.org` fixed in its own command line, and npm reads that
 before any setting. It is the one download whose source the hub does not
 choose ([modules/codeg.md](modules/codeg.md)).
+
+## Source sets
+
+A source set is the one list of addresses that serve one software
+ecosystem's packages, such as PyPI's, for the whole system.
+`hub/neutrino_hub/data/source_sets.json` defines each set once, by its name:
+
+```json
+{
+  "pypi": {
+    "probe": "/pip/",
+    "sources": ["https://pypi.org/simple", "https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple", "https://mirrors.cloud.tencent.com/pypi/simple"],
+    "variables": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX_URL"]
+  },
+  "npm": {
+    "probe": "/npm/latest",
+    "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com", "https://mirrors.cloud.tencent.com/npm"],
+    "variables": ["npm_config_registry", "YARN_NPM_REGISTRY_SERVER", "BUN_CONFIG_REGISTRY"]
+  },
+  "huggingface": {
+    "probe": "/openai-community/gpt2/resolve/main/config.json",
+    "sources": ["https://huggingface.co", "https://hf-mirror.com"],
+    "variables": ["HF_ENDPOINT"]
+  }
+}
+```
+
+| Key | Holds |
+| --- | --- |
+| `probe` | the path the probe fetches under each source: a small document every source of the set serves |
+| `sources` | the addresses, the publisher's first |
+| `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface` |
+
+| Rule | Reason |
+| --- | --- |
+| Each ecosystem has one set, and every download from it names the set: an artifact by `source_set`, a `container` entry by `source_sets`. | Two lists for one ecosystem drift apart, and a mirror added to one reaches half the modules. |
+| An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document. | The package being installed is the document that has to be there. |
+| A `container` entry lists the sets its containers use in `source_sets`, and the hub copies the list into each hub container of the module. | The tools inside a container fetch from the network at their start, and the container's environment is where they read the address. |
+| Before the agent writes a hub container's file, it probes each set the container lists and writes every variable of the set, with the fastest source, into the container's environment. | Which source is fastest depends on the machine's own network. |
+| An environment value `{<set>}`, such as `{pypi}`, is the fastest source of that set, for a variable the set does not list. The set is one the module lists. | A tool that reads a variable of its own gets the same choice. |
+| An apply whose one change to a container's file is a set's value keeps the file as it is. | The value is in the container's environment, so a new value restarts the container, and a source ranked first today is no reason to restart a running page. |
+| The hub sends the sets the machine's recipes name in the state's `source_sets` section, and the agent probes them; nothing remembers a past result. | Only the machine measures its own network, and a network changes. |
+| The loader rejects a `source_set`, a `source_sets` item or a placeholder that names a set the file does not define, and a placeholder that names a set its module does not list. | A wrong name fails the suite, and the agent resolves only the sets the state sends. |
+| A set exists for an ecosystem a module fetches from. Go's module proxy, crates.io, conda channels and Ollama's library have none. | A set no module names is a list nobody keeps true. |
+
+better-sqlite3's prebuilt binary host serves that one package alone, so it
+stays in CloudCLI's artifact as `hosts` ([modules/cloudcli.md](modules/cloudcli.md)).
 
 ## Choosing a source
 
@@ -156,15 +206,16 @@ What is probed differs by what the source serves:
 | a file | a Range request for its first 1 MiB | the download, with the measures and the moves |
 | a container image | the registry's manifest request for the image's digest | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A `docker.io` source stays in the list whatever its probe gives while the Containers module names mirrors, since Podman reaches it through them |
 | an npm registry | a GET of the package's document | npm runs with the fastest as `--registry`; an install that fails runs again with the next |
+| a source set a container lists | a GET of the set's `probe` path under each source | every variable of the set names the fastest in the container's environment; the container's tools read it, and nothing moves later |
 | a host an npm setting names | a GET of the host's base address | the setting names the fastest host; an install that fails on a native module runs again with the next |
 | a version list or `latest.json` | a GET | the fastest valid answer is read |
 
 The hub's fetcher is `utils/source_fetch.py`, and it does all of this. The
 agent's is `modules/shared/source_fetch.py`, standard library only: it
 probes and ranks, since the agent downloads no file itself and hands the
-chosen source to Podman or npm. `install.sh` and `install.ps1` hold a small
-one each: they probe, start on the fastest, and move on a stall, with no
-measures while a file downloads.
+chosen source to Podman, to npm or to a container's environment.
+`install.sh` and `install.ps1` hold a small one each: they probe, start on
+the fastest, and move on a stall, with no measures while a file downloads.
 
 ## From the hub's cache
 
@@ -226,9 +277,12 @@ containers").
 | Containers' **Stop** stops the hub containers with the declared ones, and each container module then reads `stopped`. | The containers stop with the engine that runs them. |
 | The module's data is in its named volumes, and it binds no host folder. | An uninstall removes everything the module wrote. |
 | An uninstall stops and removes the module's containers, their units, its network and its named volumes, and the images no other container uses. A `container` entry names no `uninstall`. | A container module is removed whole, and a person's container on the same image keeps it. |
+| A container module whose page needs a forwarder, or whose software needs a step after its first start, keeps `config.py`, `constants.py` and `hooks.py` under `modules/<module>/`, and the `container` runner calls them. | Hermes WebUI's login and its gateway keys are its own; the pull, the containers and the uninstall are the runner's for every container module. |
 
 A container module that uses the AI gateway has a gateway key of its own
 ([modules/containers.md](modules/containers.md), "Reaching the machine").
+The tools inside its containers fetch from the source sets its entry lists
+("Source sets").
 
 ## One presence check
 
@@ -254,6 +308,7 @@ version list can be read.
 | A version newer than the tested one reads untested. | Neutrino has run the tested version and no newer one. |
 | `config/devices/<id>/modules.json` holds each machine's chosen `version` per module, and empty follows the tested one. | The choice is per machine, as `want` is. |
 | A `system` entry has one version, the system's, locked. An `agent` module follows the agent, and a `builtin` one the system. | Their software comes from outside the hub's cache. |
+| A `container` entry that names no `releases` has one version, its tested one, locked as a `system` entry's is. | Hermes WebUI's two images run as one tested pair, and its publishers state no pairs ([modules/hermes_webui.md](modules/hermes_webui.md)). |
 | A `container` version is a tag, which the `oci` feed resolves to the image's digest. | A digest pins the bytes, and the person chooses a tag. |
 | A module whose manifest says `is_data_forward_only` asks before it installs a version older than the one installed ([../ui_behavior.md](../ui_behavior.md), "The Modules page"). | Gitea migrates its database forward at its first start, and an older Gitea cannot read it. |
 

@@ -697,10 +697,10 @@ module and the same shape in each.
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; for a `container` module, first `want: running` on `podman` as **Install** does |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` on `podman` while a `container` module has a `want` other than `absent` |
-| `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
+| `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method and for a `container` module whose manifest names no `releases`; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
 | `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json` and pushes the state; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, `codeg` and `hermes_webui` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -729,6 +729,8 @@ module and the same shape in each.
 | `POST /api/agent/module/code_server/set` | `{device_id, instances: [{account, port}]}`, `port` 1024 to 65535 | replaces the instances, generating each instance's token secret the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`; the agent's own refusals as 400 |
 | `GET /api/agent/module/codeg` | `?device_id=` | the instances as `GET /api/agent/module/code_server` gives them, with `login_id` on each, and the `accounts` the machine reported |
 | `POST /api/agent/module/codeg/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's token secret the first time as `code_server/set` does; the refusals of `vscode/set` |
+| `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the stored forwarder port, and `state`, `version` and `details` as last reported |
+| `POST /api/agent/module/hermes_webui/set` | `{device_id, port}`, `port` 1024 to 65535 | stores the port, generating the token secret and the password when the module has none, and pushes the state; `HermesWebuiDeviceView`; 400 `port_invalid {port}`; 409 `agent_offline` |
 | `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings with `login_id` and without the password, the machine as last reported (`details.machine`), and the `accounts` the machine reported |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
@@ -1001,6 +1003,7 @@ and platform, which change between releases.
 | `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
+| `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1013,6 +1016,14 @@ and platform, which change between releases.
 
 The `error` section is the agent's most recent failure worth showing: the last
 error, the state error, or a failed `reinstall`.
+
+`source_sets` holds the sets the machine's recipes name, an artifact's
+`source_set` and a `container` entry's `source_sets`, and no other; it is
+empty while no recipe names one. The agent probes a set's sources itself,
+since the fastest source depends on the machine's own network
+([agent/module_install.md](agent/module_install.md), "Source sets"). The
+section comes with 0.6.0, as the recipe's shape does, and keeps `PROTOCOL`
+4.
 
 `sessions` lists the shells the agent keeps by id, oldest first, each
 `{session_id, account, started_at, title, owner, is_attached, is_persistent,
@@ -1220,7 +1231,8 @@ manifest"). The hub sends it with the state, and the agent has no manifest
 logic of its own. `params` is the method's: a `system` entry's `packages`,
 `pre_install`, `verify` and `uninstall`; a `hub` entry's `version`, its
 `artifacts` without their `sources`, `packages`, `verify` and `uninstall`; a
-`container` entry's `version` and its `artifacts` with their `sources`; and
+`container` entry's `version`, its `artifacts` with their `sources`, and its
+`source_sets`; an `npm` artifact's `source_set` in place of `sources`; and
 nothing for `agent` and `builtin` ([agent/module_install.md](agent/module_install.md),
 "Install methods"). The recipe holds no `releases` and no identity field.
 A platform entry can name `min_version`, a dotted number the loader checks:
@@ -1374,8 +1386,8 @@ The `cloudcli` module runs CloudCLI once per account
 ([agent/modules/cloudcli.md](agent/modules/cloudcli.md)). Its recipe names
 two artifacts: the Node.js archive `data/manifests/cloudcli.json` pins for
 the platform, which the agent opens `package {module: cloudcli, artifact,
-digest}` for, and the npm package, of kind `npm`, with its registries as
-`sources` and the host lists of its npm settings as `hosts`. An install that
+digest}` for, and the npm package, of kind `npm`, with the `npm` set as
+its `source_set` and the host lists of its npm settings as `hosts`. An install that
 fails reports the step: `download_failed {file, sources}`,
 `cloudcli_npm_install_failed {account, detail}`,
 `cloudcli_native_module_failed {account, module, detail}` or
@@ -1424,8 +1436,13 @@ macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
 configuration is `{containers, hub_containers, mirrors, machine}`.
 `hub_containers` is the list the hub composes from the `container` modules,
 each `{module, name, image, ports, volumes, environment, command,
-is_autostart, services}` with `image` as `{digest, sources}`, and empty
-while no such module is installed. Each container is
+is_autostart, services, source_sets, after, page_port}` with `image` as
+`{digest, sources}`, and empty while no such module is installed:
+`source_sets` names the sets whose fastest source the agent writes into the
+container's environment, `after` the module's containers it starts after,
+and `page_port` the container port the module's forwarder serves
+([agent/modules/containers.md](agent/modules/containers.md), "Hub
+containers"). Each container is
 `{name, image, ports, volumes, environment, command, is_autostart,
 services}`, and `services` is a list of `{port, kind, scheme, protocols}`
 per host port: `kind` `auto`, `web` or `port`, `scheme` `http` or `https`
@@ -1477,8 +1494,9 @@ module's `version` in the report come with 0.6.0, which no released agent
 read before, and keep `PROTOCOL` 4 ("Versioning").
 
 A `container` module's recipe is `{runner: container, method: container,
-params: {version, artifacts}}`, each artifact of kind `image` with its
-`digest` and `sources`, and no `verify`
+params: {version, artifacts, source_sets}}`, each artifact of kind `image`
+with its `digest` and `sources`, `source_sets` the sets its containers
+fetch from, and no `verify`
 ([agent/module_install.md](agent/module_install.md), "From container
 images"). The agent installs it by choosing a source for each image and
 pulling `<source>@<digest>` with Containers' Podman, and ends an install no
@@ -1486,6 +1504,20 @@ source serves `download_failed {file, sources}`; it reads the module
 `running` while every hub container with its label runs. Its uninstall
 removes those containers, their units, the network `neutrino_<module>`, the
 images and the named volumes `neutrino_<module>_<volume>`.
+
+The `hermes_webui` module runs Hermes WebUI as two hub containers, the
+agent's gateway and the webui ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md)).
+Its configuration is `{port, secret, password}`: the forwarder's port, 8787
+by default; the token secret; and the webui's password. The hub generates
+both secrets the first time the module is installed or its port is set,
+keeps them sealed in
+`config/devices/<id>/hermes_webui.json` beside the module's gateway key, and
+sends them opened inside the state, as it sends CloudCLI's. Its manifest
+names two `image` artifacts, `webui` and `agent`, no `releases`, and
+`source_sets: ["pypi"]`. It reads `running` while both containers run and
+the webui's `/health` returns 200, and `installing` from the install, or a
+version change, until the first such read. `details` is `{version, port}`. An
+apply refuses `port_invalid {port}`.
 
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes
@@ -1513,7 +1545,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/` and the id its `port` entry has, `podman_<device>_<container>_<port>`, or an `http` record is declared |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, with the id `hermes_webui_<device>`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/` and the id its `port` entry has, `podman_<device>_<container>_<port>`, or an `http` record is declared |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`; it is an added field and keeps `PROTOCOL`, and a reader that finds none reads `tcp`. One entry has one protocol, so a number published on both is two entries; a container's UDP entry has the id of its TCP one with `_udp` after it, `podman_<device>_<container>_<port>_udp` | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a `generic_tcp` or `generic_udp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
@@ -1553,6 +1585,7 @@ its own language:
 | `cloudcli_module` | `{host, account}`; the same |
 | `code_server_module` | `{host, account}`; the same |
 | `codeg_module` | `{host, account}`; the same |
+| `hermes_webui_module` | `{host}`; the entry exists only while the device reports the module `running` |
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.

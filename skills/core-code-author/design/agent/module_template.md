@@ -18,7 +18,7 @@ a module the agent has no runner for reads `unsupported`.
 | Software the module configures | File share, `samba` on Linux and `samba_native` on Windows and macOS; Containers, `podman` on Linux and `podman_machine` on Windows and macOS; ZFS storage, `zfs` | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md), [modules/zfs.md](modules/zfs.md)) |
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md)) |
-| Container images | every module whose software is container images, `container` | runs the images as hub containers on the Containers module, one network per module | its images in the manifest and the containers it composes on the hub ([module_install.md](module_install.md), "From container images") |
+| Container images | Hermes WebUI, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
 name reports the module `unsupported`. Where a module's software comes
@@ -104,6 +104,11 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | panel | nothing of its own: `instances_panel.tsx` draws it from the description table | its own panel component |
 | tests | the mirror of each file it owns, under `agent/tests/modules/<module>/` and the hub's mirrored directories ([tests.md](../tests.md)) | the same |
 | docs | one page per language under `docs/guide/` | the same |
+
+A container module keeps its manifest, its line in the description table and
+the hub's composition of its containers. Where it has a page or a step after
+its first start, it also keeps `config.py`, `constants.py` and `hooks.py`
+under `modules/<module>/`, which the `container` runner calls.
 
 ## What `modules/shared/` holds
 

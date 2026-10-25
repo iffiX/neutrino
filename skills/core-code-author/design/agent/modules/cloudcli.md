@@ -40,8 +40,9 @@ open, as on Windows while an instance runs on it, goes at a later apply.
 Node is never put on `PATH`, in any shell profile, or under `/usr/local`.
 
 **CloudCLI is installed per account, apart from the account's own npm.** The
-`cloudcli` artifact is of kind `npm`, its sources the npm registries. The
-agent ranks the registries, compares the chosen one's `dist.integrity` for
+`cloudcli` artifact is of kind `npm`, and its `source_set` is the `npm` set,
+the one list of npm registries ([module_install.md](../module_install.md),
+"Source sets"). The agent ranks the registries, compares the chosen one's `dist.integrity` for
 the version with the artifact's digest, and goes on to the next registry
 when the two differ ([module_install.md](../module_install.md), "Choosing a
 source"). As the account, with that Node, it runs `npm install

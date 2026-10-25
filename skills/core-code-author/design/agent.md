@@ -8,9 +8,10 @@ is on `127.0.0.1`: the forwarders in front of the programs run as an
 account, CloudCLI, code-server and Codeg
 ([module_template.md](agent/module_template.md), "The run"), and the AI
 gateway forward, 8317, on every machine but the hub's own ("The AI gateway
-forward"). On Linux it opens the same ports on the gateway of each Podman
-bridge as well, for the containers there ("The listeners a container
-reaches"). Its own
+forward"). For the machine's containers it opens the same ports on the
+gateway of each Podman bridge on Linux, and on the computer's address on
+WSL's vEthernet adapter on Windows ("The listeners a container reaches").
+Its own
 code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
@@ -122,8 +123,8 @@ is told the machine is away, and asks again when it is back.
 
 **One module at a time.** The agent applies the modules a state mentions one
 after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
-Terminal, Gitea, Containers, VS Code, code-server, CloudCLI, Codeg, Remote
-desktop.
+Terminal, Gitea, Containers, Hermes WebUI, VS Code, code-server, CloudCLI,
+Codeg, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
 reported state reports `queued`, until the agent reaches it.
 
@@ -276,7 +277,7 @@ linked from the table.
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
-| container images | every module whose software is container images | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
+| container images | [Hermes WebUI](agent/modules/hermes_webui.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
 Terminal and Remote desktop install nothing: their platform entries name the
 method `agent`, they are never in the Modules page's picker, always a tab,
@@ -318,7 +319,8 @@ machine publishes at that moment on the stream's protocol:
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port |
 | a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
-| a running Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
+| the Hermes WebUI module is configured | its forwarder's port |
+| a running Podman container publishes a host port, other than a hub container's `page_port` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
 and a number published on the other protocol alone, is refused
@@ -358,6 +360,7 @@ connection"), and each also answers the agent's dial on loopback:
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
 | the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
+| the Hermes WebUI forwarder | `127.0.0.1` alone, in front of the webui's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md)) |
 
 ## The AI gateway forward
 
@@ -374,7 +377,7 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 
 | Rule | Reason |
 | --- | --- |
-| The forward listens on `127.0.0.1`, and on Linux on the Podman bridges ("The listeners a container reaches"), opens no port in any firewall, and closes when its `is_forwarded` turns false. | The gateway serves the hub's own machine, its clients, its managed machines and their containers, and no other host on the LAN; a port on a LAN address opens it to the LAN. |
+| The forward listens on `127.0.0.1`, and for the machine's containers on the Podman bridges on Linux and on WSL's vEthernet adapter on Windows, each relay with the firewall rule it needs there ("The listeners a container reaches"). It closes when its `is_forwarded` turns false. | The gateway serves the hub's own machine, its clients, its managed machines and their containers, and no other host on the LAN; a port on a LAN address opens it to the LAN. |
 | While the agent has no channel to the hub, the forward stops accepting new connections and stays bound; the connections waiting in its listen queue are served once the channel is back. | A client's forward does the same ([client.md](client.md), "The local port table"), for the same reason: a connection accepted with no channel can only be closed at once. |
 | The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there. | The setting and the container modules are the machine's permissions for the gateway. |
 | The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
@@ -386,18 +389,38 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 ## The listeners a container reaches
 
 Every container on a machine reaches the agent's `127.0.0.1` listeners at
-`host.containers.internal`, on the same port. On Linux the agent makes that
-true itself; on macOS the Podman machine's own network does
-([modules/containers.md](agent/modules/containers.md), "Reaching the
+`host.containers.internal`, on the same port. On Linux and Windows the agent
+makes that true itself with a relay; on macOS the Podman machine's own
+network does ([modules/containers.md](agent/modules/containers.md), "Reaching the
 machine").
 
 | Rule | Reason |
 | --- | --- |
 | On Linux the agent opens each of its loopback listeners also on the gateway address of every Podman bridge on the machine, bound to that bridge with `SO_BINDTODEVICE`. It relays each connection to `127.0.0.1` on the same port. | A container's loopback is its own, and its way to the machine is its bridge's gateway. Binding to the bridge keeps the port off every other interface. |
+| On Windows the agent opens each of them also on the computer's address on WSL's vEthernet adapter, the adapter whose name starts `vEthernet (WSL`, and relays each connection to `127.0.0.1` on the same port. | The Podman machine runs in WSL's NAT mode, where `host.containers.internal` is that address. A listener on Windows' `127.0.0.1` alone timed out from a container. |
 | The listeners relayed are the AI gateway forward and the forwarders of the programs run as an account. | They are the agent's own; VS Code's listener belongs to VS Code. |
-| The agent reads the bridges every report interval, and opens and closes the relays to match. | A bridge appears with its first container. |
+| The agent reads the bridges, and on Windows the adapter's address, every report interval, and opens and closes the relays to match. | A bridge appears with its first container, and WSL picks the adapter's network when it starts. |
+| A bridge is known by its name and its interface index. A bridge that netavark or CNI makes again has a new index, and the agent closes the relay on the old index and opens it on the new one. | A socket bound with `SO_BINDTODEVICE` stays on the index it was bound to. On the lab machines netavark made the bridge again when its last container stopped and one started, and at `podman network reload`, and the old relay reached nothing. |
 | On the hub's own machine, where the agent opens no AI forward, it relays the gateway's own port the same way, the port the `ai_tools` section names as `gateway_port`. | A container on the hub's machine reaches the gateway at the same address as one on a managed machine. |
 | A relayed connection meets the check of the listener behind it: a forwarder's token or login, and the gateway's key. | The relay adds a way in for the machine's containers, and no way past a check. |
+
+Each relay gets one rule in the machine's firewall where the firewall drops
+its traffic, and the rule goes when the relay closes:
+
+| Firewall | The rule for one relayed port |
+| --- | --- |
+| ufw, where `ufw status` says `Status: active` | `ufw allow in on <bridge> to <gateway> port <port> proto tcp comment neutrino_agent_relay` |
+| firewalld, where `firewall-cmd --state` says `running` | the rich rule `rule family="ipv4" source address="<subnet>" destination address="<gateway>/32" port port="<port>" protocol="tcp" accept`, in the zone of the bridge, the default zone while the bridge is in none |
+| plain nftables, where neither runs | none |
+| Windows Firewall | the inbound allow rule `neutrino_agent_relay_<port>` for TCP to the port, scoped to the vEthernet adapter by `-InterfaceAlias` |
+
+| Rule | Reason |
+| --- | --- |
+| A rule names the bridge or the adapter, the relay's address and its one port. | A rule wider than the relay opens the port to senders the relay does not serve. |
+| ufw and firewalld are each given the rule in their own language. | A packet passes only when every base chain on its hook accepts it. An accept in an nftables table of the agent's own passed nothing that ufw's `INPUT` policy or firewalld's zone dropped. |
+| The firewalld rule is written to the runtime and to the permanent configuration. | A runtime rule alone is lost at firewalld's next reload, and that reload also drops netavark's binding of the subnet to the trusted zone; a permanent rule alone waits for a reload. |
+| On plain nftables the agent adds no rule. | No base chain on the input hook drops the relay's traffic there: on the lab's Debian 12 a container reached the relay with nothing added. |
+| The agent compares its rules with its relays every report interval and removes each rule whose relay it no longer opens, its own stop among them. It finds its rules by the comment `neutrino_agent_relay` in ufw, by the rule's text in firewalld, and by the name in Windows Firewall. | A rule kept after its relay closed opens a port that nothing of the agent's serves. |
 
 ## The local control channel
 
@@ -587,6 +610,7 @@ module a system cannot run is left out on that system.
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
+| [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Terminal](agent/modules/terminal.md) | yes | the shell program alone | yes |
 | [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk; the detection of a person's own AnyDesk or TeamViewer runs on every system) | yes | amd64 | yes |
 
@@ -602,8 +626,9 @@ page: [file_share.md](agent/modules/file_share.md),
 [gitea.md](agent/modules/gitea.md),
 [containers.md](agent/modules/containers.md), [vscode.md](agent/modules/vscode.md),
 [code_server.md](agent/modules/code_server.md),
-[cloudcli.md](agent/modules/cloudcli.md) and
-[codeg.md](agent/modules/codeg.md).
+[cloudcli.md](agent/modules/cloudcli.md),
+[codeg.md](agent/modules/codeg.md) and
+[hermes_webui.md](agent/modules/hermes_webui.md).
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
@@ -849,12 +874,18 @@ who can already strip TLS, who fails the fingerprint check first.
 
 **A local account on the managed machine**: the control socket is 0600 under
 a 0700 directory, so the kernel rejects their connection before a request is
-read. The agent's only local ports are on `127.0.0.1`, and on Linux the
-same ports on the Podman bridges. The CloudCLI, code-server and Codeg
+read. The agent's only local ports are on `127.0.0.1`, and the same ports
+on the Podman bridges on Linux and on WSL's vEthernet adapter on Windows,
+each relay with a firewall rule scoped to that interface; anything inside
+WSL on the computer reaches the adapter's address as a container does. On
+macOS gvproxy gives every container in the Podman machine every port on the
+Mac's loopback, the agent's listeners and every other program's loopback
+service alike. The CloudCLI, code-server, Codeg and Hermes WebUI
 forwarders answer 401 to a request holding neither a token the hub
 generated nor a login the forwarder set, so neither the account, nor a
 website in their browser, nor a process in a container reaches an instance
-through them. The AI gateway forward passes a request to the gateway, which
+through them. Hermes WebUI's own password guards the port the webui is
+published at behind its forwarder. The AI gateway forward passes a request to the gateway, which
 answers it only with a key it knows: the device's, held in the tool files of
 the accounts the setting names, or a container module's, held in that
 module's containers.
