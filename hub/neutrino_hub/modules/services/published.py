@@ -21,8 +21,15 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
 )
 from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
-from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_CONFIGURED_WANTS
-from neutrino_hub.modules.devices.constants import DEVICE_MODULE_NAMES
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_CONFIGURED_WANTS,
+    CHANNEL_MODULE_STATE_RUNNING,
+)
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_HERMES_WEBUI_MODULE,
+    DEVICE_MODULE_NAMES,
+)
+from neutrino_hub.modules.devices.hermes_webui import stored_port
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.module_table import account_program_names
 from neutrino_hub.modules.router import link_status
@@ -296,7 +303,8 @@ class PublishedServiceCache:
         """One device's module as the list needs it, None while not served.
 
         An instance of a program run as an account is listed only while the
-        device reports it running.
+        device reports it running, and Hermes WebUI only while the device
+        reports the module running.
         """
         if not isinstance(status, dict):
             return None
@@ -310,6 +318,13 @@ class PublishedServiceCache:
         details = (
             status.get("details") if isinstance(status.get("details"), dict) else {}
         )
+        if name == DEVICE_HERMES_WEBUI_MODULE:
+            if status.get("state") != CHANNEL_MODULE_STATE_RUNNING:
+                return None
+            return {
+                "port": stored_port(self._desired_states.read(key, name)),
+                "is_healthy": True,
+            }
         if name == "samba":
             config = self._desired_states.read(key, "samba")
             shares = [

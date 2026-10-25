@@ -28,6 +28,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
     SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_AI_ID,
     SERVICES_AI_PROTOCOL,
@@ -36,6 +37,9 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_GITEA_DESCRIPTION,
     SERVICES_GITEA_ID,
     SERVICES_GITEA_TITLE,
+    SERVICES_HERMES_WEBUI_DESCRIPTION,
+    SERVICES_HERMES_WEBUI_ID,
+    SERVICES_HERMES_WEBUI_TITLE,
     SERVICES_HUB_SELF_HOSTS,
     SERVICES_INSTANCE_DESCRIPTION,
     SERVICES_PORT_KIND_BY_PROTOCOL,
@@ -102,7 +106,8 @@ class ServiceListCollector:
                 the accounts that can open it,
                 ``gitea: {"is_healthy", "url"}``, each program run as an
                 account under its name as ``{"instances": [{"account",
-                "port", "is_healthy"}]}`` and
+                "port", "is_healthy"}]}``,
+                ``hermes_webui: {"port", "is_healthy"}`` and
                 ``podman: {"containers": [{"name", "image", "is_running",
                 "bindings"}]}``, ``bindings`` being ``(port, protocol,
                 scheme)`` triples, ``scheme`` naming a ``web`` entry's and
@@ -212,6 +217,27 @@ class ServiceListCollector:
                             device_id=_device_id(device),
                         )
                     )
+        for device in self._device_modules:
+            hermes = device.get("hermes_webui")
+            host = device.get("host", "")
+            if not hermes or not host:
+                continue
+            entries.append(
+                _entry(
+                    id=f"{SERVICES_HERMES_WEBUI_ID}_{_device_id(device)}",
+                    type=SERVICES_TYPE_WEB,
+                    title=SERVICES_HERMES_WEBUI_TITLE,
+                    payload={
+                        "url": f"http://{_url_host(host)}:{hermes['port']}/",
+                        "is_token_required": True,
+                    },
+                    is_healthy=bool(hermes.get("is_healthy")),
+                    description=SERVICES_HERMES_WEBUI_DESCRIPTION.format(host=host),
+                    description_code=SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
+                    description_params={"host": host},
+                    device_id=_device_id(device),
+                )
+            )
         for device in self._device_modules:
             podman = device.get("podman")
             host = device.get("host", "")

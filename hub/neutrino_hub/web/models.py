@@ -3185,6 +3185,24 @@ class RemoteDesktopConfigUpdate(BaseModel):
     is_enabled: bool
 
 
+class HermesWebuiDeviceView(ModuleDeviceFields):
+    """One device's Hermes WebUI: the forwarder's port and where the module stands."""
+
+    # The forwarder's port as stored, 8787 until the person sets another.
+    port: int = 8787
+    # The version the machine reports; empty before it reports one.
+    version: str = ""
+    # What the machine last reported: ``{version, port}``.
+    details: dict = Field(default_factory=dict)
+
+
+class HermesWebuiConfigUpdate(BaseModel):
+    """The forwarder's port being saved; checked by the route, ``port_invalid``."""
+
+    device_id: str
+    port: int
+
+
 class CodeServerDeviceView(ModuleDeviceFields):
     """One device's code-server: the release, the instances and the accounts."""
 

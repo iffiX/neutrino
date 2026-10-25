@@ -33,6 +33,19 @@ def _render(providers, api_keys, management_key: str = "") -> dict:
     return yaml.safe_load(text)
 
 
+def test_the_container_modules_keys_follow_the_client_keys():
+    text = CliproxyApiConfigRenderer(
+        config=CliproxyApiConfig(listen_port=8317),
+        providers=[],
+        api_keys={},
+        client_keys=["client-key-1"],
+        management_key="",
+        module_keys=["module-key-1"],
+    ).render()
+
+    assert yaml.safe_load(text)["api-keys"] == ["client-key-1", "module-key-1"]
+
+
 def test_kinds_land_in_their_blocks():
     document = _render(
         [

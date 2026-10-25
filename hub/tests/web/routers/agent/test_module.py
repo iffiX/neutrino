@@ -450,6 +450,7 @@ SUPPORTED_OFF_LINUX = {
     "samba": (True, True),
     "vscode": (True, True),
     "zfs": (False, False),
+    "hermes_webui": (True, True),
 }
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}

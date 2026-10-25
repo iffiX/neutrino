@@ -148,6 +148,7 @@ SERVICES_PUBLISHED_MODULES = (
     "code_server",
     "cloudcli",
     "codeg",
+    "hermes_webui",
 )
 
 SERVICES_LIST_TTL_S = 10.0
@@ -175,6 +176,7 @@ SERVICES_DESCRIPTION_VSCODE_MODULE = "vscode_module"
 SERVICES_DESCRIPTION_CLOUDCLI_MODULE = "cloudcli_module"
 SERVICES_DESCRIPTION_CODE_SERVER_MODULE = "code_server_module"
 SERVICES_DESCRIPTION_CODEG_MODULE = "codeg_module"
+SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE = "hermes_webui_module"
 SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_AI_GATEWAY,
     SERVICES_DESCRIPTION_CONTAINER,
@@ -186,6 +188,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CODEG_MODULE,
+    SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
 )
 
 SERVICES_GITEA_TITLE = "Gitea"
@@ -199,3 +202,8 @@ SERVICES_GITEA_ID = "gitea"
 SERVICES_INSTANCE_DESCRIPTION = (
     "published by the {module} module on {host} for {account}"
 )
+# Hermes WebUI's one web entry per device, ``hermes_webui_<device id>``,
+# opened the same way while the device reports the module running.
+SERVICES_HERMES_WEBUI_ID = "hermes_webui"
+SERVICES_HERMES_WEBUI_TITLE = "Hermes WebUI"
+SERVICES_HERMES_WEBUI_DESCRIPTION = "published by the hermes_webui module on {host}"

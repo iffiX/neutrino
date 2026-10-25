@@ -404,7 +404,8 @@ def packaging_constants():
 
 def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
     """What the agent carries, then what the system holds or installs, then
-    what the module's installer fetches, and by title inside each."""
+    what the module's installer fetches, then container images, and by title
+    inside each."""
     assert list(load_module_manifests()) == [
         "remote_desktop",
         "terminal",
@@ -416,6 +417,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "codeg",
         "gitea",
         "vscode",
+        "hermes_webui",
     ]
 
 
@@ -471,6 +473,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "code_server": "coder/code-server",
         "cloudcli": "siteboon/claudecodeui",
         "codeg": "spacering-net/codeg",
+        "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
     }
 
 

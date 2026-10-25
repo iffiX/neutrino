@@ -1,7 +1,7 @@
 """The description table: one frozen row per module, read by name and by kind.
 
 What these pin: the rows come in the order the Modules page lists them and
-every row's kind is one of the four; the programs run as an account are the
+every row's kind is one of the five; the programs run as an account are the
 rows the shared router, panel and state composition are driven by, each
 with its own sealed fields, published code and title; a row's file and
 panel are named after the module unless the table says otherwise; the
@@ -17,6 +17,7 @@ from neutrino_hub.modules.devices import module_table
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
+    DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     DEVICE_MODULE_KINDS,
@@ -43,6 +44,7 @@ def test_the_rows_come_in_the_order_the_modules_page_lists_them():
         "cloudcli",
         "codeg",
         "podman",
+        "hermes_webui",
         "zfs",
     ]
 
@@ -51,7 +53,7 @@ def test_every_shipped_manifest_has_a_row_and_every_row_a_manifest():
     assert {row.name for row in DEVICE_MODULE_ROWS} == set(load_module_manifests())
 
 
-def test_every_row_is_one_of_the_four_kinds():
+def test_every_row_is_one_of_the_five_kinds():
     kinds = {row.name: row.kind for row in DEVICE_MODULE_ROWS}
 
     assert set(kinds.values()) <= set(DEVICE_MODULE_KINDS)
@@ -65,6 +67,7 @@ def test_every_row_is_one_of_the_four_kinds():
         "cloudcli": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
+        "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
         "zfs": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     }
 
@@ -112,8 +115,23 @@ def test_each_program_run_as_an_account_seals_its_own_fields():
     assert all(
         not row.sealed_fields
         for row in DEVICE_MODULE_ROWS
-        if row.kind != DEVICE_MODULE_KIND_ACCOUNT_PROGRAM
+        if row.kind
+        not in (DEVICE_MODULE_KIND_ACCOUNT_PROGRAM, DEVICE_MODULE_KIND_CONTAINER)
     )
+
+
+def test_hermes_webui_seals_its_secret_and_its_password_and_mints_its_token():
+    row = module_row("hermes_webui")
+
+    assert [(field.key, field.opened_key) for field in row.sealed_fields] == [
+        ("secret_sealed", "secret"),
+        ("password_sealed", "password"),
+    ]
+    assert row.sealed_field("secret_sealed").aad == b"device_hermes_webui:secret"
+    assert row.sealed_field("password_sealed").aad == b"device_hermes_webui:password"
+    assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
+    assert row.is_gateway_used is True
+    assert module_table.gateway_module_names() == ("hermes_webui",)
 
 
 def test_each_program_run_as_an_account_names_its_token_and_its_login():
@@ -163,6 +181,7 @@ def test_each_row_names_its_published_entry():
         "cloudcli": ("cloudcli_module", "CloudCLI ({account})"),
         "codeg": ("codeg_module", "Codeg ({account})"),
         "podman": ("container", ""),
+        "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
         "zfs": ("", ""),
     }
 
@@ -194,4 +213,4 @@ def test_the_modules_that_use_the_gateway_are_the_rows_that_say_so(monkeypatch):
     )
     monkeypatch.setattr(module_table, "DEVICE_MODULE_ROWS", rows)
 
-    assert module_table.gateway_module_names() == ("webui",)
+    assert module_table.gateway_module_names() == ("hermes_webui", "webui")

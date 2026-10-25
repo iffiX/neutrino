@@ -139,19 +139,21 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "raw_zst": (b"\x28\xb5\x2f\xfd",),
 }
 
-# The four kinds of device module the description table sorts every module
+# The five kinds of device module the description table sorts every module
 # into: carried by the agent's own package, installed from the system's own
-# sources, a service with a system account of its own, and a program run as
-# a person's account.
+# sources, a service with a system account of its own, a program run as a
+# person's account, and container images run on the Containers module.
 DEVICE_MODULE_KIND_AGENT = "agent"
 DEVICE_MODULE_KIND_SYSTEM_PACKAGE = "system_package"
 DEVICE_MODULE_KIND_SERVICE_ACCOUNT = "service_account"
 DEVICE_MODULE_KIND_ACCOUNT_PROGRAM = "account_program"
+DEVICE_MODULE_KIND_CONTAINER = "container"
 DEVICE_MODULE_KINDS = (
     DEVICE_MODULE_KIND_AGENT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+    DEVICE_MODULE_KIND_CONTAINER,
 )
 # The panel the Modules page draws every program run as an account with;
 # every other module is drawn by a panel named after it.
@@ -167,11 +169,14 @@ DEVICE_MODULE_NAMES = (
     "samba",
     "gitea",
     "podman",
+    "hermes_webui",
     "vscode",
     "code_server",
     "cloudcli",
     "codeg",
 )
+# The directory under ``config/`` that holds one directory per device.
+DEVICE_CONFIG_DIR_NAME = "devices"
 # What ``config/devices/<id>/modules.json`` is called, and the per-module
 # files beside it. A device directory is named by the device's id.
 DEVICE_MODULES_FILE = "modules.json"
@@ -258,6 +263,51 @@ DEVICE_PODMAN_MODULE = "podman"
 DEVICE_HUB_CONTAINERS_KEY = "hub_containers"
 DEVICE_HUB_CONTAINER_PREFIX = "neutrino_"
 DEVICE_PODMAN_CONTAINERS_KEY = "containers"
+# The key a container module that uses the AI gateway keeps its own gateway
+# key under, in its file under the device's directory: the key's record,
+# sealed as the gateway's own keys are, and labelled
+# ``device/<device>/<module>``.
+DEVICE_MODULE_GATEWAY_KEY = "gateway_key"
+DEVICE_MODULE_GATEWAY_LABEL = "device/{device}/{module}"
+# Where a container reaches the AI gateway: the agent's forward on a managed
+# machine, the gateway's own port on the hub's machine, relayed to the
+# container.
+DEVICE_CONTAINER_GATEWAY_URL = "http://host.containers.internal:{port}"
+DEVICE_CONTAINER_GATEWAY_FORWARD_PORT = 8317
+# Hermes WebUI: two hub containers, the agent's gateway and the webui. Its
+# file under the device's directory holds the forwarder's port, two secrets
+# the hub generates once and keeps sealed, the token secret and the webui's
+# password, and the module's gateway key.
+DEVICE_HERMES_WEBUI_MODULE = "hermes_webui"
+DEVICE_HERMES_WEBUI_DEFAULT_PORT = 8787
+DEVICE_HERMES_WEBUI_PORT_MIN = 1024
+DEVICE_HERMES_WEBUI_PORT_MAX = 65535
+DEVICE_HERMES_WEBUI_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_HERMES_WEBUI_PASSWORD_KEY = "password_sealed"  # scan: allow
+DEVICE_HERMES_WEBUI_SECRET_AAD = b"device_hermes_webui:secret"
+DEVICE_HERMES_WEBUI_PASSWORD_AAD = b"device_hermes_webui:password"
+DEVICE_HERMES_WEBUI_SECRET_BYTES = 32
+# Its two containers, the images they run by artifact name, and what each
+# mounts and is given. Both images rename their user to uid and gid 1024,
+# and the webui's 8787 is the port its forwarder serves.
+DEVICE_HERMES_WEBUI_AGENT_CONTAINER = "neutrino_hermes_webui_agent"
+DEVICE_HERMES_WEBUI_WEBUI_CONTAINER = "neutrino_hermes_webui"
+DEVICE_HERMES_WEBUI_AGENT_IMAGE = "agent"
+DEVICE_HERMES_WEBUI_WEBUI_IMAGE = "webui"
+DEVICE_HERMES_WEBUI_AGENT_COMMAND = "gateway run"
+DEVICE_HERMES_WEBUI_PAGE_PORT = 8787
+DEVICE_HERMES_WEBUI_UID = 1024
+DEVICE_HERMES_WEBUI_AGENT_VOLUMES = (
+    "neutrino_hermes_webui_home:/opt/data",
+    "neutrino_hermes_webui_agent:/opt/hermes",
+)
+DEVICE_HERMES_WEBUI_WEBUI_VOLUMES = (
+    "neutrino_hermes_webui_home:/home/hermeswebui/.hermes",
+    "neutrino_hermes_webui_workspace:/workspace",
+    "neutrino_hermes_webui_agent:/home/hermeswebui/.hermes/hermes-agent:ro",
+    "neutrino_hermes_webui_app:/app",
+)
+DEVICE_HERMES_WEBUI_STATE_DIR = "/home/hermeswebui/.hermes/webui"
 # Where a container comes from, by the owner rule: the label, the declared
 # names, else a person's own.
 DEVICE_CONTAINER_SOURCE_HUB = "hub"

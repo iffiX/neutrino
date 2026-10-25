@@ -212,6 +212,7 @@ MODULE_NAMES = (
     "code_server",
     "cloudcli",
     "codeg",
+    "hermes_webui",
 )
 
 

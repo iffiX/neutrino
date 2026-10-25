@@ -68,8 +68,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES,
     DEVICE_FORWARDER_TOKEN_LIFETIME_S,
     DEVICE_FORWARDER_TOKEN_NONCE_BYTES,
+    DEVICE_CONFIG_DIR_NAME,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
+    DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
@@ -82,6 +84,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
+from neutrino_hub.modules.devices import hermes_webui
 from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
 from neutrino_hub.modules.devices.source_sets import state_source_sets
 from neutrino_hub.modules.devices.module_table import (
@@ -97,7 +100,7 @@ from neutrino_hub.utils.json_file import (
     write_config,
 )
 
-DEVICES_DIR_NAME = "devices"
+DEVICES_DIR_NAME = DEVICE_CONFIG_DIR_NAME
 # The system whose instances start as their account only with its password.
 VSCODE_PASSWORD_OS = "windows"
 
@@ -613,6 +616,30 @@ class DesiredStateStore:
             return _fresh_token(opened, now)
         return ""
 
+    def module_token(self, key: str, module: str, *, now: "float | None" = None) -> str:
+        """A fresh token a client opens a container module's page with.
+
+        Args:
+            key: The device key.
+            module: The container module, whose row names the sealed field
+                its file holds the token secret under.
+            now: Seconds since the epoch; None is the clock.
+
+        Returns:
+            A token minted from the module's secret, its expiry 60 seconds
+            ahead; empty when the file holds no secret, when the vault is
+            locked, or when the seal does not open under this box's data
+            key.
+
+        Raises:
+            KeyError: For a module the table does not hold, or one that
+                hands no token.
+        """
+        row = module_row(module)
+        sealed = row.sealed_field(row.token_field)
+        opened = _unsealed_text(self.read(key, module).get(sealed.key), sealed.aad)
+        return _fresh_token(opened, now) if opened else ""
+
     def ai_tools(self, key: str) -> dict:
         """One device's AI tools setting.
 
@@ -792,9 +819,9 @@ class DesiredStateStore:
             The configuration: Samba with the networks its shares answer,
             Gitea with its address and the secrets it signs with, Containers
             as :func:`podman_agent_config` composes it with the hub
-            containers of the machine's container modules, and a program run
-            as an account with its sealed fields and logins opened, as its
-            row says.
+            containers of the machine's container modules, a program run as
+            an account with its sealed fields and logins opened, as its row
+            says, and Hermes WebUI with its port and its secrets opened.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -812,6 +839,8 @@ class DesiredStateStore:
             )
         elif name in account_program_names():
             config = instances_agent_config(module_row(name), config, platform)
+        elif name == DEVICE_HERMES_WEBUI_MODULE:
+            config = hermes_webui.agent_config(config)
         elif name == DEVICE_TERMINAL_MODULE:
             config = terminal_agent_config(config, platform)
         return config

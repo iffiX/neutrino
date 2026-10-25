@@ -20,7 +20,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_USAGE_QUEUE_COUNT,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import read_management_key
-from neutrino_hub.modules.cliproxyapi.ops import load_config
+from neutrino_hub.modules.cliproxyapi.ops import load_config, load_module_keys
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
 
 LOGGER = logging.getLogger(__name__)
@@ -93,7 +93,8 @@ class PanelUsageCollector:
             return 0
         try:
             config = load_config()
-            key_ids = {key.open_key(): key.id for key in config.gateway_keys()}
+            keys = [*config.gateway_keys(), *(key for _, _, key in load_module_keys())]
+            key_ids = {key.open_key(): key.id for key in keys}
         except ValueError:
             return 0
         try:
@@ -120,7 +121,7 @@ class PanelUsageCollector:
         return self._store.ingest(
             records,
             key_ids=key_ids,
-            key_names={key.id: key.name for key in config.gateway_keys()},
+            key_names={key.id: key.name for key in keys},
             provider_ids=self._provider_ids,
             account_ids=self._account_ids,
         )

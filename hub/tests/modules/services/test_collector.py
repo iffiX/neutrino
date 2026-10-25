@@ -764,3 +764,27 @@ def test_a_containers_web_entry_on_an_ipv6_host_has_the_address_in_brackets():
     )
 
     assert entry["payload"] == {"url": "http://[fd00::7]:8080/"}
+
+
+def test_hermes_webui_is_one_web_entry_per_device_opened_with_a_token():
+    entries = collect(
+        device_modules=[
+            {**hosting(), "hermes_webui": {"port": 8787, "is_healthy": True}}
+        ]
+    )
+
+    (page,) = entries
+    assert page["id"] == "hermes_webui_device-one"
+    assert page["type"] == "web"
+    assert page["title"] == "Hermes WebUI"
+    assert page["payload"] == {
+        "url": f"http://{DEVICE_HOST}:8787/",
+        "is_token_required": True,
+    }
+    assert page["is_healthy"] is True
+    assert page["description"] == (
+        f"published by the hermes_webui module on {DEVICE_HOST}"
+    )
+    assert page["description_code"] == "hermes_webui_module"
+    assert page["description_params"] == {"host": DEVICE_HOST}
+    assert page["device_id"] == DEVICE

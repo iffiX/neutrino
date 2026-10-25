@@ -1589,6 +1589,25 @@ def test_forgetting_a_device_deletes_its_module_configuration(
     assert not (tmp_path / "devices" / DEVICE).exists()
 
 
+def test_forgetting_a_device_voids_its_container_modules_gateway_keys(
+    box_api, monkeypatch, tmp_path
+):
+    client, runtime = box_api
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(BoxRegistry, "forget", lambda self, mac: None, raising=False)
+    voided = []
+    monkeypatch.setattr(
+        devices_router,
+        "revoke_module_key",
+        lambda store, device_id, module: voided.append((device_id, module)),
+    )
+
+    client.post(f"{DEVICE_PATH}/remove", json={"device_id": DEVICE})
+
+    assert voided == [(DEVICE, "hermes_webui")]
+
+
 @pytest.mark.parametrize("device_id", ["hello", "scan:nonsense", "", "12345"])
 def test_an_id_no_device_has_is_refused(box_api, device_id):
     client, _ = box_api

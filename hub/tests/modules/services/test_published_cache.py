@@ -754,3 +754,43 @@ def test_a_hub_container_s_ports_give_no_entry(box):
     ).entries()
 
     assert [entry["id"] for entry in entries] == ["podman_device-one_web_8080"]
+
+
+def test_hermes_webui_is_one_entry_at_its_port_while_the_device_reports_it_running(
+    box,
+):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "hermes_webui", "running")
+    store.write(DEVICE, "hermes_webui", {"port": 9100})
+    reported = report(hermes_webui={"version": "0.52.492", "port": 9100})
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    (page,) = entries
+    assert page["id"] == "hermes_webui_device-one"
+    assert page["title"] == "Hermes WebUI"
+    assert page["payload"] == {
+        "url": "http://192.168.100.7:9100/",
+        "is_token_required": True,
+    }
+    assert page["is_healthy"] is True
+    assert page["description_code"] == "hermes_webui_module"
+
+
+@pytest.mark.parametrize("state", ["installing", "stopped", "failed"])
+def test_hermes_webui_not_running_lists_nothing(box, state):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "hermes_webui", "running")
+    store.write(DEVICE, "hermes_webui", {"port": 8787})
+    reported = report(hermes_webui={"version": "0.52.492", "port": 8787})
+    reported["modules"]["hermes_webui"]["state"] = state
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    assert entries == []

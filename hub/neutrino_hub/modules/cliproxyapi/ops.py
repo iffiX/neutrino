@@ -17,7 +17,7 @@ import httpx
 
 from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
-from neutrino_hub.utils import constants
+from neutrino_hub.utils import constants, json_file
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import (
     read_config,
@@ -51,6 +51,11 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
 )
 from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_CONFIG_DIR_NAME,
+    DEVICE_MODULE_GATEWAY_KEY,
+)
+from neutrino_hub.modules.devices.module_table import gateway_module_names
 
 CLIPROXYAPI_CONFIG_PATH = "cliproxyapi/cliproxyapi.json"
 PROBE_TIMEOUT_S = 5
@@ -66,6 +71,37 @@ def load_config() -> CliproxyApiConfig:
         return CliproxyApiConfig.from_dict(read_config(CLIPROXYAPI_CONFIG_PATH))
     except FileNotFoundError:
         return CliproxyApiConfig()
+
+
+def load_module_keys() -> list:
+    """The gateway key of every container module that uses the gateway, on every device.
+
+    Returns:
+        ``(device_id, module, key)`` for each module file under
+        ``config/devices/`` that holds a sealed key, by device and in the
+        description table's order; none while the directory cannot be read.
+    """
+    root = json_file.UTILS_CONFIG_DIR / DEVICE_CONFIG_DIR_NAME
+    try:
+        directories = sorted(root.iterdir())
+    except OSError:
+        return []
+    found = []
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for module in gateway_module_names():
+            path = f"{DEVICE_CONFIG_DIR_NAME}/{directory.name}/{module}.json"
+            try:
+                held = read_config(path)
+            except (FileNotFoundError, ValueError):
+                continue
+            key = CliproxyApiClientKey.from_stored(
+                held.get(DEVICE_MODULE_GATEWAY_KEY) if isinstance(held, dict) else None
+            )
+            if key is not None:
+                found.append((directory.name, module, key))
+    return found
 
 
 def save_config(config: CliproxyApiConfig) -> None:
@@ -397,9 +433,21 @@ class CliproxyApiConfigApplier:
                 for key in [*config.client_keys, config.hub_key]
                 if key is not None
             ],
+            module_keys=_opened_module_keys(),
             management_key=management_key,
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)
+
+
+def _opened_module_keys() -> list:
+    """The container modules' keys opened; one that does not open is left out."""
+    opened = []
+    for _, _, key in load_module_keys():
+        try:
+            opened.append(key.open_key())
+        except ValueError:
+            continue
+    return opened
 
 
 class CliproxyApiServedModelCache:

@@ -21,6 +21,7 @@ from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_k
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config,
+    load_module_keys,
     save_config,
 )
 from neutrino_hub.modules.cliproxyapi.usage_store import (
@@ -131,9 +132,11 @@ def usage(
     store = CliproxyApiUsageStore()
     key_rows = store.key_rows(range_name)
     if key_id is not None:
-        known = {row["key_id"] for row in key_rows} | {
-            key.id for key in load_config().gateway_keys()
-        }
+        known = (
+            {row["key_id"] for row in key_rows}
+            | {key.id for key in load_config().gateway_keys()}
+            | {key.id for _, _, key in load_module_keys()}
+        )
         if key_id not in known:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -563,10 +566,12 @@ def _client_names() -> dict[str, str]:
 
 
 def _device_names() -> dict[str, str]:
-    """Device key id to the name of the device holding it, as of now."""
+    """Device key id, or a device's container module key id, to the name of the device holding it, as of now."""
     registry = DeviceRegistry()
+    held = [*load_config().device_keys.items()]
+    held += [(device_id, key) for device_id, _, key in load_module_keys()]
     names = {}
-    for device_id, key in load_config().device_keys.items():
+    for device_id, key in held:
         device = registry.get(device_id)
         names[key.id] = (device.name if device is not None else "") or device_id
     return names

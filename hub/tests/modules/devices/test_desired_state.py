@@ -1082,3 +1082,28 @@ def test_a_container_module_wanted_absent_leaves_the_containers_state(
     desired, _ = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
 
     assert desired["modules"]["podman"]["config"]["hub_containers"] == []
+
+
+def test_a_container_module_s_token_is_minted_from_the_secret_its_file_seals(
+    config, monkeypatch
+):
+    import base64
+    import hashlib
+    import hmac
+
+    from neutrino_hub.modules.credentials.vault import unseal_bytes
+    from neutrino_hub.modules.devices.hermes_webui import ensure_config
+    from tests.conftest import unlock_vault
+
+    unlock_vault(monkeypatch, config)
+    store = DesiredStateStore()
+    stored = ensure_config(store, "dev-1")
+    secret = unseal_bytes(stored["secret_sealed"], b"device_hermes_webui:secret")
+
+    token = store.module_token("dev-1", "hermes_webui", now=1_000_000)
+
+    raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+    body, mac = raw[:24], raw[24:]
+    assert int.from_bytes(body[:8], "big") == 1_000_060
+    assert hmac.compare_digest(mac, hmac.new(secret, body, hashlib.sha256).digest())
+    assert store.module_token("other", "hermes_webui") == ""

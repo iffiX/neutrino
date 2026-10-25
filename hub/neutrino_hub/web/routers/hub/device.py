@@ -23,7 +23,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_VERB_REINSTALL,
     ENROLLMENT_TTL_S,
 )
-from neutrino_hub.modules.clients.ai_keys import revoke_device_key
+from neutrino_hub.modules.clients.ai_keys import (
+    revoke_device_key,
+    revoke_module_key,
+)
+from neutrino_hub.modules.devices.module_table import gateway_module_names
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.constants import (
@@ -332,6 +336,8 @@ def forget(
     DeviceRegistry().forget(device_id)
     ClientRegistry().forget_device(device_id)
     runtime.forget_device(device_id)
+    for module in gateway_module_names():
+        revoke_module_key(runtime.desired_states, device_id, module)
     runtime.desired_states.forget(device_id)
     DeviceRetryMarks().forget(device_id)
     revoke_device_key(device_id)

@@ -77,6 +77,18 @@ class CliproxyApiClientKey:
         )
 
     @classmethod
+    def from_stored(cls, entry) -> "CliproxyApiClientKey | None":
+        """A stored key record, when it carries a seal.
+
+        Args:
+            entry: What a file holds for the key; anything else is none.
+
+        Returns:
+            The key, or None for a record without key material.
+        """
+        return cls.from_dict(entry) if _has_seal(entry) else None
+
+    @classmethod
     def from_dict(cls, data: dict) -> "CliproxyApiClientKey":
         return cls(
             id=data.get("id", ""),

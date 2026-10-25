@@ -5,8 +5,8 @@ token for a client that holds the ``panel`` permission.
 
 A ``service`` stream's close is the material: ``{password}`` for a desktop,
 ``{api_key, model}`` for the AI gateway, ``{token}`` for a VS Code
-instance, and for a CloudCLI or code-server instance a ``{token}`` minted for that
-one answer. The published list carries no secret; this is where the one secret
+instance, and for a CloudCLI, code-server or Codeg instance and for Hermes
+WebUI a ``{token}`` minted for that one answer. The published list carries no secret; this is where the one secret
 a service takes from the hub is opened, for one close.
 
 A ``connect`` stream is judged by the same checks, with the stream limit
@@ -44,6 +44,7 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
+from neutrino_hub.modules.devices.constants import DEVICE_HERMES_WEBUI_MODULE
 from neutrino_hub.modules.devices.module_table import account_program_rows
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -52,6 +53,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
     SERVICES_AI_ID,
+    SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_SAMBA_DEFAULT_PORT,
     SERVICES_SOURCE_DECLARED,
     SERVICES_TYPE_AI,
@@ -123,6 +125,13 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         if credential is None:
             return VaultLockedError.code, {}
         return "", credential
+    if entry["description_code"] == SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE:
+        token = runtime.desired_states.module_token(
+            str(raw.get("device_id") or ""), DEVICE_HERMES_WEBUI_MODULE
+        )
+        if not token:
+            return VaultLockedError.code, {}
+        return "", {"token": token}
     row = _instance_row(str(entry["description_code"] or ""))
     if row is not None:
         device_id = str(raw.get("device_id") or "")

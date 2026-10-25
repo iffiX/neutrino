@@ -12,6 +12,12 @@ One more per managed device whose AI tools setting is on, labelled
 and when the device is removed, and handed to the device in its desired
 state's ``ai_tools`` section. A key no setting holds on, as one minted for
 CloudCLI by an earlier build, is revoked when the panel starts.
+
+One more per container module that uses the gateway on each device,
+labelled ``device/<name>/<module>`` and kept sealed in that module's file
+under the device's directory: minted when the module is installed, voided
+at its uninstall and when the device is removed, and handed to the module's
+containers in their environment whatever the AI tools setting says.
 """
 
 from neutrino_hub.modules.clients.constants import (
@@ -22,6 +28,10 @@ from neutrino_hub.modules.clients.constants import (
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LISTEN_HOST
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_MODULE_GATEWAY_KEY,
+    DEVICE_MODULE_GATEWAY_LABEL,
+)
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config,
@@ -125,6 +135,87 @@ def revoke_device_key(device_id: str) -> None:
         if config.device_keys.pop(device_id, None) is None:
             return
         save_config(config)
+    _apply()
+
+
+def ensure_module_key(store, device_id: str, module: str, name: str) -> "str | None":
+    """One container module's key material on one device, minting a key when it holds none.
+
+    Args:
+        store: The desired state store, whose file of the module holds the key.
+        device_id: The device.
+        module: The container module.
+        name: What the device is called, for the key's label.
+
+    Returns:
+        The key material, or None while the vault is locked or the held key
+        does not open.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
+    with CONFIG_WRITE_LOCK:
+        held = store.read(device_id, module)
+        key = CliproxyApiClientKey.from_stored(held.get(DEVICE_MODULE_GATEWAY_KEY))
+        if key is not None:
+            try:
+                return key.open_key()
+            except ValueError:
+                return None
+        label = DEVICE_MODULE_GATEWAY_LABEL.format(
+            device=name or device_id, module=module
+        )
+        try:
+            key = CliproxyApiClientKey.generated(label)
+        except ValueError:
+            return None
+        store.write(
+            device_id, module, {**held, DEVICE_MODULE_GATEWAY_KEY: key.to_dict()}
+        )
+    material = key.open_key()
+    _apply(new_key=material)
+    return material
+
+
+def module_key(store, device_id: str, module: str) -> str:
+    """One container module's key material on one device, minting none.
+
+    Args:
+        store: The desired state store.
+        device_id: The device.
+        module: The container module.
+
+    Returns:
+        The material; empty when the module's file holds no key or it does
+        not open.
+    """
+    held = store.read(device_id, module)
+    key = CliproxyApiClientKey.from_stored(held.get(DEVICE_MODULE_GATEWAY_KEY))
+    if key is None:
+        return ""
+    try:
+        return key.open_key()
+    except ValueError:
+        return ""
+
+
+def revoke_module_key(store, device_id: str, module: str) -> None:
+    """Void one container module's key on one device, and hand the gateway the change.
+
+    Args:
+        store: The desired state store.
+        device_id: The device.
+        module: The container module.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
+    with CONFIG_WRITE_LOCK:
+        held = store.read(device_id, module)
+        if DEVICE_MODULE_GATEWAY_KEY not in held:
+            return
+        held.pop(DEVICE_MODULE_GATEWAY_KEY)
+        store.write(device_id, module, held)
     _apply()
 
 

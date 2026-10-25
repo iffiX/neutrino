@@ -26,7 +26,11 @@ from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    StreamRefusedError,
+    VaultLockedError,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
     CHANNEL_MODULE_PRESENT_STATES,
@@ -42,6 +46,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
+    DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
     DEVICE_PODMAN_MODULE,
@@ -51,8 +56,11 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
+from neutrino_hub.modules.clients.ai_keys import ensure_module_key, revoke_module_key
 from neutrino_hub.modules.devices.catalog import resolve_module
+from neutrino_hub.modules.devices.hermes_webui import ensure_config
 from neutrino_hub.modules.devices.hub_containers import container_modules
+from neutrino_hub.modules.devices.module_table import gateway_module_names
 from neutrino_hub.modules.devices.manifests import (
     entry_params,
     load_module_manifests,
@@ -248,7 +256,9 @@ def install_module(
             409 ``agent_offline`` when the device has no socket.
 
     Note:
-        A container module's install wants Containers ``running`` first.
+        A container module's install wants Containers ``running`` first,
+        and gives the module its configuration and its gateway key where it
+        has none.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
 
@@ -307,6 +317,9 @@ def uninstall_module(
     Raises:
         HTTPException: As :func:`install_module`, and 409 ``module_in_use
             {modules}`` on Containers while a container module is installed.
+
+    Note:
+        A container module's gateway key is voided.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
 
@@ -737,7 +750,9 @@ def _set_want(
     steady state other than the ``want`` written, the press also puts a
     fresh retry mark into the state, so the agent applies the module again.
     A container module's install or start first wants Containers
-    ``running``, whose Podman runs it.
+    ``running``, whose Podman runs it, and gives the module its
+    configuration and its gateway key where it has none; its uninstall
+    voids the key.
 
     Args:
         runtime: The shared runtime.
@@ -787,6 +802,10 @@ def _set_want(
     try:
         if is_engine_wanted:
             _want_containers_running(runtime, key)
+            _prepare_container_module(runtime, key, module)
+        elif is_container and want == CHANNEL_MODULE_STATE_ABSENT:
+            if module in gateway_module_names():
+                revoke_module_key(runtime.desired_states, key, module)
         runtime.desired_states.set_want(key, module, want)
         if is_retried:
             DeviceRetryMarks().mark(key, module)
@@ -819,6 +838,32 @@ def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
     store.set_want(key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING)
     if is_retried:
         DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
+
+
+def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> None:
+    """Give a container module what its containers are composed from, ahead of its install or start.
+
+    Hermes WebUI gets its port and its two secrets where its file holds
+    none, and a module that uses the AI gateway its own key. A locked vault
+    leaves a secret or the key for a later press.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The container module.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
+    store = runtime.desired_states
+    if module == DEVICE_HERMES_WEBUI_MODULE:
+        try:
+            ensure_config(store, key)
+        except VaultLockedError:
+            pass
+    if module in gateway_module_names():
+        device = DeviceRegistry().get(key)
+        ensure_module_key(store, key, module, device.name if device else "")
 
 
 def _refuse_containers_in_use(runtime: PanelRuntime, key: str) -> None:

@@ -1,0 +1,107 @@
+{
+  "_comment": "Hermes WebUI (nesquena/hermes-webui, MIT) and Hermes Agent (NousResearch/hermes-agent, MIT, source at https://github.com/NousResearch/hermes-agent/tree/v2026.9.24), two images run as one tested pair on the Containers module. The module's version is the webui's; the agent image v2026.9.24 is pinned beside it. Each digest is the publisher's OCI index digest, covering amd64 and arm64; the webui's mirrors serve the same index, and the agent's docker.io source is reached through the docker.io mirrors the Containers module names. No releases: the pair is the one version a machine installs. The containers' tools fetch Python packages from the pypi source set.", "_source_scan": "scan: allow",
+  "name": "hermes_webui",
+  "title": "Hermes WebUI",
+  "description": "A web page for Hermes Agent, Nous Research's AI agent, opened from a client with a token",
+  "publisher": "nesquena/hermes-webui and NousResearch/hermes-agent",
+  "license": "MIT",
+  "corresponding_source": "https://github.com/nesquena/hermes-webui/tree/v{version}", "_corresponding_scan": "scan: allow",
+  "platforms": {
+    "linux": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "0.52.492",
+          "artifacts": [
+            {
+              "name": "webui",
+              "kind": "image",
+              "digest": "sha256:e507cafa7b112de9abd58348423ded28a8182539e6ebb5f95be603f20aff52e6", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/nesquena/hermes-webui", "ghcr.nju.edu.cn/nesquena/hermes-webui", "ghcr.m.daocloud.io/nesquena/hermes-webui"]
+            },
+            {
+              "name": "agent",
+              "kind": "image",
+              "digest": "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/nousresearch/hermes-agent"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "0.52.492",
+          "artifacts": [
+            {
+              "name": "webui",
+              "kind": "image",
+              "digest": "sha256:e507cafa7b112de9abd58348423ded28a8182539e6ebb5f95be603f20aff52e6", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/nesquena/hermes-webui", "ghcr.nju.edu.cn/nesquena/hermes-webui", "ghcr.m.daocloud.io/nesquena/hermes-webui"]
+            },
+            {
+              "name": "agent",
+              "kind": "image",
+              "digest": "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/nousresearch/hermes-agent"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "0.52.492",
+          "artifacts": [
+            {
+              "name": "webui",
+              "kind": "image",
+              "digest": "sha256:e507cafa7b112de9abd58348423ded28a8182539e6ebb5f95be603f20aff52e6", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/nesquena/hermes-webui", "ghcr.nju.edu.cn/nesquena/hermes-webui", "ghcr.m.daocloud.io/nesquena/hermes-webui"]
+            },
+            {
+              "name": "agent",
+              "kind": "image",
+              "digest": "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/nousresearch/hermes-agent"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "0.52.492",
+          "artifacts": [
+            {
+              "name": "webui",
+              "kind": "image",
+              "digest": "sha256:e507cafa7b112de9abd58348423ded28a8182539e6ebb5f95be603f20aff52e6", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/nesquena/hermes-webui", "ghcr.nju.edu.cn/nesquena/hermes-webui", "ghcr.m.daocloud.io/nesquena/hermes-webui"]
+            },
+            {
+              "name": "agent",
+              "kind": "image",
+              "digest": "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/nousresearch/hermes-agent"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    }
+  }
+}

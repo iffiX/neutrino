@@ -257,3 +257,71 @@ def test_the_served_models_are_probed_with_the_hubs_own_key(unlocked, monkeypatc
 
     assert ai_keys.gateway_models(served) == ["m1", "m2"]
     assert served.asked == [(config.listen_port, config.hub_key.open_key())]
+
+
+@pytest.fixture
+def module_store(unlocked, monkeypatch):
+    """A desired state store under the same config directory, for a container module's file."""
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", unlocked
+    )
+    return DesiredStateStore()
+
+
+def test_a_container_module_s_key_is_minted_once_into_its_file_and_served(
+    module_store, unlocked
+):
+    import yaml
+
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    material = ai_keys.ensure_module_key(module_store, "dev-1", "hermes_webui", "argon")
+
+    assert material
+    assert (
+        ai_keys.ensure_module_key(module_store, "dev-1", "hermes_webui", "argon")
+        == material
+    )
+    assert ai_keys.module_key(module_store, "dev-1", "hermes_webui") == material
+    [(device_id, module, key)] = load_module_keys()
+    assert (device_id, module, key.name) == (
+        "dev-1",
+        "hermes_webui",
+        "device/argon/hermes_webui",
+    )
+    rendered = yaml.safe_load((unlocked / "generated" / "cliproxyapi.yaml").read_text())
+    assert material in rendered["api-keys"]
+    assert load_config().device_keys == {}
+
+
+def test_a_container_module_s_key_is_voided_and_the_render_drops_it(
+    module_store, unlocked
+):
+    import yaml
+
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    module_store.write("dev-1", "hermes_webui", {"port": 8787})
+    material = ai_keys.ensure_module_key(module_store, "dev-1", "hermes_webui", "argon")
+
+    ai_keys.revoke_module_key(module_store, "dev-1", "hermes_webui")
+
+    assert module_store.read("dev-1", "hermes_webui") == {"port": 8787}
+    assert ai_keys.module_key(module_store, "dev-1", "hermes_webui") == ""
+    assert load_module_keys() == []
+    rendered = yaml.safe_load((unlocked / "generated" / "cliproxyapi.yaml").read_text())
+    assert material not in rendered["api-keys"]
+
+
+def test_a_locked_vault_mints_no_container_module_key(config_dir, monkeypatch):
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config_dir
+    )
+    store = DesiredStateStore()
+
+    assert ai_keys.ensure_module_key(store, "dev-1", "hermes_webui", "argon") is None
+    assert store.read("dev-1", "hermes_webui") == {}

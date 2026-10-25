@@ -39,6 +39,7 @@ class CliproxyApiConfigRenderer:
         api_keys: dict[str, str],
         client_keys: list[str],
         management_key: str,
+        module_keys: "list[str] | tuple" = (),
     ):
         """
         Args:
@@ -50,12 +51,15 @@ class CliproxyApiConfigRenderer:
             client_keys: The resolved client keys devices authenticate with.
             management_key: The resolved management API key; empty renders
                 with the management API and usage metering off.
+            module_keys: The resolved keys of the container modules that use
+                the gateway, read from each device's module file.
         """
         self._config = config
         self._providers = providers
         self._api_keys = api_keys
         self._client_keys = client_keys
         self._management_key = management_key
+        self._module_keys = list(module_keys)
 
     def render(self) -> str:
         """Render the configuration file.
@@ -70,6 +74,7 @@ class CliproxyApiConfigRenderer:
             "api-keys": [
                 *self._client_keys,
                 *self._config.device_key_material(),
+                *self._module_keys,
             ],
             "logging-to-file": False,
         }

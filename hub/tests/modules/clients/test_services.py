@@ -736,3 +736,51 @@ def test_a_panel_token_is_refused_in_the_service_streams_order(config_dir):
     registry.set_disabled(client_id, True)
     assert panel_material(runtime, client_id) == ("client_disabled", {})
     assert runtime.minted == []
+
+
+HERMES_ENTRY = {
+    **ENTRY,
+    "id": "hermes_webui_dev",
+    "title": "Hermes WebUI",
+    "payload": {"url": "http://192.168.100.7:8787/", "is_token_required": True},
+    "description_code": "hermes_webui_module",
+    "description_params": {"host": "192.168.100.7"},
+    "device_id": "dev",
+}
+
+
+class ModuleMintingDesiredStates(StubDesiredStates):
+    def __init__(self):
+        super().__init__()
+        self.minted: list = []
+
+    def module_token(self, key, module):
+        self.minted.append((key, module))
+        return f"fresh-{len(self.minted)}" if key == "dev" else ""
+
+
+def test_hermes_webui_s_material_is_a_token_minted_for_each_answer(config_dir):
+    runtime = FakeRuntime(entries=(HERMES_ENTRY,))
+    runtime.desired_states = ModuleMintingDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    first = service_material(runtime, client_id, "hermes_webui_dev")
+    second = service_material(runtime, client_id, "hermes_webui_dev")
+
+    assert (first, second) == (("", {"token": "fresh-1"}), ("", {"token": "fresh-2"}))
+    assert runtime.desired_states.minted == [
+        ("dev", "hermes_webui"),
+        ("dev", "hermes_webui"),
+    ]
+
+
+def test_hermes_webui_s_secret_that_does_not_open_is_vault_locked(config_dir):
+    entry = {**HERMES_ENTRY, "device_id": "elsewhere"}
+    runtime = FakeRuntime(entries=(entry,))
+    runtime.desired_states = ModuleMintingDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    assert service_material(runtime, client_id, "hermes_webui_dev") == (
+        "vault_locked",
+        {},
+    )

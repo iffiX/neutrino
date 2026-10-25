@@ -27,8 +27,15 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CODEG_SECRET_BYTES,
     DEVICE_CODEG_SECRET_KEY,
     DEVICE_GITEA_MODULE,
+    DEVICE_HERMES_WEBUI_MODULE,
+    DEVICE_HERMES_WEBUI_PASSWORD_AAD,
+    DEVICE_HERMES_WEBUI_PASSWORD_KEY,
+    DEVICE_HERMES_WEBUI_SECRET_AAD,
+    DEVICE_HERMES_WEBUI_SECRET_BYTES,
+    DEVICE_HERMES_WEBUI_SECRET_KEY,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
+    DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     DEVICE_MODULE_PANEL_INSTANCES,
@@ -45,9 +52,11 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_CODEG_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_GITEA_TITLE,
+    SERVICES_HERMES_WEBUI_TITLE,
 )
 
 
@@ -75,11 +84,12 @@ class DeviceModuleRow:
 
     Attributes:
         name: The manifest name.
-        kind: One of the four kinds, ``DEVICE_MODULE_KIND_*``.
+        kind: One of the five kinds, ``DEVICE_MODULE_KIND_*``.
         config_file: The module's file under ``config/devices/<id>/``.
         sealed_fields: The fields the vault seals in each instance's record,
-            in the order the state carries them opened; empty for a module
-            that keeps no secret per instance.
+            or in the file itself for a container module, in the order the
+            state carries them opened; empty for a module that keeps no
+            secret.
         description_code: The published entry's ``description_code``; empty
             for a module that publishes nothing.
         entry_title: The published entry's title, with ``{account}`` for an
@@ -238,6 +248,29 @@ DEVICE_MODULE_ROWS = (
         "podman",
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         description_code=SERVICES_DESCRIPTION_CONTAINER,
+    ),
+    _row(
+        DEVICE_HERMES_WEBUI_MODULE,
+        DEVICE_MODULE_KIND_CONTAINER,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_HERMES_WEBUI_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_HERMES_WEBUI_SECRET_AAD,
+                secret_bytes=DEVICE_HERMES_WEBUI_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_HERMES_WEBUI_PASSWORD_KEY,
+                opened_key="password",
+                aad=DEVICE_HERMES_WEBUI_PASSWORD_AAD,
+                secret_bytes=DEVICE_HERMES_WEBUI_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
+        entry_title=SERVICES_HERMES_WEBUI_TITLE,
+        token_field=DEVICE_HERMES_WEBUI_SECRET_KEY,
+        is_token_minted=True,
+        is_gateway_used=True,
     ),
     _row("zfs", DEVICE_MODULE_KIND_SYSTEM_PACKAGE),
 )

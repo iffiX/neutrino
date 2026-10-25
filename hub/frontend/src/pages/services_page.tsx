@@ -90,6 +90,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   cloudcli_module: "ui.services.description_cloudcli_module",
   code_server_module: "ui.services.description_code_server_module",
   codeg_module: "ui.services.description_codeg_module",
+  hermes_webui_module: "ui.services.description_hermes_webui_module",
 };
 // The module a description names by the module's title.
 const DESCRIPTION_MODULES: Record<string, string> = {
