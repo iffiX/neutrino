@@ -45,8 +45,8 @@ body:
     attributes:
       label: Edition / 哪个版本
       options:
-        - Full edition, from GitHub / 完整版
-        - Mainland edition, from Gitee / 国内版
+        - Full edition (intl) / 完整版
+        - Mainland edition (cn, files named -cn) / 国内版（文件名带 -cn）
   - type: input
     id: system
     attributes:

@@ -1,8 +1,9 @@
 name: publish
 
 # Turns the draft the release workflow opened for a tag into the published
-# release, with the notes a person wrote. Gitee releases are paused, so
-# nothing is published there.
+# release, with the notes a person wrote, then publishes the same release to
+# CNB, the second release site. A tag with a suffix is a pre-release, which
+# publish_cn.py leaves to GitHub alone.
 on:
   workflow_dispatch:
     inputs:
@@ -17,18 +18,33 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   publish:
-    name: publish the draft
+    name: publish the draft on GitHub and on CNB
     runs-on: ubuntu-24.04
     steps:
-      - env:
+      - uses: actions/checkout@v7
+
+      - name: Write the notes
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish the GitHub draft
+        env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-          NOTES: ${{ inputs.notes }}
         run: |
-          printf '%s\n' "$NOTES" > notes.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes-file notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes-file "$RUNNER_TEMP/notes.md"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,url --jq '"draft="+(.isDraft|tostring)+" "+.url'
 
+      # The files come from the release workflow's run for the tag, the
+      # artifact release_dist.
+      - name: Publish the release to CNB
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: python3 packaging/ci/publish_cn.py --tag "$TAG" --notes-file "$RUNNER_TEMP/notes.md"

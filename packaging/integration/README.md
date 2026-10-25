@@ -64,9 +64,9 @@ the folder out that way.
 ## Installing from a folder of packages
 
 Every lab install goes through the one-command script, pointed at a folder
-that holds the packages, `SHA256SUMS` and the two scripts. The release
-workflow's `release_dist` or `release_dist_cn` artifact is such a folder; a
-folder of local builds becomes one with:
+that holds the packages, `SHA256SUMS` and the scripts. The release
+workflow's `release_dist` artifact is such a folder, holding both editions;
+a folder of local builds becomes one with:
 
 ```bash
 cp packaging/install/install.sh packaging/install/install.ps1 dist/

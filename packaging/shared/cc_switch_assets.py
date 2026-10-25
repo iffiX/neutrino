@@ -3,8 +3,8 @@
 The client's packages take the build for a system and a machine at the pin
 in ``shared.constants``. The binary lands at the path the
 package names, executable by every account and writable by none but its
-owner. The mainland release carries every pinned file as upstream names it,
-with its licence beside them, for the hubs of its edition to fetch.
+owner. Every release holds every pinned file as upstream names it, with its
+licence beside them, for the hubs to fetch.
 
 Not pure: downloads, writes files.
 """

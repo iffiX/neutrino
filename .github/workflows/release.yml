@@ -1,16 +1,16 @@
 name: release
 
-# A tag builds everything in both editions and opens the intl draft; the
-# notes are written by a person. The cn packages are built from the mainland
-# source tree and left as the artifact release_dist_cn. workflow_dispatch
-# builds the same packages and attaches them as artifacts without touching
+# A tag builds every platform in both editions and opens one draft holding
+# both, with the install scripts, the cc-switch files, latest.json and one
+# SHA256SUMS; the notes are written by a person. workflow_dispatch builds the
+# same files and attaches them as the artifact release_dist without touching
 # releases, which is how the pipeline is tried out; its editions input cuts a
 # trial to one edition.
 #
 # Each job sets up its host, then runs one script under packaging/build and
 # checks what it built with packaging/ci/check.py; both run the same way on a
 # workstation of the same kind. A cn job does the same inside the unpacked
-# mainland tree, with --edition cn, for the platforms the cn release carries.
+# mainland tree, with --edition cn.
 on:
   push:
     tags: ["v*"]
@@ -21,21 +21,14 @@ on:
         type: choice
         options: [both, intl, cn]
         default: both
-      agent_package_url_base:
-        description: "where a trial's hubs fetch the agent packages they do not carry, such as a test release's download address; empty stamps none"
-        type: string
-        default: ""
 
 permissions:
   contents: write
 
-# Where each edition's release publishes its files, stamped into each hub
-# package's agent manifest so the hub can fetch an agent package it does not
-# carry. The one place a build names the release; a dispatch build names the
-# address its input gives, or none.
+# A tag's hub packages hold the release sites, from which a hub fetches the
+# agent packages it does not carry; a dispatch build's hold none.
 env:
-  AGENT_PACKAGE_URL_BASE: ${{ startsWith(github.ref, 'refs/tags/') && format('https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name) || inputs.agent_package_url_base }}
-  AGENT_PACKAGE_URL_BASE_CN: ${{ startsWith(github.ref, 'refs/tags/') && format('https://gitee.com/iffiX/neutrino/releases/download/{0}', github.ref_name) || inputs.agent_package_url_base }}
+  RELEASE_SITES: ${{ startsWith(github.ref, 'refs/tags/') && '--release-sites' || '' }}
 
 jobs:
   # After every agent: the hub package carries the agent package of its own
@@ -83,9 +76,7 @@ jobs:
           --architecture ${{ matrix.architecture }}
           --output-dir dist
           --agent-packages agent_packages
-          ${{ env.AGENT_PACKAGE_URL_BASE
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
 
       - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
 
@@ -239,9 +230,7 @@ jobs:
           --output-dir dist
           --architecture ${{ matrix.arch }}
           --agent-packages agent_packages
-          ${{ env.AGENT_PACKAGE_URL_BASE
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
 
       - run: python3 packaging/ci/check.py hub_macos dist/*.pkg
 
@@ -303,9 +292,7 @@ jobs:
           --architecture x64
           --agent-packages agent_packages
           --packet-dll build/packet_stub/packet.dll
-          ${{ env.AGENT_PACKAGE_URL_BASE
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
 
       # Uploaded before the check, so a package that fails it can still be
       # downloaded; a job that needs it waits on this job's result.
@@ -666,9 +653,10 @@ jobs:
 
   # One source archive: this tree at the commit, with the source of what the
   # packages carry under copyleft beside it, at the tags the binaries were
-  # built from.
+  # built from; and install.sh and install.ps1, stamped with the release
+  # sites.
   sources:
-    name: source archive
+    name: source archive and install scripts
     if: inputs.editions != 'cn'
     runs-on: ubuntu-24.04
     steps:
@@ -679,49 +667,73 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: sources
-          path: dist/*-source.tar.xz
+          path: dist/*
           if-no-files-found: error
 
+  # One draft holding both editions: every file the build jobs made, the
+  # four install scripts, the cc-switch files at their pin, latest.json and
+  # SHA256SUMS over all of it. A dispatch run that built one edition holds
+  # that edition alone.
   draft:
     name: checksums and draft release
-    if: inputs.editions != 'cn'
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     needs:
       [
         hub,
         hub_macos,
         hub_windows,
         agent,
+        agent_windows,
+        agent_macos,
         client,
         client_windows,
         client_macos,
         client_android,
         client_ios,
         sources,
+        sources_cn,
+        hub_cn,
+        hub_macos_cn,
+        hub_windows_cn,
+        agent_cn,
+        agent_windows_cn,
+        agent_macos_cn,
+        client_cn,
+        client_windows_cn,
+        client_macos_cn,
+        client_android_cn,
+        client_ios_cn,
       ]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
-      # Every artifact of the run but the cn ones.
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
-      - name: Collect the intl files
+      - name: Collect the files of both editions
         run: |
           mkdir dist
           for artifact in artifacts/*/; do
             case "$(basename "$artifact")" in
               # A check's evidence is no release file.
-              cn_* | *_cn | check_*) continue ;;
+              check_*) continue ;;
             esac
-            cp "$artifact"* dist/
+            for file in "$artifact"*; do
+              if [ -e "dist/$(basename "$file")" ]; then
+                echo "two artifacts hold $(basename "$file")" >&2
+                exit 1
+              fi
+              cp "$file" dist/
+            done
           done
 
-      # The two install scripts are release assets beside the packages.
-      - run: cp packaging/install/install.sh packaging/install/install.ps1 dist/
+      # The pinned cc-switch files and their licence, which the hubs fetch
+      # from the release sites.
+      - run: python3 packaging/build/build_cc_switch.py --output-dir dist
 
-      # SHA256SUMS covers every package and both scripts at once, so it is
+      # latest.json and SHA256SUMS over every file at once, so they are
       # written here rather than by the jobs that each produced one file.
       - run: python3 packaging/build/build_checksums.py --output-dir dist
 
@@ -748,10 +760,10 @@ jobs:
             dist/*
 
   # The mainland source tree: this tree without what cn leaves out, stamped
-  # cn, with the source of what the cn packages carry. Every cn job below
-  # unpacks it and builds inside it.
+  # cn, with the source of what the cn packages carry; and install-cn.sh and
+  # install-cn.ps1. Every cn job below unpacks the tree and builds inside it.
   sources_cn:
-    name: mainland source tree
+    name: mainland source tree and install scripts
     if: inputs.editions != 'intl'
     runs-on: ubuntu-24.04
     steps:
@@ -762,11 +774,11 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_sources
-          path: dist/*-cn-source.tar.xz
+          path: dist/*
           if-no-files-found: error
 
   agent_cn:
-    name: cn agent .deb (${{ matrix.architecture }})
+    name: cn agent .deb and .rpm (${{ matrix.architecture }})
     needs: [sources_cn]
     runs-on: ubuntu-24.04
     strategy:
@@ -789,7 +801,6 @@ jobs:
           python3 packaging/build/build_agent.py
           --edition cn
           --architecture ${{ matrix.architecture }}
-          --families debian
           --output-dir dist
         working-directory: cn
 
@@ -799,7 +810,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_agent_${{ matrix.architecture }}
-          path: cn/dist/*.deb
+          path: |
+            cn/dist/*.deb
+            cn/dist/*.rpm
           if-no-files-found: error
 
   agent_windows_cn:
@@ -841,11 +854,19 @@ jobs:
         shell: bash
         working-directory: cn
 
-  # Apple silicon alone: the cn release carries no Intel Mac package.
+  # Both Macs, as the intl job builds them.
   agent_macos_cn:
-    name: cn agent installer (macOS arm64)
+    name: cn agent installer (macOS ${{ matrix.arch }})
     needs: [sources_cn]
-    runs-on: macos-15
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -859,7 +880,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python3 packaging/build/build_agent_macos.py --edition cn --output-dir dist --architecture arm64
+      - run: python3 packaging/build/build_agent_macos.py --edition cn --output-dir dist --architecture ${{ matrix.arch }}
         working-directory: cn
 
       - run: python3 packaging/ci/check.py agent_macos dist/*.pkg
@@ -867,12 +888,12 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: cn_agent_macos_arm64
+          name: cn_agent_macos_${{ matrix.arch }}
           path: cn/dist/*.pkg
           if-no-files-found: error
 
   hub_cn:
-    name: cn hub .deb (${{ matrix.architecture }})
+    name: cn hub .deb, .rpm and Arch (${{ matrix.architecture }})
     needs: [agent_cn, agent_windows_cn, agent_macos_cn]
     runs-on: ubuntu-24.04
     strategy:
@@ -913,12 +934,9 @@ jobs:
           python3 packaging/build/build_hub.py
           --edition cn
           --architecture ${{ matrix.architecture }}
-          --families debian
           --output-dir dist
           --agent-packages ../agent_packages
-          ${{ env.AGENT_PACKAGE_URL_BASE_CN
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
         working-directory: cn
 
       - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
@@ -927,13 +945,25 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_hub_${{ matrix.architecture }}
-          path: cn/dist/*.deb
+          path: |
+            cn/dist/*.deb
+            cn/dist/*.rpm
+            cn/dist/*.pkg.tar.zst
           if-no-files-found: error
 
+  # Both Macs, as the intl job builds them.
   hub_macos_cn:
-    name: cn hub installer (macOS arm64)
+    name: cn hub installer (macOS ${{ matrix.arch }})
     needs: [agent_cn, agent_windows_cn, agent_macos_cn]
-    runs-on: macos-15
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -969,11 +999,9 @@ jobs:
           python3 packaging/build/build_hub_macos.py
           --edition cn
           --output-dir dist
-          --architecture arm64
+          --architecture ${{ matrix.arch }}
           --agent-packages ../agent_packages
-          ${{ env.AGENT_PACKAGE_URL_BASE_CN
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
         working-directory: cn
 
       - run: python3 packaging/ci/check.py hub_macos dist/*.pkg
@@ -981,7 +1009,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: cn_hub_macos_arm64
+          name: cn_hub_macos_${{ matrix.arch }}
           path: cn/dist/*.pkg
           if-no-files-found: error
 
@@ -1042,9 +1070,7 @@ jobs:
           --architecture x64
           --agent-packages ../agent_packages
           --packet-dll build/packet_stub/packet.dll
-          ${{ env.AGENT_PACKAGE_URL_BASE_CN
-              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
-              || '' }}
+          ${{ env.RELEASE_SITES }}
         working-directory: cn
 
       # Uploaded before the check, so a package that fails it can still be
@@ -1060,7 +1086,7 @@ jobs:
         working-directory: cn
 
   client_cn:
-    name: cn client .deb (${{ matrix.architecture }})
+    name: cn client .deb and .rpm (${{ matrix.architecture }})
     needs: [sources_cn]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -1084,7 +1110,6 @@ jobs:
           python3 packaging/build/build_client_desktop.py
           --edition cn
           --architecture ${{ matrix.architecture }}
-          --families debian
           --output-dir dist
         working-directory: cn
 
@@ -1094,7 +1119,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_client_${{ matrix.architecture }}
-          path: cn/dist/*.deb
+          path: |
+            cn/dist/*.deb
+            cn/dist/*.rpm
           if-no-files-found: error
 
   client_windows_cn:
@@ -1244,10 +1271,19 @@ jobs:
           path: cn/ci_evidence/*
           if-no-files-found: ignore
 
+  # Both Macs, as the intl job builds them.
   client_macos_cn:
-    name: cn client installer (macOS arm64)
+    name: cn client installer (macOS ${{ matrix.arch }})
     needs: [sources_cn]
-    runs-on: macos-15
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -1261,7 +1297,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python3 packaging/build/build_client_macos.py --edition cn --output-dir dist --architecture arm64
+      - run: python3 packaging/build/build_client_macos.py --edition cn --output-dir dist --architecture ${{ matrix.arch }}
         working-directory: cn
 
       - run: python3 packaging/ci/check.py client_macos dist/*.pkg
@@ -1269,7 +1305,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: cn_client_macos_arm64
+          name: cn_client_macos_${{ matrix.arch }}
           path: cn/dist/*.pkg
           if-no-files-found: error
 
@@ -1348,7 +1384,7 @@ jobs:
         working-directory: cn
         run: |
           apksigner="$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)"
-          digest="$("${apksigner}" verify --print-certs dist/*-android.apk \
+          digest="$("${apksigner}" verify --print-certs dist/*-android-cn.apk \
             | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer:) certificate SHA-256 digest: //p' | head -1)"
           echo "signed by ${digest}"
           test "${digest}" = "${ANDROID_RELEASE_CERT_SHA256}"
@@ -1368,12 +1404,12 @@ jobs:
           target: google_apis
           working-directory: cn
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: python3 packaging/ci/check.py client_android dist/neutrino-client-*-android-x86_64.apk
+          script: python3 packaging/ci/check.py client_android dist/neutrino-client-*-android-x86_64-cn.apk
 
       - uses: actions/upload-artifact@v7
         with:
           name: cn_client_android
-          path: cn/dist/*-android.apk
+          path: cn/dist/*-android-cn.apk
           if-no-files-found: error
 
   # The cn .ipa, built in the mainland tree as the intl one is.
@@ -1426,51 +1462,5 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_client_ios
-          path: cn/dist/*-ios.ipa
-          if-no-files-found: error
-
-  # SHA256SUMS over the cn packages, the cn install scripts and the mainland
-  # source tree, and the one artifact that holds them. Nothing of cn is
-  # attached to the GitHub release.
-  draft_cn:
-    name: cn checksums
-    needs:
-      [
-        sources_cn,
-        agent_cn,
-        hub_cn,
-        hub_macos_cn,
-        hub_windows_cn,
-        client_cn,
-        client_windows_cn,
-        client_macos_cn,
-        client_android_cn,
-        client_ios_cn,
-      ]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: cn_*
-          path: dist_cn
-          merge-multiple: true
-
-      - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xf dist_cn/*-cn-source.tar.xz -C cn --strip-components=1
-
-      # The install scripts the mainland tree holds, stamped cn.
-      - run: cp cn/packaging/install/install.sh cn/packaging/install/install.ps1 dist_cn/
-
-      # The pinned cc-switch release files and their licence, which the
-      # mainland hubs fetch from this release.
-      - run: python3 packaging/build/build_cc_switch.py --edition cn --output-dir ../dist_cn
-        working-directory: cn
-
-      - run: python3 packaging/build/build_checksums.py --edition cn --output-dir ../dist_cn
-        working-directory: cn
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release_dist_cn
-          path: dist_cn/*
+          path: cn/dist/*-ios-cn.ipa
           if-no-files-found: error

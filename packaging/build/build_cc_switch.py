@@ -1,13 +1,13 @@
 """Write the pinned cc-switch release files, with their licence, into a
 directory of release files.
 
-    python3 packaging/build/build_cc_switch.py --edition cn --output-dir dist_cn/
+    python3 packaging/build/build_cc_switch.py --output-dir dist/
 
 Runs on: any machine with Python 3.11 or newer. Each file comes from the
 pinned upstream url in ``packaging/shared/constants.py``, under the name
 upstream gives it, and is checked against its pinned sha256; the licence goes
-beside them as ``cc-switch-cli-v<version>-LICENSE.txt``. The mainland release
-attaches them all, for the hubs of its edition to fetch. Run it before
+beside them as ``cc-switch-cli-v<version>-LICENSE.txt``. Every release holds
+them all, for the hubs to fetch from the release sites. Run it before
 ``build_checksums.py``, so ``SHA256SUMS`` lists them.
 
 Not pure: downloads, writes files.

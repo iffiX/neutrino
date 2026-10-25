@@ -750,9 +750,8 @@ def test_the_check_runs_one_step_per_phase_each_with_its_evidence_uploaded(artif
 
 
 def test_no_check_evidence_reaches_a_release():
-    """The intl draft copies every artifact but the mainland ones and the
-    checks' evidence; the mainland draft takes only cn_* artifacts, which no
-    evidence artifact's name matches."""
+    """The draft copies every artifact of both editions but the checks'
+    evidence, whose every name starts with check_."""
     workflow = (
         Path(payload.__file__).resolve().parents[3]
         / ".github"
@@ -760,11 +759,16 @@ def test_no_check_evidence_reaches_a_release():
         / "release.yml"
     ).read_text(encoding="utf-8")
 
-    assert "cn_* | *_cn | check_*) continue ;;" in workflow
-    assert "pattern: cn_*" in workflow
-    for artifact in windows_client_jobs():
-        for phase in CHECK_PHASES:
-            assert not f"check_{artifact}_{phase}".startswith("cn_")
+    assert "              check_*) continue ;;" in workflow
+    for job in windows_client_jobs().values():
+        lines = job.splitlines()
+        uploads = [
+            lines[index - 1].strip()
+            for index, line in enumerate(lines)
+            if line.strip().startswith("path:") and "ci_evidence" in line
+        ]
+        assert len(uploads) == len(CHECK_PHASES)
+        assert all(name.startswith("name: check_") for name in uploads)
 
 
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():
