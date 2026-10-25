@@ -50,7 +50,7 @@ SERVICE_NOT_FROM_MANAGER = (
 )
 UNINSTALL_QUESTION = (
     "stop the agent and remove the units, launchd jobs, scheduled tasks and "
-    "firewall rules its modules added? Shares and accounts stay [y/N] "
+    "firewall rules it and its modules added? Shares and accounts stay [y/N] "
 )
 UNINSTALL_QUESTION_DARWIN = (
     "remove the agent from this Mac, with the launchd jobs and the fence its "

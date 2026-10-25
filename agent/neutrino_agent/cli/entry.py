@@ -106,8 +106,9 @@ def main() -> int:
     )
     uninstall_parser = service_actions.add_parser(
         "uninstall",
-        help="take away the units, tasks and firewall rules the modules added, "
-        "the entry the package's removal runs; on macOS, remove the agent",
+        help="take away the units, tasks and firewall rules the agent and its "
+        "modules added, the entry the package's removal runs; on macOS, remove "
+        "the agent",
     )
     uninstall_parser.add_argument(
         "--yes", action="store_true", help="remove without asking first"

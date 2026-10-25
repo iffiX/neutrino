@@ -6,9 +6,10 @@ Metrics come from kernel32, ntdll, PDH and the graphics kernel through
 ctypes, with ``nvidia-smi`` for NVIDIA cards and the agent's PowerShell host
 for the thermal zones; the interfaces come from iphlpapi, the accounts from
 netapi32, a home from the registry's profile list, the machine id from the
-registry. The Task Scheduler, the file share and the uninstall cleanup go
-through the PowerShell host. Windows has no account this agent steps down
-to and no package it installs, so those capabilities are not advertised.
+registry. The Task Scheduler, the file share, the relays' firewall rules
+and the uninstall cleanup go through the PowerShell host. Windows has no
+account this agent steps down to and no package it installs, so those
+capabilities are not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
