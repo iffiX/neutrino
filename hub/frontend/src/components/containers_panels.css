@@ -113,12 +113,14 @@
   color: var(--color-text);
 }
 
-/* A running container carries four buttons. The row wraps, so the group has
-   to wrap with it rather than run one unbreakable line past the card. */
+/* A running container's four buttons and its source chip, kept together at
+   the end of the row; the group wraps inside a row too narrow for it. */
 .container_row_actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
   margin-left: auto;
 }
 

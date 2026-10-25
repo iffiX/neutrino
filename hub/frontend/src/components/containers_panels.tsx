@@ -1010,10 +1010,10 @@ function ContainerRow({
             {t("ui.containers.row_start")}
           </button>
         )}
+        <span className={`badge ${SOURCE_TONES[state.source]}`}>
+          {t(SOURCE_KEYS[state.source])}
+        </span>
       </div>
-      <span className={`badge ${SOURCE_TONES[state.source]}`}>
-        {t(SOURCE_KEYS[state.source])}
-      </span>
     </div>
   );
 }
