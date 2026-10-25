@@ -1,10 +1,13 @@
 """The AI gateway forward: how the machine's AI tools reach the hub's gateway.
 
 The gateway answers on the hub's loopback alone, so while the state's
-``ai_tools`` section is on and its ``is_forwarded`` is true, which the hub
-sends false on its own machine alone, the agent listens on
-``127.0.0.1:8317``, the endpoint the switch writes into each tool, and opens
-``connect {id: ai}`` to the hub for each connection it accepts. Bytes go
+``ai_tools`` section says ``is_forwarded``, which the hub sends true on a
+managed machine while its AI tools setting is on or a container module that
+uses the gateway is installed, and false on its own machine, the agent
+listens on ``127.0.0.1:8317``, the endpoint the switch writes into each
+tool, and opens ``connect {id: ai}`` to the hub for each connection it
+accepts. The machine's containers reach the same port through the agent's
+relays. Bytes go
 both ways under credit; end of file on either side ends the stream and the
 connection, with no half-close. While the agent has no channel to the hub
 the listener accepts nothing and stays bound, and the connections waiting in
@@ -42,13 +45,12 @@ def is_forward_wanted(document: dict) -> bool:
         document: The state, ``{ai_tools, ...}``.
 
     Returns:
-        True while its ``ai_tools`` section is on and its ``is_forwarded``
-        is true.
+        True while its ``ai_tools`` section's ``is_forwarded`` is true.
     """
     section = document.get("ai_tools")
     if not isinstance(section, dict):
         return False
-    return section.get("is_enabled") is True and section.get("is_forwarded") is True
+    return section.get("is_forwarded") is True
 
 
 def _close_socket(connection: socket.socket) -> None:

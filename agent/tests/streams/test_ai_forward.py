@@ -1,8 +1,10 @@
 """The AI gateway forward: the machine's AI tools reach the hub's gateway.
 
 What these pin: the forward is wanted while the state's ``ai_tools`` section
-is on and says ``is_forwarded``, and on the hub's own machine, where the hub
-sends ``is_forwarded`` false, it is not; it listens on ``127.0.0.1`` alone, at 8317 unless told otherwise,
+says ``is_forwarded``, with the AI tools setting on or off, since a
+container module that uses the gateway asks for it too, and on the hub's
+own machine, where the hub sends ``is_forwarded`` false, it is not; it
+listens on ``127.0.0.1`` alone, at 8317 unless told otherwise,
 while wanted, and on nothing once the section is off; each connection it
 accepts opens one ``connect {id: ai}`` to the hub and its bytes cross both
 ways, up no faster than the hub's credit and down no faster than the credit
@@ -102,13 +104,11 @@ def dial(forward) -> socket.socket:
         (OWN, False),
         ({}, False),
         ({"ai_tools": {"is_enabled": True}}, False),
-        ({"ai_tools": {"is_enabled": False, "is_forwarded": True}}, False),
-        ({"ai_tools": {"is_enabled": "yes", "is_forwarded": "yes"}}, False),
+        ({"ai_tools": {"is_enabled": False, "is_forwarded": True}}, True),
+        ({"ai_tools": {"is_enabled": True, "is_forwarded": "yes"}}, False),
     ],
 )
-def test_the_forward_is_wanted_while_the_section_is_on_and_forwarded(
-    document, is_wanted
-):
+def test_the_forward_is_wanted_while_the_section_says_forwarded(document, is_wanted):
     assert is_forward_wanted(document) is is_wanted
 
 
