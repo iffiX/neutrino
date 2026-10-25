@@ -149,9 +149,18 @@ def test_every_uplink_is_masqueraded():
     assert 'oifname { "enp2s0", "wlp3s0" } masquerade' in ruleset
 
 
+# DNS from a container, which its network's resolver on the bridge's
+# gateway answers.
+PODMAN_DNS = [
+    'iifname "podman*" udp dport 53 accept',
+    'iifname "podman*" tcp dport 53 accept',
+    'iifname "cni-podman*" udp dport 53 accept',
+    'iifname "cni-podman*" tcp dport 53 accept',
+]
 ROUTER_INPUT = [
     "type nat hook input priority 100; policy accept;",
     'iifname "lo" accept',
+    *PODMAN_DNS,
     "ip saddr { 192.168.100.0/24, 100.92.0.0/16 } accept",
     "ip6 saddr { fd00:100::/64 } accept",
     'iifname "enp1s0" ip6 saddr fe80::/64 accept',
@@ -930,6 +939,58 @@ def test_the_overlay_scope_alone_diverts_only_the_overlay():
     assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" in ruleset
 
 
+def forward_chain(ruleset: str) -> list:
+    """The forward chain's lines, comments left out."""
+    chain = without_comments(ruleset).split("chain forward {", 1)[1]
+    chain = chain.split("\n    }", 1)[0]
+    return [line.strip() for line in chain.splitlines() if line.strip()]
+
+
+PODMAN_FORWARD = [
+    'iifname "podman*" accept',
+    'oifname "podman*" accept',
+    'iifname "cni-podman*" accept',
+    'oifname "cni-podman*" accept',
+]
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [entries for entries in TOPOLOGIES.values() if entries],
+    ids=[name for name, entries in TOPOLOGIES.items() if entries],
+)
+def test_a_box_that_routes_forwards_every_podman_bridge_both_ways(entries):
+    """netavark names a module's network podman1 and on, CNI cni-podman1 and
+    on; a drop policy would cut each container off beyond the box."""
+    chain = forward_chain(render(*entries))
+
+    assert "policy drop;" in chain[0]
+    assert chain[-4:] == PODMAN_FORWARD
+
+
+@pytest.mark.parametrize("mode", ["router", "side_gateway", "server"])
+def test_dns_from_a_podman_bridge_is_accepted_ahead_of_the_hub_ports_drops(mode):
+    """A container's resolver is its bridge's gateway, and port 53 is a hub
+    port where the hub answers names."""
+    chain = input_chain(
+        render(lan_entry("enp1s0", address="192.168.100.1"), mode=mode, overlays=[])
+    )
+    first_drop = min(
+        index for index, line in enumerate(chain) if line.endswith(" drop")
+    )
+
+    assert [line for line in chain if line in PODMAN_DNS] == PODMAN_DNS
+    assert all(chain.index(line) < first_drop for line in PODMAN_DNS)
+
+
+def test_a_podman_bridge_is_accepted_for_dns_alone():
+    chain = input_chain(
+        render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+
+    assert [line for line in chain if "podman" in line] == PODMAN_DNS
+
+
 @pytest.mark.parametrize("entries", TOPOLOGIES.values(), ids=list(TOPOLOGIES))
 def test_loopback_reaches_every_port_in_every_topology(entries):
     """The hub's own agent dials the agent port on loopback, exposed or not."""
@@ -946,7 +1007,11 @@ def test_direct_off_opens_nothing_to_every_sender():
         render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
     )
 
-    assert not any("accept" in line and "tcp dport" in line for line in chain)
+    assert not any(
+        "accept" in line and "tcp dport" in line
+        for line in chain
+        if line not in PODMAN_DNS
+    )
 
 
 def test_direct_opens_the_agent_port_alone_to_every_sender_on_the_enabled_interfaces():

@@ -20,6 +20,9 @@ ROUTER_NFT_FAMILY = "inet"
 # The priority of the hub's input chain, a nat chain: the kernel's own for
 # source NAT, which nft names no keyword for on the input hook.
 ROUTER_NFT_INPUT_PRIORITY = 100
+# Every Podman bridge, as the chains name it: netavark's ``podmanN`` and
+# CNI's ``cni-podmanN``.
+ROUTER_PODMAN_BRIDGE_PATTERNS = ("podman*", "cni-podman*")
 
 # What the whole machine is, stored in ``config/router/network.json``.
 # Everything downstream of it — which panels the page draws, whether the hub

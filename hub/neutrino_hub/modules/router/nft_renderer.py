@@ -10,6 +10,7 @@ import ipaddress
 
 from neutrino_hub import edition
 from neutrino_hub.modules.firewall.constants import (
+    FIREWALL_DNS_PORT,
     FIREWALL_PROTOCOL_TCP,
     FIREWALL_PROTOCOL_UDP,
 )
@@ -21,6 +22,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_NFT_FAMILY,
     ROUTER_NFT_INPUT_PRIORITY,
     ROUTER_NFT_TABLE,
+    ROUTER_PODMAN_BRIDGE_PATTERNS,
     ROUTER_RESERVED_NETWORKS,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -218,11 +220,12 @@ class RouterNftRenderer:
                 )
         lines += [
             "",
-            "        # Containers on the podman bridge: without these the",
-            "        # default-drop forward chain cuts every container off from",
-            "        # the internet, silently.",
-            '        iifname "podman0" accept',
-            '        oifname "podman0" accept',
+            "        # Containers on every Podman bridge, netavark's and CNI's.",
+            *(
+                f'        {direction}name "{bridge}" accept'
+                for bridge in ROUTER_PODMAN_BRIDGE_PATTERNS
+                for direction in ("iif", "oif")
+            ),
         ]
         lines.append("    }\n")
         return "\n".join(lines)
@@ -283,6 +286,12 @@ class RouterNftRenderer:
         ]
         if self._proxy is not None:
             lines += self._proxy.input_lines()
+        for bridge in ROUTER_PODMAN_BRIDGE_PATTERNS:
+            for protocol in (FIREWALL_PROTOCOL_UDP, FIREWALL_PROTOCOL_TCP):
+                lines.append(
+                    f'        iifname "{bridge}" {protocol.lower()} dport '
+                    f"{FIREWALL_DNS_PORT} accept"
+                )
         ipv4 = exposure.networks(ROUTER_FAMILY_IPV4)
         if ipv4:
             lines.append(f"        ip saddr {_element_set(ipv4)} accept")
