@@ -1,9 +1,7 @@
 {
   "code.agent_never_reported": "{device} 没有回报结果。",
   "code.agent_package_cache_unwritable": "中枢无法把被控端安装包写入自己的磁盘。",
-  "code.agent_package_fetch_failed": "中枢无法获取这个平台的被控端安装包。",
   "code.agent_package_missing": "中枢没有这台机器所在平台的被控端安装包。",
-  "code.agent_package_sha256_mismatch": "中枢取回的被控端安装包校验不通过。",
   "code.connect_failed": "主机没有响应。",
   "code.declared_service_unknown": "这个服务已经不存在，请重新加载。",
   "code.hub_unreachable": "设备连不上中枢，取不到安装包：{detail}",

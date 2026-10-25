@@ -170,8 +170,8 @@ def test_a_failed_install_reads_install_failed_with_its_code_beside_its_want(api
     runtime.device_modules[DEVICE] = {
         "fakedesk": {
             "state": "install_failed",
-            "code": "module_fetch_failed",
-            "params": {"detail": "x"},
+            "code": "download_failed",
+            "params": {"file": "fake.tar.gz", "sources": []},
         }
     }
 
@@ -180,8 +180,8 @@ def test_a_failed_install_reads_install_failed_with_its_code_beside_its_want(api
     assert (row["state"], row["want"], row["code"], row["params"]) == (
         "install_failed",
         "installed",
-        "module_fetch_failed",
-        {"detail": "x"},
+        "download_failed",
+        {"file": "fake.tar.gz", "sources": []},
     )
 
 
@@ -193,26 +193,58 @@ def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
     assert (row["state"], row["want"], row["is_active"]) == ("unknown", "", False)
 
 
-def test_the_manifest_kind_reaches_the_row_for_the_ssh_confirm(api, monkeypatch):
-    client, _ = api
+def system_entry(runner: str, packages: list, **uninstall) -> dict:
+    """A ``system`` platform entry naming its packages."""
+    return {
+        "runner": runner,
+        "install": {
+            "method": "system",
+            "params": {
+                "version": "system",
+                "packages": packages,
+                "verify": f"{runner} --version",
+                "uninstall": {"packages": packages, "post_uninstall": [], **uninstall},
+            },
+        },
+    }
+
+
+def test_the_runner_and_the_method_of_the_platforms_entry_reach_the_row(
+    api, monkeypatch
+):
+    client, runtime = api
     monkeypatch.setattr(
         device_modules,
         "load_module_manifests",
         lambda: {
             "ssh_server": {
                 "title": "SSH server",
-                "kind": "openssh",
-                "platforms": {"linux-debian": {"service": "ssh"}},
+                "publisher": "OpenSSH",
+                "platforms": {
+                    "linux-debian": system_entry("openssh", ["openssh-server"])
+                },
             }
         },
     )
+    runtime.device_platform[DEVICE] = {
+        "os": "linux",
+        "family": "debian",
+        "arch": "amd64",
+    }
 
-    answer = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
 
-    assert answer["modules"][0]["kind"] == "openssh"
+    assert (row["runner"], row["method"], row["publisher"]) == (
+        "openssh",
+        "system",
+        "OpenSSH",
+    )
+    assert (row["license"], row["corresponding_source"]) == ("", "")
 
 
-def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monkeypatch):
+def test_a_builtin_entry_reads_builtin_where_the_system_holds_the_software(
+    api, monkeypatch
+):
     client, runtime = api
     monkeypatch.setattr(
         device_modules,
@@ -220,10 +252,12 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
         lambda: {
             "samba_mount": {
                 "title": "Samba mount",
-                "kind": "system_package",
                 "platforms": {
-                    "linux-debian": {"packages": ["cifs-utils"]},
-                    "windows": {},
+                    "linux-debian": system_entry("samba_mount", ["cifs-utils"]),
+                    "windows": {
+                        "runner": "samba_mount_native",
+                        "install": {"method": "builtin", "params": {}},
+                    },
                 },
             }
         },
@@ -231,7 +265,7 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
 
     runtime.device_platform[DEVICE] = {"os": "windows", "family": "", "arch": "amd64"}
     native = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
-    assert native["is_native"] is True
+    assert (native["method"], native["runner"]) == ("builtin", "samba_mount_native")
 
     runtime.device_platform[DEVICE] = {
         "os": "linux",
@@ -239,30 +273,35 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
         "arch": "amd64",
     }
     package = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
-    assert package["is_native"] is False
+    assert package["method"] == "system"
 
 
 def test_whether_an_uninstall_keeps_the_data_reaches_the_row(api, monkeypatch):
-    """The confirmation says which, so the row carries the branch's word."""
+    """The confirmation says which, so the row carries the entry's word; a
+    ``system`` entry keeps the data."""
     client, runtime = api
+    hub_entry = {
+        "runner": "sample",
+        "install": {
+            "method": "hub",
+            "params": {
+                "version": "1.0",
+                "releases": [],
+                "artifacts": [],
+                "verify": "sample --version",
+                "uninstall": {"post_uninstall": [], "is_data_kept": False},
+            },
+        },
+    }
     monkeypatch.setattr(
         device_modules,
         "load_module_manifests",
         lambda: {
             "sample": {
                 "title": "Sample",
-                "kind": "system_package",
                 "platforms": {
-                    "linux-debian": {
-                        "packages": ["sample"],
-                        "verify": "sample --version",
-                        "uninstall": {
-                            "packages": ["sample"],
-                            "post_uninstall": [],
-                            "is_data_kept": False,
-                        },
-                    },
-                    "linux-rhel": {"packages": ["sample"], "verify": "sample -v"},
+                    "linux-debian": hub_entry,
+                    "linux-rhel": system_entry("sample", ["sample"]),
                 },
             }
         },
@@ -281,12 +320,17 @@ def test_whether_an_uninstall_keeps_the_data_reaches_the_row(api, monkeypatch):
     assert row["is_data_kept"] is True
 
 
-def test_the_installer_tier_reaches_the_row(api):
-    client, _ = api
+def test_the_method_reaches_the_row(api):
+    client, runtime = api
+    runtime.device_platform[DEVICE] = {
+        "os": "linux",
+        "family": "debian",
+        "arch": "amd64",
+    }
 
     answer = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
 
-    assert answer["modules"][0]["installer"] == "hub"
+    assert answer["modules"][0]["method"] == "hub"
 
 
 @pytest.mark.parametrize(
@@ -432,7 +476,7 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
     [
         (
             {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
-            ("system_package", "platform", "system", "", ""),
+            ("podman", "system", "podman-container-tools/podman", "", ""),
         ),
         (
             WINDOWS,
@@ -456,7 +500,7 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
         ),
     ],
 )
-def test_the_containers_row_carries_the_identity_of_the_platforms_branch(
+def test_the_containers_row_carries_the_runner_and_method_of_the_platforms_entry(
     api, monkeypatch, platform, identity
 ):
     client, runtime = api
@@ -467,9 +511,9 @@ def test_the_containers_row_carries_the_identity_of_the_platforms_branch(
 
     row = {entry["name"]: entry for entry in rows["modules"]}["podman"]
     assert (
-        row["kind"],
-        row["installer"],
-        row["source"],
+        row["runner"],
+        row["method"],
+        row["publisher"],
         row["license"],
         row["corresponding_source"],
     ) == identity
@@ -500,9 +544,11 @@ def test_a_machine_below_the_entry_floor_cannot_run_the_module(api, monkeypatch)
         lambda: {
             "floored": {
                 "title": "Floored",
-                "installer": "hub",
                 "platforms": {
-                    "linux-amd64": {"verify": "f --version", "min_version": "2.28"}
+                    "linux-amd64": {
+                        **system_entry("floored", ["floored"]),
+                        "min_version": "2.28",
+                    }
                 },
             }
         },
@@ -1007,9 +1053,9 @@ def test_a_module_the_agent_carries_is_a_row_on_every_system_with_its_want(
         runtime.device_platform[DEVICE] = platform
         rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
         row = {entry["name"]: entry for entry in rows["modules"]}[name]
-        assert (row["installer"], row["is_supported"], row["is_native"]) == (
+        assert (row["method"], row["runner"], row["is_supported"]) == (
             "agent",
-            True,
+            name,
             True,
         )
     assert row["want"] == ("running" if name == "terminal" else "stopped")

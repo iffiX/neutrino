@@ -1,128 +1,190 @@
 {
-  "_comment": "CloudCLI, hub-tier: the module's one component is the nodejs.org standalone build of Node.js 22 LTS at one pinned release, which the agent unpacks under cloudcli/node without the archive's top directory; the agent then installs the npm package @cloudcli-ai/cloudcli at the pinned version into each account and runs it as that account. Each url and sha256 is what nodejs.org/dist/v22.23.3/SHASUMS256.txt names, and each cn_url the same file on npmmirror, which keeps every release. corresponding_source names CloudCLI's source at the pinned tag.",
+  "_comment": "CloudCLI, the npm package @cloudcli-ai/cloudcli, installed per account with the module's own Node.js. The node artifact is the nodejs.org standalone build of Node.js 22 LTS at one pinned release for every version, unpacked under cloudcli/node without the archive's top directory; each digest is what nodejs.org/dist/v22.23.3/SHASUMS256.txt names, and npmmirror serves the same files. The cloudcli artifact is the npm package, its digest the integrity registry.npmjs.org gives the tested version; its hosts are the ones better-sqlite3's prebuild-install fetches its binary from, the GitHub release first. node-pty and bcrypt carry their binaries inside their npm packages.",
   "name": "cloudcli",
   "title": "CloudCLI",
-  "kind": "cloudcli",
-  "installer": "hub",
-  "source": "nodejs.org",
-  "version": "1.37.3",
-  "license": "AGPL-3.0",
-  "corresponding_source": "https://github.com/siteboon/claudecodeui/tree/v1.37.3", "_source_scan": "scan: allow",
   "description": "AI coding sessions in the browser, one per account, opened from a client with a token",
-  "npm_environment": {
-    "_comment": "What npm runs with beside the edition's registry, by edition. Of CloudCLI 1.37.3's native dependencies, node-pty and bcrypt carry their prebuilt binaries inside their npm packages; better-sqlite3's prebuild-install fetches its binary from GitHub unless npm_config_better_sqlite3_binary_host names a mirror, and npmmirror serves it for Node 22 on linux-x64, linux-arm64, darwin-x64, darwin-arm64, win32-x64 and win32-arm64.",
-    "intl": {},
-    "cn": {
-      "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3", "_host_scan": "scan: allow"
-    }
-  },
+  "publisher": "siteboon/claudecodeui",
+  "license": "AGPL-3.0",
+  "corresponding_source": "https://github.com/siteboon/claudecodeui/tree/v{version}", "_source_scan": "scan: allow",
   "platforms": {
     "linux-amd64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.gz", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-linux-x64.tar.gz", "_cn_url_scan": "scan: allow",
-          "sha256": "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af", "_sha256_scan": "scan: allow",
-          "package_kind": "tar",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "tar_gz",
+              "directory": "node",
+              "file": "node-v22.23.3-linux-x64.tar.gz",
+              "digest": "sha256:1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "linux-arm64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-arm64.tar.gz", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-linux-arm64.tar.gz", "_cn_url_scan": "scan: allow",
-          "sha256": "5ced2d48d1d7198739b7f86804de0171aefb6823b684b12341d3321afc3cb0b2", "_sha256_scan": "scan: allow",
-          "package_kind": "tar",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "tar_gz",
+              "directory": "node",
+              "file": "node-v22.23.3-linux-arm64.tar.gz",
+              "digest": "sha256:5ced2d48d1d7198739b7f86804de0171aefb6823b684b12341d3321afc3cb0b2", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "windows-amd64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-win-x64.zip", "_cn_url_scan": "scan: allow",
-          "sha256": "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71", "_sha256_scan": "scan: allow",
-          "package_kind": "zip",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "zip",
+              "directory": "node",
+              "file": "node-v22.23.3-win-x64.zip",
+              "digest": "sha256:2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "windows-arm64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-arm64.zip", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-win-arm64.zip", "_cn_url_scan": "scan: allow",
-          "sha256": "33dad22e4cef5ee8f9fbb1b0d037fdacd0e56d12a4580f0d63f68b894deab535", "_sha256_scan": "scan: allow",
-          "package_kind": "zip",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "zip",
+              "directory": "node",
+              "file": "node-v22.23.3-win-arm64.zip",
+              "digest": "sha256:33dad22e4cef5ee8f9fbb1b0d037fdacd0e56d12a4580f0d63f68b894deab535", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "darwin-amd64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-darwin-x64.tar.gz", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-darwin-x64.tar.gz", "_cn_url_scan": "scan: allow",
-          "sha256": "8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8", "_sha256_scan": "scan: allow",
-          "package_kind": "tar",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "tar_gz",
+              "directory": "node",
+              "file": "node-v22.23.3-darwin-x64.tar.gz",
+              "digest": "sha256:8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "darwin-arm64": {
-      "components": [
-        {
-          "name": "node",
-          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz", "_url_scan": "scan: allow",
-          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz", "_cn_url_scan": "scan: allow",
-          "sha256": "23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53", "_sha256_scan": "scan: allow",
-          "package_kind": "tar",
-          "directory": "node"
+      "runner": "cloudcli",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.37.3",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@cloudcli-ai/cloudcli"}],
+          "artifacts": [
+            {
+              "name": "node",
+              "kind": "tar_gz",
+              "directory": "node",
+              "file": "node-v22.23.3-darwin-arm64.tar.gz",
+              "digest": "sha256:23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53", "_digest_scan": "scan: allow",
+              "sources": ["https://nodejs.org/dist/v22.23.3/{file}", "https://registry.npmmirror.com/-/binary/node/v22.23.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "cloudcli",
+              "kind": "npm",
+              "package": "@cloudcli-ai/cloudcli",
+              "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
+              "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     }
   }

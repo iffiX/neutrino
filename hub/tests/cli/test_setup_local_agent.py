@@ -185,13 +185,11 @@ def test_the_carried_package_installs_with_no_network(box, monkeypatch, tmp_path
             {
                 "deb-amd64": {
                     "name": name,
-                    "url": f"https://example.invalid/{name}",
                     "sha256": hashlib.sha256(content).hexdigest(),
                     "size": len(content),
                 },
                 "msi-amd64": {
                     "name": "neutrino-agent-0.5.0-windows-amd64.msi",
-                    "url": "https://example.invalid/x.msi",
                     "sha256": "0" * 64,
                     "size": 1,
                 },
@@ -200,15 +198,21 @@ def test_the_carried_package_installs_with_no_network(box, monkeypatch, tmp_path
         encoding="utf-8",
     )
 
-    def offline(*args, **kwargs):
-        raise AssertionError("the local agent was downloaded")
+    class OfflineFetcher:
+        def fetch_file(self, **kwargs):
+            raise AssertionError("the local agent was downloaded")
 
-    monkeypatch.setattr(agent_package.urllib.request, "urlopen", offline)
+    sites = ({"files": "https://example.invalid/{tag}/", "latest": ""},)
     monkeypatch.setattr(
         setup,
         "AgentPackageCache",
         lambda: agent_package.AgentPackageCache(
-            root=cache_dir, manifest_path=manifest, pinned_dir=tmp_path / "none"
+            root=cache_dir,
+            manifest_path=manifest,
+            pinned_dir=tmp_path / "none",
+            fetcher=OfflineFetcher(),
+            sites=sites,
+            hub_version="0.5.0",
         ),
     )
     reporter = FakeReporter()

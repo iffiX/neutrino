@@ -1,1145 +1,599 @@
-"""The agent module cache: resolution, one fetch, and what it refuses.
+"""The module cache: one artifact by its digest, fetched once, and what it refuses.
 
-Nothing here reaches the network — every fetch is replaced. What is pinned
-is the judgment around it: which entry a platform resolves to, that two
-askers share one fetch, that a manifest edit is never served the old file,
-and that losing the directory costs a download and nothing else.
+Nothing here reaches the network. The manifests are the test's own, every
+fetch goes through a fake fetcher or a source served on loopback, and the
+cache's root is a temporary directory. What is pinned is the judgment
+around the fetch: which entry and which artifact a ``package {module,
+artifact, digest}`` names, the file named by its digest, the head check, the
+2 GiB limit, two askers sharing one fetch, and the files a new one leaves.
 """
 
 import hashlib
-import os
 import threading
-import urllib.error
 
 import pytest
 
+from neutrino_hub.exceptions import DownloadTooLargeError
 from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.modules.devices import agent_module_cache
 from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
-    AgentModuleFetchProgress,
-    is_version_below,
-    latest_release_url,
-    looks_like_package,
-    platform_keys,
-    resolve_platform_entry,
+    AgentModuleSendProgress,
+    clear_module_cache,
+    looks_like_kind,
 )
+from neutrino_hub.modules.devices.constants import AGENT_MODULE_FETCH_LIMIT_BYTES
+from tests.conftest import FakeSourceFetcher
+from tests.utils.test_source_fetch import Behaviour, Source
+from tests.utils.test_source_fetch import fetcher as loopback_fetcher
 
-DEB = b"!<arch>debian-package-bytes"
-AMD64_KEY = "linux-debian-amd64"
+GZIP = b"\x1f\x8b"
+ZSTD = b"\x28\xb5\x2f\xfd"
+MACHO = b"\xcf\xfa\xed\xfe"
+MSI = b"\xd0\xcf\x11\xe0"
+APP = GZIP + b"the app's archive"
+IMAGE = ZSTD + b"the machine image"
+BINARY = MACHO + b"a release binary"
+INSTALLER = MSI + b"a windows installer"
+OTHER = GZIP + b"another module's archive"
+SWITCH = GZIP + b"cc-switch's archive"
+OLD = GZIP + b"an artifact no manifest pins any more"
+MEGABYTE = 1024 * 1024
 
-MANIFEST = {
-    "name": "fakedesk",
-    "platforms": {
-        "linux-debian-amd64": {
-            "url": "https://vendor.example/fakedesk-amd64.deb",
-            "package_kind": "deb",
-        },
-        "linux-debian-arm64": {
-            "url": "https://vendor.example/fakedesk-arm64.deb",
-            "package_kind": "deb",
-        },
-        "darwin": {"url": "https://vendor.example/fakedesk.dmg", "package_kind": "dmg"},
-    },
-}
-
-AMD64 = {"os": "linux", "family": "debian", "arch": "amd64"}
-ARM64 = {"os": "linux", "family": "debian", "arch": "arm64"}
-DARWIN = {"os": "darwin", "family": "", "arch": "arm64"}
-UNKNOWN = {"os": "windows", "family": "", "arch": "amd64"}
-LINUX_AMD = {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"}
-
-
-@pytest.fixture
-def cache(tmp_path):
-    """A cache rooted in a temporary directory."""
-    return AgentModuleCache(root=tmp_path / "agent_module_cache")
+LINUX = {"os": "linux", "family": "debian", "arch": "amd64"}
+DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.1"}
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+OLD_WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+FREEBSD = {"os": "freebsd", "family": "", "arch": "amd64"}
 
 
-def serving(content=DEB, fetches=None):
-    """An open that answers fixed bytes and counts the calls."""
-
-    def open_(request):
-        if fetches is not None:
-            fetches.append(request.full_url)
-        return ChunkedResponse(content)
-
-    return open_
+def digest(body: bytes) -> str:
+    return "sha256:" + hashlib.sha256(body).hexdigest()
 
 
-def left_on_disk(cache) -> list:
-    """Every file the cache directory holds, a hidden partial one included."""
-    if not cache._root.is_dir():
-        return []
-    return sorted(os.listdir(cache._root))
+def hexed(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
 
 
-def test_keys_run_most_specific_first_with_a_family():
-    assert platform_keys(AMD64) == [
-        "linux-debian-amd64",
-        "linux-debian",
-        "linux-amd64",
-        "linux",
-    ]
-
-
-def test_keys_without_a_family_skip_the_family_pair():
-    assert platform_keys(UNKNOWN) == ["windows-amd64", "windows"]
-
-
-def test_a_machine_that_has_not_reported_matches_nothing():
-    assert platform_keys({}) == []
-
-
-@pytest.mark.parametrize(
-    "platform, expected_key",
-    [
-        (AMD64, "linux-debian-amd64"),
-        (ARM64, "linux-debian-arm64"),
-        (DARWIN, "darwin"),
-    ],
-)
-def test_each_platform_resolves_to_its_own_entry(platform, expected_key):
-    key, entry = resolve_platform_entry(MANIFEST, platform)
-
-    assert key == expected_key
-    assert entry == MANIFEST["platforms"][expected_key]
-
-
-def test_a_platform_the_manifest_offers_nothing_resolves_to_nothing():
-    assert resolve_platform_entry(MANIFEST, UNKNOWN) == ("", None)
-
-
-def test_an_unsupported_platform_is_refused_before_any_fetch(cache, monkeypatch):
-    fetches: list = []
-    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
-
-    with pytest.raises(AgentArtifactFetchError) as raised:
-        cache.artifact(name="fakedesk", manifest=MANIFEST, platform=UNKNOWN)
-
-    assert raised.value.code == "no_platform_build"
-    assert fetches == []
-
-
-def test_the_bytes_land_under_the_key_with_their_digest(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_open", serving())
-
-    artifact = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    assert artifact.path.read_bytes() == DEB
-    assert artifact.package_kind == "deb"
-    assert artifact.key.startswith("fakedesk-linux-debian-amd64-")
-
-
-def test_two_platforms_get_two_artifacts(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_open", serving())
-
-    amd = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-    arm = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=ARM64)
-
-    assert amd.key != arm.key
-
-
-def test_a_second_asker_waits_on_the_first_fetch_rather_than_starting_one(cache):
-    started = threading.Event()
-    release = threading.Event()
-    fetches: list = []
-
-    def slow_open(request):
-        fetches.append(request.full_url)
-        started.set()
-        release.wait(timeout=5)
-        return ChunkedResponse(DEB)
-
-    cache._open = slow_open
-    results: list = []
-
-    def ask():
-        results.append(
-            cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-        )
-
-    first = threading.Thread(target=ask)
-    first.start()
-    started.wait(timeout=5)
-    second = threading.Thread(target=ask)
-    second.start()
-    release.set()
-    first.join(timeout=5)
-    second.join(timeout=5)
-
-    # One fetch serves every device of that platform.
-    assert len(fetches) == 1
-    assert len(results) == 2
-    assert results[0].key == results[1].key
-
-
-def test_a_manifest_that_changes_its_url_is_not_served_the_old_file(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_open", serving(content=DEB))
-    first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    moved = {
-        **MANIFEST,
-        "platforms": {
-            **MANIFEST["platforms"],
-            "linux-debian-amd64": {
-                "url": "https://vendor.example/fakedesk-amd64-v5.deb",
-                "package_kind": "deb",
+def hub_entry(version: str, artifacts: list, **extra) -> dict:
+    """One platform entry of the hub method."""
+    return {
+        "runner": "fakedesk",
+        **extra,
+        "install": {
+            "method": "hub",
+            "params": {
+                "version": version,
+                "releases": [],
+                "artifacts": artifacts,
+                "verify": "true",
+                "uninstall": {"post_uninstall": [], "is_data_kept": True},
             },
         },
     }
-    newer = b"!<arch>newer-bytes"
-    monkeypatch.setattr(cache, "_open", serving(content=newer))
-    second = cache.artifact(name="fakedesk", manifest=moved, platform=AMD64)
 
-    # The key carries a digest of the entry itself, so the edit is a
-    # different artifact rather than a stale file under the same name, and
-    # the file it supersedes is deleted once the new one is in place.
-    assert second.key != first.key
-    assert second.path.read_bytes() == newer
-    assert not first.path.exists()
-    assert left_on_disk(cache) == [second.key]
 
-
-def test_a_held_artifact_is_not_fetched_again(cache, monkeypatch):
-    fetches: list = []
-    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
-
-    cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-    cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    assert len(fetches) == 1
-
-
-def test_losing_the_directory_costs_only_a_re_download(cache, monkeypatch):
-    import shutil
-
-    fetches: list = []
-    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
-    first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    shutil.rmtree(cache._root)
-    again = cache.artifact_for_key(
-        first.key, sources={"fakedesk": MANIFEST}, platform=AMD64
-    )
-
-    # The same key, fetched again — an order made before the directory went
-    # still finds its bytes, which is what makes this a cache.
-    assert again.key == first.key
-    assert again.path.read_bytes() == DEB
-    assert len(fetches) == 2
-
-
-def test_a_github_release_entry_resolves_and_fetches_plain(cache, monkeypatch):
-    # The hub tier's one fetch path: cc-switch names a GitHub release, the
-    # asset resolves by suffix, and the download is a plain fetch.
-    binary = b"\x1f\x8btar-binary-bytes"
-    monkeypatch.setattr(
-        AgentModuleCache,
-        "_resolve_github_asset",
-        staticmethod(lambda repo, pattern: f"https://github.example/{repo}/{pattern}"),
-    )
-    monkeypatch.setattr(cache, "_open", serving(content=binary))
-    manifest = {
-        "name": "cc_switch",
-        "installer": "hub",
-        "platforms": {
-            "linux-amd64": {
-                "github_repo": "example/cc-switch-cli",
-                "asset_pattern": "linux-x64.tar.gz",
-                "package_kind": "tar_binary",
-            }
-        },
-    }
-
-    artifact = cache.artifact(name="cc_switch", manifest=manifest, platform=AMD64)
-
-    assert artifact.path.read_bytes() == binary
-    assert artifact.package_kind == "tar_binary"
-
-
-def test_a_key_no_manifest_resolves_to_is_refused(cache):
-    with pytest.raises(AgentArtifactFetchError) as raised:
-        cache.artifact_for_key(
-            "nothing-like-this", sources={"fakedesk": MANIFEST}, platform=AMD64
-        )
-
-    assert raised.value.code == "module_artifact_unknown"
-
-
-@pytest.mark.parametrize("key", ["", "../escape", "a/b", ".hidden"])
-def test_a_key_that_is_not_one_names_no_file(cache, key):
-    assert cache.held(key) is None
-
-
-# --- the pinned checksum, and the source a copyleft license obliges ---
-
-
-def test_a_pinned_sha256_that_matches_is_fetched_and_kept(cache, monkeypatch):
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
-    manifest = _pinned_manifest(hashlib.sha256(DEB).hexdigest())
-
-    artifact = cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
-
-    assert artifact.path.read_bytes() == DEB
-    assert artifact.digest == hashlib.sha256(DEB).hexdigest()
-
-
-def test_a_download_that_misses_its_pin_is_refused_and_never_cached(cache, monkeypatch):
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
-    manifest = _pinned_manifest("0" * 64)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
-
-    assert refusal.value.code == "module_sha256_mismatch"
-    assert refusal.value.params["expected"] == "0" * 64
-    assert refusal.value.params["received"] == hashlib.sha256(DEB).hexdigest()
-    # Nothing a pin refused is left behind for the next asker to be served.
-    assert left_on_disk(cache) == []
-
-
-def test_a_real_disk_image_opens_like_one():
-    # RustDesk's dmg assets are zlib at best compression; a magic table that
-    # knows only one zlib level reads a genuine image as an error page.
-    for opening in (b"\x78\x01", b"\x78\x9c", b"\x78\xda", b"koly", b"BZh"):
-        assert looks_like_package(opening + b"rest-of-the-image", "dmg")
-
-
-def _serve_deb(request):
-    return ChunkedResponse(DEB)
-
-
-def _pinned_manifest(digest):
-    entry = {
-        "url": "https://vendor.example/rustdesk-amd64.deb",
-        "package_kind": "deb",
-    }
-    if digest:
-        entry["sha256"] = digest
-    return {"name": "rustdesk", "installer": "hub", "platforms": {AMD64_KEY: entry}}
-
-
-FLOORED = {
-    "name": "floored",
-    "platforms": {
-        "linux-amd64": {"url": "https://vendor.example/f", "min_version": "2.28"},
-        "windows": {"verify": "where f", "min_version": "17763"},
-    },
-}
-
-
-@pytest.mark.parametrize(
-    "platform, expected_key",
-    [
-        ({**AMD64, "version": "2.36"}, "linux-amd64"),
-        ({**AMD64, "version": "2.28"}, "linux-amd64"),
-        ({**AMD64, "version": "2.27"}, ""),
-        ({**AMD64, "version": "2.3"}, ""),
-        ({**UNKNOWN, "version": "26100"}, "windows"),
-        ({**UNKNOWN, "version": "17134"}, ""),
-    ],
-)
-def test_a_platform_below_the_entry_floor_resolves_to_nothing(platform, expected_key):
-    key, entry = resolve_platform_entry(FLOORED, platform)
-
-    assert key == expected_key
-    assert (entry is None) == (expected_key == "")
-
-
-def test_a_platform_that_reports_no_version_is_not_ruled_out():
-    assert resolve_platform_entry(FLOORED, AMD64)[0] == "linux-amd64"
-
-
-@pytest.mark.parametrize(
-    "version, floor, is_below",
-    [
-        ("15.3.1", "12.3", False),
-        ("12.2", "12.3", True),
-        ("12.3", "12.3", False),
-        ("2.28", "2.28.1", True),
-        ("26100", "17763", False),
-        ("", "2.28", False),
-        ("2.17", "", False),
-    ],
-)
-def test_versions_compare_part_by_part(version, floor, is_below):
-    assert is_version_below(version, floor) is is_below
-
-
-# --- progress lines while the artifact is fetched ---
-
-MEGABYTE = 1024 * 1024
-
-
-class ChunkedResponse:
-    """A response that hands out its body in the sizes asked for."""
-
-    def __init__(self, body: bytes, *, is_sized: bool = True, broken_at=None):
-        self._body = body
-        self._offset = 0
-        self._broken_at = broken_at
-        self.headers = {"Content-Length": str(len(body))} if is_sized else {}
-        self.reads: list = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def read(self, size):
-        self.reads.append(size)
-        if self._broken_at is not None and self._offset >= self._broken_at:
-            raise ConnectionResetError("the peer went away")
-        chunk = self._body[self._offset : self._offset + size]
-        self._offset += len(chunk)
-        return chunk
-
-
-class StoppedClock:
-    """A clock that moves only when told."""
-
-    def __init__(self):
-        self.now = 0.0
-
-    def __call__(self):
-        return self.now
-
-
-def test_a_large_download_is_streamed_to_disk_in_64_kb_pieces(cache, monkeypatch):
-    body = b"!<arch>" + os.urandom(5 * MEGABYTE)
-    response = ChunkedResponse(body)
-    monkeypatch.setattr(cache, "_open", lambda request: response)
-
-    artifact = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    assert artifact.path.read_bytes() == body
-    assert artifact.digest == hashlib.sha256(body).hexdigest()
-    assert len(response.reads) > 80
-    assert max(response.reads) == 64 * 1024
-    assert left_on_disk(cache) == [artifact.key]
-
-
-def test_a_read_that_breaks_off_leaves_nothing_behind(cache, monkeypatch):
-    response = ChunkedResponse(b"!<arch>" + b"x" * MEGABYTE, broken_at=512 * 1024)
-    monkeypatch.setattr(cache, "_open", lambda request: response)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    assert refusal.value.code == "module_fetch_failed"
-    assert left_on_disk(cache) == []
-
-
-def test_a_download_of_the_wrong_kind_leaves_nothing_behind(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_open", serving(content=b"<!doctype html>"))
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-
-    assert refusal.value.code == "module_fetch_failed"
-    assert left_on_disk(cache) == []
-
-
-def test_progress_is_written_every_five_percent_and_at_the_end(cache, monkeypatch):
-    lines: list = []
-    monkeypatch.setattr(
-        cache,
-        "_open",
-        lambda request: ChunkedResponse(b"!<arch>" + b"x" * (20 * MEGABYTE - 7)),
-    )
-    manifest = {
-        **MANIFEST,
-        "title": "VS Code",
-        "version": "1.140.0",
-        "source": "Microsoft",
-    }
-
-    cache.artifact(
-        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
-    )
-
-    assert (
-        lines[0]
-        == "hub: downloading VS Code 1.140.0 from vendor.example, 0.1 / 20.0 MB"
-    )
-    assert (
-        lines[-1]
-        == "hub: downloading VS Code 1.140.0 from vendor.example, 20.0 / 20.0 MB"
-    )
-    # The first chunk, one line per 5 percent after it, and the last again.
-    assert len(lines) == 22
-
-
-def test_progress_is_written_every_two_seconds_when_the_size_is_unknown():
-    lines: list = []
-    clock = StoppedClock()
-    progress = AgentModuleFetchProgress(
-        title="Gitea 1.27.3", on_line=lines.append, clock=clock
-    )
-
-    progress.note(MEGABYTE, 0)
-    clock.now = 1.0
-    progress.note(2 * MEGABYTE, 0)
-    clock.now = 2.5
-    progress.note(3 * MEGABYTE, 0)
-
-    assert lines == [
-        "hub: downloading Gitea 1.27.3, 1.0 MB",
-        "hub: downloading Gitea 1.27.3, 3.0 MB",
-    ]
-
-
-def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
-    cache, monkeypatch
-):
-    lines: list = []
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
-    manifest = {**MANIFEST, "title": "FakeDesk", "version": "2.0", "source": "Vendor"}
-
-    cache.artifact(
-        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
-    )
-    cache.artifact(
-        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
-    )
-
-    assert set(lines[:-1]) == {
-        "hub: downloading FakeDesk 2.0 from vendor.example, 0.0 / 0.0 MB"
-    }
-    assert lines[-1] == "hub: FakeDesk 2.0 is in the cache"
-
-
-# --- a module that unpacks several archives: one artifact per component ---
-
-SERVER_BYTES = b"\x1f\x8bserver-bundle-bytes"
-NODE_BYTES = b"\x1f\x8bnode-runtime-bytes"
-COMPONENTS_MANIFEST = {
-    "name": "codeg",
-    "title": "Codeg",
-    "version": "0.9.0",
-    "platforms": {
-        "linux-amd64": {
-            "components": [
-                {
-                    "name": "server",
-                    "url": "https://vendor.example/codeg-server.tar.gz",
-                    "sha256": hashlib.sha256(SERVER_BYTES).hexdigest(),
-                    "package_kind": "tar",
-                    "directory": "server",
-                },
-                {
-                    "name": "node",
-                    "url": "https://nodejs.org/dist/node.tar.gz",
-                    "cn_url": "https://mirror.example/node.tar.gz",
-                    "sha256": hashlib.sha256(NODE_BYTES).hexdigest(),
-                    "package_kind": "tar",
-                    "directory": "node",
-                },
-            ],
-            "verify": "true",
-        }
-    },
-}
-NODE_ONLY = COMPONENTS_MANIFEST["platforms"]["linux-amd64"]["components"][1]
-ONE_COMPONENT_MANIFEST = {
-    "name": "cloudcli",
-    "platforms": {"linux-amd64": {"components": [NODE_ONLY], "verify": "true"}},
-}
-
-
-class ComponentFetches:
-    """``_open`` answering each component's bytes by its url."""
-
-    def __init__(self):
-        self.urls: list = []
-
-    def open(self, request):
-        url = request.full_url
-        self.urls.append(url)
-        if "node" in url:
-            return ChunkedResponse(NODE_BYTES)
-        return ChunkedResponse(SERVER_BYTES)
-
-
-def component_of(cache, component: str, manifest=COMPONENTS_MANIFEST, **kwargs):
-    return cache.artifact(
-        name=manifest["name"],
-        manifest=manifest,
-        platform=LINUX_AMD,
-        component=component,
-        **kwargs,
-    )
-
-
-def test_each_component_is_its_own_artifact_under_its_own_key(cache, monkeypatch):
-    fetches = ComponentFetches()
-    monkeypatch.setattr(cache, "_open", fetches.open)
-
-    server = component_of(cache, "server")
-    node = component_of(cache, "node")
-
-    assert server.key.startswith("codeg-server-linux-amd64-")
-    assert node.key.startswith("codeg-node-linux-amd64-")
-    assert (server.component, node.component) == ("server", "node")
-    assert server.path.read_bytes() == SERVER_BYTES
-    assert node.path.read_bytes() == NODE_BYTES
-    assert node.digest == hashlib.sha256(NODE_BYTES).hexdigest()
-    assert fetches.urls == [
-        "https://vendor.example/codeg-server.tar.gz",
-        "https://nodejs.org/dist/node.tar.gz",
-    ]
-    assert sorted(left_on_disk(cache)) == sorted([server.key, node.key])
-
-
-def test_a_component_the_entry_does_not_name_is_refused_before_any_fetch(
-    cache, monkeypatch
-):
-    fetches = ComponentFetches()
-    monkeypatch.setattr(cache, "_open", fetches.open)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        component_of(cache, "npm")
-    with pytest.raises(AgentArtifactFetchError) as unnamed:
-        component_of(cache, "")
-    with pytest.raises(AgentArtifactFetchError) as on_one_archive:
-        cache.artifact(
-            name="fakedesk", manifest=MANIFEST, platform=AMD64, component="x"
-        )
-
-    assert (refusal.value.code, refusal.value.params) == (
-        "no_download_named",
-        {"component": ""},
-    )
-    assert unnamed.value.code == "no_download_named"
-    assert on_one_archive.value.code == "no_download_named"
-    assert fetches.urls == []
-
-
-def test_a_one_component_entry_is_served_with_or_without_the_name(cache, monkeypatch):
-    """``package {module: cloudcli}`` and ``package {module: cloudcli,
-    component: node}`` are one artifact."""
-    fetches = ComponentFetches()
-    monkeypatch.setattr(cache, "_open", fetches.open)
-
-    unnamed = component_of(cache, "", ONE_COMPONENT_MANIFEST)
-    named = component_of(cache, "node", ONE_COMPONENT_MANIFEST)
-
-    assert unnamed.key == named.key
-    assert unnamed.component == "node"
-    assert unnamed.key.startswith("cloudcli-node-linux-amd64-")
-    assert len(fetches.urls) == 1
-
-
-def test_a_components_key_resolves_back_to_its_component(cache, monkeypatch):
-    import shutil
-
-    fetches = ComponentFetches()
-    monkeypatch.setattr(cache, "_open", fetches.open)
-    node = component_of(cache, "node")
-    shutil.rmtree(cache._root)
-
-    again = cache.artifact_for_key(
-        node.key,
-        sources={"fakedesk": MANIFEST, "codeg": COMPONENTS_MANIFEST},
-        platform=LINUX_AMD,
-    )
-
-    assert (again.key, again.component) == (node.key, "node")
-    assert again.path.read_bytes() == NODE_BYTES
-
-
-def test_a_cn_hub_fetches_each_component_from_its_own_mirror(monkeypatch, tmp_path):
-    """The component with a ``cn_url`` comes from the mirror; the one without
-    comes from its publisher."""
-    fetches = ComponentFetches()
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
-    cache = AgentModuleCache(root=tmp_path / "cache", edition="cn")
-    lines: list = []
-
-    component_of(cache, "node", on_progress=lines.append)
-    component_of(cache, "server")
-
-    assert fetches.urls == [
-        "https://mirror.example/node.tar.gz",
-        "https://vendor.example/codeg-server.tar.gz",
-    ]
-    assert lines[0].startswith(
-        "hub: downloading Codeg 0.9.0 (node) from mirror.example,"
-    )
-
-
-def test_a_component_off_its_pin_is_refused_and_never_cached(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_open", serving(content=b"\x1f\x8bsomething else"))
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        component_of(cache, "node")
-
-    assert refusal.value.code == "module_sha256_mismatch"
-    assert left_on_disk(cache) == []
-
-
-# --- the edition's own source: cn_url, and a mirror that kept only its latest ---
-
-TARBALL = b"\x1f\x8bcode-server-release-bytes"
-MIRROR = "https://mirror.example/code-server/"
-PINNED_NAME = "code-server-4.140.0-linux-amd64.tar.gz"
-MIRRORED_MANIFEST = {
-    "name": "code_server",
-    "title": "code-server",
-    "version": "4.140.0",
-    "platforms": {
-        "linux-amd64": {
-            "url": f"https://publisher.example/v4.140.0/{PINNED_NAME}",
-            "cn_url": f"{MIRROR}v4.140.0/{PINNED_NAME}",
-            "cn_latest_url": f"{MIRROR}LatestRelease/",
-            "sha256": hashlib.sha256(TARBALL).hexdigest(),
-            "package_kind": "tar",
-        }
-    },
-}
-LISTING = (
-    '<a href="..">..</a>'
-    '<a href="/code-server/LatestRelease/code-server-4.141.0-amd64.rpm">x</a>'
-    '<a href="/code-server/LatestRelease/code-server-4.141.0-linux-arm64.tar.gz">x</a>'
-    '<a href="/code-server/LatestRelease/code-server-4.141.0-linux-amd64.tar.gz">x</a>'
-)
-
-
-class MirrorFetches:
-    """``_open`` and ``_fetch_listing`` stood in for, every url recorded."""
-
-    def __init__(self, *, missing=(), served=TARBALL, listing=LISTING):
-        self.urls: list = []
-        self._missing = set(missing)
-        self._served = served
-        self._listing = listing
-
-    def open(self, request):
-        url = request.full_url
-        self.urls.append(url)
-        if url in self._missing:
-            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-        return ChunkedResponse(self._served)
-
-    def listing(self, url):
-        self.urls.append(url)
-        return self._listing
-
-
-def mirrored(monkeypatch, tmp_path, edition, fetches):
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
-    monkeypatch.setattr(
-        AgentModuleCache, "_fetch_listing", staticmethod(fetches.listing)
-    )
-    return AgentModuleCache(root=tmp_path / "cache", edition=edition)
-
-
-def test_an_intl_hub_fetches_the_publishers_url(monkeypatch, tmp_path):
-    fetches = MirrorFetches()
-    cache = mirrored(monkeypatch, tmp_path, "intl", fetches)
-
-    cache.artifact(name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD)
-
-    assert fetches.urls == [MIRRORED_MANIFEST["platforms"]["linux-amd64"]["url"]]
-
-
-def test_a_cn_hub_fetches_the_pinned_file_from_the_mirror_and_checks_it(
-    monkeypatch, tmp_path
-):
-    fetches = MirrorFetches(served=b"\x1f\x8bsomething else")
-    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(
-            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
-        )
-
-    assert fetches.urls == [f"{MIRROR}v4.140.0/{PINNED_NAME}"]
-    assert refusal.value.code == "module_sha256_mismatch"
-    assert left_on_disk(cache) == []
-
-
-def test_a_cn_hub_takes_the_mirrors_current_release_when_the_pin_is_gone(
-    monkeypatch, tmp_path
-):
-    lines: list = []
-    fetches = MirrorFetches(
-        missing={f"{MIRROR}v4.140.0/{PINNED_NAME}"}, served=b"\x1f\x8bnewer release"
-    )
-    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-
-    artifact = cache.artifact(
-        name="code_server",
-        manifest=MIRRORED_MANIFEST,
-        platform=LINUX_AMD,
-        on_progress=lines.append,
-    )
-
-    assert fetches.urls == [
-        f"{MIRROR}v4.140.0/{PINNED_NAME}",
-        f"{MIRROR}LatestRelease/",
-        "https://mirror.example/code-server/LatestRelease/"
-        "code-server-4.141.0-linux-amd64.tar.gz",
-    ]
-    assert artifact.path.read_bytes() == b"\x1f\x8bnewer release"
-    assert any("4.141.0" in line and "HTTPS alone" in line for line in lines)
-
-
-def test_a_mirror_whose_latest_holds_no_such_file_names_no_download(
-    monkeypatch, tmp_path
-):
-    fetches = MirrorFetches(
-        missing={f"{MIRROR}v4.140.0/{PINNED_NAME}"}, listing='<a href="x.deb">x</a>'
-    )
-    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(
-            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
-        )
-
-    assert refusal.value.code == "no_download_named"
-
-
-def test_a_mirror_that_fails_otherwise_is_not_read_for_its_latest(
-    monkeypatch, tmp_path
-):
-    def broken(request):
-        raise urllib.error.HTTPError(request.full_url, 503, "Unavailable", {}, None)
-
-    fetches = MirrorFetches()
-    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(broken))
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(
-            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
-        )
-
-    assert refusal.value.params["status"] == 503
-    assert fetches.urls == []
-
-
-def test_the_latest_file_is_the_pinned_name_with_its_version_left_open():
-    url, version = latest_release_url(
-        f"{MIRROR}LatestRelease/", f"{MIRROR}v4.140.0/{PINNED_NAME}", LISTING
-    )
-
-    assert version == "4.141.0"
-    assert url.endswith("/LatestRelease/code-server-4.141.0-linux-amd64.tar.gz")
-
-
-def test_a_line_names_the_host_it_fetched_from_not_the_publisher(monkeypatch, tmp_path):
-    lines: list = []
-    fetches = MirrorFetches(served=TARBALL)
-    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-
-    cache.artifact(
-        name="code_server",
-        manifest={**MIRRORED_MANIFEST, "source": "Coder"},
-        platform=LINUX_AMD,
-        on_progress=lines.append,
-    )
-
-    assert lines[0].startswith(
-        "hub: downloading code-server 4.140.0 from mirror.example,"
-    )
-    assert not any("Coder" in line for line in lines)
-
-
-RELEASE = "https://gitee.com/iffiX/neutrino/releases/download/v0.5.0"
-RELEASED_MANIFEST = {
-    "name": "cc_switch",
-    "platforms": {
-        "linux-amd64": {
-            "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc.tar.gz",
-            "cn_url": "{release}/cc.tar.gz",
-            "sha256": hashlib.sha256(TARBALL).hexdigest(),
-            "package_kind": "tar",
-        }
-    },
-}
-
-
-def released(monkeypatch, tmp_path, fetches, release_url=RELEASE):
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
-    return AgentModuleCache(
-        root=tmp_path / "cache", edition="cn", release_url=release_url
-    )
-
-
-def test_a_cn_hub_fetches_a_released_file_from_its_own_release(monkeypatch, tmp_path):
-    fetches = MirrorFetches()
-    cache = released(monkeypatch, tmp_path, fetches)
-
-    artifact = cache.artifact(
-        name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD
-    )
-
-    assert fetches.urls == [f"{RELEASE}/cc.tar.gz"]
-    assert artifact.digest == hashlib.sha256(TARBALL).hexdigest()
-
-
-def test_a_file_its_release_no_longer_carries_says_the_hub_is_behind(
-    monkeypatch, tmp_path
-):
-    fetches = MirrorFetches(missing={f"{RELEASE}/cc.tar.gz"})
-    cache = released(monkeypatch, tmp_path, fetches)
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
-
-    assert (refusal.value.code, refusal.value.params) == (
-        "hub_release_file_gone",
-        {"file": "cc.tar.gz"},
-    )
-    assert left_on_disk(cache) == []
-
-
-def test_a_cn_hub_no_release_stamped_names_no_download(monkeypatch, tmp_path):
-    fetches = MirrorFetches()
-    cache = released(monkeypatch, tmp_path, fetches, release_url="")
-
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
-
-    assert refusal.value.code == "no_download_named"
-    assert fetches.urls == []
-
-
-def test_an_intl_hub_fetches_the_publishers_file_and_not_the_release(
-    monkeypatch, tmp_path
-):
-    fetches = MirrorFetches()
-    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
-    cache = AgentModuleCache(
-        root=tmp_path / "cache", edition="intl", release_url=RELEASE
-    )
-
-    cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
-
-    assert fetches.urls == [RELEASED_MANIFEST["platforms"]["linux-amd64"]["url"]]
-
-
-# --- the files Containers keeps: a 2 GiB limit, zstd, one file per slot ---
-
-ZSTD = b"\x28\xb5\x2f\xfd"
-MSI = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
-WINDOWS_AMD = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
-
-
-def podman_manifest(image_url: str, image_bytes: bytes, installer_bytes: bytes):
-    """Containers with a hub branch for Windows that names its own version."""
+def desk_manifest(sources: "list | None" = None) -> dict:
     return {
-        "name": "podman",
-        "title": "Containers",
-        "kind": "system_package",
-        "installer": "platform",
+        "name": "fakedesk",
+        "title": "Fake desk",
         "platforms": {
-            "windows-amd64": {
-                "kind": "podman_machine",
-                "installer": "hub",
-                "version": "6.1.4",
-                "components": [
+            "linux-amd64": hub_entry(
+                "2.0",
+                [
                     {
-                        "name": "installer",
-                        "url": "https://vendor.example/podman.msi",
-                        "sha256": hashlib.sha256(installer_bytes).hexdigest(),
-                        "package_kind": "msi",
-                        "directory": "installer",
+                        "name": "app",
+                        "kind": "tar_gz",
+                        "directory": "app",
+                        "file": "desk-{version}-amd64.tar.gz",
+                        "digest": digest(APP),
+                        "sources": sources
+                        or [
+                            "https://vendor.example/{version}/{file}",
+                            "https://mirror.example/{file}",
+                        ],
                     },
                     {
                         "name": "image",
-                        "url": image_url,
-                        "sha256": hashlib.sha256(image_bytes).hexdigest(),
-                        "package_kind": "tar_zst",
+                        "kind": "tar_zst",
                         "directory": "image",
+                        "file": "image.tar.zst",
+                        "digest": digest(IMAGE),
+                        "sources": ["https://vendor.example/{file}"],
+                    },
+                    {
+                        "name": "agentpkg",
+                        "kind": "npm",
+                        "package": "@fake/desk",
+                        "digest": "sha512-AAAA",
+                        "sources": ["https://registry.example"],
                     },
                 ],
-                "verify": "podman --version",
-            },
+            ),
+            "darwin-arm64": hub_entry(
+                "2.0",
+                [
+                    {
+                        "name": "desk",
+                        "kind": "binary",
+                        "file": "desk-{version}-darwin",
+                        "digest": digest(BINARY),
+                        "sources": ["https://vendor.example/{file}"],
+                    }
+                ],
+            ),
+            "windows-amd64": hub_entry(
+                "2.0",
+                [
+                    {
+                        "name": "installer",
+                        "kind": "msi",
+                        "directory": "installer",
+                        "file": "desk.msi",
+                        "digest": digest(INSTALLER),
+                        "sources": ["https://vendor.example/{file}"],
+                    }
+                ],
+                min_version="19041",
+            ),
         },
     }
 
 
-def serving_by_url(bodies: dict):
-    """An open that answers each url's own bytes."""
+OTHER_MANIFEST = {
+    "name": "otherdesk",
+    "title": "Other desk",
+    "platforms": {
+        "linux-amd64": hub_entry(
+            "1.0",
+            [
+                {
+                    "name": "app",
+                    "kind": "tar_gz",
+                    "directory": "app",
+                    "file": "other.tar.gz",
+                    "digest": digest(OTHER),
+                    "sources": ["https://other.example/{file}"],
+                }
+            ],
+        )
+    },
+}
+SWITCH_MANIFEST = {
+    "name": "cc_switch",
+    "title": "cc-switch",
+    "is_module": False,
+    "version": "5.0",
+    "platforms": {
+        "linux-amd64": {
+            "artifacts": [
+                {
+                    "name": "cc_switch",
+                    "kind": "tar_gz",
+                    "file": "cc-switch-{version}.tar.gz",
+                    "digest": digest(SWITCH),
+                    "sources": ["https://switch.example/{file}", "{release}/{file}"],
+                }
+            ]
+        }
+    },
+}
 
-    def open_(request):
-        return ChunkedResponse(bodies[request.full_url])
 
-    return open_
+@pytest.fixture
+def manifests(monkeypatch):
+    """The test's own manifests in place of the shipped ones."""
+    held = {"fakedesk": desk_manifest(), "otherdesk": OTHER_MANIFEST}
+    monkeypatch.setattr(agent_module_cache, "load_module_manifests", lambda: held)
+    monkeypatch.setattr(
+        agent_module_cache,
+        "load_tool_manifests",
+        lambda: {"cc_switch": SWITCH_MANIFEST},
+    )
+    return held
 
 
-def test_the_limit_is_two_gib_and_a_file_past_it_is_refused(tmp_path):
-    from neutrino_hub.modules.devices.constants import AGENT_MODULE_FETCH_LIMIT_BYTES
-    from neutrino_hub.modules.devices.streamed_file import DownloadedFile
+@pytest.fixture
+def root(tmp_path):
+    return tmp_path / "agent_module_cache"
 
-    limit = 2 * 1024 * MEGABYTE
-    at_limit = DownloadedFile(path=tmp_path / "a", size=limit, sha256="", head=ZSTD)
-    past = DownloadedFile(path=tmp_path / "b", size=limit + 1, sha256="", head=ZSTD)
-    entry = {"package_kind": "raw_zst"}
 
-    AgentModuleCache._judge(at_limit, entry, is_pinned=False)
-    with pytest.raises(AgentArtifactFetchError) as refusal:
-        AgentModuleCache._judge(past, entry, is_pinned=False)
-
-    assert AGENT_MODULE_FETCH_LIMIT_BYTES == limit
-    assert (refusal.value.code, refusal.value.params) == (
-        "module_fetch_too_large",
-        {"limit_mb": 2048},
+def make_cache(root, fetcher, named=None) -> AgentModuleCache:
+    return AgentModuleCache(
+        root=root,
+        fetcher=fetcher,
+        named_modules=(lambda: set(named)) if named is not None else None,
     )
 
 
-@pytest.mark.parametrize("kind", ["tar_zst", "raw_zst"])
-def test_a_zstd_file_is_recognised_by_its_frame_magic(kind):
-    assert looks_like_package(ZSTD + b"\x84\x60\x00\xee", kind)
-    assert not looks_like_package(b"\x1f\x8b\x08", kind)
-    assert not looks_like_package(b"<!doctype html>", kind)
+def serving_app() -> FakeSourceFetcher:
+    """A fetcher whose mirror alone serves the app's archive."""
+    return FakeSourceFetcher({"https://mirror.example/desk-2.0-amd64.tar.gz": APP})
 
 
-def test_an_msi_and_a_pkg_are_recognised_by_their_magic():
-    assert looks_like_package(MSI, "msi")
-    assert looks_like_package(b"xar!\x00\x1c\x00\x01", "pkg")
-    assert not looks_like_package(b"<!doctype html>", "msi")
-    assert not looks_like_package(b"<!doctype html>", "pkg")
-
-
-def test_a_new_file_deletes_the_one_it_supersedes_and_no_other(cache, monkeypatch):
-    """The image of a new release takes the old image's place alone: the
-    installer, another platform's image, a one-file module named like the
-    module, another module and a partial download all stay."""
-    old_image = ZSTD + b"old-image"
-    new_image = ZSTD + b"new-image"
-    installer = MSI + b"installer"
-    bodies = {
-        "https://vendor.example/image-1.tar.zst": old_image,
-        "https://vendor.example/image-2.tar.zst": new_image,
-        "https://vendor.example/podman.msi": installer,
-    }
-    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
-    first = podman_manifest(
-        "https://vendor.example/image-1.tar.zst", old_image, installer
-    )
-    second = podman_manifest(
-        "https://vendor.example/image-2.tar.zst", new_image, installer
-    )
-    old = cache.artifact(
-        name="podman", manifest=first, platform=WINDOWS_AMD, component="image"
-    )
-    kept_installer = cache.artifact(
-        name="podman", manifest=first, platform=WINDOWS_AMD, component="installer"
-    )
-    neighbours = [
-        "podman-image-darwin-arm64-0123456789abcdef",
-        "podman-windows-amd64-0123456789abcdef",
-        "podman_image-windows-amd64-0123456789abcdef",
-        "podman-image-windows-amd64-0123456789abcdef.old",
-        ".partial_podman-image-windows-amd64-0123456789abcdef",
-    ]
-    for name in neighbours:
-        (cache._root / name).write_bytes(b"x")
-
-    new = cache.artifact(
-        name="podman", manifest=second, platform=WINDOWS_AMD, component="image"
+def ask(cache, module="fakedesk", artifact="app", body=APP, platform=LINUX, **kw):
+    return cache.artifact(
+        module=module,
+        artifact=artifact,
+        digest=digest(body),
+        platform=platform,
+        **kw,
     )
 
-    assert new.key != old.key
-    assert left_on_disk(cache) == sorted(neighbours + [kept_installer.key, new.key])
 
-
-def test_a_one_file_module_never_deletes_a_components_file(cache, monkeypatch):
-    image = ZSTD + b"image"
-    installer = MSI + b"installer"
-    bodies = {
-        "https://vendor.example/image.tar.zst": image,
-        "https://vendor.example/podman.msi": installer,
-        "https://vendor.example/podman-one.deb": DEB,
-    }
-    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
-    manifest = podman_manifest("https://vendor.example/image.tar.zst", image, installer)
-    held = cache.artifact(
-        name="podman", manifest=manifest, platform=WINDOWS_AMD, component="image"
-    )
-    one_file = {
-        "name": "podman",
-        "platforms": {
-            "windows-amd64": {
-                "url": "https://vendor.example/podman-one.deb",
-                "package_kind": "deb",
-            }
-        },
-    }
-
-    placed = cache.artifact(name="podman", manifest=one_file, platform=WINDOWS_AMD)
-
-    assert left_on_disk(cache) == sorted([held.key, placed.key])
-
-
-def test_a_superseded_file_that_cannot_be_deleted_is_left(cache, monkeypatch):
-    from pathlib import Path
-
-    monkeypatch.setattr(cache, "_open", serving(content=DEB))
-    first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
-    moved = {
-        **MANIFEST,
-        "platforms": {
-            **MANIFEST["platforms"],
-            "linux-debian-amd64": {
-                "url": "https://vendor.example/fakedesk-amd64-v5.deb",
-                "package_kind": "deb",
-            },
-        },
-    }
-
-    def refuse(self, missing_ok=False):
-        raise PermissionError("in use")
-
-    monkeypatch.setattr(Path, "unlink", refuse)
-    second = cache.artifact(name="fakedesk", manifest=moved, platform=AMD64)
-
-    assert first.path.exists() and second.path.exists()
-
-
-def test_the_title_and_the_lines_name_the_branchs_own_version(cache, monkeypatch):
-    image = ZSTD + b"image"
-    installer = MSI + b"installer"
-    bodies = {
-        "https://vendor.example/image.tar.zst": image,
-        "https://vendor.example/podman.msi": installer,
-    }
-    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
-    manifest = podman_manifest("https://vendor.example/image.tar.zst", image, installer)
+def test_an_artifact_is_fetched_from_its_sources_and_kept_under_its_digest(
+    manifests, root
+):
+    fetcher = serving_app()
     lines: list = []
 
-    artifact = cache.artifact(
-        name="podman",
-        manifest=manifest,
-        platform=WINDOWS_AMD,
-        component="image",
-        on_progress=lines.append,
+    held = ask(make_cache(root, fetcher), on_progress=lines.append)
+
+    assert fetcher.asked == [
+        (
+            "file",
+            "desk-2.0-amd64.tar.gz",
+            [
+                "https://vendor.example/2.0/desk-2.0-amd64.tar.gz",
+                "https://mirror.example/desk-2.0-amd64.tar.gz",
+            ],
+        )
+    ]
+    assert held.path == root / hexed(APP)
+    assert held.path.read_bytes() == APP
+    assert held.digest == digest(APP)
+    assert held.file == "desk-2.0-amd64.tar.gz"
+    assert held.title == "Fake desk 2.0 (app)"
+    assert lines == ["hub: fetching desk-2.0-amd64.tar.gz from mirror.example"]
+
+
+def test_a_held_file_is_served_with_no_fetch_and_says_it_is_in_the_cache(
+    manifests, root
+):
+    root.mkdir()
+    (root / hexed(APP)).write_bytes(APP)
+    lines: list = []
+
+    held = ask(make_cache(root, FakeSourceFetcher()), on_progress=lines.append)
+
+    assert held.path.read_bytes() == APP
+    assert lines == ["hub: Fake desk 2.0 (app) is in the cache"]
+
+
+def test_a_held_file_that_no_longer_hashes_to_its_name_is_fetched_again(
+    manifests, root
+):
+    root.mkdir()
+    (root / hexed(APP)).write_bytes(b"a cut download")
+    fetcher = serving_app()
+
+    held = ask(make_cache(root, fetcher))
+
+    assert held.path.read_bytes() == APP
+    assert len(fetcher.asked) == 1
+
+
+def test_a_one_artifact_entry_is_titled_by_its_module_and_version(manifests, root):
+    fetcher = FakeSourceFetcher({"https://vendor.example/desk-2.0-darwin": BINARY})
+
+    held = ask(make_cache(root, fetcher), artifact="desk", body=BINARY, platform=DARWIN)
+
+    assert held.title == "Fake desk 2.0"
+    assert held.path.read_bytes() == BINARY
+
+
+def test_a_name_no_manifest_names_is_refused(manifests, root):
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, FakeSourceFetcher()), module="nosuch")
+
+    assert refused.value.code == "module_unknown"
+    assert refused.value.params == {"name": "nosuch"}
+
+
+@pytest.mark.parametrize("platform", [FREEBSD, OLD_WINDOWS])
+def test_a_platform_the_manifest_names_no_entry_for_is_refused(
+    manifests, root, platform
+):
+    """A system the manifest leaves out, and one below an entry's floor, have
+    no entry; nothing is fetched for either."""
+    fetcher = FakeSourceFetcher()
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, fetcher), platform=platform)
+
+    assert refused.value.code == "no_platform_build"
+    assert refused.value.params == {"module": "fakedesk"}
+    assert fetcher.asked == []
+
+
+@pytest.mark.parametrize(
+    "artifact, body",
+    [
+        ("nosuch", APP),
+        ("app", IMAGE),
+        ("installer", INSTALLER),
+        ("agentpkg", APP),
+    ],
+)
+def test_an_artifact_the_entry_does_not_name_with_that_digest_is_refused(
+    manifests, root, artifact, body
+):
+    """A name the entry lacks, another artifact's digest, another platform's
+    artifact and an npm artifact the machine fetches itself are all unknown
+    to the cache."""
+    fetcher = FakeSourceFetcher()
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, fetcher), artifact=artifact, body=body)
+
+    assert refused.value.code == "module_artifact_unknown"
+    assert refused.value.params == {
+        "module": "fakedesk",
+        "artifact": artifact,
+        "digest": digest(body),
+    }
+    assert fetcher.asked == []
+
+
+def test_no_source_serving_it_names_each_source_and_leaves_nothing(manifests, root):
+    fetcher = FakeSourceFetcher(
+        {"https://vendor.example/2.0/desk-2.0-amd64.tar.gz": GZIP + b"other bytes"}
     )
 
-    assert artifact.title == "Containers 6.1.4 (image)"
-    assert lines[0].startswith("hub: downloading Containers 6.1.4 (image) from ")
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, fetcher))
+
+    assert refused.value.code == "download_failed"
+    assert refused.value.params == {
+        "file": "desk-2.0-amd64.tar.gz",
+        "sources": [
+            {
+                "source": "https://vendor.example/2.0/desk-2.0-amd64.tar.gz",
+                "reason": "digest_mismatch",
+                "detail": "",
+            },
+            {
+                "source": "https://mirror.example/desk-2.0-amd64.tar.gz",
+                "reason": "http_404",
+                "detail": "",
+            },
+        ],
+    }
+    assert list(root.glob("*")) == []
+
+
+def test_a_source_serving_other_bytes_is_dropped_for_the_next_on_loopback(
+    manifests, root, tmp_path
+):
+    """The real fetcher: a source whose file hashes otherwise is dropped and
+    the file comes from the next one; when every source does it, nothing is
+    kept and each source is named."""
+    wrong = Source(Behaviour(body=GZIP + b"x" * len(APP)))
+    right = Source(Behaviour(body=APP, chunk_delay_s=0.01))
+    try:
+        manifests["fakedesk"] = desk_manifest([wrong.url, right.url])
+        held = ask(make_cache(root, loopback_fetcher()))
+        assert held.path.read_bytes() == APP
+
+        manifests["fakedesk"] = desk_manifest([wrong.url])
+        (root / hexed(APP)).unlink()
+        with pytest.raises(AgentArtifactFetchError) as refused:
+            ask(make_cache(root, loopback_fetcher()))
+    finally:
+        wrong.close()
+        right.close()
+
+    assert refused.value.code == "download_failed"
+    assert [item["reason"] for item in refused.value.params["sources"]] == [
+        "digest_mismatch"
+    ]
+    assert list(root.glob("*")) == []
+
+
+class LimitFetcher:
+    """A fetcher that records the limit it was given and refuses as too large."""
+
+    def __init__(self):
+        self.limits: list = []
+
+    def fetch_file(self, *, limit, **kwargs):
+        self.limits.append(limit)
+        raise DownloadTooLargeError(limit)
+
+
+def test_the_limit_is_two_gib_and_a_file_past_it_is_refused(manifests, root):
+    fetcher = LimitFetcher()
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, fetcher))
+
+    assert AGENT_MODULE_FETCH_LIMIT_BYTES == 2 * 1024 * 1024 * 1024
+    assert fetcher.limits == [AGENT_MODULE_FETCH_LIMIT_BYTES]
+    assert refused.value.code == "module_fetch_too_large"
+    assert refused.value.params == {"limit_mb": 2048}
+
+
+class BrokenDiskFetcher:
+    def fetch_file(self, **kwargs):
+        raise OSError("No space left on device")
+
+
+def test_a_cache_that_cannot_be_written_says_so(manifests, root):
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, BrokenDiskFetcher()))
+
+    assert refused.value.code == "module_cache_unwritable"
+    assert "No space left" in refused.value.params["detail"]
+
+
+@pytest.mark.parametrize(
+    "kind, head",
+    [
+        ("tar_zst", ZSTD),
+        ("raw_zst", ZSTD),
+        ("binary", b"\x7fELF"),
+        ("binary", MACHO),
+        ("binary", b"MZ"),
+        ("msi", MSI),
+        ("pkg", b"xar!"),
+        ("tar_gz", GZIP),
+        ("zip", b"PK\x03\x04"),
+    ],
+)
+def test_each_kind_is_recognised_by_its_head(kind, head):
+    assert looks_like_kind(head + b"the rest", kind)
+    assert not looks_like_kind(b"<html>an error page</html>", kind)
+
+
+def test_a_file_whose_head_is_not_its_kind_is_refused_and_kept_nowhere(manifests, root):
+    """The digest matched, so the manifest names the wrong kind; the cache
+    still keeps nothing that does not open like its kind."""
+    page = b"<html>an error page served as the archive</html>"
+    manifests["fakedesk"]["platforms"]["linux-amd64"]["install"]["params"]["artifacts"][
+        0
+    ]["digest"] = digest(page)
+    fetcher = FakeSourceFetcher({"https://mirror.example/desk-2.0-amd64.tar.gz": page})
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        ask(make_cache(root, fetcher), body=page)
+
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["sources"] == [
+        {
+            "source": "https://mirror.example/desk-2.0-amd64.tar.gz",
+            "reason": "digest_mismatch",
+            "detail": "the file does not open like a tar_gz",
+        }
+    ]
+    assert list(root.glob("*")) == []
+
+
+def test_a_new_file_deletes_the_files_no_named_version_holds(manifests, root):
+    """After a new file is placed, a file of a version no manifest pins and a
+    module no machine names go; every file of a named module's version, on
+    every platform, cc-switch's pinned files and a file not named by a
+    digest stay."""
+    root.mkdir()
+    for body in (OLD, BINARY, INSTALLER, IMAGE, OTHER, SWITCH):
+        (root / hexed(body)).write_bytes(body)
+    (root / "notes.txt").write_text("kept")
+
+    ask(make_cache(root, serving_app(), named={"fakedesk"}))
+
+    assert sorted(path.name for path in root.iterdir()) == sorted(
+        [hexed(APP), hexed(BINARY), hexed(INSTALLER), hexed(IMAGE), hexed(SWITCH)]
+        + ["notes.txt"]
+    )
+
+
+def test_with_no_named_modules_given_every_module_keeps_its_files(manifests, root):
+    root.mkdir()
+    for body in (OLD, OTHER):
+        (root / hexed(body)).write_bytes(body)
+
+    ask(make_cache(root, serving_app()))
+
+    assert sorted(path.name for path in root.iterdir()) == sorted(
+        [hexed(APP), hexed(OTHER)]
+    )
+
+
+def test_cc_switch_is_served_from_the_cache_and_a_checkout_names_no_release_site(
+    manifests, root
+):
+    fetcher = FakeSourceFetcher({"https://switch.example/cc-switch-5.0.tar.gz": SWITCH})
+
+    held = ask(
+        make_cache(root, fetcher, named=set()),
+        module="cc_switch",
+        artifact="cc_switch",
+        body=SWITCH,
+    )
+
+    assert fetcher.asked == [
+        (
+            "file",
+            "cc-switch-5.0.tar.gz",
+            ["https://switch.example/cc-switch-5.0.tar.gz"],
+        )
+    ]
+    assert held.title == "cc-switch 5.0"
+    assert held.path.read_bytes() == SWITCH
+
+
+class SlowFetcher(FakeSourceFetcher):
+    """A fake fetcher that holds its first fetch until it is let go."""
+
+    def __init__(self, bodies):
+        super().__init__(bodies)
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def fetch_file(self, **kwargs):
+        self.started.set()
+        self.release.wait(timeout=5)
+        return super().fetch_file(**kwargs)
+
+
+def test_a_second_asker_of_one_digest_waits_on_the_first_fetch(manifests, root):
+    fetcher = SlowFetcher({"https://mirror.example/desk-2.0-amd64.tar.gz": APP})
+    cache = make_cache(root, fetcher)
+    results: list = []
+
+    def asking():
+        results.append(ask(cache))
+
+    first = threading.Thread(target=asking)
+    first.start()
+    fetcher.started.wait(timeout=5)
+    second = threading.Thread(target=asking)
+    second.start()
+    fetcher.release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert len(fetcher.asked) == 1
+    assert [held.path for held in results] == [root / hexed(APP)] * 2
+
+
+class StoppedClock:
+    """A monotonic clock that moves only when told."""
+
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
 
 
 def test_a_send_is_counted_in_sending_lines_naming_the_machine():
     lines: list = []
     clock = StoppedClock()
-    progress = AgentModuleFetchProgress(
+    progress = AgentModuleSendProgress(
         title="Containers 6.1.4 (image)",
+        recipient="nmxwin",
         on_line=lines.append,
         clock=clock,
-        verb="sending",
-        recipient="nmxwin",
     )
 
-    progress.note(MEGABYTE, 4 * MEGABYTE)
-    progress.note(4 * MEGABYTE, 4 * MEGABYTE, is_done=True)
+    progress.note(MEGABYTE, 40 * MEGABYTE)
+    progress.note(MEGABYTE + 1, 40 * MEGABYTE)
+    progress.note(3 * MEGABYTE, 40 * MEGABYTE)
+    clock.now += 2.0
+    progress.note(4 * MEGABYTE, 40 * MEGABYTE)
+    progress.note(40 * MEGABYTE, 40 * MEGABYTE, is_done=True)
 
     assert lines == [
-        "hub: sending Containers 6.1.4 (image), 1.0 / 4.0 MB to nmxwin",
-        "hub: sending Containers 6.1.4 (image), 4.0 / 4.0 MB to nmxwin",
+        "hub: sending Containers 6.1.4 (image), 1.0 / 40.0 MB to nmxwin",
+        "hub: sending Containers 6.1.4 (image), 3.0 / 40.0 MB to nmxwin",
+        "hub: sending Containers 6.1.4 (image), 4.0 / 40.0 MB to nmxwin",
+        "hub: sending Containers 6.1.4 (image), 40.0 / 40.0 MB to nmxwin",
     ]
+
+
+def test_clearing_the_cache_drops_every_file(manifests, root):
+    ask(make_cache(root, serving_app()))
+
+    clear_module_cache(root)
+
+    assert not root.exists()

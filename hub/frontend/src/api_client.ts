@@ -9,6 +9,7 @@
  */
 
 import type { ApplyChange, ApplyResult } from "./api_types";
+import { codeParams } from "./code_params";
 import { hasWord, t } from "./i18n";
 import { withModuleTitle } from "./module_title";
 
@@ -35,7 +36,7 @@ export class ApiError extends Error {
     this.detail = detail;
     const detailRecord = asRecord(detail);
     this.code = typeof detailRecord?.code === "string" ? detailRecord.code : "";
-    this.params = asParams(detailRecord?.params);
+    this.params = codeParams(detailRecord?.params);
   }
 
   /** Whether this error means the session is gone and login is required. */
@@ -280,17 +281,6 @@ function readDetail(parsed: unknown): string {
     return record.message;
   }
   return "";
-}
-
-function asParams(value: unknown): Record<string, string | number> {
-  const record = asRecord(value);
-  const params: Record<string, string | number> = {};
-  if (record === null) return params;
-  for (const [name, item] of Object.entries(record)) {
-    if (typeof item === "string" || typeof item === "number")
-      params[name] = item;
-  }
-  return params;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -7,8 +7,8 @@
 
 Runs on: a GitHub macOS runner, ``darwin-arm64`` on ``macos-15`` and
 ``darwin-amd64`` on ``macos-15-intel``. ``key`` prints the cache key of the
-branch's pinned files; ``fetch`` downloads each one missing from the
-directory and checks its sha256; ``check``, as root, drives the agent's
+entry's pinned artifacts; ``fetch`` downloads each one missing from the
+directory from its first source and checks its digest; ``check``, as root, drives the agent's
 ``PodmanDarwinApplier``, ``installers.install_pkg`` and ``PodmanMachine`` as
 the account: the install, ``podman --version``, ``podman machine init
 --image``, inspect, a grown disk and a refused smaller one, the machine's
@@ -36,7 +36,7 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 MANIFEST = REPOSITORY / "hub/neutrino_hub/data/manifests/podman.json"
 PLATFORMS = ("darwin-arm64", "darwin-amd64")
-# The names the agent keeps each component under, by its package kind.
+# The names the check keeps each artifact under, by its kind.
 KEPT_NAMES = {"pkg": "installer.pkg", "raw_zst": "image.raw.zst"}
 CHUNK_BYTES = 1024 * 1024
 GIB = 1024**3
@@ -78,9 +78,9 @@ def main() -> int:
 
 
 def cache_key(platform_name: str) -> str:
-    """The cache key of one platform's pinned files: their digests."""
-    components = _components(_branch(platform_name))
-    digests = "_".join(components[name]["sha256"] for name in ("installer", "image"))
+    """The cache key of one platform's pinned artifacts: their digests' hex."""
+    artifacts = _artifacts(_branch(platform_name))
+    digests = "_".join(_hex(artifacts[name]) for name in ("podman", "image"))
     return f"podman_{platform_name}_{digests}"
 
 
@@ -91,22 +91,23 @@ def fetch(platform_name: str, directory: Path) -> None:
         SystemExit: When a file's digest is not its pin.
     """
     directory.mkdir(parents=True, exist_ok=True)
-    for component in _branch(platform_name)["components"]:
-        path = directory / KEPT_NAMES[component["package_kind"]]
-        if path.is_file() and _sha256(path) == component["sha256"]:
+    branch = _branch(platform_name)
+    version = _params(branch)["version"]
+    for artifact in _params(branch)["artifacts"]:
+        path = directory / KEPT_NAMES[artifact["kind"]]
+        if path.is_file() and _sha256(path) == _hex(artifact):
             print(f"cached: {path.name}")
             continue
         partial = path.with_name(path.name + ".part")
         started = time.monotonic()
-        with urllib.request.urlopen(component["url"]) as answer:
+        url = _source(artifact, version)
+        with urllib.request.urlopen(url) as answer:
             with open(partial, "wb") as stream:
                 shutil.copyfileobj(answer, stream, CHUNK_BYTES)
         found = _sha256(partial)
-        if found != component["sha256"]:
+        if found != _hex(artifact):
             partial.unlink()
-            raise SystemExit(
-                f"{component['url']}: sha256 {found}, pinned {component['sha256']}"
-            )
+            raise SystemExit(f"{url}: sha256 {found}, pinned {_hex(artifact)}")
         partial.replace(path)
         mib = path.stat().st_size / 1024**2
         print(
@@ -140,7 +141,7 @@ def check(platform_name: str, directory: Path, account: str, session_tmpdir: str
         os.environ.pop(name, None)
     log = CheckLog()
     branch = _branch(platform_name)
-    components = _components(branch)
+    artifacts = _artifacts(branch)
     computer = DarwinPlatform()
     system = podman_system_applier_for(computer)
     log.show(
@@ -170,8 +171,8 @@ def check(platform_name: str, directory: Path, account: str, session_tmpdir: str
     )
 
     started = time.monotonic()
-    system.install_component(
-        dict(components["installer"]), str(directory / KEPT_NAMES["pkg"])
+    system.install_artifact(
+        dict(artifacts["podman"]), str(directory / KEPT_NAMES["pkg"])
     )
     log.show("install seconds", f"{time.monotonic() - started:.0f}")
     log.expect(os.path.isfile(system.binary), f"{system.binary} is installed")
@@ -189,7 +190,7 @@ def check(platform_name: str, directory: Path, account: str, session_tmpdir: str
     log.expect(not helpers, f"no podman-mac-helper LaunchDaemon {helpers}")
     log.expect(not os.path.exists(HELPER_DIR), f"no {HELPER_DIR}")
     version = podman_version(podman=(system.binary,))
-    log.expect(version == branch["version"], f"podman --version is {version}")
+    log.expect(version == _params(branch)["version"], f"podman --version is {version}")
 
     machine = PodmanMachine(
         platform=computer,
@@ -309,14 +310,30 @@ def check(platform_name: str, directory: Path, account: str, session_tmpdir: str
 
 
 def _branch(platform_name: str) -> dict:
-    """One platform's branch of the Podman manifest."""
+    """One platform's entry of the Podman manifest."""
     with open(MANIFEST, "r", encoding="utf-8") as stream:
         return json.load(stream)["platforms"][platform_name]
 
 
-def _components(branch: dict) -> dict:
-    """A branch's components by name."""
-    return {component["name"]: component for component in branch["components"]}
+def _params(branch: dict) -> dict:
+    """An entry's install params."""
+    return branch["install"]["params"]
+
+
+def _artifacts(branch: dict) -> dict:
+    """An entry's artifacts by name."""
+    return {artifact["name"]: artifact for artifact in _params(branch)["artifacts"]}
+
+
+def _hex(artifact: dict) -> str:
+    """An artifact's digest without its ``sha256:``."""
+    return artifact["digest"].removeprefix("sha256:")
+
+
+def _source(artifact: dict, version: str) -> str:
+    """An artifact's first source, its file and version filled in."""
+    file = artifact["file"].replace("{version}", version)
+    return artifact["sources"][0].replace("{file}", file).replace("{version}", version)
 
 
 def _sha256(path: Path) -> str:

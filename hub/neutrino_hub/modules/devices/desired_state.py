@@ -8,8 +8,8 @@ the install recipe resolved for its platform and the parts the hub knows
 about the machine, the address it sits at and the networks its shares
 answer, under one hash the agent compares against. The document is the
 ``state`` frame's sections: ``modules``, one entry
-``{want, config, install, uninstall}`` per module ``modules.json`` names
-and has not settled, ``desktop`` with the seat password, and ``ai_tools``,
+``{want, config, install}`` per module ``modules.json`` names and has not
+settled, ``install`` being the recipe ``{runner, method, params}``, ``desktop`` with the seat password, and ``ai_tools``,
 the machine's AI tools setting from ``ai_tools.json`` with where its tools
 reach the gateway and the device's key, for the accounts the instances of
 the programs run as an account name.
@@ -34,7 +34,6 @@ import shutil
 import string
 import time
 
-from neutrino_hub.edition import EDITION
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
@@ -54,11 +53,11 @@ from neutrino_hub.modules.devices.ai_tools import (
 )
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.manifests import (
-    load_module_manifests,
+    entry_artifacts,
     load_tool_manifests,
+    resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_IDENTITY_FIELDS,
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
     DEVICE_AI_TOOLS_NAME,
@@ -66,7 +65,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_TERMINAL_ACCOUNT_OS,
     DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
-    DEVICE_CLOUDCLI_NPM_REGISTRIES,
     DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES,
     DEVICE_FORWARDER_TOKEN_LIFETIME_S,
     DEVICE_FORWARDER_TOKEN_NONCE_BYTES,
@@ -96,9 +94,6 @@ from neutrino_hub.utils.json_file import (
 DEVICES_DIR_NAME = "devices"
 # The system whose instances start as their account only with its password.
 VSCODE_PASSWORD_OS = "windows"
-# A manifest naming this is an npm install: the state carries the registry
-# of the hub's edition and the environment the manifest names for it.
-NPM_ENVIRONMENT_KEY = "npm_environment"
 
 
 def state_hash(desired: dict) -> str:
@@ -114,9 +109,7 @@ def state_hash(desired: dict) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def instances_agent_config(
-    row: DeviceModuleRow, stored: dict, platform: dict, *, edition: str = EDITION
-) -> dict:
+def instances_agent_config(row: DeviceModuleRow, stored: dict, platform: dict) -> dict:
     """What the agent is sent for a program run as a person's account.
 
     Args:
@@ -125,23 +118,13 @@ def instances_agent_config(
             fields and, where the row names one, the login it runs as.
         platform: The tuple the agent reported; only a Windows machine is
             sent a password.
-        edition: The hub's edition, whose npm registry a module installed
-            by npm is sent.
 
     Returns:
-        The row's ``config_head``, then for a module whose manifest names
-        ``npm_environment`` the ``npm_registry`` and ``npm_environment`` of
-        the edition, then ``instances``, each ``{account, port}`` with every
+        The row's ``config_head``, then ``instances``, each ``{account, port}`` with every
         sealed field opened under its opened key and, on Windows, the
         ``password`` of the instance's login.
     """
     config = dict(row.config_head)
-    manifest = load_module_manifests().get(row.name) or {}
-    if NPM_ENVIRONMENT_KEY in manifest:
-        config["npm_registry"] = DEVICE_CLOUDCLI_NPM_REGISTRIES[edition]
-        config[NPM_ENVIRONMENT_KEY] = dict(
-            (manifest.get(NPM_ENVIRONMENT_KEY) or {}).get(edition, {})
-        )
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     instances = []
     for instance in stored.get("instances") or []:
@@ -207,6 +190,7 @@ def ai_tools_agent_config(
     models: list,
     switcher_version: str = "",
     *,
+    switcher_artifact: "dict | None" = None,
     is_forwarded: bool = True,
 ) -> dict:
     """What the agent is sent for the machine's AI tools.
@@ -221,17 +205,20 @@ def ai_tools_agent_config(
             reach the gateway, and the device's own key.
         models: The names the gateway serves now.
         switcher_version: The cc-switch version the hub's manifest pins.
+        switcher_artifact: Its artifact for the machine's platform, ``{name,
+            kind, digest}``; None where the manifest names none.
         is_forwarded: Whether the agent opens its AI gateway forward: true on
             a managed machine, false on the hub's own.
 
     Returns:
-        ``{is_enabled: false, cc_switch_version}`` while the setting is off,
-        the gateway serves no model, or the device has no key for it, the
-        version left out when none is given; else
-        ``{is_enabled, is_forwarded, base_url, api_key, tool_configs,
-        accounts: [{account, password}], cc_switch_version}``, every Claude
-        slot filled with the first served model where none was chosen and
-        ``password`` sent to a Windows machine alone.
+        ``{is_enabled: false, cc_switch_version, cc_switch_artifact}`` while
+        the setting is off, the gateway serves no model, or the device has
+        no key for it, the version and the artifact each left out when none
+        is given; else ``{is_enabled, is_forwarded, base_url, api_key,
+        tool_configs, accounts: [{account, password}], cc_switch_version,
+        cc_switch_artifact}``, every Claude slot filled with the first
+        served model where none was chosen and ``password`` sent to a
+        Windows machine alone.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
@@ -239,6 +226,8 @@ def ai_tools_agent_config(
         off = {"is_enabled": False}
         if switcher_version:
             off["cc_switch_version"] = switcher_version
+        if switcher_artifact:
+            off["cc_switch_artifact"] = dict(switcher_artifact)
         return off
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     sent_accounts = []
@@ -247,7 +236,7 @@ def ai_tools_agent_config(
         if is_windows and login_id:
             sent["password"] = _login_password(login_id)
         sent_accounts.append(sent)
-    return {
+    section = {
         "is_enabled": True,
         "is_forwarded": is_forwarded,
         "base_url": base_url,
@@ -258,6 +247,26 @@ def ai_tools_agent_config(
         "accounts": sent_accounts,
         "cc_switch_version": switcher_version,
     }
+    if switcher_artifact:
+        section["cc_switch_artifact"] = dict(switcher_artifact)
+    return section
+
+
+def switcher_artifact(manifest: dict, platform: dict) -> "dict | None":
+    """The cc-switch artifact one machine's agent asks the package stream for.
+
+    Args:
+        manifest: ``cc_switch.json``, empty when the hub holds none.
+        platform: The tuple the agent reported.
+
+    Returns:
+        ``{name, kind, digest}`` of the entry's one artifact, or None where
+        the manifest names no entry for the platform.
+    """
+    _, entry = resolve_platform_entry(manifest, platform)
+    for artifact in entry_artifacts(manifest, entry):
+        return {key: artifact[key] for key in ("name", "kind", "digest")}
+    return None
 
 
 def terminal_agent_config(stored: dict, platform: dict) -> dict:
@@ -352,6 +361,25 @@ class DesiredStateStore:
                     "is_settled": bool(entry.get("is_settled", False)),
                 }
         return modules
+
+    def named_modules(self) -> set:
+        """Every module some device's ``modules.json`` still names.
+
+        Returns:
+            The module names some device names with a ``want`` other than a
+            settled ``absent``.
+        """
+        root = UTILS_CONFIG_DIR / DEVICES_DIR_NAME
+        named: set = set()
+        if not root.is_dir():
+            return named
+        for path in sorted(root.iterdir()):
+            if not path.is_dir() or path.name == DEVICE_PACKAGES_DIR_NAME:
+                continue
+            for name, entry in self.modules(path.name).items():
+                if not entry["is_settled"]:
+                    named.add(name)
+        return named
 
     def set_want(self, key: str, module: str, want: str) -> None:
         """Write what one device is to make of one module.
@@ -760,7 +788,8 @@ class DesiredStateStore:
         its ``want``; one it does not name, and one the machine has already
         settled, is left out, so the agent leaves it as it is. The two
         modules the agent carries, ``terminal`` and ``remote_desktop``, are
-        always sent, composed from their own files with no recipe.
+        always sent, composed from their own files, with the ``agent`` recipe
+        their manifests name.
 
         Args:
             key: The device key.
@@ -798,7 +827,7 @@ class DesiredStateStore:
             modules[name] = {
                 "want": entry["want"],
                 "config": config,
-                **_recipes(resolved.get(name) or {}),
+                "install": dict((resolved.get(name) or {}).get("recipe") or {}),
             }
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
@@ -816,8 +845,13 @@ class DesiredStateStore:
             "config": self.remote_desktop(key),
         }
         for name in DEVICE_AGENT_MODULES:
+            recipe = (resolved.get(name) or {}).get("recipe")
+            if recipe:
+                modules[name]["install"] = dict(recipe)
+        for name in DEVICE_AGENT_MODULES:
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
+        switcher = load_tool_manifests().get(DEVICE_AI_SWITCHER_NAME, {})
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
@@ -828,12 +862,8 @@ class DesiredStateStore:
                 platform,
                 device_gateway(key, is_hub_machine=is_hub_machine),
                 list(ai_models),
-                str(
-                    load_tool_manifests()
-                    .get(DEVICE_AI_SWITCHER_NAME, {})
-                    .get("version", "")
-                    or ""
-                ),
+                str(switcher.get("version", "") or ""),
+                switcher_artifact=switcher_artifact(switcher, platform),
                 is_forwarded=not is_hub_machine,
             ),
         }
@@ -894,33 +924,6 @@ class DesiredStateStore:
 
     def _path(self, key: str, name: str) -> str:
         return f"{DEVICES_DIR_NAME}/{key}/{name}"
-
-
-def _recipes(resolved: dict) -> dict:
-    """The install and uninstall recipes of one module resolved for a platform.
-
-    Args:
-        resolved: The module as :func:`resolved_modules` answers it.
-
-    Returns:
-        ``{"install", "uninstall"}``, the branch's own blocks, the
-        components of an entry that lists them reduced to their name,
-        package kind, directory and digest; the install's ``kind`` is the
-        branch's resolved one, and no other identity field the branch
-        names is in either; both empty where the manifest offers the
-        platform nothing.
-    """
-    entry = resolved.get("entry")
-    if not isinstance(entry, dict):
-        return {"install": {}, "uninstall": {}}
-    left_out = ("uninstall", "components") + AGENT_MODULE_IDENTITY_FIELDS
-    install = {name: value for name, value in entry.items() if name not in left_out}
-    install["kind"] = str(resolved.get("kind", "") or "")
-    if "components" in resolved:
-        install["components"] = [
-            dict(component) for component in resolved["components"]
-        ]
-    return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
 
 
 def _fresh_token(secret: str, now: "float | None") -> str:

@@ -1,68 +1,115 @@
 {
-  "_comment": "VS Code in the browser, hub-tier: the cache fetches Microsoft's standalone CLI at one pinned build and the agent runs its serve-web as a chosen account. Each url and sha256 is what update.code.visualstudio.com/api/update/<platform>/stable/latest answered for that build. The Linux builds are the static Alpine ones; the server the CLI downloads needs glibc 2.28. Microsoft's license terms cover the binaries; corresponding_source names the CLI's source at the pinned commit.",
+  "_comment": "VS Code in the browser: Microsoft's standalone CLI, whose serve-web the agent runs as each chosen account. Each file and digest is what update.code.visualstudio.com/api/update/<platform>/stable/latest answered for the tested build, and Microsoft's address is its one source. The Linux builds are the static Alpine ones; the server the CLI downloads needs glibc 2.28. The archive holds the one CLI, which lands directly in the module's own directory.",
   "name": "vscode",
   "title": "VS Code",
-  "kind": "vscode",
-  "installer": "hub",
-  "source": "Microsoft",
-  "version": "1.140.0",
-  "license": "Microsoft Software License Terms",
-  "corresponding_source": "https://github.com/microsoft/vscode/tree/07f806f999227108933c2e30515b26eecc1fda74/cli", "_source_scan": "scan: allow",
   "description": "VS Code in the browser, opened from a client through localhost",
+  "publisher": "Microsoft",
+  "license": "Microsoft Software License Terms",
+  "corresponding_source": "https://github.com/microsoft/vscode/tree/{version}/cli",
   "platforms": {
     "linux-amd64": {
-      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_alpine_x64_cli.tar.gz", "_url_scan": "scan: allow",
-      "sha256": "938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1", "_sha256_scan": "scan: allow",
-      "package_kind": "tar",
-      "verify": "/var/lib/neutrino/agent/vscode/code --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "vscode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.140.0",
+          "releases": [{"kind": "vscode_update", "sources": ["https://update.code.visualstudio.com"], "platform": "cli-alpine-x64"}],
+          "artifacts": [
+            {
+              "name": "cli",
+              "kind": "tar_gz",
+              "file": "vscode_cli_alpine_x64_cli.tar.gz",
+              "digest": "sha256:938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1", "_digest_scan": "scan: allow",
+              "sources": ["https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/vscode/code --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
       }
     },
     "linux-arm64": {
-      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_alpine_arm64_cli.tar.gz", "_url_scan": "scan: allow",
-      "sha256": "6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86", "_sha256_scan": "scan: allow",
-      "package_kind": "tar",
-      "verify": "/var/lib/neutrino/agent/vscode/code --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "vscode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.140.0",
+          "releases": [{"kind": "vscode_update", "sources": ["https://update.code.visualstudio.com"], "platform": "cli-alpine-arm64"}],
+          "artifacts": [
+            {
+              "name": "cli",
+              "kind": "tar_gz",
+              "file": "vscode_cli_alpine_arm64_cli.tar.gz",
+              "digest": "sha256:6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86", "_digest_scan": "scan: allow",
+              "sources": ["https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/vscode/code --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
       }
     },
     "windows-amd64": {
-      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_win32_x64_cli.zip", "_url_scan": "scan: allow",
-      "sha256": "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe", "_sha256_scan": "scan: allow",
-      "package_kind": "zip",
-      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\vscode\\code.exe\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "vscode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.140.0",
+          "releases": [{"kind": "vscode_update", "sources": ["https://update.code.visualstudio.com"], "platform": "cli-win32-x64"}],
+          "artifacts": [
+            {
+              "name": "cli",
+              "kind": "zip",
+              "file": "vscode_cli_win32_x64_cli.zip",
+              "digest": "sha256:ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe", "_digest_scan": "scan: allow",
+              "sources": ["https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\vscode\\code.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
       }
     },
     "darwin-arm64": {
-      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_darwin_arm64_cli.zip", "_url_scan": "scan: allow",
-      "sha256": "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c", "_sha256_scan": "scan: allow",
-      "package_kind": "zip",
-      "verify": "\"/Library/Application Support/Neutrino/agent/state/vscode/code\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "vscode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.140.0",
+          "releases": [{"kind": "vscode_update", "sources": ["https://update.code.visualstudio.com"], "platform": "cli-darwin-arm64"}],
+          "artifacts": [
+            {
+              "name": "cli",
+              "kind": "zip",
+              "file": "vscode_cli_darwin_arm64_cli.zip",
+              "digest": "sha256:352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c", "_digest_scan": "scan: allow",
+              "sources": ["https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/vscode/code\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
       }
     },
     "darwin-amd64": {
-      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_darwin_x64_cli.zip", "_url_scan": "scan: allow",
-      "sha256": "ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4", "_sha256_scan": "scan: allow",
-      "package_kind": "zip",
-      "verify": "\"/Library/Application Support/Neutrino/agent/state/vscode/code\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "vscode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.140.0",
+          "releases": [{"kind": "vscode_update", "sources": ["https://update.code.visualstudio.com"], "platform": "cli-darwin-x64"}],
+          "artifacts": [
+            {
+              "name": "cli",
+              "kind": "zip",
+              "file": "vscode_cli_darwin_x64_cli.zip",
+              "digest": "sha256:ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4", "_digest_scan": "scan: allow",
+              "sources": ["https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/vscode/code\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
       }
     }
   }

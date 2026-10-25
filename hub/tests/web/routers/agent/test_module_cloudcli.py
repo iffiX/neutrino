@@ -20,8 +20,6 @@ import json
 
 import pytest
 
-from neutrino_hub.edition import EDITION
-from neutrino_hub.modules.devices.constants import DEVICE_CLOUDCLI_NPM_REGISTRIES
 from neutrino_hub.modules.clients import ai_keys
 from neutrino_hub.modules.cliproxyapi.ops import load_config
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -124,16 +122,6 @@ def test_a_set_is_checked_as_the_agent_receives_it_and_mints_no_key(api, tmp_pat
     _device, module, checked = runtime.agent_sessions.validations[0]
     assert module == "cloudcli"
     assert checked == {
-        "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[EDITION],
-        "npm_environment": (
-            {}
-            if EDITION == "intl"
-            else {
-                "npm_config_better_sqlite3_binary_host": (
-                    "https://registry.npmmirror.com/-/binary/better-sqlite3"
-                )
-            }
-        ),
         "instances": [
             {
                 "account": "alice",
@@ -251,11 +239,23 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     )
     assert "gateway_url" not in module["config"]
     assert "gateway_key" not in module["config"]
-    assert module["install"]["kind"] == "cloudcli"
-    (node,) = module["install"]["components"]
+    recipe = module["install"]
+    assert (recipe["runner"], recipe["method"]) == ("cloudcli", "hub")
+    assert recipe["params"]["version"] == "1.37.3"
+    assert "releases" not in recipe["params"]
+    node, package = recipe["params"]["artifacts"]
     assert (node["name"], node["directory"]) == ("node", "node")
-    assert node["package_kind"] == ("zip" if has_password else "tar")
-    assert "url" not in node
+    assert node["kind"] == ("zip" if has_password else "tar_gz")
+    assert node["digest"].startswith("sha256:")
+    assert "sources" not in node and "file" not in node
+    assert (package["name"], package["kind"]) == ("cloudcli", "npm")
+    assert package["package"] == "@cloudcli-ai/cloudcli"
+    assert package["digest"].startswith("sha512-")
+    assert package["sources"] == [
+        "https://registry.npmjs.org",
+        "https://registry.npmmirror.com",
+    ]
+    assert list(package["hosts"]) == ["npm_config_better_sqlite3_binary_host"]
     assert "sealed" not in json.dumps(desired)
 
 

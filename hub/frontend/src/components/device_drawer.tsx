@@ -9,6 +9,7 @@ import { InstallAgentModal } from "./install_agent_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { StatusDot } from "./status_dot";
 import { ApiError, apiPost, describeCode, describeError } from "../api_client";
+import { codeParams } from "../code_params";
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_KEYS,
@@ -699,13 +700,7 @@ function describeAgentError(error: DeviceClientError): string {
   if (!hasWord(key)) {
     return error.code;
   }
-  const params: Record<string, string> = {};
-  for (const [name, value] of Object.entries(error.params)) {
-    if (typeof value === "string" || typeof value === "number") {
-      params[name] = String(value);
-    }
-  }
-  return t(key, withModuleTitle(params));
+  return t(key, withModuleTitle(codeParams(error.params)));
 }
 
 /** Wording for a failed action, with the coded refusals spelled out. */

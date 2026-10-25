@@ -29,8 +29,22 @@ FINGERPRINT = "ab" * 32
 MANIFESTS = {
     "fakedesk": {
         "title": "FakeDesk",
-        "installer": "hub",
-        "platforms": {"debian": {}},
+        "publisher": "FakeDesk",
+        "platforms": {
+            "linux-debian": {
+                "runner": "fakedesk",
+                "install": {
+                    "method": "hub",
+                    "params": {
+                        "version": "1.0",
+                        "releases": [],
+                        "artifacts": [],
+                        "verify": "fakedesk --version",
+                        "uninstall": {"post_uninstall": [], "is_data_kept": True},
+                    },
+                },
+            }
+        },
     }
 }
 

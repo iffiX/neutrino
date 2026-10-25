@@ -1159,14 +1159,13 @@ export interface DeviceModuleView {
   name: string;
   title: string;
   description: string;
-  kind: string;
-  /** agent, platform, hub or builtin: who puts the module on the machine,
-   * for its platform. */
-  installer: string;
+  runner: string;
+  /** agent, builtin, system, hub or container: how the module is installed
+   * on the machine, for its platform. */
+  method: string;
   is_supported: boolean;
-  is_native: boolean;
   is_data_kept: boolean;
-  source: string;
+  publisher: string;
   license: string;
   corresponding_source: string;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */

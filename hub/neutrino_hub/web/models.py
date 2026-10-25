@@ -1775,11 +1775,12 @@ class ChannelPong(BaseModel):
 
 class ChannelModuleState(BaseModel):
     """What one module on a device is to be."""
+    # The recipe resolved for the machine's platform: ``{runner, method,
+    # params}``.
 
     want: str
     config: dict = Field(default_factory=dict)
     install: dict = Field(default_factory=dict)
-    uninstall: dict = Field(default_factory=dict)
 
 
 class ChannelDesktopState(BaseModel):
@@ -1797,7 +1798,7 @@ class ChannelAiToolsAccount(BaseModel):
 
 
 class ChannelAiToolsState(BaseModel):
-    """The machine's AI tools setting; off, it carries ``cc_switch_version`` alone."""
+    """The machine's AI tools setting; off, it carries the cc-switch version and artifact alone."""
 
     is_enabled: bool = False
     # Whether the agent opens its AI gateway forward on 127.0.0.1:8317: true
@@ -1807,6 +1808,9 @@ class ChannelAiToolsState(BaseModel):
     # the hub's own machine.
     base_url: str = ""
     api_key: str = ""
+    # The cc-switch artifact for the machine's platform, ``{name, kind,
+    # digest}``, which the agent asks the package stream for.
+    cc_switch_artifact: dict = Field(default_factory=dict)
     tool_configs: dict = Field(default_factory=dict)
     accounts: list[ChannelAiToolsAccount] = Field(default_factory=list)
     cc_switch_version: str = ""
@@ -2060,25 +2064,22 @@ class DeviceModuleView(BaseModel):
     name: str
     title: str
     description: str = ""
-    # The kind of the branch for the device's platform; the SSH server's
-    # uninstall confirmation keys on it.
-    kind: str = ""
-    # Who installs it on the device's platform: agent (the agent's own
-    # package carries it, so the row offers none of the four presses),
-    # platform (the OS's package manager carries it), hub (the module's
-    # installer fetches it) or builtin (the system itself carries it).
-    installer: str = ""
+    # The agent runner the entry for the device's platform names.
+    runner: str = ""
+    # How the module is installed on the device's platform: agent (the
+    # agent's own package carries it, so the row offers none of the four
+    # presses), builtin (the system holds it), system (the system's package
+    # manager installs it), hub (the module's installer fetches it) or
+    # container (its images run on Containers).
+    method: str = ""
     is_supported: bool = True
-    # The platform carries this natively: worded built in, no button.
-    is_native: bool = False
     # Whether an uninstall leaves the module's data: pools, share
     # directories, repositories, volumes. The confirmation says which.
     is_data_kept: bool = True
-    # Where the software comes from, in the words the row is attributed to:
-    # a repository, a vendor, or the machine's own packages.
-    source: str = ""
-    # What the hub conveys this under, and where its exact source is. Empty
-    # for software the hub does not hand on itself.
+    # Who publishes the software.
+    publisher: str = ""
+    # The licence and the address of the source it asks for, for a hub or a
+    # container entry alone.
     license: str = ""
     corresponding_source: str = ""
     # What the hub asks of the module here: ``absent``, ``installed``,

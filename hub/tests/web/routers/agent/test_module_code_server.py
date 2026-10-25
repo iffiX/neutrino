@@ -21,6 +21,7 @@ import pytest
 from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.devices.constants import DEVICE_CODE_SERVER_SECRET_AAD
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.web.routers.agent import module_instances
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, module_box
@@ -151,11 +152,19 @@ def test_the_state_carries_the_opened_secret_and_the_pinned_release(api, platfor
     module = desired["modules"]["code_server"]
     (instance,) = module["config"]["instances"]
     assert set(instance) == {"account", "port", "secret"}
-    assert module["install"]["kind"] == "code_server"
-    assert module["install"]["package_kind"] == "tar"
-    assert module["install"]["url"].endswith(
-        f"code-server-4.140.0-{key.replace('darwin', 'macos')}.tar.gz"
+    recipe = module["install"]
+    assert (recipe["runner"], recipe["method"]) == ("code_server", "hub")
+    assert recipe["params"]["version"] == "4.140.0"
+    (release,) = recipe["params"]["artifacts"]
+    assert (release["name"], release["kind"], release["directory"]) == (
+        "release",
+        "tar_gz",
+        "release",
     )
+    manifest = load_module_manifests()["code_server"]
+    (pinned,) = manifest["platforms"][key]["install"]["params"]["artifacts"]
+    assert release["digest"] == pinned["digest"]
+    assert "sources" not in release
     assert "sealed" not in json.dumps(desired)
 
 

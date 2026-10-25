@@ -85,6 +85,7 @@ def test_a_windows_machine_takes_the_shell_program_alone(api):
     assert desired["modules"]["terminal"] == {
         "want": "running",
         "config": {"account": "", "shell_path": shell},
+        "install": {"runner": "terminal", "method": "agent", "params": {}},
     }
 
 
@@ -132,4 +133,5 @@ def test_every_device_is_sent_the_module_with_its_default(api):
     assert desired["modules"]["terminal"] == {
         "want": "running",
         "config": {"account": "", "shell_path": ""},
+        "install": {"runner": "terminal", "method": "agent", "params": {}},
     }

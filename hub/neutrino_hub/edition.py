@@ -8,9 +8,10 @@ A feature is present when its package imports. Every hook is named by its
 dotted path and imported on its first lookup, so loading this file imports
 no feature.
 
-``EDITION`` is where the hub fetches from, never which features it has:
-the stamp a build writes into ``_version.py``, else the ``EDITION`` file at
-the root of a checkout, else ``intl``.
+``EDITION`` names the edition the hub was built as, never which features it
+has and never where it fetches from: the stamp a build writes into
+``_version.py``, else the ``EDITION`` file at the root of a checkout, else
+``intl``.
 """
 
 import importlib

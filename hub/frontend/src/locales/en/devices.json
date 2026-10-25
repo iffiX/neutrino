@@ -1,9 +1,7 @@
 {
   "code.agent_never_reported": "{device} never said how it went.",
   "code.agent_package_cache_unwritable": "The hub could not write the agent package to its own disk.",
-  "code.agent_package_fetch_failed": "The hub could not fetch the agent package for this platform.",
   "code.agent_package_missing": "The hub has no agent package for this machine's platform.",
-  "code.agent_package_sha256_mismatch": "The agent package the hub fetched failed its check.",
   "code.connect_failed": "The host did not answer.",
   "code.declared_service_unknown": "That service is already gone; reload.",
   "code.hub_unreachable": "The device could not reach the hub for the download: {detail}",

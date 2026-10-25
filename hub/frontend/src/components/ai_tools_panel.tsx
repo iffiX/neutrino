@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
+import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -348,7 +349,7 @@ function describeResult(entry: AiToolAccountView, isEnabled: boolean): string {
         : `code.${entry.code}`;
     const params: Record<string, string | number> = {
       account: entry.account,
-      ...entry.params,
+      ...codeParams(entry.params),
     };
     const detailKey = `code.${String(params.detail ?? "")}`;
     const detailWords = t(detailKey);

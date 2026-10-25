@@ -32,6 +32,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from neutrino_hub.exceptions import (
     AgentArtifactFetchError,
     AgentOfflineError,
+    DownloadFailedError,
     TaskExitStatusError,
 )
 from neutrino_hub.modules.channel.admission import admit
@@ -67,18 +68,14 @@ from neutrino_hub.modules.channel.sessions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import panel_material, service_material
-from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchProgress
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleSendProgress
 from neutrino_hub.modules.devices.agent_package import platform_family
 from neutrino_hub.modules.devices.agent_reports import (
     record_hello,
     record_offline,
     record_report,
 )
-from neutrino_hub.modules.devices.constants import AGENT_MODULE_PROGRESS_VERB_SEND
-from neutrino_hub.modules.devices.manifests import (
-    load_module_manifests,
-    load_tool_manifests,
-)
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
@@ -268,14 +265,14 @@ async def serve_package_stream(
 ) -> None:
     """Serve a ``package`` stream an agent opened: the bytes, then their digest.
 
-    ``{module}`` names a module's package from the hub's cache, or a
-    program the agent runs itself, such as cc-switch, and ``{module,
-    component}`` one component of a module that unpacks several archives;
-    ``{}`` is the agent's own package for its platform. The bytes go down
-    under the agent's credit and the close carries their ``sha256`` and the
-    file's own ``name``, the release's file name with no directory. A
-    module's bytes are counted into its task as ``hub: sending <title>,
-    <sent> / <total> MB to <device>`` lines while they go.
+    ``{module, artifact, digest}`` names one artifact of a module, or of a
+    program the agent runs itself such as cc-switch, from the hub's cache by
+    its digest; ``{}`` is the agent's own package for its platform. The
+    bytes go down under the agent's credit and the close carries their
+    ``sha256`` and the file's own ``name``, as its sources or its release
+    name it, with no directory. A module's fetch and its bytes are counted
+    into its task as ``hub: fetching`` and ``hub: sending <title>, <sent> /
+    <total> MB to <device>`` lines while they go.
 
     Args:
         runtime: The shared runtime.
@@ -283,7 +280,8 @@ async def serve_package_stream(
         stream: The stream, closed here.
     """
     module = str(stream.args.get("module", "") or "")
-    component = str(stream.args.get("component", "") or "")
+    artifact = str(stream.args.get("artifact", "") or "")
+    digest = str(stream.args.get("digest", "") or "")
     platform = dict(runtime.device_platform.get(session.key, {}))
     if not platform:
         platform = await _platform_once_reported(runtime, session.key)
@@ -297,19 +295,17 @@ async def serve_package_stream(
             module_task_label(session.key, module),
         )
     try:
-        path, title = await asyncio.to_thread(
-            _package_file, runtime, module, platform, on_progress, component
+        path, title, name = await asyncio.to_thread(
+            _package_file, runtime, module, platform, on_progress, artifact, digest
         )
     except AgentArtifactFetchError as error:
         if not module and not platform:
             session.is_reinstall_due = True
         if is_module:
-            detail = " ".join(f"{k}={v}" for k, v in sorted(error.params.items()))
-            publish_module_line(
-                runtime,
-                module_task_label(session.key, module),
-                f"hub: the download failed: {error.code} {detail}".rstrip(),
-            )
+            for line in _refusal_lines(error.code, error.params):
+                publish_module_line(
+                    runtime, module_task_label(session.key, module), line
+                )
         LOGGER.warning(
             "package stream for %s refused: %s %s",
             module or "agent",
@@ -321,24 +317,23 @@ async def serve_package_stream(
     progress = None
     size = 0
     if is_module:
-        progress = AgentModuleFetchProgress(
+        progress = AgentModuleSendProgress(
             title=title,
+            recipient=session.name,
             on_line=functools.partial(
                 publish_module_line, runtime, module_task_label(session.key, module)
             ),
-            verb=AGENT_MODULE_PROGRESS_VERB_SEND,
-            recipient=session.name,
         )
         size = await asyncio.to_thread(_file_size, path)
     sent = 0
-    digest = hashlib.sha256()
+    sent_digest = hashlib.sha256()
     try:
         with path.open("rb") as handle:
             while True:
                 chunk = await asyncio.to_thread(handle.read, CHANNEL_CHUNK_BYTES)
                 if not chunk:
                     break
-                digest.update(chunk)
+                sent_digest.update(chunk)
                 await stream.send_bytes(chunk)
                 sent += len(chunk)
                 if progress is not None:
@@ -348,7 +343,7 @@ async def serve_package_stream(
         return
     if progress is not None:
         progress.note(sent, size, is_done=True)
-    await stream.close("", {"sha256": digest.hexdigest(), "name": path.name})
+    await stream.close("", {"sha256": sent_digest.hexdigest(), "name": name})
 
 
 async def serve_log_stream(
@@ -523,34 +518,60 @@ async def _platform_once_reported(runtime, key: str) -> dict:
     return {}
 
 
-def _package_file(
-    runtime, module: str, platform: dict, on_progress=None, component: str = ""
-) -> tuple:
-    """Where the package a ``package`` stream asks for is on this hub, and its title.
+def _refusal_lines(code: str, params: dict) -> list:
+    """The module output lines a refused ``package`` stream writes.
+
+    Args:
+        code: The refusal's code.
+        params: Its params.
 
     Returns:
-        ``(path, title)``, the title empty for the agent's own package.
+        For ``download_failed``, one line naming the file and one per source
+        with its reason and detail; for any other code, one line with the
+        code and its params.
+    """
+    if code != DownloadFailedError.code:
+        detail = " ".join(f"{key}={value}" for key, value in sorted(params.items()))
+        return [f"hub: the download failed: {code} {detail}".rstrip()]
+    lines = [f"hub: no source served {params.get('file', '')}"]
+    for item in params.get("sources") or []:
+        said = f"hub:   {item.get('source', '')}: {item.get('reason', '')}"
+        if item.get("detail"):
+            said += f" ({item['detail']})"
+        lines.append(said)
+    return lines
+
+
+def _package_file(
+    runtime,
+    module: str,
+    platform: dict,
+    on_progress=None,
+    artifact: str = "",
+    digest: str = "",
+) -> tuple:
+    """Where the package a ``package`` stream asks for is on this hub.
+
+    Returns:
+        ``(path, title, name)``: the file, what progress lines call it,
+        empty for the agent's own package, and the name the close gives it.
 
     Raises:
-        AgentArtifactFetchError: ``module_unknown`` for a name no manifest
-            names, and the caches' own typed reasons.
+        AgentArtifactFetchError: The caches' own typed reasons.
     """
     if not module:
         path = runtime.agent_packages.package(
             family=platform_family(platform), architecture=str(platform.get("arch", ""))
         )
-        return path, ""
-    manifest = load_module_manifests().get(module) or load_tool_manifests().get(module)
-    if manifest is None:
-        raise AgentArtifactFetchError("module_unknown", name=module)
-    artifact = runtime.agent_modules.artifact(
-        name=module,
-        manifest=manifest,
+        return path, "", path.name
+    held = runtime.agent_modules.artifact(
+        module=module,
+        artifact=artifact,
+        digest=digest,
         platform=platform,
-        component=component,
         on_progress=on_progress,
     )
-    return artifact.path, artifact.title
+    return held.path, held.title, held.file
 
 
 async def _serve_frames(websocket: WebSocket, session: ChannelSession, frames) -> None:

@@ -35,89 +35,63 @@ SSH_UNREACHABLE_STATUS = 255
 # and from SSH_UNREACHABLE_STATUS.
 SSH_UNSUPPORTED_OS_STATUS = 95
 
-# Who puts a module on a machine. platform: the OS carries it and the hub
-# switches it. hub: the module's installer fetches an artifact and the
-# agent installs it.
-# agent: the agent's own package carries it on every system; no branch
-# names a platform, the hub composes its entry from its own file, and none
-# of the four presses applies to it.
-AGENT_MODULE_INSTALLER_TIERS = ("agent", "platform", "hub")
-AGENT_MODULE_INSTALLER_AGENT = "agent"
-# A manifest that says ``is_module: false`` names a program the agent runs
-# itself rather than a module: it stays out of the catalog, and each of its
-# platform branches names these fields.
-AGENT_TOOL_FIELDS = ("url", "cn_url", "sha256", "package_kind")
-# What a ``cn_url`` names for the release this hub was built for: the
-# address its build stamped for the agent packages, which the project's own
-# release publishes beside them.
-AGENT_MODULE_RELEASE_PLACEHOLDER = "{release}"
-# A platform branch whose ``installer`` is this names software the system
-# itself carries, such as Windows' and macOS's own SMB servers: nothing is
-# downloaded or installed, and the agent's runner checks for it itself.
-AGENT_MODULE_INSTALLER_BUILTIN = "builtin"
-AGENT_MODULE_INSTALLER_HUB = "hub"
-# The installers a platform branch may name in place of the manifest's.
-AGENT_MODULE_BRANCH_INSTALLERS = (
-    AGENT_MODULE_INSTALLER_BUILTIN,
-    AGENT_MODULE_INSTALLER_HUB,
+# How a module is installed on a machine, by the method its platform entry
+# names (design/agent/module_install.md, "Install methods"): the agent's own
+# package, software the system holds, the system's package manager, the hub's
+# cache, or container images.
+DEVICE_METHOD_AGENT = "agent"
+DEVICE_METHOD_BUILTIN = "builtin"
+DEVICE_METHOD_SYSTEM = "system"
+DEVICE_METHOD_HUB = "hub"
+DEVICE_METHOD_CONTAINER = "container"
+# The order both surfaces draw the modules in, by the first method a
+# manifest names: what the agent carries, what the system holds or installs,
+# what the hub's cache fetches, then container images.
+DEVICE_METHOD_RANKS = {
+    DEVICE_METHOD_AGENT: 0,
+    DEVICE_METHOD_BUILTIN: 1,
+    DEVICE_METHOD_SYSTEM: 1,
+    DEVICE_METHOD_HUB: 2,
+    DEVICE_METHOD_CONTAINER: 3,
+}
+# The methods whose entry the catalog shows a licence and a source address for.
+DEVICE_METHODS_WITH_LICENSE = (DEVICE_METHOD_HUB, DEVICE_METHOD_CONTAINER)
+# The version a system entry names: the system's own.
+DEVICE_SYSTEM_VERSION = "system"
+# The systems a platform key starts with.
+DEVICE_PLATFORM_OS = ("linux", "windows", "darwin")
+# The artifact kinds the hub's cache fetches, those of them kept under a
+# directory of their own, and the two kinds the machine fetches itself.
+DEVICE_ARTIFACT_FILE_KINDS = (
+    "tar_gz",
+    "zip",
+    "binary",
+    "msi",
+    "pkg",
+    "tar_zst",
+    "raw_zst",
 )
-# The identity fields a platform branch may name in place of the
-# manifest's, for that platform alone; a recipe carries the resolved kind
-# and none of the others.
-AGENT_MODULE_IDENTITY_FIELDS = (
-    "kind",
-    "installer",
-    "version",
-    "source",
-    "license",
-    "corresponding_source",
-)
-# The branch fields that say the module's installer fetches or installs
-# something, none of which a builtin branch may name.
-AGENT_MODULE_DOWNLOAD_FIELDS = (
-    "url",
-    "components",
-    "github_repo",
-    "asset_pattern",
-    "download",
-    "package_kind",
-    "packages",
-    "pre_install",
-)
-# A branch that unpacks several archives names them under ``components``,
-# one entry per archive with these fields and an optional ``cn_url``; the
-# recipe the state carries keeps the four the agent acts on.
-AGENT_MODULE_COMPONENT_FIELDS = ("name", "url", "sha256", "package_kind", "directory")
-AGENT_MODULE_COMPONENT_RECIPE_FIELDS = ("name", "package_kind", "directory", "sha256")
+DEVICE_ARTIFACT_DIRECTORY_KINDS = ("msi", "pkg", "tar_zst", "raw_zst")
+DEVICE_ARTIFACT_KIND_NPM = "npm"
+DEVICE_ARTIFACT_KIND_IMAGE = "image"
+# The keys each kind of release feed names beside ``kind`` and ``sources``.
+DEVICE_FEED_KEYS = {
+    "github": ("repository", "tag"),
+    "vscode_update": ("platform",),
+    "oci": ("repository", "tag"),
+    "npm": ("package",),
+}
 
-# The agent module cache: what the hub presents when a module's installer
-# fetches an artifact for a managed machine, and what it accepts back. The
-# ceiling is generous, since Podman's machine image for applehv runs past
-# 1 GB, and exists so a mirror serving something endless cannot fill the
-# hub's disk.
+# The agent module cache: the files a module's installer fetches for managed
+# machines, each named by its digest. The ceiling exists so a source serving
+# something endless cannot fill the hub's disk; Podman's machine image for
+# applehv runs past 1 GB.
 AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_module_cache"
-AGENT_MODULE_FETCH_TIMEOUT_S = 300
 AGENT_MODULE_FETCH_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
-AGENT_MODULE_KEY_DIGEST_CHARS = 16
-AGENT_MODULE_FETCH_CHUNK_BYTES = 64 * 1024
-# How much of a download's start is kept for the check of what kind of file
-# it is.
-AGENT_MODULE_HEAD_BYTES = 512
-# A download's progress line is written every this many percent, or after
-# this many seconds when the percent moves slower or the size is unknown.
+# A ``package`` stream's progress line is written every this many percent, or
+# after this many seconds when the percent moves slower.
 AGENT_MODULE_PROGRESS_PERCENT_STEP = 5
 AGENT_MODULE_PROGRESS_INTERVAL_S = 2.0
-# The second word of a progress line: the cache's download, and the
-# ``package`` stream's send to the machine that asked.
-AGENT_MODULE_PROGRESS_VERB_DOWNLOAD = "downloading"
-AGENT_MODULE_PROGRESS_VERB_SEND = "sending"
-AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
-# The edition whose installer fetches from a manifest entry's ``cn_url``
-# where the entry names one, and how much of a mirror's listing of its
-# latest release is read.
-AGENT_MODULE_EDITION_INTL = "intl"
-AGENT_MODULE_EDITION_CN = "cn"
-AGENT_MODULE_LISTING_LIMIT_BYTES = 1024 * 1024
 
 # The hub's own agent packages, which are not third-party modules: the hub's
 # package lands the one of its own platform here, and every other platform is
@@ -141,45 +115,20 @@ DEVICE_RETRY_MARK_BYTES = 8
 AGENT_PACKAGE_MANIFEST_NAME = "agent_packages.json"
 AGENT_PACKAGE_MANIFEST_PATH = UTILS_DATA_DIR / AGENT_PACKAGE_MANIFEST_NAME
 
-# Our own release asset over plain HTTP, pinned by the manifest's hash. The
-# ceiling is what one agent package can weigh many times over; it exists so a
-# mirror serving something endless cannot fill the panel's memory.
-AGENT_PACKAGE_FETCH_TIMEOUT_S = 300
+# The largest agent package the hub takes from a release site; it exists so a
+# source serving something endless cannot fill the hub's disk.
 AGENT_PACKAGE_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 
-# The headers a module fetch carries: a program's own User-Agent, which
-# GitHub's API requires one of, and no browser's. A mirror that answers a
-# browser with a page of its own (the USTC mirror asks a browser to run a
-# script before it serves a file) hands a program the file itself.
-AGENT_MODULE_FETCH_HEADERS = {"User-Agent": "neutrino-hub"}
-
-# What each package kind starts with, so a page served in a package's place is
-# caught before anything hands it to an installer.
+# What each artifact kind starts with, so a page served in a file's place is
+# never kept: a Windows Installer package, a macOS installer package, a gzip
+# stream, a zip, a release binary (ELF, a 64-bit Mach-O or PE) and a zstd
+# frame.
 AGENT_MODULE_PACKAGE_MAGIC = {
-    "deb": (b"!<arch>",),
-    "rpm": (b"\xed\xab\xee\xdb",),
     "msi": (b"\xd0\xcf\x11\xe0",),
-    "exe": (b"MZ",),
     "pkg": (b"xar!",),
-    # A UDIF image opens with its compressor: zlib at any level, bzip2, or
-    # the koly trailer when the image is uncompressed.
-    "dmg": (
-        b"koly",
-        b"\x78\x01",
-        b"\x78\x9c",
-        b"\x78\xda",
-        b"\x42\x5a\x68",
-    ),
-    "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
-    "zip_binary": (b"PK\x03\x04",),
-    # An archive the agent unpacks one member of: VS Code's CLI.
-    "tar": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
+    "tar_gz": (b"\x1f\x8b",),
     "zip": (b"PK\x03\x04",),
-    # A release binary: ELF on Linux, a 64-bit Mach-O on macOS, PE on
-    # Windows.
     "binary": (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"MZ"),
-    # A zstd frame, kept as the publisher's bytes and never unpacked:
-    # Podman's machine images.
     "tar_zst": (b"\x28\xb5\x2f\xfd",),
     "raw_zst": (b"\x28\xb5\x2f\xfd",),
 }
@@ -258,12 +207,6 @@ DEVICE_VSCODE_TERMS_URL = "https://aka.ms/vscode-server-license"
 # administrator signs in with, and the secret the instance's tokens are
 # signed with.
 DEVICE_CLOUDCLI_MODULE = "cloudcli"
-# The npm registry each edition's agents install an npm package from, sent
-# with every module whose manifest names an ``npm_environment``.
-DEVICE_CLOUDCLI_NPM_REGISTRIES = {
-    "intl": "https://registry.npmjs.org",
-    "cn": "https://registry.npmmirror.com",
-}
 DEVICE_CLOUDCLI_PASSWORD_KEY = "web_password_sealed"  # scan: allow
 DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow
 DEVICE_CLOUDCLI_PASSWORD_AAD = b"device_cloudcli:web_password"

@@ -1,42 +1,68 @@
 {
-  "_comment": "cc-switch, which the agent runs as each account to point the machine's AI tools at the gateway. It is no module: is_module is false, so it stays out of the catalog, and the agent opens package {module: cc_switch} for it when its ai_tools section needs a copy. The version, each asset and each sha256 are the client's pin, PACKAGING_CC_SWITCH_* in packaging/shared/constants.py, which a hub test holds this file to. Each url is the publisher's GitHub release, and each cn_url the same file under its upstream name on the project's own release, {release} being the address this hub's build stamped for its agent packages; the mainland release keeps its latest files alone, so a cn hub older than that finds the file gone and answers hub_release_file_gone.",
+  "_comment": "cc-switch, which the agent runs as each account to point the machine's AI tools at the gateway. It is no module: is_module is false, so it stays out of the catalog, and the agent opens package {module: cc_switch, artifact, digest} for it when its ai_tools section needs a copy. The version, each file and each digest are the client's pin, PACKAGING_CC_SWITCH_* in packaging/shared/constants.py, which a hub test holds this file to. Its sources are the publisher's GitHub release, then each release site the hub's build stamped, which holds the same files under their upstream names.",
   "name": "cc_switch",
   "title": "cc-switch",
+  "description": "Points a machine's AI tools at the hub's AI gateway",
   "is_module": false,
-  "source": "SaladDay",
-  "version": "5.10.4",
+  "publisher": "SaladDay/cc-switch-cli",
   "license": "MIT",
-  "corresponding_source": "https://github.com/SaladDay/cc-switch-cli/tree/v5.10.4", "_source_scan": "scan: allow",
+  "corresponding_source": "https://github.com/SaladDay/cc-switch-cli/tree/v{version}", "_source_scan": "scan: allow",
+  "version": "5.10.4",
   "platforms": {
     "linux-amd64": {
-      "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc-switch-cli-v5.10.4-linux-x64-musl.tar.gz", "_url_scan": "scan: allow",
-      "cn_url": "{release}/cc-switch-cli-v5.10.4-linux-x64-musl.tar.gz", "_cn_url_scan": "scan: allow",
-      "sha256": "a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3", "_sha256_scan": "scan: allow",
-      "package_kind": "tar"
+      "artifacts": [
+        {
+          "name": "cc_switch",
+          "kind": "tar_gz",
+          "file": "cc-switch-cli-v{version}-linux-x64-musl.tar.gz",
+          "digest": "sha256:a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3", "_digest_scan": "scan: allow",
+          "sources": ["https://github.com/SaladDay/cc-switch-cli/releases/download/v{version}/{file}", "{release}/{file}"], "_sources_scan": "scan: allow"
+        }
+      ]
     },
     "linux-arm64": {
-      "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc-switch-cli-v5.10.4-linux-arm64-musl.tar.gz", "_url_scan": "scan: allow",
-      "cn_url": "{release}/cc-switch-cli-v5.10.4-linux-arm64-musl.tar.gz", "_cn_url_scan": "scan: allow",
-      "sha256": "37d9b2564f9d47215dbb45914158d71f746d92d829ad62ca1214de4eeb5bfc6f", "_sha256_scan": "scan: allow",
-      "package_kind": "tar"
+      "artifacts": [
+        {
+          "name": "cc_switch",
+          "kind": "tar_gz",
+          "file": "cc-switch-cli-v{version}-linux-arm64-musl.tar.gz",
+          "digest": "sha256:37d9b2564f9d47215dbb45914158d71f746d92d829ad62ca1214de4eeb5bfc6f", "_digest_scan": "scan: allow",
+          "sources": ["https://github.com/SaladDay/cc-switch-cli/releases/download/v{version}/{file}", "{release}/{file}"], "_sources_scan": "scan: allow"
+        }
+      ]
     },
     "darwin-amd64": {
-      "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc-switch-cli-v5.10.4-darwin-x64.tar.gz", "_url_scan": "scan: allow",
-      "cn_url": "{release}/cc-switch-cli-v5.10.4-darwin-x64.tar.gz", "_cn_url_scan": "scan: allow",
-      "sha256": "aaea1f60f5d34b784831c9a6cb9568927a07930e52fd295608b94d2ac17ba53b", "_sha256_scan": "scan: allow",
-      "package_kind": "tar"
+      "artifacts": [
+        {
+          "name": "cc_switch",
+          "kind": "tar_gz",
+          "file": "cc-switch-cli-v{version}-darwin-x64.tar.gz",
+          "digest": "sha256:aaea1f60f5d34b784831c9a6cb9568927a07930e52fd295608b94d2ac17ba53b", "_digest_scan": "scan: allow",
+          "sources": ["https://github.com/SaladDay/cc-switch-cli/releases/download/v{version}/{file}", "{release}/{file}"], "_sources_scan": "scan: allow"
+        }
+      ]
     },
     "darwin-arm64": {
-      "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc-switch-cli-v5.10.4-darwin-arm64.tar.gz", "_url_scan": "scan: allow",
-      "cn_url": "{release}/cc-switch-cli-v5.10.4-darwin-arm64.tar.gz", "_cn_url_scan": "scan: allow",
-      "sha256": "7ca345ac2c9c930e7929252584fcfe7e7507ae40c1350d4969a80bafbad769f5", "_sha256_scan": "scan: allow",
-      "package_kind": "tar"
+      "artifacts": [
+        {
+          "name": "cc_switch",
+          "kind": "tar_gz",
+          "file": "cc-switch-cli-v{version}-darwin-arm64.tar.gz",
+          "digest": "sha256:7ca345ac2c9c930e7929252584fcfe7e7507ae40c1350d4969a80bafbad769f5", "_digest_scan": "scan: allow",
+          "sources": ["https://github.com/SaladDay/cc-switch-cli/releases/download/v{version}/{file}", "{release}/{file}"], "_sources_scan": "scan: allow"
+        }
+      ]
     },
     "windows-amd64": {
-      "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc-switch-cli-v5.10.4-windows-x64.zip", "_url_scan": "scan: allow",
-      "cn_url": "{release}/cc-switch-cli-v5.10.4-windows-x64.zip", "_cn_url_scan": "scan: allow",
-      "sha256": "6bc4ceea645cdf3cebc662e859d6a8804e3a3c737d4968497f66ba6df481f1a7", "_sha256_scan": "scan: allow",
-      "package_kind": "zip"
+      "artifacts": [
+        {
+          "name": "cc_switch",
+          "kind": "zip",
+          "file": "cc-switch-cli-v{version}-windows-x64.zip",
+          "digest": "sha256:6bc4ceea645cdf3cebc662e859d6a8804e3a3c737d4968497f66ba6df481f1a7", "_digest_scan": "scan: allow",
+          "sources": ["https://github.com/SaladDay/cc-switch-cli/releases/download/v{version}/{file}", "{release}/{file}"], "_sources_scan": "scan: allow"
+        }
+      ]
     }
   }
 }

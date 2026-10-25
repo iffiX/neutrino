@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
+import { codeParams } from "../code_params";
 import { AiToolsPanel } from "../components/ai_tools_panel";
 import { ContainersPanels } from "../components/containers_panels";
 import { DevicePick } from "../components/device_pick";
@@ -161,9 +162,9 @@ const TAB_ORDER = [
 ];
 const PAGE_MODULES = TAB_ORDER.filter((name) => name in MODULE_PANELS);
 
-/** The tier of a module the agent's package carries: always a tab, never in
+/** The method of a module the agent's package carries: always a tab, never in
  * the picker, and none of the four presses. */
-const CARRIED_INSTALLER = "agent";
+const CARRIED_METHOD = "agent";
 
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
@@ -924,7 +925,7 @@ function isUnclaimed(row: DeviceModuleView): boolean {
 
 /** Whether the agent's own package carries the module. */
 function isCarried(row: DeviceModuleView | undefined): boolean {
-  return row?.installer === CARRIED_INSTALLER;
+  return row?.method === CARRIED_METHOD;
 }
 
 /** Whether a failed module's own press tries again: the one of what it was
@@ -1076,17 +1077,6 @@ function wordedCode(row: DeviceModuleView): string | null {
   }
   return t(
     key,
-    withModuleTitle(asParams(row.params), { [row.name]: row.title }),
+    withModuleTitle(codeParams(row.params), { [row.name]: row.title }),
   );
-}
-
-/** The values a sentence can take from a report's params. */
-function asParams(params: Record<string, unknown>): Record<string, string> {
-  const named: Record<string, string> = {};
-  for (const [name, value] of Object.entries(params)) {
-    if (typeof value === "string" || typeof value === "number") {
-      named[name] = String(value);
-    }
-  }
-  return named;
 }

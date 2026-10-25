@@ -1,32 +1,43 @@
-"""The shipped manifests: one source of module truth under data/manifests.
+"""The shipped manifests and the loader that refuses any other shape.
 
-What the panel offers, what the catalog resolves and what an agent installs
-all read these files, so the modules the design names are pinned here as
-shipped: the two the agent's own package carries, three by the machine's
-own packages, Gitea as a pinned release binary and the programs run as an
-account from their pinned archives. Every manifest names its installer tier
-and where its software comes from.
+What the panel offers, what the catalog resolves, what the cache fetches and
+what an agent installs all read these files, so the modules the design names
+are pinned here as shipped: the two the agent's own package carries, the
+three the system holds or installs, Gitea as a pinned release binary, the
+programs run as an account from their pinned archives, and cc-switch beside
+them as no module. Every platform entry names a runner and one of the five
+install methods with the params its method fixes, and every artifact a kind
+and a digest of its kind's form, or the loader refuses the manifest.
 """
 
+import copy
+import importlib.util
 import json
+from pathlib import Path
 
 import pytest
 
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices import manifests as manifests_module
-from neutrino_hub.modules.devices.agent_module_cache import (
-    looks_like_package,
-    resolve_platform_entry,
-)
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.manifests import (
-    branch_identity,
+    artifact_file,
+    artifact_sources,
+    entry_artifacts,
+    entry_params,
+    entry_version,
     load_module_manifests,
+    load_tool_manifests,
+    module_recipe,
+    platform_keys,
+    resolve_platform_entry,
 )
 
 GITEA_VERSION = "1.27.3"
 # The checksums dl.gitea.com publishes beside each release binary, in its
-# own .sha256 files. Each is a published checksum of a public download.
-# Each platform key to the asset's name after the version, and its digest.
+# own .sha256 files. Each platform key to the file's name after the version,
+# and its digest.
 GITEA_DIGESTS = {
     "linux-amd64": (
         "linux-amd64",
@@ -53,592 +64,66 @@ GITEA_DIGESTS = {
 VSCODE_VERSION = "1.140.0"
 VSCODE_COMMIT = "07f806f999227108933c2e30515b26eecc1fda74"  # scan: allow
 # What update.code.visualstudio.com answered for each CLI build of that
-# commit: the platform key, Microsoft's build name, the archive, its sha256.
-VSCODE_DIGEST_ALPINE_X64 = (
-    "938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1"  # scan: allow
-)
-VSCODE_DIGEST_ALPINE_ARM64 = (
-    "6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86"  # scan: allow
-)
-VSCODE_DIGEST_WIN32_X64 = (
-    "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe"  # scan: allow
-)
-VSCODE_DIGEST_DARWIN_ARM64 = (
-    "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c"  # scan: allow
-)
-VSCODE_DIGEST_DARWIN_X64 = (
-    "ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4"  # scan: allow
-)
+# commit: the platform key, Microsoft's platform name, the archive's kind,
+# its file and its sha256.
 VSCODE_BUILDS = {
-    "linux-amd64": ("cli_alpine_x64", "tar.gz", VSCODE_DIGEST_ALPINE_X64),
-    "linux-arm64": ("cli_alpine_arm64", "tar.gz", VSCODE_DIGEST_ALPINE_ARM64),
-    "windows-amd64": ("cli_win32_x64", "zip", VSCODE_DIGEST_WIN32_X64),
-    "darwin-arm64": ("cli_darwin_arm64", "zip", VSCODE_DIGEST_DARWIN_ARM64),
-    "darwin-amd64": ("cli_darwin_x64", "zip", VSCODE_DIGEST_DARWIN_X64),
+    "linux-amd64": (
+        "cli-alpine-x64",
+        "tar_gz",
+        "vscode_cli_alpine_x64_cli.tar.gz",
+        "938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1",  # scan: allow
+    ),
+    "linux-arm64": (
+        "cli-alpine-arm64",
+        "tar_gz",
+        "vscode_cli_alpine_arm64_cli.tar.gz",
+        "6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86",  # scan: allow
+    ),
+    "windows-amd64": (
+        "cli-win32-x64",
+        "zip",
+        "vscode_cli_win32_x64_cli.zip",
+        "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "cli-darwin-arm64",
+        "zip",
+        "vscode_cli_darwin_arm64_cli.zip",
+        "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "cli-darwin-x64",
+        "zip",
+        "vscode_cli_darwin_x64_cli.zip",
+        "ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4",  # scan: allow
+    ),
 }
 
-DEBIAN = {"os": "linux", "family": "debian", "arch": "amd64"}
-RHEL = {"os": "linux", "family": "rhel", "arch": "amd64"}
-
-
-def write_manifest(directory, name: str, manifest: dict) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{name}.json").write_text(json.dumps(manifest), encoding="utf-8")
-
-
-def test_every_shipped_manifest_names_its_installer_tier():
-    tiers = {
-        name: manifest["installer"]
-        for name, manifest in load_module_manifests().items()
-    }
-
-    assert tiers == {
-        "remote_desktop": "agent",
-        "terminal": "agent",
-        "podman": "platform",
-        "samba": "platform",
-        "zfs": "platform",
-        "gitea": "hub",
-        "vscode": "hub",
-        "code_server": "hub",
-        "cloudcli": "hub",
-        "codeg": "hub",
-    }
-
-
-def test_every_shipped_manifest_says_where_its_software_comes_from():
-    sources = {
-        name: manifest["source"] for name, manifest in load_module_manifests().items()
-    }
-
-    assert sources == {
-        "remote_desktop": "the Neutrino agent",
-        "terminal": "the Neutrino agent",
-        "podman": "system",
-        "samba": "system",
-        "zfs": "system",
-        "gitea": "go-gitea/gitea",
-        "vscode": "Microsoft",
-        "code_server": "Coder",
-        "cloudcli": "nodejs.org",
-        "codeg": "spacering-net/codeg",
-    }
-
-
-def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
-    """What the agent carries, then what the machine carries, then what the
-    module's installer fetches, and by title inside each tier."""
-    assert list(load_module_manifests()) == [
-        "remote_desktop",
-        "terminal",
-        "podman",
-        "samba",
-        "zfs",
-        "cloudcli",
-        "code_server",
-        "codeg",
-        "gitea",
-        "vscode",
-    ]
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["ssh_server", "samba_mount", "cc_switch", "rustdesk"],
-)
-def test_the_modules_that_left_are_not_shipped_any_more(name):
-    assert name not in load_module_manifests()
-
-
-@pytest.mark.parametrize(
-    "name, debian, rhel",
-    [
-        ("samba", ["samba"], ["samba", "samba-client"]),
-        ("podman", ["podman", "podman-docker"], ["podman", "podman-docker"]),
-        (
-            "zfs",
-            ["zfsutils-linux", "zfs-zed", "smartmontools"],
-            ["zfs", "smartmontools"],
-        ),
-    ],
-)
-def test_a_system_package_module_names_its_packages_per_family(name, debian, rhel):
-    manifest = load_module_manifests()[name]
-
-    assert manifest["kind"] == "system_package"
-    assert resolve_module(manifest, DEBIAN)["entry"]["packages"] == debian
-    assert resolve_module(manifest, RHEL)["entry"]["packages"] == rhel
-
-
-def test_zfs_adds_the_repository_each_family_keeps_it_in_before_its_packages():
-    manifest = load_module_manifests()["zfs"]
-
-    debian_steps = resolve_module(manifest, DEBIAN)["entry"]["pre_install"]
-    rhel_steps = resolve_module(manifest, RHEL)["entry"]["pre_install"]
-    assert any("contrib" in step for step in debian_steps)
-    assert any("apt-get update" in step for step in debian_steps)
-    assert any("zfs-dkms" in step for step in debian_steps)
-    assert any("zfsonlinux.org" in step for step in rhel_steps)
-    assert manifest["platforms"]["linux-arch"]["pre_install"]
-
-
-def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
-    manifest = load_module_manifests()["gitea"]
-
-    assert manifest["kind"] == "gitea"
-    assert manifest["version"] == GITEA_VERSION
-    assert manifest["license"] == "MIT"
-    assert manifest["corresponding_source"] == (
-        f"https://github.com/go-gitea/gitea/tree/v{GITEA_VERSION}"
-    )
-    assert set(manifest["platforms"]) == set(GITEA_DIGESTS)
-    for key, (asset, digest) in GITEA_DIGESTS.items():
-        entry = manifest["platforms"][key]
-        assert entry["url"] == (
-            f"https://dl.gitea.com/gitea/{GITEA_VERSION}/gitea-{GITEA_VERSION}-{asset}"
-        )
-        assert entry["sha256"] == digest
-        assert entry["package_kind"] == "binary"
-        assert "cn_url" not in entry
-        assert entry["packages"] == (["git"] if key.startswith("linux") else [])
-    assert "gitea\\gitea.exe" in manifest["platforms"]["windows-amd64"]["verify"]
-    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
-        '"/Library/Application Support/Neutrino/agent/state/gitea/gitea" --version'
-    )
-
-
-def test_gitea_resolves_by_machine_and_refuses_the_rest():
-    manifest = load_module_manifests()["gitea"]
-
-    assert resolve_platform_entry(manifest, DEBIAN)[0] == "linux-amd64"
-    assert resolve_platform_entry(manifest, {**RHEL, "arch": "arm64"})[0] == (
-        "linux-arm64"
-    )
-    assert resolve_platform_entry(manifest, {**DEBIAN, "arch": "armhf"}) == ("", None)
-    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
-    assert resolve_platform_entry(manifest, windows)[0] == "windows-amd64"
-    assert resolve_platform_entry(manifest, {**windows, "arch": "arm64"}) == ("", None)
-    for arch in ("arm64", "amd64"):
-        mac = {"os": "darwin", "family": "", "arch": arch, "version": "12.3"}
-        assert resolve_platform_entry(manifest, mac)[0] == f"darwin-{arch}"
-
-
-def test_a_binary_package_is_recognised_by_its_elf_mach_o_or_pe_magic():
-    assert looks_like_package(b"\x7fELF\x02\x01\x01", "binary")
-    assert looks_like_package(b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01", "binary")
-    assert looks_like_package(b"MZ\x90\x00", "binary")
-    assert not looks_like_package(b"<!doctype html>", "binary")
-
-
-@pytest.mark.parametrize("tier", ["agent", "platform", "hub"])
-def test_the_loader_accepts_each_tier(tier, tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path, "sample", {"name": "sample", "installer": tier, "source": "s"}
-    )
-
-    assert load_module_manifests()["sample"]["installer"] == tier
-
-
-@pytest.mark.parametrize(
-    "manifest",
-    [
-        {"name": "sample", "source": "s"},
-        {"name": "sample", "installer": "vendor", "source": "s"},
-    ],
-)
-def test_the_loader_refuses_a_manifest_without_a_real_tier(
-    manifest, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", manifest)
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "sample.json" in str(refusal.value)
-    assert "installer" in str(refusal.value)
-
-
-def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
-    """What the agent is sent for a module: the command whose exit says the
-    software is there, and the block an uninstall runs by; a builtin branch
-    installs nothing and the agent's runner checks for it itself."""
-    for name, manifest in load_module_manifests().items():
-        for key, entry in manifest["platforms"].items():
-            if entry == {} or entry.get("installer") == "builtin":
-                continue
-            assert entry["verify"], (name, key)
-            removal = entry["uninstall"]
-            assert isinstance(removal["packages"], list), (name, key)
-            assert isinstance(removal["post_uninstall"], list), (name, key)
-            assert isinstance(removal["is_data_kept"], bool), (name, key)
-
-
-@pytest.mark.parametrize(
-    ("name", "program"),
-    [
-        ("cloudcli", "cloudcli\\node\\node.exe"),
-        ("codeg", "codeg\\server\\codeg-server.exe"),
-        ("gitea", "gitea\\gitea.exe"),
-        ("vscode", "vscode\\code.exe"),
-    ],
-)
-def test_a_windows_verify_runs_the_unpacked_program_through_cmd(name, program):
-    """The agent's shell on Windows is cmd.exe: it expands ``%ProgramData%``,
-    and a program that is not there exits non-zero."""
-    branches = load_module_manifests()[name]["platforms"]
-    windows = [key for key in branches if key.startswith("windows")]
-
-    assert windows
-    for key in windows:
-        assert branches[key]["verify"] == (
-            f'"%ProgramData%\\Neutrino\\agent\\state\\{program}" --version'
-        ), key
-
-
-def test_no_windows_verify_starts_powershell():
-    for name, manifest in load_module_manifests().items():
-        for key, entry in manifest.get("platforms", {}).items():
-            verify = str(entry.get("verify", "") or "").lower()
-            if key.startswith("windows"):
-                assert "powershell" not in verify, (name, key)
-
-
-def test_the_loader_refuses_a_branch_without_a_verify_command(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "platform",
-            "source": "system",
-            "platforms": {"linux-debian": {"packages": ["sample"]}},
-        },
-    )
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "verify" in str(refusal.value)
-
-
-def test_the_loader_refuses_a_hub_installed_branch_without_an_uninstall_block(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "platform",
-            "source": "system",
-            "platforms": {
-                "linux-debian": {
-                    "packages": ["sample"],
-                    "verify": "sample --version",
-                    "uninstall": {"packages": ["sample"]},
-                }
-            },
-        },
-    )
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "uninstall" in str(refusal.value)
-
-
-def test_the_resolved_module_carries_the_installer_tier():
-    resolved = resolve_module(load_module_manifests()["gitea"], DEBIAN)
-
-    assert resolved["installer"] == "hub"
-
-
-def test_every_hub_tier_branch_resolves_its_version_license_and_source():
-    """A branch the hub's cache fetches for takes its bytes from a public
-    release, and resolves their version, their license and where their
-    source is, its own or the manifest's; a branch of any other tier
-    resolves none of the three."""
-    for name, manifest in load_module_manifests().items():
-        branches = manifest.get("platforms") or {"": None}
-        for key, entry in branches.items():
-            identity = branch_identity(manifest, entry)
-            if identity["installer"] != "hub":
-                assert identity["version"] == "", (name, key)
-                assert identity["license"] == "", (name, key)
-                assert identity["corresponding_source"] == "", (name, key)
-                continue
-            assert identity["version"], (name, key)
-            assert identity["license"], (name, key)
-            assert identity["corresponding_source"].startswith("https://github.com/"), (
-                name,
-                key,
-            )
-
-
-def test_the_loader_refuses_a_manifest_that_names_no_source(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", {"name": "sample", "installer": "hub"})
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "sample.json" in str(refusal.value)
-    assert "source" in str(refusal.value)
-
-
-@pytest.mark.parametrize("floor", ["2.28", "17763", "12.3.1"])
-def test_the_loader_accepts_a_dotted_floor(floor, tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "hub",
-            "source": "vendor",
-            "license": "MIT",
-            "corresponding_source": "https://github.com/vendor/sample",
-            "platforms": {
-                "linux": {
-                    "verify": "which s",
-                    "min_version": floor,
-                    "uninstall": {
-                        "packages": [],
-                        "post_uninstall": [],
-                        "is_data_kept": True,
-                    },
-                }
-            },
-        },
-    )
-
-    assert "sample" in load_module_manifests()
-
-
-@pytest.mark.parametrize("floor", ["", "2.x", "v2.28", 2.28])
-def test_the_loader_refuses_a_floor_that_is_not_a_dotted_number(
-    floor, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "hub",
-            "source": "vendor",
-            "license": "MIT",
-            "corresponding_source": "https://github.com/vendor/sample",
-            "platforms": {
-                "linux": {
-                    "verify": "which s",
-                    "min_version": floor,
-                    "uninstall": {
-                        "packages": [],
-                        "post_uninstall": [],
-                        "is_data_kept": True,
-                    },
-                }
-            },
-        },
-    )
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "min_version" in str(refusal.value)
-
-
-@pytest.mark.parametrize(
-    "platform",
-    [
-        {"os": "windows", "family": "", "arch": "amd64", "version": "19045"},
-        {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"},
-    ],
-)
-def test_samba_is_the_system_s_own_server_on_windows_and_macos(platform):
-    key, entry = resolve_platform_entry(load_module_manifests()["samba"], platform)
-
-    assert key == platform["os"]
-    assert entry == {"installer": "builtin"}
-
-
-def test_a_builtin_branch_needs_no_verify_and_no_uninstall(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "platform",
-            "source": "system",
-            "platforms": {"windows": {"installer": "builtin"}},
-        },
-    )
-
-    assert "sample" in load_module_manifests()
-
-
-@pytest.mark.parametrize(
-    "branch",
-    [
-        {"installer": "builtin", "url": "https://vendor.example/s.msi"},
-        {"installer": "builtin", "packages": ["samba"]},
-        {"installer": "vendor", "verify": "where s"},
-        {"installer": "platform", "verify": "where s"},
-        {"installer": "agent", "verify": "where s"},
-    ],
-)
-def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
-    branch, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "platform",
-            "source": "system",
-            "platforms": {"windows": branch},
-        },
-    )
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "installer" in str(refusal.value) or "builtin" in str(refusal.value)
-
-
-# --- a branch may name its own identity in place of the manifest's ---
-
-HUB_BRANCH = {
-    "kind": "machine",
-    "installer": "hub",
-    "source": "vendor/sample",
-    "version": "2.0",
-    "license": "Apache-2.0",
-    "corresponding_source": "https://github.com/vendor/sample/tree/v2.0",
-    "components": [
-        {
-            "name": "installer",
-            "url": "https://vendor.example/sample.msi",
-            "sha256": "c" * 64,
-            "package_kind": "msi",
-            "directory": "installer",
-        }
-    ],
-    "verify": "sample --version",
-    "uninstall": {"packages": [], "post_uninstall": [], "is_data_kept": True},
+CODE_SERVER_VERSION = "4.140.0"
+# The sha256 of each of the publisher's release archives.
+CODE_SERVER_BUILDS = {
+    "linux-amd64": (
+        "linux-amd64",
+        "864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "macos-amd64",
+        "a5393b6eed4aa68b084e724c3c565f805abd996c609356043119f0323e40cf52",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "macos-arm64",
+        "82c7144406ac31c373acfa786b6705c7c5463d895f728fde2cb94402b945b301",  # scan: allow
+    ),
 }
-PLATFORM_MANIFEST = {
-    "name": "sample",
-    "kind": "system_package",
-    "installer": "platform",
-    "source": "system",
-    "platforms": {
-        "linux-debian": {
-            "packages": ["sample"],
-            "verify": "sample --version",
-            "uninstall": {
-                "packages": ["sample"],
-                "post_uninstall": [],
-                "is_data_kept": True,
-            },
-        },
-        "windows-amd64": HUB_BRANCH,
-    },
-}
-
-
-def test_the_loader_accepts_a_hub_branch_with_its_own_identity(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", PLATFORM_MANIFEST)
-
-    manifest = load_module_manifests()["sample"]
-
-    assert manifest["installer"] == "platform"
-    assert manifest["platforms"]["windows-amd64"]["installer"] == "hub"
-
-
-@pytest.mark.parametrize(
-    "field",
-    ["kind", "installer", "version", "source", "license", "corresponding_source"],
-)
-@pytest.mark.parametrize("value", ["", 2, None, ["hub"]])
-def test_the_loader_refuses_a_branch_identity_field_that_is_not_text(
-    field, value, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    branch = {**HUB_BRANCH, field: value}
-    write_manifest(
-        tmp_path,
-        "sample",
-        {**PLATFORM_MANIFEST, "platforms": {"windows-amd64": branch}},
-    )
-
-    with pytest.raises(ValueError, match=f"windows-amd64 .*{field}"):
-        load_module_manifests()
-
-
-def test_a_branch_identity_takes_the_place_of_the_manifests_field_by_field():
-    windows = branch_identity(PLATFORM_MANIFEST, HUB_BRANCH)
-    linux = branch_identity(
-        PLATFORM_MANIFEST, PLATFORM_MANIFEST["platforms"]["linux-debian"]
-    )
-    partial = branch_identity(
-        {**PLATFORM_MANIFEST, "version": "1.0"}, {"installer": "builtin"}
-    )
-
-    assert windows == {
-        "kind": "machine",
-        "installer": "hub",
-        "version": "2.0",
-        "source": "vendor/sample",
-        "license": "Apache-2.0",
-        "corresponding_source": "https://github.com/vendor/sample/tree/v2.0",
-    }
-    assert linux == {
-        "kind": "system_package",
-        "installer": "platform",
-        "version": "",
-        "source": "system",
-        "license": "",
-        "corresponding_source": "",
-    }
-    assert branch_identity(PLATFORM_MANIFEST, None) == linux
-    assert (partial["installer"], partial["version"], partial["kind"]) == (
-        "builtin",
-        "1.0",
-        "system_package",
-    )
-
-
-def test_the_resolved_module_carries_the_branchs_identity():
-    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
-
-    on_windows = resolve_module(PLATFORM_MANIFEST, windows)
-    on_linux = resolve_module(PLATFORM_MANIFEST, DEBIAN)
-
-    assert (on_windows["kind"], on_windows["installer"], on_windows["version"]) == (
-        "machine",
-        "hub",
-        "2.0",
-    )
-    assert on_windows["license"] == "Apache-2.0"
-    assert on_windows["source"] == "vendor/sample"
-    assert (on_linux["kind"], on_linux["installer"], on_linux["license"]) == (
-        "system_package",
-        "platform",
-        "",
-    )
-
+CODE_SERVER_RELEASES = "https://github.com/coder/code-server/releases/download/"
+CODE_SERVER_MIRROR = "https://mirrors.ustc.edu.cn/github-release/coder/code-server/"
 
 NODE_VERSION = "22.23.3"
+# What nodejs.org/dist/v22.23.3/SHASUMS256.txt names for each build.
 NODE_BUILDS = {
     "linux-amd64": (
         "linux-x64.tar.gz",
@@ -665,149 +150,13 @@ NODE_BUILDS = {
         "23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53",  # scan: allow
     ),
 }
-
-
-def test_cloudcli_pins_one_node_release_per_platform_as_its_node_component():
-    """The module's one component unpacks under ``cloudcli/node``, so the
-    verify command names the binary there, whatever the archive's top
-    directory was called."""
-    manifest = load_module_manifests()["cloudcli"]
-
-    assert manifest["version"] == "1.37.3"
-    assert manifest["license"] == "AGPL-3.0"
-    assert manifest["corresponding_source"] == (
-        "https://github.com/siteboon/claudecodeui/tree/v1.37.3"
-    )
-    assert set(manifest["platforms"]) == set(NODE_BUILDS)
-    for key, (build, digest) in NODE_BUILDS.items():
-        entry = manifest["platforms"][key]
-        assert "url" not in entry and "min_version" not in entry
-        (node,) = entry["components"]
-        assert node["name"] == "node"
-        assert node["directory"] == "node"
-        assert node["url"] == (
-            f"https://nodejs.org/dist/v{NODE_VERSION}/node-v{NODE_VERSION}-{build}"
-        )
-        assert node["sha256"] == digest
-        assert node["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
-        assert "node-v" not in entry["verify"]
-    assert manifest["platforms"]["linux-amd64"]["verify"] == (
-        "/var/lib/neutrino/agent/cloudcli/node/bin/node --version"
-    )
-    windows_verify = manifest["platforms"]["windows-amd64"]["verify"]
-    assert "cloudcli\\node\\node.exe" in windows_verify
-    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
-        '"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node"'
-        " --version"
-    )
-
-
-def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
-    manifest = load_module_manifests()["vscode"]
-
-    assert manifest["version"] == VSCODE_VERSION
-    assert manifest["corresponding_source"].endswith(f"/{VSCODE_COMMIT}/cli")
-    assert set(manifest["platforms"]) == set(VSCODE_BUILDS)
-    for key, (build, archive, digest) in VSCODE_BUILDS.items():
-        entry = manifest["platforms"][key]
-        assert entry["url"] == (
-            "https://vscode.download.prss.microsoft.com/dbazure/download/stable/"
-            f"{VSCODE_COMMIT}/vscode_{build}_cli.{archive}"
-        )
-        assert entry["sha256"] == digest
-        assert entry["package_kind"] == ("tar" if archive == "tar.gz" else "zip")
-
-
-def test_vscode_names_no_glibc_floor_and_resolves_by_machine():
-    """The agent's own floor is above every shipped module's, so no branch
-    names a ``min_version``."""
-    manifest = load_module_manifests()["vscode"]
-    old = {**DEBIAN, "version": "2.27"}
-    new = {**RHEL, "arch": "arm64", "version": "2.28"}
-    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
-
-    assert not any("min_version" in entry for entry in manifest["platforms"].values())
-    assert resolve_platform_entry(manifest, old)[0] == "linux-amd64"
-    assert resolve_platform_entry(manifest, new)[0] == "linux-arm64"
-    assert resolve_platform_entry(manifest, windows)[0] == "windows-amd64"
-
-
-@pytest.mark.parametrize(
-    "key, path",
-    [
-        ("linux-amd64", "/var/lib/neutrino/agent/vscode/code"),
-        ("windows-amd64", "Neutrino\\agent\\state\\vscode\\code.exe"),
-        (
-            "darwin-arm64",
-            "/Library/Application Support/Neutrino/agent/state/vscode/code",
-        ),
-    ],
-)
-def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):
-    verify = load_module_manifests()["vscode"]["platforms"][key]["verify"]
-
-    assert path in verify
-    assert "--version" in verify
-
-
-CODE_SERVER_VERSION = "4.140.0"
-# The sha256 of each of the publisher's release archives, computed here from
-# the files the release serves, since the publisher ships no checksum file.
-CODE_SERVER_BUILDS = {
-    "linux-amd64": (
-        "linux-amd64",
-        "864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48",  # scan: allow
-    ),
-    "linux-arm64": (
-        "linux-arm64",
-        "ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200",  # scan: allow
-    ),
-    "darwin-amd64": (
-        "macos-amd64",
-        "a5393b6eed4aa68b084e724c3c565f805abd996c609356043119f0323e40cf52",  # scan: allow
-    ),
-    "darwin-arm64": (
-        "macos-arm64",
-        "82c7144406ac31c373acfa786b6705c7c5463d895f728fde2cb94402b945b301",  # scan: allow
-    ),
-}
-CODE_SERVER_RELEASES = "https://github.com/coder/code-server/releases/download/"
-CODE_SERVER_MIRROR = "https://mirrors.ustc.edu.cn/github-release/coder/code-server/"
-
-
-def test_code_server_pins_coders_release_per_platform_with_its_mirror():
-    manifest = load_module_manifests()["code_server"]
-
-    assert manifest["version"] == CODE_SERVER_VERSION
-    assert manifest["license"] == "MIT"
-    assert manifest["kind"] == "code_server"
-    assert set(manifest["platforms"]) == set(CODE_SERVER_BUILDS)
-    for key, (build, digest) in CODE_SERVER_BUILDS.items():
-        entry = manifest["platforms"][key]
-        name = f"code-server-{CODE_SERVER_VERSION}-{build}.tar.gz"
-        assert entry["url"] == f"{CODE_SERVER_RELEASES}v{CODE_SERVER_VERSION}/{name}"
-        assert entry["cn_url"] == f"{CODE_SERVER_MIRROR}v{CODE_SERVER_VERSION}/{name}"
-        assert entry["cn_latest_url"] == f"{CODE_SERVER_MIRROR}LatestRelease/"
-        assert entry["sha256"] == digest
-        assert entry["package_kind"] == "tar"
-        assert "code_server/release/lib/node" in entry["verify"]
-        assert "min_version" not in entry
-
-
-NODE_MIRROR = "https://registry.npmmirror.com/-/binary/node/"
-
-
-def test_cloudclis_node_names_the_same_file_on_npmmirror():
-    """A mainland hub fetches Node.js from npmmirror, which keeps every
-    release, so one pin checks both addresses."""
-    manifest = load_module_manifests()["cloudcli"]
-
-    for key, entry in manifest["platforms"].items():
-        (node,) = entry["components"]
-        path = node["url"].split("/dist/", 1)[1]
-        assert node["cn_url"] == f"{NODE_MIRROR}{path}", key
-        assert "cn_latest_url" not in node
-
+NODE_SOURCES = [
+    f"https://nodejs.org/dist/v{NODE_VERSION}/{{file}}",
+    f"https://registry.npmmirror.com/-/binary/node/v{NODE_VERSION}/{{file}}",
+]
+CLOUDCLI_VERSION = "1.37.3"
+# The integrity registry.npmjs.org gives @cloudcli-ai/cloudcli 1.37.3.
+CLOUDCLI_INTEGRITY = "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw=="  # scan: allow
 
 CODEG_VERSION = "0.35.1"
 # The sha256 of each server bundle, from the publisher's own .sha256 sidecar.
@@ -834,96 +183,14 @@ CODEG_SERVER_BUILDS = {
     ),
 }
 
-
-def test_codeg_pins_the_server_bundle_and_node_as_two_components_per_platform():
-    """The server bundle from the publisher's release, mirrored nowhere, and
-    the Node.js build CloudCLI's manifest pins, each under its own directory;
-    no Windows arm64, and no glibc floor since Codeg's is the agent's own."""
-    manifest = load_module_manifests()["codeg"]
-    node_builds = load_module_manifests()["cloudcli"]["platforms"]
-
-    assert manifest["version"] == CODEG_VERSION
-    assert manifest["license"] == "Apache-2.0"
-    assert manifest["corresponding_source"] == (
-        f"https://github.com/spacering-net/codeg/tree/v{CODEG_VERSION}"
-    )
-    assert set(manifest["platforms"]) == set(CODEG_SERVER_BUILDS)
-    assert "windows-arm64" not in manifest["platforms"]
-    for key, (build, digest) in CODEG_SERVER_BUILDS.items():
-        entry = manifest["platforms"][key]
-        assert "url" not in entry and "min_version" not in entry
-        server, node = entry["components"]
-        assert server["name"] == "server" and server["directory"] == "server"
-        assert server["url"] == (
-            "https://github.com/spacering-net/codeg/releases/download/"
-            f"v{CODEG_VERSION}/codeg-server-{build}"
-        )
-        assert server["sha256"] == digest
-        assert server["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
-        assert "cn_url" not in server
-        (cloudcli_node,) = node_builds[key]["components"]
-        assert node == cloudcli_node
-        assert entry["uninstall"] == {
-            "packages": [],
-            "post_uninstall": [],
-            "is_data_kept": True,
-        }
-    assert manifest["platforms"]["linux-amd64"]["verify"] == (
-        "/var/lib/neutrino/agent/codeg/server/codeg-server --version"
-    )
-    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
-        '"/Library/Application Support/Neutrino/agent/state/codeg/server/codeg-server"'
-        " --version"
-    )
-    assert "codeg\\server\\codeg-server.exe" in (
-        manifest["platforms"]["windows-amd64"]["verify"]
-    )
-
-
-def test_codeg_resolves_to_two_components_by_machine_and_refuses_the_rest():
-    manifest = load_module_manifests()["codeg"]
-    windows_arm = {"os": "windows", "family": "", "arch": "arm64", "version": "26100"}
-
-    resolved = resolve_module(manifest, {**DEBIAN, "version": "2.34"})
-    old = resolve_module(manifest, {**DEBIAN, "version": "2.28"})
-
-    assert [component["name"] for component in resolved["components"]] == [
-        "server",
-        "node",
-    ]
-    assert resolved["components"][0] == {
-        "name": "server",
-        "package_kind": "tar",
-        "directory": "server",
-        "sha256": CODEG_SERVER_BUILDS["linux-amd64"][1],
-    }
-    assert [component["name"] for component in old["components"]] == [
-        "server",
-        "node",
-    ]
-    assert resolve_platform_entry(manifest, windows_arm) == ("", None)
-
-
-def test_code_server_has_no_windows_branch_and_no_glibc_floor():
-    manifest = load_module_manifests()["code_server"]
-    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
-    old = {**DEBIAN, "version": "2.27"}
-
-    assert resolve_platform_entry(manifest, windows) == ("", None)
-    assert resolve_platform_entry(manifest, old)[0] == "linux-amd64"
-    assert resolve_platform_entry(manifest, {**DEBIAN, "version": "2.36"})[0] == (
-        "linux-amd64"
-    )
-
-
-# --- Containers: the system's Podman on Linux, a pinned release elsewhere ---
-
 PODMAN_RELEASES = "https://github.com/podman-container-tools/podman/releases/download/"
 PODMAN_IMAGES = (
     "https://github.com/podman-container-tools/podman-machine-os/releases/download/"
 )
-# Each digest is the one GitHub's release API gives the asset; the msi and
-# pkg ones are also in the Podman release's own shasums file.
+# Each digest is the one the GitHub release API gives the asset; the msi and
+# pkg ones are also in the Podman release's own shasums file. Per platform:
+# the version, the floor, the verify, and each artifact's name, kind, file,
+# digest and its first source filled in.
 PODMAN_PINS = {
     "windows-amd64": (
         "6.1.4",
@@ -932,22 +199,25 @@ PODMAN_PINS = {
         [
             (
                 "wsl",
-                "https://github.com/microsoft/WSL/releases/download/3.0.3/"
+                "msi",
                 "wsl.3.0.3.0.x64.msi",
                 "ae977286974255bd26bf925f00f40f5692c6b2084155cbc0563c09aea091f211",  # scan: allow
-                "msi",
+                "https://github.com/microsoft/WSL/releases/download/3.0.3/"
+                "wsl.3.0.3.0.x64.msi",
             ),
             (
-                "installer",
-                f"{PODMAN_RELEASES}v6.1.4/podman-installer-windows-amd64.msi",
-                "4a05240054cb990629cbe098db090c5c7848c44162c11910cabb45ca75a40d53",  # scan: allow
+                "podman",
                 "msi",
+                "podman-installer-windows-amd64.msi",
+                "4a05240054cb990629cbe098db090c5c7848c44162c11910cabb45ca75a40d53",  # scan: allow
+                f"{PODMAN_RELEASES}v6.1.4/podman-installer-windows-amd64.msi",
             ),
             (
                 "image",
-                f"{PODMAN_IMAGES}v6.1.4/podman-machine.x86_64.wsl.tar.zst",
-                "84c99d407af99d36e18d32327c86f57128d0e76f70c357fc4bc27f307be98738",  # scan: allow
                 "tar_zst",
+                "podman-machine.x86_64.wsl.tar.zst",
+                "84c99d407af99d36e18d32327c86f57128d0e76f70c357fc4bc27f307be98738",  # scan: allow
+                f"{PODMAN_IMAGES}v6.1.4/podman-machine.x86_64.wsl.tar.zst",
             ),
         ],
     ),
@@ -957,16 +227,18 @@ PODMAN_PINS = {
         "/opt/podman/bin/podman --version",
         [
             (
-                "installer",
-                f"{PODMAN_RELEASES}v6.1.4/podman-installer-macos-arm64.pkg",
-                "48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22",  # scan: allow
+                "podman",
                 "pkg",
+                "podman-installer-macos-arm64.pkg",
+                "48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22",  # scan: allow
+                f"{PODMAN_RELEASES}v6.1.4/podman-installer-macos-arm64.pkg",
             ),
             (
                 "image",
-                f"{PODMAN_IMAGES}v6.1.4/podman-machine.aarch64.applehv.raw.zst",
-                "d92af11c2980615ad1645fd36999f5abb53e4118a7a19fc981fbaccf57de1737",  # scan: allow
                 "raw_zst",
+                "podman-machine.aarch64.applehv.raw.zst",
+                "d92af11c2980615ad1645fd36999f5abb53e4118a7a19fc981fbaccf57de1737",  # scan: allow
+                f"{PODMAN_IMAGES}v6.1.4/podman-machine.aarch64.applehv.raw.zst",
             ),
         ],
     ),
@@ -976,41 +248,567 @@ PODMAN_PINS = {
         "/opt/podman/bin/podman --version",
         [
             (
-                "installer",
-                f"{PODMAN_RELEASES}v5.8.9/podman-installer-macos-amd64.pkg",
-                "3d600c6a1efd41445b56ed9864b9daba0765cfeae9d62604e87cf6c01b613403",  # scan: allow
+                "podman",
                 "pkg",
+                "podman-installer-macos-amd64.pkg",
+                "3d600c6a1efd41445b56ed9864b9daba0765cfeae9d62604e87cf6c01b613403",  # scan: allow
+                f"{PODMAN_RELEASES}v5.8.9/podman-installer-macos-amd64.pkg",
             ),
             (
                 "image",
-                f"{PODMAN_IMAGES}v5.8.9/podman-machine.x86_64.applehv.raw.zst",
-                "eac6f4ca8e3b6c1abd6bd6f331f05eecf0779b4d601d13ed9815be521c4715af",  # scan: allow
                 "raw_zst",
+                "podman-machine.x86_64.applehv.raw.zst",
+                "eac6f4ca8e3b6c1abd6bd6f331f05eecf0779b4d601d13ed9815be521c4715af",  # scan: allow
+                f"{PODMAN_IMAGES}v5.8.9/podman-machine.x86_64.applehv.raw.zst",
             ),
         ],
     ),
 }
 
+DEBIAN = {"os": "linux", "family": "debian", "arch": "amd64"}
+RHEL = {"os": "linux", "family": "rhel", "arch": "amd64"}
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+MAC = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}
+# Two release sites as a build stamps them.
+SITES = (
+    {
+        "files": "https://releases.example/a/download/{tag}/",
+        "latest": "https://releases.example/a/latest.json",
+    },
+    {
+        "files": "https://releases.example/b/download/{tag}/",
+        "latest": "https://releases.example/b/latest.json",
+    },
+)
 
-def test_containers_keeps_its_linux_branches_with_no_identity_of_their_own():
+
+def write_manifest(directory, name: str, manifest: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{name}.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+@pytest.fixture
+def manifests_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    return tmp_path
+
+
+def sample_artifact(**overrides) -> dict:
+    artifact = {
+        "name": "server",
+        "kind": "tar_gz",
+        "directory": "server",
+        "file": "server-{version}.tar.gz",
+        "digest": "sha256:" + "a" * 64,
+        "sources": ["https://vendor.example/v{version}/{file}"],
+    }
+    artifact.update(overrides)
+    return artifact
+
+
+def sample_manifest() -> dict:
+    """One valid module manifest: a system entry on Debian, a hub entry on amd64."""
+    return {
+        "name": "sample",
+        "title": "Sample",
+        "description": "A sample module",
+        "publisher": "vendor/sample",
+        "license": "MIT",
+        "corresponding_source": "https://vendor.example/tree/v{version}",
+        "platforms": {
+            "linux-debian": {
+                "runner": "sample",
+                "install": {
+                    "method": "system",
+                    "params": {
+                        "version": "system",
+                        "packages": ["sample"],
+                        "verify": "sample --version",
+                        "uninstall": {"packages": ["sample"], "post_uninstall": []},
+                    },
+                },
+            },
+            "windows-amd64": {
+                "runner": "sample_machine",
+                "min_version": "19041",
+                "install": {
+                    "method": "hub",
+                    "params": {
+                        "version": "2.0",
+                        "releases": [
+                            {
+                                "kind": "github",
+                                "sources": ["https://api.example"],
+                                "repository": "vendor/sample",
+                                "tag": "v{version}",
+                            }
+                        ],
+                        "artifacts": [
+                            sample_artifact(),
+                            sample_artifact(
+                                name="cli",
+                                kind="npm",
+                                package="@vendor/cli",
+                                digest="sha512-" + "b" * 86 + "==",
+                                sources=["https://registry.example"],
+                                hosts={
+                                    "npm_config_cli_binary_host": ["https://h.example"]
+                                },
+                                directory=None,
+                                file=None,
+                            ),
+                        ],
+                        "verify": "sample --version",
+                        "uninstall": {"post_uninstall": [], "is_data_kept": True},
+                    },
+                },
+            },
+        },
+    }
+
+
+def _without_nones(value):
+    if isinstance(value, dict):
+        return {
+            key: _without_nones(item) for key, item in value.items() if item is not None
+        }
+    if isinstance(value, list):
+        return [_without_nones(item) for item in value]
+    return value
+
+
+def valid_manifest() -> dict:
+    return _without_nones(sample_manifest())
+
+
+def hub_params(manifest: dict) -> dict:
+    return manifest["platforms"]["windows-amd64"]["install"]["params"]
+
+
+def system_params(manifest: dict) -> dict:
+    return manifest["platforms"]["linux-debian"]["install"]["params"]
+
+
+def packaging_constants():
+    """The packaging pins, read from their file as the build reads them."""
+    path = Path(__file__).resolve().parents[4] / "packaging/shared/constants.py"
+    spec = importlib.util.spec_from_file_location("packaging_pins", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# --- the shipped manifests ---
+
+
+def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
+    """What the agent carries, then what the system holds or installs, then
+    what the module's installer fetches, and by title inside each."""
+    assert list(load_module_manifests()) == [
+        "remote_desktop",
+        "terminal",
+        "podman",
+        "samba",
+        "zfs",
+        "cloudcli",
+        "code_server",
+        "codeg",
+        "gitea",
+        "vscode",
+    ]
+
+
+def test_every_shipped_entry_names_its_runner_and_method():
+    shipped = {
+        name: {
+            key: (entry["runner"], entry["install"]["method"])
+            for key, entry in manifest["platforms"].items()
+        }
+        for name, manifest in load_module_manifests().items()
+    }
+
+    agent = {key: None for key in ("linux", "windows", "darwin")}
+    assert shipped["terminal"] == {key: ("terminal", "agent") for key in agent}
+    assert shipped["remote_desktop"] == {
+        key: ("remote_desktop", "agent") for key in agent
+    }
+    families = ("linux-debian", "linux-rhel", "linux-arch")
+    assert shipped["samba"] == {
+        **{key: ("samba", "system") for key in families},
+        "windows": ("samba_native", "builtin"),
+        "darwin": ("samba_native", "builtin"),
+    }
+    assert shipped["zfs"] == {key: ("zfs", "system") for key in families}
+    assert shipped["podman"] == {
+        **{key: ("podman", "system") for key in families},
+        **{key: ("podman_machine", "hub") for key in PODMAN_PINS},
+    }
+    for name, keys in (
+        ("gitea", GITEA_DIGESTS),
+        ("vscode", VSCODE_BUILDS),
+        ("code_server", CODE_SERVER_BUILDS),
+        ("cloudcli", NODE_BUILDS),
+        ("codeg", CODEG_SERVER_BUILDS),
+    ):
+        assert shipped[name] == {key: (name, "hub") for key in keys}, name
+
+
+def test_every_shipped_manifest_names_its_publisher():
+    publishers = {
+        name: manifest["publisher"]
+        for name, manifest in load_module_manifests().items()
+    }
+
+    assert publishers == {
+        "remote_desktop": "Neutrino",
+        "terminal": "Neutrino",
+        "podman": "podman-container-tools/podman",
+        "samba": "Samba Team",
+        "zfs": "OpenZFS",
+        "gitea": "go-gitea/gitea",
+        "vscode": "Microsoft",
+        "code_server": "coder/code-server",
+        "cloudcli": "siteboon/claudecodeui",
+        "codeg": "spacering-net/codeg",
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["ssh_server", "samba_mount", "cc_switch", "rustdesk"],
+)
+def test_the_modules_that_left_are_not_shipped_any_more(name):
+    assert name not in load_module_manifests()
+
+
+@pytest.mark.parametrize(
+    "name, debian, rhel",
+    [
+        ("samba", ["samba"], ["samba", "samba-client"]),
+        ("podman", ["podman"], ["podman"]),
+        (
+            "zfs",
+            ["zfsutils-linux", "zfs-zed", "smartmontools"],
+            ["zfs", "smartmontools"],
+        ),
+    ],
+)
+def test_a_system_module_names_its_packages_per_family(name, debian, rhel):
+    manifest = load_module_manifests()[name]
+
+    for platform, packages in ((DEBIAN, debian), (RHEL, rhel)):
+        params = resolve_module(manifest, platform)["recipe"]["params"]
+        assert params["version"] == "system"
+        assert params["packages"] == packages
+        assert params["uninstall"] == {"packages": packages, "post_uninstall": []}
+
+
+def test_containers_on_linux_names_podman_alone():
+    """podman-docker adds a docker command and conflicts with Docker CE."""
     manifest = load_module_manifests()["podman"]
 
-    assert (manifest["kind"], manifest["installer"], manifest["source"]) == (
-        "system_package",
-        "platform",
-        "system",
-    )
-    assert "version" not in manifest and "license" not in manifest
     for key in ("linux-debian", "linux-rhel", "linux-arch"):
-        assert manifest["platforms"][key] == {
-            "packages": ["podman", "podman-docker"],
+        assert entry_params(manifest["platforms"][key]) == {
+            "version": "system",
+            "packages": ["podman"],
             "verify": "podman --version",
-            "uninstall": {
-                "packages": ["podman", "podman-docker"],
-                "post_uninstall": [],
-                "is_data_kept": True,
-            },
+            "uninstall": {"packages": ["podman"], "post_uninstall": []},
         }, key
+    shipped = json.dumps(load_module_manifests())
+    assert "podman-docker" not in shipped
+
+
+def test_zfs_adds_the_repository_each_family_keeps_it_in_before_its_packages():
+    manifest = load_module_manifests()["zfs"]
+
+    debian_steps = entry_params(manifest["platforms"]["linux-debian"])["pre_install"]
+    rhel_steps = entry_params(manifest["platforms"]["linux-rhel"])["pre_install"]
+    arch_steps = entry_params(manifest["platforms"]["linux-arch"])["pre_install"]
+    assert any("contrib" in step for step in debian_steps)
+    assert any("apt-get update" in step for step in debian_steps)
+    assert any("zfs-dkms" in step for step in debian_steps)
+    assert any("zfsonlinux.org" in step for step in rhel_steps)
+    assert arch_steps
+    assert entry_params(manifest["platforms"]["linux-debian"])["verify"] == (
+        "modprobe zfs && zpool --version"
+    )
+
+
+@pytest.mark.parametrize("platform", [WINDOWS, MAC])
+def test_samba_is_the_system_s_own_server_on_windows_and_macos(platform):
+    key, entry = resolve_platform_entry(load_module_manifests()["samba"], platform)
+
+    assert key == platform["os"]
+    assert entry == {
+        "runner": "samba_native",
+        "install": {"method": "builtin", "params": {}},
+    }
+
+
+def test_terminal_and_remote_desktop_are_the_agent_s_on_every_system():
+    for name in ("terminal", "remote_desktop"):
+        manifest = load_module_manifests()[name]
+        for platform in (DEBIAN, WINDOWS, MAC):
+            assert resolve_module(manifest, platform)["recipe"] == {
+                "runner": name,
+                "method": "agent",
+                "params": {},
+            }, (name, platform)
+
+
+def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
+    manifest = load_module_manifests()["gitea"]
+
+    assert manifest["license"] == "MIT"
+    assert manifest["corresponding_source"] == (
+        "https://github.com/go-gitea/gitea/tree/v{version}"
+    )
+    assert manifest["is_data_forward_only"] is True
+    assert set(manifest["platforms"]) == set(GITEA_DIGESTS)
+    for key, (asset, digest) in GITEA_DIGESTS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert params["version"] == GITEA_VERSION
+        assert params["releases"] == [
+            {
+                "kind": "github",
+                "sources": ["https://api.github.com"],
+                "repository": "go-gitea/gitea",
+                "tag": "v{version}",
+            }
+        ]
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert artifact["kind"] == "binary" and "directory" not in artifact
+        assert artifact["digest"] == f"sha256:{digest}"
+        file = f"gitea-{GITEA_VERSION}-{asset}"
+        assert artifact_file(artifact, GITEA_VERSION) == file
+        assert artifact_sources(artifact, GITEA_VERSION) == [
+            f"https://dl.gitea.com/gitea/{GITEA_VERSION}/{file}",
+            f"https://github.com/go-gitea/gitea/releases/download/v{GITEA_VERSION}/{file}",
+        ]
+        assert params.get("packages", []) == (
+            ["git"] if key.startswith("linux") else []
+        )
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+    assert entry_params(manifest["platforms"]["linux-amd64"])["verify"] == (
+        "/usr/local/bin/gitea --version"
+    )
+    assert entry_params(manifest["platforms"]["darwin-arm64"])["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/gitea/gitea" --version'
+    )
+
+
+def test_gitea_resolves_by_machine_and_refuses_the_rest():
+    manifest = load_module_manifests()["gitea"]
+
+    assert resolve_platform_entry(manifest, DEBIAN)[0] == "linux-amd64"
+    assert resolve_platform_entry(manifest, {**RHEL, "arch": "arm64"})[0] == (
+        "linux-arm64"
+    )
+    assert resolve_platform_entry(manifest, {**DEBIAN, "arch": "armhf"}) == ("", None)
+    assert resolve_platform_entry(manifest, WINDOWS)[0] == "windows-amd64"
+    assert resolve_platform_entry(manifest, {**WINDOWS, "arch": "arm64"}) == ("", None)
+    for arch in ("arm64", "amd64"):
+        assert resolve_platform_entry(manifest, {**MAC, "arch": arch})[0] == (
+            f"darwin-{arch}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "program"),
+    [
+        ("cloudcli", "cloudcli\\node\\node.exe"),
+        ("codeg", "codeg\\server\\codeg-server.exe"),
+        ("gitea", "gitea\\gitea.exe"),
+        ("vscode", "vscode\\code.exe"),
+    ],
+)
+def test_a_windows_verify_runs_the_unpacked_program_through_cmd(name, program):
+    """The agent's shell on Windows is cmd.exe: it expands ``%ProgramData%``,
+    and a program that is not there exits non-zero."""
+    entries = load_module_manifests()[name]["platforms"]
+    windows = [key for key in entries if key.startswith("windows")]
+
+    assert windows
+    for key in windows:
+        assert entry_params(entries[key])["verify"] == (
+            f'"%ProgramData%\\Neutrino\\agent\\state\\{program}" --version'
+        ), key
+
+
+def test_no_windows_verify_starts_powershell():
+    for name, manifest in load_module_manifests().items():
+        for key, entry in manifest["platforms"].items():
+            verify = str(entry_params(entry).get("verify", "")).lower()
+            if key.startswith("windows"):
+                assert "powershell" not in verify, (name, key)
+
+
+def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
+    """Microsoft's address is the one source, and the CLI lands directly in
+    the module's own directory, so its artifact names no directory."""
+    manifest = load_module_manifests()["vscode"]
+
+    assert manifest["corresponding_source"] == (
+        "https://github.com/microsoft/vscode/tree/{version}/cli"
+    )
+    assert set(manifest["platforms"]) == set(VSCODE_BUILDS)
+    for key, (platform_name, kind, file, digest) in VSCODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert params["version"] == VSCODE_VERSION
+        assert params["releases"] == [
+            {
+                "kind": "vscode_update",
+                "sources": ["https://update.code.visualstudio.com"],
+                "platform": platform_name,
+            }
+        ]
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert (artifact["name"], artifact["kind"]) == ("cli", kind)
+        assert "directory" not in artifact
+        assert artifact["digest"] == f"sha256:{digest}"
+        assert artifact_sources(artifact, VSCODE_VERSION) == [
+            "https://vscode.download.prss.microsoft.com/dbazure/download/stable/"
+            f"{VSCODE_COMMIT}/{file}"
+        ]
+        assert "min_version" not in entry
+
+
+@pytest.mark.parametrize(
+    "key, path",
+    [
+        ("linux-amd64", "/var/lib/neutrino/agent/vscode/code"),
+        ("windows-amd64", "Neutrino\\agent\\state\\vscode\\code.exe"),
+        (
+            "darwin-arm64",
+            "/Library/Application Support/Neutrino/agent/state/vscode/code",
+        ),
+    ],
+)
+def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):
+    verify = entry_params(load_module_manifests()["vscode"]["platforms"][key])["verify"]
+
+    assert path in verify
+    assert "--version" in verify
+
+
+def test_code_server_pins_coders_release_per_platform_with_its_mirror():
+    manifest = load_module_manifests()["code_server"]
+
+    assert manifest["license"] == "MIT"
+    assert set(manifest["platforms"]) == set(CODE_SERVER_BUILDS)
+    for key, (build, digest) in CODE_SERVER_BUILDS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert params["version"] == CODE_SERVER_VERSION
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert (artifact["kind"], artifact["directory"]) == ("tar_gz", "release")
+        assert artifact["digest"] == f"sha256:{digest}"
+        name = f"code-server-{CODE_SERVER_VERSION}-{build}.tar.gz"
+        assert artifact_sources(artifact, CODE_SERVER_VERSION) == [
+            f"{CODE_SERVER_RELEASES}v{CODE_SERVER_VERSION}/{name}",
+            f"{CODE_SERVER_MIRROR}v{CODE_SERVER_VERSION}/{name}",
+        ]
+        assert "code_server/release/lib/node" in params["verify"]
+        assert "min_version" not in entry
+
+
+def test_code_server_has_no_windows_entry_and_no_glibc_floor():
+    manifest = load_module_manifests()["code_server"]
+
+    assert resolve_platform_entry(manifest, WINDOWS) == ("", None)
+    assert resolve_platform_entry(manifest, {**DEBIAN, "version": "2.27"})[0] == (
+        "linux-amd64"
+    )
+
+
+def test_cloudcli_pins_node_and_its_npm_package_on_six_platforms():
+    """Node.js unpacks under ``cloudcli/node`` with nodejs.org and npmmirror
+    as its sources; the npm package keeps its registries and the hosts
+    better-sqlite3's binary comes from, its digest npm's integrity."""
+    manifest = load_module_manifests()["cloudcli"]
+
+    assert manifest["license"] == "AGPL-3.0"
+    assert manifest["corresponding_source"] == (
+        "https://github.com/siteboon/claudecodeui/tree/v{version}"
+    )
+    assert set(manifest["platforms"]) == set(NODE_BUILDS)
+    for key, (build, digest) in NODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert params["version"] == CLOUDCLI_VERSION
+        assert params["releases"] == [
+            {
+                "kind": "npm",
+                "sources": ["https://registry.npmjs.org"],
+                "package": "@cloudcli-ai/cloudcli",
+            }
+        ]
+        node, package = entry_artifacts(manifest, entry)
+        assert (node["name"], node["directory"]) == ("node", "node")
+        assert node["kind"] == ("zip" if build.endswith(".zip") else "tar_gz")
+        assert node["file"] == f"node-v{NODE_VERSION}-{build}"
+        assert node["digest"] == f"sha256:{digest}"
+        assert node["sources"] == NODE_SOURCES
+        assert package == {
+            "name": "cloudcli",
+            "kind": "npm",
+            "package": "@cloudcli-ai/cloudcli",
+            "digest": CLOUDCLI_INTEGRITY,
+            "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com"],
+            "hosts": {
+                "npm_config_better_sqlite3_binary_host": [
+                    "https://github.com/WiseLibs/better-sqlite3/releases/download",
+                    "https://registry.npmmirror.com/-/binary/better-sqlite3",
+                ]
+            },
+        }
+        assert "node-v" not in params["verify"]
+        assert "min_version" not in entry
+    assert entry_params(manifest["platforms"]["linux-amd64"])["verify"] == (
+        "/var/lib/neutrino/agent/cloudcli/node/bin/node --version"
+    )
+    assert entry_params(manifest["platforms"]["darwin-arm64"])["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node"'
+        " --version"
+    )
+
+
+def test_codeg_pins_the_server_bundle_and_cloudclis_node_per_platform():
+    """The server bundle from the publisher's release, its one source, and
+    the Node.js build CloudCLI's manifest pins, each under its own
+    directory; no Windows arm64, and no glibc floor."""
+    manifest = load_module_manifests()["codeg"]
+    cloudcli = load_module_manifests()["cloudcli"]
+
+    assert manifest["license"] == "Apache-2.0"
+    assert manifest["corresponding_source"] == (
+        "https://github.com/spacering-net/codeg/tree/v{version}"
+    )
+    assert set(manifest["platforms"]) == set(CODEG_SERVER_BUILDS)
+    for key, (build, digest) in CODEG_SERVER_BUILDS.items():
+        entry = manifest["platforms"][key]
+        assert entry_params(entry)["version"] == CODEG_VERSION
+        assert "min_version" not in entry
+        server, node = entry_artifacts(manifest, entry)
+        assert (server["name"], server["directory"]) == ("server", "server")
+        assert server["kind"] == ("zip" if build.endswith(".zip") else "tar_gz")
+        assert server["digest"] == f"sha256:{digest}"
+        assert artifact_sources(server, CODEG_VERSION) == [
+            "https://github.com/spacering-net/codeg/releases/download/"
+            f"v{CODEG_VERSION}/codeg-server-{build}"
+        ]
+        cloudcli_node, _ = entry_artifacts(cloudcli, cloudcli["platforms"][key])
+        assert node == cloudcli_node
+        assert entry_params(entry)["uninstall"] == {
+            "post_uninstall": [],
+            "is_data_kept": True,
+        }
+    assert entry_params(manifest["platforms"]["linux-amd64"])["verify"] == (
+        "/var/lib/neutrino/agent/codeg/server/codeg-server --version"
+    )
+    assert resolve_platform_entry(manifest, {**WINDOWS, "arch": "arm64"}) == ("", None)
 
 
 def test_containers_pins_podmans_release_per_platform_off_linux():
@@ -1021,40 +819,39 @@ def test_containers_pins_podmans_release_per_platform_off_linux():
         if not key.startswith("linux")
     }
 
+    assert manifest["license"] == "Apache-2.0"
     assert set(off_linux) == set(PODMAN_PINS)
-    assert "windows-arm64" not in manifest["platforms"]
-    for key, (version, floor, verify, components) in PODMAN_PINS.items():
+    for key, (version, floor, verify, artifacts) in PODMAN_PINS.items():
         entry = off_linux[key]
-        assert branch_identity(manifest, entry) == {
-            "kind": "podman_machine",
-            "installer": "hub",
-            "version": version,
-            "source": "podman-container-tools/podman",
-            "license": "Apache-2.0",
-            "corresponding_source": (
-                f"https://github.com/podman-container-tools/podman/tree/v{version}"
-            ),
-        }, key
+        params = entry_params(entry)
         assert entry["min_version"] == floor
-        assert entry["verify"] == verify
-        assert entry["uninstall"] == {
-            "packages": [],
-            "post_uninstall": [],
-            "is_data_kept": True,
-        }
+        assert params["version"] == version
+        assert params["verify"] == verify
+        assert params["packages"] == []
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
         assert [
             (
-                component["name"],
-                component["url"],
-                component["sha256"],
-                component["package_kind"],
+                artifact["name"],
+                artifact["kind"],
+                artifact["file"],
+                artifact["digest"],
+                artifact_sources(artifact, version)[0],
             )
-            for component in entry["components"]
-        ] == components, key
+            for artifact in entry_artifacts(manifest, entry)
+        ] == [
+            (name, kind, file, f"sha256:{digest}", source)
+            for name, kind, file, digest, source in artifacts
+        ], key
         assert all(
-            component["directory"] == component["name"] and "cn_url" not in component
-            for component in entry["components"]
+            artifact["directory"] == artifact["name"]
+            for artifact in entry_artifacts(manifest, entry)
         ), key
+        resolved = resolve_module(
+            manifest, {"os": key.split("-")[0], "arch": key.split("-")[1]}
+        )
+        assert resolved["corresponding_source"] == (
+            f"https://github.com/podman-container-tools/podman/tree/v{version}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1067,217 +864,10 @@ def test_containers_pins_podmans_release_per_platform_off_linux():
         ({"os": "darwin", "family": "", "arch": "amd64", "version": "12.7.6"}, False),
     ],
 )
-def test_containers_resolves_off_linux_from_each_branchs_floor(platform, expected):
+def test_containers_resolves_off_linux_from_each_entrys_floor(platform, expected):
     _, entry = resolve_platform_entry(load_module_manifests()["podman"], platform)
 
     assert (entry is not None) is expected
-
-
-# --- a branch that unpacks several archives lists them as components ---
-
-COMPONENT = {
-    "name": "server",
-    "url": "https://vendor.example/server.tar.gz",
-    "sha256": "a" * 64,
-    "package_kind": "tar",
-    "directory": "server",
-}
-NODE_COMPONENT = {
-    "name": "node",
-    "url": "https://nodejs.org/dist/node.tar.gz",
-    "cn_url": "https://mirror.example/node.tar.gz",
-    "sha256": "b" * 64,
-    "package_kind": "tar",
-    "directory": "node",
-}
-
-
-def components_manifest(components, **entry) -> dict:
-    return {
-        "name": "sample",
-        "installer": "hub",
-        "source": "vendor",
-        "license": "MIT",
-        "corresponding_source": "https://github.com/vendor/sample",
-        "platforms": {
-            "linux-amd64": {
-                "components": components,
-                "verify": "sample --version",
-                "uninstall": {
-                    "packages": [],
-                    "post_uninstall": [],
-                    "is_data_kept": True,
-                },
-                **entry,
-            }
-        },
-    }
-
-
-def test_the_loader_accepts_a_branch_listing_components(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", components_manifest([COMPONENT, NODE_COMPONENT]))
-
-    manifest = load_module_manifests()["sample"]
-
-    components = manifest["platforms"]["linux-amd64"]["components"]
-    assert [component["name"] for component in components] == ["server", "node"]
-
-
-def test_the_loader_refuses_a_branch_naming_both_a_url_and_components(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        components_manifest([COMPONENT], url="https://vendor.example/all.tar.gz"),
-    )
-
-    with pytest.raises(ValueError, match="both url and components"):
-        load_module_manifests()
-
-
-@pytest.mark.parametrize(
-    "field", ["name", "url", "sha256", "package_kind", "directory"]
-)
-def test_the_loader_refuses_a_component_without_one_of_its_fields(
-    field, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    broken = {key: value for key, value in COMPONENT.items() if key != field}
-    write_manifest(tmp_path, "sample", components_manifest([broken]))
-
-    with pytest.raises(ValueError, match=f"component without {field}"):
-        load_module_manifests()
-
-
-@pytest.mark.parametrize(
-    "second, message",
-    [
-        ({**NODE_COMPONENT, "name": "server"}, "names the component 'server' twice"),
-        ({**NODE_COMPONENT, "directory": "server"}, "two components into 'server'"),
-    ],
-)
-def test_the_loader_refuses_two_components_sharing_a_name_or_a_directory(
-    second, message, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", components_manifest([COMPONENT, second]))
-
-    with pytest.raises(ValueError, match=message):
-        load_module_manifests()
-
-
-@pytest.mark.parametrize("components", [[], "server", [COMPONENT, "node"]])
-def test_the_loader_refuses_components_that_are_not_a_list_of_archives(
-    components, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(tmp_path, "sample", components_manifest(components))
-
-    with pytest.raises(ValueError, match="component"):
-        load_module_manifests()
-
-
-def test_a_builtin_branch_names_no_components(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "platform",
-            "source": "system",
-            "platforms": {
-                "windows": {"installer": "builtin", "components": [COMPONENT]}
-            },
-        },
-    )
-
-    with pytest.raises(ValueError, match="builtin"):
-        load_module_manifests()
-
-
-def test_the_resolved_module_carries_each_component_as_the_recipe_does():
-    """The agent is handed the name, the kind, the directory and the digest of
-    each archive; where it comes from stays the hub's."""
-    manifest = components_manifest([COMPONENT, NODE_COMPONENT])
-
-    resolved = resolve_module(manifest, DEBIAN)
-
-    assert resolved["components"] == [
-        {
-            "name": "server",
-            "package_kind": "tar",
-            "directory": "server",
-            "sha256": "a" * 64,
-        },
-        {
-            "name": "node",
-            "package_kind": "tar",
-            "directory": "node",
-            "sha256": "b" * 64,
-        },
-    ]
-    assert "components" not in resolve_module(load_module_manifests()["vscode"], DEBIAN)
-
-
-def test_an_archive_package_is_recognised_by_its_compressor():
-    assert looks_like_package(b"\x1f\x8b\x08", "tar")
-    assert looks_like_package(b"PK\x03\x04", "zip")
-    assert not looks_like_package(b"<!doctype html>", "zip")
-
-
-@pytest.mark.parametrize(
-    ("edition", "registry"),
-    [("intl", "https://registry.npmjs.org"), ("cn", "https://registry.npmmirror.com")],
-)
-def test_cloudclis_state_names_the_npm_registry_of_the_hubs_edition(edition, registry):
-    from neutrino_hub.modules.devices.desired_state import instances_agent_config
-    from neutrino_hub.modules.devices.module_table import module_row
-
-    sent = instances_agent_config(module_row("cloudcli"), {}, {}, edition=edition)
-
-    assert sent["npm_registry"] == registry
-
-
-@pytest.mark.parametrize(
-    ("edition", "environment"),
-    [
-        ("intl", {}),
-        (
-            "cn",
-            {
-                "npm_config_better_sqlite3_binary_host": (
-                    "https://registry.npmmirror.com/-/binary/better-sqlite3"
-                )
-            },
-        ),
-    ],
-)
-def test_cloudclis_state_carries_the_npm_environment_the_manifest_names(
-    edition, environment
-):
-    from neutrino_hub.modules.devices.desired_state import instances_agent_config
-    from neutrino_hub.modules.devices.module_table import module_row
-
-    sent = instances_agent_config(module_row("cloudcli"), {}, {}, edition=edition)
-
-    assert sent["npm_environment"] == environment
-    assert all(name.startswith("npm_config_") for name in environment)
-
-
-def packaging_constants():
-    """The packaging pins, read from their file as the build reads them."""
-    import importlib.util
-    from pathlib import Path
-
-    path = Path(__file__).resolve().parents[4] / "packaging/shared/constants.py"
-    spec = importlib.util.spec_from_file_location("packaging_pins", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 # The packaging pin's systems and machines, as the manifest's platform keys.
@@ -1292,65 +882,528 @@ CC_SWITCH_KEYS = {
 
 def test_cc_switch_is_pinned_where_the_client_s_packages_are():
     pins = packaging_constants()
-    manifest = manifests_module.load_tool_manifests()["cc_switch"]
+    manifest = load_tool_manifests()["cc_switch"]
+    version = pins.PACKAGING_CC_SWITCH_VERSION
 
-    assert manifest["version"] == pins.PACKAGING_CC_SWITCH_VERSION
+    assert manifest["version"] == version
     assert set(manifest["platforms"]) == {
         CC_SWITCH_KEYS[key] for key in pins.PACKAGING_CC_SWITCH_ASSETS
     }
     for key, (asset, digest) in pins.PACKAGING_CC_SWITCH_ASSETS.items():
         entry = manifest["platforms"][CC_SWITCH_KEYS[key]]
-        assert entry["url"] == pins.PACKAGING_CC_SWITCH_URL.format(
-            version=pins.PACKAGING_CC_SWITCH_VERSION, asset=asset
-        )
-        assert entry["sha256"] == digest
-        assert entry["package_kind"] == ("zip" if asset.endswith(".zip") else "tar")
-        assert entry["cn_url"] == "{release}/" + entry["url"].rsplit("/", 1)[-1]
+        (artifact,) = entry_artifacts(manifest, entry)
+        upstream = pins.PACKAGING_CC_SWITCH_URL.format(version=version, asset=asset)
+        file = upstream.rsplit("/", 1)[-1]
+        assert artifact["digest"] == f"sha256:{digest}"
+        assert artifact["kind"] == ("zip" if asset.endswith(".zip") else "tar_gz")
+        assert artifact_file(artifact, version) == file
+        assert artifact_sources(
+            artifact, version, hub_version="0.6.0", sites=SITES
+        ) == [
+            upstream,
+            f"https://releases.example/a/download/v0.6.0/{file}",
+            f"https://releases.example/b/download/v0.6.0/{file}",
+        ]
+        assert artifact_sources(artifact, version, sites=()) == [upstream]
 
 
 def test_cc_switch_is_no_module():
     assert "cc_switch" not in load_module_manifests()
-    assert list(manifests_module.load_tool_manifests()) == ["cc_switch"]
-
-
-def test_the_loader_refuses_a_program_branch_that_lacks_a_field(tmp_path, monkeypatch):
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    (tmp_path / "tool.json").write_text(
-        json.dumps(
-            {
-                "name": "tool",
-                "is_module": False,
-                "source": "x",
-                "version": "1",
-                "platforms": {
-                    "linux-amd64": {"url": "u", "sha256": "s", "package_kind": "tar"}
-                },
-            }
-        )
+    assert list(load_tool_manifests()) == ["cc_switch"]
+    manifest = load_tool_manifests()["cc_switch"]
+    assert entry_version(manifest, manifest["platforms"]["linux-amd64"]) == (
+        manifest["version"]
     )
 
-    with pytest.raises(ValueError, match="linux-amd64 must name cn_url"):
-        manifests_module.load_tool_manifests()
+
+def test_every_shipped_source_names_no_edition_or_country_key():
+    texts = json.dumps(
+        [load_module_manifests(), load_tool_manifests()], ensure_ascii=False
+    )
+
+    for retired in ("cn_url", "cn_latest_url", "components", "package_kind"):
+        assert retired not in texts
+    for manifest in load_module_manifests().values():
+        assert "installer" not in manifest and "kind" not in manifest
+
+
+# --- the catalog's row: only a hub or container entry shows a licence ---
+
+
+def test_only_a_hub_entry_shows_a_licence_and_its_source_with_the_version():
+    manifest = load_module_manifests()["podman"]
+
+    linux = resolve_module(manifest, DEBIAN)
+    windows = resolve_module(manifest, WINDOWS)
+
+    assert (linux["method"], linux["license"], linux["corresponding_source"]) == (
+        "system",
+        "",
+        "",
+    )
+    assert (windows["method"], windows["license"]) == ("hub", "Apache-2.0")
+    assert windows["corresponding_source"] == (
+        "https://github.com/podman-container-tools/podman/tree/v6.1.4"
+    )
+    assert windows["version"] == "6.1.4" and linux["version"] == "system"
+
+
+def test_a_platform_with_no_entry_resolves_to_no_runner_and_no_recipe():
+    resolved = resolve_module(load_module_manifests()["zfs"], WINDOWS)
+
+    assert (resolved["runner"], resolved["method"], resolved["recipe"]) == ("", "", {})
+    assert resolved["platform_key"] == ""
+
+
+# --- resolve_platform_entry ---
+
+
+def test_the_platform_keys_are_tried_in_their_order():
+    assert platform_keys(DEBIAN) == [
+        "linux-debian-amd64",
+        "linux-debian",
+        "linux-amd64",
+        "linux",
+    ]
+    assert platform_keys(WINDOWS) == ["windows-amd64", "windows"]
+    assert platform_keys({}) == []
+
+
+@pytest.mark.parametrize(
+    ("named", "expected"),
+    [
+        (
+            ("linux-debian-amd64", "linux-debian", "linux-amd64", "linux"),
+            "linux-debian-amd64",
+        ),
+        (("linux-debian", "linux-amd64", "linux"), "linux-debian"),
+        (("linux-amd64", "linux"), "linux-amd64"),
+        (("linux",), "linux"),
+        (("linux-rhel", "linux-arm64"), ""),
+    ],
+)
+def test_the_first_key_a_manifest_names_wins(named, expected):
+    manifest = {"platforms": {key: {"runner": key} for key in named}}
+
+    key, entry = resolve_platform_entry(manifest, DEBIAN)
+
+    assert key == expected
+    assert (entry or {}).get("runner", "") == expected
+
+
+def test_a_floor_above_the_reported_version_resolves_no_entry():
+    manifest = {"platforms": {"windows-amd64": {"runner": "r", "min_version": "19041"}}}
+
+    assert resolve_platform_entry(manifest, {**WINDOWS, "version": "18363"}) == (
+        "",
+        None,
+    )
+    assert resolve_platform_entry(manifest, {**WINDOWS, "version": "19041"})[0] == (
+        "windows-amd64"
+    )
+    # A machine that reported no version is not ruled out.
+    assert resolve_platform_entry(manifest, {**WINDOWS, "version": ""})[0] == (
+        "windows-amd64"
+    )
+
+
+def test_the_catalog_and_the_cache_read_the_one_entry(manifests_dir):
+    """A more specific key wins in the catalog's row and recipe, and the
+    cache knows only that entry's artifact."""
+    manifest = valid_manifest()
+    specific = copy.deepcopy(manifest["platforms"]["windows-amd64"])
+    specific["runner"] = "specific"
+    hub_params_of = specific["install"]["params"]
+    hub_params_of["artifacts"][0]["digest"] = "sha256:" + "c" * 64
+    manifest["platforms"] = {
+        "linux-amd64": copy.deepcopy(specific),
+        "linux-debian-amd64": specific,
+    }
+    manifest["platforms"]["linux-amd64"]["runner"] = "general"
+    manifest["platforms"]["linux-amd64"]["install"]["params"]["artifacts"][0][
+        "digest"
+    ] = ("sha256:" + "d" * 64)
+    write_manifest(manifests_dir, "sample", manifest)
+    loaded = load_module_manifests()["sample"]
+
+    resolved = resolve_module(loaded, DEBIAN)
+
+    assert resolved["platform_key"] == "linux-debian-amd64"
+    assert resolved["runner"] == resolved["recipe"]["runner"] == "specific"
+    assert resolved["recipe"]["params"]["artifacts"][0]["digest"] == (
+        "sha256:" + "c" * 64
+    )
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        AgentModuleCache(root=manifests_dir / "cache").artifact(
+            module="sample",
+            artifact="server",
+            digest="sha256:" + "d" * 64,
+            platform=DEBIAN,
+        )
+    assert refused.value.code == "module_artifact_unknown"
+
+
+# --- module_recipe and artifact_sources ---
+
+
+def test_the_recipe_drops_the_feeds_and_the_sources_the_package_stream_serves():
+    recipe = module_recipe(valid_manifest()["platforms"]["windows-amd64"])
+
+    assert recipe == {
+        "runner": "sample_machine",
+        "method": "hub",
+        "params": {
+            "version": "2.0",
+            "artifacts": [
+                {
+                    "name": "server",
+                    "kind": "tar_gz",
+                    "digest": "sha256:" + "a" * 64,
+                    "directory": "server",
+                },
+                {
+                    "name": "cli",
+                    "kind": "npm",
+                    "package": "@vendor/cli",
+                    "digest": "sha512-" + "b" * 86 + "==",
+                    "sources": ["https://registry.example"],
+                    "hosts": {"npm_config_cli_binary_host": ["https://h.example"]},
+                },
+            ],
+            "verify": "sample --version",
+            "uninstall": {"post_uninstall": [], "is_data_kept": True},
+        },
+    }
+    assert module_recipe(None) == {}
+
+
+def test_a_system_recipe_is_the_entry_s_params():
+    entry = valid_manifest()["platforms"]["linux-debian"]
+
+    assert module_recipe(entry) == {
+        "runner": "sample",
+        "method": "system",
+        "params": entry["install"]["params"],
+    }
+
+
+def test_the_sources_fill_the_file_and_the_version_and_expand_each_release_site():
+    artifact = sample_artifact(
+        sources=[
+            "https://vendor.example/v{version}/{file}",
+            "{release}/{file}",
+        ]
+    )
+
+    assert artifact_file(artifact, "2.0") == "server-2.0.tar.gz"
+    assert artifact_sources(artifact, "2.0", hub_version="0.6.0", sites=SITES) == [
+        "https://vendor.example/v2.0/server-2.0.tar.gz",
+        "https://releases.example/a/download/v0.6.0/server-2.0.tar.gz",
+        "https://releases.example/b/download/v0.6.0/server-2.0.tar.gz",
+    ]
+
+
+def test_a_checkout_names_no_release_site():
+    artifact = sample_artifact(sources=["{release}/{file}"])
+
+    assert artifact_sources(artifact, "2.0", hub_version="0.6.0+dev", sites=()) == []
+    # This test run is a checkout: the hub's own stamp names no site.
+    assert artifact_sources(artifact, "2.0") == []
+
+
+# --- the loader's gates ---
+
+
+def test_the_loader_takes_a_manifest_of_the_shapes(manifests_dir):
+    write_manifest(manifests_dir, "sample", valid_manifest())
+
+    loaded = load_module_manifests()["sample"]
+
+    assert loaded["platforms"]["windows-amd64"]["min_version"] == "19041"
+
+
+def test_the_loader_takes_an_agent_and_a_builtin_entry_with_empty_params(manifests_dir):
+    manifest = valid_manifest()
+    del manifest["license"], manifest["corresponding_source"]
+    manifest["platforms"] = {
+        "linux": {"runner": "sample", "install": {"method": "agent", "params": {}}},
+        "windows": {"runner": "sample", "install": {"method": "builtin", "params": {}}},
+    }
+    write_manifest(manifests_dir, "sample", manifest)
+
+    assert "sample" in load_module_manifests()
+
+
+def test_the_loader_takes_a_container_entry_of_images(manifests_dir):
+    manifest = valid_manifest()
+    manifest["platforms"] = {
+        "linux": {
+            "runner": "container",
+            "install": {
+                "method": "container",
+                "params": {
+                    "version": "7.0",
+                    "releases": [
+                        {
+                            "kind": "oci",
+                            "sources": ["https://registry.example"],
+                            "repository": "library/mongo",
+                            "tag": "{version}",
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "name": "mongo",
+                            "kind": "image",
+                            "digest": "sha256:" + "e" * 64,
+                            "sources": ["docker.io/library/mongo"],
+                        }
+                    ],
+                },
+            },
+        }
+    }
+    write_manifest(manifests_dir, "sample", manifest)
+
+    loaded = load_module_manifests()["sample"]
+    recipe = module_recipe(loaded["platforms"]["linux"])
+    assert recipe["params"]["artifacts"][0]["sources"] == ["docker.io/library/mongo"]
+    assert "releases" not in recipe["params"]
+
+
+def _stray_top_key(manifest):
+    manifest["installer"] = "hub"
+
+
+def _missing_publisher(manifest):
+    del manifest["publisher"]
+
+
+def _missing_runner(manifest):
+    del manifest["platforms"]["linux-debian"]["runner"]
+
+
+def _stray_entry_key(manifest):
+    manifest["platforms"]["linux-debian"]["kind"] = "system_package"
+
+
+def _wrong_method(manifest):
+    manifest["platforms"]["linux-debian"]["install"]["method"] = "platform"
+
+
+def _system_version(manifest):
+    system_params(manifest)["version"] = "1.0"
+
+
+def _system_without_verify(manifest):
+    del system_params(manifest)["verify"]
+
+
+def _system_uninstall_keeps_data_key(manifest):
+    system_params(manifest)["uninstall"]["is_data_kept"] = True
+
+
+def _hub_without_releases(manifest):
+    del hub_params(manifest)["releases"]
+
+
+def _hub_without_uninstall(manifest):
+    del hub_params(manifest)["uninstall"]
+
+
+def _hub_uninstall_without_data_flag(manifest):
+    del hub_params(manifest)["uninstall"]["is_data_kept"]
+
+
+def _agent_with_params(manifest):
+    manifest["platforms"]["linux-debian"]["install"] = {
+        "method": "agent",
+        "params": {"verify": "true"},
+    }
+
+
+def _image_in_hub(manifest):
+    hub_params(manifest)["artifacts"][0] = {
+        "name": "server",
+        "kind": "image",
+        "digest": "sha256:" + "a" * 64,
+        "sources": ["docker.io/vendor/server"],
+    }
+
+
+def _bad_sha256(manifest):
+    hub_params(manifest)["artifacts"][0]["digest"] = "sha256:abc"
+
+
+def _bare_hex_digest(manifest):
+    hub_params(manifest)["artifacts"][0]["digest"] = "a" * 64
+
+
+def _bad_integrity(manifest):
+    hub_params(manifest)["artifacts"][1]["digest"] = "sha256:" + "b" * 64
+
+
+def _source_without_file(manifest):
+    hub_params(manifest)["artifacts"][0]["sources"] = ["https://vendor.example/x"]
+
+
+def _shared_name(manifest):
+    artifacts = hub_params(manifest)["artifacts"]
+    artifacts.append(sample_artifact(directory="other"))
+
+
+def _shared_directory(manifest):
+    artifacts = hub_params(manifest)["artifacts"]
+    artifacts.append(sample_artifact(name="other"))
+
+
+def _binary_with_directory(manifest):
+    hub_params(manifest)["artifacts"][0]["kind"] = "binary"
+
+
+def _msi_without_directory(manifest):
+    artifact = hub_params(manifest)["artifacts"][0]
+    artifact["kind"] = "msi"
+    del artifact["directory"]
+
+
+def _unknown_feed(manifest):
+    hub_params(manifest)["releases"][0]["kind"] = "gitlab"
+
+
+def _feed_without_its_key(manifest):
+    del hub_params(manifest)["releases"][0]["tag"]
+
+
+def _hub_without_license(manifest):
+    del manifest["license"]
+
+
+def _bad_floor(manifest):
+    manifest["platforms"]["windows-amd64"]["min_version"] = "v19041"
+
+
+def _unknown_system(manifest):
+    manifest["platforms"]["solaris-amd64"] = manifest["platforms"].pop("linux-debian")
+
+
+def _stray_params_key(manifest):
+    hub_params(manifest)["url"] = "https://vendor.example/server.tar.gz"
+
+
+def _no_artifacts(manifest):
+    hub_params(manifest)["artifacts"] = []
+
+
+@pytest.mark.parametrize(
+    "spoil, said",
+    [
+        (_stray_top_key, "installer"),
+        (_missing_publisher, "publisher"),
+        (_missing_runner, "runner"),
+        (_stray_entry_key, "kind"),
+        (_wrong_method, "method"),
+        (_system_version, "system"),
+        (_system_without_verify, "verify"),
+        (_system_uninstall_keeps_data_key, "is_data_kept"),
+        (_hub_without_releases, "releases"),
+        (_hub_without_uninstall, "uninstall"),
+        (_hub_uninstall_without_data_flag, "is_data_kept"),
+        (_agent_with_params, "verify"),
+        (_image_in_hub, "image"),
+        (_bad_sha256, "digest"),
+        (_bare_hex_digest, "digest"),
+        (_bad_integrity, "digest"),
+        (_source_without_file, "{file}"),
+        (_shared_name, "twice"),
+        (_shared_directory, "server"),
+        (_binary_with_directory, "directory"),
+        (_msi_without_directory, "directory"),
+        (_unknown_feed, "gitlab"),
+        (_feed_without_its_key, "tag"),
+        (_hub_without_license, "license"),
+        (_bad_floor, "min_version"),
+        (_unknown_system, "solaris-amd64"),
+        (_stray_params_key, "url"),
+        (_no_artifacts, "artifact"),
+    ],
+)
+def test_the_loader_refuses_a_manifest_outside_the_shapes(spoil, said, manifests_dir):
+    manifest = valid_manifest()
+    spoil(manifest)
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "sample.json" in str(refusal.value)
+    assert said in str(refusal.value)
+
+
+def test_the_loader_refuses_a_name_that_is_not_the_file_s(manifests_dir):
+    write_manifest(manifests_dir, "other", valid_manifest())
+
+    with pytest.raises(ValueError, match="other.json: name"):
+        load_module_manifests()
+
+
+def test_the_loader_refuses_a_file_that_is_no_json_object(manifests_dir):
+    (manifests_dir / "broken.json").write_text("[1, 2]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="broken.json"):
+        load_module_manifests()
+
+
+def tool_manifest(**entry_overrides) -> dict:
+    artifact = sample_artifact(name="tool", directory=None)
+    artifact.update(entry_overrides)
+    return _without_nones(
+        {
+            "name": "tool",
+            "title": "Tool",
+            "description": "A program the agent runs",
+            "is_module": False,
+            "publisher": "vendor/tool",
+            "license": "MIT",
+            "corresponding_source": "https://vendor.example/tree/v{version}",
+            "version": "1.0",
+            "platforms": {"linux-amd64": {"artifacts": [artifact]}},
+        }
+    )
+
+
+def test_the_loader_takes_a_tool_manifest_and_keeps_it_out_of_the_modules(
+    manifests_dir,
+):
+    write_manifest(manifests_dir, "tool", tool_manifest())
+
+    assert list(load_tool_manifests()) == ["tool"]
     assert load_module_manifests() == {}
 
 
-def test_a_module_the_agent_carries_names_no_platform(monkeypatch, tmp_path):
-    import json
-
-    from neutrino_hub.modules.devices import manifests
-
-    (tmp_path / "shell.json").write_text(
-        json.dumps(
+@pytest.mark.parametrize(
+    "manifest, said",
+    [
+        (tool_manifest(digest="a" * 64), "digest"),
+        (tool_manifest(kind="npm"), "npm"),
+        (tool_manifest(sources=["https://vendor.example/tool"]), "{file}"),
+        ({**tool_manifest(), "version": ""}, "version"),
+        (
             {
-                "name": "shell",
-                "title": "Shell",
-                "installer": "agent",
-                "source": "the Neutrino agent",
-                "platforms": {"linux": {"verify": "true"}},
-            }
-        )
-    )
-    monkeypatch.setattr(manifests, "MANIFESTS_DIR", tmp_path)
+                **tool_manifest(),
+                "platforms": {"linux-amd64": {"url": "u", "sha256": "s"}},
+            },
+            "url",
+        ),
+    ],
+)
+def test_the_loader_refuses_a_tool_manifest_outside_its_shape(
+    manifest, said, manifests_dir
+):
+    write_manifest(manifests_dir, "tool", manifest)
 
-    with pytest.raises(ValueError, match="agent-tier"):
-        manifests.load_module_manifests()
+    with pytest.raises(ValueError) as refusal:
+        load_tool_manifests()
+
+    assert "tool.json" in str(refusal.value)
+    assert said in str(refusal.value)

@@ -94,11 +94,14 @@ def test_the_switch_is_the_modules_want_in_the_state(api):
     store.set_remote_desktop(DEVICE, True)
     on, _ = store.compose(DEVICE, LINUX)
 
+    recipe = {"runner": "remote_desktop", "method": "agent", "params": {}}
     assert off["modules"]["remote_desktop"] == {
         "want": "stopped",
         "config": {"is_enabled": False},
+        "install": recipe,
     }
     assert on["modules"]["remote_desktop"] == {
         "want": "running",
         "config": {"is_enabled": True},
+        "install": recipe,
     }

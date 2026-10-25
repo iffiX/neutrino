@@ -1,31 +1,30 @@
-"""Composing the catalog a heartbeat answers with, behind a cache.
+"""Composing the catalog a device's page reads, behind a cache.
 
 The catalog has two halves under one hash: the modules, and the typed service
-list. Both are resolved for the machine that asked — every payload host
+list. Both are resolved for the machine that asked: every payload host
 becomes the address that device reaches in the scope its socket arrived
 from, and each module's manifest becomes the one entry that device's
-platform matches. **The agent is handed conclusions, never a table to
-search**, which is what lets it carry no manifest logic at all.
+platform matches, which :func:`resolve_platform_entry` picks.
 
 The composed copy is kept per scope and platform, and dropped whole
-whenever the manifests or the list move: an agent beats every few seconds,
-and recomposing on each beat would be waste.
+whenever the manifests or the list move.
 """
 
 import hashlib
 import json
 
-from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
-from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_COMPONENT_RECIPE_FIELDS,
-)
+from neutrino_hub.modules.devices.constants import DEVICE_METHODS_WITH_LICENSE
 from neutrino_hub.modules.devices.manifests import (
-    branch_identity,
+    entry_method,
+    entry_version,
     load_module_manifests,
     manifests_stamp,
+    module_recipe,
+    resolve_platform_entry,
 )
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.host_scope import HostScope
+from neutrino_hub.utils.constants import UTILS_SOURCE_VERSION
 
 
 def resolve_module(manifest: dict, platform: dict) -> dict:
@@ -36,45 +35,32 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         platform: The tuple the agent reported.
 
     Returns:
-        The module's title, kind and installer tier, plus the entry, verify
-        command and package name for this platform, and the license and
-        exact-tag source pointer the surfaces render beside the row, and the
-        source the row is attributed to; the kind, the tier, the version,
-        the license, the source pointer and the source are the branch's
-        identity (:func:`branch_identity`). An entry that lists ``components``
-        adds them as the recipe carries them, each with its name, package
-        kind, directory and digest.
-        ``entry`` is None where the manifest offers this platform nothing,
-        which is the machine's whole basis for reporting the module
-        unsupported.
+        ``{title, description, publisher, runner, method, version, license,
+        corresponding_source, platform_key, recipe}`` for the entry the
+        platform resolves to; the licence and the source address, its
+        version filled in, only for a ``hub`` or ``container`` entry; empty
+        runner, method and recipe where the manifest names no entry for the
+        platform.
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
-    resolved = entry if entry is not None else {}
-    identity = branch_identity(manifest, entry)
-    module = {
-        "title": manifest.get("title", manifest.get("name", "")),
-        "description": manifest.get("description", ""),
-        "kind": identity["kind"],
-        "installer": identity["installer"],
-        "source": identity["source"],
-        "version": identity["version"],
-        "license": identity["license"],
-        "corresponding_source": identity["corresponding_source"],
+    method = entry_method(entry)
+    version = entry_version(manifest, entry)
+    is_licensed = method in DEVICE_METHODS_WITH_LICENSE
+    source = str(manifest.get("corresponding_source", "") or "")
+    return {
+        "title": str(manifest.get("title", "") or manifest.get("name", "")),
+        "description": str(manifest.get("description", "") or ""),
+        "publisher": str(manifest.get("publisher", "") or ""),
+        "runner": str((entry or {}).get("runner", "") or ""),
+        "method": method,
+        "version": version,
+        "license": str(manifest.get("license", "") or "") if is_licensed else "",
+        "corresponding_source": (
+            source.replace(UTILS_SOURCE_VERSION, version) if is_licensed else ""
+        ),
         "platform_key": platform_key,
-        "entry": entry,
-        "verify": str(resolved.get("verify", "") or ""),
-        "package": str(resolved.get("package", "") or manifest.get("name", "")),
+        "recipe": module_recipe(entry),
     }
-    if isinstance(resolved.get("components"), list):
-        module["components"] = [
-            {
-                field: str(component.get(field, "") or "")
-                for field in AGENT_MODULE_COMPONENT_RECIPE_FIELDS
-            }
-            for component in resolved["components"]
-            if isinstance(component, dict)
-        ]
-    return module
 
 
 def resolved_modules(platform: dict) -> dict:
@@ -84,9 +70,8 @@ def resolved_modules(platform: dict) -> dict:
         platform: The tuple the agent reported.
 
     Returns:
-        Module name to its resolved form.
+        Module name to its resolved form, in the loader's order.
     """
-    # The loader's order is the order both surfaces draw, so nothing re-sorts.
     return {
         name: resolve_module(manifest, platform)
         for name, manifest in load_module_manifests().items()

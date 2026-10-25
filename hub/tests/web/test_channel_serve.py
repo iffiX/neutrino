@@ -139,21 +139,44 @@ class StubPackages:
 
 
 class StubModules:
-    """The module cache: one artifact for one module."""
+    """The module cache: one file for every artifact, or a refusal it is told."""
 
     def __init__(self, path: Path):
         self.path = path
         self.asked: list = []
-        self.components: list = []
+        self.progress: list = []
+        self.refusals: dict = {"nope": ("module_unknown", {"name": "nope"})}
 
-    def artifact(self, *, name, manifest, platform, component="", on_progress=None):
+    def artifact(self, *, module, artifact, digest, platform, on_progress=None):
         from types import SimpleNamespace
 
-        self.asked.append((name, dict(platform)))
-        self.components.append(component)
+        from neutrino_hub.exceptions import AgentArtifactFetchError
+
+        self.asked.append((module, artifact, digest, dict(platform)))
+        self.progress.append(on_progress)
+        if module in self.refusals:
+            code, params = self.refusals[module]
+            raise AgentArtifactFetchError(code, **params)
         if on_progress is not None:
-            on_progress(f"hub: downloading {name}, 1.0 / 1.0 MB")
-        return SimpleNamespace(path=self.path, title=f"{name.title()} 1.0")
+            on_progress(f"hub: fetching {module}-1.0.tar.gz from vendor.example")
+        return SimpleNamespace(
+            path=self.path, title=f"{module.title()} 1.0", file=f"{module}-1.0.tar.gz"
+        )
+
+
+DIGEST = "sha256:" + "ab" * 32
+
+
+def module_open(stream: int, module: str, artifact: str = "release") -> dict:
+    """A ``package {module, artifact, digest}`` open the agent sends."""
+    return {
+        "type": "open",
+        "stream": stream,
+        "kind": "package",
+        "module": module,
+        "artifact": artifact,
+        "digest": DIGEST,
+    }
 
 
 class FakeRuntime:
@@ -815,7 +838,9 @@ def test_a_package_is_read_from_its_file_and_sent_in_64_kb_pieces(api, monkeypat
         socket.__exit__(None, None, None)
 
 
-def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
+def test_a_package_stream_naming_an_artifact_is_served_from_the_module_cache(api):
+    """``package {module, artifact, digest}`` is the cache's file for that
+    digest, and the close names the artifact's own file."""
     client, runtime = api
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token)
@@ -824,9 +849,7 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
         socket.receive_json()
         expected = runtime.package_path.read_bytes()
 
-        socket.send_json(
-            {"type": "open", "stream": 3, "kind": "package", "module": "samba"}
-        )
+        socket.send_json(module_open(3, "samba"))
         socket.receive_json()
         socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
         received = b""
@@ -834,55 +857,69 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
             received += socket.receive_bytes()[4:]
         close = socket.receive_json()
 
-        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
-        assert runtime.agent_modules.asked == [("samba", PLATFORM)]
+        assert received == expected
+        assert close["params"] == {
+            "sha256": hashlib.sha256(expected).hexdigest(),
+            "name": "samba-1.0.tar.gz",
+        }
+        assert runtime.agent_modules.asked == [("samba", "release", DIGEST, PLATFORM)]
     finally:
         socket.__exit__(None, None, None)
 
 
-def test_a_package_stream_naming_a_component_asks_the_cache_for_it(api):
-    """``package {module, component}`` serves that component's archive; a
-    stream naming no component asks for the module's one archive."""
+def test_a_refused_artifact_closes_with_the_caches_code_and_lines_in_the_task(api):
+    """No source serving the file closes the stream ``download_failed`` with
+    its params, and the module's task names the file and each source."""
     client, runtime = api
+    sources = [
+        {"source": "https://one.example/f.tar.gz", "reason": "http_404", "detail": ""},
+        {
+            "source": "https://two.example/f.tar.gz",
+            "reason": "digest_mismatch",
+            "detail": "the file hashes to 00",
+        },
+    ]
+    runtime.agent_modules.refusals["samba"] = (
+        "download_failed",
+        {"file": "f.tar.gz", "sources": sources},
+    )
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token)
     try:
         socket.send_json(report())
         socket.receive_json()
-        expected = runtime.package_path.read_bytes()
-
         socket.send_json(
-            {
-                "type": "open",
-                "stream": 3,
-                "kind": "package",
-                "module": "samba",
-                "component": "node",
-            }
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
         )
         socket.receive_json()
-        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
-        received = b""
-        while len(received) < len(expected):
-            received += socket.receive_bytes()[4:]
-        close = socket.receive_json()
-        socket.send_json(
-            {"type": "open", "stream": 5, "kind": "package", "module": "samba"}
-        )
-        socket.receive_json()
-        socket.send_json({"type": "credit", "stream": 5, "bytes": len(expected)})
-        received = b""
-        while len(received) < len(expected):
-            received += socket.receive_bytes()[4:]
-        socket.receive_json()
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(lambda: runtime.tasks.running(label) is not None)
 
-        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
-        assert runtime.agent_modules.components == ["node", ""]
+        socket.send_json(module_open(3, "samba"))
+        frames = [socket.receive_json(), socket.receive_json()]
+        close = next(frame for frame in frames if frame["type"] == "close")
+
+        assert close == {
+            "type": "close",
+            "stream": 3,
+            "code": "download_failed",
+            "params": {"file": "f.tar.gz", "sources": sources},
+        }
+        task = runtime.tasks.running(label)
+        assert wait_until(lambda: len(task.buffer) == 3)
+        assert task.buffer == [
+            "hub: no source served f.tar.gz\n",
+            "hub:   https://one.example/f.tar.gz: http_404\n",
+            "hub:   https://two.example/f.tar.gz: digest_mismatch"
+            " (the file hashes to 00)\n",
+        ]
     finally:
         socket.__exit__(None, None, None)
 
 
-def test_a_package_stream_naming_cc_switch_is_served_from_the_module_cache(api):
+def test_a_package_stream_naming_cc_switch_is_served_with_no_task_lines(api):
+    """cc-switch is a tool the agent runs, not a module: its file comes from
+    the same cache, and no module's task counts it."""
     client, runtime = api
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token)
@@ -891,9 +928,7 @@ def test_a_package_stream_naming_cc_switch_is_served_from_the_module_cache(api):
         socket.receive_json()
         expected = runtime.package_path.read_bytes()
 
-        socket.send_json(
-            {"type": "open", "stream": 3, "kind": "package", "module": "cc_switch"}
-        )
+        socket.send_json(module_open(3, "cc_switch", "cc_switch"))
         socket.receive_json()
         socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
         received = b""
@@ -902,15 +937,24 @@ def test_a_package_stream_naming_cc_switch_is_served_from_the_module_cache(api):
         close = socket.receive_json()
 
         assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
-        assert runtime.agent_modules.asked == [("cc_switch", PLATFORM)]
+        assert runtime.agent_modules.asked == [
+            ("cc_switch", "cc_switch", DIGEST, PLATFORM)
+        ]
+        assert runtime.agent_modules.progress == [None]
+        assert not [
+            stream
+            for stream in runtime.tasks.streams()
+            if stream.label == channel_serve.module_task_label(device_id, "cc_switch")
+        ]
     finally:
         socket.__exit__(None, None, None)
 
 
 def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
-    """The send counts the bytes into the module's task as they go, named by
-    the artifact's title and the machine they go to: a line per 64 KB chunk
-    of a ten-chunk file, each a tenth of it, and the last again at the end."""
+    """The cache's ``hub: fetching`` line comes first, then the send counts
+    the bytes into the module's task as they go, named by the artifact's
+    title and the machine they go to: a line per 64 KB chunk of a ten-chunk
+    file, each a tenth of it, and the last again at the end."""
     client, runtime = api
     runtime.package_path.write_bytes(b"x" * (10 * 64 * 1024))
     device_id, token = bound_device()
@@ -926,9 +970,7 @@ def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
         assert wait_until(lambda: runtime.tasks.running(label) is not None)
         expected = runtime.package_path.read_bytes()
 
-        socket.send_json(
-            {"type": "open", "stream": 3, "kind": "package", "module": "samba"}
-        )
+        socket.send_json(module_open(3, "samba"))
         socket.receive_json()
         socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
         received = b""
@@ -938,7 +980,7 @@ def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
 
         task = runtime.tasks.running(label)
         assert wait_until(lambda: len(task.buffer) == 12)
-        assert task.buffer[0] == "hub: downloading samba, 1.0 / 1.0 MB\n"
+        assert task.buffer[0] == "hub: fetching samba-1.0.tar.gz from vendor.example\n"
         assert task.buffer[1] == "hub: sending Samba 1.0, 0.1 / 0.6 MB to box\n"
         assert task.buffer[-2:] == [
             "hub: sending Samba 1.0, 0.6 / 0.6 MB to box\n",
@@ -986,9 +1028,7 @@ def test_a_package_asked_before_the_first_report_waits_for_the_platform(api):
     socket = welcomed(client, device_id, token)
     try:
         expected = runtime.package_path.read_bytes()
-        socket.send_json(
-            {"type": "open", "stream": 3, "kind": "package", "module": "cc_switch"}
-        )
+        socket.send_json(module_open(3, "cc_switch", "cc_switch"))
         socket.send_json(report())
         frames = [socket.receive_json(), socket.receive_json()]
         assert [frame["type"] for frame in frames].count("credit") == 1
@@ -1000,7 +1040,9 @@ def test_a_package_asked_before_the_first_report_waits_for_the_platform(api):
         close = socket.receive_json()
 
         assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
-        assert runtime.agent_modules.asked == [("cc_switch", PLATFORM)]
+        assert runtime.agent_modules.asked == [
+            ("cc_switch", "cc_switch", DIGEST, PLATFORM)
+        ]
     finally:
         socket.__exit__(None, None, None)
 
@@ -1014,9 +1056,7 @@ def test_a_package_the_hub_cannot_produce_is_closed_with_the_typed_reason(api):
         socket.receive_json()
 
         socket.send_json({"type": "open", "stream": 1, "kind": "package"})
-        socket.send_json(
-            {"type": "open", "stream": 3, "kind": "package", "module": "nope"}
-        )
+        socket.send_json(module_open(3, "nope"))
 
         frames = [socket.receive_json() for _ in range(4)]
         closes = {
@@ -1283,7 +1323,7 @@ def test_a_failed_install_s_task_ends_with_the_exit_code_its_close_names(
                 "code": "podman_install_failed",
                 "params": {
                     "state": "install_failed",
-                    "component": "installer",
+                    "artifact": "podman",
                     "exit_code": named,
                 },
             }

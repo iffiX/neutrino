@@ -227,7 +227,7 @@ class PanelRuntime:
         # The bytes a module's ``package`` stream serves, fetched once and
         # kept; the agent installs them by the recipe its state carries.
         self.agent_modules = AgentModuleCache(
-            edition=edition.EDITION, release_url=self.agent_packages.release_url()
+            named_modules=self.desired_states.named_modules
         )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by device id. Runtime only: these are

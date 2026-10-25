@@ -257,8 +257,11 @@ def test_the_agent_is_sent_each_opened_token_and_on_windows_the_password(
     if has_password:
         expected["password"] = "pw-hanha"
     assert module["config"] == {"address": "", "instances": [expected]}
-    assert module["install"]["kind"] == "vscode"
-    assert module["install"]["package_kind"] == ("zip" if has_password else "tar")
+    recipe = module["install"]
+    assert (recipe["runner"], recipe["method"]) == ("vscode", "hub")
+    (cli,) = recipe["params"]["artifacts"]
+    assert (cli["name"], cli["kind"]) == ("cli", "zip" if has_password else "tar_gz")
+    assert "directory" not in cli
 
 
 def test_the_view_says_the_terms_are_not_accepted_and_where_they_are(bare):

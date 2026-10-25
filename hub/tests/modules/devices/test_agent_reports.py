@@ -321,8 +321,8 @@ def test_a_failed_install_keeps_its_want_and_the_report_as_it_came(box, want):
     runtime.desired_states.wants[(DEVICE, "code_server")] = want
     reported = {
         "state": "install_failed",
-        "code": "module_fetch_failed",
-        "params": {"detail": "no route"},
+        "code": "download_failed",
+        "params": {"file": "code-server.tar.gz", "sources": []},
     }
 
     agent_reports.record_report(
@@ -359,7 +359,7 @@ def test_an_absent_module_with_no_code_or_no_want_is_left_as_it_is(box):
         report(
             modules={
                 "podman": {"state": "absent"},
-                "gitea": {"state": "absent", "code": "module_fetch_failed"},
+                "gitea": {"state": "absent", "code": "download_failed"},
             }
         ),
     )

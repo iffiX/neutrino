@@ -17,7 +17,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_KINDS
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.devices.catalog import load_module_manifests
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries

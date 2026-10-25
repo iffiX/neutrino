@@ -8,7 +8,7 @@ sealed once per account and kept across sets; two instances sharing an
 account or a port, a login the vault does not hold, and a Windows instance
 with no login are refused by code before the agent is asked; the state the
 agent is sent holds the opened secret, the login's password on Windows
-alone, never a seal or a login id, and a recipe with the two components; and
+alone, never a seal or a login id, and a recipe with the two artifacts; and
 a token minted for an instance is its secret's, for 60 seconds and one
 nonce.
 """
@@ -199,7 +199,7 @@ def test_a_windows_instance_needs_a_stored_login(api):
 
 
 @pytest.mark.parametrize("platform, has_password", [(WINDOWS, True), (LINUX, False)])
-def test_the_state_carries_the_opened_secret_the_two_components_and_never_a_seal(
+def test_the_state_carries_the_opened_secret_the_two_artifacts_and_never_a_seal(
     api, platform, has_password
 ):
     client, runtime = api
@@ -224,12 +224,14 @@ def test_the_state_carries_the_opened_secret_the_two_components_and_never_a_seal
         {"password"} if has_password else set()
     )
     assert set(module["config"]) == {"instances"}
-    assert module["install"]["kind"] == "codeg"
-    server, node = module["install"]["components"]
+    recipe = module["install"]
+    assert (recipe["runner"], recipe["method"]) == ("codeg", "hub")
+    assert recipe["params"]["version"] == "0.35.1"
+    server, node = recipe["params"]["artifacts"]
     assert (server["name"], server["directory"]) == ("server", "server")
     assert (node["name"], node["directory"]) == ("node", "node")
-    assert server["package_kind"] == ("zip" if has_password else "tar")
-    assert "url" not in server and "url" not in node
+    assert server["kind"] == ("zip" if has_password else "tar_gz")
+    assert set(server) == set(node) == {"name", "kind", "digest", "directory"}
     assert "sealed" not in json.dumps(desired)
     assert "login_id" not in json.dumps(module)
 

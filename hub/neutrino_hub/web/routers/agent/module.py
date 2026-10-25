@@ -26,10 +26,6 @@ from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from neutrino_hub.modules.devices.agent_module_cache import (
-    platform_keys,
-    resolve_platform_entry,
-)
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
@@ -45,17 +41,21 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_INSTALLER_AGENT,
     DEVICE_AGENT_MODULES,
+    DEVICE_METHOD_AGENT,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
+from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.manifests import (
-    branch_identity,
+    entry_params,
     load_module_manifests,
+    manifest_methods,
+    platform_keys,
+    resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
@@ -171,23 +171,22 @@ def list_modules(
     modules = []
     for name, manifest in load_module_manifests().items():
         _, entry = resolve_platform_entry(manifest, platform)
-        identity = branch_identity(manifest, entry)
-        is_carried = identity["installer"] == AGENT_MODULE_INSTALLER_AGENT
+        resolved = resolve_module(manifest, platform)
+        is_carried = DEVICE_METHOD_AGENT in manifest_methods(manifest)
         modules.append(
             DeviceModuleView(
                 name=name,
-                title=manifest.get("title", name),
-                description=manifest.get("description", ""),
-                kind=identity["kind"],
-                installer=identity["installer"],
+                title=resolved["title"],
+                description=resolved["description"],
+                runner=resolved["runner"],
+                method=resolved["method"],
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(entry is not None if keys and not is_carried else True),
-                is_native=(entry == {} or is_carried),
                 is_data_kept=_is_data_kept(entry),
-                source=identity["source"],
-                license=identity["license"],
-                corresponding_source=identity["corresponding_source"],
+                publisher=resolved["publisher"],
+                license=resolved["license"],
+                corresponding_source=resolved["corresponding_source"],
                 want=(
                     runtime.desired_states.agent_module_want(key, name)
                     if is_carried
@@ -206,16 +205,17 @@ def list_modules(
 
 
 def _is_data_kept(entry) -> bool:
-    """Whether the branch's uninstall leaves the module's data.
+    """Whether the entry's uninstall leaves the module's data.
 
     Args:
-        entry: The platform branch, or None for a platform the manifest
+        entry: The platform entry, or None for a platform the manifest
             does not cover.
 
     Returns:
-        What the branch says; True where it says nothing.
+        What the entry's ``uninstall`` says; True where it says nothing, as
+        a ``system`` entry keeps the data.
     """
-    removal = entry.get("uninstall") if isinstance(entry, dict) else None
+    removal = entry_params(entry).get("uninstall")
     if not isinstance(removal, dict):
         return True
     return bool(removal.get("is_data_kept", True))
@@ -751,7 +751,7 @@ def _set_want(
     module = request.module
     if manifest is None:
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
-    if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_AGENT:
+    if DEVICE_METHOD_AGENT in manifest_methods(manifest):
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_MODULE_NOT_OPTIONAL, name=module
         )

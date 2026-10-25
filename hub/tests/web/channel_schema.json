@@ -304,7 +304,7 @@
           "type": "object"
         },
         "ChannelAiToolsState": {
-          "description": "The machine's AI tools setting; off, it carries ``cc_switch_version`` alone.",
+          "description": "The machine's AI tools setting; off, it carries the cc-switch version and artifact alone.",
           "properties": {
             "is_enabled": {
               "default": false,
@@ -343,6 +343,11 @@
               "title": "Cc Switch Version",
               "type": "string"
             },
+            "cc_switch_artifact": {
+              "additionalProperties": true,
+              "title": "Cc Switch Artifact",
+              "type": "object"
+            },
             "retry_mark": {
               "default": "",
               "title": "Retry Mark",
@@ -379,11 +384,6 @@
             "install": {
               "additionalProperties": true,
               "title": "Install",
-              "type": "object"
-            },
-            "uninstall": {
-              "additionalProperties": true,
-              "title": "Uninstall",
               "type": "object"
             }
           },
@@ -468,7 +468,7 @@
           "type": "object"
         }
       },
-      "description": "The machine's AI tools setting; off, it carries ``cc_switch_version`` alone.",
+      "description": "The machine's AI tools setting; off, it carries the cc-switch version and artifact alone.",
       "properties": {
         "is_enabled": {
           "default": false,
@@ -506,6 +506,11 @@
           "default": "",
           "title": "Cc Switch Version",
           "type": "string"
+        },
+        "cc_switch_artifact": {
+          "additionalProperties": true,
+          "title": "Cc Switch Artifact",
+          "type": "object"
         },
         "retry_mark": {
           "default": "",
@@ -1313,11 +1318,6 @@
         "install": {
           "additionalProperties": true,
           "title": "Install",
-          "type": "object"
-        },
-        "uninstall": {
-          "additionalProperties": true,
-          "title": "Uninstall",
           "type": "object"
         },
         "want": {

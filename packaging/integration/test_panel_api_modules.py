@@ -7,7 +7,7 @@ refusal around it, against a device that has never joined.
 
 One fact the page does not show is read through the installed hub's own
 interpreter: the recipe a Linux machine of this box's platform is sent, which
-names the components the agent fetches one `package` stream each.
+names the artifacts the agent fetches one `package` stream each.
 """
 
 import json
@@ -21,30 +21,35 @@ MODULE_VERBS = ["install", "start", "stop", "uninstall"]
 # A row the page can offer, and one no catalog has.
 KNOWN_MODULE = "samba"
 UNKNOWN_MODULE = "nosuchmodule"
-# The programs run as a person's account the hub fetches, and the components
-# each one's Linux recipe names, in the manifest's order.
-HUB_MODULE_COMPONENTS = {"codeg": ["server", "node"], "cloudcli": ["node"]}
+# The programs run as a person's account the hub fetches, and the artifacts
+# each one's Linux recipe takes from the package stream, in the manifest's
+# order.
+HUB_MODULE_ARTIFACTS = {"codeg": ["server", "node"], "cloudcli": ["node"]}
 # The modules the agent's own package carries: no press is offered on them.
 AGENT_MODULES = ["terminal", "remote_desktop"]
 # A page the shared instances router serves.
 INSTANCE_MODULE = "codeg"
-# Who installs a row: the closed set, as the manifests name it.
-INSTALLER_TIERS = frozenset({"agent", "platform", "hub"})
+# How a row is installed: the closed set of methods, as the manifests name it.
+INSTALL_METHODS = frozenset({"agent", "builtin", "system", "hub", "container"})
 # A person's own remote desktop products: detected by a module, never rows.
 REMOTE_DESKTOP_PRODUCTS = ["anydesk", "teamviewer"]
-# Each module's component names in the recipe the hub resolves for a Linux
-# machine of this box's family and architecture, run in the hub's interpreter.
+# Each module's artifacts the package stream serves, in the recipe the hub
+# resolves for a Linux machine of this box's family and architecture, run in
+# the hub's interpreter.
 RECIPE_SCRIPT = """
 import json
-from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
-from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.manifests import (
+    load_module_manifests,
+    module_recipe,
+    resolve_platform_entry,
+)
 from neutrino_hub.system.machine import distribution_family, machine_architecture
 platform = {"os": "linux", "family": distribution_family(), "arch": machine_architecture()}
 recipes = {}
 for name, manifest in load_module_manifests().items():
     _, entry = resolve_platform_entry(manifest, platform)
-    components = (entry or {}).get("components") or []
-    recipes[name] = [component["name"] for component in components]
+    artifacts = module_recipe(entry).get("params", {}).get("artifacts") or []
+    recipes[name] = [item["name"] for item in artifacts if item["kind"] != "npm"]
 print(json.dumps(recipes))
 """
 # The states a row may report, the closed set the panel words.
@@ -85,7 +90,7 @@ def modules(panel, device_id) -> list:
 
 @pytest.fixture(scope="module")
 def linux_recipes() -> dict:
-    """Each module's component names in a Linux machine's recipe, by name."""
+    """Each module's package stream artifacts in a Linux machine's recipe, by name."""
     result = subprocess.run(
         [update.HUB_PYTHON, "-c", RECIPE_SCRIPT], capture_output=True, text=True
     )
@@ -104,23 +109,23 @@ def test_every_row_carries_a_state_of_the_closed_set(modules):
     assert {entry["state"] for entry in modules} <= STATE_WORDS
 
 
-def test_every_row_is_installed_by_one_of_the_three_tiers(modules):
-    assert {entry["installer"] for entry in modules} <= INSTALLER_TIERS
+def test_every_row_is_installed_by_one_of_the_methods(modules):
+    assert {entry["method"] for entry in modules} <= INSTALL_METHODS | {""}
 
 
-@pytest.mark.parametrize("name", sorted(HUB_MODULE_COMPONENTS))
-def test_a_program_run_as_an_account_is_a_hub_tier_row(modules, name):
+@pytest.mark.parametrize("name", sorted(HUB_MODULE_ARTIFACTS))
+def test_a_program_run_as_an_account_is_a_hub_row(modules, name):
     rows = {entry["name"]: entry for entry in modules}
 
     assert name in rows, sorted(rows)
-    assert rows[name]["installer"] == "hub"
+    assert rows[name]["method"] == "hub"
 
 
-@pytest.mark.parametrize("name", sorted(HUB_MODULE_COMPONENTS))
-def test_a_linux_recipe_names_each_component_the_agent_fetches(linux_recipes, name):
+@pytest.mark.parametrize("name", sorted(HUB_MODULE_ARTIFACTS))
+def test_a_linux_recipe_names_each_artifact_the_agent_fetches(linux_recipes, name):
     """The row shows no recipe; the state the agent is sent does, and the
-    agent opens one ``package`` stream per component it names."""
-    assert linux_recipes[name] == HUB_MODULE_COMPONENTS[name]
+    agent opens one ``package`` stream per artifact the hub serves."""
+    assert linux_recipes[name] == HUB_MODULE_ARTIFACTS[name]
 
 
 def test_a_persons_own_remote_desktop_product_is_no_row(modules):

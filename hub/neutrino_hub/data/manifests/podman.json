@@ -1,140 +1,159 @@
 {
-  "_comment": "The container engine, hosted by a device's agent. On Linux the machine's own package manager installs podman, and podman-docker adds a docker alias over it; declared containers become systemd units from the hub's desired state for that device. On Windows and macOS each branch names its own identity: the hub's cache fetches Podman's installer and its machine image, which the agent keeps as the publisher's files, and the containers run inside one account's Podman machine. Windows amd64 also takes Microsoft's WSL msi (microsoft/WSL 3.0.3, MIT), which Podman's msi does not install. Each machine image is podman-container-tools/podman-machine-os at Podman's own tag. Podman 6 publishes no macOS amd64 pkg, and darwin-amd64 pins 5.8.9, the latest 5.8.x. Every sha256 on the Windows and macOS branches is the digest GitHub's release API gives the asset, read on 2026-10-24 from the release named in each branch's _comment; the msi and pkg digests are also the ones in the Podman release's own shasums file.",
+  "_comment": "The container engine. On Linux the machine's own package manager installs podman, and the declared containers become systemd units. On Windows and macOS the module's installer fetches Podman's installer and its machine image, which the agent keeps as the publisher's files, and the containers run inside one account's Podman machine; Windows amd64 also takes Microsoft's WSL msi (microsoft/WSL 3.0.3, MIT), pinned for every version, which Podman's msi does not install. Each machine image is podman-container-tools/podman-machine-os at Podman's own tag. Podman 6 publishes no macOS amd64 pkg, so darwin-amd64 tests 5.8.9. Every digest is the one GitHub's release API gives the asset, read on 2026-10-24; the msi and pkg digests are also those of the Podman release's own shasums file.",
   "name": "podman",
   "title": "Containers",
-  "kind": "system_package",
-  "installer": "platform",
-  "source": "system",
   "description": "Runs declared containers as systemd units",
+  "publisher": "podman-container-tools/podman",
+  "license": "Apache-2.0",
+  "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v{version}", "_source_scan": "scan: allow",
   "platforms": {
     "linux-debian": {
-      "packages": ["podman", "podman-docker"],
-      "verify": "podman --version",
-      "uninstall": {
-        "packages": ["podman", "podman-docker"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "podman",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["podman"],
+          "verify": "podman --version",
+          "uninstall": {"packages": ["podman"], "post_uninstall": []}
+        }
       }
     },
     "linux-rhel": {
-      "packages": ["podman", "podman-docker"],
-      "verify": "podman --version",
-      "uninstall": {
-        "packages": ["podman", "podman-docker"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "podman",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["podman"],
+          "verify": "podman --version",
+          "uninstall": {"packages": ["podman"], "post_uninstall": []}
+        }
       }
     },
     "linux-arch": {
-      "packages": ["podman", "podman-docker"],
-      "verify": "podman --version",
-      "uninstall": {
-        "packages": ["podman", "podman-docker"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "podman",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["podman"],
+          "verify": "podman --version",
+          "uninstall": {"packages": ["podman"], "post_uninstall": []}
+        }
       }
     },
     "windows-amd64": {
-      "_comment": "Digests from api.github.com/repos/microsoft/WSL/releases/tags/3.0.3 (wsl), api.github.com/repos/podman-container-tools/podman/releases/tags/v6.1.4 (installer) and api.github.com/repos/podman-container-tools/podman-machine-os/releases/tags/v6.1.4 (image).",
-      "kind": "podman_machine",
-      "installer": "hub",
-      "source": "podman-container-tools/podman",
-      "version": "6.1.4",
-      "license": "Apache-2.0",
-      "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v6.1.4", "_source_scan": "scan: allow",
+      "runner": "podman_machine",
       "min_version": "19041",
-      "components": [
-        {
-          "name": "wsl",
-          "url": "https://github.com/microsoft/WSL/releases/download/3.0.3/wsl.3.0.3.0.x64.msi", "_url_scan": "scan: allow",
-          "sha256": "ae977286974255bd26bf925f00f40f5692c6b2084155cbc0563c09aea091f211", "_sha256_scan": "scan: allow",
-          "package_kind": "msi",
-          "directory": "wsl"
-        },
-        {
-          "name": "installer",
-          "url": "https://github.com/podman-container-tools/podman/releases/download/v6.1.4/podman-installer-windows-amd64.msi", "_url_scan": "scan: allow",
-          "sha256": "4a05240054cb990629cbe098db090c5c7848c44162c11910cabb45ca75a40d53", "_sha256_scan": "scan: allow",
-          "package_kind": "msi",
-          "directory": "installer"
-        },
-        {
-          "name": "image",
-          "url": "https://github.com/podman-container-tools/podman-machine-os/releases/download/v6.1.4/podman-machine.x86_64.wsl.tar.zst", "_url_scan": "scan: allow",
-          "sha256": "84c99d407af99d36e18d32327c86f57128d0e76f70c357fc4bc27f307be98738", "_sha256_scan": "scan: allow",
-          "package_kind": "tar_zst",
-          "directory": "image"
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "6.1.4",
+          "releases": [
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman", "tag": "v{version}"},
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman-machine-os", "tag": "v{version}"}
+          ],
+          "artifacts": [
+            {
+              "name": "wsl",
+              "kind": "msi",
+              "directory": "wsl",
+              "file": "wsl.3.0.3.0.x64.msi",
+              "digest": "sha256:ae977286974255bd26bf925f00f40f5692c6b2084155cbc0563c09aea091f211", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/microsoft/WSL/releases/download/3.0.3/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "podman",
+              "kind": "msi",
+              "directory": "podman",
+              "file": "podman-installer-windows-amd64.msi",
+              "digest": "sha256:4a05240054cb990629cbe098db090c5c7848c44162c11910cabb45ca75a40d53", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "image",
+              "kind": "tar_zst",
+              "directory": "image",
+              "file": "podman-machine.x86_64.wsl.tar.zst",
+              "digest": "sha256:84c99d407af99d36e18d32327c86f57128d0e76f70c357fc4bc27f307be98738", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman-machine-os/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "packages": [],
+          "verify": "\"C:\\Program Files\\Podman\\podman.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "\"C:\\Program Files\\Podman\\podman.exe\" --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "darwin-arm64": {
-      "_comment": "Digests from api.github.com/repos/podman-container-tools/podman/releases/tags/v6.1.4 (installer) and api.github.com/repos/podman-container-tools/podman-machine-os/releases/tags/v6.1.4 (image).",
-      "kind": "podman_machine",
-      "installer": "hub",
-      "source": "podman-container-tools/podman",
-      "version": "6.1.4",
-      "license": "Apache-2.0",
-      "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v6.1.4", "_source_scan": "scan: allow",
+      "runner": "podman_machine",
       "min_version": "13",
-      "components": [
-        {
-          "name": "installer",
-          "url": "https://github.com/podman-container-tools/podman/releases/download/v6.1.4/podman-installer-macos-arm64.pkg", "_url_scan": "scan: allow",
-          "sha256": "48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22", "_sha256_scan": "scan: allow",
-          "package_kind": "pkg",
-          "directory": "installer"
-        },
-        {
-          "name": "image",
-          "url": "https://github.com/podman-container-tools/podman-machine-os/releases/download/v6.1.4/podman-machine.aarch64.applehv.raw.zst", "_url_scan": "scan: allow",
-          "sha256": "d92af11c2980615ad1645fd36999f5abb53e4118a7a19fc981fbaccf57de1737", "_sha256_scan": "scan: allow",
-          "package_kind": "raw_zst",
-          "directory": "image"
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "6.1.4",
+          "releases": [
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman", "tag": "v{version}"},
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman-machine-os", "tag": "v{version}"}
+          ],
+          "artifacts": [
+            {
+              "name": "podman",
+              "kind": "pkg",
+              "directory": "podman",
+              "file": "podman-installer-macos-arm64.pkg",
+              "digest": "sha256:48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "image",
+              "kind": "raw_zst",
+              "directory": "image",
+              "file": "podman-machine.aarch64.applehv.raw.zst",
+              "digest": "sha256:d92af11c2980615ad1645fd36999f5abb53e4118a7a19fc981fbaccf57de1737", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman-machine-os/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "packages": [],
+          "verify": "/opt/podman/bin/podman --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "/opt/podman/bin/podman --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     },
     "darwin-amd64": {
-      "_comment": "Digests from api.github.com/repos/podman-container-tools/podman/releases/tags/v5.8.9 (installer) and api.github.com/repos/podman-container-tools/podman-machine-os/releases/tags/v5.8.9 (image).",
-      "kind": "podman_machine",
-      "installer": "hub",
-      "source": "podman-container-tools/podman",
-      "version": "5.8.9",
-      "license": "Apache-2.0",
-      "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v5.8.9", "_source_scan": "scan: allow",
+      "runner": "podman_machine",
       "min_version": "13",
-      "components": [
-        {
-          "name": "installer",
-          "url": "https://github.com/podman-container-tools/podman/releases/download/v5.8.9/podman-installer-macos-amd64.pkg", "_url_scan": "scan: allow",
-          "sha256": "3d600c6a1efd41445b56ed9864b9daba0765cfeae9d62604e87cf6c01b613403", "_sha256_scan": "scan: allow",
-          "package_kind": "pkg",
-          "directory": "installer"
-        },
-        {
-          "name": "image",
-          "url": "https://github.com/podman-container-tools/podman-machine-os/releases/download/v5.8.9/podman-machine.x86_64.applehv.raw.zst", "_url_scan": "scan: allow",
-          "sha256": "eac6f4ca8e3b6c1abd6bd6f331f05eecf0779b4d601d13ed9815be521c4715af", "_sha256_scan": "scan: allow",
-          "package_kind": "raw_zst",
-          "directory": "image"
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "5.8.9",
+          "releases": [
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman", "tag": "v{version}"},
+            {"kind": "github", "sources": ["https://api.github.com"], "repository": "podman-container-tools/podman-machine-os", "tag": "v{version}"}
+          ],
+          "artifacts": [
+            {
+              "name": "podman",
+              "kind": "pkg",
+              "directory": "podman",
+              "file": "podman-installer-macos-amd64.pkg",
+              "digest": "sha256:3d600c6a1efd41445b56ed9864b9daba0765cfeae9d62604e87cf6c01b613403", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            },
+            {
+              "name": "image",
+              "kind": "raw_zst",
+              "directory": "image",
+              "file": "podman-machine.x86_64.applehv.raw.zst",
+              "digest": "sha256:eac6f4ca8e3b6c1abd6bd6f331f05eecf0779b4d601d13ed9815be521c4715af", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/podman-container-tools/podman-machine-os/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "packages": [],
+          "verify": "/opt/podman/bin/podman --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
         }
-      ],
-      "verify": "/opt/podman/bin/podman --version",
-      "uninstall": {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": true
       }
     }
   }

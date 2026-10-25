@@ -15,10 +15,12 @@ the manifest pins; one that does not is a stale fetch and is fetched again.
 The hub's package seeds this directory with one agent package, the one of its
 own system, machine and package family, which keeps the hub's own agent and
 every device of the same platform offline. Every other platform the release
-publishes is named in the manifest with its URL and its hash, fetched once
-the first time a device needs it, checked against that hash, and kept. A
-platform with neither, or an entry that pins no hash, is refused by name
-rather than served the wrong machine's build or an unchecked one.
+publishes is named in the manifest with its file name and its hash, fetched
+once the first time a device needs it from the release sites the hub's build
+stamped, at the release the hub came from, through the method every download
+uses, and kept. A platform the manifest does not name, an entry that pins no
+hash, and a build with no release sites are refused by name rather than
+served the wrong machine's build or an unchecked one.
 
 A build dropped under ``config/devices/packages`` wins over both.
 
@@ -26,24 +28,28 @@ Not pure: fetches over the network and writes under the state root.
 """
 
 import json
-import urllib.request
 from pathlib import Path
 
-from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub import HUB_VERSION
+from neutrino_hub.exceptions import (
+    AgentArtifactFetchError,
+    DownloadFailedError,
+    DownloadTooLargeError,
+)
 from neutrino_hub.modules.devices.constants import (
     AGENT_PACKAGE_CACHE_DIR,
     AGENT_PACKAGE_FETCH_LIMIT_BYTES,
-    AGENT_PACKAGE_FETCH_TIMEOUT_S,
     AGENT_PACKAGE_MANIFEST_PATH,
     DEVICE_PACKAGES_DIR_NAME,
 )
-from neutrino_hub.modules.devices.streamed_file import (
-    DownloadedFile,
-    file_sha256,
-    stream_to_file,
-)
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
-from neutrino_hub.utils.tls_trust import public_ssl_context
+from neutrino_hub.utils.release_sites import release_addresses
+from neutrino_hub.utils.source_fetch import (
+    DIGEST_PREFIX,
+    SourceFetcher,
+    failure_entry,
+    file_sha256,
+)
 
 # What each format spells the same machine, mapped to the name the agent's
 # platform tuple reports.
@@ -150,6 +156,9 @@ class AgentPackageCache:
         root: "Path | None" = None,
         manifest_path: "Path | None" = None,
         pinned_dir: "Path | None" = None,
+        fetcher: "SourceFetcher | None" = None,
+        sites=None,
+        hub_version: str = HUB_VERSION,
     ):
         """
         Args:
@@ -159,6 +168,11 @@ class AgentPackageCache:
                 by default.
             pinned_dir: Where a hand-pinned build is looked for; the
                 configuration directory's own by default.
+            fetcher: The fetcher every download goes through; a new one by
+                default.
+            sites: The release sites; None reads the hub's stamp.
+            hub_version: The release the hub came from, whose files are
+                fetched.
         """
         self._root = Path(root) if root is not None else AGENT_PACKAGE_CACHE_DIR
         self._manifest_path = (
@@ -171,6 +185,9 @@ class AgentPackageCache:
             if pinned_dir is not None
             else UTILS_CONFIG_DIR / "devices" / DEVICE_PACKAGES_DIR_NAME
         )
+        self._fetcher = fetcher if fetcher is not None else SourceFetcher()
+        self._sites = sites
+        self._hub_version = hub_version
 
     def has_packages(self) -> bool:
         """Whether this hub can deliver an agent package at all.
@@ -215,9 +232,10 @@ class AgentPackageCache:
         Raises:
             AgentArtifactFetchError: ``agent_package_missing`` when this hub
                 has nothing for that platform and nothing to fetch,
-                ``agent_package_fetch_failed`` when the release cannot be
-                read, and ``agent_package_sha256_mismatch`` when what arrived
-                is not what the manifest pinned.
+                ``download_failed {file, sources}`` when no release site
+                serves the pinned bytes, and
+                ``agent_package_cache_unwritable`` when the cache cannot be
+                written.
         """
         pinned = self._pinned(family=family, architecture=architecture)
         if pinned is not None:
@@ -233,30 +251,13 @@ class AgentPackageCache:
 
         if not self._is_fetchable(entry):
             raise AgentArtifactFetchError("agent_package_missing", platform=key)
-        download = self._fetch(str(entry["url"]))
-        pinned_digest = str(entry["sha256"]).lower()
-        if pinned_digest != download.sha256:
-            download.discard()
-            raise AgentArtifactFetchError(
-                "agent_package_sha256_mismatch",
-                platform=key,
-                expected=pinned_digest,
-                received=download.sha256,
-            )
-        path = self._root / package_name(entry)
-        try:
-            download.place(path)
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "agent_package_cache_unwritable", detail=str(error)[:200]
-            ) from error
-        return path
+        return self._fetch(entry)
 
     def manifest(self) -> dict:
         """What the build stamped: the platforms this hub knows a package for.
 
         Returns:
-            Platform key to ``{url, sha256, size}``, empty for a checkout,
+            Platform key to ``{name, sha256, ...}``, empty for a checkout,
             which has no build behind it and therefore no manifest.
         """
         try:
@@ -265,25 +266,8 @@ class AgentPackageCache:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
-    def release_url(self) -> str:
-        """Where the release this hub was built for publishes its files.
-
-        Returns:
-            The address the build stamped before each agent package's name,
-            empty for a build that publishes nothing.
-        """
-        for entry in self.manifest().values():
-            if not isinstance(entry, dict):
-                continue
-            name = package_name(entry)
-            url = str(entry.get("url", "") or "")
-            if name and url.endswith("/" + name):
-                return url[: -len(name) - 1]
-        return ""
-
-    @staticmethod
-    def _is_fetchable(entry: dict) -> bool:
-        """Whether one entry names a file, where it is published, and its hash.
+    def _is_fetchable(self, entry: dict) -> bool:
+        """Whether one entry names a file and its hash, and a release site serves it.
 
         Args:
             entry: The manifest's entry for a platform.
@@ -291,7 +275,11 @@ class AgentPackageCache:
         Returns:
             True when all three are there; a fetch is never kept unchecked.
         """
-        return bool(package_name(entry) and entry.get("url") and entry.get("sha256"))
+        return bool(
+            package_name(entry)
+            and entry.get("sha256")
+            and release_addresses(self._hub_version, sites=self._sites)
+        )
 
     def _file(self, entry: dict) -> "Path | None":
         """Where one entry's package would be, when a file is there.
@@ -358,52 +346,55 @@ class AgentPackageCache:
             if path.is_file() and package_family(path.name)
         ]
 
-    def _fetch(self, url: str) -> DownloadedFile:
-        """Download one package from where the manifest publishes it, into the cache.
+    def _fetch(self, entry: dict) -> Path:
+        """Fetch one entry's package from the release sites into the cache.
 
         Args:
-            url: What the manifest names.
+            entry: The manifest's entry for a platform, naming a file and
+                its hash.
 
         Returns:
-            The download beside its place, not yet checked against its pin.
+            Where the package is kept.
 
         Raises:
-            AgentArtifactFetchError: ``agent_package_fetch_failed`` when the
-                release cannot be read or the file is past the limit,
-                ``agent_package_cache_unwritable`` when the cache cannot be
-                written; nothing is left on disk.
+            AgentArtifactFetchError: ``download_failed {file, sources}`` when
+                no site serves the pinned bytes, or one names a size past
+                the limit; ``agent_package_cache_unwritable`` when the cache
+                cannot be written. Nothing is left on disk.
         """
+        name = package_name(entry)
+        sources = [
+            f"{address}/{name}"
+            for address in release_addresses(self._hub_version, sites=self._sites)
+        ]
         try:
-            self._root.mkdir(parents=True, exist_ok=True)
+            download = self._fetcher.fetch_file(
+                file=name,
+                sources=sources,
+                digest=DIGEST_PREFIX + str(entry["sha256"]).lower(),
+                directory=self._root,
+                limit=AGENT_PACKAGE_FETCH_LIMIT_BYTES,
+            )
+        except DownloadFailedError as error:
+            raise AgentArtifactFetchError(error.code, **error.params) from error
+        except DownloadTooLargeError as error:
+            raise AgentArtifactFetchError(
+                DownloadFailedError.code,
+                file=name,
+                sources=[
+                    failure_entry(source, "digest_mismatch", str(error))
+                    for source in sources
+                ],
+            ) from error
+        except (OSError, ValueError) as error:
+            raise AgentArtifactFetchError(
+                "agent_package_cache_unwritable", detail=str(error)[:200]
+            ) from error
+        path = self._root / name
+        try:
+            download.place(path)
         except OSError as error:
             raise AgentArtifactFetchError(
                 "agent_package_cache_unwritable", detail=str(error)[:200]
             ) from error
-        try:
-            response = urllib.request.urlopen(
-                url, timeout=AGENT_PACKAGE_FETCH_TIMEOUT_S, context=public_ssl_context()
-            )
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "agent_package_fetch_failed", detail=str(error)[:200]
-            ) from error
-        with response:
-            try:
-                download = stream_to_file(
-                    response, self._root, limit=AGENT_PACKAGE_FETCH_LIMIT_BYTES
-                )
-            except ConnectionError as error:
-                raise AgentArtifactFetchError(
-                    "agent_package_fetch_failed", detail=str(error)[:200]
-                ) from error
-            except OSError as error:
-                raise AgentArtifactFetchError(
-                    "agent_package_cache_unwritable", detail=str(error)[:200]
-                ) from error
-        if download.size > AGENT_PACKAGE_FETCH_LIMIT_BYTES:
-            download.discard()
-            raise AgentArtifactFetchError(
-                "agent_package_fetch_failed",
-                detail=f"the download is past {AGENT_PACKAGE_FETCH_LIMIT_BYTES} bytes",
-            )
-        return download
+        return path

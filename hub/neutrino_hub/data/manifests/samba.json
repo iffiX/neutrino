@@ -1,44 +1,47 @@
 {
-  "_comment": "The file share, hosted by a device's agent. On Linux the package comes from the machine's own package manager; Windows and macOS carry their own SMB server, so their branches are builtin and download nothing. The shares, users and allowed subnets come from the hub's desired state for that device.",
+  "_comment": "The file share. On Linux the machine's own package manager installs Samba; Windows and macOS hold their own SMB server, so their entries are builtin. The shares, users and allowed subnets come from the hub's state for the device.",
   "name": "samba",
   "title": "File share",
-  "kind": "system_package",
-  "installer": "platform",
-  "source": "system",
   "description": "Serves shares over SMB from this machine",
+  "publisher": "Samba Team",
   "platforms": {
     "linux-debian": {
-      "packages": ["samba"],
-      "verify": "smbd -V",
-      "uninstall": {
-        "packages": ["samba"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "samba",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["samba"],
+          "verify": "smbd -V",
+          "uninstall": {"packages": ["samba"], "post_uninstall": []}
+        }
       }
     },
     "linux-rhel": {
-      "packages": ["samba", "samba-client"],
-      "verify": "smbd -V",
-      "uninstall": {
-        "packages": ["samba", "samba-client"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "samba",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["samba", "samba-client"],
+          "verify": "smbd -V",
+          "uninstall": {"packages": ["samba", "samba-client"], "post_uninstall": []}
+        }
       }
     },
     "linux-arch": {
-      "packages": ["samba"],
-      "verify": "smbd -V",
-      "uninstall": {
-        "packages": ["samba"],
-        "post_uninstall": [],
-        "is_data_kept": true
+      "runner": "samba",
+      "install": {
+        "method": "system",
+        "params": {
+          "version": "system",
+          "packages": ["samba"],
+          "verify": "smbd -V",
+          "uninstall": {"packages": ["samba"], "post_uninstall": []}
+        }
       }
     },
-    "windows": {
-      "installer": "builtin"
-    },
-    "darwin": {
-      "installer": "builtin"
-    }
+    "windows": {"runner": "samba_native", "install": {"method": "builtin", "params": {}}},
+    "darwin": {"runner": "samba_native", "install": {"method": "builtin", "params": {}}}
   }
 }

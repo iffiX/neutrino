@@ -54,17 +54,20 @@ def box(monkeypatch, tmp_path):
     return manifests, StubPublished()
 
 
-def write_manifest(manifests, name: str) -> None:
-    (manifests / f"{name}.json").write_text(
-        json.dumps(
-            {
-                "name": name,
-                "title": name.title(),
-                "installer": "hub",
-                "source": f"vendor/{name}",
-            }
-        )
-    )
+AGENT_ENTRY = {"install": {"method": "agent", "params": {}}}
+
+
+def write_manifest(manifests, name: str, platforms: "dict | None" = None, **top):
+    """One manifest of the loader's shape; an agent entry on Linux by default."""
+    manifest = {
+        "name": name,
+        "title": name.title(),
+        "description": f"The {name} module",
+        "publisher": f"vendor/{name}",
+        "platforms": platforms or {"linux": {"runner": name, **AGENT_ENTRY}},
+        **top,
+    }
+    (manifests / f"{name}.json").write_text(json.dumps(manifest))
 
 
 def test_the_catalog_has_two_halves_under_one_hash(box):
@@ -84,96 +87,63 @@ def test_the_catalog_has_two_halves_under_one_hash(box):
     assert "record_id" not in entry
 
 
-def test_a_module_listing_components_hands_the_catalog_their_recipe_form(box):
+def test_each_platform_gets_the_entry_its_platform_resolves_to(box):
+    """A system entry on Linux and a hub entry on Windows: the row's runner,
+    method, version and recipe follow the entry, and only the hub entry
+    shows the licence and the source address, its version filled in."""
     manifests, published = box
-    (manifests / "codeg.json").write_text(
-        json.dumps(
-            {
-                "name": "codeg",
-                "title": "Codeg",
-                "installer": "hub",
-                "source": "vendor/codeg",
-                "license": "MIT",
-                "corresponding_source": "https://github.com/vendor/codeg",
-                "platforms": {
-                    "linux-amd64": {
-                        "components": [
-                            {
-                                "name": "node",
-                                "url": "https://nodejs.org/dist/node.tar.gz",
-                                "sha256": "b" * 64,
-                                "package_kind": "tar",
-                                "directory": "node",
-                            }
-                        ],
-                        "verify": "true",
-                        "uninstall": {
-                            "packages": [],
-                            "post_uninstall": [],
-                            "is_data_kept": True,
-                        },
-                    }
-                },
-            }
-        )
-    )
-    cache = DeviceCatalogCache(services=published)
-    platform = {"os": "linux", "family": "debian", "arch": "amd64"}
-
-    catalog, _ = cache.catalog(scope=link_scope("192.168.100.7"), platform=platform)
-
-    assert catalog["modules"]["codeg"]["components"] == [
-        {"name": "node", "package_kind": "tar", "directory": "node", "sha256": "b" * 64}
-    ]
-
-
-def test_each_platform_gets_the_identity_its_branch_resolves_to(box):
-    """A branch naming its own identity gives the catalog's row its kind, tier,
-    version, license and source on that platform alone; another platform's
-    row keeps the manifest's."""
-    manifests, published = box
-    (manifests / "engine.json").write_text(
-        json.dumps(
-            {
-                "name": "engine",
-                "title": "Engine",
-                "kind": "system_package",
-                "installer": "platform",
-                "source": "system",
-                "platforms": {
-                    "linux-debian": {
+    write_manifest(
+        manifests,
+        "engine",
+        {
+            "linux-debian": {
+                "runner": "engine",
+                "install": {
+                    "method": "system",
+                    "params": {
+                        "version": "system",
                         "packages": ["engine"],
                         "verify": "engine --version",
-                        "uninstall": {
-                            "packages": ["engine"],
-                            "post_uninstall": [],
-                            "is_data_kept": True,
-                        },
-                    },
-                    "windows-amd64": {
-                        "kind": "engine_machine",
-                        "installer": "hub",
-                        "source": "vendor/engine",
-                        "version": "6.1.4",
-                        "license": "Apache-2.0",
-                        "corresponding_source": "https://github.com/vendor/engine",
-                        "url": "https://vendor.example/engine.msi",
-                        "sha256": "c" * 64,
-                        "package_kind": "msi",
-                        "verify": "engine --version",
-                        "uninstall": {
-                            "packages": [],
-                            "post_uninstall": [],
-                            "is_data_kept": True,
-                        },
+                        "uninstall": {"packages": ["engine"], "post_uninstall": []},
                     },
                 },
-            }
-        )
+            },
+            "windows-amd64": {
+                "runner": "engine_machine",
+                "install": {
+                    "method": "hub",
+                    "params": {
+                        "version": "6.1.4",
+                        "releases": [
+                            {
+                                "kind": "github",
+                                "sources": ["https://api.example"],
+                                "repository": "vendor/engine",
+                                "tag": "v{version}",
+                            }
+                        ],
+                        "artifacts": [
+                            {
+                                "name": "engine",
+                                "kind": "msi",
+                                "directory": "engine",
+                                "file": "engine-{version}.msi",
+                                "digest": "sha256:" + "c" * 64,
+                                "sources": ["https://vendor.example/{file}"],
+                            }
+                        ],
+                        "verify": "engine --version",
+                        "uninstall": {"post_uninstall": [], "is_data_kept": True},
+                    },
+                },
+            },
+        },
+        license="Apache-2.0",
+        corresponding_source="https://github.com/vendor/engine/tree/v{version}",
     )
     cache = DeviceCatalogCache(services=published)
     scope = link_scope("192.168.100.7")
-    fields = ("kind", "installer", "source", "version", "license")
+    fields = ("runner", "method", "version", "license", "corresponding_source")
 
     linux, _ = cache.catalog(
         scope=scope, platform={"os": "linux", "family": "debian", "arch": "amd64"}
@@ -183,8 +153,8 @@ def test_each_platform_gets_the_identity_its_branch_resolves_to(box):
     )
 
     assert tuple(linux["modules"]["engine"][field] for field in fields) == (
-        "system_package",
-        "platform",
+        "engine",
+        "system",
         "system",
         "",
         "",
@@ -192,13 +162,33 @@ def test_each_platform_gets_the_identity_its_branch_resolves_to(box):
     assert tuple(windows["modules"]["engine"][field] for field in fields) == (
         "engine_machine",
         "hub",
-        "vendor/engine",
         "6.1.4",
         "Apache-2.0",
+        "https://github.com/vendor/engine/tree/v6.1.4",
     )
-    assert windows["modules"]["engine"]["corresponding_source"] == (
-        "https://github.com/vendor/engine"
+    assert windows["modules"]["engine"]["recipe"]["params"]["artifacts"] == [
+        {
+            "name": "engine",
+            "kind": "msi",
+            "digest": "sha256:" + "c" * 64,
+            "directory": "engine",
+        }
+    ]
+    assert windows["modules"]["engine"]["publisher"] == "vendor/engine"
+
+
+def test_a_platform_the_manifest_names_no_entry_for_gets_no_recipe(box):
+    manifests, published = box
+    write_manifest(manifests, "forge")
+    cache = DeviceCatalogCache(services=published)
+
+    catalog, _ = cache.catalog(
+        scope=link_scope("192.168.100.7"),
+        platform={"os": "windows", "family": "", "arch": "amd64"},
     )
+
+    row = catalog["modules"]["forge"]
+    assert (row["runner"], row["method"], row["recipe"]) == ("", "", {})
 
 
 def test_two_hosts_get_two_catalogs_with_two_hashes(box):

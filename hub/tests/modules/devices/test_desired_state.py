@@ -6,9 +6,10 @@ a module the machine settled keeping its want and leaving the state,
 a hash that moves only with the state, the composed shape the agent
 applies, the secrets a device's Gitea is handed once and kept, the fence
 and address the hub folds in, the sweep that removes a directory no
-stored device names, and the Containers Run settings: sent to Windows and
-macOS alone, with the login's password on Windows and never the login's
-id, and a Linux entry byte for byte as before.
+stored device names, the recipe each entry carries as the manifest names
+it, the cc-switch artifact beside its version, and the Containers Run
+settings: sent to Windows and macOS alone, with the login's password on
+Windows and never the login's id, and a Linux entry unchanged by them.
 """
 
 import json
@@ -20,8 +21,31 @@ from neutrino_hub.modules.devices.desired_state import DesiredStateStore, state_
 
 DEVICE = "device-one"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
-# The section while the setting is off: the pinned cc-switch version beside it.
-AI_TOOLS_OFF = {"is_enabled": False, "cc_switch_version": "5.10.4"}
+# cc-switch's artifact for a Linux amd64 machine, as cc_switch.json pins it.
+CC_SWITCH_LINUX = {
+    "name": "cc_switch",
+    "kind": "tar_gz",
+    "digest": "sha256:a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3",  # scan: allow
+}
+# The section while the setting is off: the pinned cc-switch version and its
+# artifact beside it.
+AI_TOOLS_OFF = {
+    "is_enabled": False,
+    "cc_switch_version": "5.10.4",
+    "cc_switch_artifact": CC_SWITCH_LINUX,
+}
+# The recipe of a module the agent's own package carries.
+AGENT_RECIPE = {"method": "agent", "params": {}}
+SAMBA_RECIPE = {
+    "runner": "samba",
+    "method": "system",
+    "params": {
+        "version": "system",
+        "packages": ["samba"],
+        "verify": "smbd -V",
+        "uninstall": {"packages": ["samba"], "post_uninstall": []},
+    },
+}
 
 
 @pytest.fixture
@@ -32,40 +56,10 @@ def config(monkeypatch, tmp_path):
         desired_state_module,
         "resolved_modules",
         lambda platform: {
-            "samba": {
-                "kind": "system_package",
-                "entry": {
-                    "packages": ["samba"],
-                    "verify": "smbd -V",
-                    "uninstall": {"packages": ["samba"], "is_data_kept": True},
-                },
-            },
-            "gitea": {"kind": "binary", "entry": None},
-            "cloudcli": {
-                "kind": "cloudcli",
-                "entry": {
-                    "components": [
-                        {
-                            "name": "node",
-                            "url": "https://nodejs.org/dist/node.tar.gz",
-                            "cn_url": "https://mirror.example/node.tar.gz",
-                            "sha256": "b" * 64,
-                            "package_kind": "tar",
-                            "directory": "node",
-                        }
-                    ],
-                    "verify": "node --version",
-                    "uninstall": {"packages": [], "is_data_kept": True},
-                },
-                "components": [
-                    {
-                        "name": "node",
-                        "package_kind": "tar",
-                        "directory": "node",
-                        "sha256": "b" * 64,
-                    }
-                ],
-            },
+            "samba": {"recipe": SAMBA_RECIPE},
+            "gitea": {"recipe": {}},
+            "terminal": {"recipe": {"runner": "terminal", **AGENT_RECIPE}},
+            "remote_desktop": {"recipe": {"runner": "remote_desktop", **AGENT_RECIPE}},
         },
     )
     return tmp_path
@@ -158,8 +152,9 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
     config,
 ):
     """A named module is sent with its want, its configuration and the
-    recipes resolved for the platform; one the file does not name is not
-    mentioned, so the agent leaves it as it is."""
+    recipe resolved for the platform; one the file does not name is not
+    mentioned, so the agent leaves it as it is, and the two the agent
+    carries come with their ``agent`` recipe."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "samba", "running")
     store.set_want(DEVICE, "gitea", "absent")
@@ -177,16 +172,13 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
     assert desired["ai_tools"] == AI_TOOLS_OFF
     assert set(desired["modules"]) == {"samba", "gitea", "terminal", "remote_desktop"}
     samba = desired["modules"]["samba"]
-    assert set(samba) == {"want", "config", "install", "uninstall"}
+    assert set(samba) == {"want", "config", "install"}
     assert samba["want"] == "running"
     assert samba["config"]["shares"] == [{"name": "s", "path": "/srv"}]
     assert samba["config"]["allowed_subnets"] == ["192.168.100.0/24"]
-    assert samba["install"] == {
-        "kind": "system_package",
-        "packages": ["samba"],
-        "verify": "smbd -V",
-    }
-    assert samba["uninstall"] == {"packages": ["samba"], "is_data_kept": True}
+    assert samba["install"] == SAMBA_RECIPE
+    for name in ("terminal", "remote_desktop"):
+        assert desired["modules"][name]["install"] == {"runner": name, **AGENT_RECIPE}
     gitea = desired["modules"]["gitea"]
     assert gitea["want"] == "absent"
     assert gitea["config"]["listen_port"] == 3100
@@ -197,33 +189,9 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
         "JWT_SECRET",
         "LFS_JWT_SECRET",
     }
-    assert (gitea["install"], gitea["uninstall"]) == ({}, {})
+    assert gitea["install"] == {}
     assert desired["desktop"] == {"seat_password": ""}
     assert digest == state_hash(desired)
-
-
-def test_a_recipe_carries_each_component_without_where_it_comes_from(config):
-    """The agent opens ``package {module, component}`` for each and is told
-    the kind, the directory and the digest; the urls stay the hub's."""
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "cloudcli", "running")
-    store.write(DEVICE, "cloudcli", {"instances": []})
-
-    desired, _ = store.compose(DEVICE, PLATFORM)
-
-    assert desired["modules"]["cloudcli"]["install"] == {
-        "kind": "cloudcli",
-        "verify": "node --version",
-        "components": [
-            {
-                "name": "node",
-                "package_kind": "tar",
-                "directory": "node",
-                "sha256": "b" * 64,
-            }
-        ],
-    }
-    assert "url" not in json.dumps(desired["modules"]["cloudcli"]["install"])
 
 
 @pytest.fixture
@@ -234,13 +202,33 @@ def shipped(monkeypatch, tmp_path):
     return tmp_path
 
 
-# Containers' Linux recipe as the hub sent it before its manifest named
-# branches of its own, in the canonical form the state hash is taken over.
-PODMAN_LINUX_RECIPE = (
-    '{"install":{"kind":"system_package","packages":["podman","podman-docker"],'
-    '"verify":"podman --version"},"uninstall":{"is_data_kept":true,'
-    '"packages":["podman","podman-docker"],"post_uninstall":[]}}'
-)
+def test_a_recipe_carries_each_artifact_without_where_it_comes_from(shipped):
+    """The agent opens ``package {module, artifact, digest}`` for each file
+    the hub serves and is told its kind, directory and digest; the sources
+    and the release feeds stay the hub's. An npm artifact keeps its
+    registries and hosts, since the machine fetches it."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "cloudcli", "running")
+    store.write(DEVICE, "cloudcli", {"instances": []})
+
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    recipe = desired["modules"]["cloudcli"]["install"]
+    assert (recipe["runner"], recipe["method"]) == ("cloudcli", "hub")
+    assert set(recipe["params"]) == {"version", "artifacts", "verify", "uninstall"}
+    node, package = recipe["params"]["artifacts"]
+    assert node == {
+        "name": "node",
+        "kind": "tar_gz",
+        "directory": "node",
+        "digest": "sha256:1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",  # scan: allow
+    }
+    assert package["sources"] == [
+        "https://registry.npmjs.org",
+        "https://registry.npmmirror.com",
+    ]
+    assert "nodejs.org" not in json.dumps(recipe)
+    assert recipe["params"]["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
 
 
 @pytest.mark.parametrize(
@@ -251,41 +239,54 @@ PODMAN_LINUX_RECIPE = (
         {"os": "linux", "family": "arch", "arch": "amd64", "version": "2.40"},
     ],
 )
-def test_the_linux_containers_recipe_is_byte_for_byte_as_before(shipped, platform):
+def test_the_linux_containers_recipe_installs_podman_alone_by_the_system(
+    shipped, platform
+):
     store = DesiredStateStore()
     store.set_want(DEVICE, "podman", "running")
 
     desired, _ = store.compose(DEVICE, platform)
 
-    podman = desired["modules"]["podman"]
-    recipe = {"install": podman["install"], "uninstall": podman["uninstall"]}
-    assert json.dumps(recipe, sort_keys=True, separators=(",", ":")) == (
-        PODMAN_LINUX_RECIPE
-    )
+    assert desired["modules"]["podman"]["install"] == {
+        "runner": "podman",
+        "method": "system",
+        "params": {
+            "version": "system",
+            "packages": ["podman"],
+            "verify": "podman --version",
+            "uninstall": {"packages": ["podman"], "post_uninstall": []},
+        },
+    }
 
 
 @pytest.mark.parametrize(
-    ("platform", "floor", "verify", "components"),
+    ("platform", "version", "verify", "artifacts"),
     [
         (
             {"os": "windows", "family": "", "arch": "amd64", "version": "26100"},
-            "19041",
+            "6.1.4",
             '"C:\\Program Files\\Podman\\podman.exe" --version',
-            [("wsl", "msi"), ("installer", "msi"), ("image", "tar_zst")],
+            [("wsl", "msi"), ("podman", "msi"), ("image", "tar_zst")],
         ),
         (
             {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3"},
-            "13",
+            "6.1.4",
             "/opt/podman/bin/podman --version",
-            [("installer", "pkg"), ("image", "raw_zst")],
+            [("podman", "pkg"), ("image", "raw_zst")],
+        ),
+        (
+            {"os": "darwin", "family": "", "arch": "amd64", "version": "14.7"},
+            "5.8.9",
+            "/opt/podman/bin/podman --version",
+            [("podman", "pkg"), ("image", "raw_zst")],
         ),
     ],
 )
-def test_an_off_linux_containers_recipe_has_the_branchs_kind_and_no_identity(
-    shipped, platform, floor, verify, components
+def test_a_containers_recipe_off_linux_is_the_hub_method_of_podman_machine(
+    shipped, platform, version, verify, artifacts
 ):
-    """The recipe's kind is the branch's own, and the branch's installer,
-    version, source, license and source pointer stay on the hub."""
+    """The entry's runner, method and params, with no feed, no source and no
+    identity field, and the file share's builtin recipe beside it."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "podman", "running")
     store.set_want(DEVICE, "samba", "running")
@@ -293,26 +294,45 @@ def test_an_off_linux_containers_recipe_has_the_branchs_kind_and_no_identity(
     desired, _ = store.compose(DEVICE, platform)
 
     install = desired["modules"]["podman"]["install"]
-    assert set(install) == {"kind", "min_version", "verify", "components"}
-    assert (install["kind"], install["min_version"], install["verify"]) == (
-        "podman_machine",
-        floor,
-        verify,
-    )
-    assert [
-        (component["name"], component["package_kind"])
-        for component in install["components"]
-    ] == components
+    assert (install["runner"], install["method"]) == ("podman_machine", "hub")
+    params = install["params"]
+    assert set(params) == {"version", "artifacts", "packages", "verify", "uninstall"}
+    assert (params["version"], params["verify"]) == (version, verify)
+    assert [(item["name"], item["kind"]) for item in params["artifacts"]] == artifacts
     assert all(
-        set(component) == {"name", "package_kind", "directory", "sha256"}
-        for component in install["components"]
+        set(item) == {"name", "kind", "digest", "directory"}
+        and item["directory"] == item["name"]
+        for item in params["artifacts"]
     )
-    assert desired["modules"]["podman"]["uninstall"] == {
-        "packages": [],
-        "post_uninstall": [],
-        "is_data_kept": True,
+    assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+    assert desired["modules"]["samba"]["install"] == {
+        "runner": "samba_native",
+        "method": "builtin",
+        "params": {},
     }
-    assert desired["modules"]["samba"]["install"] == {"kind": "system_package"}
+
+
+def test_a_platform_below_the_entrys_floor_is_sent_no_recipe(shipped):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+
+    desired, _ = store.compose(
+        DEVICE, {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+    )
+
+    assert desired["modules"]["podman"]["install"] == {}
+
+
+def test_the_modules_named_are_every_devices_unsettled_wants(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "running")
+    store.set_want(DEVICE, "gitea", "absent")
+    store.set_want("device-two", "codeg", "installed")
+    store.set_want("device-two", "podman", "absent")
+    store.settle_want("device-two", "podman")
+    (config / "devices" / "packages").mkdir(parents=True)
+
+    assert store.named_modules() == {"samba", "gitea", "codeg"}
 
 
 def test_compose_is_the_same_twice_and_moves_with_a_write(config):
@@ -484,7 +504,23 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
         },
         "accounts": [{"account": "alice"}, {"account": "bob"}],
         "cc_switch_version": "5.10.4",
+        "cc_switch_artifact": CC_SWITCH_LINUX,
     }
+
+
+def test_a_platform_cc_switch_names_no_entry_for_is_sent_no_artifact(
+    config, monkeypatch
+):
+    store, models = ai_tools_box(monkeypatch)
+    windows_arm = {"os": "windows", "family": "", "arch": "arm64", "version": "26100"}
+
+    off, _ = store.compose(DEVICE, windows_arm, ai_models=models)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+    on, _ = store.compose(DEVICE, windows_arm, ai_models=models)
+
+    assert off["ai_tools"] == {"is_enabled": False, "cc_switch_version": "5.10.4"}
+    assert on["ai_tools"]["cc_switch_version"] == "5.10.4"
+    assert "cc_switch_artifact" not in on["ai_tools"]
 
 
 def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
@@ -703,9 +739,10 @@ PINNED_STORED = {
 }
 # What ``vscode_agent_config``, ``code_server_agent_config`` and
 # ``cloudcli_agent_config`` answered for those files before the table drove
-# one composition, keyed ``<module>/<platform>[/<edition>]``.
+# one composition, keyed ``<module>/<platform>``; CloudCLI's registries are
+# its npm artifact's, in the recipe, and no longer in its configuration.
 PINNED_CONFIGS = {
-    "cloudcli/darwin/cn": {
+    "cloudcli/darwin": {
         "instances": [
             {
                 "account": "alice",
@@ -716,12 +753,8 @@ PINNED_CONFIGS = {
             {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
             {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
         ],
-        "npm_environment": {
-            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
-        },
-        "npm_registry": "https://registry.npmmirror.com",
     },
-    "cloudcli/darwin/intl": {
+    "cloudcli/linux": {
         "instances": [
             {
                 "account": "alice",
@@ -732,40 +765,8 @@ PINNED_CONFIGS = {
             {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
             {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
         ],
-        "npm_environment": {},
-        "npm_registry": "https://registry.npmjs.org",
     },
-    "cloudcli/linux/cn": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",
-                "web_password": "pw-a:device_cloudcli:web_password",
-            },
-            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-        "npm_environment": {
-            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
-        },
-        "npm_registry": "https://registry.npmmirror.com",
-    },
-    "cloudcli/linux/intl": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",
-                "web_password": "pw-a:device_cloudcli:web_password",
-            },
-            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-        "npm_environment": {},
-        "npm_registry": "https://registry.npmjs.org",
-    },
-    "cloudcli/windows/cn": {
+    "cloudcli/windows": {
         "instances": [
             {
                 "account": "alice",
@@ -783,31 +784,6 @@ PINNED_CONFIGS = {
             },
             {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
         ],
-        "npm_environment": {
-            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
-        },
-        "npm_registry": "https://registry.npmmirror.com",
-    },
-    "cloudcli/windows/intl": {
-        "instances": [
-            {
-                "account": "alice",
-                "password": "pw-l-a",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",
-                "web_password": "pw-a:device_cloudcli:web_password",
-            },
-            {
-                "account": "bob",
-                "password": "pw-l-b",
-                "port": 3002,
-                "token_secret": "",
-                "web_password": "",
-            },
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-        "npm_environment": {},
-        "npm_registry": "https://registry.npmjs.org",
     },
     "code_server/darwin": {
         "instances": [
@@ -890,14 +866,10 @@ def test_the_one_composition_answers_byte_for_byte_what_the_three_did(
 
     monkeypatch.setattr(desired_state_module, "_unsealed_text", _opened_for_pin)
     monkeypatch.setattr(desired_state_module, "_login_password", _password_for_pin)
-    module, platform_name, *edition = pinned.split("/")
-    kwargs = {"edition": edition[0]} if edition else {}
+    module, platform_name = pinned.split("/")
 
     composed = instances_agent_config(
-        module_row(module),
-        PINNED_STORED[module],
-        PINNED_PLATFORMS[platform_name],
-        **kwargs,
+        module_row(module), PINNED_STORED[module], PINNED_PLATFORMS[platform_name]
     )
 
     # The state hash is over the canonical JSON, which is what is compared.
@@ -930,11 +902,6 @@ PODMAN_RUN_SETTINGS = {
     "disk_gib": 120,
 }
 PODMAN_SENT_MACHINE = {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120}
-# The hash of the Linux ``podman`` entry for ``PODMAN_STORED`` under the
-# catalog's own recipe, captured before the Run settings existed.
-PODMAN_LINUX_ENTRY_HASH = (
-    "be399912fdb9cc26d9bd724feef0aab35f7a58e0fdc325c63f8dcea3deec6318"  # scan: allow
-)
 
 
 @pytest.fixture
@@ -946,7 +913,7 @@ def podman_config(monkeypatch, tmp_path):
     return tmp_path
 
 
-def test_a_linux_podman_entry_is_byte_for_byte_as_before_and_names_no_machine(
+def test_a_linux_podman_entry_names_no_machine_whatever_the_run_settings(
     podman_config,
 ):
     store = DesiredStateStore()
@@ -956,7 +923,7 @@ def test_a_linux_podman_entry_is_byte_for_byte_as_before_and_names_no_machine(
     store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
     after, after_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
 
-    assert state_hash(before["modules"]["podman"]) == PODMAN_LINUX_ENTRY_HASH
+    assert before["modules"]["podman"]["config"] == PODMAN_STORED
     assert after == before
     assert after_hash == before_hash
 

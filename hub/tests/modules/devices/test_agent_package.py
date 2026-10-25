@@ -3,19 +3,18 @@
 The hub's own package seeds the cache with the one package of its own
 platform, so for that platform the answer is a file already on disk, under
 the name the release publishes it as. Every other platform is fetched once
-from the release the manifest names, checked against the manifest's hash,
-and kept under that same name. A platform with
-neither is refused by name.
+from the release sites the build stamped, at the release the hub came from,
+checked against the manifest's hash, and kept under that same name. A
+platform the manifest does not name, an entry with no hash and a build with
+no release sites are refused by name.
 """
 
 import hashlib
-import io
 import json
 import os
 
 import pytest
 
-from neutrino_hub.modules.devices import agent_package
 from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_package import (
     AgentPackageCache,
@@ -25,29 +24,55 @@ from neutrino_hub.modules.devices.agent_package import (
     platform_family,
     platform_key,
 )
+from tests.conftest import FakeSourceFetcher
+from tests.utils.test_source_fetch import Behaviour, Source
+from tests.utils.test_source_fetch import fetcher as loopback_fetcher
 
 DEB_BYTES = b"!<arch>an agent deb"
 DEB_DIGEST = hashlib.sha256(DEB_BYTES).hexdigest()
 DEB_NAME = "neutrino-agent_0.1.0_amd64.deb"
 DEB_ARM_NAME = "neutrino-agent_0.1.0_arm64.deb"
 RPM_NAME = "neutrino-agent-0.1.0-1.x86_64.rpm"
-RELEASE_URL = f"https://example.invalid/{DEB_NAME}"
+HUB_VERSION = "0.1.0"
+# The two release sites the build stamped, each ``{files, latest}``.
+SITES = (
+    {
+        "files": "https://one.invalid/download/{tag}/",
+        "latest": "https://one.invalid/latest.json",
+    },
+    {
+        "files": "https://two.invalid/releases/{tag}/",
+        "latest": "https://two.invalid/latest.json",
+    },
+)
+FIRST_SITE = "https://one.invalid/download/v0.1.0"
+SECOND_SITE = "https://two.invalid/releases/v0.1.0"
 
 
-@pytest.fixture
-def cache(tmp_path, monkeypatch):
-    """A cache over three empty directories, with nothing fetchable."""
+class RefusingFetcher:
+    """A fetcher that fails the test the moment anything is fetched."""
 
-    def refuse(*args, **kwargs):
+    def fetch_file(self, **kwargs):
         raise AssertionError("nothing should have been fetched")
 
-    monkeypatch.setattr(agent_package.urllib.request, "urlopen", refuse)
-    (tmp_path / "pinned").mkdir()
+
+def make_cache(tmp_path, *, fetcher=None, sites=SITES) -> AgentPackageCache:
+    """A cache over three directories under ``tmp_path``."""
+    (tmp_path / "pinned").mkdir(exist_ok=True)
     return AgentPackageCache(
         root=tmp_path / "agent_cache",
         manifest_path=tmp_path / "agent_packages.json",
         pinned_dir=tmp_path / "pinned",
+        fetcher=fetcher if fetcher is not None else RefusingFetcher(),
+        sites=sites,
+        hub_version=HUB_VERSION,
     )
+
+
+@pytest.fixture
+def cache(tmp_path):
+    """A cache over three empty directories, with nothing fetched."""
+    return make_cache(tmp_path)
 
 
 def write_manifest(path, entries: dict) -> None:
@@ -55,11 +80,10 @@ def write_manifest(path, entries: dict) -> None:
     path.write_text(json.dumps(entries), encoding="utf-8")
 
 
-def entry(name: str, *, url: str = "", content: bytes = DEB_BYTES) -> dict:
+def entry(name: str, *, content: bytes = DEB_BYTES) -> dict:
     """One manifest entry, stamped over the bytes it is for."""
     return {
         "name": name,
-        "url": url,
         "sha256": hashlib.sha256(content).hexdigest(),
         "size": len(content),
     }
@@ -71,16 +95,9 @@ def seed(root, name: str, content: bytes) -> None:
     (root / name).write_bytes(content)
 
 
-def answers(monkeypatch, content: bytes):
-    """Make the one release URL answer with these bytes."""
-    served = []
-
-    def urlopen(url, timeout=None, context=None):
-        served.append(url)
-        return io.BytesIO(content)
-
-    monkeypatch.setattr(agent_package.urllib.request, "urlopen", urlopen)
-    return served
+def fetched_files(fetcher: FakeSourceFetcher) -> list:
+    """Each file the fake fetcher was asked for, with its sources."""
+    return [(file, sources) for kind, file, sources in fetcher.asked if kind == "file"]
 
 
 @pytest.mark.parametrize(
@@ -172,78 +189,78 @@ def test_a_seeded_package_is_served_without_reaching_for_anything(cache, tmp_pat
     assert cache.serves(family="deb", architecture="amd64")
 
 
-def test_a_held_file_that_is_another_build_is_fetched_again(
-    cache, tmp_path, monkeypatch
-):
+def test_a_held_file_that_is_another_build_is_fetched_again(tmp_path):
     """The name is the release's and says nothing about what is inside it, so
     the pinned hash is what decides whether a held file is still the answer."""
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-amd64": entry(DEB_NAME, url=RELEASE_URL)},
-    )
+    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
     seed(tmp_path / "agent_cache", DEB_NAME, b"!<arch>an older agent deb")
-    served = answers(monkeypatch, DEB_BYTES)
+    fetcher = FakeSourceFetcher({f"{FIRST_SITE}/{DEB_NAME}": DEB_BYTES})
 
-    path = cache.package(family="deb", architecture="amd64")
+    path = make_cache(tmp_path, fetcher=fetcher).package(
+        family="deb", architecture="amd64"
+    )
 
-    assert served == [RELEASE_URL]
     assert path.name == DEB_NAME
     assert path.read_bytes() == DEB_BYTES
+    assert len(fetched_files(fetcher)) == 1
 
 
-def test_a_platform_the_release_publishes_is_fetched_once_and_kept(
-    cache, tmp_path, monkeypatch
+def test_a_platform_the_release_publishes_is_fetched_once_from_the_sites_and_kept(
+    tmp_path,
 ):
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-arm64": entry(DEB_ARM_NAME, url=RELEASE_URL)},
-    )
-    served = answers(monkeypatch, DEB_BYTES)
+    """Every release site is a source of the file, at the release the hub came
+    from, in the order the build stamped them."""
+    write_manifest(tmp_path / "agent_packages.json", {"deb-arm64": entry(DEB_ARM_NAME)})
+    fetcher = FakeSourceFetcher({f"{SECOND_SITE}/{DEB_ARM_NAME}": DEB_BYTES})
+    cache = make_cache(tmp_path, fetcher=fetcher)
 
     path = cache.package(family="deb", architecture="arm64")
 
-    assert served == [RELEASE_URL]
+    assert fetched_files(fetcher) == [
+        (
+            DEB_ARM_NAME,
+            [f"{FIRST_SITE}/{DEB_ARM_NAME}", f"{SECOND_SITE}/{DEB_ARM_NAME}"],
+        )
+    ]
     assert path.read_bytes() == DEB_BYTES
     assert path.name == DEB_ARM_NAME
-
-    def refuse(*args, **kwargs):
-        raise AssertionError("the second ask should have been a cache hit")
-
-    monkeypatch.setattr(agent_package.urllib.request, "urlopen", refuse)
     assert cache.package(family="deb", architecture="arm64") == path
+    assert len(fetched_files(fetcher)) == 1
 
 
-def test_a_release_that_serves_something_else_is_refused_and_kept_nowhere(
-    cache, tmp_path, monkeypatch
+def test_a_site_serving_something_else_is_dropped_and_its_file_cached_nowhere(
+    tmp_path,
 ):
-    write_manifest(
-        tmp_path / "agent_packages.json",
+    write_manifest(tmp_path / "agent_packages.json", {"deb-arm64": entry(DEB_ARM_NAME)})
+    fetcher = FakeSourceFetcher(
         {
-            "deb-arm64": {
-                "name": DEB_ARM_NAME,
-                "url": RELEASE_URL,
-                "sha256": "0" * 64,
-                "size": 9,
-            }
-        },
+            f"{FIRST_SITE}/{DEB_ARM_NAME}": b"!<arch>another build",
+            f"{SECOND_SITE}/{DEB_ARM_NAME}": b"!<arch>a third build",
+        }
     )
-    answers(monkeypatch, DEB_BYTES)
 
     with pytest.raises(AgentArtifactFetchError) as refused:
-        cache.package(family="deb", architecture="arm64")
+        make_cache(tmp_path, fetcher=fetcher).package(
+            family="deb", architecture="arm64"
+        )
 
-    assert refused.value.code == "agent_package_sha256_mismatch"
-    assert refused.value.params["received"] == DEB_DIGEST
-    assert os.listdir(tmp_path / "agent_cache") == []
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["file"] == DEB_ARM_NAME
+    assert [item["reason"] for item in refused.value.params["sources"]] == [
+        "digest_mismatch",
+        "digest_mismatch",
+    ]
+    assert list(tmp_path.glob("agent_cache/*")) == []
 
 
-def test_a_platform_with_no_url_and_nothing_held_is_refused_by_name(cache, tmp_path):
-    """A local build seeds what it made and stamps no URL for the rest; the
-    refusal says which platform rather than handing over another machine's."""
+def test_a_build_with_no_release_sites_refuses_the_rest_by_name(tmp_path):
+    """A checkout, or a local build, names no site: what it did not seed is
+    refused by name rather than handing over another machine's build."""
     write_manifest(
         tmp_path / "agent_packages.json",
         {"rpm-arm64": entry("neutrino-agent-0.1.0-1.aarch64.rpm")},
     )
+    cache = make_cache(tmp_path, sites=())
 
     with pytest.raises(AgentArtifactFetchError) as refused:
         cache.package(family="rpm", architecture="arm64")
@@ -254,21 +271,19 @@ def test_a_platform_with_no_url_and_nothing_held_is_refused_by_name(cache, tmp_p
 
 
 def test_a_platform_the_manifest_never_names_is_refused_by_name(cache, tmp_path):
-    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": {"url": ""}})
+    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
 
     with pytest.raises(AgentArtifactFetchError) as refused:
         cache.package(family="msi", architecture="amd64")
 
+    assert refused.value.code == "agent_package_missing"
     assert refused.value.params == {"platform": "msi-amd64"}
 
 
 def test_a_pinned_build_wins_over_the_manifest(cache, tmp_path):
     """A build dropped in by hand is a decision, and it beats both the seeded
     file and anything the release publishes."""
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-amd64": entry(DEB_NAME, url=RELEASE_URL)},
-    )
+    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
     seed(tmp_path / "agent_cache", DEB_NAME, DEB_BYTES)
     (tmp_path / "pinned" / "neutrino-agent_0.2.0_amd64.deb").write_bytes(b"pinned")
 
@@ -293,28 +308,10 @@ def test_a_hub_carrying_nothing_says_so_before_a_device_is_reached(cache):
 
 
 def test_a_stamped_manifest_alone_is_a_hub_that_carries_something(cache, tmp_path):
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-amd64": entry(DEB_NAME, url=RELEASE_URL)},
-    )
+    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
 
     assert cache.has_packages()
     assert cache.serves(family="deb", architecture="amd64")
-
-
-def test_the_release_url_is_where_the_build_stamped_the_packages(cache, tmp_path):
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-amd64": entry(DEB_NAME, url=RELEASE_URL)},
-    )
-
-    assert cache.release_url() == "https://example.invalid"
-
-
-def test_a_build_that_stamped_no_url_names_no_release(cache, tmp_path):
-    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
-
-    assert cache.release_url() == ""
 
 
 def test_a_pinned_build_alone_is_a_hub_that_carries_something(cache, tmp_path):
@@ -330,32 +327,30 @@ def test_an_unreadable_manifest_is_a_hub_that_knows_no_platform(cache, tmp_path)
     assert not cache.has_packages()
 
 
-# --- another platform's package comes from the release ---------------------
+# --- another platform's package comes from the release sites ---------------
 
 MSI_NAME = "neutrino-agent-0.1.0-windows-amd64.msi"
 MSI_BYTES = b"MZ an agent installer"
-MSI_URL = f"https://example.invalid/{MSI_NAME}"
 
 
-def test_a_deb_hub_fetches_the_windows_installer_and_checks_it(
-    cache, tmp_path, monkeypatch
-):
+def test_a_deb_hub_fetches_the_windows_installer_and_checks_it(tmp_path):
     """The hub carries its own platform's package alone; a Windows agent
     updating itself is served the release's file once it hashes right."""
     write_manifest(
         tmp_path / "agent_packages.json",
         {
-            "deb-amd64": entry(DEB_NAME, url=RELEASE_URL),
-            "msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES),
+            "deb-amd64": entry(DEB_NAME),
+            "msi-amd64": entry(MSI_NAME, content=MSI_BYTES),
         },
     )
     seed(tmp_path / "agent_cache", DEB_NAME, DEB_BYTES)
-    served = answers(monkeypatch, MSI_BYTES)
+    fetcher = FakeSourceFetcher({f"{FIRST_SITE}/{MSI_NAME}": MSI_BYTES})
+    cache = make_cache(tmp_path, fetcher=fetcher)
 
     assert cache.package(family="deb", architecture="amd64").name == DEB_NAME
     path = cache.package(family="msi", architecture="amd64")
 
-    assert served == [MSI_URL]
+    assert [file for file, _ in fetched_files(fetcher)] == [MSI_NAME]
     assert path == tmp_path / "agent_cache" / MSI_NAME
     assert path.read_bytes() == MSI_BYTES
 
@@ -363,7 +358,7 @@ def test_a_deb_hub_fetches_the_windows_installer_and_checks_it(
 def test_an_entry_that_pins_no_hash_is_never_fetched(cache, tmp_path):
     """A fetch is kept only once it matches; with nothing to match it against
     the platform is refused by name and nothing is downloaded."""
-    unpinned = entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)
+    unpinned = entry(MSI_NAME, content=MSI_BYTES)
     unpinned["sha256"] = ""
     write_manifest(tmp_path / "agent_packages.json", {"msi-amd64": unpinned})
 
@@ -374,81 +369,62 @@ def test_an_entry_that_pins_no_hash_is_never_fetched(cache, tmp_path):
     assert not cache.serves(family="msi", architecture="amd64")
 
 
-def test_an_unreachable_release_is_refused_with_its_own_code(
-    cache, tmp_path, monkeypatch
-):
+def test_no_site_serving_the_file_names_each_site_and_why(tmp_path):
     write_manifest(
         tmp_path / "agent_packages.json",
-        {"msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)},
+        {"msi-amd64": entry(MSI_NAME, content=MSI_BYTES)},
     )
-
-    def unreachable(*args, **kwargs):
-        raise OSError("Name or service not known")
-
-    monkeypatch.setattr(agent_package.urllib.request, "urlopen", unreachable)
 
     with pytest.raises(AgentArtifactFetchError) as refused:
-        cache.package(family="msi", architecture="amd64")
+        make_cache(tmp_path, fetcher=FakeSourceFetcher()).package(
+            family="msi", architecture="amd64"
+        )
 
-    assert refused.value.code == "agent_package_fetch_failed"
-    assert list((tmp_path / "agent_cache").glob("*")) == []
+    assert refused.value.code == "download_failed"
+    assert refused.value.params["sources"] == [
+        {"source": f"{FIRST_SITE}/{MSI_NAME}", "reason": "http_404", "detail": ""},
+        {"source": f"{SECOND_SITE}/{MSI_NAME}", "reason": "http_404", "detail": ""},
+    ]
+    assert list(tmp_path.glob("agent_cache/*")) == []
 
 
-def test_a_held_file_that_no_longer_hashes_right_is_fetched_again(
-    cache, tmp_path, monkeypatch
-):
+def test_a_held_file_that_no_longer_hashes_right_is_fetched_again(tmp_path):
     write_manifest(
         tmp_path / "agent_packages.json",
-        {"msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)},
+        {"msi-amd64": entry(MSI_NAME, content=MSI_BYTES)},
     )
     seed(tmp_path / "agent_cache", MSI_NAME, b"MZ a truncated download")
-    served = answers(monkeypatch, MSI_BYTES)
+    fetcher = FakeSourceFetcher({f"{FIRST_SITE}/{MSI_NAME}": MSI_BYTES})
 
-    path = cache.package(family="msi", architecture="amd64")
+    path = make_cache(tmp_path, fetcher=fetcher).package(
+        family="msi", architecture="amd64"
+    )
 
-    assert served == [MSI_URL]
+    assert len(fetched_files(fetcher)) == 1
     assert path.read_bytes() == MSI_BYTES
 
 
-class BrokenResponse(io.BytesIO):
-    """A body that breaks off after its first chunk."""
-
-    def read(self, size=-1):
-        if self.tell() > 0:
-            raise ConnectionResetError("the peer went away")
-        return super().read(size)
-
-
-def test_a_release_that_breaks_off_is_refused_and_leaves_nothing_behind(
-    cache, tmp_path, monkeypatch
-):
-    body = b"!<arch>" + b"x" * (1024 * 1024)
-    write_manifest(
-        tmp_path / "agent_packages.json",
-        {"deb-arm64": entry(DEB_ARM_NAME, url=RELEASE_URL, content=body)},
-    )
-    monkeypatch.setattr(
-        agent_package.urllib.request,
-        "urlopen",
-        lambda url, timeout=None, context=None: BrokenResponse(body),
-    )
-
-    with pytest.raises(AgentArtifactFetchError) as refused:
-        cache.package(family="deb", architecture="arm64")
-
-    assert refused.value.code == "agent_package_fetch_failed"
-    assert os.listdir(tmp_path / "agent_cache") == []
-
-
-def test_a_large_release_lands_whole_under_its_name(cache, tmp_path, monkeypatch):
+def test_the_real_fetcher_takes_the_package_from_a_site_on_loopback(tmp_path):
+    """One end-to-end fetch: the stamped site, the tag, the file's name and the
+    digest, through the fetcher every download uses."""
     body = b"!<arch>" + os.urandom(3 * 1024 * 1024)
     write_manifest(
         tmp_path / "agent_packages.json",
-        {"deb-arm64": entry(DEB_ARM_NAME, url=RELEASE_URL, content=body)},
+        {"deb-arm64": entry(DEB_ARM_NAME, content=body)},
     )
-    answers(monkeypatch, body)
+    site = Source(Behaviour(body=body))
+    try:
+        base = f"http://127.0.0.1:{site.server.server_port}"
+        cache = make_cache(
+            tmp_path,
+            fetcher=loopback_fetcher(),
+            sites=({"files": base + "/{tag}/", "latest": base + "/latest.json"},),
+        )
 
-    path = cache.package(family="deb", architecture="arm64")
+        path = cache.package(family="deb", architecture="arm64")
+    finally:
+        site.close()
 
     assert path.read_bytes() == body
     assert os.listdir(tmp_path / "agent_cache") == [DEB_ARM_NAME]
+    assert site.behaviour.ranges[0].startswith("bytes=0-")

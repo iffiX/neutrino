@@ -1,9 +1,9 @@
 """The parts of ``packaging/ci/podman_macos.py`` that run before the runner's root step.
 
 The check itself installs Podman on a macOS runner; what is asserted here is
-what feeds it: the cache key made of the branch's pinned digests, and the
-fetch that downloads each missing file, keeps a cached one and refuses a
-file whose digest is not its pin.
+what feeds it: the cache key made of the entry's pinned digests, and the
+fetch that downloads each missing artifact from its first source, keeps a
+cached one and refuses a file whose digest is not its pin.
 """
 
 import hashlib
@@ -37,37 +37,38 @@ def branch(platform_name: str) -> dict:
 
 
 @pytest.mark.parametrize("platform_name", ["darwin-arm64", "darwin-amd64"])
-def test_the_cache_key_names_the_branchs_pkg_and_image_digests(script, platform_name):
+def test_the_cache_key_names_the_entrys_pkg_and_image_digests(script, platform_name):
     pins = {
-        item["name"]: item["sha256"] for item in branch(platform_name)["components"]
+        item["name"]: item["digest"].removeprefix("sha256:")
+        for item in branch(platform_name)["install"]["params"]["artifacts"]
     }
 
     assert script.cache_key(platform_name) == (
-        f"podman_{platform_name}_{pins['installer']}_{pins['image']}"
+        f"podman_{platform_name}_{pins['podman']}_{pins['image']}"
     )
 
 
 def pinned_to(monkeypatch, script, contents: dict) -> list:
-    """The manifest's darwin-arm64 branch pinned to these bytes per name."""
-    components = [
+    """The manifest's darwin-arm64 entry pinned to these bytes per name."""
+    artifacts = [
         {
             "name": name,
-            "url": f"https://example.invalid/{name}",
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "package_kind": "pkg" if name == "installer" else "raw_zst",
+            "kind": "pkg" if name == "podman" else "raw_zst",
+            "file": f"{name}-{{version}}",
+            "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+            "sources": ["https://example.invalid/{file}"],
         }
         for name, data in contents.items()
     ]
     fetched = []
 
     def branch_of(platform_name):
-        return {"components": components}
+        return {"install": {"params": {"version": "1", "artifacts": artifacts}}}
 
     def urlopen(url):
         fetched.append(url)
-        return io.BytesIO(
-            b"tampered" if "bad" in url else contents[url.rsplit("/")[-1]]
-        )
+        name = url.rsplit("/")[-1].removesuffix("-1")
+        return io.BytesIO(b"tampered" if "bad" in url else contents[name])
 
     monkeypatch.setattr(script, "_branch", branch_of)
     monkeypatch.setattr(script.urllib.request, "urlopen", urlopen)
@@ -78,7 +79,7 @@ def test_fetch_downloads_each_missing_file_under_the_agents_name(
     script, monkeypatch, tmp_path
 ):
     fetched = pinned_to(
-        monkeypatch, script, {"installer": b"pkg bytes", "image": b"zstd bytes"}
+        monkeypatch, script, {"podman": b"pkg bytes", "image": b"zstd bytes"}
     )
 
     script.fetch("darwin-arm64", tmp_path)
@@ -86,8 +87,8 @@ def test_fetch_downloads_each_missing_file_under_the_agents_name(
     assert (tmp_path / "installer.pkg").read_bytes() == b"pkg bytes"
     assert (tmp_path / "image.raw.zst").read_bytes() == b"zstd bytes"
     assert fetched == [
-        "https://example.invalid/installer",
-        "https://example.invalid/image",
+        "https://example.invalid/podman-1",
+        "https://example.invalid/image-1",
     ]
     assert sorted(path.name for path in tmp_path.iterdir()) == [
         "image.raw.zst",
@@ -99,14 +100,14 @@ def test_fetch_keeps_a_cached_file_whose_digest_is_its_pin(
     script, monkeypatch, tmp_path
 ):
     fetched = pinned_to(
-        monkeypatch, script, {"installer": b"pkg bytes", "image": b"zstd bytes"}
+        monkeypatch, script, {"podman": b"pkg bytes", "image": b"zstd bytes"}
     )
     (tmp_path / "installer.pkg").write_bytes(b"pkg bytes")
     (tmp_path / "image.raw.zst").write_bytes(b"an older image")
 
     script.fetch("darwin-arm64", tmp_path)
 
-    assert fetched == ["https://example.invalid/image"]
+    assert fetched == ["https://example.invalid/image-1"]
     assert (tmp_path / "image.raw.zst").read_bytes() == b"zstd bytes"
 
 
@@ -118,5 +119,5 @@ def test_fetch_refuses_a_file_whose_digest_is_not_its_pin(
     with pytest.raises(SystemExit) as refused:
         script.fetch("darwin-arm64", tmp_path)
 
-    assert "https://example.invalid/bad" in str(refused.value)
+    assert "https://example.invalid/bad-1" in str(refused.value)
     assert list(tmp_path.iterdir()) == []

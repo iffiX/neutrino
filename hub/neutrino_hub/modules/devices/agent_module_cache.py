@@ -1,207 +1,92 @@
-"""Turning "this machine, on this platform, wants this module" into bytes.
+"""The module cache: the files a module's installer fetches for managed machines.
 
-The hub is the only thing that fetches a module, so everything a fetch needs
-— the manifest's platform table and GitHub's release API — lives here rather
-than on a machine that carries no dependencies.
-
-**The cache key is the module name, the component's name where the entry
-lists components, the platform key it resolved, and a digest of the
-resolved download itself.** A manifest carries no version number,
-so the entry is the only honest identity of what will be installed: change
-its url, its package kind or its install arguments and the digest changes
-with it, which is what stops a manifest edit from being served yesterday's
-file. Nothing but the key names a file, so losing the directory costs a
-download and nothing else. Once a new file is in place, the files held for
-the same module, component and platform under another digest are deleted.
+The hub is the one thing that fetches a module's files. For a ``package
+{module, artifact, digest}`` stream the cache resolves the module's entry for
+the asking machine's platform, finds the artifact of that name and digest,
+and serves the file it keeps under that digest, fetching it first when it is
+not held: every source the manifest names, filled in, through the method
+every download uses (:mod:`neutrino_hub.utils.source_fetch`), the digest and
+the head checked, a file larger than 2 GiB refused. Once a new file is in
+place, the files of no module some machine names, and of no version the
+manifests pin, are deleted; cc-switch's pinned files stay.
 
 Not pure: fetches over the network and writes under the state root.
 """
 
-import hashlib
-import json
 import re
 import shutil
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.exceptions import (
+    AgentArtifactFetchError,
+    DownloadFailedError,
+    DownloadTooLargeError,
+)
 from neutrino_hub.modules.devices.constants import (
-    AGENT_MODULE_PACKAGE_MAGIC,
-    AGENT_MODULE_FETCH_HEADERS,
     AGENT_MODULE_CACHE_DIR,
-    AGENT_MODULE_EDITION_CN,
-    AGENT_MODULE_EDITION_INTL,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
-    AGENT_MODULE_FETCH_TIMEOUT_S,
-    AGENT_MODULE_GITHUB_API,
-    AGENT_MODULE_KEY_DIGEST_CHARS,
-    AGENT_MODULE_LISTING_LIMIT_BYTES,
+    AGENT_MODULE_PACKAGE_MAGIC,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
-    AGENT_MODULE_PROGRESS_VERB_DOWNLOAD,
-    AGENT_MODULE_RELEASE_PLACEHOLDER,
+    DEVICE_ARTIFACT_FILE_KINDS,
 )
-from neutrino_hub.modules.devices.manifests import branch_identity
-from neutrino_hub.modules.devices.streamed_file import (
-    DownloadedFile,
+from neutrino_hub.modules.devices.manifests import (
+    artifact_file,
+    artifact_sources,
+    entry_artifacts,
+    entry_version,
+    load_module_manifests,
+    load_tool_manifests,
+    resolve_platform_entry,
+)
+from neutrino_hub.utils.source_fetch import (
+    REASON_DIGEST_MISMATCH,
+    SourceFetcher,
+    failure_entry,
     file_sha256,
-    stream_to_file,
+    hex_of,
 )
-from neutrino_hub.utils.tls_trust import public_ssl_context
+
+# A file the cache keeps is named by its digest's hex.
+CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass
 class AgentModuleArtifact:
-    """One module's bytes on the hub's own disk.
+    """One artifact's file on the hub's own disk.
 
     Attributes:
-        key: What addresses it in the cache, and what an agent asks for.
-        path: Where the file is.
-        digest: Its SHA-256, which the agent checks what it received against.
-        package_kind: The kind the manifest names.
-        component: The component's name; empty for a module with one
-            archive.
+        path: Where the file is, named by its digest.
+        digest: Its ``sha256:<hex>``.
+        file: The artifact's file name, as its sources name it.
         title: What progress lines call it, from :func:`artifact_title`.
     """
 
-    key: str
     path: Path
     digest: str
-    package_kind: str
-    component: str = ""
-    title: str = ""
+    file: str
+    title: str
 
 
-def platform_keys(platform: dict) -> list:
-    """The manifest keys a platform tuple matches, most specific first.
-
-    Args:
-        platform: The tuple the agent reported — ``os``, ``family``, ``arch``.
-
-    Returns:
-        Candidate keys; the first present in a manifest's platform table
-        wins. Empty when the machine has not reported a platform yet.
-    """
-    if not platform:
-        return []
-    os_name = str(platform.get("os", ""))
-    family = str(platform.get("family", ""))
-    arch = str(platform.get("arch", ""))
-    keys = []
-    if family:
-        keys.append(f"{os_name}-{family}-{arch}")
-        keys.append(f"{os_name}-{family}")
-    keys.append(f"{os_name}-{arch}")
-    keys.append(os_name)
-    return keys
-
-
-def resolve_platform_entry(manifest: dict, platform: dict) -> tuple:
-    """The manifest's entry for one platform, and the key it matched.
+def looks_like_kind(head: bytes, kind: str) -> bool:
+    """Whether a file's first bytes open like its artifact kind.
 
     Args:
-        manifest: The module's manifest.
-        platform: The tuple the agent reported.
+        head: The file's first bytes.
+        kind: The artifact's kind.
 
     Returns:
-        ``(platform_key, entry)``, or ``("", None)`` when the manifest
-        offers this platform nothing. An entry whose ``min_version`` is
-        above the tuple's ``version`` is no entry; a tuple with no
-        ``version`` is not ruled out.
+        True when the head starts with one of the kind's magic prefixes, or
+        when the kind names none.
     """
-    platforms = manifest.get("platforms", {})
-    for key in platform_keys(platform):
-        if key in platforms:
-            entry = platforms[key]
-            floor = entry.get("min_version", "") if isinstance(entry, dict) else ""
-            if is_version_below(str(platform.get("version", "") or ""), str(floor)):
-                return "", None
-            return key, entry
-    return "", None
-
-
-def resolve_component(entry: dict, component: str = "") -> tuple:
-    """The download one platform entry names for one component.
-
-    Args:
-        entry: The manifest's entry for the platform.
-        component: The component's name; empty asks for the entry's one
-            archive, which on an entry listing components is its one
-            component.
-
-    Returns:
-        ``(component_name, source)``: the name the download is kept under,
-        empty for a module with one archive, and the mapping that names its
-        ``url``, ``sha256`` and ``package_kind``; ``("", None)`` when the
-        entry names no such download.
-    """
-    components = entry.get("components")
-    if not isinstance(components, list):
-        return ("", dict(entry)) if not component else ("", None)
-    if not component and len(components) == 1:
-        component = str(components[0].get("name", "") or "")
-    for candidate in components:
-        if isinstance(candidate, dict) and candidate.get("name") == component:
-            return component, dict(candidate)
-    return "", None
-
-
-def is_version_below(version: str, floor: str) -> bool:
-    """Whether a reported system version is below a manifest's floor.
-
-    Both are dotted numbers compared part by part: ``2.27`` is below
-    ``2.28``, ``15.3.1`` is not below ``12.3``.
-
-    Args:
-        version: What the agent reported; empty when it reported none.
-        floor: The entry's ``min_version``; empty when it names none.
-
-    Returns:
-        True only when both are given and ``version`` is lower.
-    """
-    if not version or not floor:
-        return False
-    return version_parts(version) < version_parts(floor)
-
-
-def version_parts(version: str) -> tuple:
-    """A dotted version as the tuple of its leading numbers.
-
-    Args:
-        version: A version such as ``2.36``, ``26100`` or ``15.3.1``.
-
-    Returns:
-        One int per part, from each part's leading digits; 0 for a part
-        with none.
-    """
-    parts = []
-    for part in version.strip().split("."):
-        lead = re.match(r"\d*", part).group()
-        parts.append(int(lead) if lead else 0)
-    return tuple(parts)
-
-
-def looks_like_package(content: bytes, package_kind: str) -> bool:
-    """Whether a payload opens like its claimed package kind.
-
-    Args:
-        content: The downloaded bytes.
-        package_kind: The kind the manifest names.
-
-    Returns:
-        True when the payload starts with one of the kind's magic prefixes,
-        or when the kind names no magic to check.
-    """
-    magic = AGENT_MODULE_PACKAGE_MAGIC.get(package_kind)
+    magic = AGENT_MODULE_PACKAGE_MAGIC.get(kind)
     if not magic:
         return True
-    return any(content.startswith(prefix) for prefix in magic)
+    return any(head.startswith(prefix) for prefix in magic)
 
 
 def format_megabytes(size: int) -> str:
@@ -216,113 +101,66 @@ def format_megabytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f}"
 
 
-def artifact_title(
-    name: str, manifest: dict, *, entry: "dict | None" = None, component: str = ""
-) -> str:
-    """What progress lines call a module's artifact: its title and version.
+def artifact_title(manifest: dict, entry: dict, artifact: dict) -> str:
+    """What progress lines call one artifact: its module's title and version.
 
     Args:
-        name: The module name, used when the manifest names no title.
-        manifest: Its manifest.
-        entry: The branch resolved for the machine's platform, whose
-            identity gives the version; None reads the manifest's.
-        component: The component's name, named after the version; empty
-            for a module with one archive.
+        manifest: The module's or the tool's manifest.
+        entry: The entry for the machine's platform.
+        artifact: The artifact.
 
     Returns:
-        Such as ``VS Code 1.140.0`` or ``Containers 6.1.4 (image)``.
+        Such as ``VS Code 1.140.0``, or ``Containers 6.1.4 (image)`` for an
+        entry with more than one artifact.
     """
-    title = str(manifest.get("title", "") or name)
-    version = branch_identity(manifest, entry)["version"]
+    title = str(manifest.get("title", "") or manifest.get("name", ""))
+    version = entry_version(manifest, entry)
     titled = f"{title} {version}" if version else title
-    return f"{titled} ({component})" if component else titled
+    if len(entry_artifacts(manifest, entry)) > 1:
+        return f"{titled} ({artifact['name']})"
+    return titled
 
 
-def latest_release_url(listing_url: str, pinned_url: str, listing: str) -> tuple:
-    """The file a mirror's latest release holds in place of the pinned one.
-
-    The pinned file's name with its version left open is looked for among
-    the listing's links.
-
-    Args:
-        listing_url: The mirror's directory of its latest release.
-        pinned_url: The pinned file on the mirror; its name gives the shape.
-        listing: The directory's listing page.
-
-    Returns:
-        ``(url, version)``: the file's address and the version its name holds.
-
-    Raises:
-        AgentArtifactFetchError: ``no_download_named`` when no link has the
-            pinned name's shape.
-    """
-    name = urllib.parse.unquote(pinned_url.rsplit("/", 1)[-1])
-    found = re.search(r"\d+(?:\.\d+)+", name)
-    if found is None:
-        raise AgentArtifactFetchError("no_download_named", url=listing_url)
-    shape = re.compile(
-        re.escape(name[: found.start()])
-        + r"(\d+(?:\.\d+)+)"
-        + re.escape(name[found.end() :])
-        + r"\Z"
-    )
-    for link in re.findall(r'href="([^"]+)"', listing):
-        candidate = urllib.parse.unquote(link.rsplit("/", 1)[-1])
-        matched = shape.match(candidate)
-        if matched:
-            return urllib.parse.urljoin(listing_url, link), matched.group(1)
-    raise AgentArtifactFetchError("no_download_named", url=listing_url)
-
-
-class AgentModuleFetchProgress:
-    """Turns a running byte count into ``hub: downloading`` or ``hub: sending`` lines.
+class AgentModuleSendProgress:
+    """Turns a running byte count into ``hub: sending`` lines.
 
     A line is written for the first chunk, then each time the share of the
-    bytes moved grows by :data:`AGENT_MODULE_PROGRESS_PERCENT_STEP` percent
-    or :data:`AGENT_MODULE_PROGRESS_INTERVAL_S` seconds pass, and for the
-    last. The cache's download and the ``package`` stream's send both count
-    by it.
+    bytes sent grows by :data:`AGENT_MODULE_PROGRESS_PERCENT_STEP` percent or
+    :data:`AGENT_MODULE_PROGRESS_INTERVAL_S` seconds pass, and for the last.
     """
 
     def __init__(
         self,
         *,
         title: str,
+        recipient: str,
         on_line: Callable[[str], None],
         clock: Callable[[], float] = time.monotonic,
-        verb: str = AGENT_MODULE_PROGRESS_VERB_DOWNLOAD,
-        recipient: str = "",
     ):
         """
         Args:
-            title: The artifact's title and version, from
-                :func:`artifact_title`.
+            title: The artifact's title, from :func:`artifact_title`.
+            recipient: The machine the bytes go to.
             on_line: Called with each line.
             clock: Seconds, monotonic; injected by tests.
-            verb: What the hub is doing with the bytes, the line's second
-                word.
-            recipient: The machine the bytes go to, named after the
-                amount; empty for a download.
         """
         self._title = title
-        self._source = ""
+        self._recipient = recipient
         self._on_line = on_line
         self._clock = clock
-        self._verb = verb
-        self._recipient = recipient
         self._last_at: "float | None" = None
         self._last_percent = 0
 
-    def note(self, received: int, total: int, *, is_done: bool = False) -> None:
+    def note(self, sent: int, total: int, *, is_done: bool = False) -> None:
         """Take the byte count after one chunk, writing a line when one is due.
 
         Args:
-            received: Bytes received so far.
-            total: The size the server announced; 0 when it announced none.
-            is_done: Whether the download has ended.
+            sent: Bytes sent so far.
+            total: The file's size; 0 when unknown.
+            is_done: Whether the send has ended.
         """
         now = self._clock()
-        percent = received * 100 // total if total > 0 else 0
+        percent = sent * 100 // total if total > 0 else 0
         is_due = (
             is_done
             or self._last_at is None
@@ -333,267 +171,203 @@ class AgentModuleFetchProgress:
             return
         self._last_at = now
         self._last_percent = percent
-        self._on_line(self._line(received, total))
-
-    def fetching(self, url: str) -> None:
-        """Name the host a download now comes from in the lines that follow.
-
-        Args:
-            url: The address being fetched.
-        """
-        self._source = urllib.parse.urlsplit(url).hostname or ""
-        self._last_at = None
-        self._last_percent = 0
-
-    def say(self, line: str) -> None:
-        """Write one line of the fetch's own beside the progress.
-
-        Args:
-            line: The line.
-        """
-        self._on_line(line)
-
-    def _line(self, received: int, total: int) -> str:
-        """One progress line for this byte count."""
-        amount = format_megabytes(received)
+        amount = format_megabytes(sent)
         if total > 0:
             amount = f"{amount} / {format_megabytes(total)}"
-        origin = f" from {self._source}" if self._source else ""
-        recipient = f" to {self._recipient}" if self._recipient else ""
-        return f"hub: {self._verb} {self._title}{origin}, {amount} MB{recipient}"
+        self._on_line(f"hub: sending {self._title}, {amount} MB to {self._recipient}")
 
 
 class AgentModuleCache:
-    """Resolves a module to bytes, fetching each artifact exactly once."""
+    """Serves each module artifact by its digest, fetching it exactly once."""
 
     def __init__(
         self,
         *,
         root: "Path | None" = None,
-        edition: str = AGENT_MODULE_EDITION_INTL,
-        release_url: str = "",
+        fetcher: "SourceFetcher | None" = None,
+        named_modules: "Callable[[], set] | None" = None,
     ):
         """
         Args:
-            root: Where artifacts are kept; the state root's own directory
-                by default.
-            edition: The hub's edition; ``cn`` fetches from an entry's
-                ``cn_url`` where the entry names one.
-            release_url: Where this hub's own release publishes its files,
-                which a ``cn_url`` naming ``{release}`` is read under; empty
-                for a hub no release stamped.
+            root: Where files are kept; the state root's own directory by
+                default.
+            fetcher: The fetcher every download goes through; a new one by
+                default.
+            named_modules: Returns the modules some machine names; their
+                files are kept and every other module's go. None keeps every
+                module's files.
         """
         self._root = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
-        self._edition = edition
-        self._release_url = release_url
+        self._fetcher = fetcher if fetcher is not None else SourceFetcher()
+        self._named_modules = named_modules
         self._guard = threading.Lock()
         self._fetch_locks: dict = {}
-
-    def artifact_key(
-        self, *, name: str, manifest: dict, platform: dict, component: str = ""
-    ) -> str:
-        """What addresses this module's artifact for this platform.
-
-        Args:
-            name: The module name.
-            manifest: Its manifest.
-            platform: The tuple the agent reported.
-            component: The component's name; empty for the entry's one
-                archive.
-
-        Returns:
-            The cache key, empty when the manifest offers this platform
-            nothing or names no such component.
-        """
-        platform_key, entry = resolve_platform_entry(manifest, platform)
-        if entry is None:
-            return ""
-        component, source = resolve_component(entry, component)
-        if source is None:
-            return ""
-        return self._key(
-            name=name, platform_key=platform_key, component=component, source=source
-        )
 
     def artifact(
         self,
         *,
-        name: str,
-        manifest: dict,
+        module: str,
+        artifact: str,
+        digest: str,
         platform: dict,
-        component: str = "",
         on_progress: "Callable[[str], None] | None" = None,
     ) -> AgentModuleArtifact:
-        """The module's bytes for this platform, fetched if they are not held.
+        """The file of one artifact of a module, fetched if it is not held.
 
-        Two devices of one platform asking at once share the single fetch:
-        the second waits on the first rather than starting its own, and
-        finds the file already there when it is let through.
+        Two devices asking for one digest at once share the single fetch:
+        the second waits on the first, and finds the file there when it is
+        let through.
 
         Args:
-            name: The module name.
-            manifest: Its manifest.
-            platform: The tuple the agent reported.
-            component: The component's name on an entry that lists
-                components; empty for the entry's one archive.
+            module: The module, or the tool, the stream names.
+            artifact: The artifact's name.
+            digest: The ``sha256:<hex>`` the stream asks for.
+            platform: The tuple the asking agent reported.
             on_progress: Called on this thread with each ``hub:`` line: the
-                download's progress, or that the artifact is in the cache.
-                None writes no line.
+                fetch's ``hub: fetching`` lines, or that the file is in the
+                cache. None writes no line.
 
         Returns:
             The artifact.
 
         Raises:
-            AgentArtifactFetchError: ``no_platform_build`` when the manifest
-                offers this platform nothing, ``no_download_named`` when its
-                entry names neither a url nor a release to resolve or no
-                component of that name, and the fetch's own typed reasons
-                otherwise.
+            AgentArtifactFetchError: ``module_unknown {name}`` for a name no
+                manifest names, ``no_platform_build {module}`` when the
+                manifest names no entry for the platform,
+                ``module_artifact_unknown {module, artifact, digest}`` when
+                the entry names no such artifact with that digest,
+                ``download_failed {file, sources}`` when no source serves
+                it, ``module_fetch_too_large {limit_mb}`` for a file past 2
+                GiB, and ``module_cache_unwritable {detail}`` when the cache
+                cannot be written.
         """
-        platform_key, entry = resolve_platform_entry(manifest, platform)
-        if entry is None:
-            raise AgentArtifactFetchError("no_platform_build")
-        component, source = resolve_component(entry, component)
-        if source is None:
-            raise AgentArtifactFetchError("no_download_named", component=component)
-        package_kind = str(source.get("package_kind", "") or "")
-        key = self._key(
-            name=name, platform_key=platform_key, component=component, source=source
+        manifest = load_module_manifests().get(module) or load_tool_manifests().get(
+            module
         )
-        path = self._root / key
-
-        title = artifact_title(name, manifest, entry=entry, component=component)
-        with self._lock_for(key):
-            held = self._read_held(path)
-            if held is None:
-                progress = None
-                if on_progress is not None:
-                    progress = AgentModuleFetchProgress(
-                        title=title, on_line=on_progress
-                    )
-                download = self._fetch(source, progress=progress)
-                self._place(download, path)
-                self._prune_superseded(path)
-                held = download.sha256
-            elif on_progress is not None:
-                on_progress(f"hub: {title} is in the cache")
-            return AgentModuleArtifact(
-                key=key,
-                path=path,
-                digest=held,
-                package_kind=package_kind,
-                component=component,
-                title=title,
+        if manifest is None:
+            raise AgentArtifactFetchError("module_unknown", name=module)
+        _, entry = resolve_platform_entry(manifest, platform)
+        if entry is None:
+            raise AgentArtifactFetchError("no_platform_build", module=module)
+        named = self._named_artifact(manifest, entry, artifact, digest)
+        if named is None:
+            raise AgentArtifactFetchError(
+                "module_artifact_unknown",
+                module=module,
+                artifact=artifact,
+                digest=digest,
             )
+        version = entry_version(manifest, entry)
+        file = artifact_file(named, version)
+        title = artifact_title(manifest, entry, named)
+        hexed = hex_of(digest)
+        path = self._root / hexed
+        with self._lock_for(hexed):
+            if self._is_held(path, hexed):
+                if on_progress is not None:
+                    on_progress(f"hub: {title} is in the cache")
+            else:
+                self._fetch(named, file, version, digest, path, on_progress)
+                self._prune()
+        return AgentModuleArtifact(path=path, digest=digest, file=file, title=title)
 
-    def artifact_for_key(
-        self, key: str, *, sources: dict, platform: dict
-    ) -> AgentModuleArtifact:
-        """The artifact a key names, fetching it again if it is not held.
-
-        The key is a pure function of the name, the component, the platform
-        and the entry, so it can be resolved back without anything having
-        been remembered. That is what makes losing the directory cost a
-        download and nothing else: an order made before a restart still
-        finds its bytes.
-
-        Args:
-            key: The cache key an order carried.
-            sources: Name to manifest — every artifact this hub can serve.
-            platform: The tuple the asking device reported.
-
-        Returns:
-            The artifact.
-
-        Raises:
-            AgentArtifactFetchError: ``module_artifact_unknown`` when no
-                manifest this hub holds resolves to that key, and the
-                fetch's own typed reasons otherwise.
-        """
-        if not self._is_safe_key(key):
-            raise AgentArtifactFetchError("module_artifact_unknown")
-        for name, manifest in sources.items():
-            for component in _component_names(manifest, platform):
-                asked = self.artifact_key(
-                    name=name, manifest=manifest, platform=platform, component=component
-                )
-                if asked == key:
-                    return self.artifact(
-                        name=name,
-                        manifest=manifest,
-                        platform=platform,
-                        component=component,
-                    )
-        raise AgentArtifactFetchError("module_artifact_unknown", artifact_key=key)
-
-    def held(self, key: str) -> "Path | None":
-        """The artifact a key names, when the cache still holds it.
-
-        Args:
-            key: The cache key.
+    def kept_digests(self) -> set:
+        """The digests the cache keeps files of.
 
         Returns:
-            Its path, or None — a directory cleared since the order reads as
-            nothing held, and the caller resolves the key again instead.
+            The hex digest of every file artifact of every entry of each
+            module some machine names, and of every tool's artifacts.
         """
-        if not self._is_safe_key(key):
-            return None
-        path = self._root / key
-        return path if path.is_file() else None
+        named = self._named_modules() if self._named_modules is not None else None
+        kept = set()
+        sources = list(load_module_manifests().items())
+        sources += list(load_tool_manifests().items())
+        tools = set(load_tool_manifests())
+        for name, manifest in sources:
+            if named is not None and name not in named and name not in tools:
+                continue
+            for entry in (manifest.get("platforms") or {}).values():
+                for artifact in entry_artifacts(manifest, entry):
+                    if artifact.get("kind") in DEVICE_ARTIFACT_FILE_KINDS:
+                        kept.add(hex_of(artifact["digest"]))
+        return kept
 
     @staticmethod
-    def _is_safe_key(key: str) -> bool:
-        """Whether a key names a file in the cache and nowhere else."""
-        return (
-            bool(key) and "/" not in key and "\\" not in key and not key.startswith(".")
-        )
+    def _named_artifact(manifest: dict, entry: dict, name: str, digest: str):
+        """The entry's file artifact of that name and digest, or None."""
+        for artifact in entry_artifacts(manifest, entry):
+            if (
+                artifact.get("name") == name
+                and artifact.get("digest") == digest
+                and artifact.get("kind") in DEVICE_ARTIFACT_FILE_KINDS
+            ):
+                return artifact
+        return None
 
-    def _key(
-        self, *, name: str, platform_key: str, component: str, source: dict
-    ) -> str:
-        """Address one artifact by what would actually be installed."""
-        serialized = json.dumps(source, sort_keys=True, default=str).encode("utf-8")
-        digest = hashlib.sha256(serialized).hexdigest()[:AGENT_MODULE_KEY_DIGEST_CHARS]
-        named = (
-            f"{name}-{component}-{platform_key}"
-            if component
-            else f"{name}-{platform_key}"
-        )
-        safe = "".join(
-            character if character.isalnum() or character in "-_" else "_"
-            for character in named
-        )
-        return f"{safe}-{digest}"
+    def _fetch(self, artifact, file, version, digest, path, on_progress) -> None:
+        """Fetch one artifact from its sources, check it, and put it in place.
 
-    def _prune_superseded(self, path: Path) -> None:
-        """Delete the files held for the same module, component and platform as ``path``.
-
-        Such a file's name is ``path``'s with another digest in place of
-        its own and nothing more, so ``podman-windows-amd64-<digest>``
-        never matches ``podman-image-windows-amd64-<digest>``. A file that
-        cannot be deleted is left.
-
-        Args:
-            path: The file just placed, which stays.
+        Raises:
+            AgentArtifactFetchError: ``download_failed``,
+                ``module_fetch_too_large`` or ``module_cache_unwritable``;
+                nothing is left on disk.
         """
-        named = path.name[: -(AGENT_MODULE_KEY_DIGEST_CHARS + 1)]
-        superseded = re.compile(
-            f"{re.escape(named)}-[0-9a-f]{{{AGENT_MODULE_KEY_DIGEST_CHARS}}}"
-        )
+        try:
+            download = self._fetcher.fetch_file(
+                file=file,
+                sources=artifact_sources(artifact, version),
+                digest=digest,
+                directory=self._root,
+                limit=AGENT_MODULE_FETCH_LIMIT_BYTES,
+                on_line=on_progress,
+            )
+        except DownloadFailedError as error:
+            raise AgentArtifactFetchError(error.code, **error.params) from error
+        except DownloadTooLargeError as error:
+            raise AgentArtifactFetchError(
+                "module_fetch_too_large", limit_mb=error.limit // (1024 * 1024)
+            ) from error
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "module_cache_unwritable", detail=str(error)[:200]
+            ) from error
+        kind = str(artifact.get("kind", ""))
+        if not looks_like_kind(download.head, kind):
+            download.discard()
+            raise AgentArtifactFetchError(
+                DownloadFailedError.code,
+                file=file,
+                sources=[
+                    failure_entry(
+                        download.source,
+                        REASON_DIGEST_MISMATCH,
+                        f"the file does not open like a {kind}",
+                    )
+                ],
+            )
+        try:
+            download.place(path)
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "module_cache_unwritable", detail=str(error)[:200]
+            ) from error
+
+    def _prune(self) -> None:
+        """Delete every file the cache no longer keeps; one that cannot go stays."""
+        kept = self.kept_digests()
         try:
             held = list(self._root.iterdir())
         except OSError:
             return
-        for other in held:
-            if other.name == path.name or not superseded.fullmatch(other.name):
-                continue
-            try:
-                other.unlink()
-            except OSError:
-                continue
+        for path in held:
+            if CACHE_NAME_PATTERN.fullmatch(path.name) and path.name not in kept:
+                try:
+                    path.unlink()
+                except OSError:
+                    continue
 
     def _lock_for(self, key: str) -> threading.Lock:
-        """The one lock every asker for this artifact waits on."""
+        """The one lock every asker for this digest waits on."""
         with self._guard:
             lock = self._fetch_locks.get(key)
             if lock is None:
@@ -602,340 +376,22 @@ class AgentModuleCache:
             return lock
 
     @staticmethod
-    def _read_held(path: Path) -> "str | None":
-        """The digest of an artifact already on disk, or None."""
+    def _is_held(path: Path, hexed: str) -> bool:
+        """Whether the file is there and still hashes to its name."""
         try:
-            return file_sha256(path)
+            return file_sha256(path) == hexed
         except OSError:
-            return None
-
-    @staticmethod
-    def _place(download: DownloadedFile, path: Path) -> None:
-        """Put a checked download in place with one rename.
-
-        Args:
-            download: The download, beside its place.
-            path: Where it belongs.
-
-        Raises:
-            AgentArtifactFetchError: ``module_cache_unwritable``; the
-                download is gone.
-        """
-        try:
-            download.place(path)
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "module_cache_unwritable", detail=str(error)[:200]
-            ) from error
-
-    def _fetch(
-        self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> DownloadedFile:
-        """Get one module's file, written beside its place in the cache and checked.
-
-        A ``cn`` hub fetches from the entry's ``cn_url`` where it names one,
-        reading ``{release}`` in it as its own release's address; when a
-        mirror no longer carries the pinned file and the entry names
-        ``cn_latest_url``, the mirror's current release is taken
-        instead, checked by HTTPS alone. A download that is refused leaves
-        nothing on disk.
-
-        Args:
-            entry: The download named: the platform's entry, or one of its
-                components.
-            progress: Told the byte count after each chunk; None tells nobody.
-
-        Returns:
-            The download, not yet in its place.
-
-        Raises:
-            AgentArtifactFetchError: With the typed reason; a payload that does
-                not open like the entry's package kind is
-                ``module_fetch_failed``, so an error page never gets cached
-                as a package, and one whose digest is not the pinned
-                ``sha256`` is ``module_sha256_mismatch``.
-        """
-        url = str(entry.get("url", "") or "")
-        if not url and entry.get("github_repo"):
-            url = self._resolve_github_asset(
-                str(entry["github_repo"]), str(entry.get("asset_pattern", "") or "")
-            )
-        is_pinned = True
-        cn_url = str(entry.get("cn_url", "") or "")
-        if (
-            self._edition == AGENT_MODULE_EDITION_CN
-            and AGENT_MODULE_RELEASE_PLACEHOLDER in cn_url
-        ):
-            download = self._fetch_from_release(cn_url, progress=progress)
-        elif self._edition == AGENT_MODULE_EDITION_CN and cn_url:
-            download, is_pinned = self._fetch_from_mirror(entry, progress=progress)
-        elif not url:
-            raise AgentArtifactFetchError("no_download_named")
-        else:
-            download = self._fetch_plain(url, progress=progress)
-        try:
-            self._judge(download, entry, is_pinned=is_pinned)
-        except AgentArtifactFetchError:
-            download.discard()
-            raise
-        return download
-
-    @staticmethod
-    def _judge(download: DownloadedFile, entry: dict, *, is_pinned: bool) -> None:
-        """Refuse a download past the limit, of the wrong kind, or off its pin.
-
-        Args:
-            download: The download.
-            entry: The download named: the platform's entry, or one of its
-                components.
-            is_pinned: Whether the entry's ``sha256`` covers the download.
-
-        Raises:
-            AgentArtifactFetchError: ``module_fetch_too_large``,
-                ``module_fetch_failed`` or ``module_sha256_mismatch``.
-        """
-        if download.size > AGENT_MODULE_FETCH_LIMIT_BYTES:
-            raise AgentArtifactFetchError(
-                "module_fetch_too_large",
-                limit_mb=AGENT_MODULE_FETCH_LIMIT_BYTES // (1024 * 1024),
-            )
-        package_kind = str(entry.get("package_kind", "") or "")
-        if not looks_like_package(download.head, package_kind):
-            raise AgentArtifactFetchError(
-                "module_fetch_failed",
-                detail=f"the download does not open like a {package_kind} package",
-            )
-        pinned = str(entry.get("sha256", "") or "").lower()
-        if is_pinned and pinned and pinned != download.sha256:
-            raise AgentArtifactFetchError(
-                "module_sha256_mismatch", expected=pinned, received=download.sha256
-            )
-
-    def _fetch_from_release(
-        self, cn_url: str, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> DownloadedFile:
-        """A file the project's own release publishes, from this hub's release.
-
-        Args:
-            cn_url: The entry's ``cn_url``, naming ``{release}``.
-            progress: Told the byte count after each chunk; None tells nobody.
-
-        Returns:
-            The download, not yet in its place.
-
-        Raises:
-            AgentArtifactFetchError: ``no_download_named`` for a hub no
-                release stamped, ``hub_release_file_gone {file}`` when its
-                release no longer carries the file, and the fetch's own
-                reasons otherwise.
-        """
-        if not self._release_url:
-            raise AgentArtifactFetchError("no_download_named")
-        url = cn_url.replace(
-            AGENT_MODULE_RELEASE_PLACEHOLDER, self._release_url.rstrip("/")
-        )
-        try:
-            return self._fetch_plain(url, progress=progress)
-        except AgentArtifactFetchError as error:
-            if error.params.get("status") == 404:
-                raise AgentArtifactFetchError(
-                    "hub_release_file_gone", file=url.rsplit("/", 1)[-1]
-                ) from error
-            raise
-
-    def _fetch_from_mirror(
-        self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> tuple:
-        """The pinned file from the mirror, or the mirror's current release.
-
-        Args:
-            entry: The manifest's entry, naming ``cn_url`` and maybe
-                ``cn_latest_url``.
-            progress: Told the byte count after each chunk; None tells nobody.
-
-        Returns:
-            ``(download, is_pinned)``: whether the download is the pinned
-            file, which its ``sha256`` checks.
-
-        Raises:
-            AgentArtifactFetchError: ``module_fetch_failed`` when the mirror
-                does not answer, and ``no_download_named`` when its latest
-                release holds no file of the pinned one's name.
-        """
-        pinned_url = str(entry["cn_url"])
-        latest_url = str(entry.get("cn_latest_url", "") or "")
-        try:
-            return self._fetch_plain(pinned_url, progress=progress), True
-        except AgentArtifactFetchError as error:
-            if error.params.get("status") != 404 or not latest_url:
-                raise
-        url, version = latest_release_url(
-            latest_url, pinned_url, self._fetch_listing(latest_url)
-        )
-        if progress is not None:
-            progress.say(
-                f"hub: the mirror no longer carries the pinned release; "
-                f"fetching its current one, {version}, checked by HTTPS alone"
-            )
-        return self._fetch_plain(url, progress=progress), False
-
-    @staticmethod
-    def _fetch_listing(url: str) -> str:
-        """A mirror directory's listing page, up to the listing limit.
-
-        Args:
-            url: The directory.
-
-        Returns:
-            The page's text.
-
-        Raises:
-            AgentArtifactFetchError: ``module_fetch_failed``.
-        """
-        request = urllib.request.Request(url, headers=AGENT_MODULE_FETCH_HEADERS)
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
-                context=public_ssl_context(),
-            ) as response:
-                body = response.read(AGENT_MODULE_LISTING_LIMIT_BYTES)
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "module_fetch_failed", detail=str(error)[:200]
-            ) from error
-        return body.decode("utf-8", "replace")
-
-    def _fetch_plain(
-        self, url: str, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> DownloadedFile:
-        """Fetch directly, with the module fetch headers, into a file in the cache.
-
-        Args:
-            url: What the manifest names.
-            progress: Told the byte count after each chunk; None tells nobody.
-
-        Returns:
-            The download, at most one byte past the fetch limit.
-
-        Raises:
-            AgentArtifactFetchError: ``module_fetch_failed`` when the source
-                does not answer or the body breaks off, with ``status`` for
-                an HTTP refusal; ``module_cache_unwritable`` when the cache
-                cannot be written.
-        """
-        try:
-            self._root.mkdir(parents=True, exist_ok=True)
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "module_cache_unwritable", detail=str(error)[:200]
-            ) from error
-        request = urllib.request.Request(url, headers=AGENT_MODULE_FETCH_HEADERS)
-        if progress is not None:
-            progress.fetching(url)
-        try:
-            response = self._open(request)
-        except urllib.error.HTTPError as error:
-            raise AgentArtifactFetchError(
-                "module_fetch_failed", detail=str(error)[:200], status=error.code
-            ) from error
-        except OSError as error:
-            raise AgentArtifactFetchError(
-                "module_fetch_failed", detail=str(error)[:200]
-            ) from error
-        with response:
-            try:
-                return stream_to_file(
-                    response,
-                    self._root,
-                    limit=AGENT_MODULE_FETCH_LIMIT_BYTES,
-                    on_chunk=progress.note if progress is not None else None,
-                )
-            except ConnectionError as error:
-                raise AgentArtifactFetchError(
-                    "module_fetch_failed", detail=str(error)[:200]
-                ) from error
-            except OSError as error:
-                raise AgentArtifactFetchError(
-                    "module_cache_unwritable", detail=str(error)[:200]
-                ) from error
-
-    @staticmethod
-    def _open(request: urllib.request.Request):
-        """Open one download over the public internet.
-
-        Args:
-            request: The request.
-
-        Returns:
-            The response, to be read and closed by the caller.
-
-        Raises:
-            OSError: When the source does not answer, an HTTP refusal
-                included.
-        """
-        return urllib.request.urlopen(
-            request, timeout=AGENT_MODULE_FETCH_TIMEOUT_S, context=public_ssl_context()
-        )
-
-    @staticmethod
-    def _resolve_github_asset(repo: str, asset_pattern: str) -> str:
-        """The newest release asset whose name ends with a pattern.
-
-        Args:
-            repo: ``owner/name`` on GitHub.
-            asset_pattern: Suffix the wanted asset's file name ends with.
-
-        Returns:
-            The asset's download URL.
-
-        Raises:
-            AgentArtifactFetchError: ``module_release_unreadable`` when the
-                release cannot be read, ``no_download_named`` when nothing
-                in it matches.
-        """
-        request = urllib.request.Request(
-            AGENT_MODULE_GITHUB_API.format(repo=repo),
-            headers=AGENT_MODULE_FETCH_HEADERS,
-        )
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
-                context=public_ssl_context(),
-            ) as response:
-                release = json.load(response)
-        except (OSError, ValueError) as error:
-            raise AgentArtifactFetchError(
-                "module_release_unreadable", repo=repo, detail=str(error)[:200]
-            ) from error
-        for asset in release.get("assets", []):
-            if str(asset.get("name", "")).endswith(asset_pattern):
-                return str(asset.get("browser_download_url", ""))
-        raise AgentArtifactFetchError("no_download_named", repo=repo)
+            return False
 
 
 def clear_module_cache(root: "Path | None" = None) -> None:
-    """Drop every fetched artifact.
+    """Drop every fetched file.
 
     A reset hands the machine back with nothing of the hub's on it, and this
     directory is a cache: what it costs to lose is one download.
 
     Args:
-        root: Where artifacts are kept; the state root's own by default.
+        root: Where files are kept; the state root's own by default.
     """
     directory = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
     shutil.rmtree(directory, ignore_errors=True)
-
-
-def _component_names(manifest: dict, platform: dict) -> list:
-    """Every component name a manifest's entry for a platform lists, or ``[""]``."""
-    _, entry = resolve_platform_entry(manifest, platform)
-    components = entry.get("components") if isinstance(entry, dict) else None
-    if not isinstance(components, list):
-        return [""]
-    return [
-        str(component.get("name", "") or "")
-        for component in components
-        if isinstance(component, dict)
-    ]
