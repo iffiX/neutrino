@@ -27,6 +27,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_ADDED_NAME_PREFIX,
     AGENT_ANSWER_VERB,
+    AGENT_RELAY_RULE_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
     AGENT_RUN_AS_DIR_NAME,
@@ -77,6 +78,7 @@ from neutrino_agent.platforms.windows_accounts import (
     read_users,
 )
 from neutrino_agent.platforms.windows_net import read_interfaces
+from neutrino_agent.platforms.windows_relay import rule_changes, wsl_addresses_from
 from neutrino_agent.platforms.windows_processes import (
     WindowsProcessTable,
     process_entries,
@@ -735,6 +737,46 @@ class WindowsPlatform(AgentPlatform):
             return read_interfaces(self._iphlpapi)
         except (OSError, ValueError):
             return []
+
+    def read_relay_addresses(self) -> list:
+        """The computer's address on WSL's vEthernet adapter, read now.
+
+        Returns:
+            One :class:`RelayAddress` per IPv4 address on the adapter whose
+            name starts ``vEthernet (WSL``; none while WSL has no adapter or
+            the adapters cannot be read.
+        """
+        return wsl_addresses_from(self.read_network_interfaces())
+
+    def sync_relay_rules(self, rules: frozenset) -> list:
+        """Give Windows Firewall one inbound rule per relayed port, scoped to
+        WSL's vEthernet adapter, and remove the agent's rules no relay asks for.
+
+        Args:
+            rules: One :class:`RelayRule` per relay the agent opens.
+
+        Returns:
+            What changed, one line each.
+
+        Raises:
+            OSError: When the PowerShell host cannot read or change the
+                rules, or refuses.
+        """
+        try:
+            found = self.powershell_host.call(
+                "relay_rules_read", {"prefix": AGENT_RELAY_RULE_PREFIX}
+            )
+            add, remove = rule_changes(rules, list(found.get("rules") or []))
+            if not add and not remove:
+                return []
+            self.powershell_host.call(
+                "relay_rules_write", {"add": add, "remove": remove}
+            )
+        except ModuleApplyError as error:
+            raise OSError(f"the relay rules were refused: {error}") from error
+        return [f"removed firewall rule {name}" for name in remove] + [
+            f"added firewall rule {rule['name']} on {rule['alias']}" for rule in add
+        ]
 
     def read_machine_id(self) -> str:
         """The id Windows gave this installation, from the registry.

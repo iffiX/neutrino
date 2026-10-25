@@ -2,8 +2,9 @@
 
 Linux steps down with ``runuser`` and judges people by its own floor; homes
 come from the account database, never ``$HOME``; the interfaces are what
-``ip -j addr`` prints, loopback left out; the machine id is the first file
-systemd or dbus wrote that holds one.
+``ip -j addr`` prints, loopback left out; the relays' addresses are the
+Podman bridges and their rules go to ufw and firewalld; the machine id is
+the first file systemd or dbus wrote that holds one.
 """
 
 import collections
@@ -352,6 +353,30 @@ def test_linux_interfaces_are_empty_when_iproute2_cannot_answer(monkeypatch, out
     monkeypatch.setattr(linux_module.subprocess, "run", answer)
 
     assert LinuxPlatform().read_network_interfaces() == []
+
+
+def test_linux_relay_addresses_are_the_podman_bridges(monkeypatch):
+    found = [object()]
+    monkeypatch.setattr(linux_module, "read_bridges", lambda: found)
+
+    assert LinuxPlatform().read_relay_addresses() is found
+
+
+def test_linux_relay_rules_go_to_ufw_and_firewalld(monkeypatch):
+    asked = []
+
+    class Firewall:
+        def sync(self, rules):
+            asked.append(rules)
+            return ["added ufw rule: allow in on podman1 to 10.89.0.1 port 8317"]
+
+    monkeypatch.setattr(linux_module, "LinuxRelayFirewall", Firewall)
+    rules = frozenset({"rule"})
+
+    lines = LinuxPlatform().sync_relay_rules(rules)
+
+    assert asked == [rules]
+    assert lines == ["added ufw rule: allow in on podman1 to 10.89.0.1 port 8317"]
 
 
 def test_linux_machine_id_is_the_first_file_that_holds_one(monkeypatch, tmp_path):

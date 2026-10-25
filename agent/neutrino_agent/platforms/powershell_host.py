@@ -47,6 +47,8 @@ WINDOWS_POWERSHELL_HOST_OPS = {
     "share_withdraw": "Remove-NeutrinoShare",
     "share_log": "Get-NeutrinoShareLog",
     "share_password": "Set-NeutrinoSharePassword",
+    "relay_rules_read": "Get-NeutrinoRelayRule",
+    "relay_rules_write": "Set-NeutrinoRelayRule",
 }
 # The operations that change the system, after whose answer the host is
 # stopped; every other operation reads.
@@ -62,6 +64,7 @@ WINDOWS_POWERSHELL_HOST_CHANGING_OPS = frozenset(
         "share_withdraw",
         "share_password",
         "added_remove",
+        "relay_rules_write",
     }
 )
 WINDOWS_POWERSHELL_HOST_PROGRAM = "powershell.exe"

@@ -2,8 +2,11 @@
 
 Run is what the systemd unit starts. It binds the socket first, so the
 agent answers ``nagent`` from the moment the loop begins, and closes it once
-the loop has ended.
+the loop has ended. SIGTERM asks the agent to stop rather than ending the
+process, so the relays' firewall rules go with the agent.
 """
+
+import signal
 
 import pytest
 
@@ -31,6 +34,10 @@ class FakeRunAgent(FakeControlAgent):
         super().__init__()
         self._platform = platform
         self.answered = None
+        self.stops = 0
+
+    def stop(self) -> None:
+        self.stops += 1
 
     def run_forever(self) -> None:
         self.answered = client.request(
@@ -61,6 +68,13 @@ def run_stack(tmp_path, monkeypatch):
     monkeypatch.setattr(run_cli, "detect_platform", lambda: platform)
     monkeypatch.setattr(run_cli, "Agent", build_agent)
     monkeypatch.setattr(run_cli, "ControlServer", build_server)
+    handlers = {}
+    monkeypatch.setattr(
+        run_cli.signal,
+        "signal",
+        lambda signum, handler: handlers.__setitem__(signum, handler),
+    )
+    platform.handlers = handlers
     yield platform, agents, servers
     for server in servers:
         server.stop()
@@ -75,6 +89,15 @@ def test_run_serves_the_control_socket_before_the_loop(run_stack):
     assert status == 200
     assert state["version"]
     assert servers[0].socket_path == ""
+
+
+def test_sigterm_asks_the_agent_to_stop(run_stack):
+    platform, agents, _ = run_stack
+
+    run_cli.main()
+    platform.handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+    assert agents[0].stops == 1
 
 
 def test_run_takes_no_flags(monkeypatch):

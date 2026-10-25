@@ -570,6 +570,23 @@ class InstancesModuleRunner(ModuleRunner):
         """Whether an account's install runs or is waited on."""
         return bool(self._hooks.installing)
 
+    def forwarder_ports(self) -> tuple:
+        """The ports the instances' forwarders listen on now, in order.
+
+        Returns:
+            Each listening forwarder's port; none while no forwarder
+            listens.
+        """
+        with self._lock:
+            forwarders = list(self._forwarders.values())
+        return tuple(
+            sorted(
+                forwarder.listen_address[1]
+                for forwarder in forwarders
+                if forwarder.is_listening and forwarder.listen_address[1]
+            )
+        )
+
     def journal_units(self) -> list:
         """Every instance's unit, on Linux."""
         services = [self._service_of(record) for record in self._records.read_all()]

@@ -7,8 +7,9 @@ agent's own; the loop answers one compressed line per request with arrays
 kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
-share or account, the share accounts' sign-in denial and hiding; nothing
-there starts icacls or lists processes, which the agent does itself; a
+share or account, the share accounts' sign-in denial and hiding; a relay's
+rule allows inbound TCP to its port on its adapter alone; nothing there
+starts icacls or lists processes, which the agent does itself; a
 function of a verb that changes the machine asks ``ShouldProcess``; and the
 file is ASCII.
 """
@@ -188,6 +189,22 @@ def test_the_thermal_zones_and_the_removal_keep_what_their_scripts_did():
     assert "& sc.exe delete $name" in removed
     assert "Unregister-ScheduledTask -TaskName $name -Confirm:$false" in removed
     assert "Remove-NetFirewallRule -Name $name" in removed
+
+
+def test_a_relay_s_rule_is_an_inbound_tcp_allow_scoped_to_its_adapter():
+    listed = body("relay_rules_read")
+    written = body("relay_rules_write")
+
+    assert 'Get-NetFirewallRule -Name "$($Request.prefix)*"' in listed
+    assert "Get-NetFirewallPortFilter" in listed
+    assert "Get-NetFirewallInterfaceFilter" in listed
+    assert "Remove-NetFirewallRule -Name $name" in written
+    for part in (
+        "New-NetFirewallRule -Name $rule.name",
+        "-Direction Inbound -Action Allow -Protocol TCP -LocalPort $rule.port",
+        "-InterfaceAlias $rule.alias",
+    ):
+        assert part in written
 
 
 @pytest.mark.parametrize(

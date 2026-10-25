@@ -5,8 +5,9 @@ shell32 are fakes that fill the structures they are handed, the PowerShell
 host is a recording one, ``sc`` and icacls are faked at ``subprocess.run``
 or as the injected runner, the iphlpapi and netapi32 reads are replaced at
 their seam, and the registry is a fake ``winreg``. What is pinned is what
-each source is turned into, every request the host is sent, and the
-one-shot tasks of one account taking turns.
+each source is turned into, every request the host is sent, the
+one-shot tasks of one account taking turns, and the relays on WSL's adapter
+with their firewall rules read and written through the host.
 """
 
 import contextlib
@@ -22,7 +23,7 @@ from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms import win32
-from neutrino_agent.platforms.base import is_added_name
+from neutrino_agent.platforms.base import RelayAddress, RelayRule, is_added_name
 from neutrino_agent.platforms.windows import (
     cmd_argument,
     WindowsHostMetricsReader,
@@ -1508,3 +1509,101 @@ def test_runs_for_two_accounts_do_not_wait_on_each_other(monkeypatch, tmp_path):
     first.join(5)
     second.join(5)
     assert task.host.ops().count("task_remove") == 2
+
+
+# --- the relays ---
+
+WSL_ADAPTER = "vEthernet (WSL (Hyper-V firewall))"
+RELAY_ADAPTERS = [
+    {"name": "Ethernet Instance 0 2", "mac": "", "addresses": ["192.168.122.46"]},
+    {"name": WSL_ADAPTER, "mac": "", "addresses": ["fe80::1", "172.20.208.1"]},
+]
+
+
+def relay_rule(port):
+    return RelayRule(interface=WSL_ADAPTER, address="172.20.208.1", prefix=0, port=port)
+
+
+def test_the_platform_reads_the_wsl_adapter(monkeypatch):
+    monkeypatch.setattr(
+        windows_module, "read_interfaces", lambda iphlpapi: RELAY_ADAPTERS
+    )
+
+    assert WindowsPlatform().read_relay_addresses() == [
+        RelayAddress(interface=WSL_ADAPTER, index=0, address="172.20.208.1", prefix=0)
+    ]
+
+
+def test_the_platform_writes_the_rules_through_the_host_when_they_differ():
+    host = RecordingHost(
+        {
+            "relay_rules_read": {
+                "rules": [
+                    {
+                        "name": "neutrino_agent_relay_9000",
+                        "port": "9000",
+                        "alias": WSL_ADAPTER,
+                    }
+                ]
+            }
+        }
+    )
+
+    lines = WindowsPlatform(powershell=host).sync_relay_rules(
+        frozenset({relay_rule(8317)})
+    )
+
+    assert host.calls == [
+        ("relay_rules_read", {"prefix": "neutrino_agent_relay_"}),
+        (
+            "relay_rules_write",
+            {
+                "add": [
+                    {
+                        "name": "neutrino_agent_relay_8317",
+                        "port": "8317",
+                        "alias": WSL_ADAPTER,
+                    }
+                ],
+                "remove": ["neutrino_agent_relay_9000"],
+            },
+        ),
+    ]
+    assert lines == [
+        "removed firewall rule neutrino_agent_relay_9000",
+        f"added firewall rule neutrino_agent_relay_8317 on {WSL_ADAPTER}",
+    ]
+
+
+def test_the_platform_writes_nothing_when_the_rules_stand():
+    host = RecordingHost(
+        {
+            "relay_rules_read": {
+                "rules": [
+                    {
+                        "name": "neutrino_agent_relay_8317",
+                        "port": "8317",
+                        "alias": WSL_ADAPTER,
+                    }
+                ]
+            }
+        }
+    )
+
+    assert (
+        WindowsPlatform(powershell=host).sync_relay_rules(frozenset({relay_rule(8317)}))
+        == []
+    )
+    assert host.ops() == ["relay_rules_read"]
+
+
+def test_a_refusal_of_the_host_is_an_os_error():
+    host = RecordingHost(
+        {
+            "relay_rules_read": {"rules": []},
+            "relay_rules_write": ModuleApplyError("access_denied", {}),
+        }
+    )
+
+    with pytest.raises(OSError):
+        WindowsPlatform(powershell=host).sync_relay_rules(frozenset({relay_rule(8317)}))

@@ -40,6 +40,7 @@ from neutrino_agent.core.metrics import (
 from neutrino_agent.modules.shared import installers
 from neutrino_agent.platforms.answered_run import run_on_pty
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
+from neutrino_agent.platforms.linux_relay import LinuxRelayFirewall, read_bridges
 
 try:
     import pwd
@@ -166,6 +167,7 @@ class LinuxPlatform(AgentPlatform):
 
     def __init__(self):
         self._metrics_reader = HostMetricsReader()
+        self._relay_firewall = LinuxRelayFirewall()
 
     def human_accounts(self) -> list:
         """The accounts that are people: uid at the floor or above, a shell
@@ -536,6 +538,32 @@ class LinuxPlatform(AgentPlatform):
                 }
             )
         return interfaces
+
+    def read_relay_addresses(self) -> list:
+        """The gateway address of every Podman bridge, read now.
+
+        Returns:
+            One :class:`RelayAddress` per IPv4 address on a ``podmanN`` or
+            ``cni-podmanN`` interface; none while there is no bridge.
+        """
+        return read_bridges()
+
+    def sync_relay_rules(self, rules: frozenset) -> list:
+        """Give ufw and firewalld, where each runs, the agent's rule for each
+        relay, and take away the agent's rules no relay asks for.
+
+        Args:
+            rules: One :class:`RelayRule` per relay the agent opens.
+
+        Returns:
+            What changed, one line each.
+
+        Raises:
+            OSError: When a firewall command cannot start.
+            subprocess.SubprocessError: When one runs past its timeout or
+                fails.
+        """
+        return self._relay_firewall.sync(rules)
 
     def read_machine_id(self) -> str:
         """The machine id systemd or dbus wrote.

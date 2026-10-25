@@ -87,6 +87,46 @@ AGENT_AI_FORWARD_HOST = "127.0.0.1"
 AGENT_AI_FORWARD_PORT = 8317
 AGENT_AI_ENTRY_ID = "ai"
 AGENT_AI_FORWARD_POLL_S = 0.5
+# The relays a container reaches the agent's loopback listeners through:
+# one per listener on each Podman bridge on Linux, netavark's ``podmanN``
+# and CNI's ``cni-podmanN``, and on the adapter of WSL's NAT network on
+# Windows. A relay dials ``127.0.0.1`` on its own port.
+AGENT_RELAY_BRIDGE_PATTERN = r"^(cni-)?podman[0-9]+$"
+AGENT_RELAY_WSL_ADAPTER_PREFIX = "vEthernet (WSL"
+AGENT_RELAY_TARGET_HOST = "127.0.0.1"
+AGENT_RELAY_BACKLOG = 64
+# How a Linux bridge's addresses are read, once the kernel lists a bridge.
+AGENT_RELAY_IP_ADDR_COMMAND = ("ip", "-j", "-4", "addr")
+AGENT_RELAY_IP_ADDR_TIMEOUT_S = 10
+# The relays' firewall rules: ufw's comment, the prefix of a Windows
+# Firewall rule's name before its port, how long the agent goes while it
+# holds rules before it reads the firewall again with no relay changed,
+# and how long one firewall command may take.
+AGENT_RELAY_RULE_COMMENT = "neutrino_agent_relay"
+AGENT_RELAY_RULE_PREFIX = "neutrino_agent_relay_"
+AGENT_RELAY_FIREWALL_RECHECK_S = 60
+AGENT_RELAY_FIREWALL_TIMEOUT_S = 30
+# How ufw and firewalld are asked, in the C locale so their answers read
+# the same on every machine.
+AGENT_RELAY_UFW = "ufw"
+AGENT_RELAY_UFW_ACTIVE = "Status: active"
+AGENT_RELAY_FIREWALLD = "firewall-cmd"
+AGENT_RELAY_FIREWALLD_RUNNING = "running"
+# The words of the one rich rule shape the agent writes into firewalld; a
+# word ending in ``=`` takes a quoted value, which is read back.
+AGENT_RELAY_FIREWALLD_RULE_WORDS = (
+    "rule",
+    'family="ipv4"',
+    "source",
+    "address=",
+    "destination",
+    "address=",
+    "port",
+    "port=",
+    'protocol="tcp"',
+    "accept",
+)
+AGENT_RELAY_COMMAND_LOCALE = "C"
 # Close codes: a refused hello, after the ``refused`` frame that says why,
 # and a socket replaced by a second one for the same binding.
 AGENT_WS_CLOSE_REFUSED = 4000

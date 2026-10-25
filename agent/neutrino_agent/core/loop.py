@@ -12,9 +12,10 @@ modules: its state says what
 each is to be, and this machine observes, installs, configures and reports
 until it matches, the bytes coming down and the output going up on streams
 this side opens. The desktop share is the other way round: decided only on
-the machine, and reported upward. While the state's ``ai_tools`` section is
-on and its ``is_forwarded`` is true, the AI gateway forward carries the
-machine's AI tools to the hub's gateway over the same socket.
+the machine, and reported upward. While the state's ``ai_tools`` section says ``is_forwarded``, the
+AI gateway forward carries the machine's AI tools to the hub's gateway over
+the same socket, and the machine's containers reach the agent's loopback
+listeners through its relays.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -58,6 +59,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.core import enrollment, network, self_update
 from neutrino_agent.core.commands import DeviceOperator
+from neutrino_agent.core.container_relay import ContainerRelays, gateway_port_of
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.core.metrics import HostMetrics, hostname
@@ -193,6 +195,11 @@ class Agent:
         # The machine's AI tools reach the hub's gateway through it.
         self._ai_forward = AiGatewayForward(
             open_stream=self._open_stream, is_online=self.is_online, log=log
+        )
+        # The machine's containers reach the agent's loopback listeners
+        # through them.
+        self._relays = ContainerRelays(
+            platform=self._platform, ports=self._relayed_ports, log=log
         )
         self._desired = DesiredStateApplier(
             engine=self._engine,
@@ -382,15 +389,19 @@ class Agent:
         # kept before this start.
         if self._is_bound_and_wanted():
             self._ai_forward.take(self._desired.latest())
-        while not self._is_stop_asked.is_set():
-            # Cleared before the turn: news set during it is still standing
-            # when the wait begins.
-            self._news.clear()
-            delay = self.run_once()
-            if self._is_stop_asked.is_set():
-                break
-            self._wait_out(delay)
-        self._ai_forward.stop()
+        self._relays.start()
+        try:
+            while not self._is_stop_asked.is_set():
+                # Cleared before the turn: news set during it is still
+                # standing when the wait begins.
+                self._news.clear()
+                delay = self.run_once()
+                if self._is_stop_asked.is_set():
+                    break
+                self._wait_out(delay)
+        finally:
+            self._ai_forward.stop()
+            self._relays.stop()
         self._log("neutrino_agent stopped")
 
     def run_once(self) -> int:
@@ -579,6 +590,25 @@ class Agent:
         if isinstance(runner, PodmanMachineModuleRunner):
             return runner.read_command()
         return (PODMAN_BINARY,)
+
+    def _relayed_ports(self) -> set:
+        """The agent's loopback listeners a container reaches through the relays.
+
+        Returns:
+            The AI gateway forward's port while it listens, the gateway's
+            own port the state names on the hub's own machine while the
+            machine is bound, and every port a module's forwarder listens
+            on.
+        """
+        with self._lock:
+            is_bound = bool(self._binding)
+        ports = {self._ai_forward.local_port}
+        if is_bound:
+            ports.add(gateway_port_of(self._desired.latest()))
+        for runner in self._engine.module_runners.values():
+            ports.update(runner.forwarder_ports())
+        ports.discard(0)
+        return ports
 
     def _published_ports(self, protocol: str = AGENT_CONNECT_TCP) -> dict:
         """Every port this machine publishes now on one protocol, each to the

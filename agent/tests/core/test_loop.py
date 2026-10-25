@@ -19,7 +19,11 @@ Podman machine's read command where the machine runner holds the module
 and through this machine's ``podman`` elsewhere; the wake flag cleared before a
 turn rather than after it; and the AI gateway forward following each state,
 the kept one at a start, and closed by a leave, a ``binding_unknown`` and a
-stop, a tool's connection riding the live socket as ``connect {id: ai}``.
+stop, a tool's connection riding the live socket as ``connect {id: ai}``,
+opened for a container module with the AI tools off; and the relays run
+with the loop and closed at its end, however it ends, carrying the forward,
+every forwarder, and on the hub's own machine while bound the gateway's own
+port.
 Nothing here talks to a network beyond loopback.
 """
 
@@ -2030,20 +2034,18 @@ def test_a_start_opens_the_forward_from_the_state_kept_before_it(
     agent, _ = scripted_agent(config_path, monkeypatch)
     monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
     agent._desired._store.write(AI_ON)
+    seen = {}
 
-    def stop():
-        raise _Stop()
+    def first_turn():
+        seen["port"] = agent._ai_forward.local_port
+        agent.stop()
+        return 0
 
-    monkeypatch.setattr(agent, "run_once", stop)
+    monkeypatch.setattr(agent, "run_once", first_turn)
 
-    try:
-        with pytest.raises(_Stop):
-            agent.run_forever()
-        listening = agent._ai_forward.local_port
-    finally:
-        agent._ai_forward.stop()
+    agent.run_forever()
 
-    assert listening != 0
+    assert seen["port"] != 0
 
 
 def test_a_stopped_loop_closes_the_ai_gateway_forward(config_path, monkeypatch):
@@ -2055,3 +2057,110 @@ def test_a_stopped_loop_closes_the_ai_gateway_forward(config_path, monkeypatch):
     agent.run_forever()
 
     assert agent._ai_forward.local_port == 0
+
+
+def test_a_container_module_alone_opens_the_forward(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+
+    agent._take_state(dict(AI_ON, ai_tools={"is_enabled": False, "is_forwarded": True}))
+    try:
+        listening = agent._ai_forward.local_port
+    finally:
+        agent._ai_forward.stop()
+
+    assert listening != 0
+
+
+# --- the relays a container reaches the agent through ---
+
+
+class RecordedRelays:
+    """The relays, their start and stop recorded."""
+
+    def __init__(self):
+        self.events: list = []
+
+    def start(self):
+        self.events.append("start")
+
+    def stop(self):
+        self.events.append("stop")
+
+
+class ForwardingRunner:
+    """A module whose forwarders listen on the ports given."""
+
+    def __init__(self, ports):
+        self._ports = tuple(ports)
+
+    def forwarder_ports(self):
+        return self._ports
+
+
+def test_the_loop_runs_the_relays_and_its_end_closes_them(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
+    agent._relays = RecordedRelays()
+    agent.stop()
+
+    agent.run_forever()
+
+    assert agent._relays.events == ["start", "stop"]
+
+
+def test_a_loop_that_ends_on_an_error_still_closes_the_relays(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
+    agent._relays = RecordedRelays()
+
+    def failing_turn():
+        raise _Stop()
+
+    monkeypatch.setattr(agent, "run_once", failing_turn)
+
+    with pytest.raises(_Stop):
+        agent.run_forever()
+
+    assert agent._relays.events == ["start", "stop"]
+
+
+def test_the_relays_carry_the_forward_and_every_forwarder(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    agent._engine._module_runners = {
+        "cloudcli": ForwardingRunner([3101]),
+        "codeg": ForwardingRunner([3102, 3103]),
+        "samba": ForwardingRunner([]),
+    }
+    agent._take_state(AI_ON)
+    try:
+        forward = agent._ai_forward.local_port
+        ports = agent._relayed_ports()
+    finally:
+        agent._ai_forward.stop()
+
+    assert ports == {forward, 3101, 3102, 3103}
+
+
+def test_the_hubs_own_agent_relays_the_gateways_own_port(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    agent._engine._module_runners = {}
+    agent._take_state(
+        dict(
+            AI_ON,
+            ai_tools={"is_enabled": True, "is_forwarded": False, "gateway_port": 8317},
+        )
+    )
+
+    assert agent._ai_forward.local_port == 0
+    assert agent._relayed_ports() == {8317}
+
+
+def test_an_unbound_agent_relays_no_gateway_port(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    agent._engine._module_runners = {}
+    agent._desired._store.write(
+        dict(AI_ON, ai_tools={"is_forwarded": False, "gateway_port": 8317})
+    )
+    agent._binding = {}
+
+    assert agent._relayed_ports() == set()

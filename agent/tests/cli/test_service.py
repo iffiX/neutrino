@@ -5,7 +5,9 @@ dispatcher within 30 seconds, so nothing is built before it is handed the
 process; the agent and its control channel are built in the start callback.
 The stop callback only asks the agent's loop to end, and the channel closes
 once the loop has. A process the manager did not start is told so. The log
-is ``agent.log`` under the data root.
+is ``agent.log`` under the data root. ``nagent service uninstall`` takes the
+relays' firewall rules away after the service stopped, and a firewall that
+does not answer is said while the removal goes on.
 """
 
 import pytest
@@ -161,10 +163,21 @@ def test_the_service_log_makes_its_directory_and_writes_the_file(tmp_path):
 class RemovalPlatform(FakeControlPlatform):
     """Records what ``nagent service uninstall`` asks of the system."""
 
-    def __init__(self, *, capabilities=frozenset({"removal"}), error=None):
+    def __init__(
+        self, *, capabilities=frozenset({"removal"}), error=None, relay_error=None
+    ):
         self.capabilities = capabilities
         self.calls = []
         self._error = error
+        self._relay_error = relay_error
+
+    def sync_relay_rules(self, rules):
+        self.calls.append(("relay_rules", rules))
+        if self._relay_error is not None:
+            raise self._relay_error
+        return [
+            "removed ufw rule: allow in on podman1 to 10.89.0.1 port 8317 proto tcp"
+        ]
 
     def stop_agent_service(self):
         self.calls.append("stop")
@@ -290,9 +303,28 @@ def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
         "disable",
         "forget_tried",
         "desktop_off",
+        ("relay_rules", frozenset()),
         "remove_added",
     ]
-    assert "removed    neutrino_vscode@ann.service" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "removed    neutrino_vscode@ann.service" in printed
+    assert (
+        "removed ufw rule: allow in on podman1 to 10.89.0.1 port 8317 proto tcp"
+        in printed
+    )
+
+
+def test_uninstall_says_when_the_relay_rules_stay_and_goes_on(monkeypatch, capsys):
+    platform = RemovalPlatform(relay_error=OSError("ufw did not answer"))
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+
+    assert service_cli.main_uninstall(is_forced=True) == 0
+
+    assert "remove_added" in platform.calls
+    assert (
+        "relays: the firewall rules were not removed: ufw did not answer"
+        in capsys.readouterr().out
+    )
 
 
 def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys):
@@ -306,6 +338,7 @@ def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys
         "disable",
         "forget_tried",
         "desktop_off",
+        ("relay_rules", frozenset()),
         "remove_added",
         "remove_agent_program",
     ]
@@ -373,6 +406,7 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
         "forget_tried",
         "desktop_off",
         "switch_back",
+        ("relay_rules", frozenset()),
         "remove_copy",
         "remove_added",
     ]

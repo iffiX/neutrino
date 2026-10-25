@@ -10,7 +10,8 @@ once every service started; an account no longer named loses its service,
 its record and its forwarder; one forwarder runs per record and follows
 it; a stop closes the forwarders and keeps the records; a restarted agent
 starts the forwarders from the records; a row runs only while its service
-runs and its forwarder listens; the details carry what the hooks add; the
+runs and its forwarder listens; the forwarder ports the relays carry are
+those of the forwarders that listen; the details carry what the hooks add; the
 journal is the units' or the log files', the module's own log first
 where the hooks name one and nothing of a service whose output is
 discarded, the refusal last; an artifact lands under its directory in
@@ -164,6 +165,12 @@ class FakeForwarder:
             self.record.get(field) == record.get(field)
             for field in self.fields["hooks"].forwarder_fields
         )
+
+    @property
+    def listen_address(self):
+        if not self.is_listening:
+            return ("", 0)
+        return ("127.0.0.1", self.record["port"])
 
     def start(self):
         self.is_started = True
@@ -500,6 +507,15 @@ def test_a_row_runs_only_while_its_unit_runs_and_its_forwarder_listens(runner, s
             }
         ],
     }
+
+
+def test_the_forwarder_ports_are_the_ones_a_forwarder_listens_on(runner):
+    runner.apply(CONFIG)
+    assert runner.forwarder_ports() == ()
+
+    FakeForwarder.made[0].is_listening = True
+
+    assert runner.forwarder_ports() == (8443,)
 
 
 def test_a_forwarders_failure_is_the_rows_code(runner):

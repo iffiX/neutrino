@@ -45,6 +45,7 @@ HOST_READS = {
     "share_log",
     "thermal_zones",
     "added_list",
+    "relay_rules_read",
 }
 HOST_CHANGES = {
     "task_write",
@@ -57,6 +58,7 @@ HOST_CHANGES = {
     "share_withdraw",
     "share_password",
     "added_remove",
+    "relay_rules_write",
 }
 
 

@@ -3,11 +3,12 @@
 This is the entry the systemd unit and the LaunchDaemon start; a person
 starts and stops the service with ``nagent start`` and ``nagent stop``. The
 control socket always serves: it is how ``nagent`` reaches the running agent.
-SIGTERM ends the process at once: the agent holds nothing that needs a
-graceful stop.
+SIGTERM asks the agent to stop, so its relays close and their firewall rules
+go before the process ends.
 """
 
 import functools
+import signal
 
 from neutrino_agent.cli.service import service_log
 from neutrino_agent.control.server import ControlServer
@@ -29,6 +30,7 @@ def main() -> int:
     platform = detect_platform()
     log = log_sink(platform)
     agent = Agent(platform=platform, log=log)
+    signal.signal(signal.SIGTERM, lambda _signum, _frame: agent.stop())
     control = ControlServer(agent=agent, platform=platform, log=log)
     control.start()
     try:

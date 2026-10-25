@@ -175,6 +175,42 @@ function Remove-NeutrinoAddition {
     return @{}
 }
 
+# The relays' rules: each firewall rule whose name starts with the prefix,
+# with the port it allows and the adapter it is scoped to.
+function Get-NeutrinoRelayRule($Request) {
+    $rules = @()
+    foreach ($rule in @(Get-NetFirewallRule -Name "$($Request.prefix)*" -ErrorAction SilentlyContinue)) {
+        $port = @($rule | Get-NetFirewallPortFilter)[0]
+        $scope = @($rule | Get-NetFirewallInterfaceFilter)[0]
+        $rules += @{
+            name = "$($rule.Name)"
+            port = "$($port.LocalPort)"
+            alias = "$($scope.InterfaceAlias)"
+        }
+    }
+    return @{rules = $rules}
+}
+
+# Removes the relays' rules named, and adds one inbound allow rule for TCP to
+# each port asked for, scoped to its adapter.
+function Set-NeutrinoRelayRule {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([hashtable])]
+    param($Request)
+    if (-not $PSCmdlet.ShouldProcess('the relays'' rules')) {
+        return @{}
+    }
+    foreach ($name in @($Request.remove)) {
+        Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue | Out-Null
+    }
+    foreach ($rule in @($Request.add)) {
+        New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
+            -Direction Inbound -Action Allow -Protocol TCP -LocalPort $rule.port `
+            -InterfaceAlias $rule.alias -Profile Any | Out-Null
+    }
+    return @{}
+}
+
 # The thermal zones the firmware exposes, in tenths of a kelvin; none on most
 # machines.
 function Get-NeutrinoThermalZone {
@@ -446,6 +482,8 @@ $NeutrinoOperations = @{
     'share_withdraw' = 'Remove-NeutrinoShare'
     'share_log' = 'Get-NeutrinoShareLog'
     'share_password' = 'Set-NeutrinoSharePassword'
+    'relay_rules_read' = 'Get-NeutrinoRelayRule'
+    'relay_rules_write' = 'Set-NeutrinoRelayRule'
 }
 
 # The answer to one request line: the function's value, its refusal, or the

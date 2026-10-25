@@ -6,8 +6,9 @@ answers the runner's own log, the units' journal by default, capped at the
 newest lines; the agent's own lines about a module are the ones that
 name it, from the file the last rotation left and then the current one;
 they follow the module's own lines and take at most half the box when
-there are any; and a source that cannot be read is one line in the
-agent's log naming the module and the source, once until it reads again.
+there are any; a source that cannot be read is one line in the agent's log
+naming the module and the source, once until it reads again; and a module
+with no forwarder has no forwarder port.
 """
 
 import neutrino_agent.modules.shared.base as base_module
@@ -171,3 +172,7 @@ def test_a_source_that_cannot_be_read_is_warned_of_once():
     assert runner._read_source("C:\\logs\\ann.log", lambda: ["back"]) == ["back"]
     runner._read_source("C:\\logs\\ann.log", refuse)
     assert len(lines) == 2
+
+
+def test_a_module_with_no_forwarder_has_no_forwarder_port():
+    assert picky_runner([]).forwarder_ports() == ()

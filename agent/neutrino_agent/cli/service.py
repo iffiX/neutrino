@@ -18,6 +18,7 @@ no uninstaller, it removes the agent itself as well.
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 import threading
 
@@ -96,7 +97,7 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added.
+    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added, its relays' firewall rules among them.
 
     The service stops first, so no apply of its own runs beside the switch
     back; the copy of cc-switch goes once the switch back is done. A desktop
@@ -123,6 +124,8 @@ def main_uninstall(*, is_forced: bool) -> int:
         ai_tools = AiToolsApplier(platform=platform, log=print)
         for line in ai_tools_lines(ai_tools.switch_back_all()):
             print(line)
+        for line in remove_relay_rules(platform):
+            print(line)
         removed = ai_tools.remove_copy() + platform.remove_added()
         if is_whole:
             removed += platform.remove_agent_program()
@@ -135,6 +138,23 @@ def main_uninstall(*, is_forced: bool) -> int:
     for name in removed:
         print(f"removed    {name}")
     return 0
+
+
+def remove_relay_rules(platform) -> list:
+    """Take away the firewall rules of the agent's relays, which a stopped
+    agent leaves when it did not stop by its own hand.
+
+    Args:
+        platform: The machine's platform.
+
+    Returns:
+        What was removed, one line each, or the one line that says why
+        nothing was.
+    """
+    try:
+        return platform.sync_relay_rules(frozenset())
+    except (OSError, subprocess.SubprocessError) as error:
+        return [f"relays: the firewall rules were not removed: {error}"]
 
 
 def forget_tried(platform) -> None:

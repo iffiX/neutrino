@@ -299,6 +299,14 @@ class ModuleRunner:
         """
         return False
 
+    def forwarder_ports(self) -> tuple:
+        """The ports the agent's forwarders of this module listen on, on ``127.0.0.1``.
+
+        Returns:
+            An empty tuple for a module with no forwarder.
+        """
+        return ()
+
     def journal_units(self) -> list:
         """The units whose journal is this module's output.
 

@@ -7,7 +7,10 @@ own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
 server the system carries; unpack the hub's software; find the agent's own
 log; end a process where the system has no signals; take away what the
-agent's modules added when the agent itself is removed. A new platform is a new class, and nothing above this seam changes.
+agent's modules added when the agent itself is removed; read the addresses
+the machine's containers reach the machine at, and give the system's
+firewall the rules of the agent's relays there. A new platform is a new
+class, and nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
 Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
@@ -21,6 +24,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 
 from neutrino_agent.constants import (
     AGENT_ADDED_FOREIGN_WORDS,
@@ -32,6 +36,44 @@ from neutrino_agent.exceptions import PlatformUnsupportedError
 
 # What ends the word after a name's prefix.
 ADDED_NAME_WORD_END = re.compile(r"[_.@-]")
+
+
+@dataclass(frozen=True)
+class RelayAddress:
+    """One address the machine's containers reach the machine at.
+
+    Attributes:
+        interface: The interface that holds it: a Podman bridge on Linux,
+            WSL's vEthernet adapter on Windows.
+        index: The interface's index, which a relay bound to the interface
+            stays on; 0 where no relay is bound to an interface.
+        address: The interface's IPv4 address, where the relays listen.
+        prefix: The length of the interface's network; 0 where it is not
+            read.
+    """
+
+    interface: str
+    index: int
+    address: str
+    prefix: int
+
+
+@dataclass(frozen=True)
+class RelayRule:
+    """The firewall rule one relay needs: its interface, its address and its port.
+
+    Attributes:
+        interface: The interface the relay listens on.
+        address: The relay's address.
+        prefix: The length of the interface's network; 0 where it is not
+            read.
+        port: The relayed port, over TCP.
+    """
+
+    interface: str
+    address: str
+    prefix: int
+    port: int
 
 
 def is_added_name(name: str, prefix: str) -> bool:
@@ -430,6 +472,32 @@ class AgentPlatform:
                 agent knows how to remove.
         """
         raise PlatformUnsupportedError("nothing to remove here")
+
+    def read_relay_addresses(self) -> list:
+        """The addresses the machine's containers reach the machine at, read now.
+
+        Returns:
+            One :class:`RelayAddress` per address; none on a platform where
+            the agent opens no relay, macOS among them.
+        """
+        return []
+
+    def sync_relay_rules(self, rules: frozenset) -> list:
+        """Make the system's firewall hold the agent's rule for each relay, and
+        no rule of the agent's for anything else.
+
+        Args:
+            rules: One :class:`RelayRule` per relay the agent opens.
+
+        Returns:
+            What changed, one line each; none on a platform whose firewall
+            the agent gives no rule.
+
+        Raises:
+            OSError: When the firewall cannot be read or changed.
+            subprocess.SubprocessError: When a firewall command fails.
+        """
+        return []
 
     def remove_agent_program(self) -> list:
         """Remove the agent itself where no package manager does.
