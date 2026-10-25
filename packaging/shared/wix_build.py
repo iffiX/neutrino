@@ -50,7 +50,7 @@ PACKAGE_SOURCE = """<?xml version="1.0" encoding="utf-8"?>
            Compressed="yes">
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer @NAME@ is already installed." />
-    <MediaTemplate EmbedCab="yes"@COMPRESSION@ />
+    <MediaTemplate EmbedCab="yes" />
 @BODY@
   </Package>
 </Wix>
@@ -91,7 +91,6 @@ def package_source(
     version: str,
     upgrade_code: str,
     body: str,
-    compression_level: str = "",
 ) -> str:
     """The whole ``.wxs`` document around a package's body.
 
@@ -102,32 +101,19 @@ def package_source(
         upgrade_code: The product's identity across every version it ships
             as.
         body: The XML inside ``Package``, holes already filled.
-        compression_level: The cabinet's ``CompressionLevel``, such as
-            ``high``; WiX's own default when empty.
 
     Returns:
         The .wxs document.
     """
-    return (
-        fill(
-            PACKAGE_SOURCE,
-            {
-                "NAME": name,
-                "MANUFACTURER": manufacturer,
-                "VERSION": version,
-                "UPGRADE_CODE": upgrade_code,
-            },
-        )
-        .replace(
-            "@COMPRESSION@",
-            (
-                f' CompressionLevel="{attribute_text(compression_level)}"'
-                if compression_level
-                else ""
-            ),
-        )
-        .replace("@BODY@", body.rstrip("\n"))
-    )
+    return fill(
+        PACKAGE_SOURCE,
+        {
+            "NAME": name,
+            "MANUFACTURER": manufacturer,
+            "VERSION": version,
+            "UPGRADE_CODE": upgrade_code,
+        },
+    ).replace("@BODY@", body.rstrip("\n"))
 
 
 def element(tag: str, attributes: dict, children: tuple = ()) -> str:

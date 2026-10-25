@@ -135,21 +135,3 @@ def test_the_hub_stamp_carries_the_edition(monkeypatch, edition):
 
     assert namespace["EDITION"] == edition
 
-
-@pytest.mark.parametrize(
-    "edition, expected",
-    [("intl", []), ("cn", ["-Zxz", "-z9", "-Sextreme"])],
-)
-def test_the_mainland_hub_deb_is_compressed_at_xz_s_strongest(
-    monkeypatch, tmp_path, edition, expected
-):
-    import build_deb
-
-    commands = []
-    monkeypatch.setattr(build_deb, "run", commands.append)
-    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
-
-    build_deb._build(tmp_path / "tree", tmp_path / "out.deb")
-
-    ((command),) = commands
-    assert command[2 : command.index("--build")] == expected

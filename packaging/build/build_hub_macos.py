@@ -161,11 +161,6 @@ exit 0
 """
 
 
-# The oldest macOS the mainland hub package names to pkgbuild, which picks
-# its strongest payload compression for it; the package's own floor.
-HUB_PKG_CN_MIN_OS_VERSION = "12.3"
-
-
 def main() -> int:
     """Build the installer.
 
@@ -222,9 +217,6 @@ def main() -> int:
             identifier=PACKAGE_IDENTIFIER,
             version=version,
             scripts_dir=staged["scripts"],
-            min_os_version=(
-                HUB_PKG_CN_MIN_OS_VERSION if arguments.edition == "cn" else ""
-            ),
             title="Neutrino Hub",
         )
 
