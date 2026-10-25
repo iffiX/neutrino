@@ -10,8 +10,8 @@ with ``Host`` and ``Origin`` as the browser sent them; every other request,
 and the browser's own login request, is 401.
 
 Once ``config.yaml`` exists in ``home`` the agent writes ``model.provider``,
-``model.base_url`` and ``model.key_env`` with ``hermes config set`` in the
-agent container, and again whenever the base URL differs from the one the
+``model.base_url``, ``model.key_env`` and ``model.api_key``, the last two
+naming the key's variable, with ``hermes config set`` in the agent container, and again whenever the base URL differs from the one the
 record holds. From the install, and after a version change, the module
 reads ``installing`` until the keys hold the current base URL and the
 webui's ``/health`` first answers 200; meanwhile its start waits, and the
@@ -26,6 +26,7 @@ Not pure: runs podman, opens sockets, writes the record.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -51,6 +52,7 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_EXEC_HOME,
     HERMES_WEBUI_EXEC_USER,
     HERMES_WEBUI_FORWARDER_FIELDS,
+    HERMES_WEBUI_GATEWAY_KEY_REFERENCE,
     HERMES_WEBUI_GATEWAY_KEY_VARIABLE,
     HERMES_WEBUI_GATEWAY_URL_VARIABLE,
     HERMES_WEBUI_HEALTH_PATH,
@@ -95,19 +97,22 @@ def normal_path(path: str) -> str:
 
 
 def gateway_keys(base_url: str) -> list:
-    """The three keys the agent writes into ``config.yaml``, in order.
+    """The four keys the agent writes into ``config.yaml``, in order.
 
     Args:
         base_url: The gateway's address with ``/v1`` after it.
 
     Returns:
         ``(key, value)`` for ``model.provider``, ``model.base_url`` and
-        ``model.key_env``; ``model.default`` is the person's.
+        ``model.key_env`` and ``model.api_key``, both naming the key's
+        variable and neither holding the key; ``model.default`` is the
+        person's.
     """
     return [
         ("model.provider", HERMES_WEBUI_PROVIDER),
         ("model.base_url", base_url),
         ("model.key_env", HERMES_WEBUI_GATEWAY_KEY_VARIABLE),
+        ("model.api_key", HERMES_WEBUI_GATEWAY_KEY_REFERENCE),
     ]
 
 
@@ -291,6 +296,9 @@ class HermesWebuiHooks(ContainerHooks):
         """
         record = self._started_record()
         self._sync_forwarder(record)
+        if not record.get("is_ready"):
+            with self._lock:
+                self._is_starting = True
         base_url = self._base_url()
         if base_url and base_url != record.get("base_url") and self._has_config_file():
             if self._write_keys(base_url):
@@ -304,8 +312,6 @@ class HermesWebuiHooks(ContainerHooks):
             with self._lock:
                 self._is_starting = False
             return
-        with self._lock:
-            self._is_starting = True
         raise ModuleInstallPending(HERMES_WEBUI_PENDING)
 
     def stop(self) -> None:
@@ -345,11 +351,13 @@ class HermesWebuiHooks(ContainerHooks):
         return {"port": int(record.get("port", 0) or 0)}
 
     def remove(self) -> None:
-        """Stop serving the page and forget the record."""
+        """Stop serving the page and forget the record, with its directory when nothing else is in it."""
         with self._lock:
             self._is_starting = False
         self._close_forwarder()
         self._records.remove(self._name)
+        with contextlib.suppress(OSError):
+            os.rmdir(self._records.directory)
 
     # --- what the forwarder asks ---
 
@@ -499,7 +507,7 @@ class HermesWebuiHooks(ContainerHooks):
         return done is not None and done.is_success
 
     def _write_keys(self, base_url: str) -> bool:
-        """Write the three keys with ``hermes config set``; False at the first that fails."""
+        """Write the four keys with ``hermes config set``; False at the first that fails."""
         for key, value in gateway_keys(base_url):
             done = self._quietly(
                 [

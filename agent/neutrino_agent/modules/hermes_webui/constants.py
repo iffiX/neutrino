@@ -29,6 +29,9 @@ HERMES_WEBUI_CONFIG_COMMAND = ("hermes", "config", "set")
 # writes into config.yaml from them; ``model.default`` stays the person's.
 HERMES_WEBUI_GATEWAY_URL_VARIABLE = "NEUTRINO_GATEWAY_URL"
 HERMES_WEBUI_GATEWAY_KEY_VARIABLE = "NEUTRINO_GATEWAY_KEY"
+# The variable in the reference form the webui expands, which it reads a
+# bare ``custom`` provider's key from when it lists the gateway's models.
+HERMES_WEBUI_GATEWAY_KEY_REFERENCE = "${NEUTRINO_GATEWAY_KEY}"
 HERMES_WEBUI_BASE_URL_SUFFIX = "/v1"
 HERMES_WEBUI_PROVIDER = "custom"
 # How long one podman call the hooks make may take; ``hermes config set``

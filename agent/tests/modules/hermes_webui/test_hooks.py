@@ -4,7 +4,7 @@ What these pin, against a faked ``podman`` and a webui on loopback: a token
 that verifies is traded for the webui's ``hermes_session`` cookie and a
 redirect to ``/``, the cookie passed on with ``Host`` and ``Origin``
 unchanged, 401 for ``/api/auth/login`` whatever it holds and for a request
-with neither; the three gateway keys written with ``hermes config set``
+with neither; the four gateway keys written with ``hermes config set``
 once ``config.yaml`` exists and again when the base URL changes, never
 ``model.default``; ``installing`` until the keys and ``/health`` hold, the
 start waiting meanwhile; a version change making ``agent`` and ``app``
@@ -189,7 +189,7 @@ def test_before_config_yaml_exists_the_start_waits_and_writes_no_key(box):
     assert box.record()["is_ready"] is False
 
 
-def test_once_config_yaml_exists_the_three_keys_are_written_with_hermes_config_set(
+def test_once_config_yaml_exists_the_four_keys_are_written_with_hermes_config_set(
     box,
 ):
     box.podman.has_config = True
@@ -218,6 +218,7 @@ def test_once_config_yaml_exists_the_three_keys_are_written_with_hermes_config_s
             ("model.provider", "custom"),
             ("model.base_url", URL + "/v1"),
             ("model.key_env", "NEUTRINO_GATEWAY_KEY"),
+            ("model.api_key", "${NEUTRINO_GATEWAY_KEY}"),
         )
     ]
     assert not any("model.default" in call for call in box.podman.calls)
@@ -234,13 +235,13 @@ def test_the_module_reads_installing_until_health_answers_200_once(box):
     with pytest.raises(ModuleInstallPending):
         box.hooks.start()
     assert box.hooks.is_installing() is True
-    assert len(box.podman.config_sets()) == 3
+    assert len(box.podman.config_sets()) == 4
 
     box.status = 200
     box.hooks.start()
 
     assert box.hooks.is_installing() is False
-    assert len(box.podman.config_sets()) == 3
+    assert len(box.podman.config_sets()) == 4
     box.status = 500
     box.hooks.start()
     assert box.hooks.is_running() is False
@@ -257,8 +258,8 @@ def test_a_base_url_that_changes_writes_the_keys_again(box):
     box.hooks.start()
 
     sets = box.podman.config_sets()
-    assert len(sets) == 6
-    assert sets[4][-2:] == ["model.base_url", "http://host.containers.internal:8400/v1"]
+    assert len(sets) == 8
+    assert sets[5][-2:] == ["model.base_url", "http://host.containers.internal:8400/v1"]
     assert box.record()["base_url"] == "http://host.containers.internal:8400/v1"
 
 
@@ -326,7 +327,7 @@ def test_stop_closes_the_forwarder_and_remove_forgets_the_record(box):
     assert forwarder.is_closed
     assert box.record()["is_stopped"] is True
     box.hooks.remove()
-    assert not os.path.exists(os.path.join(box.record_dir, "hermes_webui.json"))
+    assert not os.path.exists(box.record_dir)
 
 
 def test_a_new_port_starts_another_forwarder(box):
@@ -389,6 +390,7 @@ def test_the_keys_name_the_custom_provider_and_the_key_s_variable():
         ("model.provider", "custom"),
         ("model.base_url", "http://h:1/v1"),
         ("model.key_env", "NEUTRINO_GATEWAY_KEY"),
+        ("model.api_key", "${NEUTRINO_GATEWAY_KEY}"),
     ]
 
 
