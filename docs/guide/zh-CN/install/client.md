@@ -50,7 +50,13 @@ Windows 弹出一次授权框，安装在新开的管理员窗口里进行。加
 sudo apt install ./neutrino-client_0.6.0_amd64.deb
 ```
 
-```bash [RHEL、AlmaLinux、Fedora]
+```bash [Fedora]
+sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
+```
+
+```bash [AlmaLinux、Rocky]
+sudo dnf config-manager --set-enabled crb
+sudo dnf install -y epel-release
 sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
 ```
 
@@ -64,7 +70,7 @@ sudo installer -pkg neutrino-client-0.6.0-macos-arm64.pkg -target /
 
 :::
 
-64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.6.0-macos-amd64.pkg`。
+64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.6.0-macos-amd64.pkg`。RHEL 系上客户端要的 `xdotool` 在 EPEL 里，安装脚本自己启用它；RHEL 上照 EPEL 自己的说明启用：用 CodeReady Builder 代替 CRB，EPEL 的发布包从 Fedora 项目下载。
 
 ::: warning
 `dpkg -i` 和 `rpm -i` 不装依赖。已经用了的话，Debian 系运行 `sudo apt -f install`，RHEL 系用 `sudo dnf install` 装上它列出的包。

@@ -26,7 +26,7 @@ title: 安装被控端
 
 ## 一条命令安装
 
-脚本用 `SHA256SUMS` 核对安装包后安装，每做完一步打印一行：安装包从哪里来，核对通过，已经装好。下面的 `<enroll-link>` 是刚复制的加入链接。
+脚本用 `SHA256SUMS` 核对安装包后安装，每做完一步打印一行：安装包从哪里来，核对通过，已经装好。AlmaLinux、Rocky 和 RHEL 上，安装前脚本先启用 EPEL，安装包要的 `xdotool` 在那里。下面的 `<enroll-link>` 是刚复制的加入链接。
 
 ### Linux 和 macOS
 
@@ -69,14 +69,21 @@ sudo apt install ./neutrino-agent_0.6.0_amd64.deb
 sudo nagent join '<enroll-link>'
 ```
 
-```bash [Fedora、RHEL 系]
+```bash [Fedora]
+sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
+sudo nagent join '<enroll-link>'
+```
+
+```bash [AlmaLinux、Rocky]
+sudo dnf config-manager --set-enabled crb
+sudo dnf install -y epel-release
 sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
 sudo nagent join '<enroll-link>'
 ```
 
 :::
 
-ARM64 机器的文件名以 `_arm64.deb` 或 `.aarch64.rpm` 结尾。
+ARM64 机器的文件名以 `_arm64.deb` 或 `.aarch64.rpm` 结尾。RHEL 上照 EPEL 自己的说明启用：用 CodeReady Builder 代替 CRB，EPEL 的发布包从 Fedora 项目下载。
 
 ### macOS
 
@@ -107,7 +114,7 @@ sudo nagent join '<enroll-link>'
 
 ![SSH 安装对话框：主机、端口、用户名和凭据](/guide/zh/devices_install_ssh.webp)
 
-**安装输出** 实时显示安装过程。用 **按地址添加** 时，页面上同时多出这台机器的一行，以你填的主机命名。对方不是 Linux 时，改用加入链接。
+**安装输出** 实时显示安装过程。AlmaLinux、Rocky 和 RHEL 上，中枢先启用 EPEL 再装包。用 **按地址添加** 时，页面上同时多出这台机器的一行，以你填的主机命名。对方不是 Linux 时，改用加入链接。
 
 ## 核对机器
 

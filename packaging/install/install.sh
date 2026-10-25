@@ -17,7 +17,8 @@
 # Run as a person, the script asks for the sudo password once, before it
 # downloads anything, and keeps sudo's ticket fresh until it ends: the
 # install, the hub's setup and the hub's own agent ask nothing more. An
-# account sudo already lets in without a password is asked nothing.
+# account sudo already lets in without a password is asked nothing. On the
+# RHEL family EPEL is enabled under the same sudo before the install.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -32,6 +33,9 @@ PROBE_WAIT_S=5
 STALL_S=20
 PROBE_BYTES=1048576
 OS_RELEASE=/etc/os-release
+# The EPEL release package for RHEL, the major release and .noarch.rpm after
+# it, as EPEL's own instructions name it.
+EPEL_RELEASE_PREFIX=https://dl.fedoraproject.org/pub/epel/epel-release-latest-
 # The agent's binding to its hub on each system: a machine that holds one
 # has joined, and is not told to join again.
 AGENT_BINDING_LINUX=/etc/neutrino/agent/agent.json
@@ -79,6 +83,37 @@ linux_family() {
         esac
     done
     return 1
+}
+
+# Enable EPEL on the RHEL family, which every package's dependencies need
+# there: the hub's fail2ban and arp-scan, the agent's and the client's
+# xdotool. The steps are EPEL's own, CRB first: Rocky, AlmaLinux and CentOS
+# take epel-release, RHEL CodeReady Builder and the EPEL release package. Any
+# other system takes no step.
+enable_epel() {
+    [ -r "$1" ] || return 0
+    release=$(
+        # shellcheck disable=SC1090
+        . "$1"
+        echo "${ID:-} ${VERSION_ID:-}"
+    )
+    id=${release%% *}
+    major=${release#* }
+    major=${major%%.*}
+    case "$id" in
+        rocky | almalinux | centos)
+            echo "Enabling CRB and EPEL, which the package's dependencies come from"
+            $as_root dnf config-manager --set-enabled crb \
+                && $as_root dnf install -y epel-release \
+                || fail "EPEL could not be enabled; nothing was installed."
+            ;;
+        rhel)
+            echo "Enabling CodeReady Builder and EPEL, which the package's dependencies come from"
+            $as_root subscription-manager repos --enable "codeready-builder-for-rhel-$major-$(uname -m)-rpms" \
+                && $as_root dnf install -y "$EPEL_RELEASE_PREFIX$major.noarch.rpm" \
+                || fail "EPEL could not be enabled; nothing was installed."
+            ;;
+    esac
 }
 
 # What this script's edition's file names hold before the extension.
@@ -428,6 +463,7 @@ main() {
         *) package="$(pwd)/$package" ;;
     esac
 
+    [ "$kind" != rpm ] || enable_epel "$OS_RELEASE"
     echo "Installing $name"
     case "$kind" in
         macos) $as_root installer -pkg "$package" -target / ;;

@@ -30,7 +30,7 @@ Run:
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
 ```
 
-On Debian and Ubuntu, apt prints `N: Download is performed unsandboxed as root…` during the install. The line means apt read the package file as root, and the install goes on.
+On Debian and Ubuntu, apt prints `N: Download is performed unsandboxed as root…` during the install. The line means apt read the package file as root, and the install goes on. On AlmaLinux, Rocky and RHEL the script enables EPEL before the install and prints a line for it.
 
 ### Windows
 
@@ -58,7 +58,8 @@ sudo apt install ./neutrino-hub_0.6.0_amd64.deb
 sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
-```bash [RHEL, AlmaLinux, Rocky]
+```bash [AlmaLinux, Rocky]
+sudo dnf config-manager --set-enabled crb
 sudo dnf install -y epel-release
 sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
@@ -69,7 +70,7 @@ sudo pacman -U neutrino-hub-0.6.0-1-x86_64.pkg.tar.zst
 
 :::
 
-On ARM64 the files are `neutrino-hub_0.6.0_arm64.deb` and `neutrino-hub-0.6.0-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban and arp-scan.
+On ARM64 the files are `neutrino-hub_0.6.0_arm64.deb` and `neutrino-hub-0.6.0-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban and arp-scan; on RHEL, CodeReady Builder takes the place of CRB and the EPEL release package comes from the Fedora project, as EPEL's own instructions show.
 
 ::: warning
 Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of the dependencies; after `dpkg -i`, run `sudo apt -f install` to finish.

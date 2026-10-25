@@ -24,7 +24,7 @@ The link is valid for 30 minutes. For a machine listed under **Unmanaged devices
 
 ## Install with one command
 
-The install script checks the agent package against the release's `SHA256SUMS` and installs it. It prints a line for each step: where the package came from, that it matches, and that it is installed.
+The install script checks the agent package against the release's `SHA256SUMS` and installs it. It prints a line for each step: where the package came from, that it matches, and that it is installed. On AlmaLinux, Rocky and RHEL it enables EPEL before the install, because the package's `xdotool` comes from there.
 
 ### Linux and macOS
 
@@ -68,7 +68,13 @@ Download the agent's file for the machine from the [releases page](https://githu
    sudo apt install ./neutrino-agent_0.6.0_amd64.deb
    ```
 
-   ```bash [Fedora, RHEL family]
+   ```bash [Fedora]
+   sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
+   ```
+
+   ```bash [AlmaLinux, Rocky]
+   sudo dnf config-manager --set-enabled crb
+   sudo dnf install -y epel-release
    sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
    ```
 
@@ -80,7 +86,7 @@ Download the agent's file for the machine from the [releases page](https://githu
    sudo nagent join '<enroll-link>'
    ```
 
-On ARM64 the files are `neutrino-agent_0.6.0_arm64.deb` and `neutrino-agent-0.6.0-1.aarch64.rpm`.
+On ARM64 the files are `neutrino-agent_0.6.0_arm64.deb` and `neutrino-agent-0.6.0-1.aarch64.rpm`. On RHEL, CodeReady Builder takes the place of CRB, and the EPEL release package comes from the Fedora project, as EPEL's own instructions show.
 
 ### macOS
 
@@ -116,7 +122,7 @@ The hub can sign in to a Linux machine over SSH and install the agent itself. Be
 
 ![The SSH install dialog with host, port, username and credential](/guide/en/devices_install_ssh.webp)
 
-**Install output** shows the installer as it runs, and the installer joins the machine by itself. **Add by address** also adds the machine's row to the page, named after the host you typed.
+**Install output** shows the installer as it runs, and the installer joins the machine by itself. On AlmaLinux, Rocky and RHEL the hub enables EPEL before it installs the package. **Add by address** also adds the machine's row to the page, named after the host you typed.
 
 ## Check the machine
 

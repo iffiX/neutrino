@@ -41,6 +41,8 @@ PACKAGES = (
     "neutrino-agent_9.9.9_amd64.deb",
     "neutrino-hub-9.9.9-1.x86_64.rpm",
     "neutrino-hub-9.9.9-1.aarch64.rpm",
+    "neutrino-agent-9.9.9-1.x86_64.rpm",
+    "neutrino-client-9.9.9-1.x86_64.rpm",
     "neutrino-hub-9.9.9-1-x86_64.pkg.tar.zst",
     "neutrino-hub-9.9.9-macos-arm64.pkg",
     "neutrino-hub-9.9.9-macos-amd64.pkg",
@@ -58,7 +60,9 @@ PACKAGES = (
 OS_RELEASES = {
     "ubuntu": 'ID=ubuntu\nID_LIKE="debian"\nVERSION_ID="24.04"\n',
     "fedora": 'ID=fedora\nVERSION_ID="41"\n',
-    "rocky": 'ID="rocky"\nID_LIKE="rhel centos fedora"\n',
+    "rocky": 'ID="rocky"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.4"\n',
+    "almalinux": 'ID="almalinux"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.5"\n',
+    "rhel": 'ID="rhel"\nID_LIKE="fedora"\nVERSION_ID="9.4"\n',
     "arch": "ID=arch\n",
     "suse": 'ID="opensuse-leap"\nID_LIKE="suse opensuse"\n',
 }
@@ -91,7 +95,11 @@ echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
 """,
     "installer": RECORDER,
     "apt-get": RECORDER,
-    "dnf": RECORDER,
+    "dnf": """#!/bin/sh
+echo "$(basename "$0") $*" >> "$FAKE_LOG"
+case "$*" in *"${FAKE_DNF_REFUSED:-no refusal}"*) exit 1 ;; esac
+""",
+    "subscription-manager": RECORDER,
     "pacman": RECORDER,
 }
 
@@ -300,9 +308,89 @@ def test_each_linux_family_installs_its_own_package(
     result, asked = stand_ins(os_release=os_release, machine=machine)
 
     assert result.returncode == 0, result.stderr
-    (install,) = _installs(asked)
+    install = _installs(asked)[-1]
     assert install.startswith(command + " /")
     assert install.endswith("/" + name)
+
+
+# EPEL's own steps on each RHEL-family system, CRB first.
+EPEL_STEPS = {
+    "rocky": ["dnf config-manager --set-enabled crb", "dnf install -y epel-release"],
+    "almalinux": [
+        "dnf config-manager --set-enabled crb",
+        "dnf install -y epel-release",
+    ],
+    "rhel": [
+        "subscription-manager repos --enable codeready-builder-for-rhel-9-x86_64-rpms",
+        "dnf install -y "
+        "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm",
+    ],
+}
+
+
+@pytest.mark.parametrize("component", ["hub", "agent", "client"])
+@pytest.mark.parametrize("os_release", ["rocky", "almalinux", "rhel"])
+def test_the_rhel_family_enables_epel_before_the_package_under_the_one_sudo(
+    stand_ins, os_release, component
+):
+    """xdotool of the agent and the client, and fail2ban and arp-scan of the
+    hub, come from EPEL there."""
+    result, asked = stand_ins(component, os_release=os_release)
+
+    assert result.returncode == 0, result.stderr
+    installs = _installs(asked)
+    assert installs[:2] == EPEL_STEPS[os_release]
+    assert installs[2].startswith("dnf install -y /")
+    assert installs[2].endswith(f"/neutrino-{component}-9.9.9-1.x86_64.rpm")
+    assert len(installs) == 3
+    for step in EPEL_STEPS[os_release]:
+        assert f"sudo {step}" in asked
+    assert asked.count("sudo -v") == 1
+
+
+def test_rhel_on_arm64_enables_the_code_ready_builder_of_its_machine(stand_ins):
+    result, asked = stand_ins(os_release="rhel", machine="aarch64")
+
+    assert result.returncode == 0, result.stderr
+    assert _installs(asked)[0] == (
+        "subscription-manager repos --enable codeready-builder-for-rhel-9-aarch64-rpms"
+    )
+    assert _installs(asked)[-1].endswith("/neutrino-hub-9.9.9-1.aarch64.rpm")
+
+
+def test_root_enables_epel_without_sudo(stand_ins):
+    result, asked = stand_ins(os_release="rocky", uid="0")
+
+    assert result.returncode == 0, result.stderr
+    assert _installs(asked)[:2] == EPEL_STEPS["rocky"]
+    assert not any(line.startswith("sudo") for line in asked)
+
+
+@pytest.mark.parametrize("refused", ["crb", "epel-release"])
+def test_a_refused_epel_step_installs_nothing(stand_ins, refused):
+    result, asked = stand_ins(
+        os_release="rocky", environment={"FAKE_DNF_REFUSED": refused}
+    )
+
+    assert result.returncode == 1
+    assert _said(result) == "EPEL could not be enabled; nothing was installed."
+    assert not any(line.startswith("dnf install -y /") for line in asked)
+
+
+@pytest.mark.parametrize(
+    "os_release, machine",
+    [("fedora", "x86_64"), ("ubuntu", "x86_64"), ("arch", "x86_64")],
+)
+def test_no_other_system_takes_an_epel_step(stand_ins, os_release, machine):
+    result, asked = stand_ins(os_release=os_release, machine=machine)
+
+    assert result.returncode == 0, result.stderr
+    assert len(_installs(asked)) == 1
+    assert not any(
+        word in line
+        for line in asked
+        for word in ("epel", "crb", "subscription-manager")
+    )
 
 
 @pytest.mark.parametrize(

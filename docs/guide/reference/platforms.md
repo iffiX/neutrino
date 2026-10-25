@@ -31,7 +31,7 @@ On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, becaus
 | ------------------------------------------------------------------- | ------------ | ---------------------------------------- |
 | Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.6.0_amd64.deb`         |
 | the same                                                            | ARM64        | `neutrino-agent_0.6.0_arm64.deb`         |
-| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.6.0-1.x86_64.rpm`      |
+| Fedora 41 and newer; RHEL 9 family, with EPEL enabled first         | x86-64       | `neutrino-agent-0.6.0-1.x86_64.rpm`      |
 | the same                                                            | ARM64        | `neutrino-agent-0.6.0-1.aarch64.rpm`     |
 | Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.6.0-windows-amd64.msi` |
 | macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.6.0-macos-arm64.pkg`   |
@@ -43,15 +43,15 @@ The Windows and macOS installers put RustDesk in the agent's own directory. The 
 
 ## Desktop client
 
-| System                                                                                      | Architecture | File                                      |
-| ------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.6.0_amd64.deb`         |
-| the same                                                                                    | ARM64        | `neutrino-client_0.6.0_arm64.deb`         |
-| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.6.0-1.x86_64.rpm`      |
-| the same                                                                                    | ARM64        | `neutrino-client-0.6.0-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.6.0-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.6.0-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.6.0-macos-amd64.pkg`   |
+| System                                                                                                               | Architecture | File                                      |
+| -------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
+| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                                                  | x86-64       | `neutrino-client_0.6.0_amd64.deb`         |
+| the same                                                                                                             | ARM64        | `neutrino-client_0.6.0_arm64.deb`         |
+| RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.6.0-1.x86_64.rpm`      |
+| the same                                                                                                             | ARM64        | `neutrino-client-0.6.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                                                                                | x86-64       | `neutrino-client-0.6.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                                                                                | ARM64        | `neutrino-client-0.6.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                                                                        | x86-64       | `neutrino-client-0.6.0-macos-amd64.pkg`   |
 
 The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the AppIndicator library, the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and its installer adds WebView2 when the runtime is absent.
 

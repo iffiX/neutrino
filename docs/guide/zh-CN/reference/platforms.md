@@ -44,7 +44,7 @@ Windows 和 macOS 上的中枢只运行 **服务器** 模式：只在机器所�
 | ------------------------------------------------------------ | ------ | ---------------------------------------- |
 | Debian 12 及以上，Ubuntu 22.04 及以上，Raspberry Pi OS 64 位 | x86-64 | `neutrino-agent_0.6.0_amd64.deb`         |
 | 同上                                                         | ARM64  | `neutrino-agent_0.6.0_arm64.deb`         |
-| Fedora 41 及以上；RHEL 9 系                                  | x86-64 | `neutrino-agent-0.6.0-1.x86_64.rpm`      |
+| Fedora 41 及以上；RHEL 9 系，先启用 EPEL                     | x86-64 | `neutrino-agent-0.6.0-1.x86_64.rpm`      |
 | 同上                                                         | ARM64  | `neutrino-agent-0.6.0-1.aarch64.rpm`     |
 | Windows 10 1809 及以上，Windows 11                           | x86-64 | `neutrino-agent-0.6.0-windows-amd64.msi` |
 | Apple 芯片上的 macOS 12.3 及以上                             | ARM64  | `neutrino-agent-0.6.0-macos-arm64.pkg`   |
@@ -56,15 +56,15 @@ Windows 版只有 x86-64，因为 RustDesk 没有发布 Windows ARM64 版本。�
 
 ## 桌面客户端
 
-| 系统                                                              | 架构   | 文件                                      |
-| ----------------------------------------------------------------- | ------ | ----------------------------------------- |
-| Debian 12 及以上，Ubuntu 22.04 及以上，带桌面会话                 | x86-64 | `neutrino-client_0.6.0_amd64.deb`         |
-| 同上                                                              | ARM64  | `neutrino-client_0.6.0_arm64.deb`         |
-| RHEL 9 系，例如 AlmaLinux、Rocky，和 Fedora 41 及以上，带桌面会话 | x86-64 | `neutrino-client-0.6.0-1.x86_64.rpm`      |
-| 同上                                                              | ARM64  | `neutrino-client-0.6.0-1.aarch64.rpm`     |
-| Windows 10 1809 及以上，Windows 11                                | x86-64 | `neutrino-client-0.6.0-windows-amd64.msi` |
-| Apple 芯片上的 macOS 12.3 及以上                                  | ARM64  | `neutrino-client-0.6.0-macos-arm64.pkg`   |
-| Intel 芯片上的 macOS 12.3 及以上                                  | x86-64 | `neutrino-client-0.6.0-macos-amd64.pkg`   |
+| 系统                                                                          | 架构   | 文件                                      |
+| ----------------------------------------------------------------------------- | ------ | ----------------------------------------- |
+| Debian 12 及以上，Ubuntu 22.04 及以上，带桌面会话                             | x86-64 | `neutrino-client_0.6.0_amd64.deb`         |
+| 同上                                                                          | ARM64  | `neutrino-client_0.6.0_arm64.deb`         |
+| RHEL 9 系，例如 AlmaLinux、Rocky，先启用 EPEL；Fedora 41 及以上；都带桌面会话 | x86-64 | `neutrino-client-0.6.0-1.x86_64.rpm`      |
+| 同上                                                                          | ARM64  | `neutrino-client-0.6.0-1.aarch64.rpm`     |
+| Windows 10 1809 及以上，Windows 11                                            | x86-64 | `neutrino-client-0.6.0-windows-amd64.msi` |
+| Apple 芯片上的 macOS 12.3 及以上                                              | ARM64  | `neutrino-client-0.6.0-macos-arm64.pkg`   |
+| Intel 芯片上的 macOS 12.3 及以上                                              | x86-64 | `neutrino-client-0.6.0-macos-amd64.pkg`   |
 
 Linux 客户端的窗口用 WebKitGTK，4.1 和 4.0 两种接口都行；挂载共享要用 `cifs-utils` 和 polkit。缺 appindicator 库时，托盘图标改用 GTK 状态图标画出。Windows 上的窗口用 WebView2 运行时，系统缺它时安装程序装上它。Windows 版只有 x86-64，因为 cc-switch 没有发布 Windows ARM64 版本。
 

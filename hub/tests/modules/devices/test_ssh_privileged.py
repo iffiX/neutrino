@@ -6,8 +6,8 @@ over stdin: the command asyncssh is handed never contains either, and the
 stdin payload carries the password line first, then whatever the command
 itself reads. The password is the call's own argument, typed for one
 install and held by no credentials object. The install half pins the
-package flow: the family the device's own tools pick, and a failure
-stopping before the join.
+package flow: the family the device's own tools pick, EPEL enabled before
+the rpm on the RHEL family, and a failure stopping before the join.
 """
 
 import asyncio
@@ -18,7 +18,11 @@ import pytest
 
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNSUPPORTED_OS_STATUS
-from neutrino_hub.modules.devices.ssh_ops import DeviceSshOperator, SshCredentials
+from neutrino_hub.modules.devices.ssh_ops import (
+    DeviceSshOperator,
+    SshCredentials,
+    epel_command,
+)
 
 SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 LINK = "neutrino://enroll/eyJmYWtlIjogdHJ1ZX0"
@@ -43,18 +47,20 @@ class FakeSftp:
 
 
 class FakeConnection:
-    """Answers ``uname -s``, ``uname -m`` and ``command -v``, and records
-    everything."""
+    """Answers ``uname -s``, ``uname -m``, ``command -v`` and the read of
+    ``/etc/os-release``, and records everything."""
 
     def __init__(
         self,
         kernel: str = "Linux",
         tools: tuple = ("dpkg",),
         machine: str = "x86_64",
+        os_release: str = "",
     ):
         self.kernel = kernel
         self.tools = tools
         self.machine = machine
+        self.os_release = os_release
         self.commands: list[str] = []
         self.uploads: list = []
 
@@ -66,6 +72,8 @@ class FakeConnection:
             stdout = f"{self.kernel}\n"
         elif "uname -m" in command:
             stdout = f"{self.machine}\n"
+        elif command == "cat /etc/os-release":
+            stdout = self.os_release
         elif command.startswith("command -v "):
             tool = command.split()[-1]
             exit_status = 0 if tool in self.tools else 1
@@ -404,3 +412,89 @@ def test_the_rpm_install_asks_for_no_refresh(packages):
 
     assert len(calls) == 2
     assert "dnf" in calls[0]["command"]
+
+
+ROCKY = (
+    'NAME="Rocky Linux"\nID="rocky"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.4"\n'
+)
+ALMA = 'ID="almalinux"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.5"\n'
+RHEL = 'ID="rhel"\nID_LIKE="fedora"\nVERSION_ID="9.4"\n'
+FEDORA = "ID=fedora\nVERSION_ID=41\n"
+CRB_EPEL = "dnf config-manager --set-enabled crb && dnf install -y epel-release"
+
+
+@pytest.mark.parametrize(
+    "os_release, machine, command",
+    [
+        (ROCKY, "x86_64", CRB_EPEL),
+        (ALMA, "aarch64", CRB_EPEL),
+        (
+            RHEL,
+            "x86_64",
+            "subscription-manager repos --enable "
+            "codeready-builder-for-rhel-9-x86_64-rpms && dnf install -y "
+            "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm",
+        ),
+        (
+            RHEL,
+            "aarch64",
+            "subscription-manager repos --enable "
+            "codeready-builder-for-rhel-9-aarch64-rpms && dnf install -y "
+            "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm",
+        ),
+        (FEDORA, "x86_64", ""),
+        ('ID=debian\nVERSION_ID="12"\n', "x86_64", ""),
+        ("", "x86_64", ""),
+    ],
+)
+def test_epel_is_enabled_the_way_epel_says_on_each_system(os_release, machine, command):
+    assert epel_command(os_release, machine) == command
+
+
+@pytest.mark.parametrize("os_release", [ROCKY, ALMA, RHEL])
+def test_the_rpm_install_enables_epel_first_on_the_rhel_family(packages, os_release):
+    """The agent's rpm names xdotool, which the RHEL family has in EPEL."""
+    op = operator()
+    connection = FakeConnection(tools=("rpm",), os_release=os_release)
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
+
+    lines = asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
+
+    assert "cat /etc/os-release" in connection.commands
+    assert calls[0]["command"] == epel_command(os_release, "x86_64")
+    assert "dnf reinstall" in calls[1]["command"]
+    assert calls[2]["command"] == f"nagent join --yes {LINK}"
+    assert [call["sudo_password"] for call in calls] == [SUDO_PASSWORD] * 3
+    assert any("enabling EPEL" in line for line in lines)
+    assert lines[-1] == "\n[exit 0]\n"
+
+
+def test_epel_that_cannot_be_enabled_ends_the_task_before_the_package(packages):
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=("rpm",), os_release=ROCKY))
+    calls = capture_privileged_once(op, codes=(1,))
+
+    lines = asyncio.run(install_lines(op, packages))
+
+    assert len(calls) == 1
+    assert any("EPEL could not be enabled" in line for line in lines)
+    assert lines[-1] == "\n[exit 1]\n"
+
+
+@pytest.mark.parametrize(
+    "tools, os_release",
+    [(("rpm",), FEDORA), (("dpkg",), 'ID=debian\nVERSION_ID="12"\n')],
+)
+def test_fedora_and_a_deb_take_no_epel_step(packages, tools, os_release):
+    op = operator()
+    op._connect = fake_connect(FakeConnection(tools=tools, os_release=os_release))
+    calls = capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages))
+
+    assert not any(
+        word in call["command"]
+        for call in calls
+        for word in ("epel", "crb", "subscription-manager")
+    )

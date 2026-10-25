@@ -31,7 +31,7 @@ title: 安装中枢
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
 ```
 
-下载开始之前，在 `sudo` 的提示下输入一次密码。Debian 和 Ubuntu 上，apt 安装时打印一行 `N: Download is performed unsandboxed as root…`，这是 apt 的提示，安装照常完成。
+下载开始之前，在 `sudo` 的提示下输入一次密码。Debian 和 Ubuntu 上，apt 安装时打印一行 `N: Download is performed unsandboxed as root…`，这是 apt 的提示，安装照常完成。AlmaLinux、Rocky 和 RHEL 上，脚本安装前先启用 EPEL，并为此打印一行。
 
 ### Windows
 
@@ -59,7 +59,8 @@ sudo apt install ./neutrino-hub_0.6.0_amd64.deb
 sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
-```bash [RHEL、AlmaLinux、Rocky]
+```bash [AlmaLinux、Rocky]
+sudo dnf config-manager --set-enabled crb
 sudo dnf install -y epel-release
 sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
@@ -70,7 +71,7 @@ sudo pacman -U neutrino-hub-0.6.0-1-x86_64.pkg.tar.zst
 
 :::
 
-ARM64 机器用文件名带 `arm64` 或 `aarch64` 的包，Arch 的包只有 x86-64。RHEL 系先装 `epel-release`。
+ARM64 机器用文件名带 `arm64` 或 `aarch64` 的包，Arch 的包只有 x86-64。RHEL 系的 fail2ban 和 arp-scan 在 EPEL 里；RHEL 上照 EPEL 自己的说明启用：用 CodeReady Builder 代替 CRB，EPEL 的发布包从 Fedora 项目下载。
 
 ::: warning
 用 `apt`、`dnf` 或 `pacman` 安装，它们一起装上依赖。`dpkg -i` 和 `rpm -i` 不装依赖；已经用了的话，Debian 系运行 `sudo apt -f install` 补齐。

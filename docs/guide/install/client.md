@@ -46,7 +46,13 @@ Download the client's file from the [releases page](https://github.com/iffiX/neu
 sudo apt install ./neutrino-client_0.6.0_amd64.deb
 ```
 
-```bash [Fedora, RHEL family]
+```bash [Fedora]
+sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
+```
+
+```bash [AlmaLinux, Rocky]
+sudo dnf config-manager --set-enabled crb
+sudo dnf install -y epel-release
 sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
 ```
 
@@ -60,7 +66,7 @@ sudo installer -pkg neutrino-client-0.6.0-macos-arm64.pkg -target /
 
 :::
 
-On 64-bit ARM Linux the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. On an Intel Mac the file is `neutrino-client-0.6.0-macos-amd64.pkg`.
+On 64-bit ARM Linux the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. The RHEL family takes the client's `xdotool` from EPEL, which the install script enables itself; on RHEL, CodeReady Builder takes the place of CRB and the EPEL release package comes from the Fedora project, as EPEL's own instructions show. On an Intel Mac the file is `neutrino-client-0.6.0-macos-amd64.pkg`.
 
 ::: warning
 `dpkg -i` and `rpm -i` install none of the dependencies. After either one, run `sudo apt -f install` on Debian, or `sudo dnf install` with the missing packages on Fedora and RHEL.

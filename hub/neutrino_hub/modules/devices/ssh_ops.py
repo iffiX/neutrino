@@ -57,6 +57,47 @@ MACHINE_TO_ARCH = {
     "armv7l": "armhf",
     "armv6l": "armhf",
 }
+# The RHEL rebuilds whose EPEL is epel-release with CRB enabled, and the EPEL
+# release package for RHEL itself, the major release and .noarch.rpm after
+# it, as EPEL's own instructions name them.
+EPEL_CRB_IDS = ("rocky", "almalinux", "centos")
+EPEL_RHEL_ID = "rhel"
+EPEL_RELEASE_PREFIX = "https://dl.fedoraproject.org/pub/epel/epel-release-latest-"
+
+
+def epel_command(os_release: str, machine: str) -> str:
+    """The command that enables EPEL on a RHEL-family device, CRB first.
+
+    The agent's ``.rpm`` names ``xdotool``, which the RHEL family carries in
+    EPEL alone.
+
+    Args:
+        os_release: The device's ``/etc/os-release``.
+        machine: What ``uname -m`` printed there.
+
+    Returns:
+        The steps as one shell command: ``dnf config-manager --set-enabled
+        crb`` and ``dnf install -y epel-release`` on Rocky, AlmaLinux and
+        CentOS, CodeReady Builder and the EPEL release package on RHEL;
+        empty for every other system.
+    """
+    fields = {}
+    for line in os_release.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key.strip()] = value.strip().strip("\"'")
+    system = fields.get("ID", "")
+    major = fields.get("VERSION_ID", "").split(".", 1)[0]
+    if system in EPEL_CRB_IDS:
+        return "dnf config-manager --set-enabled crb && dnf install -y epel-release"
+    if system == EPEL_RHEL_ID:
+        repository = f"codeready-builder-for-rhel-{major}-{machine}-rpms"
+        release = f"{EPEL_RELEASE_PREFIX}{major}.noarch.rpm"
+        return (
+            f"subscription-manager repos --enable {shlex.quote(repository)} && "
+            f"dnf install -y {shlex.quote(release)}"
+        )
+    return ""
 
 
 def _os_family(os_release: str) -> str:
@@ -351,12 +392,13 @@ class DeviceSshOperator:
         """Deliver the agent as a native package and join it to this hub.
 
         The same acts a person performs by hand — refresh the package lists,
-        install the package, run ``nagent join`` — so there is one install
-        story and one enrollment path. The link goes on the command line,
-        which it was shaped for: a single-use ticket bound to this device's
-        record, no different from a person pasting it into a terminal. Stdin
-        stays the sudo password's alone — sudo reads it only when it prompts,
-        so nothing else may need lines counted behind it.
+        on the RHEL family enable EPEL, install the package, run ``nagent
+        join`` — so there is one install story and one enrollment path. The
+        link goes on the command line, which it was shaped for: a single-use
+        ticket bound to this device's record, no different from a person
+        pasting it into a terminal. Stdin stays the sudo password's alone —
+        sudo reads it only when it prompts, so nothing else may need lines
+        counted behind it.
 
         Args:
             packages: The agent packages this hub can deliver, asked once the
@@ -368,10 +410,12 @@ class DeviceSshOperator:
         Yields:
             Progress lines and the remote tools' output. A device that is not
             Linux, or whose package manager or machine the hub carries no
-            package for, ends the task before anything lands on it.
+            package for, ends the task before anything lands on it; EPEL that
+            cannot be enabled ends it before the package.
         """
         family = None
         package_path = None
+        epel = ""
         try:
             async with self._connect() as connection:
                 result = await connection.run("uname -s", check=False)
@@ -411,6 +455,9 @@ class DeviceSshOperator:
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
                     return
+                if family == "rpm":
+                    result = await connection.run("cat /etc/os-release", check=False)
+                    epel = epel_command(result.stdout or "", machine)
                 remote_package = f"/tmp/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:
@@ -451,6 +498,17 @@ class DeviceSshOperator:
                 f"--allow-downgrades {shlex.quote(remote_package)}"
             )
         else:
+            if epel:
+                yield "[enabling EPEL, where the package's dependencies come from]\n"
+                code, output = await self.run_privileged_once(
+                    epel, timeout_s=INSTALL_TIMEOUT_S, sudo_password=sudo_password
+                )
+                if output:
+                    yield output + "\n"
+                if code != 0:
+                    yield "[EPEL could not be enabled; the package was not installed]\n"
+                    yield f"\n[exit {code}]\n"
+                    return
             install_command = (
                 f"dnf reinstall -y {shlex.quote(remote_package)} || "
                 f"dnf install -y {shlex.quote(remote_package)} || "
