@@ -4,15 +4,19 @@ The autouse redirect keeps every store off the real machine: the binding
 file, the machine's own state store, the credentials directory, the
 configured marks and the package directory all land in ``tmp_path``, and
 the AI gateway forward an agent builds listens on a port the system picks.
-The fakes here are the ones more than one directory drives: the control
-channel's platform and agent, the injected clock, the link builder and the
-log sink.
+A guard on every process a test starts refuses the firewalls and the
+network tools by name, so no test reads or changes the machine's firewall
+or its network. The fakes here are the ones more than one directory drives:
+the control channel's platform and agent, the injected clock, the link
+builder and the log sink.
 """
 
 import base64
 import functools
 import json
+import os
 import subprocess
+import tempfile
 import zlib
 
 import pytest
@@ -41,6 +45,61 @@ from neutrino_agent.platforms.powershell_host import (
 from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.platforms.windows_processes import WindowsProcessEntry
 from neutrino_agent.streams.ai_forward import AiGatewayForward
+
+# The programs no test may start: the firewalls the relays' rules go to, the
+# tools that read or change the machine's network, and PowerShell, which a
+# test runs only on a script it wrote under the temporary directory.
+REFUSED_PROGRAMS = frozenset(
+    {
+        "ufw",
+        "firewall-cmd",
+        "firewall-offline-cmd",
+        "nft",
+        "iptables",
+        "ip6tables",
+        "netsh",
+        "ip",
+    }
+)
+POWERSHELL_PROGRAMS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.exe"})
+
+_real_popen = subprocess.Popen
+
+
+def _refuses(command) -> "str | None":
+    """Why a test must not start a command, or None when it may."""
+    if isinstance(command, (str, bytes)):
+        words = os.fsdecode(command).split()
+    else:
+        words = [os.fsdecode(word) for word in command]
+    if not words:
+        return None
+    program = os.path.basename(words[0]).lower()
+    if program in REFUSED_PROGRAMS:
+        return f"{program} reads or changes the machine's firewall or network"
+    if program in POWERSHELL_PROGRAMS:
+        script = words[words.index("-File") + 1] if "-File" in words[:-1] else ""
+        if not script.startswith(tempfile.gettempdir() + os.sep):
+            return f"{program} runs only a script a test wrote"
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _no_test_reaches_the_firewall(monkeypatch):
+    """Refuse, by name, a process a test would start on the real firewall or
+    network; ``subprocess.run`` starts every process through ``Popen``."""
+
+    class GuardedPopen(_real_popen):
+        def __init__(self, command, *arguments, **keywords):
+            reason = _refuses(command)
+            if reason is not None:
+                test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+                raise AssertionError(
+                    f"{test} started {command!r} ({reason}); stub what ran it"
+                )
+            super().__init__(command, *arguments, **keywords)
+
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
 
 
 @pytest.fixture(autouse=True)
