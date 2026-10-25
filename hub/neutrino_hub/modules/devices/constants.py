@@ -308,6 +308,11 @@ DEVICE_HERMES_WEBUI_WEBUI_VOLUMES = (
     "neutrino_hermes_webui_app:/app",
 )
 DEVICE_HERMES_WEBUI_STATE_DIR = "/home/hermeswebui/.hermes/webui"
+# The webui's login cookie: its name on each device is this prefix and the
+# first characters of the device id, so the pages of two devices open in one
+# browser keep their own logins.
+DEVICE_HERMES_WEBUI_COOKIE_PREFIX = "hermes_session_"
+DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS = 12
 # Where a container comes from, by the owner rule: the label, the declared
 # names, else a person's own.
 DEVICE_CONTAINER_SOURCE_HUB = "hub"

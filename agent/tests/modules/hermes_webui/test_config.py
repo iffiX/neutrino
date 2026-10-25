@@ -1,4 +1,4 @@
-"""Hermes WebUI's configuration: the forwarder's port and its two secrets."""
+"""Hermes WebUI's configuration: the forwarder's port, its two secrets and the login cookie's name."""
 
 import pytest
 
@@ -11,6 +11,16 @@ def test_the_state_s_fields_are_read_and_a_missing_port_is_8787():
 
     assert (config.port, config.secret, config.password) == (8787, "s", "p")
     config.validate()
+
+
+def test_the_cookie_name_is_the_hub_s_and_the_webui_s_default_without_one():
+    named = HermesWebuiConfig.from_dict({"cookie_name": "hermes_session_a9cae9416662"})
+
+    assert named.cookie_name == "hermes_session_a9cae9416662"
+    assert HermesWebuiConfig.from_dict({}).cookie_name == "hermes_session"
+    assert HermesWebuiConfig.from_dict({"cookie_name": ""}).cookie_name == (
+        "hermes_session"
+    )
 
 
 @pytest.mark.parametrize("port", [0, 80, 1023, 65536, True, "8787", None])

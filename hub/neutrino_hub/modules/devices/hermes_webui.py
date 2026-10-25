@@ -4,9 +4,10 @@ The file is ``config/devices/<id>/hermes_webui.json``: ``port``, the
 forwarder's, 8787 unless the person sets another; the token secret and the
 webui's password, generated the first time the module is installed or its
 port is set and sealed under the vault's data key; and the module's gateway
-key. The state carries ``{port, secret, password}`` opened. The module runs
-two hub containers on Containers: the agent's gateway first, then the
-webui, which starts after it and whose 8787 the module's forwarder serves.
+key. The state carries ``{port, secret, password}`` opened, and the name
+of the webui's login cookie on the device. The module runs two hub
+containers on Containers: the agent's gateway first, then the webui, which
+starts after it and whose 8787 the module's forwarder serves.
 
 Pure apart from the module's file, read and written through the store.
 """
@@ -19,6 +20,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CONTAINER_GATEWAY_FORWARD_PORT,
     DEVICE_CONTAINER_GATEWAY_URL,
     DEVICE_HERMES_WEBUI_AGENT_COMMAND,
+    DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS,
+    DEVICE_HERMES_WEBUI_COOKIE_PREFIX,
     DEVICE_HERMES_WEBUI_AGENT_CONTAINER,
     DEVICE_HERMES_WEBUI_AGENT_IMAGE,
     DEVICE_HERMES_WEBUI_AGENT_VOLUMES,
@@ -108,19 +111,33 @@ def ensure_config(store, key: str, *, port: "int | None" = None) -> dict:
     return written
 
 
-def agent_config(stored: dict) -> dict:
+def cookie_name(key: str) -> str:
+    """The name of the webui's login cookie on one device.
+
+    Args:
+        key: The device.
+
+    Returns:
+        ``hermes_session_`` and the first 12 characters of the device id.
+    """
+    return DEVICE_HERMES_WEBUI_COOKIE_PREFIX + key[:DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS]
+
+
+def agent_config(stored: dict, key: str) -> dict:
     """What the agent is sent for Hermes WebUI.
 
     Args:
         stored: The module's file.
+        key: The device.
 
     Returns:
-        ``{port, secret, password}``, each secret opened, empty when the
-        file holds none or the vault cannot open it.
+        ``{port, secret, password, cookie_name}``, each secret opened, empty
+        when the file holds none or the vault cannot open it.
     """
     config = {"port": stored_port(stored)}
     for sealed in module_row(DEVICE_HERMES_WEBUI_MODULE).sealed_fields:
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
+    config["cookie_name"] = cookie_name(key)
     return config
 
 
@@ -149,7 +166,9 @@ def compose_containers(request: HubContainerRequest) -> tuple:
         The agent container, then the webui; none while the webui's password
         does not open, so no webui runs without its own login.
     """
-    config = agent_config(request.store.read(request.key, DEVICE_HERMES_WEBUI_MODULE))
+    config = agent_config(
+        request.store.read(request.key, DEVICE_HERMES_WEBUI_MODULE), request.key
+    )
     if not config["password"]:
         return ()
     gateway = (
@@ -177,6 +196,7 @@ def compose_containers(request: HubContainerRequest) -> tuple:
             f"WANTED_GID={DEVICE_HERMES_WEBUI_UID}",
             f"HERMES_WEBUI_STATE_DIR={DEVICE_HERMES_WEBUI_STATE_DIR}",
             f"HERMES_WEBUI_PASSWORD={config['password']}",
+            f"HERMES_WEBUI_COOKIE_NAME={config['cookie_name']}",
             *gateway,
         ),
         after=(DEVICE_HERMES_WEBUI_AGENT_CONTAINER,),

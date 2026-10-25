@@ -821,7 +821,8 @@ class DesiredStateStore:
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, a program run as
             an account with its sealed fields and logins opened, as its row
-            says, and Hermes WebUI with its port and its secrets opened.
+            says, and Hermes WebUI with its port, its secrets opened and its
+            login cookie's name.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -840,7 +841,7 @@ class DesiredStateStore:
         elif name in account_program_names():
             config = instances_agent_config(module_row(name), config, platform)
         elif name == DEVICE_HERMES_WEBUI_MODULE:
-            config = hermes_webui.agent_config(config)
+            config = hermes_webui.agent_config(config, key)
         elif name == DEVICE_TERMINAL_MODULE:
             config = terminal_agent_config(config, platform)
         return config

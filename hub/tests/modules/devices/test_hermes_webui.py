@@ -2,8 +2,10 @@
 
 What these pin: the first install or port set generates the token secret and
 the webui's password once and keeps them; a port outside 1024 to 65535 is
-refused; the state carries ``{port, secret, password}`` opened; the two hub
-containers as the module's page lists them, with the gateway's address on a
+refused; the state carries ``{port, secret, password}`` opened and the login
+cookie's name, ``hermes_session_`` and the device id's first 12 characters;
+the two hub containers as the module's page lists them, the cookie's name in
+the webui's environment, with the gateway's address on a
 managed machine and on the hub's own; no container while the password does
 not open; and the manifest's four entries naming the tested pair by digest.
 """
@@ -92,15 +94,25 @@ def test_the_state_carries_the_port_and_both_secrets_opened(store):
         "port": 9000,
         "secret": opened(stored, "secret_sealed", b"device_hermes_webui:secret"),
         "password": opened(stored, "password_sealed", b"device_hermes_webui:password"),
+        "cookie_name": "hermes_session_dev-1",
     }
 
 
 def test_a_file_with_nothing_sealed_sends_empty_secrets_and_the_default_port():
-    assert hermes_webui.agent_config({}) == {
+    assert hermes_webui.agent_config({}, DEVICE) == {
         "port": 8787,
         "secret": "",
         "password": "",
+        "cookie_name": "hermes_session_dev-1",
     }
+
+
+def test_the_cookie_is_named_for_the_first_12_characters_of_the_device_id():
+    first = hermes_webui.cookie_name("a9cae941666241e39f3b2213ad5290bb")
+    second = hermes_webui.cookie_name("0d1e2f3041526374a9cae941666241e3")
+
+    assert first == "hermes_session_a9cae9416662"
+    assert second == "hermes_session_0d1e2f304152"
 
 
 def test_the_two_containers_are_composed_as_the_module_s_page_lists_them(store):
@@ -152,6 +164,7 @@ def test_the_two_containers_are_composed_as_the_module_s_page_lists_them(store):
                 "WANTED_GID=1024",
                 "HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui",
                 f"HERMES_WEBUI_PASSWORD={password}",
+                "HERMES_WEBUI_COOKIE_NAME=hermes_session_dev-1",
                 *gateway,
             ],
             "command": "",

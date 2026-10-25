@@ -1,10 +1,11 @@
 """Hermes WebUI's hooks: the forwarder's login, the gateway keys, the health read, a version change.
 
 What these pin, against a faked ``podman`` and a webui on loopback: a token
-that verifies is traded for the webui's ``hermes_session`` cookie and a
-redirect to ``/``, the cookie passed on with ``Host`` and ``Origin``
-unchanged, 401 for ``/api/auth/login`` whatever it holds and for a request
-with neither; the four gateway keys written with ``hermes config set``
+that verifies is traded for the webui's cookie under the device's own
+name and a redirect to ``/``, the cookie passed on with ``Host`` and
+``Origin`` unchanged, 401 for ``/api/auth/login`` whatever it holds and for
+a request with neither; two devices' pages open in one browser keeping both
+logins; the four gateway keys written with ``hermes config set``
 once ``config.yaml`` exists and again when the base URL changes, never
 ``model.default``; ``installing`` until the keys and ``/health`` hold, the
 start waiting meanwhile; a version change making ``agent`` and ``app``
@@ -23,6 +24,9 @@ import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.hermes_webui import hooks as hooks_module
+from neutrino_agent.modules.hermes_webui.constants import (
+    HERMES_WEBUI_FORWARDER_FIELDS,
+)
 from neutrino_agent.modules.hermes_webui.hooks import (
     HermesWebuiHooks,
     gateway_keys,
@@ -35,10 +39,16 @@ from neutrino_agent.platforms.base import AgentPlatform
 
 SECRET = "token-secret-of-the-module"
 PASSWORD = "webui-password"
-CONFIG = {"port": 8787, "secret": SECRET, "password": PASSWORD}
+COOKIE_NAME = "hermes_session_a9cae9416662"
+CONFIG = {
+    "port": 8787,
+    "secret": SECRET,
+    "password": PASSWORD,
+    "cookie_name": COOKIE_NAME,
+}
 PODMAN = "/usr/bin/podman"
 URL = "http://host.containers.internal:8317"
-COOKIE = "hermes_session=abc123; HttpOnly; Max-Age=2592000; Path=/; SameSite=Lax"
+COOKIE = f"{COOKIE_NAME}=abc123; HttpOnly; Max-Age=2592000; Path=/; SameSite=Lax"
 
 
 class FakeContainers:
@@ -106,7 +116,7 @@ class FakeForwarder:
     def matches(self, record):
         return all(
             record.get(field) == self.record.get(field)
-            for field in ("port", "secret", "password", "upstream_port")
+            for field in HERMES_WEBUI_FORWARDER_FIELDS
         )
 
     def start(self):
@@ -344,6 +354,31 @@ def test_a_new_port_starts_another_forwarder(box):
     assert second.record["port"] == 9100
 
 
+def test_the_record_keeps_the_cookie_name_and_a_new_one_starts_another_forwarder(
+    box,
+):
+    box.hooks.apply(CONFIG)
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
+    assert box.record()["cookie_name"] == COOKIE_NAME
+
+    box.hooks.apply({**CONFIG, "cookie_name": "hermes_session_0123456789ab"})
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
+
+    first, second = box.forwarders
+    assert first.is_closed and second.is_started
+    assert second.record["cookie_name"] == "hermes_session_0123456789ab"
+
+
+def test_a_state_with_no_cookie_name_uses_the_webui_s_default(box):
+    box.hooks.apply({"port": 8787, "secret": SECRET, "password": PASSWORD})
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
+
+    assert box.record()["cookie_name"] == "hermes_session"
+
+
 def test_after_a_restart_the_record_brings_the_forwarder_back(box):
     box.podman.has_config = True
     box.status = 200
@@ -378,11 +413,16 @@ def test_the_login_route_is_matched_however_it_is_spelled(path):
     assert normal_path(path) == "/api/auth/login"
 
 
-def test_the_session_cookie_is_the_one_the_webui_set():
-    assert session_cookie([("Set-Cookie", "other=1"), ("set-cookie", COOKIE)]) == (
-        COOKIE
-    )
-    assert session_cookie([("Content-Type", "x")]) == ""
+def test_the_session_cookie_is_the_one_the_webui_set_under_the_name_given():
+    headers = [
+        ("Set-Cookie", "other=1"),
+        ("Set-Cookie", "hermes_session=default"),
+        ("set-cookie", COOKIE),
+    ]
+
+    assert session_cookie(headers, COOKIE_NAME) == COOKIE
+    assert session_cookie(headers) == "hermes_session=default"
+    assert session_cookie([("Content-Type", "x")], COOKIE_NAME) == ""
 
 
 def test_the_keys_name_the_custom_provider_and_the_key_s_variable():
@@ -398,13 +438,16 @@ def test_the_keys_name_the_custom_provider_and_the_key_s_variable():
 
 
 class FakeWebui(socketserver.ThreadingTCPServer):
-    """A webui that signs in a JSON password with no Origin, and echoes the rest."""
+    """A webui that signs in a JSON password with no Origin under its cookie
+    name, and echoes the host of a request that holds its own login."""
 
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self):
+    def __init__(self, cookie_name=COOKIE_NAME, value="abc123"):
         self.requests: list = []
+        self.cookie_name = cookie_name
+        self.value = value
         super().__init__(("127.0.0.1", 0), FakeWebuiConnection)
         threading.Thread(
             target=self.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
@@ -445,10 +488,26 @@ class FakeWebuiConnection(socketserver.BaseRequestHandler):
                 and json.loads(body or b"{}").get("password") == PASSWORD
             )
             status = "200 OK" if is_good else "401 Unauthorized"
-            cookie = f"Set-Cookie: {COOKIE}\r\n" if is_good else ""
+            cookie = (
+                f"Set-Cookie: {self.server.cookie_name}={self.server.value};"
+                " HttpOnly; Max-Age=2592000; Path=/; SameSite=Lax\r\n"
+                if is_good
+                else ""
+            )
             self.request.sendall(
                 f"HTTP/1.1 {status}\r\n{cookie}Content-Length: 2\r\n"
                 "Connection: close\r\n\r\n{}".encode()
+            )
+            return
+        held = dict(
+            part.strip().partition("=")[::2]
+            for part in headers.get("cookie", "").split(";")
+            if part.strip()
+        )
+        if held.get(self.server.cookie_name) != self.server.value:
+            self.request.sendall(
+                b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
             )
             return
         answer = json.dumps({"host": headers.get("host", "")}).encode()
@@ -465,14 +524,14 @@ def webui():
     server.stop()
 
 
-@pytest.fixture
-def page(webui, tmp_path):
+def open_page(webui, record_dir, cookie_name=COOKIE_NAME) -> InstanceForwarder:
+    """A forwarder in front of one webui, listening on a port of its own."""
     hooks = HermesWebuiHooks(
         platform=AgentPlatform(),
         name="hermes_webui",
         containers=FakeContainers(upstream=webui.port),
         log=lambda line: None,
-        record_dir=str(tmp_path / "record"),
+        record_dir=str(record_dir),
     )
     forwarder = InstanceForwarder(
         name="hermes_webui",
@@ -481,6 +540,7 @@ def page(webui, tmp_path):
             "port": 0,
             "secret": SECRET,
             "password": PASSWORD,
+            "cookie_name": cookie_name,
             "upstream_port": webui.port,
         },
         hooks=hooks,
@@ -492,6 +552,12 @@ def page(webui, tmp_path):
     deadline = time.monotonic() + 5
     while not forwarder.is_listening and time.monotonic() < deadline:
         time.sleep(0.02)
+    return forwarder
+
+
+@pytest.fixture
+def page(webui, tmp_path):
+    forwarder = open_page(webui, tmp_path / "record")
     yield forwarder.listen_address[1]
     forwarder.close()
 
@@ -532,6 +598,7 @@ def test_a_token_is_traded_for_the_webui_s_cookie_and_a_redirect(page, webui):
     assert status_of(answer) == 302
     assert header_of(answer, b"location") == "/"
     assert header_of(answer, b"set-cookie") == COOKIE
+    assert header_of(answer, b"set-cookie").startswith(COOKIE_NAME + "=")
     assert status_of(again) == 401
     (login,) = webui.requests
     assert (login[0], login[1], json.loads(login[3])) == (
@@ -545,7 +612,7 @@ def test_the_cookie_is_passed_on_with_host_and_origin_unchanged(page, webui):
     answer = ask(
         page,
         b"POST /api/chat HTTP/1.1\r\nHost: 127.0.0.1:47001\r\n"
-        b"Origin: http://127.0.0.1:47001\r\nCookie: hermes_session=abc123\r\n"
+        b"Origin: http://127.0.0.1:47001\r\nCookie: hermes_session_a9cae9416662=abc123\r\n"
         b"Content-Length: 2\r\n\r\n{}",
     )
 
@@ -554,16 +621,75 @@ def test_the_cookie_is_passed_on_with_host_and_origin_unchanged(page, webui):
     method, target, headers, _body = webui.requests[-1]
     assert (method, target) == ("POST", "/api/chat")
     assert headers["origin"] == "http://127.0.0.1:47001"
-    assert headers["cookie"] == "hermes_session=abc123"
+    assert headers["cookie"] == f"{COOKIE_NAME}=abc123"
+
+
+def test_the_webui_s_default_cookie_name_is_not_this_device_s_login(page, webui):
+    answer = ask(
+        page, b"GET / HTTP/1.1\r\nHost: x\r\nCookie: hermes_session=abc123\r\n\r\n"
+    )
+
+    assert status_of(answer) == 401
+    assert webui.requests == []
+
+
+class Browser:
+    """Keeps cookies per host and name, never per port, as a browser does."""
+
+    def __init__(self):
+        self.jar: dict = {}
+
+    def sign_in(self, port):
+        answer = ask(
+            port, f"GET /?tkn={fresh_token()} HTTP/1.1\r\nHost: x\r\n\r\n".encode()
+        )
+        name, _, rest = header_of(answer, b"set-cookie").partition("=")
+        self.jar[name] = rest.split(";", 1)[0]
+        return status_of(answer)
+
+    def get(self, port):
+        cookie = "; ".join(f"{name}={value}" for name, value in self.jar.items())
+        return status_of(
+            ask(port, f"GET / HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n\r\n".encode())
+        )
+
+
+@pytest.mark.parametrize(
+    ("names", "kept"),
+    [
+        (("hermes_session_a9cae9416662", "hermes_session_0d1e2f304152"), [200, 200]),
+        (("hermes_session", "hermes_session"), [401, 200]),
+    ],
+)
+def test_two_devices_pages_in_one_browser_keep_both_logins_under_two_names(
+    tmp_path, names, kept
+):
+    webuis = [FakeWebui(name, value) for name, value in zip(names, ("one", "two"))]
+    pages = [
+        open_page(webui, tmp_path / str(index), webui.cookie_name)
+        for index, webui in enumerate(webuis)
+    ]
+    ports = [page.listen_address[1] for page in pages]
+    browser = Browser()
+    try:
+        assert [browser.sign_in(port) for port in ports] == [302, 302]
+
+        assert [browser.get(port) for port in ports] == kept
+    finally:
+        for page in pages:
+            page.close()
+        for webui in webuis:
+            webui.stop()
 
 
 @pytest.mark.parametrize(
     "request_bytes",
     [
-        b"POST /api/auth/login HTTP/1.1\r\nHost: x\r\nCookie: hermes_session=abc"
-        b"\r\nContent-Length: 2\r\n\r\n{}",
+        b"POST /api/auth/login HTTP/1.1\r\nHost: x\r\n"
+        b"Cookie: hermes_session_a9cae9416662=abc\r\nContent-Length: 2\r\n\r\n{}",
         b"GET /api/auth/login?tkn=whatever HTTP/1.1\r\nHost: x\r\n\r\n",
-        b"GET /%2Fapi/auth/login HTTP/1.1\r\nHost: x\r\nCookie: hermes_session=a\r\n\r\n",
+        b"GET /%2Fapi/auth/login HTTP/1.1\r\nHost: x\r\n"
+        b"Cookie: hermes_session_a9cae9416662=a\r\n\r\n",
         b"GET / HTTP/1.1\r\nHost: x\r\n\r\n",
         b"GET /share/abc HTTP/1.1\r\nHost: x\r\n\r\n",
         b"GET /?tkn=forged HTTP/1.1\r\nHost: x\r\n\r\n",

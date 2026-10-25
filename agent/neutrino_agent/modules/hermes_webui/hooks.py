@@ -4,10 +4,11 @@ The forwarder listens on ``127.0.0.1`` at the configured port and passes
 requests on to the webui's 8787, published on loopback at the port the
 Containers runner picked. A request with a token that verifies is traded for
 the webui's own login: the forwarder posts the password to
-``/api/auth/login``, hands the browser the ``hermes_session`` cookie the
-webui sets and redirects to ``/``. A request with that cookie is passed on
-with ``Host`` and ``Origin`` as the browser sent them; every other request,
-and the browser's own login request, is 401.
+``/api/auth/login``, hands the browser the login cookie the webui sets,
+under the name the hub gives this device, and redirects to ``/``. A request
+with that cookie is passed on with ``Host`` and ``Origin`` as the browser
+sent them; every other request, and the browser's own login request, is
+401.
 
 Once ``config.yaml`` exists in ``home`` the agent writes ``model.provider``,
 ``model.base_url``, ``model.key_env`` and ``model.api_key``, the last two
@@ -116,11 +117,12 @@ def gateway_keys(base_url: str) -> list:
     ]
 
 
-def session_cookie(headers: list) -> str:
+def session_cookie(headers: list, cookie_name: str = HERMES_WEBUI_COOKIE) -> str:
     """The ``Set-Cookie`` value that carries the webui's login, as it sent it.
 
     Args:
         headers: ``(name, value)`` of the login's answer.
+        cookie_name: The name of the webui's login cookie.
 
     Returns:
         The header's value; empty when the answer sets no such cookie.
@@ -128,8 +130,7 @@ def session_cookie(headers: list) -> str:
     for name, value in headers:
         if name.lower() != "set-cookie":
             continue
-        cookie_name = value.split("=", 1)[0].strip()
-        if cookie_name == HERMES_WEBUI_COOKIE:
+        if value.split("=", 1)[0].strip() == cookie_name:
             return value
     return ""
 
@@ -187,6 +188,11 @@ def webui_login(port: int, password: str) -> tuple:
         raise ConnectionError(str(error)) from error
     finally:
         connection.close()
+
+
+def _cookie_name(record: dict) -> str:
+    """The name of the webui's login cookie the record holds, the webui's default when it holds none."""
+    return str(record.get("cookie_name", "") or "") or HERMES_WEBUI_COOKIE
 
 
 def _forwarder(*, name: str, record: dict, hooks, log) -> InstanceForwarder:
@@ -382,7 +388,7 @@ class HermesWebuiHooks(ContainerHooks):
         Returns:
             401 for ``/api/auth/login`` whatever it holds, for a token that
             does not verify and for a request with neither a token nor the
-            webui's cookie; a redirect to ``/`` carrying the webui's cookie
+            webui's cookie under the record's name; a redirect to ``/`` carrying the webui's cookie
             for a token that verifies, 502 when the webui refuses the
             password or does not answer; the relay for a request with the
             cookie.
@@ -404,7 +410,7 @@ class HermesWebuiHooks(ContainerHooks):
                     ("Referrer-Policy", "no-referrer"),
                 ),
             )
-        if request.cookie_values(HERMES_WEBUI_COOKIE):
+        if request.cookie_values(_cookie_name(record)):
             return RELAY
         return refused()
 
@@ -436,7 +442,9 @@ class HermesWebuiHooks(ContainerHooks):
             )
         except OSError:
             return ""
-        return session_cookie(headers) if status == 200 else ""
+        if status != 200:
+            return ""
+        return session_cookie(headers, _cookie_name(record))
 
     def _started_record(self) -> dict:
         """The record as this start serves it: the configuration, the published port, running.
@@ -460,6 +468,7 @@ class HermesWebuiHooks(ContainerHooks):
                 "port": config.port,
                 "secret": config.secret,
                 "password": config.password,
+                "cookie_name": config.cookie_name,
                 "upstream_port": upstream,
                 "is_stopped": False,
             }

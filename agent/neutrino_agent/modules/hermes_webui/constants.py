@@ -40,7 +40,8 @@ HERMES_WEBUI_PODMAN_TIMEOUT_S = 120
 
 # The webui on its published port: the address, the health page that answers
 # with no login once its first start has ended, its login route, and the
-# cookie that login sets.
+# default name of the cookie that login sets; the hub sends each device's
+# own name.
 HERMES_WEBUI_UPSTREAM_HOST = "127.0.0.1"
 HERMES_WEBUI_HEALTH_PATH = "/health"
 HERMES_WEBUI_LOGIN_PATH = "/api/auth/login"
@@ -48,14 +49,15 @@ HERMES_WEBUI_COOKIE = "hermes_session"
 HERMES_WEBUI_HEALTH_TIMEOUT_S = 3.0
 
 # What the module keeps, root-only, in its record: the forwarder's port and
-# secrets, the loopback port the webui is published at, the pair it last
-# installed, the base URL the keys were written with, whether its first
-# start has ended, and whether it was stopped.
+# secrets, the login cookie's name, the loopback port the webui is published
+# at, the pair it last installed, the base URL the keys were written with,
+# whether its first start has ended, and whether it was stopped.
 HERMES_WEBUI_RECORD_FIELDS = (
     "account",
     "port",
     "secret",
     "password",
+    "cookie_name",
     "upstream_port",
     "version",
     "base_url",
@@ -63,6 +65,12 @@ HERMES_WEBUI_RECORD_FIELDS = (
     "is_stopped",
 )
 # The fields whose change starts the forwarder again.
-HERMES_WEBUI_FORWARDER_FIELDS = ("port", "secret", "password", "upstream_port")
+HERMES_WEBUI_FORWARDER_FIELDS = (
+    "port",
+    "secret",
+    "password",
+    "cookie_name",
+    "upstream_port",
+)
 # What the module waits on while its first start runs.
 HERMES_WEBUI_PENDING = "hermes_webui_first_start"
