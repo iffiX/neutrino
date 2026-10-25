@@ -232,16 +232,34 @@ sudo pacman -U neutrino-hub-<version>-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
-RHEL 9 and its rebuilds need EPEL enabled first, because `fail2ban` and
-`arp-scan` are there rather than in the base repositories:
+The RHEL family, RHEL 9 and its rebuilds, needs EPEL for each of the three
+`.rpm` packages: the hub's `fail2ban` and `arp-scan`, and the `xdotool` the
+agent's and the client's `.rpm` name, are there rather than in the base
+repositories. Neutrino enables it: `install.sh` before it installs any of
+the three packages there, and the hub's install of an agent over SSH
+before it installs the `.rpm`, each with the administrator rights it
+already holds for the install. Each follows EPEL's own instructions, CRB or
+CodeReady Builder first, picked by `ID` in `/etc/os-release`:
+
+| `ID` | The steps |
+| --- | --- |
+| `rocky`, `almalinux`, `centos` | `dnf config-manager --set-enabled crb`, then `dnf install -y epel-release` |
+| `rhel` | `subscription-manager repos --enable codeready-builder-for-rhel-<major>-<machine>-rpms`, then `dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-<major>.noarch.rpm` |
+
+`<major>` is the part of `VERSION_ID` before its first dot and `<machine>`
+is `uname -m`. A step that fails stops the install with its output, and
+Fedora and every other system take no step. A package installed by hand on
+Rocky or AlmaLinux needs the same two lines first:
 
 ```bash
+sudo dnf config-manager --set-enabled crb
 sudo dnf install -y epel-release
 ```
 
 Enabling it in the same transaction does not work: the new repository's
 metadata is not read until the transaction that added it has finished, so it
-is its own line, and only on RHEL rebuilds. Fedora carries both itself.
+is its own command, and only on the RHEL family. Fedora carries these
+packages itself.
 
 ### Agent
 
@@ -275,7 +293,8 @@ sudo nagent join '<enrollment link from the Devices page>'
 
 Most people never download a Linux agent package: the hub installs the
 right one over SSH from the Devices page, from the one its own package
-holds or from the release sites. The two installers are downloaded and
+holds or from the release sites, and enables EPEL first on the RHEL family
+("Hub"). The two installers are downloaded and
 run on the machine, then `nagent join` runs in a terminal opened as
 administrator on Windows and under `sudo` on macOS.
 
@@ -415,8 +434,9 @@ sentence, which names each site and why it failed.
 Run as a person, `install.sh` asks sudo for the password once before it
 downloads anything, and asks nothing when `sudo -n true` already succeeds.
 It then installs with `sudo installer -pkg`, `sudo apt install ./`,
-`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`.
-For the hub it ends by printing the wizard's address with its token, and
+`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`;
+on the RHEL family it enables EPEL under the same sudo before `dnf install`
+("Hub"). For the hub it ends by printing the wizard's address with its token, and
 runs `nhub setup` in its place when its standard input is a terminal. Over a
 hub already set up, one whose panel settings hold a password hash, it runs
 neither and prints one line naming the panel's address. It runs `nhub` where

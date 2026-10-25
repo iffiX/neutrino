@@ -35,7 +35,7 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
-something the whole page is about: `Scan LAN`, `New terminal`, `Open Gitea`.
+something the whole page is about: `Scan LAN`, `New terminal`.
 Those sit in `page_actions`, and a page with none is the normal case.
 
 ## The panel

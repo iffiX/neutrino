@@ -106,7 +106,7 @@ usually just works. Two cases need a hand:
 ## Getting back in from outside
 
 NetBird advertises `192.168.100.0/24` over its `wt0` interface, so once you are
-on the overlay you reach the panel, SSH, Gitea, and the shares at their LAN
+on the overlay you reach the panel, SSH and the shares at their LAN
 addresses. Approve the advertised route once in the NetBird console.
 
 If NetBird itself cannot reach its control plane from where the box lives, turn

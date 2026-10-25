@@ -46,6 +46,14 @@ upstream's musl build, which is linked statically and names no glibc
 (`client/desktop/packaging/bundled.py:42`), and on Windows and macOS it is
 the build the client's `.msi` and `.pkg` already carry on the same floors.
 
+On the RHEL family every `.rpm` names a package that is in EPEL: the hub's
+`fail2ban` and `arp-scan` (`hub/neutrino_hub/system/constants.py`), and the
+agent's and the client's `xdotool` (`agent/packaging/build_rpm.py:41`,
+`client/desktop/packaging/build_rpm.py:65`). EPEL is therefore a requirement
+of all three there, and `install.sh` and the hub's install of an agent over
+SSH enable it, with CRB, before they install
+([../agent_work_rule/release.md](../agent_work_rule/release.md), "Hub").
+
 The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
 The introspection library on RHEL 9 is older than the bindings need, so the

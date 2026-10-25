@@ -901,6 +901,13 @@ The first frame each way is an identity card, and both cards have one shape.
 | `name` | the hostname, or the binding's name | the hub's name from `identity.json` |
 | `software` | `neutrino_agent/0.3.0`, `neutrino_client/0.3.0` | `neutrino_hub/0.3.0` |
 | `token` | the binding token | absent |
+| `time` | absent | the hub's clock as it sends the card, in seconds since the epoch, with a fraction |
+
+`time` is an added field and keeps `PROTOCOL`; a peer that does not read it
+ignores it. An agent takes the offset between it and its own clock and
+checks every token the hub minted against the hub's time
+([agent.md](agent.md), "Every later connection"); a `welcome` with none,
+from an older hub, leaves the agent on its own clock.
 
 A rejected `hello` gets `refused {code, params}` and close 4000: `hello_invalid`
 when the first frame is late, not text, not a `hello`, or one the hub cannot
@@ -1426,7 +1433,9 @@ the release binary of the version the machine runs, of kind `binary`, which
 the cache recognises by the ELF, Mach-O or PE header and the agent opens
 `package {module: gitea, artifact, digest}` for, and on Linux the package
 `git` in `packages`. `details` is
-`{is_running, port, url, version, admins}`. On macOS and Windows an install
+`{is_running, port, url, version, admins}`. The server listens on
+`127.0.0.1` alone, so its `web` entry is reached through the agent's
+`connect` stream ("The connect stream"). On macOS and Windows an install
 and an apply refuse `gitea_git_missing` while the machine has no usable
 `git`, and an install on macOS refuses `user_create_failed {user, detail}`
 when the system will not make the server's account.
@@ -1565,7 +1574,9 @@ health, the declared record's last probe, or true for a share a machine is
 reporting now, and empty on a record no probe has reached. A `generic_udp`
 record is never probed, so its health stays empty. Only `false` is
 unhealthy: an entry with empty health carries no health word and keeps its
-actions ([client.md](client.md), "The button rule"). A container's
+actions ([client.md](client.md), "The button rule"). A Gitea entry is
+healthy while its machine reports the server running, and the hub dials
+nothing on the machine to judge it. A container's
 entry, `web` or `port` on either protocol, is healthy while the container
 runs, and a container's TCP binding is a `web` entry or a `port` entry,
 never both
@@ -1712,7 +1723,7 @@ its code; the panel's are `binding_unknown`, `client_disabled` and
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once |
+| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The handshake") |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
@@ -1766,7 +1777,10 @@ The agent's end dials `127.0.0.1:<port>`, or the host address a container
 port is published on when it names one, and only a port the machine
 publishes at that moment on the stream's protocol ([agent.md](agent.md), "The
 connect stream"); any other port, and a number published on the other
-protocol alone, is refused `port_not_published {port}`.
+protocol alone, is refused `port_not_published {port}`. Gitea, VS Code and
+every forwarder listen on `127.0.0.1` alone, so this dial is the one way a
+client reaches them, and no module opens a port for them in the machine's
+firewall.
 
 | Concern | Rule |
 | --- | --- |

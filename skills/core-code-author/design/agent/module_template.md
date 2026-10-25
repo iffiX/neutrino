@@ -52,8 +52,10 @@ The instance listens on loopback alone, and the agent's forwarder,
 the configured port, where the agent's end of a `connect` stream reaches it.
 The hub generates a token from the instance's secret on every `service` ask,
 `base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))` with
-`expiry` 60 seconds ahead, and the forwarder checks it on the device with no
-call to the hub and spends it once. The module's one rule for turning that
+`expiry` 60 seconds ahead by the hub's clock, and the forwarder checks it on
+the device against the hub's time, the machine's clock plus the offset the
+agent keeps from each `welcome` ([agent.md](../agent.md), "Every later
+connection"), with no call to the hub, and spends it once. The module's one rule for turning that
 token into a login, a cookie of the forwarder's own, the page's own login
 state or a value in the browser's storage, is its hook, and every module's
 forwarder answers 401 to a request carrying neither a token nor the login.
@@ -121,6 +123,7 @@ under `modules/<module>/`, which the `container` runner calls.
 | `installers.py` | installing a downloaded package the way this machine installs things, one function per artifact kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
 | `source_fetch.py` | probing and ranking the sources of an image, an npm registry or a host an npm setting names ([module_install.md](module_install.md), "Choosing a source") |
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
+| `hub_clock.py` | the hub's time on this machine, which every token check reads: the machine's clock plus the offset the last `welcome` gave, moved by any jump of the machine's clock |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
 | `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |

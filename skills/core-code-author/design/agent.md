@@ -357,7 +357,7 @@ connection"), and each also answers the agent's dial on loopback:
 | --- | --- |
 | Samba on Linux | every address; `hosts allow` names the networks the hub composed and `127.0.0.1` |
 | the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
-| Gitea | every address (`HTTP_ADDR = 0.0.0.0`); on Windows the system firewall decides who on the LAN reaches it, and the module opens no port in it |
+| Gitea | `127.0.0.1` alone (`HTTP_ADDR = 127.0.0.1`) on every system, and the module opens no port in any firewall ([modules/gitea.md](agent/modules/gitea.md)) |
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
@@ -801,6 +801,18 @@ fingerprint is checked on **every** connection. The token is in the `hello`
 or in the body. The hub looks the token up with `secrets.compare_digest`,
 constant-time, against every stored token of that role. Nothing about an
 agent is trusted from its network position; the token is the entire identity.
+
+**The hub's time.** Each `welcome` names the hub's `time`, and the agent
+keeps the offset between it and its own clock in
+`modules/shared/hub_clock.py`. Every check of a token the hub minted reads
+the hub's time, the machine's clock plus that offset, so a machine whose
+clock is hours off still accepts a fresh token. At each report interval and
+each token check the agent compares how far its clock moved with how far the
+monotonic clock moved since the last reading; a difference of
+`AGENT_HUB_CLOCK_JUMP_S`, 2 seconds, or more is the machine's clock being
+set, and the offset moves by it. A `welcome` with no `time`, from an older
+hub, leaves the offset at zero. A login a forwarder sets is judged by the
+machine's own clock, which also gave its expiry.
 
 ## What a refusal means to the agent
 

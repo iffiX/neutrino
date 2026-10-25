@@ -13,10 +13,22 @@ system.
 | Binary | `/usr/local/bin/gitea` | `gitea/gitea` under the state root | `gitea\gitea.exe` under the state root |
 | Data: the database, the repositories, the log, `custom/` | `/var/lib/gitea` | `gitea_data/` under the state root, owned by the account, mode 700 | `gitea_data\` under the state root, SYSTEM and the administrators alone as the root is |
 | `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
+| Listens on | `127.0.0.1` alone, at the configured port | the same | the same |
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
 | Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
 | Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
 | SSH | the system's `sshd` as `git` | none; clones and pushes over HTTP | none; clones and pushes over HTTP |
+
+**Gitea listens on loopback alone.** `app.ini` names `HTTP_ADDR =
+127.0.0.1`, and the `web` entry is reached through the agent's end of a
+`connect` stream, which dials `127.0.0.1` at the port of the URL the module
+reports ([agent.md](../../agent.md), "The connect stream"). The module
+opens no port in any firewall, and the hub dials nothing on the machine: the
+entry is healthy while the machine reports the server running. A Gitea that
+listened on every address moves to loopback at the next apply, which an
+agent of another build runs once for every module the state names: it
+renders `app.ini` again and restarts the server on the changed file. The
+panel shows no link to it; a client opens it as it opens every `web` entry.
 
 **Git is the machine's.** The module installs none on macOS and Windows: an
 install or an apply there that finds no usable `git` is refused
