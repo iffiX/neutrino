@@ -767,6 +767,23 @@ def test_a_declared_container_reaches_the_machine_at_its_network_s_gateway():
     assert "Network=" not in rendered["webdav.container"]
 
 
+def test_below_podman_5_3_the_host_goes_into_podman_args():
+    rendered = PodmanQuadletRenderer(
+        config=hub_config([FULL]), context=HUB_CONTEXT, is_add_host_key=False
+    ).render()
+
+    for text in rendered.values():
+        assert "AddHost" not in text
+    assert (
+        "PodmanArgs=--add-host=host.containers.internal:10.89.0.1"
+        in rendered["neutrino_demo.container"].splitlines()
+    )
+    assert (
+        "PodmanArgs=--add-host=host.containers.internal:10.88.0.1"
+        in rendered["webdav.container"].splitlines()
+    )
+
+
 def test_no_gateway_known_writes_no_addhost():
     rendered = PodmanQuadletRenderer(config=hub_config([FULL])).render()
 

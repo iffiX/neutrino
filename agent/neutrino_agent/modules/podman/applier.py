@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_ADD_HOST_VERSION,
     PODMAN_BINARY,
     PODMAN_CNI_DIR,
     PODMAN_CNI_SUFFIX,
@@ -122,7 +123,8 @@ def is_quadlet_supported() -> bool:
     """Whether the installed podman turns a ``.container`` file into a unit.
 
     Returns:
-        True from podman 4.4; False below it or when podman cannot run.
+        True from podman 4.6, the first Quadlet that adds a host; False
+        below it or when podman cannot run.
     """
     try:
         result = run([PODMAN_BINARY, "--version"], is_checked=False, timeout_s=30)
@@ -162,11 +164,16 @@ def container_renderer(
         context: What the apply found; None renders with nothing found.
 
     Returns:
-        A :class:`PodmanQuadletRenderer` from podman 4.4, else a
-        :class:`PodmanUnitRenderer`.
+        A :class:`PodmanQuadletRenderer` from podman 4.6, writing the host
+        as ``AddHost=`` from 5.3; else a :class:`PodmanUnitRenderer`.
     """
-    if is_quadlet_supported():
-        return PodmanQuadletRenderer(config=config, context=context)
+    version = podman_version()
+    if is_version_at_least(version, PODMAN_QUADLET_VERSION):
+        return PodmanQuadletRenderer(
+            config=config,
+            context=context,
+            is_add_host_key=is_version_at_least(version, PODMAN_ADD_HOST_VERSION),
+        )
     return PodmanUnitRenderer(config=config, context=context)
 
 

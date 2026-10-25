@@ -11,6 +11,7 @@ from neutrino_agent.modules.podman.applier import (
     PodmanStatusReader,
     PodmanUnitApplier,
     container_applier,
+    container_renderer,
     ensure_network,
     fastest_sources,
     fix_cni_version,
@@ -24,6 +25,11 @@ from neutrino_agent.modules.podman.applier import (
     stored_reference,
 )
 from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN, PodmanConfig
+from neutrino_agent.modules.podman.renderer import (
+    PodmanQuadletRenderer,
+    PodmanRenderContext,
+    PodmanUnitRenderer,
+)
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.podman.constants import (
     PODMAN_GENERATED_MARKER,
@@ -77,6 +83,37 @@ def test_the_version_line_podman_prints_decides_which_applier(commands):
     )
     assert is_quadlet_supported() is True
     assert container_applier().directory == PODMAN_QUADLET_DIR
+
+
+def test_below_podman_4_6_a_container_is_a_plain_unit(commands):
+    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.5.1\n")
+
+    assert is_quadlet_supported() is False
+    assert container_applier().directory == PODMAN_UNIT_DIR
+    assert isinstance(container_renderer(PodmanConfig()), PodmanUnitRenderer)
+
+
+@pytest.mark.parametrize(
+    ("version", "line"),
+    [
+        ("podman version 4.9.3\n", "PodmanArgs=--add-host=host.containers.internal"),
+        ("podman version 5.2.2\n", "PodmanArgs=--add-host=host.containers.internal"),
+        ("podman version 5.3.0\n", "AddHost=host.containers.internal"),
+        ("podman version 6.1.4\n", "AddHost=host.containers.internal"),
+    ],
+)
+def test_the_quadlet_version_decides_how_the_host_is_written(commands, version, line):
+    commands.answers[("/usr/bin/podman", "--version")] = (0, version)
+    config = PodmanConfig.from_dict(
+        {"containers": [{"name": "web", "image": "docker.io/library/nginx"}]}
+    )
+    context = PodmanRenderContext(gateways={"podman": "10.88.0.1"})
+
+    renderer = container_renderer(config, context)
+
+    assert isinstance(renderer, PodmanQuadletRenderer)
+    text = renderer.render()["web.container"]
+    assert f"{line}:10.88.0.1" in text.splitlines()
 
 
 def test_a_podman_that_will_not_run_gets_the_unit_that_works_everywhere(commands):
@@ -192,7 +229,7 @@ def test_only_the_plain_unit_applier_enables(commands):
     commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.3.1\n")
     assert container_applier()._is_enabled_by_systemctl is True
 
-    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.4.0\n")
+    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.6.0\n")
     assert container_applier()._is_enabled_by_systemctl is False
 
 

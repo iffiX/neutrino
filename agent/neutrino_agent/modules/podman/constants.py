@@ -1,8 +1,12 @@
 """Fixed values of the container engine module."""
 
-# From 4.4 a rendered .container file becomes a unit; below it that file is
-# inert, so the applier writes plain .service units running `podman run`.
-PODMAN_QUADLET_VERSION = "4.4"
+# From 4.6 a rendered .container file becomes a unit that can add a host;
+# Quadlet reads no file below 4.4 and no key that adds a host below 4.6, so
+# below 4.6 the applier writes plain .service units running `podman run`.
+PODMAN_QUADLET_VERSION = "4.6"
+# Quadlet's AddHost= key comes with 5.3; from 4.6 to 5.2 the host goes
+# through PodmanArgs=, and Quadlet refuses a file with a key it lacks.
+PODMAN_ADD_HOST_VERSION = "5.3"
 
 # Podman has no daemon; the API socket stands for the engine.
 PODMAN_UNIT = "podman.socket"

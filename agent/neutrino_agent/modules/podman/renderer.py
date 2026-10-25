@@ -2,8 +2,9 @@
 
 Quadlet turns a ``.container`` file into an ordinary systemd unit, so a
 declared container is supervised, journalled and comes back with the
-machine. Quadlet arrived in podman 4.4; :class:`PodmanUnitRenderer` writes
-the unit Quadlet would have generated for an older podman. The unit is
+machine. From podman 4.6 Quadlet can add a host to a container;
+:class:`PodmanUnitRenderer` writes the unit Quadlet would have generated for
+an older podman. The unit is
 called ``<name>.service`` either way. A hub container is rendered the same
 way with its module's label and network, the units it starts after, the
 image reference the store holds and its page port on loopback. On Windows
@@ -513,6 +514,7 @@ class PodmanQuadletRenderer(_PodmanContainerFiles):
         config: PodmanConfig,
         machine_os_name: str = "",
         context: "PodmanRenderContext | None" = None,
+        is_add_host_key: bool = True,
     ):
         """
         Args:
@@ -520,13 +522,16 @@ class PodmanQuadletRenderer(_PodmanContainerFiles):
             machine_os_name: The computer's system when the files go into
                 a Podman machine, which writes each volume's folder as the
                 machine names it, adds the machine's cgroups line and writes
-                no ``AddHost``; empty renders this machine's own files.
+                no host; empty renders this machine's own files.
             context: What the apply found; None renders with nothing found.
+            is_add_host_key: Whether Quadlet reads ``AddHost=``, from
+                Podman 5.3; otherwise the host goes into ``PodmanArgs=``.
         """
         super().__init__(
             config=config, context=context, is_host_added=not machine_os_name
         )
         self._machine_os_name = machine_os_name
+        self._is_add_host_key = is_add_host_key
 
     def render(self) -> dict:
         """Render every declared container and every hub container.
@@ -560,8 +565,10 @@ class PodmanQuadletRenderer(_PodmanContainerFiles):
             lines.append(f"Label={held.label}")
         if held.network:
             lines.append(f"Network={held.network}")
-        if held.add_host:
+        if held.add_host and self._is_add_host_key:
             lines.append(f"AddHost={PODMAN_HOST_ALIAS}:{held.add_host}")
+        elif held.add_host:
+            lines.append(f"PodmanArgs=--add-host={PODMAN_HOST_ALIAS}:{held.add_host}")
         for port in container.publish_ports:
             lines.append(f"PublishPort={port}")
         if held.page_publish:
