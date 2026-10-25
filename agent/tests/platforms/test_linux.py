@@ -118,6 +118,52 @@ def test_linux_steps_down_with_runuser(monkeypatch):
     assert recorded["command"] == ["runuser", "-u", "alice", "--", "id"]
 
 
+@pytest.mark.parametrize("mode", ["1", "0"])
+def test_an_unpack_is_labelled_bin_t_where_selinux_enforces_or_permits(
+    monkeypatch, tmp_path, mode
+):
+    """On Rocky 9 systemd did not run an unpack labelled ``var_lib_t``:
+    code-server, Codeg and VS Code exited 203/EXEC."""
+    enforce = tmp_path / "enforce"
+    enforce.write_text(mode)
+    unpack = tmp_path / "code_server" / "release"
+    unpack.mkdir(parents=True)
+    recorded = []
+
+    def record(command, **kwargs):
+        recorded.append((list(command), kwargs.get("check")))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(linux_module, "AGENT_SELINUX_ENFORCE_PATH", str(enforce))
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+
+    LinuxPlatform().label_programs(str(unpack))
+
+    assert recorded == [(["chcon", "-R", "-t", "bin_t", str(unpack)], True)]
+
+
+def test_nothing_is_labelled_without_selinux_or_without_the_unpack(
+    monkeypatch, tmp_path
+):
+    enforce = tmp_path / "enforce"
+    unpack = tmp_path / "vscode"
+    unpack.mkdir()
+    recorded = []
+
+    def record(command, **kwargs):
+        recorded.append(list(command))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(linux_module, "AGENT_SELINUX_ENFORCE_PATH", str(enforce))
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+
+    LinuxPlatform().label_programs(str(unpack))
+    enforce.write_text("1")
+    LinuxPlatform().label_programs(str(tmp_path / "absent"))
+
+    assert recorded == []
+
+
 def test_linux_runs_directly_without_root_or_account(monkeypatch):
     recorded = []
 

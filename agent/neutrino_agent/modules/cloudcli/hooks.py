@@ -5,7 +5,9 @@ publishes, the module's ``node`` artifact, which the shared unpack puts
 under ``node`` in the module's own directory, never on a ``PATH``.
 Before an instance first runs, its account installs the recipe's npm
 artifact into its own app directory with that Node.js: as a transient
-service on Linux, so a kill for want of memory ends it and not the agent; as
+service on Linux, so a kill for want of memory ends it and not the agent,
+its output in a log systemd opens, since SELinux on Rocky 9 rejects the
+agent's pipes that ``--pipe`` passes; as
 the account's own process on macOS; as a task of its own on Windows, left
 running and judged by the next apply. The registries of the state's ``npm``
 source set that name the pinned integrity are tried fastest first, each with
@@ -23,6 +25,7 @@ Not pure: writes files, runs npm as the account, and talks to CloudCLI.
 from __future__ import annotations
 
 import binascii
+import contextlib
 import hashlib
 import hmac
 import http.client
@@ -86,7 +89,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_TITLE,
     CLOUDCLI_UPSTREAM_HOST,
     CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
-    CLOUDCLI_WINDOWS_INSTALL_OUTPUT_CHARS,
+    CLOUDCLI_INSTALL_OUTPUT_CHARS,
     CLOUDCLI_WINDOWS_NPM_PATH,
     CLOUDCLI_WINDOWS_SERVICE_PATH,
 )
@@ -351,7 +354,7 @@ def failure_detail(output: str) -> str:
 
 
 def install_output(log_file: str) -> str:
-    """The end of a Windows install's output, as its log holds it.
+    """The end of an install's output, as its log holds it.
 
     Args:
         log_file: The install's log.
@@ -364,7 +367,7 @@ def install_output(log_file: str) -> str:
             text = stream.read().decode("utf-8", "replace")
     except OSError:
         return ""
-    return text.lstrip("\ufeff")[-CLOUDCLI_WINDOWS_INSTALL_OUTPUT_CHARS:]
+    return text.lstrip("\ufeff")[-CLOUDCLI_INSTALL_OUTPUT_CHARS:]
 
 
 def registry_host(registry: str) -> str:
@@ -1044,6 +1047,10 @@ class CloudcliHooks(InstanceHooks):
         npm = npm_path(os.path.dirname(node_bin), "linux")
         self._log_install(account, registry)
         unit = f"{CLOUDCLI_INSTALL_UNIT_PREFIX}{account}.service"
+        log_file = self._install_log_path(account)
+        os.makedirs(os.path.dirname(log_file), mode=0o700, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(log_file)
         run = self.machine.run
         run(["systemctl", "reset-failed", unit], is_checked=False)
         result = run(
@@ -1052,9 +1059,12 @@ class CloudcliHooks(InstanceHooks):
                 f"--unit={unit}",
                 "--quiet",
                 "--wait",
-                "--pipe",
                 "-p",
                 "OOMPolicy=stop",
+                "-p",
+                f"StandardOutput=file:{log_file}",
+                "-p",
+                f"StandardError=file:{log_file}",
                 "--",
             ]
             + prefix
@@ -1063,8 +1073,11 @@ class CloudcliHooks(InstanceHooks):
             is_checked=False,
             timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S,
         )
+        logged = install_output(log_file)
+        with contextlib.suppress(OSError):
+            os.unlink(log_file)
         if not result.is_success:
-            output = (result.stdout + "\n" + result.stderr).strip()
+            output = "\n".join([logged, result.stdout, result.stderr]).strip()
             self._log(f"{self.name}: npm for {account}: {output[-2000:]}")
             if self._is_out_of_memory(unit):
                 raise ModuleApplyError(
@@ -1196,7 +1209,7 @@ class CloudcliHooks(InstanceHooks):
         )
 
     def _install_log_path(self, account: str) -> str:
-        return ntpath.join(
+        return self._join(
             self.machine.module_dir,
             ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME,
             CLOUDCLI_INSTALL_LOG_PATTERN.format(account=account),

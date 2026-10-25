@@ -173,10 +173,11 @@ class ModuleRunner:
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
         """Put one artifact the hub handed down on the machine, as its kind says.
 
-        An archive is unpacked under its directory in the module's own and
-        sealed, an msi or a pkg is kept there and installed, a zstd file is
-        kept there, and a program is kept at :meth:`binary_path`; the
-        module's directory is then opened to every account.
+        An archive is unpacked under its directory in the module's own,
+        sealed, and labelled so the system's service manager runs it, an msi
+        or a pkg is kept there and installed, a zstd file is kept there, and
+        a program is kept at :meth:`binary_path`; the module's directory is
+        then opened to every account.
 
         Args:
             recipe: The module's recipe.
@@ -190,12 +191,15 @@ class ModuleRunner:
                 unpacked.
             InstallError: When the system's installer refuses a package.
             OSError: When the module's directory cannot be written.
+            subprocess.CalledProcessError: When SELinux's label cannot be
+                set on the unpack.
         """
         kind = str(artifact.get("kind", "") or "")
         join = joiner(self._platform.os_name)
         module_dir = self.module_dir
         if is_archive_kind(kind):
-            unpack_artifact(artifact, path, module_dir=module_dir, join=join)
+            placed = unpack_artifact(artifact, path, module_dir=module_dir, join=join)
+            self._platform.label_programs(placed)
         elif kind in AGENT_ARTIFACT_KEPT_SUFFIXES:
             kept = keep_artifact(artifact, path, module_dir=module_dir, join=join)
             if kind == AGENT_ARTIFACT_KIND_MSI:

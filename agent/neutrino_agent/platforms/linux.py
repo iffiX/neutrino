@@ -26,6 +26,8 @@ from neutrino_agent.constants import (
     AGENT_ADDED_NAME_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH,
+    AGENT_SELINUX_ENFORCE_PATH,
+    AGENT_SELINUX_PROGRAM_TYPE,
     AGENT_SERVICE_NAME,
     AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_SYSTEMD_UNIT_DIR,
@@ -333,6 +335,28 @@ class LinuxPlatform(AgentPlatform):
                 reachable, or a package unknown.
         """
         return "\n".join(self._install_system_package(name) for name in names)
+
+    def label_programs(self, path: str) -> None:
+        """Label a module's unpack ``bin_t`` where SELinux is enforcing or permissive.
+
+        Args:
+            path: The unpack, a directory or one file; nothing happens when
+                it is not there, or where SELinux is disabled or absent.
+
+        Raises:
+            subprocess.CalledProcessError: When ``chcon`` refuses.
+            OSError: When ``chcon`` cannot run.
+        """
+        if not os.path.exists(AGENT_SELINUX_ENFORCE_PATH):
+            return
+        if not os.path.lexists(path):
+            return
+        subprocess.run(
+            ["chcon", "-R", "-t", AGENT_SELINUX_PROGRAM_TYPE, path],
+            capture_output=True,
+            timeout=AGENT_COMMAND_TIMEOUT_S,
+            check=True,
+        )
 
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name, purging their configuration on apt.

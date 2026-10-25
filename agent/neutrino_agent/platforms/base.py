@@ -442,6 +442,15 @@ class AgentPlatform:
         """
         os.chmod(directory, 0o755)
 
+    def label_programs(self, path: str) -> None:
+        """Label a module's unpack so the system's service manager runs its programs.
+
+        Nothing is labelled here; Linux labels under SELinux.
+
+        Args:
+            path: The unpack, a directory or one file.
+        """
+
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name with the machine's own package manager.
 

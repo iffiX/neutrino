@@ -31,6 +31,7 @@ from neutrino_agent.modules.shared.package import (
     npm_artifact,
     place_binary,
     received_artifacts,
+    unpacked_paths,
     verify_passes,
 )
 from neutrino_agent.platforms.base import AgentPlatform
@@ -70,6 +71,7 @@ class StatePlatform(AgentPlatform):
         self.root = str(root)
         self.installed: list = []
         self.opened: list = []
+        self.labelled: list = []
 
     def agent_var_dir(self):
         return self.root
@@ -80,6 +82,9 @@ class StatePlatform(AgentPlatform):
 
     def open_to_accounts(self, directory):
         self.opened.append(directory)
+
+    def label_programs(self, path):
+        self.labelled.append(path)
 
 
 class DemoRunner(ModuleRunner):
@@ -149,6 +154,7 @@ def test_an_archive_lands_under_its_directory_sealed_and_opened(tmp_path):
     assert (node / "bin" / "node").read_bytes() == b"#!node"
     assert stat.S_IMODE(node.stat().st_mode) == 0o555
     assert platform.opened == [str(tmp_path / "state" / "demo")]
+    assert platform.labelled == [str(node)]
 
 
 def test_an_archive_that_names_no_directory_lands_beside_what_is_there(tmp_path):
@@ -166,6 +172,30 @@ def test_an_archive_that_names_no_directory_lands_beside_what_is_there(tmp_path)
     module = tmp_path / "state" / "demo"
     assert sorted(os.listdir(module)) == ["code", "tokens"]
     assert (kept / "lab.token").read_text() == "t"
+    assert platform.labelled == [str(module)]
+
+
+def test_the_unpacks_of_a_recipe_are_its_archives_places_once_each():
+    recipe = {
+        "params": {
+            "artifacts": [
+                {"name": "server", "kind": "tar_gz", "directory": "server"},
+                {"name": "node", "kind": "zip", "directory": "node"},
+                {"name": "cli", "kind": "tar_gz"},
+                {"name": "again", "kind": "tar_gz", "directory": "node"},
+                {"name": "odd", "kind": "tar_gz", "directory": "../up"},
+                {"name": "app", "kind": "npm", "directory": "app"},
+                {"name": "msi", "kind": "msi", "directory": "msi"},
+            ]
+        }
+    }
+
+    assert unpacked_paths(recipe, module_dir="/m", join=os.path.join) == [
+        "/m/server",
+        "/m/node",
+        "/m",
+    ]
+    assert unpacked_paths({}, module_dir="/m", join=os.path.join) == []
 
 
 def test_a_broken_archive_is_install_failed(tmp_path):

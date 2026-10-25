@@ -16,6 +16,7 @@ Not pure: writes files.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import stat
@@ -128,6 +129,7 @@ def unpack_beside(path: str, kind: str, directory: str) -> list:
             if os.path.isdir(target) and not os.path.islink(target):
                 remove_tree(target)
             elif os.path.lexists(target):
+                _unseal_file(target)
                 os.unlink(target)
             os.replace(os.path.join(source, name), target)
             placed.append(target)
@@ -190,17 +192,30 @@ def seal_tree(directory: str) -> None:
 def remove_tree(path: str) -> None:
     """Delete a tree, giving its owner the write bits sealing took first.
 
+    On Windows a file with no write bit has the read-only attribute and
+    cannot be deleted, so each file gets its owner's write bit back first.
+
     Args:
         path: The tree's root; nothing happens when it is not there.
     """
-    for parent, directories, _files in os.walk(path):
+    for parent, directories, files in os.walk(path):
         for name in directories:
             child = os.path.join(parent, name)
             if not os.path.islink(child):
                 os.chmod(child, stat.S_IMODE(os.stat(child).st_mode) | 0o700)
+        for name in files:
+            _unseal_file(os.path.join(parent, name))
     if os.path.isdir(path) and not os.path.islink(path):
         os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | 0o700)
     shutil.rmtree(path, ignore_errors=True)
+
+
+def _unseal_file(path: str) -> None:
+    """Give one file its owner's write bit back, which clears Windows' read-only attribute."""
+    if os.path.islink(path):
+        return
+    with contextlib.suppress(OSError):
+        os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | stat.S_IWRITE)
 
 
 def _check_member(name: str, directory: str) -> None:

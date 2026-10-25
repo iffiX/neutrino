@@ -206,6 +206,7 @@ class Platform(AgentPlatform):
         self._root = root
         self._log_path = log_path
         self.opened: list = []
+        self.labelled: list = []
 
     def agent_var_dir(self):
         return self._root + "/state"
@@ -223,6 +224,9 @@ class Platform(AgentPlatform):
 
     def open_to_accounts(self, directory):
         self.opened.append(directory)
+
+    def label_programs(self, path):
+        self.labelled.append(path)
 
 
 def lookup(account):
@@ -300,6 +304,40 @@ def test_an_apply_prepares_writes_starts_and_records_each_instance(
         "secret": "s",
         "upstream_port": 41000,
     }
+
+
+def test_every_apply_labels_each_unpack_before_an_instance_starts(
+    runner, systemd, platform, tmp_path, monkeypatch
+):
+    """A relabel of the whole system puts ``var_lib_t`` back, and the next
+    apply undoes it."""
+    runner.take_recipe(
+        {
+            "params": {
+                "artifacts": [
+                    {"name": "server", "kind": "tar_gz", "directory": "server"},
+                    {"name": "cli", "kind": "tar_gz"},
+                ]
+            }
+        }
+    )
+
+    def label(path):
+        systemd.calls.append(["label", path])
+
+    monkeypatch.setattr(platform, "label_programs", label)
+
+    runner.apply(CONFIG)
+    runner.apply(CONFIG)
+
+    module = str(tmp_path / "state" / "demo")
+    labels = [call[1] for call in systemd.calls if call[0] == "label"]
+    assert labels == [module + "/server", module] * 2
+    first_start = systemd.calls.index(
+        ["systemctl", "restart", "neutrino_demo@ann.service"]
+    )
+    assert systemd.calls[:2] == [["label", module + "/server"], ["label", module]]
+    assert first_start > 1
 
 
 def test_an_unchanged_instance_is_only_kept_up_and_its_record_kept(runner, systemd):
@@ -775,6 +813,7 @@ def test_an_artifact_lands_under_its_directory_and_the_hooks_tidy_after(
     assert (node / "bin" / "node").read_bytes() == b"hi"
     assert tidied == [True]
     assert platform.opened == [str(tmp_path / "state" / "demo")]
+    assert platform.labelled == [str(node)]
 
 
 def test_an_artifact_directory_that_is_not_a_plain_name_is_refused(runner, tmp_path):

@@ -304,6 +304,32 @@ def remove_received(path: str) -> None:
         os.unlink(path)
 
 
+def unpacked_paths(recipe, *, module_dir: str, join) -> list:
+    """Where a recipe's archives are unpacked. Pure.
+
+    Args:
+        recipe: ``{runner, method, params}``.
+        module_dir: The module's directory under the state root.
+        join: How the system joins a path.
+
+    Returns:
+        Each archive artifact's directory under the module's, or the
+        module's directory for one that names none, once each, in the
+        recipe's order; a directory that is not a plain name is left out.
+    """
+    paths = []
+    for artifact in artifacts_of(recipe):
+        if not is_archive_kind(str(artifact.get("kind", "") or "")):
+            continue
+        directory = str(artifact.get("directory", "") or "")
+        if directory and not is_plain_name(directory):
+            continue
+        path = join(module_dir, directory) if directory else module_dir
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
 def joiner(os_name: str):
     """How a system joins a path.
 

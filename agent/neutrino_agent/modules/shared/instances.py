@@ -37,6 +37,7 @@ from neutrino_agent.modules.shared.account_service.constants import (
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.package import joiner, unpacked_paths
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
@@ -438,6 +439,7 @@ class InstancesModuleRunner(ModuleRunner):
         # One apply at a time: the state's, or an instance's apply again.
         self._apply_lock = threading.Lock()
         self._last_config: "dict | None" = None
+        self._recipe: dict = {}
 
     @property
     def hooks(self) -> InstanceHooks:
@@ -466,11 +468,12 @@ class InstancesModuleRunner(ModuleRunner):
         return self._machine.module_dir
 
     def take_recipe(self, recipe: dict) -> None:
-        """Hand the recipe the state names to the module's hooks.
+        """Keep the recipe the state names, and hand it to the module's hooks.
 
         Args:
             recipe: ``{runner, method, params}``.
         """
+        self._recipe = dict(recipe)
         self._hooks.take_recipe(recipe)
 
     def take_source_sets(self, source_sets: dict) -> None:
@@ -681,7 +684,13 @@ class InstancesModuleRunner(ModuleRunner):
         self._log(f"{self.name}: " + "; ".join(notes or ["unchanged"]))
 
     def _run_instances(self, parsed, entries: dict, held: dict) -> list:
-        """Prepare, write, start and record every instance; retire the rest."""
+        """Label the unpacks, then prepare, write, start and record every instance; retire the rest."""
+        for path in unpacked_paths(
+            self._recipe,
+            module_dir=self.module_dir,
+            join=joiner(self._platform.os_name),
+        ):
+            self._platform.label_programs(path)
         notes = list(self._hooks.prepare_module())
         for instance in parsed.instances:
             notes += self._hooks.prepare(parsed, instance, entries[instance.account])

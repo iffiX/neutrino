@@ -51,8 +51,8 @@ CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
 # and how long the task that runs it on Windows, where nothing waits, may run.
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800
 CLOUDCLI_WINDOWS_INSTALL_LIMIT_S = 4 * 3600
-# The end of a Windows install's output an ended install is judged by.
-CLOUDCLI_WINDOWS_INSTALL_OUTPUT_CHARS = 8000
+# The end of an install's log an ended install is judged by.
+CLOUDCLI_INSTALL_OUTPUT_CHARS = 8000
 # How long a check run as an account may take.
 CLOUDCLI_LOOKUP_TIMEOUT_S = 30
 # What a service's PATH holds after Node's directory: the account's usual

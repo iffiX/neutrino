@@ -164,6 +164,8 @@ AGENT_WANT_ABSENT = "absent"
 AGENT_WANT_INSTALLED = "installed"
 AGENT_WANT_STOPPED = "stopped"
 AGENT_WANT_RUNNING = "running"
+# The wants under which the software must be there.
+AGENT_PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNNING)
 # What the agent reports a module to be, one closed table on every surface:
 # five steady states, three in transit, and two shared by every failure.
 AGENT_MODULE_STATE_ABSENT = "absent"
@@ -386,6 +388,11 @@ AGENT_ADDED_FOREIGN_WORDS = ("hub", "client", "agent")
 # Where the modules write their units and their launchd jobs.
 AGENT_SYSTEMD_UNIT_DIR = "/etc/systemd/system"
 AGENT_LAUNCHD_DAEMON_DIR = "/Library/LaunchDaemons"
+# The file SELinux keeps its mode in, there while SELinux is enforcing or
+# permissive, and the type systemd runs a program of; a module's unpack under
+# the state root is otherwise var_lib_t, which systemd does not run.
+AGENT_SELINUX_ENFORCE_PATH = "/sys/fs/selinux/enforce"
+AGENT_SELINUX_PROGRAM_TYPE = "bin_t"
 # The pf anchor the file share's fence on macOS lives under.
 AGENT_PF_PARENT_ANCHOR = "com.apple"
 # What a macOS removal takes besides the modules' jobs: the agent's own

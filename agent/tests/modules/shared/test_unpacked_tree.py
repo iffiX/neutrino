@@ -14,6 +14,7 @@ import zipfile
 
 import pytest
 
+from neutrino_agent.modules.shared import unpacked_tree
 from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
@@ -119,6 +120,58 @@ def test_a_broken_archive_leaves_the_directory_as_it_was(tmp_path):
 
     assert (target / "kept").read_text() == "x"
     assert sorted(os.listdir(tmp_path / "demo")) == ["node"]
+
+
+def test_removing_a_tree_gives_each_sealed_file_its_write_bit_first(
+    tmp_path, monkeypatch
+):
+    """On Windows a file with no write bit is read-only and cannot be deleted:
+    an uninstall of VS Code left its sealed ``code.exe`` and read
+    ``uninstall_unconfirmed``."""
+    tree = tmp_path / "vscode"
+    (tree / "tokens").mkdir(parents=True)
+    (tree / "code.exe").write_text("MZ")
+    (tree / "tokens" / "lab.token").write_text("t")
+    seal_tree(str(tree))
+    seen = {}
+
+    def rmtree(path, ignore_errors=False):
+        for parent, _directories, files in os.walk(path):
+            for name in files:
+                full = os.path.join(parent, name)
+                seen[name] = stat.S_IMODE(os.stat(full).st_mode) & stat.S_IWRITE
+        real_rmtree(path, ignore_errors=ignore_errors)
+
+    real_rmtree = unpacked_tree.shutil.rmtree
+    monkeypatch.setattr(unpacked_tree.shutil, "rmtree", rmtree)
+
+    remove_tree(str(tree))
+
+    assert seen == {"code.exe": stat.S_IWRITE, "lab.token": stat.S_IWRITE}
+    assert not tree.exists()
+
+
+def test_a_sealed_file_placed_beside_is_given_its_write_bit_before_it_goes(
+    tmp_path, monkeypatch
+):
+    module = tmp_path / "vscode"
+    module.mkdir()
+    (module / "code").write_text("old")
+    os.chmod(module / "code", 0o555)
+    archive = _tarball(tmp_path / "cli.tar.gz", {"code": b"#!new"})
+    modes = []
+    real_unseal = unpacked_tree._unseal_file
+
+    def unseal(path):
+        real_unseal(path)
+        modes.append(stat.S_IMODE(os.stat(path).st_mode) & stat.S_IWRITE)
+
+    monkeypatch.setattr(unpacked_tree, "_unseal_file", unseal)
+
+    unpack_beside(archive, "tar_gz", str(module))
+
+    assert modes == [stat.S_IWRITE]
+    assert (module / "code").read_bytes() == b"#!new"
 
 
 def test_an_archive_placed_beside_replaces_its_namesakes_and_keeps_the_rest(

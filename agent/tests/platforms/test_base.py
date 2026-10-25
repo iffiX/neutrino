@@ -74,6 +74,7 @@ BASE_IMPLEMENTED = {
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
     "open_to_accounts": "hub_packages",
+    "label_programs": "hub_packages",
     "read_relay_addresses": "",
     "sync_relay_rules": "",
 }

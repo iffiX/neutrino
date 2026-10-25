@@ -356,6 +356,15 @@ def test_a_failed_install_names_its_step(output, expected):
 # --- the install on Linux ---
 
 
+def write_log(command: list, output: str) -> None:
+    """Write a service's output where systemd-run's StandardOutput names, as systemd does."""
+    for part in command:
+        if part.startswith("StandardOutput=file:"):
+            path = part.split(":", 1)[1]
+            with open(path, "a", encoding="utf-8") as stream:
+                stream.write(output)
+
+
 class Machine:
     """systemctl, systemd-run and runuser, recorded; answers set per command."""
 
@@ -377,7 +386,8 @@ class Machine:
             self.installing_seen.append(self.hooks.installing)
             if self.npm_exit == 0:
                 land_package(command[command.index("--prefix") + 1])
-            return CommandResult(list(command), self.npm_exit, self.npm_output, "")
+            write_log(command, self.npm_output)
+            return CommandResult(list(command), self.npm_exit, "", "")
         if "-e" in command:
             return CommandResult(list(command), self.check_exit, self.check_output, "")
         return CommandResult(list(command), 0, "", "")
@@ -396,20 +406,28 @@ def linux(tmp_path):
 
 
 def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_path):
+    """Its output goes to a log systemd opens: under SELinux on Rocky 9 the
+    agent's pipes, which ``--pipe`` passes, failed the start with
+    ``Connection reset by peer``."""
     hooks, machine, entry = linux
 
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     started = machine.install_call()
+    log = os.path.join(hooks.machine.module_dir, "run", "install_ann.log")
     assert started[: started.index("--")] == [
         "systemd-run",
         "--unit=neutrino_cloudcli_install_ann.service",
         "--quiet",
         "--wait",
-        "--pipe",
         "-p",
         "OOMPolicy=stop",
+        "-p",
+        f"StandardOutput=file:{log}",
+        "-p",
+        f"StandardError=file:{log}",
     ]
+    assert not os.path.exists(log)
     install = started[started.index("--") + 1 :]
     app = os.path.join(
         entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
@@ -444,7 +462,23 @@ def test_a_failed_npm_install_names_its_step_and_reads_installing_no_more(linux)
         hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     assert caught.value.code == "cloudcli_npm_install_failed"
+    assert caught.value.params["detail"] == "npm error code ECONNRESET"
     assert hooks.installing == frozenset()
+
+
+def test_a_log_an_earlier_install_left_is_not_read_as_this_ones(linux):
+    hooks, machine, entry = linux
+    log = os.path.join(hooks.machine.module_dir, "run", "install_ann.log")
+    os.makedirs(os.path.dirname(log))
+    with open(log, "w", encoding="utf-8") as stream:
+        stream.write("npm error an earlier failure\n")
+    machine.npm_exit = 1
+    machine.npm_output = "npm error code ETIMEDOUT"
+
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.params["detail"] == "npm error code ETIMEDOUT"
 
 
 def test_a_native_module_without_its_binary_names_it(linux):
@@ -509,7 +543,8 @@ class Attempts:
             self.tried.append((registry, host))
             output = self.failures.get((registry, host), "")
             if output:
-                return CommandResult(list(command), 1, output, "")
+                write_log(command, output)
+                return CommandResult(list(command), 1, "", "")
             land_package(command[command.index("--prefix") + 1])
         return CommandResult(list(command), 0, "", "")
 
