@@ -153,3 +153,38 @@ def resolve_config_dir() -> Path:
 
 
 UTILS_CONFIG_DIR = resolve_config_dir()
+
+
+# How every download chooses among the sources that serve its bytes
+# (design/agent/module_install.md, "Choosing a source"): a probe asks each
+# source for this much of the file and waits this long for an answer; the
+# sources are measured again this often while a download has at least that
+# long left; one this many times faster than the current source over the
+# window takes over; a source silent this long fails; two speeds within this
+# share of each other go to the earlier first byte.
+UTILS_FETCH_PROBE_BYTES = 1024 * 1024
+UTILS_FETCH_PROBE_TIMEOUT_S = 5.0
+UTILS_FETCH_MEASURE_INTERVAL_S = 30.0
+UTILS_FETCH_MOVE_FACTOR = 1.5
+UTILS_FETCH_SPEED_WINDOW_S = 10.0
+UTILS_FETCH_STALL_S = 20.0
+UTILS_FETCH_NEAR_TIE = 0.1
+UTILS_FETCH_CHUNK_BYTES = 64 * 1024
+# How much of a file's start is kept for the check of what kind of file it is.
+UTILS_FETCH_HEAD_BYTES = 512
+# The largest document a version list or latest.json read takes.
+UTILS_FETCH_DOCUMENT_LIMIT_BYTES = 4 * 1024 * 1024
+# A download's progress line is written every this many percent, or after
+# this many seconds when the percent moves slower or the size is unknown.
+UTILS_FETCH_PROGRESS_PERCENT_STEP = 5
+UTILS_FETCH_PROGRESS_INTERVAL_S = 2.0
+# A program's own User-Agent, which the GitHub API requires, and no browser's:
+# a mirror that answers a browser with a page of its own hands a program the
+# file itself.
+UTILS_FETCH_HEADERS = {"User-Agent": "neutrino-hub"}
+# What a source names a release site by, the file and the version.
+UTILS_SOURCE_RELEASE = "{release}"
+UTILS_SOURCE_FILE = "{file}"
+UTILS_SOURCE_VERSION = "{version}"
+# The tag a release site keeps a version's files under.
+UTILS_RELEASE_TAG_PREFIX = "v"

@@ -37,3 +37,9 @@ try:  # The versions of the carried programs the build pins, by name.
     from neutrino_hub._version import HUB_CARRIED_VERSIONS
 except ImportError:
     HUB_CARRIED_VERSIONS: dict = {}
+
+try:  # The release sites the build stamped, each ``{files, latest}``.
+    from neutrino_hub._version import HUB_RELEASE_SITES
+except ImportError:
+    # A checkout has no stamp and names no release site.
+    HUB_RELEASE_SITES: tuple = ()

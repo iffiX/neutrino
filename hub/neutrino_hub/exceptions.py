@@ -95,6 +95,34 @@ class StreamRefusedError(ConnectionError):
         self.params = dict(params or {})
 
 
+class DownloadFailedError(ConnectionError):
+    """Raised when no source of a download serves it.
+
+    Attributes:
+        code: ``download_failed``, which every surface words.
+        params: ``{file, sources}``, each source ``{source, reason,
+            detail}``.
+    """
+
+    code = "download_failed"
+
+    def __init__(self, file: str, sources: list):
+        super().__init__(f"no source served {file}")
+        self.params = {"file": file, "sources": [dict(item) for item in sources]}
+
+
+class DownloadTooLargeError(ValueError):
+    """Raised when a download is larger than its caller takes.
+
+    Attributes:
+        limit: The largest size taken, in bytes.
+    """
+
+    def __init__(self, limit: int):
+        super().__init__(f"the download is larger than {limit} bytes")
+        self.limit = limit
+
+
 class AgentArtifactFetchError(RuntimeError):
     """Raised when an agent package or module artifact cannot be produced.
 

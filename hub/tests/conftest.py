@@ -21,10 +21,12 @@ person to authorize. A test that reaches one fails naming the command, rather
 than stopping a unit on the developer's box or opening a password dialog.
 """
 
+import hashlib
 import os
 import secrets
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -1518,3 +1520,82 @@ def self_signed_pair(directory) -> tuple:
     )
     der = certificate.public_bytes(serialization.Encoding.DER)
     return certificate_path, key_path, hashlib.sha256(der).hexdigest()
+
+
+class FakeSourceFetcher:
+    """A fetcher answering every address from a table, never the network.
+
+    ``fetch_file`` checks the digest as the real fetcher does, writes the file
+    into the directory it is given and says the line the real one says;
+    ``fetch_document`` hands the first parsed answer back; ``probe`` names the
+    size of what an address holds. An address missing from the table answers
+    404.
+
+    Attributes:
+        bodies: Address to the bytes it serves.
+        asked: Each call, as ``(kind, file, sources)``.
+    """
+
+    def __init__(self, bodies: "dict | None" = None):
+        self.bodies = dict(bodies or {})
+        self.asked: list = []
+
+    def fetch_file(
+        self, *, file, sources, digest, directory, limit, on_line=None
+    ) -> "DownloadedFile":
+        from neutrino_hub.exceptions import DownloadFailedError
+        from neutrino_hub.utils.source_fetch import DownloadedFile, failure_entry
+
+        self.asked.append(("file", file, list(sources)))
+        failures = []
+        for source in sources:
+            body = self.bodies.get(source)
+            if body is None:
+                failures.append(failure_entry(source, "http_404"))
+                continue
+            if "sha256:" + hashlib.sha256(body).hexdigest() != digest:
+                failures.append(failure_entry(source, "digest_mismatch"))
+                continue
+            if on_line is not None:
+                host = source.split("/")[2] if "//" in source else source
+                on_line(f"hub: fetching {file} from {host}")
+            Path(directory).mkdir(parents=True, exist_ok=True)
+            handle, name = tempfile.mkstemp(prefix=".partial_", dir=directory)
+            with os.fdopen(handle, "wb") as stream:
+                stream.write(body)
+            return DownloadedFile(
+                path=Path(name),
+                size=len(body),
+                sha256=hashlib.sha256(body).hexdigest(),
+                head=body[:512],
+                source=source,
+            )
+        raise DownloadFailedError(file, failures)
+
+    def fetch_document(self, *, file, sources, parse, limit=0) -> tuple:
+        from neutrino_hub.exceptions import DownloadFailedError
+        from neutrino_hub.utils.source_fetch import failure_entry
+
+        self.asked.append(("document", file, list(sources)))
+        failures = []
+        for source in sources:
+            body = self.bodies.get(source)
+            if body is None:
+                failures.append(failure_entry(source, "http_404"))
+                continue
+            try:
+                return parse(body), source
+            except (ValueError, KeyError, TypeError) as error:
+                failures.append(failure_entry(source, "digest_mismatch", str(error)))
+        raise DownloadFailedError(file, failures)
+
+    def probe(self, source, *, offset=0):
+        from neutrino_hub.utils.source_fetch import SourceProbe
+
+        self.asked.append(("probe", "", [source]))
+        body = self.bodies.get(source)
+        if body is None:
+            return SourceProbe(source=source, reason="http_404")
+        return SourceProbe(
+            source=source, is_answered=True, is_resumable=True, size=len(body)
+        )
