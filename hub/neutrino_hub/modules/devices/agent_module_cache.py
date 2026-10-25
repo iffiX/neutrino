@@ -53,6 +53,9 @@ from neutrino_hub.utils.source_fetch import (
 
 # A file the cache keeps is named by its digest's hex.
 CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}")
+# A file a 0.5 hub kept, ``<module>-<platform>-<16 hex of its digest>``,
+# which no hub serves any more.
+CACHE_OLD_NAME_PATTERN = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)+-[0-9a-f]{16}")
 
 
 @dataclass
@@ -353,18 +356,27 @@ class AgentModuleCache:
             ) from error
 
     def _prune(self) -> None:
-        """Delete every file the cache no longer keeps; one that cannot go stays."""
+        """Delete every file the cache no longer keeps, and every file of a 0.5
+        hub's naming; one that cannot go stays."""
         kept = self.kept_digests()
         try:
             held = list(self._root.iterdir())
         except OSError:
             return
         for path in held:
-            if CACHE_NAME_PATTERN.fullmatch(path.name) and path.name not in kept:
-                try:
+            is_dropped = bool(
+                (CACHE_NAME_PATTERN.fullmatch(path.name) and path.name not in kept)
+                or CACHE_OLD_NAME_PATTERN.fullmatch(path.name)
+            )
+            if not is_dropped:
+                continue
+            try:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
                     path.unlink()
-                except OSError:
-                    continue
+            except OSError:
+                continue
 
     def _lock_for(self, key: str) -> threading.Lock:
         """The one lock every asker for this digest waits on."""

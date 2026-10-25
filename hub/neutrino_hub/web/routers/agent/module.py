@@ -185,6 +185,7 @@ def list_modules(
         _, entry = resolve_platform_entry(manifest, platform)
         resolved = resolve_module(manifest, platform)
         is_carried = DEVICE_METHOD_AGENT in manifest_methods(manifest)
+        reported = module_status(runtime, key, name, manifest=manifest)
         modules.append(
             DeviceModuleView(
                 name=name,
@@ -206,7 +207,7 @@ def list_modules(
                 ),
                 is_configured=bool(runtime.desired_states.read(key, name)),
                 task_id=module_task_id(runtime, key, name),
-                **module_status(runtime, key, name),
+                **{**reported, "details": panel_details(reported["details"])},
             )
         )
     return DeviceModuleListView(
@@ -483,26 +484,53 @@ def device_context(
     return context
 
 
-def module_status(runtime: PanelRuntime, key: str, module: str) -> dict:
+def module_status(
+    runtime: PanelRuntime, key: str, module: str, *, manifest: "dict | None" = None
+) -> dict:
     """Where one module stands on one device, as its agent last reported.
 
     Args:
         runtime: The shared runtime.
         key: The device.
         module: The module name.
+        manifest: The module's manifest, when the caller holds it; None
+            reads it when the report leaves the module out.
 
     Returns:
-        ``{"state", "is_active", "code", "params", "details"}``; the state
-        is ``unknown`` until the agent has said.
+        ``{"state", "is_active", "code", "params", "details"}``, the details
+        as the agent sent them; the state is ``unknown`` until the agent has
+        said, and ``absent`` for a ``container`` module a report from the
+        device leaves out, since the agent observes one only once a state
+        names it.
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
     details = reported.get("details")
+    state = str(reported.get("state", "") or "")
     return {
-        "state": str(reported.get("state", STATE_UNKNOWN) or STATE_UNKNOWN),
+        "state": state or _unreported_state(runtime, key, module, manifest),
         "is_active": bool(reported.get("is_active", False)),
         "code": str(reported.get("code") or ""),
         "params": dict(reported.get("params") or {}),
         "details": dict(details) if isinstance(details, dict) else {},
+    }
+
+
+def panel_details(details: dict) -> dict:
+    """A report's ``details`` as a route hands them to the panel.
+
+    Args:
+        details: What the agent last reported for one module.
+
+    Returns:
+        A copy in which each container's ``environment`` holds the
+        variables' names alone, never their values.
+    """
+    containers = details.get("containers")
+    if not isinstance(containers, list):
+        return dict(details)
+    return {
+        **details,
+        "containers": [_with_environment_names(entry) for entry in containers],
     }
 
 
@@ -927,6 +955,33 @@ def _is_retried(runtime: PanelRuntime, key: str, module: str, want: str) -> bool
     if state in CHANNEL_MODULE_RETRIED_STATES:
         return True
     return bool(want) and state in CHANNEL_MODULE_WANTS and state != want
+
+
+def _unreported_state(
+    runtime: PanelRuntime, key: str, module: str, manifest: "dict | None"
+) -> str:
+    """The state of a module the device's report leaves out: ``absent`` for a
+    ``container`` module once the device has reported, else ``unknown``."""
+    if key not in runtime.device_modules:
+        return STATE_UNKNOWN
+    if manifest is None:
+        manifest = load_module_manifests().get(module) or {}
+    if DEVICE_METHOD_CONTAINER in manifest_methods(manifest):
+        return CHANNEL_MODULE_STATE_ABSENT
+    return STATE_UNKNOWN
+
+
+def _with_environment_names(container):
+    """One reported container with its environment as the variables' names."""
+    if not isinstance(container, dict):
+        return container
+    environment = container.get("environment")
+    if not isinstance(environment, list):
+        return dict(container)
+    return {
+        **container,
+        "environment": [str(line).split("=", 1)[0] for line in environment],
+    }
 
 
 def _want_of(runtime: PanelRuntime, key: str, module: str) -> str:

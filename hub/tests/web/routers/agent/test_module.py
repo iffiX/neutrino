@@ -193,6 +193,29 @@ def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
     assert (row["state"], row["want"], row["is_active"]) == ("unknown", "", False)
 
 
+def test_a_containers_environment_reaches_the_row_as_names_alone(api):
+    """The values stay in the report the hub keeps, where the import reads them."""
+    client, runtime = api
+    containers = [
+        {"name": "web", "environment": ["TOKEN=mine", "EMPTY=", "A=b=c"]},
+        {"name": "neutrino_demo", "module": "demo", "environment": []},
+        {"name": "old", "image": "alpine"},
+    ]
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "running", "details": {"containers": containers}}
+    }
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["details"]["containers"] == [
+        {"name": "web", "environment": ["TOKEN", "EMPTY", "A"]},
+        {"name": "neutrino_demo", "module": "demo", "environment": []},
+        {"name": "old", "image": "alpine"},
+    ]
+    held = runtime.device_modules[DEVICE]["fakedesk"]["details"]["containers"]
+    assert held[0]["environment"] == ["TOKEN=mine", "EMPTY=", "A=b=c"]
+
+
 def system_entry(runner: str, packages: list, **uninstall) -> dict:
     """A ``system`` platform entry naming its packages."""
     return {
@@ -1119,7 +1142,8 @@ def test_a_container_module_s_install_or_start_wants_containers_running_first(
         "podman": {"want": "running", "is_settled": False},
         "demo": {"want": want, "is_settled": False},
     }
-    assert set(retry_marks()) == {"podman"}
+    # The report leaves demo out, so it reads absent and its press marks it.
+    assert set(retry_marks()) == {"podman", "demo"}
     assert len(runtime.agent_sessions.pushes) == 1
 
 
@@ -1131,7 +1155,7 @@ def test_containers_already_wanted_running_is_left_as_it_is(containers_api, tmp_
     client.post(f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "demo"})
 
     assert modules_file(tmp_path)["podman"] == {"want": "running", "is_settled": False}
-    assert retry_marks() == {}
+    assert "podman" not in retry_marks()
 
 
 def test_stopping_a_container_module_leaves_containers_as_it_is(
@@ -1166,3 +1190,24 @@ def test_containers_cannot_be_uninstalled_while_a_container_module_is_installed(
     }
     assert taken.status_code == 200
     assert modules_file(tmp_path)["podman"]["want"] == "absent"
+
+
+def test_a_container_module_a_report_leaves_out_reads_absent(containers_api):
+    """The agent has a runner for a container module only once a state names it."""
+    client, runtime = containers_api
+    runtime.device_modules[DEVICE] = {"podman": {"state": "running"}}
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+
+    by_name = {row["name"]: row for row in rows}
+    assert by_name["demo"]["state"] == "absent"
+    assert by_name["hermes_webui"]["state"] == "absent"
+    assert by_name["samba"]["state"] == "unknown"
+
+
+def test_a_container_module_reads_unknown_until_the_device_reports(containers_api):
+    client, _runtime = containers_api
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+
+    assert {row["name"]: row["state"] for row in rows}["demo"] == "unknown"

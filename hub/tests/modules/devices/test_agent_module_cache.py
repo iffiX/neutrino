@@ -486,6 +486,27 @@ def test_a_new_file_deletes_the_files_no_named_version_holds(manifests, root):
     )
 
 
+def test_a_new_file_deletes_every_file_of_a_0_5_hubs_naming(manifests, root):
+    """An upgrade from 0.5 left ``<module>-<platform>-<digest16>`` files, 1.5 GB
+    on the lab hub, which no hub serves."""
+    root.mkdir()
+    for name in (
+        "vscode-linux-amd64-82a1956cf354a293",
+        "codeg-node-darwin-amd64-4505455b62ce2619",
+        "cc_switch-linux-amd64-d501e05187c45205",
+    ):
+        (root / name).write_bytes(b"old")
+    (root / "podman-image-windows-amd64-51f8fbca7a7ec68a").mkdir()
+    (root / "podman-image-windows-amd64-51f8fbca7a7ec68a" / "part").write_text("x")
+    (root / "notes-2026-0123456789abcdef.txt").write_text("kept")
+
+    ask(make_cache(root, serving_app(), named={"fakedesk"}))
+
+    assert sorted(path.name for path in root.iterdir()) == sorted(
+        [hexed(APP), "notes-2026-0123456789abcdef.txt"]
+    )
+
+
 def test_with_no_named_modules_given_every_module_keeps_its_files(manifests, root):
     root.mkdir()
     for body in (OLD, OTHER):

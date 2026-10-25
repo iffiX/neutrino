@@ -21,6 +21,7 @@ from neutrino_hub.web.routers.agent.module import (
     DeviceModuleContext,
     device_context,
     module_router,
+    panel_details,
     push_state,
     require_online,
 )
@@ -46,7 +47,7 @@ def device_view(
         **context.fields(),
         port=stored_port(context.config),
         version=str(context.details.get("version", "") or ""),
-        details=dict(context.details),
+        details=panel_details(context.details),
     )
 
 
