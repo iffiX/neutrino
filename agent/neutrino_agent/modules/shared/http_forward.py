@@ -692,7 +692,7 @@ class InstanceForwarder:
                     return
                 self._server = server
                 self._code, self._params = "", {}
-            self._log(f"{self.name}: {self.account} answers on port {self.port}")
+            self._log(f"{self._who} answers on port {self.port}")
             server.serve_forever(poll_interval=0.5)
             return
 
@@ -701,4 +701,9 @@ class InstanceForwarder:
             is_new = self._code != code
             self._code, self._params = code, dict(params)
         if is_new:
-            self._log(f"{self.name}: {self.account} {code}")
+            self._log(f"{self._who} {code}")
+
+    @property
+    def _who(self) -> str:
+        """The module and the account the log lines name; the module alone for no account."""
+        return f"{self.name}: {self.account}" if self.account else f"{self.name}:"

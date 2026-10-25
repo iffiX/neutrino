@@ -94,6 +94,13 @@ class ContainerHooks:
             ModuleApplyError: When the configuration is refused.
         """
 
+    def installed(self, version: str) -> None:
+        """Note the version an install just pulled the images of.
+
+        Args:
+            version: The version the recipe names.
+        """
+
     def start(self) -> None:
         """Do what follows once the module's containers run.
 
@@ -112,6 +119,14 @@ class ContainerHooks:
             True for a module with no check of its own.
         """
         return True
+
+    def is_installing(self) -> bool:
+        """Whether the module's start waits on its containers' first start.
+
+        Returns:
+            False for a module with no first start of its own.
+        """
+        return False
 
     def details(self) -> dict:
         """What the module adds to its row's details.
@@ -191,6 +206,8 @@ class ContainerModuleRunner(ModuleRunner):
     def install(self, recipe: dict) -> None:
         """Pull every image the store lacks, each from the fastest source that serves it.
 
+        The hooks are then told the version the images belong to.
+
         Args:
             recipe: The module's recipe.
 
@@ -210,6 +227,7 @@ class ContainerModuleRunner(ModuleRunner):
             if stored_reference(image["digest"], image["sources"], references):
                 continue
             self._pull(command, image, is_docker_mirrored=is_mirrored)
+        self._hooks.installed(str(params_of(recipe).get("version", "") or ""))
 
     def uninstall(self, recipe: dict) -> None:
         """Remove the module's containers, units, network, named volumes and unused images.
@@ -274,6 +292,10 @@ class ContainerModuleRunner(ModuleRunner):
         names = self._names()
         if names:
             self._containers.drive_hub_containers(names, "stop")
+
+    def is_installing(self) -> bool:
+        """Whether the module's hooks wait on its containers' first start."""
+        return bool(self._hooks.is_installing())
 
     def is_active(self) -> bool:
         """Whether every container of the module runs and its hooks' check passes."""

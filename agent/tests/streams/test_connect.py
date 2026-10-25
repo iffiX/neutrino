@@ -114,6 +114,20 @@ def test_a_stopped_containers_ports_are_not_published():
     assert published_ports({"podman": stopped}, {}, None) == {}
 
 
+@pytest.mark.parametrize(
+    ("want", "is_published"),
+    [("running", True), ("stopped", True), ("installed", False), ("absent", False)],
+)
+def test_a_container_module_s_forwarder_port_is_published_while_configured(
+    want, is_published
+):
+    desired = {"hermes_webui": {"want": want, "config": {"port": 9100}}}
+
+    ports = published_ports({}, desired, None)
+
+    assert ports == ({9100: "127.0.0.1"} if is_published else {})
+
+
 def test_a_gitea_url_with_no_port_publishes_its_schemes():
     gitea = {"state": "running", "details": {"url": "https://git.example/"}}
 

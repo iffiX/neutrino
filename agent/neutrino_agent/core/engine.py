@@ -62,7 +62,12 @@ from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.codeg.hooks import CodegHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.podman.container_runner import ContainerModuleRunner
+from neutrino_agent.modules.hermes_webui.constants import HERMES_WEBUI_NAME
+from neutrino_agent.modules.hermes_webui.hooks import HermesWebuiHooks
+from neutrino_agent.modules.podman.container_runner import (
+    CONTAINER_MODULE_HOOKS,
+    ContainerModuleRunner,
+)
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
@@ -109,6 +114,9 @@ CloudcliModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=CloudcliHooks
 )
 CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHooks)
+# The container modules with hooks of their own, which the container runner
+# reads by module name.
+CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
 
 # The states a kept failure reads as: an install's, and every other step's.
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)

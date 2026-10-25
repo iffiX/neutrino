@@ -363,3 +363,31 @@ def test_a_module_s_hooks_are_called_where_the_runner_says(store, monkeypatch):
 
     assert calls == [("apply", {"port": 8787}), ("start",), ("remove",)]
     assert runner.details(RECIPE) == {"version": "0.52.492", "port": 8787}
+
+
+def test_an_install_tells_the_hooks_its_version_and_installing_is_theirs(
+    store, monkeypatch
+):
+    calls: list = []
+
+    class DemoHooks(ContainerHooks):
+        def installed(self, version):
+            calls.append(("installed", version))
+
+        def is_installing(self):
+            return True
+
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", DemoHooks
+    )
+    store.add("docker.io/acme/agent@" + AGENT)
+    store.add("ghcr.io/acme/webui@" + WEB)
+    runner = runner_for(FakeContainers(), FakePodman())
+
+    runner.install(RECIPE)
+
+    assert calls == [("installed", "0.52.492")]
+    assert runner.is_installing() is True
+    assert runner_for(FakeContainers(), FakePodman()).is_installing() is True
+    monkeypatch.delitem(container_runner_module.CONTAINER_MODULE_HOOKS, "demo")
+    assert runner_for(FakeContainers(), FakePodman()).is_installing() is False

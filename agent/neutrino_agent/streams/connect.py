@@ -46,6 +46,9 @@ SCHEME_PORTS = {"http": 80, "https": 443}
 CONFIGURED_STATES = ("stopped", "running")
 # The modules whose configured instances each answer on their own port.
 INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg")
+# The container modules whose page the agent's forwarder serves at the
+# configured ``port``.
+FORWARDED_MODULES = ("hermes_webui",)
 # How long the hub's side waits for an item before it looks again.
 POLL_S = 0.5
 
@@ -71,8 +74,8 @@ def published_ports(
         Port to address. On TCP: 445 while the file share reports a share,
         the desktop's direct port while it is shared, the port of the url
         the Gitea module reports, each configured editor or CloudCLI
-        instance's port, and each port a running container publishes on
-        TCP. On UDP: each port a running container publishes on UDP, and
+        instance's port, the port of a container module's forwarder, and
+        each port a running container publishes on TCP. On UDP: each port a running container publishes on UDP, and
         nothing else. The port a hub container's ``page_port`` is published
         at is never one. A container's port goes to the one address it is
         published on when it names one; every other to loopback. A binding
@@ -102,6 +105,14 @@ def published_ports(
             port = _port(instance.get("port") if isinstance(instance, dict) else 0)
             if port:
                 ports[port] = AGENT_CONNECT_LOOPBACK
+    for name in FORWARDED_MODULES:
+        entry = desired_modules.get(name)
+        if not isinstance(entry, dict) or entry.get("want") not in CONFIGURED_STATES:
+            continue
+        config = entry.get("config") if isinstance(entry.get("config"), dict) else {}
+        port = _port(config.get("port"))
+        if port:
+            ports[port] = AGENT_CONNECT_LOOPBACK
     ports.update(_container_ports(modules, desired_modules, protocol))
     return ports
 
