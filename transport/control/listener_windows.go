@@ -16,6 +16,8 @@ import (
 // The named pipe constants kernel32 takes.
 const (
 	pipeAccessDuplex        = 0x00000003
+	fileFlagOverlapped      = 0x40000000
+	errorIOPending          = syscall.Errno(997)
 	fileFlagFirstInstance   = 0x00080000
 	pipeTypeByte            = 0x00000000
 	pipeReadModeByte        = 0x00000000
@@ -39,19 +41,20 @@ const (
 )
 
 var (
-	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
-	advapi32                 = syscall.NewLazyDLL("advapi32.dll")
-	procCreateNamedPipeW     = kernel32.NewProc("CreateNamedPipeW")
-	procConnectNamedPipe     = kernel32.NewProc("ConnectNamedPipe")
-	procDisconnectNamedPipe  = kernel32.NewProc("DisconnectNamedPipe")
-	procConvertSddl          = advapi32.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
-	procLocalFree            = kernel32.NewProc("LocalFree")
-	procWaitNamedPipeW       = kernel32.NewProc("WaitNamedPipeW")
-	procSetNamedPipeHandleSt = kernel32.NewProc("SetNamedPipeHandleState")
+	kernel32                = syscall.NewLazyDLL("kernel32.dll")
+	advapi32                = syscall.NewLazyDLL("advapi32.dll")
+	procCreateNamedPipeW    = kernel32.NewProc("CreateNamedPipeW")
+	procConnectNamedPipe    = kernel32.NewProc("ConnectNamedPipe")
+	procDisconnectNamedPipe = kernel32.NewProc("DisconnectNamedPipe")
+	procConvertSddl         = advapi32.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
+	procCreateEventW        = kernel32.NewProc("CreateEventW")
+	procGetOverlappedResult = kernel32.NewProc("GetOverlappedResult")
 )
 
 // pipeListener accepts connections on a named pipe, one instance per
-// connection, each created when the previous one connected.
+// connection, each created when the previous one connected. Every instance
+// is opened overlapped, so os.NewFile puts it on the runtime's completion
+// port and a read and a write on one connection run at once.
 type pipeListener struct {
 	name     string
 	security *syscall.SecurityAttributes
@@ -112,7 +115,7 @@ func listenPipe(path string, isPrivate bool) (net.Listener, error) {
 // createInstance makes one pipe instance, the first one refusing a name
 // another program holds.
 func (l *pipeListener) createInstance() (syscall.Handle, error) {
-	flags := uintptr(pipeAccessDuplex)
+	flags := uintptr(pipeAccessDuplex | fileFlagOverlapped)
 	if l.isFirst {
 		flags |= fileFlagFirstInstance
 		l.isFirst = false
@@ -147,9 +150,8 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 		}
 		handle := l.pending
 		l.mu.Unlock()
-		result, _, callErr := procConnectNamedPipe.Call(uintptr(handle), 0)
+		isConnected, callErr := connectOverlapped(handle)
 		var errno syscall.Errno
-		isConnected := result != 0 || (errors.As(callErr, &errno) && errno == errorPipeConnected)
 		l.mu.Lock()
 		if l.isClosed {
 			l.mu.Unlock()
@@ -228,15 +230,48 @@ func securityAttributes(sddl string) (*syscall.SecurityAttributes, error) {
 	return attributes, nil
 }
 
-// DialPipe connects to a named pipe, for the tests and the probe of a pipe.
+// DialPipe connects to a named pipe, overlapped so a read and a write run at
+// once, for the tests and the probe of a pipe.
 func DialPipe(path string) (net.Conn, error) {
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
-	handle, err := syscall.CreateFile(name, genericRead|genericWrite, 0, nil, openExisting, 0, 0)
+	handle, err := syscall.CreateFile(name, genericRead|genericWrite, 0, nil, openExisting, fileFlagOverlapped, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open pipe %s: %w", path, err)
 	}
 	return &pipeConn{file: os.NewFile(uintptr(handle), path), name: path}, nil
+}
+
+// connectOverlapped waits for a client on an instance opened overlapped.
+func connectOverlapped(handle syscall.Handle) (bool, error) {
+	eventHandle, _, eventErr := procCreateEventW.Call(0, 1, 0, 0)
+	if eventHandle == 0 {
+		return false, eventErr
+	}
+	event := syscall.Handle(eventHandle)
+	defer syscall.CloseHandle(event)
+	overlapped := new(syscall.Overlapped)
+	overlapped.HEvent = event
+	result, _, callErr := procConnectNamedPipe.Call(uintptr(handle), uintptr(unsafe.Pointer(overlapped)))
+	if result != 0 {
+		return true, nil
+	}
+	var errno syscall.Errno
+	if errors.As(callErr, &errno) && errno == errorPipeConnected {
+		return true, nil
+	}
+	if !errors.As(callErr, &errno) || errno != errorIOPending {
+		return false, callErr
+	}
+	if _, err := syscall.WaitForSingleObject(event, syscall.INFINITE); err != nil {
+		return false, err
+	}
+	var done uint32
+	ok, _, resultErr := procGetOverlappedResult.Call(uintptr(handle), uintptr(unsafe.Pointer(overlapped)), uintptr(unsafe.Pointer(&done)), 1)
+	if ok == 0 {
+		return false, resultErr
+	}
+	return true, nil
 }
