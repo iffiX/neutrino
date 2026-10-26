@@ -1,6 +1,8 @@
 """The binaries the client packages carry, pinned and unpacked at build time.
 
-Three of them everywhere: the cc-switch CLI, which points a person's AI
+The transport, which the resident runs as its child, is the release's own
+build of ``transport/``, taken from ``dist/go/<target>/``. Three more
+everywhere: the cc-switch CLI, which points a person's AI
 tools at the hub's gateway; the RustDesk viewer, which opens a desktop the
 fleet shares; and EasyTier, whose daemon the packages register as a service
 so the client can join a hub's virtual network, and NetBird, whose daemon
@@ -93,6 +95,8 @@ TUN2SOCKS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
 # Where each lands under the install prefix, matching what the runtime
 # resolver in ``neutrino_client.bundled`` looks for.
 CC_SWITCH_INSTALL_PATH = "bin/cc-switch"
+TRANSPORT_INSTALL_PATH = "bin/neutrino_transport"
+TRANSPORT_WINDOWS_NAME = "neutrino_transport.exe"
 RUSTDESK_INSTALL_DIR = "rustdesk"
 EASYTIER_INSTALL_DIR = "easytier"
 # Where both land under the app bundle's Contents on macOS.
@@ -107,12 +111,13 @@ def stage_linux_binaries(tree: Path, architecture: str) -> None:
         architecture: The architecture, named however the format names it.
 
     Raises:
-        SystemExit: When an asset is not pinned for the machine, what
-            arrived is not what was pinned, or the viewer is not the shape
-            the client expects.
+        SystemExit: When the release built no transport for the machine, an
+            asset is not pinned for it, what arrived is not what was pinned,
+            or the viewer is not the shape the client expects.
     """
     machine = payload.machine_name(architecture)
     prefix = tree / str(payload.INSTALL_PREFIX).lstrip("/")
+    payload.stage_transport(prefix / TRANSPORT_INSTALL_PATH, "linux", machine)
     _stage_cc_switch(prefix / CC_SWITCH_INSTALL_PATH, "linux", machine)
     _stage_rustdesk_host(prefix / RUSTDESK_INSTALL_DIR, machine)
     netbird_payload.stage_linux(prefix, machine)
@@ -127,10 +132,14 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
         architecture: The architecture, named however the format names it.
 
     Raises:
-        SystemExit: When an asset is not pinned for the machine, or what
-            arrived is not what was pinned.
+        SystemExit: When the release built no transport for the machine, an
+            asset is not pinned for it, or what arrived is not what was
+            pinned.
     """
     machine = payload.machine_name(architecture)
+    payload.stage_transport(
+        installed / "bin" / TRANSPORT_WINDOWS_NAME, "windows", machine
+    )
     _stage_cc_switch(
         installed / "bin" / cc_switch_assets.binary_name("windows"), "windows", machine
     )
@@ -153,12 +162,13 @@ def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:
         architecture: The architecture, named however the format names it.
 
     Raises:
-        SystemExit: When an asset is not pinned for the machine, what
-            arrived is not what was pinned, the disk image carries no
-            viewer, or hdiutil refuses.
+        SystemExit: When the release built no transport for the machine, an
+            asset is not pinned for it, what arrived is not what was pinned,
+            the disk image carries no viewer, or hdiutil refuses.
     """
     machine = payload.machine_name(architecture)
     resources = app_contents / DARWIN_RESOURCES_DIR
+    payload.stage_transport(resources / TRANSPORT_INSTALL_PATH, "darwin", machine)
     _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", machine)
     rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR, machine=machine)
     netbird_payload.stage_darwin(resources, machine)

@@ -281,6 +281,9 @@ def test_the_windows_staging_puts_both_under_bin(tmp_path, downloads):
     bundled.stage_windows_binaries(tmp_path, "x64")
 
     assert (tmp_path / "bin" / "cc-switch.exe").is_file()
+    assert (tmp_path / "bin" / "neutrino_transport.exe").read_bytes() == (
+        b"transport for windows-amd64"
+    )
     assert (tmp_path / "bin" / "rustdesk.exe").read_bytes() == b"MZ"
     for name in ("easytier-core.exe", "easytier-cli.exe", "wintun.dll"):
         assert (tmp_path / "bin" / name).is_file(), name
@@ -309,6 +312,9 @@ def test_the_macos_staging_puts_both_under_the_bundles_resources(
     switcher = contents / "Resources" / "bin" / "cc-switch"
     assert switcher.is_file()
     assert switcher.stat().st_mode & 0o111
+    assert (contents / "Resources" / "bin" / "neutrino_transport").read_bytes() == (
+        b"transport for darwin-arm64"
+    )
     app = contents / "Resources" / "rustdesk" / "RustDesk.app"
     assert (app / "Contents" / "MacOS" / "RustDesk").is_file()
     assert (app / "Contents" / "Info.plist").is_file()
@@ -447,3 +453,27 @@ def test_an_easytier_release_without_its_daemon_is_refused(tmp_path, monkeypatch
         bundled._stage_easytier(tmp_path / "easytier", "linux", "x86_64")
 
     assert "easytier-core" in str(refused.value)
+
+
+# --- the transport, the release's own build ---
+
+
+def test_every_staging_carries_the_transport_of_its_target(
+    tmp_path, downloads, unpacked_viewer, go_programs
+):
+    bundled.stage_linux_binaries(tmp_path / "linux", "amd64")
+
+    program = tmp_path / "linux/opt/neutrino/client/bin/neutrino_transport"
+    assert program.read_bytes() == b"transport for linux-amd64"
+    assert program.stat().st_mode & 0o111
+
+
+def test_a_release_with_no_transport_for_the_target_is_refused(
+    tmp_path, downloads, go_programs
+):
+    (go_programs / "linux-arm64" / "neutrino_transport").unlink()
+
+    with pytest.raises(SystemExit) as refused:
+        bundled.stage_linux_binaries(tmp_path, "arm64")
+
+    assert "neutrino_transport" in str(refused.value)

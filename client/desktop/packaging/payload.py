@@ -49,6 +49,13 @@ CLIENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = CLIENT_ROOT.parent.parent
 PACKAGE_NAME = "neutrino-client"
 
+# Where every package build takes the Go programs of its target from, as the
+# release jobs download them: ``dist/go/<target>/``, the target
+# ``<os>-<arch>`` as Go names them. The client carries the transport.
+GO_PROGRAMS_DIR = REPO_ROOT / "dist" / "go"
+TRANSPORT_PROGRAM = "neutrino_transport"
+GO_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
+
 # A glibc version as readelf's version sections name it.
 GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 
@@ -277,6 +284,51 @@ def machine_name(architecture: str) -> str:
             f"not {architecture}"
         )
     return name
+
+
+def go_target(os_name: str, machine: str) -> str:
+    """The Go target one package's programs are built for.
+
+    Args:
+        os_name: ``linux``, ``windows`` or ``darwin``.
+        machine: The interpreter release's name for the machine.
+
+    Returns:
+        ``<os>-<arch>``, ``linux-amd64`` and the like.
+
+    Raises:
+        SystemExit: When Go names no architecture for the machine.
+    """
+    architecture = GO_ARCHITECTURES.get(machine)
+    if architecture is None:
+        raise SystemExit(f"no Go target for {machine}")
+    return f"{os_name}-{architecture}"
+
+
+def stage_transport(target: Path, os_name: str, machine: str) -> None:
+    """Copy the transport the release built for this package's target.
+
+    Args:
+        target: Where the binary belongs in the package.
+        os_name: ``linux``, ``windows`` or ``darwin``.
+        machine: The interpreter release's name for the machine.
+
+    Raises:
+        SystemExit: When ``dist/go/<target>/`` holds no transport.
+    """
+    suffix = ".exe" if os_name == "windows" else ""
+    source = (
+        GO_PROGRAMS_DIR / go_target(os_name, machine) / (TRANSPORT_PROGRAM + suffix)
+    )
+    if not source.is_file():
+        raise SystemExit(
+            f"the client for {os_name} {machine} carries {TRANSPORT_PROGRAM} and "
+            f"there is none at {source}; build it with "
+            "packaging/build/build_transport.py first"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    target.chmod(0o755)
 
 
 def stage_client_tree(

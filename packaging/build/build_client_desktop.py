@@ -60,16 +60,48 @@ CLIENT_BUILDS = {
 }
 
 CLIENT_CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/client/desktop /build/images /build/packaging && "
+    "{install} && mkdir -p /build/client/desktop /build/images /build/packaging "
+    "/build/dist && "
     "cp -r /src/client/desktop/neutrino_client /src/client/desktop/packaging "
     "/src/client/desktop/frontend /src/client/desktop/pyproject.toml "
     "/build/client/desktop/ && "
+    "cp -r /src/dist/go /build/dist/go && "
     "cp -r /src/packaging/shared /build/packaging/ && "
     "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
     "python3 client/desktop/packaging/{script} --output-dir /out "
     "--architecture {architecture}"
 )
+
+
+# Where the release jobs put the Go programs of each target; the client
+# carries the transport of its own.
+GO_PROGRAMS_DIR = REPO_ROOT / "dist" / "go"
+TRANSPORT_PROGRAM = "neutrino_transport"
+GO_ARCHITECTURES = {
+    "amd64": "amd64",
+    "x86_64": "amd64",
+    "arm64": "arm64",
+    "aarch64": "arm64",
+}
+
+
+def require_transport(architecture: str) -> None:
+    """Refuse a build whose release built no transport for its architecture.
+
+    Args:
+        architecture: The architecture being built.
+
+    Raises:
+        SystemExit: When ``dist/go/linux-<arch>/`` holds no transport.
+    """
+    go_architecture = GO_ARCHITECTURES.get(architecture, architecture)
+    path = GO_PROGRAMS_DIR / f"linux-{go_architecture}" / TRANSPORT_PROGRAM
+    if not path.is_file():
+        raise SystemExit(
+            f"the client carries {TRANSPORT_PROGRAM} and there is none at {path}; "
+            "build it with packaging/build/build_transport.py first"
+        )
 
 
 def main() -> int:
@@ -93,6 +125,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     edition_build.require_edition_tree(arguments.edition)
+    require_transport(arguments.architecture)
     if container_build.container_engine() is None:
         raise SystemExit("podman or docker is needed and neither is on the path")
 
