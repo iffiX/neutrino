@@ -8,14 +8,27 @@ directory drives: the client platform, the resident, the injected clock,
 the link builder and the log sink. ``HUB_SERVICES`` is what one hub sends
 in a state; ``SERVICES`` is the two-hub list the resident merges from it,
 each entry stamped with its ``hub_id``.
+
+A guard on every process a test starts refuses by name the service and
+session managers, the mount tools, everything that asks for authorization,
+the package managers, the tools that change the machine's network, the
+person's browser and clipboard, the overlays the client carries and
+``ssh``: a test that reaches one fails naming the command, rather than
+opening a password dialog or a browser on the developer's desktop. A
+program of one of these names that a test placed under the temporary
+directory, a fake, runs. Python's own ``webbrowser`` is refused the same
+way.
 """
 
 import base64
 import json
 import os
+import shutil
 import socket
 import subprocess
+import tempfile
 import threading
+import webbrowser
 import zlib
 
 import pytest
@@ -26,6 +39,202 @@ from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
+
+# The programs no test may start on the real machine: the service and
+# session managers, the mount tools and everything that asks for
+# authorization, the package managers, the tools that change the machine's
+# network or the Windows and macOS system, the person's browser and
+# clipboard, the overlays and tools the client carries, and ssh. A program
+# of one of these names that a test placed under the temporary directory, a
+# fake on its own PATH, runs.
+REFUSED_PROGRAMS = frozenset(
+    {
+        "systemctl",
+        "systemd-run",
+        "loginctl",
+        "journalctl",
+        "sudo",
+        "pkexec",
+        "runuser",
+        "su",
+        "doas",
+        "mount",
+        "umount",
+        "mount.cifs",
+        "umount.cifs",
+        "mount_smbfs",
+        "diskutil",
+        "osascript",
+        "open",
+        "launchctl",
+        "installer",
+        "pkgutil",
+        "apt",
+        "apt-get",
+        "dpkg",
+        "dnf",
+        "yum",
+        "rpm",
+        "zypper",
+        "pacman",
+        "nft",
+        "iptables",
+        "ip6tables",
+        "ufw",
+        "firewall-cmd",
+        "resolvectl",
+        "nmcli",
+        "sysctl",
+        "modprobe",
+        "net",
+        "net.exe",
+        "netsh",
+        "netsh.exe",
+        "cmdkey",
+        "cmdkey.exe",
+        "icacls",
+        "icacls.exe",
+        "schtasks",
+        "schtasks.exe",
+        "sc",
+        "sc.exe",
+        "reg",
+        "reg.exe",
+        "msiexec",
+        "msiexec.exe",
+        "xdg-open",
+        "gio",
+        "x-www-browser",
+        "sensible-browser",
+        "firefox",
+        "chromium",
+        "google-chrome",
+        "wl-copy",
+        "wl-paste",
+        "xclip",
+        "xsel",
+        "pbcopy",
+        "pbpaste",
+        "notify-send",
+        "netbird",
+        "easytier-core",
+        "easytier-cli",
+        "rustdesk",
+        "cc-switch",
+        "ssh",
+    }
+)
+# PowerShell, which a test runs only on a script it wrote under the
+# temporary directory.
+POWERSHELL_PROGRAMS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.exe"})
+# ``ip`` only reads, unless one of these words is in it.
+MUTATING_IP_VERBS = frozenset(
+    {"add", "del", "delete", "replace", "change", "set", "flush", "monitor"}
+)
+
+_real_popen = subprocess.Popen
+_real_system = os.system
+_real_exec = {
+    name: getattr(os, name) for name in ("execv", "execve", "execvp", "execvpe")
+}
+
+
+def _refuses(command, environment=None) -> "str | None":
+    """Why a test must not start a command on the real machine, or None when it may.
+
+    Args:
+        command: The argument vector, or a shell line.
+        environment: The environment it starts with; None is the test's own.
+
+    Returns:
+        The reason naming the program; None for a program of no refused
+        name, one found under the temporary directory, PowerShell on a
+        script there, and an ``ip`` that only reads.
+    """
+    if isinstance(command, (str, bytes)):
+        words = os.fsdecode(command).split()
+    else:
+        words = [os.fsdecode(word) for word in command]
+    if not words:
+        return None
+    program = words[0]
+    name = os.path.basename(program).lower()
+    under_temp = os.path.realpath(tempfile.gettempdir()) + os.sep
+    if name in POWERSHELL_PROGRAMS:
+        script = words[words.index("-File") + 1] if "-File" in words[:-1] else ""
+        if script and os.path.realpath(script).startswith(under_temp):
+            return None
+        return f"{name} runs only a script a test wrote"
+    if name == "ip":
+        if MUTATING_IP_VERBS.intersection(words[1:]):
+            return "ip would change an address, a link, a route or a rule"
+        return None
+    if name not in REFUSED_PROGRAMS:
+        return None
+    path = (environment or os.environ).get("PATH", os.defpath)
+    found = program if os.sep in program else shutil.which(program, path=path)
+    if found and os.path.realpath(found).startswith(under_temp):
+        return None
+    return f"{name} changes the machine or the desktop, or asks for authorization to"
+
+
+@pytest.fixture(autouse=True)
+def _no_test_reaches_the_machine(monkeypatch):
+    """Fail a test at once when it would start a refused program on the real machine.
+
+    ``subprocess.run``, ``call`` and ``check_output`` start every process
+    through ``Popen``. Code under test catches ``Exception`` in places, so
+    the refusal is a pytest failure, which it does not catch, and the test
+    also fails at its end when something swallowed it. A refused ``exec``
+    in a forked child ends that child.
+    """
+    refused: list = []
+
+    def refuse(reason: str, command) -> None:
+        test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+        refused.append(reason)
+        pytest.fail(
+            f"{test} would start {command!r} on this machine ({reason}); "
+            "patch the module's run, or put a fake on PATH under tmp_path",
+            pytrace=True,
+        )
+
+    class GuardedPopen(_real_popen):
+        def __init__(self, command, *arguments, **keywords):
+            reason = _refuses(command, keywords.get("env"))
+            if reason is not None:
+                refuse(reason, command)
+            super().__init__(command, *arguments, **keywords)
+
+    def guarded_system(command):
+        reason = _refuses(command)
+        if reason is not None:
+            refuse(reason, command)
+        return _real_system(command)
+
+    def guarded_exec(name):
+        def run(program, argv, *rest):
+            reason = _refuses([program] + list(argv)[1:])
+            if reason is not None:
+                os.write(2, f"refused {program}: {reason}\n".encode())
+                os._exit(127)
+            return _real_exec[name](program, argv, *rest)
+
+        return run
+
+    def guarded_browser(url, *arguments, **keywords):
+        refuse("the person's browser", ["webbrowser", url])
+
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+    monkeypatch.setattr(os, "system", guarded_system)
+    for name in _real_exec:
+        monkeypatch.setattr(os, name, guarded_exec(name))
+    for name in ("open", "open_new", "open_new_tab"):
+        monkeypatch.setattr(webbrowser, name, guarded_browser)
+    yield refused
+    if refused:
+        pytest.fail(f"the test tried to start a refused program: {refused}")
+
 
 SAME_USER = {"account": "alice", "uid": 1000, "is_same_user": True}
 OTHER_USER = {"account": "bob", "uid": 1001, "is_same_user": False}
