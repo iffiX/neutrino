@@ -28,12 +28,13 @@ import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.words.WordCatalog
 
 /**
- * An app's Configure dialog: one line per entry, its name, its kind and a number field that starts
- * at the entry's number, the person's or else the hub's, then Cancel and Save. A number of the
- * person's, from 1024 to 65535, replaces the hub's on this phone alone, and an empty field goes back
- * to the hub's. A refused Save stays open with its reason, and a disabled Save has its reason under
+ * An app's Configure dialog: one line per entry, its name and its kind, and a number field that
+ * starts at the entry's number, the person's or else the hub's, then Cancel and Save. A number of
+ * the person's, from 1024 to 65535, replaces the hub's on this phone alone, and an empty field goes
+ * back to the hub's. A refused Save stays open with its reason, and a disabled Save has its reason under
  * the fields.
  *
  * @param title The app's title.
@@ -75,10 +76,11 @@ fun LocalPortDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        BasicText(entry.name.ifEmpty { entry.title }, style = NeutrinoTheme.body)
-                        BasicText(kindOf(entry), style = NeutrinoTheme.mono)
-                    }
+                    BasicText(
+                        "${entry.name.ifEmpty { entry.title }} · ${kindOf(entry, words)}",
+                        style = NeutrinoTheme.body,
+                        modifier = Modifier.weight(1f),
+                    )
                     InputField(
                         value = typed[entry.id].orEmpty(),
                         onChange = { text ->
@@ -144,13 +146,17 @@ internal fun numbersOf(entries: List<ChannelServiceEntry>, typed: Map<String, St
     }
 
 /**
- * An entry's kind as the Apps page names it: `web`, `port`, or `port/udp` for a UDP port.
+ * An entry's kind as the Configure dialog names it: `ui.entry_kind.<type>`, with `/udp` after a UDP
+ * port.
  *
  * @param entry The entry.
+ * @param words The catalog.
  * @return The kind.
  */
-internal fun kindOf(entry: ChannelServiceEntry): String =
-    if (entry.protocol == "udp") "${entry.type}/udp" else entry.type
+internal fun kindOf(entry: ChannelServiceEntry, words: WordCatalog): String {
+    val kind = words.word("ui.entry_kind.${entry.type}")
+    return if (entry.protocol == "udp") "$kind/udp" else kind
+}
 
 @Preview(widthDp = 400, heightDp = 300)
 @Composable

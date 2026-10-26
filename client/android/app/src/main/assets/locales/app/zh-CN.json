@@ -7,7 +7,6 @@
     "rdp_core_missing": "这个版本没有远程桌面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
     "transport_failed": "应用的传输层没有启动：{detail}",
-    "transport_missing": "这个版本没有带传输层，请安装正式发布的应用。",
     "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {

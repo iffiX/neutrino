@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The apps the joined hubs publish, one row each: the title with its source, the machine, and one mono line per
-/// `web` and `port` entry with its kind and its fixed local address, the `ssh` entries left out on a phone. Use
+/// The apps the joined hubs publish, one row each: the title, the hub, the machine and the source, and one mono line
+/// per `web` and `port` entry with its fixed local address, the `ssh` entries left out on a phone. Use
 /// forwards every entry and opens the in-app browser at the first `http` or `https` entry, Configure opens the
 /// local port dialog while the app is not in use, and Stop ends the app's forwards while it is.
 struct AppsScreen: View {
@@ -66,20 +66,14 @@ struct AppsScreen: View {
         let isFree = row.job == nil && !hub.jobs.isRefreshing
         let isUsable = entries.contains { !$0.isUnhealthy }
         FeatureRow(marker: AppText.tone(hub, entries, isBusy: row.job != nil), hasDivider: hasDivider) {
-            HStack(spacing: 8) {
-                RowText(text: app.title, style: .title)
-                Badge(text: words.word("ui.app_source.\(app.source.isEmpty ? "module" : app.source)"))
-            }
+            RowText(text: app.title, style: .title)
+            RowText(text: AppText.provider(hub, app, entries, words: words), style: .note)
             ForEach(entries) { entry in
-                let address = AppText.localAddress(entry, port: core.localPort(bindingId: hub.binding.id, entry: entry))
-                RowText(text: "\(AppText.kind(entry))  \(address)", style: .mono)
-                if entry.isUnhealthy {
-                    RowText(text: words.word("ui.unhealthy"), style: .note)
-                }
+                RowText(
+                    text: AppText.line(
+                        entry, port: core.localPort(bindingId: hub.binding.id, entry: entry), words: words),
+                    style: .mono)
             }
-            RowText(
-                text: words.word("ui.machine_provided_by", ["hub": hub.binding.title, "device": app.deviceName]),
-                style: .note)
             if let error = row.error {
                 RowText(text: words.refusal(error), style: .error)
             }

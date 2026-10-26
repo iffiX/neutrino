@@ -19,7 +19,34 @@ final class AppTextTests: XCTestCase {
         XCTAssertEqual(AppText.localAddress(entry("port", ["port": .int(22)]), port: 30418), "127.0.0.1:30418")
         XCTAssertEqual(
             AppText.localAddress(entry("port", ["protocol": .string("udp")]), port: 25001), "127.0.0.1:25001/udp")
-        XCTAssertEqual(AppText.kind(entry("port", ["protocol": .string("udp")])), "port/udp")
+    }
+
+    private let words = WordCatalog(words: [
+        "ui.entry_kind.web": "Web", "ui.entry_kind.port": "Port", "ui.unhealthy": "Not reachable now",
+        "ui.app_source.declared": "declared", "ui.app_provided_by": "from {hub}:{machine} · {source}",
+    ])
+
+    func testAnEntrysLineAndKindAreWordedAsOnTheDesktop() {
+        XCTAssertEqual(AppText.kind(entry("port", ["protocol": .string("udp")]), words: words), "Port/udp")
+        XCTAssertEqual(AppText.kind(entry("web", [:]), words: words), "Web")
+        XCTAssertEqual(
+            AppText.line(
+                entry("web", ["url": .string("http://10.0.0.5:3000/")], isHealthy: false), port: 24001,
+                words: words),
+            "http://127.0.0.1:24001/ · Not reachable now")
+    }
+
+    func testTheProviderLineNamesTheEntrysHostWhenTheHubNamesNoMachine() throws {
+        let hub = HubView(binding: Samples.binding)
+        let app = try XCTUnwrap(
+            ChannelApp.of(.object(["id": .string("a"), "source": .string("declared"), "device_name": .string("box")])))
+        let web = entry("web", ["url": .string("http://[fd00::5]:3000/")])
+        XCTAssertEqual(AppText.provider(hub, app, [web], words: words), "from Home:box · declared")
+        let manual = try XCTUnwrap(ChannelApp.of(.object(["id": .string("a"), "source": .string("other")])))
+        XCTAssertEqual(AppText.provider(hub, manual, [web], words: words), "from Home:fd00::5 · ")
+        XCTAssertEqual(
+            AppText.provider(hub, manual, [entry("port", ["host": .string("10.0.0.9")])], words: words),
+            "from Home:10.0.0.9 · ")
     }
 
     func testTheReasonSaysWhyUseOrConfigureIsDisabled() {

@@ -17,12 +17,53 @@ enum AppText {
         return entry.protocol == Forward.protocolUdp ? address + "/udp" : address
     }
 
-    /// An entry's kind as the Apps page names it: `web`, `port`, or `port/udp` for a UDP port.
+    /// An entry's mono line under its app: its local address, and the health word while the hub reports it
+    /// unhealthy.
     ///
-    /// - Parameter entry: The entry.
+    /// - Parameters:
+    ///   - entry: The entry.
+    ///   - port: The local port it listens on.
+    ///   - words: The catalog.
+    /// - Returns: The line.
+    static func line(_ entry: ChannelServiceEntry, port: Int, words: WordCatalog) -> String {
+        let address = localAddress(entry, port: port)
+        return entry.isUnhealthy ? "\(address) · \(words.word("ui.unhealthy"))" : address
+    }
+
+    /// An entry's kind as the Configure dialog names it: `ui.entry_kind.<type>`, with `/udp` after a UDP port.
+    ///
+    /// - Parameters:
+    ///   - entry: The entry.
+    ///   - words: The catalog.
     /// - Returns: The kind.
-    static func kind(_ entry: ChannelServiceEntry) -> String {
-        entry.protocol == Forward.protocolUdp ? "\(entry.type)/udp" : entry.type
+    static func kind(_ entry: ChannelServiceEntry, words: WordCatalog) -> String {
+        let kind = words.word("ui.entry_kind.\(entry.type)")
+        return entry.protocol == Forward.protocolUdp ? kind + "/udp" : kind
+    }
+
+    /// Which hub and which machine an app is on, and who answers for it: `ui.app_provided_by`, the machine being
+    /// the host its first entry points at when the hub names none.
+    ///
+    /// - Parameters:
+    ///   - hub: The hub that publishes the app.
+    ///   - app: The app.
+    ///   - entries: The app's entries.
+    ///   - words: The catalog.
+    /// - Returns: The line.
+    static func provider(_ hub: HubView, _ app: ChannelApp, _ entries: [ChannelServiceEntry], words: WordCatalog)
+        -> String
+    {
+        let source = sources.contains(app.source) ? words.word("ui.app_source.\(app.source)") : ""
+        let machine = app.deviceName.isEmpty ? entries.first.map(host) ?? "" : app.deviceName
+        return words.word("ui.app_provided_by", ["hub": hub.binding.title, "machine": machine, "source": source])
+    }
+
+    /// The sources an app's provider line words, as the hub names them.
+    static let sources = ["module", "declared", "manual"]
+
+    private static func host(_ entry: ChannelServiceEntry) -> String {
+        let url = entry.payload.text("url")
+        return url.isEmpty ? entry.payload.text("host") : ChannelAddress.host(of: url)
     }
 
     /// Why an app's buttons are disabled.
