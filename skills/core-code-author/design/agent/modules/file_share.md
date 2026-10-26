@@ -21,9 +21,14 @@ On Linux the module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"`, sets its
 Samba password from `passwords`, and renders the account's share with `valid
 users = neutrino-<account>` and `force user = <account>`, so every file is
-written as the account and with its primary group; a share the file names
-itself, a ZFS dataset's, has no forced user and writes as the SMB user that
-connected. The person's account must exist, and is refused
+written as the account and with its primary group. A share the file names
+itself, a ZFS dataset's, admits several SMB users and carries no `force
+user` of its own: it carries `include = /etc/samba/neutrino_users/%U.conf`,
+and the module writes one file there per SMB user, named after the user and
+holding `force user = <account>`, so Samba forces the connected user's own
+account on that share too, and every file in it is the account's. The
+directory and its files are the module's, written at every apply and
+deleted with `smb.conf`. The person's account must exist, and is refused
 `account_unknown {account}` when it does not. An account that is disabled
 loses its SMB user's Samba credential and, when the comment says the module
 made it, the user itself; an account the module did not make is never
