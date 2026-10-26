@@ -11,7 +11,7 @@ enum class HubWaitReason {
     /** The phone has no network at all; the next round waits for its connectivity to change. */
     NO_NETWORK,
 
-    /** An address answered with another certificate. */
+    /** An address answered with another hub key. */
     UNTRUSTED,
 
     /** The hub paused new devices; the join runs again after the seconds it named. */
