@@ -2,9 +2,9 @@
 
 The box stores an SSH key, points the relay at a server the tester owns and
 turns it on; the relay reads ``connected``, a client link names the relay's
-address last, and a client that is handed only that address joins, says
-hello and is told it came through the relay. Everything the test made is
-removed at the end, and the relay is off again.
+address last, and a client that is handed only that address joins through
+its transport, says hello and is told it came through the relay. Everything
+the test made is removed at the end, and the relay is off again.
 
 The server is set up as docs/guide/hub/relay.md says; the lab's VPS VM from
 ``packaging/lab/make_vps.sh`` is one. Run on a set-up box:
@@ -34,11 +34,8 @@ connect_probe = pytest.importorskip(
     "connect_probe",
     reason="no neutrino_agent package in the checkout or the installed agent",
 )
-Channel = connect_probe.Channel
-join = connect_probe.join
+Client = connect_probe.Client
 parse_client_link = connect_probe.parse_client_link
-take_state = connect_probe.take_state
-BindingHttpClient = connect_probe.BindingHttpClient
 
 RELAY_ACCOUNT_ENV = "NEUTRINO_RELAY_ACCOUNT"
 RELAY_SSH_PORT_ENV = "NEUTRINO_RELAY_SSH_PORT"
@@ -94,7 +91,7 @@ def connected_view(panel) -> dict:
 
 
 def test_a_client_handed_only_the_relay_address_joins_through_it(panel, relay):
-    relay_url = f"https://{relay['host']}:{relay['public_port']}"
+    relay_url = f"tcp://{relay['host']}:{relay['public_port']}"
 
     view = connected_view(panel)
     assert view["state"] == "connected", view
@@ -105,23 +102,24 @@ def test_a_client_handed_only_the_relay_address_joins_through_it(panel, relay):
         "POST", "/hub/client/enrollment/create", {"name": CLIENT_NAME}
     )
     assert status == 200, made
-    urls, ticket, fingerprint = parse_client_link(made["link"])
-    assert urls[-1] == relay_url
+    addresses, ticket, hub_key = parse_client_link(made["link"])
+    assert addresses[-1] == relay_url
 
-    gateway_url, binding_id, token = join([relay_url], ticket, fingerprint)
-    channel = Channel(gateway_url, fingerprint)
+    client = Client()
+    client.start()
     try:
-        welcome = channel.open(binding_id, token)
-        state = take_state(channel)
+        client.join([relay_url], ticket, hub_key)
+        welcome = client.dial()
+        state = client.take_state()
         kinds = {row["key"]: row for row in panel.read("/hub/overlay")["kinds"]}
     finally:
-        channel.close()
-        BindingHttpClient(gateway_url=gateway_url, fingerprint=fingerprint).leave(
-            binding_id, token
-        )
+        client.leave()
+        client.close()
 
     assert welcome["role"] == "hub"
-    assert state["reached_through"] == "relay"
+    assert welcome["address"] == relay_url
+    assert state["reached_through"] == "ssh_relay"
     assert state["urls"][-1] == relay_url
+    assert state["ssh_relay_url"] == relay_url
     assert kinds["relay"]["is_active"] is True
     assert kinds["relay"]["client_count"] >= 1

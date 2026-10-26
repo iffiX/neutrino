@@ -1,41 +1,36 @@
 """A client runs one command on a managed machine through an ``exec`` stream.
 
-The Clients page makes a link; the check joins with it over the pinned agent
-port as a client, is given ``terminal`` alone, and opens ``exec`` on the hub's
-own agent, else on the first online machine the panel lists. The command
-writes ``out`` to stdout and ``err`` to stderr and exits 7: each arrives on
-its own ``fd`` and the close carries ``exit_code`` 7. Then ``cat`` is sent
-``hello`` and the input-ended frame: ``hello`` comes back and the close
-carries 0. On a Windows machine both run through ``cmd /c``. The client
-leaves at the end, which deletes its row.
+The Clients page makes a link; the check joins with it through a transport
+of its own as a client, is given ``terminal`` alone, and opens ``exec`` on
+the hub's own agent, else on the first online machine the panel lists. The
+command writes ``out`` to stdout and ``err`` to stderr and exits 7: each
+arrives in its own records and the close carries ``exit_code`` 7. Then
+``cat`` is sent ``hello`` and the ``eof`` record: ``hello`` comes back and
+the close carries 0. On a Windows machine both run through ``cmd /c``. The
+client leaves at the end, which deletes its row.
 
 Run on a set-up box with at least one exposed address, so a link has an
 address to carry, and one machine whose agent is online.
 """
 
-import contextlib
 import json
-import time
 
 import pytest
 
 connect_probe = pytest.importorskip(
-    "connect_probe", reason="needs the agent package for the client's socket"
+    "connect_probe", reason="needs the agent package for the client's transport"
 )
 
 STDIO_ARGV = ["sh", "-c", "echo out; echo err >&2; exit 7"]
 STDIO_ARGV_WINDOWS = ["cmd", "/c", "echo out& echo err 1>&2& exit /b 7"]
 CAT_ARGV = ["cat"]
 CAT_ARGV_WINDOWS = ["cmd", "/c", "more"]
-STDOUT_FD = 1
-STDERR_FD = 2
-CREDIT_BYTES = 1024 * 1024
 EXEC_TIMEOUT_S = 30.0
 
 
 @pytest.fixture
 def exec_client(panel):
-    """A client allowed ``terminal`` alone, its socket open, and its row gone
+    """A client allowed ``terminal`` alone, its session open, and its row gone
     after."""
     status, made = panel.call(
         "POST", "/hub/client/enrollment/create", {"name": "integration-exec"}
@@ -43,29 +38,27 @@ def exec_client(panel):
     if status == 400 and made.get("detail", {}).get("code") == "no_reachable_address":
         pytest.skip("this box exposes no address a client could be sent to")
     assert status == 200, made
-    urls, ticket, fingerprint = connect_probe.parse_client_link(made["link"])
-    gateway_url, client_id, token = connect_probe.join(urls, ticket, fingerprint)
-    channel = connect_probe.Channel(gateway_url, fingerprint)
+    addresses, ticket, hub_key = connect_probe.parse_client_link(made["link"])
+    client = connect_probe.Client()
+    client.start()
     try:
+        client.join(addresses, ticket, hub_key)
         status, answer = panel.call(
             "POST",
             "/hub/client/permission/set",
-            {"client_id": client_id, "kinds": ["terminal"]},
+            {"client_id": client.binding_id, "kinds": ["terminal"]},
         )
         assert status == 200, answer
-        channel.open(client_id, token)
-        yield channel
+        client.dial()
+        yield client
     finally:
-        channel.close()
-        with contextlib.suppress(
-            connect_probe.GatewayUnreachable, connect_probe.GatewayUntrusted
-        ):
-            connect_probe.BindingHttpClient(
-                gateway_url=gateway_url, fingerprint=fingerprint
-            ).leave(client_id, token)
+        client.leave()
+        client.close()
         for row in panel.read("/hub/client")["clients"]:
-            if row["id"] == client_id:
-                panel.call("POST", "/hub/client/remove", {"client_id": client_id})
+            if row["id"] == client.binding_id:
+                panel.call(
+                    "POST", "/hub/client/remove", {"client_id": client.binding_id}
+                )
 
 
 @pytest.fixture
@@ -81,54 +74,25 @@ def is_windows(device: dict) -> bool:
     return str((device.get("platform") or {}).get("os", "")).lower() == "windows"
 
 
-def run_exec(channel, stream_id: int, device_id: str, argv: list, stdin: bytes):
-    """Open one ``exec``, send the stdin and ``eof``, and read to the close.
+def run_exec(client, device_id: str, argv: list, stdin: bytes) -> tuple:
+    """Open one ``exec`` on the machine, send the stdin, and read to the close.
 
     Returns:
-        The bytes by ``fd``, and the close's ``{code, params}``.
+        The bytes by output, ``{"data", "stderr"}``, and the close's
+        ``{code, params}``.
     """
-    channel.send(
+    return connect_probe.run_exec(
+        client,
         {
-            "type": "open",
-            "stream": stream_id,
-            "kind": "exec",
             "device_id": device_id,
             "argv": argv,
             "is_tty": False,
             "cols": 80,
             "rows": 24,
-        }
+        },
+        stdin,
+        EXEC_TIMEOUT_S,
     )
-    channel.send({"type": "credit", "stream": stream_id, "bytes": CREDIT_BYTES})
-    is_input_sent = False
-    received: dict = {}
-    deadline = time.monotonic() + EXEC_TIMEOUT_S
-    while time.monotonic() < deadline:
-        item = channel.next(deadline - time.monotonic())
-        if item is None:
-            break
-        kind, payload = item
-        if kind == "gone":
-            return received, {"code": "socket_closed", "params": {}}
-        if kind == "binary" and int.from_bytes(payload[:4], "big") == stream_id:
-            frame = payload[4:]
-            channel.send({"type": "credit", "stream": stream_id, "bytes": len(frame)})
-            if frame:
-                received[frame[0]] = received.get(frame[0], b"") + frame[1:]
-            continue
-        if kind != "text" or payload.get("stream") != stream_id:
-            continue
-        if payload.get("type") == "credit" and not is_input_sent:
-            if stdin:
-                channel.client.send_bytes(stream_id.to_bytes(4, "big") + stdin)
-            channel.send({"type": "eof", "stream": stream_id})
-            is_input_sent = True
-        elif payload.get("type") == "close":
-            return received, {
-                "code": str(payload.get("code", "") or ""),
-                "params": payload.get("params") or {},
-            }
-    raise AssertionError(f"no close within {EXEC_TIMEOUT_S} s: {received}")
 
 
 def test_stdout_and_stderr_arrive_apart_and_the_exit_code_comes_back(
@@ -136,12 +100,11 @@ def test_stdout_and_stderr_arrive_apart_and_the_exit_code_comes_back(
 ):
     argv = STDIO_ARGV_WINDOWS if is_windows(machine) else STDIO_ARGV
 
-    received, close = run_exec(exec_client, 1, machine["device_id"], argv, b"")
+    received, close = run_exec(exec_client, machine["device_id"], argv, b"")
 
     assert close == {"code": "", "params": {"exit_code": 7}}, json.dumps(close)
-    assert set(received) <= {STDOUT_FD, STDERR_FD}
-    assert received.get(STDOUT_FD, b"").strip() == b"out"
-    assert received.get(STDERR_FD, b"").strip() == b"err"
+    assert received["data"].strip() == b"out"
+    assert received["stderr"].strip() == b"err"
 
 
 def test_stdin_reaches_the_command_and_the_input_ended_frame_ends_it(
@@ -149,8 +112,8 @@ def test_stdin_reaches_the_command_and_the_input_ended_frame_ends_it(
 ):
     argv = CAT_ARGV_WINDOWS if is_windows(machine) else CAT_ARGV
 
-    received, close = run_exec(exec_client, 1, machine["device_id"], argv, b"hello")
+    received, close = run_exec(exec_client, machine["device_id"], argv, b"hello")
 
     assert close == {"code": "", "params": {"exit_code": 0}}, json.dumps(close)
-    assert received.get(STDOUT_FD, b"").rstrip(b"\r\n") == b"hello"
-    assert received.get(STDERR_FD, b"") == b""
+    assert received["data"].rstrip(b"\r\n") == b"hello"
+    assert received["stderr"] == b""
