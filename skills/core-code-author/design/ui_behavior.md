@@ -667,7 +667,10 @@ bar; an account checked goes to the end of the order, and each row shows the
 module's own field, its running dot and its code's words. The tabs of the
 machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
-accounts. No module asks for a port: the agent takes them.
+accounts. No module asks for a port: the agent takes them. On a Linux
+machine the File share tab shows `ui.samba.replace_notice` as a notice
+above its apply bar while the module has no `want`, the state a Samba set up
+by hand is in ([agent/modules/file_share.md](agent/modules/file_share.md)).
 
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine

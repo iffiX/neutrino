@@ -11,7 +11,11 @@ accounts"); the module keeps no share list and no user list of its own, and
 a client mounts a share with the user and the password the `service` frame
 hands it. The module has no import: a Samba a person set up by hand reads
 `installed`, and on Linux the first apply replaces its `smb.conf` whole with
-the enabled accounts' shares, which the tab says before that apply.
+the enabled accounts' shares. An apply that finds an `smb.conf` the module
+did not render, one whose first line is not the module's generated marker,
+first copies it to `/etc/samba/smb.conf.before_neutrino` beside it, unless
+that file exists, and never writes that copy again. The tab says both before
+that apply.
 
 The file share on Windows and macOS is the one module that changes what the
 person set up. On Linux it owns the whole `smb.conf`; on Windows and macOS it

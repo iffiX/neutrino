@@ -276,6 +276,7 @@ where they fit.
 | `ui.modules.config_title` | Configuration | 配置 |
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
 | `ui.modules.no_accounts` | Add an account under Available accounts first. | 先在“可用账户”里添加账户。 |
+| `ui.samba.replace_notice` | Applying replaces this machine's smb.conf. The old file is kept as /etc/samba/smb.conf.before_neutrino. | 应用会替换这台机器的 smb.conf，原文件保存为 /etc/samba/smb.conf.before_neutrino。 |
 | `ui.modules.add_module` | + Add module | + 添加模块 |
 | `ui.module_catalog.title` | Add module | 添加模块 |
 | `ui.module_catalog.search` | Search names and descriptions | 搜索名称或说明 |
