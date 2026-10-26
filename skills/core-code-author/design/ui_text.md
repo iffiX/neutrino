@@ -636,6 +636,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.op_unknown` | This agent cannot do {op} on files. | 这个被控端不能对文件做 {op}。 |
 | `code.hub_untrusted` | The hub's key does not match; if it was reset, join it again. | 中枢的密钥对不上；中枢重置过的话就重新加入。 |
 | `ui.state.untrusted`, on a hub row | Hub key mismatch | 中枢密钥不符 |
+| `code.hub_key_missing` | This binding is from 0.5 and the hub no longer moves it; join the hub again with a new link. | 这份绑定来自 0.5，中枢已不再迁移；用新链接重新加入中枢。 |
 | `code.port_taken` | Local port {port} is in use; give this entry another in Configure. | 本机端口 {port} 已被占用，在“配置”里给这个入口换一个。 |
 | `code.client_not_running` | The client is not running; start it with nclient gui. | 客户端没有运行，先 nclient gui。 |
 | `ui.panel_apps`, the page's title and its bar label | Apps | 应用 |
