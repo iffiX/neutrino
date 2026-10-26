@@ -88,17 +88,19 @@ def machine_for(platform, name: str) -> ServiceMachine:
 
     Args:
         platform: The machine's platform.
-        name: The module's name, its directory under both roots.
+        name: The module's name, its directory under the state root, which
+            holds its software and its instances' records.
 
     Returns:
         The machine, with the account lookup the platform answers, and on
         Windows its PowerShell host and its process table.
     """
     join = ntpath.join if platform.os_name == "windows" else os.path.join
+    module_dir = join(platform.agent_var_dir(), name)
     return ServiceMachine(
         os_name=platform.os_name,
-        module_dir=join(platform.agent_var_dir(), name),
-        record_dir=join(platform.agent_data_dir(), name),
+        module_dir=module_dir,
+        record_dir=module_dir,
         lookup_account=functools.partial(_lookup_account, platform),
         powershell=platform.powershell_host,
         processes=platform.process_table,

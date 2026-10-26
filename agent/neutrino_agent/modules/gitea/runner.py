@@ -159,7 +159,7 @@ class GiteaModuleRunner(ModuleRunner):
             publish: Called with ``(name, status)`` for transient states.
             applier: The system's applier; None picks the platform's own.
             record_dir: Where the module's record lives; empty is
-                ``gitea`` under ``platform.agent_data_dir()``.
+                ``gitea`` under ``platform.agent_var_dir()``.
             is_port_free: Answers whether a loopback port can be bound now.
 
         Raises:
@@ -169,7 +169,7 @@ class GiteaModuleRunner(ModuleRunner):
         self._applier = applier if applier is not None else gitea_applier_for(platform)
         self._records = InstanceRecordStore(
             directory=record_dir
-            or os.path.join(platform.agent_data_dir(), GITEA_RECORD_NAME),
+            or os.path.join(platform.agent_var_dir(), GITEA_RECORD_NAME),
             fields=GITEA_RECORD_FIELDS,
         )
         self._is_port_free = is_port_free

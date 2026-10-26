@@ -861,13 +861,13 @@ def test_the_kept_configuration_is_read_from_the_state_file(tmp_path):
 # --- the machine ---
 
 
-def test_the_machine_names_the_modules_directories_under_both_roots():
+def test_the_machine_names_the_modules_directory_under_the_state_root():
     linux = machine_for(Platform("linux", "/agent"), "demo")
     windows = machine_for(Platform("windows", "C:\\N\\agent"), "demo")
 
     assert (linux.module_dir, linux.record_dir) == (
         "/agent/state/demo",
-        "/agent/config/demo",
+        "/agent/state/demo",
     )
     assert windows.module_dir == "C:\\N\\agent/state\\demo"
     assert windows.lookup_account("ann") == AccountEntry(0, 0, "C:\\Users\\ann", "")

@@ -127,7 +127,8 @@ class ServiceMachine:
     Attributes:
         os_name: ``linux``, ``darwin`` or ``windows``.
         module_dir: The module's directory under the state root.
-        record_dir: The module's directory under the configuration root.
+        record_dir: Where the instances' records and environment files
+            live, the module's directory under the state root.
         lookup_account: Returns an account's :class:`AccountEntry`, or
             raises KeyError for one the machine does not have.
         run: Runs one command as :func:`subprocess_run.run` does.

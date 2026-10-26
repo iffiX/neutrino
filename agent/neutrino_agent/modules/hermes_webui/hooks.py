@@ -285,7 +285,7 @@ class HermesWebuiHooks(ContainerHooks):
                 :class:`InstanceForwarder` that tries a held port again every
                 report interval.
             record_dir: Where the record lives; empty is the module's
-                directory under ``platform.agent_data_dir()``.
+                directory under ``platform.agent_var_dir()``.
             is_port_free: Answers whether a loopback port can be bound now.
         """
         super().__init__(platform=platform, name=name, containers=containers, log=log)
@@ -296,7 +296,7 @@ class HermesWebuiHooks(ContainerHooks):
         self._forwarder_factory = forwarder_factory or _forwarder
         self._is_port_free = is_port_free
         self._records = InstanceRecordStore(
-            directory=record_dir or os.path.join(platform.agent_data_dir(), name),
+            directory=record_dir or os.path.join(platform.agent_var_dir(), name),
             fields=HERMES_WEBUI_RECORD_FIELDS,
         )
         self._lock = threading.Lock()
