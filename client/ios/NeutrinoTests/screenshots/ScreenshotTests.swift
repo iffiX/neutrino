@@ -460,7 +460,8 @@ final class ScreenshotTests: XCTestCase {
         let asked = directory.appendingPathComponent("\(name).shot")
         let taken = directory.appendingPathComponent("\(name).png")
         try Data().write(to: asked)
-        XCTAssertTrue(isTrue { FileManager.default.fileExists(atPath: taken.path) }, "no screenshot came for \(name)")
+        let isTaken = isTrue(within: 60) { FileManager.default.fileExists(atPath: taken.path) }
+        XCTAssertTrue(isTaken, "no screenshot came for \(name)")
     }
 
     /// Ask the CI job to record the whole Simulator screen while `body` runs: the job starts a recording, as
