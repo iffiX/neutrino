@@ -36,6 +36,8 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_PATH,
     SAMBA_LINUX_NOLOGIN_SHELLS,
     SAMBA_LINUX_USER_COMMENT,
+    SAMBA_USERS_DIR,
+    SAMBA_USERS_FILE_SUFFIX,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult, run, unit_state
 
@@ -406,7 +408,9 @@ class SambaConfigApplier:
         """
         self._unit = unit
 
-    def apply(self, rendered: str, *, config: SambaConfig) -> str:
+    def apply(
+        self, rendered: str, *, config: SambaConfig, user_files: "dict | None" = None
+    ) -> str:
         """Validate, install and load the rendered configuration.
 
         Validation runs on a copy before the live file moves, so a bad
@@ -416,6 +420,8 @@ class SambaConfigApplier:
             rendered: The full ``smb.conf`` text.
             config: The configuration it was rendered from, for the share
                 directories to create.
+            user_files: The files under :data:`SAMBA_USERS_DIR` by name, as
+                the renderer gives them; every other file there goes.
 
         Returns:
             A short summary of what changed.
@@ -427,6 +433,7 @@ class SambaConfigApplier:
         testparm(rendered)
         self._ensure_share_directories(config)
         keep_backup()
+        self._write_user_files(dict(user_files or {}))
         self._write(rendered)
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
@@ -447,6 +454,26 @@ class SambaConfigApplier:
             if len(share.valid_users) == 1 and pwd is not None:
                 entry = pwd.getpwnam(share.valid_users[0])
                 os.chown(share.path, entry.pw_uid, entry.pw_gid)
+
+    def _write_user_files(self, user_files: dict) -> None:
+        """Write each user's file under the users directory and drop the rest."""
+        os.makedirs(SAMBA_USERS_DIR, exist_ok=True)
+        os.chmod(SAMBA_USERS_DIR, 0o755)
+        for name in os.listdir(SAMBA_USERS_DIR):
+            if name.endswith(SAMBA_USERS_FILE_SUFFIX) and name not in user_files:
+                os.unlink(os.path.join(SAMBA_USERS_DIR, name))
+        for name, text in user_files.items():
+            path = os.path.join(SAMBA_USERS_DIR, name)
+            handle, temporary = tempfile.mkstemp(dir=SAMBA_USERS_DIR, prefix=".user_")
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    stream.write(text)
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, path)
+            except BaseException:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+                raise
 
     def _write(self, rendered: str) -> None:
         directory = os.path.dirname(SAMBA_CONF_PATH)

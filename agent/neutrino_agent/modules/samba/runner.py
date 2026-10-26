@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -42,6 +43,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
     SAMBA_CONF_PATH,
+    SAMBA_USERS_DIR,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
@@ -109,11 +111,14 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         parsed.validate()
         users = SambaUserManager()
         users.check_accounts(parsed.forced_users())
-        rendered = SambaConfigRenderer(config=parsed).render()
+        renderer = SambaConfigRenderer(config=parsed)
+        rendered = renderer.render()
         held = read_digests(self._record_path)
         try:
             changes = users.converge_accounts(parsed)
-            note = SambaConfigApplier(unit=self._unit).apply(rendered, config=parsed)
+            note = SambaConfigApplier(unit=self._unit).apply(
+                rendered, config=parsed, user_files=renderer.render_user_files()
+            )
             passwords, kept = users.converge(parsed, held)
             changes += passwords
         except (OSError, subprocess.SubprocessError) as error:
@@ -130,10 +135,11 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).stop()
 
     def remove_configuration(self) -> None:
-        """Delete the rendered ``smb.conf`` and the record; the share directories stay."""
+        """Delete the rendered ``smb.conf``, the users' files and the record; the share directories stay."""
         self._config = None
         with contextlib.suppress(OSError):
             os.unlink(SAMBA_CONF_PATH)
+        shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
 

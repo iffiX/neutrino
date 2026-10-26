@@ -283,7 +283,7 @@ def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocke
         {
             "name": "media",
             "path": "/tank/media",
-            "valid_users": ["neutrino-ann", "neutrino-gone"],
+            "valid_users": ["ann", "neutrino-ann", "neutrino-gone"],
         }
     ]
     store.write(DEVICE, "samba", stored)

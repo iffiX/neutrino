@@ -86,6 +86,9 @@ def box(monkeypatch, tmp_path):
         applier_module, "SAMBA_CONF_BACKUP_PATH", str(tmp_path / "etc/backup.conf")
     )
     monkeypatch.setattr(
+        applier_module, "SAMBA_USERS_DIR", str(tmp_path / "etc/neutrino_users")
+    )
+    monkeypatch.setattr(
         applier_module.shutil, "which", lambda name: "/usr/bin/testparm"
     )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
@@ -135,6 +138,27 @@ def test_apply_validates_writes_the_file_and_starts_the_unit(box):
     assert commands.ran("systemctl", "enable") == [
         (["systemctl", "enable", "--now", "smbd.service"], None)
     ]
+
+
+def test_apply_writes_each_users_file_and_drops_the_rest(box, monkeypatch):
+    commands, tmp_path = box
+    users_dir = tmp_path / "etc/neutrino_users"
+    users_dir.mkdir(parents=True)
+    (users_dir / "old.conf").write_text("   force user = old\n")
+    (users_dir / "notes.txt").write_text("kept")
+    config = SambaConfig.from_dict({"shares": [], "users": []})
+
+    SambaConfigApplier(unit="smbd.service").apply(
+        "[global]\n", config=config, user_files={"ann.conf": "   force user = ann\n"}
+    )
+
+    assert sorted(path.name for path in users_dir.iterdir()) == [
+        "ann.conf",
+        "notes.txt",
+    ]
+    assert (users_dir / "ann.conf").read_text() == "   force user = ann\n"
+    assert stat.S_IMODE(os.stat(users_dir / "ann.conf").st_mode) == 0o644
+    assert stat.S_IMODE(os.stat(users_dir).st_mode) == 0o755
 
 
 def test_a_hand_made_smb_conf_is_kept_aside_once_before_the_first_write(box):

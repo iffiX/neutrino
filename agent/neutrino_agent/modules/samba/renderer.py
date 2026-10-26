@@ -12,7 +12,11 @@ Pure: text in, text out. Writing, validating and reloading is
 from __future__ import annotations
 
 from neutrino_agent.modules.samba.config import SambaConfig, SambaShare
-from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
+from neutrino_agent.modules.samba.constants import (
+    SAMBA_CONF_MARKER,
+    SAMBA_USERS_FILE_SUFFIX,
+    SAMBA_USERS_INCLUDE,
+)
 
 
 class SambaConfigRenderer:
@@ -36,6 +40,24 @@ class SambaConfigRenderer:
         for share in self._config.shares:
             lines += self._render_share(share)
         return "\n".join(lines)
+
+    def render_user_files(self) -> dict:
+        """Render the file each SMB user's connection includes on a named share.
+
+        Returns:
+            File name to text: ``<user>.conf`` for every user an account's
+            share admits, holding ``force user`` of that account, so a share
+            the file names itself writes the user's files as the account.
+        """
+        files = {}
+        for share in self._config.shares:
+            if not share.force_user:
+                continue
+            for user in share.valid_users:
+                files[f"{user}{SAMBA_USERS_FILE_SUFFIX}"] = "\n".join(
+                    [SAMBA_CONF_MARKER, f"   force user = {share.force_user}", ""]
+                )
+        return files
 
     def _render_global(self) -> list:
         allowed = " ".join(list(self._config.allowed_subnets) + ["127.0.0.1"])
@@ -67,8 +89,9 @@ class SambaConfigRenderer:
     def _render_share(self, share: SambaShare) -> list:
         # A share limited to named users stays limited to them; one with no
         # list is open to every configured user. An account's share writes
-        # every file as the account, its primary group with it; a share with
-        # no forced user writes as the user that connected.
+        # every file as the account, its primary group with it; a share the
+        # file names itself includes the connected user's file, which forces
+        # that user's account the same way.
         valid = " ".join(share.valid_users or self._config.users)
         lines = [
             f"[{share.name}]",
@@ -78,6 +101,8 @@ class SambaConfigRenderer:
         ]
         if share.force_user:
             lines.append(f"   force user = {share.force_user}")
+        else:
+            lines.append(f"   include = {SAMBA_USERS_INCLUDE}")
         if share.comment:
             lines.append(f"   comment = {share.comment}")
         lines.append("")

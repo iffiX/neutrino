@@ -24,6 +24,13 @@ SAMBA_LINUX_NOLOGIN_SHELLS = (
     "/bin/false",
 )
 
+# Linux: the directory beside smb.conf holding one file per SMB user, named
+# after the user, which a share the file names itself includes by the
+# connected user's name, so the share writes files as that user's account.
+SAMBA_USERS_DIR = "/etc/samba/neutrino_users"
+SAMBA_USERS_FILE_SUFFIX = ".conf"
+SAMBA_USERS_INCLUDE = f"{SAMBA_USERS_DIR}/%U{SAMBA_USERS_FILE_SUFFIX}"
+
 # Debian names the unit after the binary; the RHEL family ships one
 # smb.service.
 SAMBA_SERVICES = {"debian": "smbd", "rhel": "smb", "arch": "smb"}

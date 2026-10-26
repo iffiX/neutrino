@@ -305,12 +305,14 @@ def _samba_config(
     """The file share's section: one share and one user per enabled account,
     the share's files written as the account, then the shares the file names
     itself, a ZFS dataset's among them, each open to the enabled accounts'
-    users it names. An enabled account with no share path whose home the
-    machine has not reported is left out."""
+    users it names, by the SMB user's name or by the account's. An enabled
+    account with no share path whose home the machine has not reported is
+    left out."""
     sealed = row.sealed_fields[0]
     shares = []
     users = []
     passwords = {}
+    user_of_account = {}
     for record in enabled:
         account = str(record["account"])
         user = smb_user(account, platform)
@@ -330,19 +332,23 @@ def _samba_config(
             }
         )
         users.append(user)
+        user_of_account[account] = user
         passwords[user] = _unsealed_text(record.get(sealed.key), sealed.aad)
     for share in (stored or {}).get(DEVICE_SAMBA_SHARES_KEY) or []:
         if not isinstance(share, dict) or not share.get("name"):
             continue
+        valid_users = []
+        for named in share.get("valid_users") or []:
+            user = user_of_account.get(str(named), str(named))
+            if user in users and user not in valid_users:
+                valid_users.append(user)
         shares.append(
             {
                 "name": str(share["name"]),
                 "path": str(share.get("path", "") or ""),
                 "comment": str(share.get("comment", "") or ""),
                 "is_read_only": bool(share.get("is_read_only", False)),
-                "valid_users": [
-                    user for user in share.get("valid_users") or [] if user in users
-                ],
+                "valid_users": valid_users,
             }
         )
     return {"shares": shares, "users": users, "passwords": passwords}

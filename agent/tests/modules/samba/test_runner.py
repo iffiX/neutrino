@@ -26,6 +26,7 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState, password_digest
 from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
@@ -95,12 +96,14 @@ class RecordingPlatform(AgentPlatform):
 class FakeApplier:
     applied: list = []
     stops = 0
+    user_files: dict = {}
 
     def __init__(self, *, unit):
         self.unit = unit
 
-    def apply(self, rendered, *, config):
+    def apply(self, rendered, *, config, user_files=None):
         FakeApplier.applied.append((self.unit, rendered, config))
+        FakeApplier.user_files = dict(user_files or {})
         return "started"
 
     def stop(self):
@@ -261,7 +264,7 @@ def test_apply_renders_applies_and_keeps_the_configuration(runner):
 
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
-    def refuse(self, rendered, *, config):
+    def refuse(self, rendered, *, config, user_files=None):
         raise subprocess.CalledProcessError(1, ["systemctl"], stderr="no unit")
 
     monkeypatch.setattr(FakeApplier, "apply", refuse)
@@ -320,14 +323,40 @@ def test_validate_is_a_verb_every_module_answers(runner):
     assert (bad["exit_code"], bad["code"]) == (1, "share_name_reserved")
 
 
+def test_apply_hands_the_applier_each_users_file(runner):
+    runner.apply(
+        {
+            **CONFIG,
+            "shares": [
+                {
+                    "name": "ann",
+                    "path": "/home/ann",
+                    "valid_users": ["ann"],
+                    "force_user": "ann",
+                }
+            ],
+        }
+    )
+
+    assert FakeApplier.user_files == {
+        "ann.conf": SAMBA_CONF_MARKER + "\n   force user = ann\n"
+    }
+
+
 def test_removing_the_configuration_deletes_the_rendered_file(
     runner, monkeypatch, tmp_path
 ):
     conf = tmp_path / "smb.conf"
     conf.write_text("[global]")
     monkeypatch.setattr(runner_module, "SAMBA_CONF_PATH", str(conf))
+    users_dir = tmp_path / "neutrino_users"
+    users_dir.mkdir()
+    (users_dir / "ann.conf").write_text("   force user = ann\n")
+    monkeypatch.setattr(runner_module, "SAMBA_USERS_DIR", str(users_dir))
 
     runner.remove_configuration()
+
+    assert not users_dir.exists()
     runner.remove_configuration()
 
     assert not conf.exists()
