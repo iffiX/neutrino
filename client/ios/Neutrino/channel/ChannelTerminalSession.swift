@@ -3,11 +3,14 @@ import Foundation
 /// One shell session as the hub lists it in a `terminals` entry: every session this phone owns, and every
 /// shared session on a machine it has terminal rights on.
 struct ChannelTerminalSession: Equatable {
-    /// What a `shell` stream and the `persist` and `stop_session` commands name.
+    /// What a `shell` stream and the `persist` and `stop_session` frames name.
     let sessionId: String
 
     /// What the shell last set as its title.
     let title: String
+
+    /// The account the shell runs as.
+    var account = ""
 
     /// Who opened it: `hub` for the panel, `client:<id>` for a client.
     let owner: String
@@ -38,6 +41,7 @@ struct ChannelTerminalSession: Equatable {
         return ChannelTerminalSession(
             sessionId: sessionId,
             title: object.text("title"),
+            account: object.text("account"),
             owner: object.text("owner"),
             ownerName: object.text("owner_name"),
             isOwned: object.flag("is_owned"),

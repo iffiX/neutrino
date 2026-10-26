@@ -3,26 +3,48 @@ import XCTest
 @testable import Neutrino
 
 final class ShareSessionsTests: XCTestCase {
-    private let socket = FakeChannelSocket(url: "https://192.168.1.1:8443")
-    private let clock = FakeClientClock()
+    private var transport = FakeTransport()
     private var secrets = FakeSecretStore()
     private var client = FakeShareClient()
     private var sessions: ShareSessions?
-    private var registry: ChannelStreamRegistry?
+    private var material: Result<[String: JSONValue], ClientError> = .success([
+        "user": .string("smb_iffi"), "password": .string("generated"),
+    ])
+    private var asked = 0
     private var directory = FileManager.default.temporaryDirectory
 
     private let target = ShareTarget(
-        bindingId: "b1", entryId: "samba_dev_music", title: "music", share: "music", users: ["alice", "bob"])
+        bindingId: "b1", entryId: "samba_dev_music", title: "music", share: "music", users: ["alice", "bob"],
+        isDeclared: true)
+
+    private let machine = ShareTarget(
+        bindingId: "b1", entryId: "samba_box_home", title: "home", share: "home", users: [])
 
     override func setUp() {
         secrets = FakeSecretStore()
         client = FakeShareClient()
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let registry = ChannelStreamRegistry(socket: socket, clock: clock)
-        self.registry = registry
+        transport = FakeTransport()
+        _ = try? transport.start(directory: "/data", secret: String(repeating: "ee", count: 32))
+        asked = 0
         sessions = ShareSessions(
             secrets: secrets, makeClient: { self.client },
-            openConnect: { _, args in registry.open(kind: Channel.kindConnect, args: args, hasBytes: true) },
+            openConnect: { _, args in
+                var open = args
+                open["kind"] = .string(Channel.kindConnect)
+                do {
+                    return .success(
+                        try TransportStream.open(
+                            dialer: self.transport, secret: self.transport.secret, binding: "b1", open: open,
+                            carriage: .raw))
+                } catch {
+                    return .failure(.refusal(Channel.codeHubUnreachable))
+                }
+            },
+            material: { _, _, completion in
+                self.asked += 1
+                completion(self.material)
+            },
             directory: directory)
     }
 
@@ -35,7 +57,7 @@ final class ShareSessionsTests: XCTestCase {
     private func hub(services: [ChannelServiceEntry]) -> HubView {
         var hub = HubView(binding: Samples.binding)
         hub.connection = .connected
-        hub.connectedAddress = "https://192.168.1.1:8443"
+        hub.connectedAddress = "tcp://192.168.1.1:8443"
         hub.services = services
         return hub
     }
@@ -44,6 +66,7 @@ final class ShareSessionsTests: XCTestCase {
         ChannelServiceEntry.of(
             .object([
                 "id": .string("samba_dev_music"), "type": .string("file"), "title": .string("music"),
+                "source": .string("declared"),
                 "payload": .object([
                     "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("music"),
                     "users": .array([.string("alice"), .string("bob")]),
@@ -124,11 +147,12 @@ final class ShareSessionsTests: XCTestCase {
         client.onConnect = { port in dialled = LoopbackClient(port: port) }
         sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
         XCTAssertNotNil(dialled)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        let open = try XCTUnwrap(socket.frames.first { $0.text("type") == "open" })
+        XCTAssertTrue(RunLoopWait.until { !self.transport.streams.isEmpty })
+        let open = try XCTUnwrap(transport.streams.first?.open)
         XCTAssertEqual(open.text("kind"), "connect")
         XCTAssertEqual(open.text("id"), "samba_dev_music")
-        XCTAssertEqual(socket.frameTypes.filter { $0 == "open" }.count, 1)
+        RunLoopWait.turn()
+        XCTAssertEqual(transport.streams.count, 1)
     }
 
     func testAPullWhileTheConnectionIsCarriedReadsTheFolderAlone() throws {
@@ -158,23 +182,21 @@ final class ShareSessionsTests: XCTestCase {
 
     func testAReadShowsWhatItsForwardCarriedBelowItsSize() throws {
         let sessions = try XCTUnwrap(self.sessions)
-        let registry = try XCTUnwrap(self.registry)
         var dialled: LoopbackClient?
         client.onConnect = { port in dialled = LoopbackClient(port: port) }
         client.files = ["big.bin": Data(count: 100)]
         sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        let open = try XCTUnwrap(socket.frames.first { $0.text("type") == "open" })
-        let stream = try XCTUnwrap(open.number("stream").map(UInt32.init))
+        XCTAssertTrue(RunLoopWait.until { !self.transport.streams.isEmpty })
+        let end = try XCTUnwrap(transport.streams.first?.end)
         let session = try XCTUnwrap(sessions.session)
         client.isHolding = true
         session.open(try XCTUnwrap(session.view.items.first))
         XCTAssertEqual(session.view.transfers["big.bin"]?.done, 50)
 
-        registry.takeBinary(ChannelFrames.binary(stream: stream, bytes: Data(count: 70)))
+        end.write(Data(count: 70))
         RunLoop.main.run(until: Date().addingTimeInterval(0.6))
         XCTAssertEqual(session.view.transfers["big.bin"]?.done, 70)
-        registry.takeBinary(ChannelFrames.binary(stream: stream, bytes: Data(count: 70)))
+        end.write(Data(count: 70))
         RunLoop.main.run(until: Date().addingTimeInterval(0.6))
         XCTAssertEqual(session.view.transfers["big.bin"]?.done, 99)
 
@@ -194,10 +216,37 @@ final class ShareSessionsTests: XCTestCase {
         client.onConnect = { port in dialled = LoopbackClient(port: port) }
         sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        XCTAssertFalse(socket.frameTypes.contains("open"))
+        XCTAssertTrue(transport.streams.isEmpty)
         sessions.take([hub(services: [try XCTUnwrap(entry)])])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        XCTAssertEqual(socket.frameTypes.filter { $0 == "open" }.count, 1)
+        XCTAssertTrue(RunLoopWait.until { self.transport.streams.count == 1 })
         XCTAssertNotNil(dialled)
+    }
+
+    func testAMachineShareLogsInWithTheHubsLogin() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        sessions.open(machine)
+        XCTAssertEqual(client.connected?.login, ShareLogin(user: "smb_iffi", password: "generated"))  // scan: allow
+        XCTAssertNotNil(sessions.session)
+        XCTAssertTrue(sessions.heldLogins.isEmpty)
+        XCTAssertNil(secrets.items[SharePage.loginsAccount])
+        sessions.suspend()
+        sessions.foreground()
+        XCTAssertEqual(asked, 2)
+        XCTAssertEqual(client.connected?.login, ShareLogin(user: "smb_iffi", password: "generated"))  // scan: allow
+    }
+
+    func testAMachinesShareTheHubRefusesShowsTheHubsCode() throws {
+        material = .failure(.refusal("permission_denied", ["kind": "file"]))
+        let sessions = try XCTUnwrap(self.sessions)
+        sessions.open(machine)
+        XCTAssertEqual(sessions.rows[machine.id]?.error?.code, "permission_denied")
+        XCTAssertNil(client.connected)
+    }
+
+    func testADeclaredShareWithNoLoginHeldOpensNothing() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        sessions.open(target)
+        XCTAssertNil(client.connected)
+        XCTAssertEqual(asked, 0)
     }
 }

@@ -12,7 +12,7 @@ final class ShareSessionTests: XCTestCase {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let session = ShareSession(
             target: ShareTarget(bindingId: "b1", entryId: "music", title: "music", share: "music", users: []),
-            login: ShareLogin(user: "alice", password: "pw"), makeClient: { self.client },
+            readLogin: { $0(.success(ShareLogin(user: "alice", password: "pw"))) }, makeClient: { self.client },
             openConnect: { .failure(.refusal(Channel.codeHubUnreachable)) }, directory: directory)
         self.session = session
     }

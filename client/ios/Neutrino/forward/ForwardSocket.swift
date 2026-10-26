@@ -35,16 +35,30 @@ enum ForwardSocket {
     }
 
     /// Whether nothing listens on a number on any address of the phone now: a probe binds it on the IPv4
-    /// wildcard address, then on the IPv6 one where the phone has IPv6, and closes it.
+    /// wildcard address, then on the IPv6 one where the phone has IPv6, with sockets of the protocol, and closes
+    /// them.
     ///
     /// - Parameters:
     ///   - port: The number.
+    ///   - protocol: `tcp` or `udp`.
     ///   - isKept: Whether the table keeps the number for an entry already; such a number is probed with address
     ///     reuse, so this app's own closed connections still lingering on it do not count.
     /// - Returns: True when both probes could take it.
-    static func isFree(port: Int, isKept: Bool) -> Bool {
-        canBind(family: AF_INET, port: port, isReused: isKept, isFamilyRequired: true)
-            && canBind(family: AF_INET6, port: port, isReused: isKept, isFamilyRequired: false)
+    static func isFree(port: Int, protocol: String, isKept: Bool) -> Bool {
+        let type = `protocol` == Forward.protocolUdp ? datagramType : streamType
+        return canBind(family: AF_INET, type: type, port: port, isReused: isKept, isFamilyRequired: true)
+            && canBind(family: AF_INET6, type: type, port: port, isReused: isKept, isFamilyRequired: false)
+    }
+
+    /// Make a connected descriptor non-blocking, and keep a write to a closed peer from raising a signal.
+    ///
+    /// - Parameter descriptor: The connection.
+    static func prepare(_ descriptor: Int32) {
+        setNonBlocking(descriptor)
+        #if canImport(Darwin)
+            var isQuiet: Int32 = 1
+            setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &isQuiet, socklen_t(MemoryLayout<Int32>.size))
+        #endif
     }
 
     /// Accept one waiting connection.
@@ -54,11 +68,7 @@ enum ForwardSocket {
     static func acceptWaiting(_ descriptor: Int32) -> Int32? {
         let accepted = accept(descriptor, nil, nil)
         guard accepted >= 0 else { return nil }
-        setNonBlocking(accepted)
-        #if canImport(Darwin)
-            var isQuiet: Int32 = 1
-            setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, &isQuiet, socklen_t(MemoryLayout<Int32>.size))
-        #endif
+        prepare(accepted)
         return accepted
     }
 
@@ -106,8 +116,10 @@ enum ForwardSocket {
         return read == 0 ? Int(UInt16(bigEndian: address.sin_port)) : 0
     }
 
-    private static func canBind(family: Int32, port: Int, isReused: Bool, isFamilyRequired: Bool) -> Bool {
-        let descriptor = socket(family, streamType, 0)
+    private static func canBind(family: Int32, type: Int32, port: Int, isReused: Bool, isFamilyRequired: Bool)
+        -> Bool
+    {
+        let descriptor = socket(family, type, 0)
         guard descriptor >= 0 else { return !isFamilyRequired }
         defer { close(descriptor) }
         var reuse: Int32 = isReused ? 1 : 0
@@ -160,11 +172,20 @@ enum ForwardSocket {
         _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
     }
 
-    private static var streamType: Int32 {
+    /// The stream socket type, as each system's headers spell it.
+    static var streamType: Int32 {
         #if canImport(Darwin)
             return SOCK_STREAM
         #else
             return Int32(SOCK_STREAM.rawValue)
+        #endif
+    }
+
+    private static var datagramType: Int32 {
+        #if canImport(Darwin)
+            return SOCK_DGRAM
+        #else
+            return Int32(SOCK_DGRAM.rawValue)
         #endif
     }
 

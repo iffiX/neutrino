@@ -5,22 +5,22 @@ import XCTest
 final class EnrollmentLinkTests: XCTestCase {
     /// A client link Python's zlib wrote at level 9, as the hub does.
     private let hubLink =
-        "neutrino://enroll/eNqlkE9PxCAQxb8L54aFttHKzTUejNe9bZqGltE2pYD8WdNs-t0dVmPU7M1wYX7MvPeYM0le"  // scan: allow
-        + "ByKOZIzRBbHb8buS8puGcsYoF01dV6T4fjyWjHGh-kYI3n4-tgWJdgZDBDk8PTw_HniZJ14cgvv9_w7qeKsBlQY9gY"  // scan: allow
-        + "lY2xN4Ldcc-Uyct6dJgccGA7GfvMKOADG5boYV6Yz1Io18hQXHO_wrwpzuTeXAY-rp1yAdtE15HFknlfIQ0IPkLTQN"  // scan: allow
-        + "xVWQrfhlCDKsccIrOliVM6JRkhprlHy3fu6MXDI3P1CAwUNEGBA6uCjFweFqS1ZlG17RW8E54-xKFsquJbFxvMT400"  // scan: allow
-        + "1LWtGabO32Ac4FkKw"  // scan: allow
+        "neutrino://enroll/eNqlkDFvgzAQhf-L58jxAWpdr1WHqmu2CCGDrw3C2NQ2qVDEf-85ZGirbBUL993de8"  // scan: allow
+        + "93YXOwkakjS92k9nt4Kjg8SA5CcFCyqkq2u7WOhRCgTCuVgnpr1dTzAzqm2OH1-e3lAEWeH3Ahotv_fSQUvE"  // scan: allow
+        + "VS6myPLlHtzxisXnLeC5uCP_cGAw04TG0fDE1ETPPUbAEGqkft9AeOtN7QQwkSe_80OfFpbvltkXfWz3mdWK"  // scan: allow
+        + "ONCRjJg-UjSMnpEmzd_TJEHZfU0y85eJMzktGsLdUk-eXD0Dg9Zu5-oIhdwEQwEpzwqrTdthBltoGSPyoAAe"  // scan: allow
+        + "JOFi7uJfHpdI3xZ5oXvOQVW-v1G2n0l0c"  // scan: allow
 
     /// A device link, which a client refuses.
     private let deviceLink =
-        "neutrino://enroll/eNqrViotyilWsopWyigpKSi20tc3tDTSMzSz0DM0MNAztLIwMTFWitVRKsnPTs1TslIKUdJR"  // scan: allow
-        + "SisAMhKTKINAc4ryc1JBJqWn5pUo1QIAf80szg"  // scan: allow
+        "neutrino://enroll/eNqrViotyilWsopWKkkusNLXN7Q00jM0s9AzNDDQM7SyMDExVorVUSrJz07NU7JSCl"  // scan: allow
+        + "HSUcpOrQSyEpMog0CDivJzUkEmpafmlSjVAgA33ixV"  // scan: allow
 
-    func testAHubsLinkReadsWithEveryAddressTheTicketThePinAndTheOverlaysHubAddresses() throws {
+    func testAHubsLinkReadsWithEveryAddressTheTicketTheHubsKeyAndTheOverlaysHubAddresses() throws {
         let link = try EnrollmentLink.parse(hubLink)
-        XCTAssertEqual(link.urls, ["https://192.168.100.1:8443", "https://[2001:db8::1]:8443"])
+        XCTAssertEqual(link.urls, ["tcp://192.168.100.1:8443", "tcp://[2001:db8::1]:8443"])
         XCTAssertEqual(link.ticket, "TICKET123")
-        XCTAssertEqual(link.fingerprint, String(repeating: "ab", count: 32))
+        XCTAssertEqual(link.hubKey, String(repeating: "ab", count: 32))
         XCTAssertEqual(
             link.overlays,
             [
@@ -36,10 +36,10 @@ final class EnrollmentLinkTests: XCTestCase {
 
     func testAScannedAndAPastedLinkAreOnePath() throws {
         let made = Samples.link([
-            "urls": .array([.string("https://10.0.0.2:8443/")]), "token": .string("t"),
-            "fp": .string(Samples.fingerprint), "role": .string("client"),
+            "urls": .array([.string("tcp://10.0.0.2:8443/")]), "token": .string("t"),
+            "key": .string(Samples.hubKey), "role": .string("client"),
         ])
-        XCTAssertEqual(try EnrollmentLink.parse(made).urls, ["https://10.0.0.2:8443"])
+        XCTAssertEqual(try EnrollmentLink.parse(made).urls, ["tcp://10.0.0.2:8443"])
     }
 
     func testADevicesLinkIsRefusedNamingItsRole() {
@@ -68,12 +68,15 @@ final class EnrollmentLinkTests: XCTestCase {
         }
     }
 
-    func testALinkWithoutAPinIsLinkIncomplete() {
-        let made = Samples.link([
-            "urls": .array([.string("https://10.0.0.2:8443")]), "token": .string("t"), "role": .string("client"),
-        ])
-        XCTAssertThrowsError(try EnrollmentLink.parse(made)) { error in
-            XCTAssertEqual((error as? ClientError)?.code, "link_incomplete")
+    func testALinkWithNoHubKeyIsIncomplete() {
+        for pin: [String: JSONValue] in [[:], ["fp": .string(Samples.hubKey)], ["key": .string("abcd")]] {
+            var object: [String: JSONValue] = [
+                "urls": .array([.string("tcp://10.0.0.2:8443")]), "token": .string("t"), "role": .string("client"),
+            ]
+            object.merge(pin) { _, new in new }
+            XCTAssertThrowsError(try EnrollmentLink.parse(Samples.link(object))) { error in
+                XCTAssertEqual((error as? ClientError)?.code, "link_incomplete")
+            }
         }
     }
 }

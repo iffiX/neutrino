@@ -2,13 +2,14 @@ import Foundation
 
 /// Every terminal tab of the app, outliving the page that draws them: the tabs follow the session lists of the
 /// connected hubs, and each tab keeps its shell stream and its last output so a new view can draw it again. A
-/// new shell is opened with a session id this phone makes; a listed one is attached with `is_resumed`, its kept
-/// output first. What the person types goes to the tab's stream in the order typed. Every call runs on the main
-/// queue.
+/// new shell is opened with a session id this phone makes, as the account picked on its machine; a listed one is
+/// attached with `is_resumed`, its kept output first. What the person types goes to the tab's stream in the order
+/// typed, a later size as a `resize` record, and `persist` and `stop_session` are frames naming only the session.
+/// Every call runs on the main queue.
 final class TerminalTabs {
-    private let open: (String, String, [String: JSONValue], Bool) -> Result<ChannelStream, ClientError>
+    private let hubOf: (String) -> TerminalHub?
     private let clock: ClientClock
-    private var streams: [String: ChannelStream] = [:]
+    private var streams: [String: TransportStream] = [:]
     private var outputs: [String: Data] = [:]
     private var sizes: [String: (cols: Int, rows: Int)] = [:]
     private var dismissed: Set<String> = []
@@ -46,6 +47,13 @@ final class TerminalTabs {
         }
     }
 
+    /// The account a new terminal runs as on the picked machine, empty for its first enabled one.
+    private(set) var pickedAccount = "" {
+        didSet {
+            if pickedAccount != oldValue { onChange?() }
+        }
+    }
+
     /// The tabs whose Clear is still dropping what arrives.
     private(set) var clearing: Set<String> = [] {
         didSet {
@@ -56,14 +64,10 @@ final class TerminalTabs {
     /// Prepare the tabs.
     ///
     /// - Parameters:
-    ///   - open: Opens a stream on a hub's live socket: the binding, the kind, the arguments, whether it carries
-    ///     bytes.
+    ///   - hubOf: One hub's terminal questions, by binding id, or nil while it is not connected.
     ///   - clock: The time Clear's dropping is measured by.
-    init(
-        open: @escaping (String, String, [String: JSONValue], Bool) -> Result<ChannelStream, ClientError>,
-        clock: ClientClock
-    ) {
-        self.open = open
+    init(hubOf: @escaping (String) -> TerminalHub?, clock: ClientClock) {
+        self.hubOf = hubOf
         self.clock = clock
     }
 
@@ -90,7 +94,15 @@ final class TerminalTabs {
     ///
     /// - Parameter machine: The machine.
     func pick(_ machine: TerminalMachine) {
+        if picked != machine { pickedAccount = "" }
         picked = machine
+    }
+
+    /// Pick the account a new terminal runs as on the picked machine.
+    ///
+    /// - Parameter account: One of the machine's enabled accounts.
+    func pickAccount(_ account: String) {
+        pickedAccount = account
     }
 
     /// Show one tab; its stream attaches at the first size its view reports.
@@ -106,12 +118,15 @@ final class TerminalTabs {
     ///   - bindingId: The hub.
     ///   - deviceId: The machine.
     ///   - name: The machine's name.
+    ///   - account: The account the shell runs as, empty for the machine's first enabled one.
     /// - Returns: The tab's session id.
     @discardableResult
-    func create(bindingId: String, deviceId: String, name: String) -> String {
+    func create(bindingId: String, deviceId: String, name: String, account: String = "") -> String {
         let sessionId = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         tabs.append(
-            TerminalTab(sessionId: sessionId, bindingId: bindingId, deviceId: deviceId, name: name, phase: .connecting))
+            TerminalTab(
+                sessionId: sessionId, bindingId: bindingId, deviceId: deviceId, name: name, account: account,
+                phase: .connecting))
         active = sessionId
         return sessionId
     }
@@ -126,7 +141,8 @@ final class TerminalTabs {
         guard let tab = tab(sessionId), cols > 0, rows > 0 else { return }
         sizes[sessionId] = (cols, rows)
         if let stream = streams[sessionId], !stream.isDone {
-            command(tab, verb: "resize", ["shell": .int(Int(stream.id)), "cols": .int(cols), "rows": .int(rows)])
+            let size: [String: JSONValue] = ["cols": .int(cols), "rows": .int(rows)]
+            stream.sendRecord(type: Transport.recordResize, payload: Data(size.jsonText.utf8))
         } else if tab.phase != .ended && tab.phase != .open {
             attach(tab, cols: cols, rows: rows)
         }
@@ -182,9 +198,10 @@ final class TerminalTabs {
             tab.isShared = isShared
             tab.note = nil
         }
-        command(
-            tab, verb: "persist",
-            ["session_id": .string(sessionId), "is_persistent": .bool(isPersistent), "is_shared": .bool(isShared)])
+        hubOf(tab.bindingId)?.persist(sessionId: sessionId, isPersistent: isPersistent, isShared: isShared) {
+            [weak self] result in
+            if case .failure(let refusal) = result { self?.change(sessionId) { $0.note = refusal } }
+        }
     }
 
     /// Close a tab: an ended tab goes, a persistent or shared session is ended on its machine with `stop_session`
@@ -208,18 +225,14 @@ final class TerminalTabs {
     }
 
     private func stopSession(_ tab: TerminalTab) {
-        let args: [String: JSONValue] = [
-            "module": .string("agent"), "verb": .string("stop_session"), "session_id": .string(tab.sessionId),
-        ]
-        switch open(tab.bindingId, Channel.kindCommand, args, false) {
-        case .failure(let refusal):
-            change(tab.sessionId) { $0.note = refusal }
-        case .success(let stream):
-            stream.whenClosed(timeout: Channel.streamTimeoutSeconds) { [weak self] result in
-                switch result {
-                case .failure(let refusal): self?.change(tab.sessionId) { $0.note = refusal }
-                case .success: self?.remove(tab.sessionId)
-                }
+        guard let hub = hubOf(tab.bindingId) else {
+            change(tab.sessionId) { $0.note = .refusal(Channel.codeHubUnreachable) }
+            return
+        }
+        hub.stopSession(tab.sessionId) { [weak self] result in
+            switch result {
+            case .failure(let refusal): self?.change(tab.sessionId) { $0.note = refusal }
+            case .success: self?.remove(tab.sessionId)
             }
         }
     }
@@ -242,16 +255,26 @@ final class TerminalTabs {
     }
 
     private func attach(_ tab: TerminalTab, cols: Int, rows: Int) {
+        guard let hub = hubOf(tab.bindingId) else {
+            change(tab.sessionId) { tab in
+                tab.phase = .detached
+                tab.note = .refusal(Channel.codeHubUnreachable)
+            }
+            return
+        }
         let isResumed = tab.phase == .detached
-        let args: [String: JSONValue] = [
+        let open: [String: JSONValue] = [
+            "kind": .string(Channel.kindShell),
             "device_id": .string(tab.deviceId),
             "cols": .int(cols),
             "rows": .int(rows),
+            "account": .string(tab.account),
             "session_id": .string(tab.sessionId),
             "is_resumed": .bool(isResumed),
+            "is_shared": .bool(tab.isShared),
         ]
         change(tab.sessionId) { $0.phase = .connecting }
-        switch open(tab.bindingId, Channel.kindShell, args, true) {
+        switch hub.openShell(open) {
         case .failure(let refusal):
             change(tab.sessionId) { tab in
                 tab.phase = .detached
@@ -264,10 +287,7 @@ final class TerminalTabs {
                 tab.phase = .open
                 tab.note = nil
             }
-            stream.onBytes = { [weak self, weak stream] data in
-                self?.take(data, for: tab.sessionId)
-                stream?.consumed(data.count)
-            }
+            stream.onBytes = { [weak self] data in self?.take(data, for: tab.sessionId) }
             stream.onEnd = { [weak self, weak stream] refusal in
                 guard let self, let stream else { return }
                 self.ended(tab.sessionId, stream: stream, refusal: refusal)
@@ -287,7 +307,7 @@ final class TerminalTabs {
         onOutput?(sessionId, data)
     }
 
-    private func ended(_ sessionId: String, stream: ChannelStream, refusal: ClientError?) {
+    private func ended(_ sessionId: String, stream: TransportStream, refusal: ClientError?) {
         if streams[sessionId] === stream { streams[sessionId] = nil }
         replaying.remove(sessionId)
         if drops[sessionId] != nil { stopDropping(sessionId) }
@@ -332,18 +352,6 @@ final class TerminalTabs {
     private func stopDropping(_ sessionId: String) {
         drops[sessionId] = nil
         clearing.remove(sessionId)
-    }
-
-    private func command(_ tab: TerminalTab, verb: String, _ args: [String: JSONValue]) {
-        var all = args
-        all["module"] = .string("agent")
-        all["verb"] = .string(verb)
-        guard case .success(let stream) = open(tab.bindingId, Channel.kindCommand, all, false) else { return }
-        stream.whenClosed(timeout: Channel.streamTimeoutSeconds) { [weak self] result in
-            if case .failure(let refusal) = result, verb != "resize" {
-                self?.change(tab.sessionId) { $0.note = refusal }
-            }
-        }
     }
 
     private func tab(_ sessionId: String) -> TerminalTab? {

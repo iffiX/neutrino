@@ -22,7 +22,9 @@ struct NeutrinoApp: App {
             appVersion: info["CFBundleShortVersionString"] as? String ?? "")
         let core = ClientCore(
             secrets: KeychainSecretStore(service: Client.keychainService),
-            transport: URLSessionHubTransport(),
+            transport: ClientTransport(
+                library: MobileTransportLibrary(), directory: NSTemporaryDirectory(),
+                dialerOf: { UnixTransportDialer(path: $0) }, clock: SystemClientClock()),
             clock: SystemClientClock(),
             defaults: .standard,
             device: device,

@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The shares the joined hubs publish, one row each: the share's name, `//host/share`, and who provides it. Open
-/// logs in with the login held, or shows the login sheet when none is; Forget password arms and removes the
-/// login held.
+/// on a machine's share logs in with the login the hub hands and asks nothing; on a declared share it logs in
+/// with the login held, or shows the login sheet when none is, and Forget password arms and removes the login
+/// held.
 struct FilesScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -25,6 +26,7 @@ struct FilesScreen: View {
         let key = target?.id ?? ""
         let row = core.shareRows[key] ?? ShareRow()
         let isHeld = core.shareLogins.contains(key)
+        let isDeclared = target?.isDeclared ?? false
         let isFree = !row.isOpening && !hub.jobs.isRefreshing && !hub.isDisabled
         FeatureRow(marker: EntryText.tone(hub, entry, isBusy: row.isOpening), hasDivider: hasDivider) {
             RowText(text: entry.title, style: .title)
@@ -45,9 +47,9 @@ struct FilesScreen: View {
                     label: words.word(row.isOpening ? "ui.job.opening" : "ui.open"), isBusy: row.isOpening,
                     isEnabled: isFree && !entry.isUnhealthy
                 ) {
-                    if isHeld { core.shares.open(target) } else { asking = target }
+                    if isHeld || !isDeclared { core.shares.open(target) } else { asking = target }
                 }
-                if isHeld {
+                if isHeld && isDeclared {
                     ArmedButton(
                         key: "forget-\(key)", label: words.word("ui.forget_password"),
                         armedLabel: words.word("ui.forget_password_arm"), isEnabled: !row.isOpening

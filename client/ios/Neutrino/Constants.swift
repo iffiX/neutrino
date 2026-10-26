@@ -163,40 +163,34 @@ enum Channel {
     /// What a pasted or scanned link starts with.
     static let linkPrefix = "neutrino://enroll/"
 
+    /// The one scheme of a hub's address this build dials; an address of any other scheme is skipped.
+    static let addressScheme = "tcp"
+
+    /// The hub's agent port, for an address that names none.
+    static let agentPortDefault = 8443
+
+    /// The hex characters of a static key: the hub's public key, and a binding's own private key.
+    static let keyHexLength = 64
+
+    /// The bytes of a binding's static private key.
+    static let privateKeyBytes = 32
+
     /// The largest payload a link inflates to.
     static let linkInflatedBytesMax = 1024 * 1024
-
-    /// The path a binding starts at, on the pinned agent port.
-    static let joinPath = "/api/channel/join"
-
-    /// The path a binding ends at.
-    static let leavePath = "/api/channel/leave"
-
-    /// The path of the one socket.
-    static let socketPath = "/api/channel/socket"
 
     /// The name every network a hub serves resolves to that hub's address on it.
     static let hubName = "hub.neutrino.internal"
 
-    /// How long a join or a leave may take.
-    static let requestTimeoutSeconds = 10.0
-
     /// How long telling a hub of a leave may take, after this phone has forgotten the binding.
     static let leaveTellTimeoutSeconds = 5.0
 
-    /// How long connecting and the handshake on top of it may take together.
+    /// How long a phone with no network waits before it looks again.
     static let connectTimeoutSeconds = 10.0
-
-    /// How often a round dials again an address that refused, until the round's connect time has passed.
-    static let redialIntervalSeconds = 1.0
 
     /// How often a report goes up while nothing changes.
     static let reportIntervalSeconds = 30.0
 
-    /// How long the open socket may stay silent before it counts as dead.
-    static let silenceTimeoutSeconds = 45.0
-
-    /// How often the open socket sends this phone's `ping` frame.
+    /// How often the live session sends this phone's `ping` frame, whose `pong` measures the round trip.
     static let pingIntervalSeconds = 20.0
 
     /// The first wait after a broken wire, doubled on each failure.
@@ -208,56 +202,14 @@ enum Channel {
     /// How long a refresh waits for a hub's state frame or a code before it ends.
     static let refreshTimeoutSeconds = 10.0
 
-    /// How long a stream this side opened waits for the hub's close.
+    /// How long a `service`, `persist` or `stop_session` frame waits for the hub's `reply`.
     static let streamTimeoutSeconds = 15.0
-
-    /// A byte stream's credit window; half of it consumed sends the next grant.
-    static let streamCreditBytes = 1024 * 1024
-
-    /// The most one binary frame carries after its stream id.
-    static let chunkBytes = 64 * 1024
-
-    /// How long a send waits for the hub's credit.
-    static let creditTimeoutSeconds = 60.0
-
-    /// The largest message the socket takes.
-    static let messageBytesMax = 4 * 1024 * 1024
-
-    /// The longest nonce a `ping` carries.
-    static let pingNonceMax = 64
-
-    /// A socket closed from this side with nothing to say.
-    static let closeNormal = 1000
-
-    /// The close code after a `refused` frame.
-    static let closeRefused = 4000
-
-    /// The close code of a socket another socket for the same binding replaced.
-    static let closeReplaced = 4010
-
-    /// The first id this side opens a stream at; the hub's are even.
-    static let firstStreamId: UInt32 = 1
-
-    /// The step between two ids one side opens.
-    static let streamIdStep: UInt32 = 2
-
-    /// The big-endian stream id at the head of a binary frame.
-    static let streamIdBytes = 4
-
-    /// A stream for one published entry's material, or the panel's sign-in.
-    static let kindService = "service"
 
     /// A shell on a managed machine.
     static let kindShell = "shell"
 
-    /// A command on a managed machine, such as a shell's resize.
-    static let kindCommand = "command"
-
     /// One TCP connection to a published entry or to the hub's panel, carried by the hub.
     static let kindConnect = "connect"
-
-    /// The code this side closes a stream the hub opened with: a client serves no kind.
-    static let codeKindUnknown = "kind_unknown"
 
     /// The refusal of a binding the hub does not hold.
     static let codeBindingUnknown = "binding_unknown"
@@ -271,19 +223,28 @@ enum Channel {
     /// The refusal of a join while the hub has paused new enrolments; the ticket stays good.
     static let codeAdmissionPaused = "admission_paused"
 
-    /// A certificate that is not the pinned one.
+    /// An address that answered under neither psk: the hub's key is not the binding's.
     static let codeHubUntrusted = "hub_untrusted"
+
+    /// The refusal of a session whose binding another client took.
+    static let codeReplaced = "replaced"
+
+    /// A binding of 0.5's shape, which this build cannot move.
+    static let codeHubKeyMissing = "hub_key_missing"
+
+    /// The codes of a round, or a join, that no address answered: the next one runs at the backoff.
+    static let roundSilentCodes = ["hub_unreachable", Transport.codeMissing, Transport.codeFailed]
+
+    /// The hub's refusals a bound session or a join waits `backoffMaxSeconds` after and tries again.
+    static let roundRetriedCodes = ["control_unavailable", "channel_full"]
 
     /// Anything on the way to the hub that did not answer.
     static let codeHubUnreachable = "hub_unreachable"
 
-    /// The hub closed the socket after a refusal it did not word.
-    static let codeHubRefused = "hub_refused"
-
     /// A fault of this app's own, with its detail.
     static let codeClientInternal = "client_internal"
 
-    /// The ways a client's socket reaches its hub, each worded as `ui.through.<way>`.
+    /// The ways a client's session reaches its hub, each worded as `ui.through.<way>`.
     static let reachedThrough = ["lan", "netbird", "easytier", "ssh_relay", "direct", "sakurafrp", "openfrp"]
 
     /// NetBird's provider name in an overlay object.
@@ -300,13 +261,19 @@ enum Channel {
 
     /// Every code the hub may send this app, each worded in the catalogs.
     static let hubCodes = [
+        "account_not_enabled",
+        "account_unknown",
         "admission_paused",
         "agent_offline",
         "binding_unknown",
         "client_disabled",
         "connect_failed",
         "connect_limit",
+        "control_unavailable",
         "hello_invalid",
+        "hub_key_missing",
+        "hub_unreachable",
+        "hub_untrusted",
         "kind_unknown",
         "permission_denied",
         "port_not_published",
@@ -317,14 +284,54 @@ enum Channel {
         "service_unknown",
         "session_not_owned",
         "session_unknown",
-        "shell_unknown",
+        "shell_program_unusable",
+        "terminal_account_missing",
         "ticket_spent",
         "vault_locked",
         "verb_unknown",
     ]
 }
 
-/// The loopback forwards of web pages and the hub's panel.
+/// The transport the app embeds, and its local channel.
+enum Transport {
+    /// The bytes of the local channel's secret, made afresh at each start and written as hex.
+    static let secretBytes = 32
+
+    /// How long a command to the transport waits for its answer.
+    static let commandTimeoutSeconds = 5.0
+
+    /// How long a `join` may take: a round's dial and handshake, then the hub's answer.
+    static let joinTimeoutSeconds = 30.0
+
+    /// How long the app waits before it opens the transport's local channel again after it dropped.
+    static let reconnectSeconds = 1.0
+
+    /// The record that accepts a stream.
+    static let recordAccept: UInt8 = 2
+
+    /// A record of a stream's bytes.
+    static let recordData: UInt8 = 3
+
+    /// A terminal's new size, `{cols, rows}`.
+    static let recordResize: UInt8 = 6
+
+    /// The record that ends a stream, `{code, params}`.
+    static let recordClose: UInt8 = 8
+
+    /// The header before each record's payload: its type and its length.
+    static let recordHeaderBytes = 5
+
+    /// The most one record's payload carries.
+    static let recordBytesMax = 64 * 1024
+
+    /// A build with no transport library.
+    static let codeMissing = "transport_missing"
+
+    /// A transport that did not start.
+    static let codeFailed = "transport_failed"
+}
+
+/// The loopback forwards of the apps, the hub's panel, a share and a remote desktop.
 enum Forward {
     /// The address every forward listens on.
     static let bindHost = "127.0.0.1"
@@ -332,8 +339,14 @@ enum Forward {
     /// The numbers a person may fix a local port to.
     static let fixedPorts = 1024...65535
 
-    /// Where an automatic local port is looked for when the entry's own is taken; the panel starts here.
-    static let autoFirstPort = 20000
+    /// The numbers a forward of no app picks from, its pick kept: the panel's.
+    static let pickPorts = 20000...23999
+
+    /// A UDP `port` entry's protocol; every other entry is TCP.
+    static let protocolUdp = "udp"
+
+    /// How long after the hub closed a UDP forward's stream it is started again while its app is in use.
+    static let udpRestartSeconds = 1.0
 
     /// The most one read of a forwarded connection copies at once.
     static let bufferBytes = 65536

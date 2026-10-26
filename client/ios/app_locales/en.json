@@ -8,6 +8,8 @@
     "share_interrupted": "Interrupted when the app went to the background.",
     "share_name_taken": "This folder already holds that name.",
     "share_photo_unavailable": "Photos did not hand over one of the picked items.",
+    "transport_failed": "The app's transport did not start: {detail}",
+    "transport_missing": "This build carries no transport; install a release of the app.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {

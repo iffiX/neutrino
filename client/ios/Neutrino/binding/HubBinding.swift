@@ -2,8 +2,8 @@ import Foundation
 
 /// What this phone keeps of one hub it joined, in the desktop client's binding shape.
 struct HubBinding: Codable, Equatable {
-    /// The key this phone keeps the binding under: the id the join returned, or, for a binding kept before its
-    /// ticket was spent, an id made here.
+    /// The key this phone keeps the binding under, made here when the link was read, and the name the transport
+    /// knows the hub by.
     var id: String
 
     /// The name this phone joined under.
@@ -21,16 +21,19 @@ struct HubBinding: Codable, Equatable {
     /// Every address the hub answers on, from the link and then each state.
     var gatewayUrls: [String] = []
 
-    /// The pinned SHA-256 of the hub's certificate.
-    var fingerprint: String
+    /// The hub's static public key, 64 lowercase hex characters; empty in a binding of 0.5.
+    var hubKey: String = ""
 
-    /// The secret every hello carries; empty while the ticket is unspent.
+    /// This phone's static private key for the hub, 64 lowercase hex characters, made when the link was read.
+    var privateKey: String = ""
+
+    /// The secret the hub keeps by its digest; empty while the ticket is unspent.
     var token: String
 
     /// The link's ticket while it is unspent; empty once the join is done.
     var ticket: String = ""
 
-    /// The id the hub gave a binding whose ticket was spent after it was kept; empty when `id` is the hub's own.
+    /// The id the hub gave the binding when its ticket was spent.
     var hubBindingId: String = ""
 
     /// The hub's virtual networks, preferred first.
@@ -43,7 +46,8 @@ struct HubBinding: Codable, Equatable {
         case hubName = "hub_name"
         case gatewayUrl = "gateway_url"
         case gatewayUrls = "gateway_urls"
-        case fingerprint
+        case hubKey = "hub_key"
+        case privateKey = "private_key"
         case token
         case ticket
         case hubBindingId = "hub_binding_id"
@@ -59,35 +63,26 @@ struct HubBinding: Codable, Equatable {
     /// Whether the binding waits for its ticket to be spent: no hello goes before.
     var isPending: Bool { !ticket.isEmpty }
 
+    /// Whether the binding is of 0.5's shape, pinned by a certificate this build cannot check.
+    var isKeyMissing: Bool { hubKey.isEmpty || privateKey.isEmpty }
+
     /// The id the hub knows the binding by.
     var boundId: String { hubBindingId.isEmpty ? id : hubBindingId }
 
     /// The name a page shows: the hub's own, else its address.
     var title: String { hubName.isEmpty ? gatewayUrl : hubName }
 
-    /// The hub's address on each of its virtual networks, as the round dials it: the stored address with that
-    /// host, else the host at the port of the address that last answered.
+    /// The hub's address on each of its virtual networks, as a round dials it: the stored address with that host,
+    /// else the host at the port of the address that last answered.
     var overlayUrls: [(url: String, provider: String)] {
         overlays.compactMap { overlay in
             guard !overlay.hubAddress.isEmpty else { return nil }
             if let stored = storedUrls.first(where: { ChannelAddress.host(of: $0) == overlay.hubAddress }) {
                 return (stored, overlay.provider)
             }
-            let port = ChannelAddress.port(of: gatewayUrl) ?? Channel.httpsDefaultPort
-            return ("https://" + ChannelAddress.bracketed(overlay.hubAddress) + ":\(port)", overlay.provider)
-        }
-    }
-
-    /// The addresses one connection round dials, all at once.
-    ///
-    /// - Parameter nameUrl: The address the hub's name resolves to on this network, or empty.
-    /// - Returns: The hub's address on each virtual network, the name's, then the stored ones, each once.
-    func candidateUrls(nameUrl: String) -> [String] {
-        var seen = Set<String>()
-        return (overlayUrls.map(\.url) + [nameUrl] + storedUrls).filter { url in
-            guard !url.isEmpty, !seen.contains(url) else { return false }
-            seen.insert(url)
-            return true
+            let port = ChannelAddress.port(of: gatewayUrl) ?? Channel.agentPortDefault
+            let address = "\(Channel.addressScheme)://\(ChannelAddress.bracketed(overlay.hubAddress)):\(port)"
+            return (address, overlay.provider)
         }
     }
 }
@@ -101,8 +96,9 @@ extension HubBinding {
         hubName = try container.decodeIfPresent(String.self, forKey: .hubName) ?? ""
         gatewayUrl = try container.decode(String.self, forKey: .gatewayUrl)
         gatewayUrls = try container.decodeIfPresent([String].self, forKey: .gatewayUrls) ?? []
-        fingerprint = try container.decode(String.self, forKey: .fingerprint)
-        token = try container.decode(String.self, forKey: .token)
+        hubKey = try container.decodeIfPresent(String.self, forKey: .hubKey) ?? ""
+        privateKey = try container.decodeIfPresent(String.self, forKey: .privateKey) ?? ""
+        token = try container.decodeIfPresent(String.self, forKey: .token) ?? ""
         ticket = try container.decodeIfPresent(String.self, forKey: .ticket) ?? ""
         hubBindingId = try container.decodeIfPresent(String.self, forKey: .hubBindingId) ?? ""
         overlays = try container.decodeIfPresent([ChannelOverlay].self, forKey: .overlays) ?? []

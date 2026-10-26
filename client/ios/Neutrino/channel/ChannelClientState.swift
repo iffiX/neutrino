@@ -8,8 +8,11 @@ struct ChannelClientState: Equatable {
     /// Whether the hub switched this client off.
     let isDisabled: Bool
 
-    /// The published list, resolved for the address this socket came from.
+    /// The published list, resolved for the address this session came from.
     let services: [ChannelServiceEntry]
+
+    /// The apps the `web`, `port` and `ssh` entries belong to.
+    var apps: [ChannelApp] = []
 
     /// Every address the hub answers the channel on.
     let urls: [String]
@@ -32,7 +35,7 @@ struct ChannelClientState: Equatable {
     /// Whether this phone may open the hub's panel through `connect {is_panel: true}`.
     let isPanelAllowed: Bool
 
-    /// The way this phone's socket reached the hub, as `reached_through` names it.
+    /// The way this phone's session reached the hub, as `reached_through` names it.
     let reachedThrough: String
 
     /// The path each server's address of the state stands for.
@@ -54,6 +57,7 @@ struct ChannelClientState: Equatable {
             hash: frame.text("hash"),
             isDisabled: frame.flag("is_disabled"),
             services: (frame["services"]?.arrayValue ?? []).compactMap { ChannelServiceEntry.of($0) },
+            apps: (frame["apps"]?.arrayValue ?? []).compactMap { ChannelApp.of($0) },
             urls: EnrollmentLink.cleanUrls(frame["urls"]),
             sshRelayUrl: trimmed(frame.text("ssh_relay_url")),
             sakurafrpUrl: trimmed(frame.text("sakurafrp_url")),

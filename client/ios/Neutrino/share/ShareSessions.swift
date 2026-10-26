@@ -7,7 +7,9 @@ import Foundation
 final class ShareSessions {
     private let logins: ShareLoginStore
     private let makeClient: () -> ShareClient
-    private let openConnect: (String, [String: JSONValue]) -> Result<ChannelStream, ClientError>
+    private let openConnect: (String, [String: JSONValue]) -> Result<TransportStream, ClientError>
+    private let material:
+        (String, [String: JSONValue], @escaping (Result<[String: JSONValue], ClientError>) -> Void) -> Void
     private let directory: URL
     private var opening: ShareSession?
     private var channelless: Set<String> = []
@@ -31,25 +33,36 @@ final class ShareSessions {
     ///   - secrets: Where the kept logins live.
     ///   - makeClient: Makes the SMB client of one connection.
     ///   - openConnect: Opens one `connect` stream on a hub, by binding id and the stream's arguments.
+    ///   - material: Reads what the hub hands this phone on a `service` frame, by binding id and arguments: a
+    ///     machine's share's `{user, password}`.
     ///   - directory: Where the shares' files go in the app's temporary directory.
     init(
         secrets: SecretStore, makeClient: @escaping () -> ShareClient,
-        openConnect: @escaping (String, [String: JSONValue]) -> Result<ChannelStream, ClientError>,
+        openConnect: @escaping (String, [String: JSONValue]) -> Result<TransportStream, ClientError>,
+        material:
+            @escaping (String, [String: JSONValue], @escaping (Result<[String: JSONValue], ClientError>) -> Void)
+            -> Void,
         directory: URL = FileManager.default.temporaryDirectory.appendingPathComponent(SharePage.temporaryDirectory)
     ) {
         logins = ShareLoginStore(secrets: secrets)
         self.makeClient = makeClient
         self.openConnect = openConnect
+        self.material = material
         self.directory = directory
     }
 
     /// The keys of the shares with a login held.
     var heldLogins: Set<String> { logins.keys }
 
-    /// Press Open on a share with a login held: it logs in, then the page opens at the share's root.
+    /// Press Open on a machine's share, which logs in with the hub's login and keeps nothing, or on a declared
+    /// share with a login held: it logs in, then the page opens at the share's root.
     ///
     /// - Parameter target: The share.
     func open(_ target: ShareTarget) {
+        guard target.isDeclared else {
+            start(target, login: nil, isKept: nil)
+            return
+        }
         guard let login = logins.login(target.id) else { return }
         start(target, login: login, isKept: nil)
     }
@@ -150,7 +163,7 @@ final class ShareSessions {
         }
     }
 
-    private func start(_ target: ShareTarget, login: ShareLogin, isKept: Bool?) {
+    private func start(_ target: ShareTarget, login: ShareLogin?, isKept: Bool?) {
         let key = target.id
         guard opening == nil, rows[key]?.isOpening != true else {
             ClientLog.info("a login runs on \(key); the press is dropped")
@@ -158,7 +171,7 @@ final class ShareSessions {
         }
         rows[key] = ShareRow(isOpening: true)
         let session = ShareSession(
-            target: target, login: login, makeClient: makeClient,
+            target: target, readLogin: readLogin(target, held: login), makeClient: makeClient,
             openConnect: { [openConnect] in
                 openConnect(target.bindingId, ["id": .string(target.entryId)])
             },
@@ -174,7 +187,7 @@ final class ShareSessions {
                 self.rows[key] = ShareRow(error: refusal)
                 return
             }
-            if let isKept {
+            if let isKept, let login {
                 do {
                     try self.logins.put(key, login, isKept: isKept)
                 } catch let refusal as ClientError {
@@ -193,6 +206,31 @@ final class ShareSessions {
             self.session = session
             session.reload()
             self.onChange?()
+        }
+    }
+
+    private func readLogin(_ target: ShareTarget, held: ShareLogin?) -> (
+        @escaping (Result<ShareLogin, ClientError>) -> Void
+    ) -> Void {
+        { [weak self] completion in
+            if let held {
+                completion(.success(held))
+                return
+            }
+            guard let self else { return }
+            self.material(target.bindingId, ["id": .string(target.entryId)]) { result in
+                switch result {
+                case .failure(let refusal):
+                    completion(.failure(refusal))
+                case .success(let answer):
+                    let user = answer.text("user")
+                    guard !user.isEmpty else {
+                        completion(.failure(.refusal(SharePage.codeLoginRejected)))
+                        return
+                    }
+                    completion(.success(ShareLogin(user: user, password: answer.text("password"))))
+                }
+            }
         }
     }
 

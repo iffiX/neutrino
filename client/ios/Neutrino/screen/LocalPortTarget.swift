@@ -1,16 +1,19 @@
 import Foundation
 
-/// The entry a local port dialog configures.
+/// The app a local port dialog configures.
 struct LocalPortTarget: Identifiable {
     /// The hub.
     let bindingId: String
 
-    /// The entry.
-    let entryId: String
+    /// The app.
+    let appId: String
 
-    /// The entry's title, the dialog's title.
+    /// The app's title, in the dialog's title.
     let title: String
 
-    /// `<binding>/<entry>`.
-    var id: String { "\(bindingId)/\(entryId)" }
+    /// The app's entries, one line each.
+    let entries: [ChannelServiceEntry]
+
+    /// `<binding>/<app>`.
+    var id: String { "\(bindingId)/\(appId)" }
 }

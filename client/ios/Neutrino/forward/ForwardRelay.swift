@@ -7,7 +7,7 @@ final class ForwardRelay {
     /// What the log calls the far end.
     let name: String
 
-    private let open: () -> Result<ChannelStream, ClientError>
+    private let open: () -> Result<TransportStream, ClientError>
     private var descriptor: Int32 = -1
     private var source: DispatchSourceRead?
     private var isSourceSuspended = false
@@ -27,7 +27,7 @@ final class ForwardRelay {
     /// - Parameters:
     ///   - name: What the log calls the far end.
     ///   - open: Opens one `connect` stream for one accepted connection.
-    init(name: String, open: @escaping () -> Result<ChannelStream, ClientError>) {
+    init(name: String, open: @escaping () -> Result<TransportStream, ClientError>) {
         self.name = name
         self.open = open
     }

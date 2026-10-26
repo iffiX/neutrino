@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The Terminals page: a card of machine chips, with New terminal after them in both layouts, then the
+/// The Terminals page: a card of machine chips, the account picker where the picked machine enables two or more
+/// accounts, and New terminal after them in both layouts, then the
 /// terminal's card with the tab strip, the terminal, the status line with Keyboard, Keys and the two switches, and
 /// the key row, in one scrolling column. The terminal's card is as tall as the page, so the chips scroll away above
 /// it; while the keyboard slides the page is kept at its end, so the key row moves with the keyboard's top.
@@ -94,10 +95,17 @@ struct TerminalScreen: View {
                         ForEach(machines) { chip in machineChip(chip, isOn: chip.ref == picked?.ref) }
                         NeutrinoButton(
                             label: words.word("ui.terminal_new"), systemImage: "terminal", tier: .primary,
-                            isEnabled: picked?.machine.isOnline == true
+                            isEnabled: picked?.machine.isOnline == true && picked?.machine.accounts.isEmpty == false
                         ) {
                             core.newTerminal()
                         }
+                    }
+                    if let picked, picked.machine.accounts.count > 1 {
+                        MenuPickerRow(
+                            label: words.word("ui.terminal.account"), options: picked.machine.accounts, name: { $0 },
+                            selection: Binding(
+                                get: { Self.account(core.pickedAccount, of: picked.machine) },
+                                set: { core.pickAccount($0) }))
                     }
                 }
                 if let picked {
@@ -110,10 +118,22 @@ struct TerminalScreen: View {
                     RowText(text: words.word("ui.reason.no_machine"), style: .reason)
                 } else if picked?.machine.isOnline == false {
                     RowText(text: words.word("ui.reason.offline"), style: .reason)
+                } else if picked?.machine.accounts.isEmpty == true {
+                    RowText(text: words.word("ui.reason.terminal_no_account"), style: .reason)
                 }
             }
             .padding(12)
         }
+    }
+
+    /// The account a new terminal runs as on a machine: the one picked while the machine enables it, else its first.
+    ///
+    /// - Parameters:
+    ///   - picked: The account picked, empty for none.
+    ///   - machine: The machine.
+    /// - Returns: The account, empty when the machine enables none.
+    static func account(_ picked: String, of machine: ChannelTerminal) -> String {
+        machine.accounts.contains(picked) ? picked : machine.accounts.first ?? ""
     }
 
     private func machineChip(_ chip: TerminalChip, isOn: Bool) -> some View {

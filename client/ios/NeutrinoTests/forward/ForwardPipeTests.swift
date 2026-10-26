@@ -3,39 +3,60 @@ import XCTest
 @testable import Neutrino
 
 final class ForwardPipeTests: XCTestCase {
-    private let socket = FakeChannelSocket(url: "https://192.168.1.1:8443")
-    private let clock = FakeClientClock()
-
-    private func turnMainQueue() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-    }
-
     func testTheBytesAConnectionCarriesUpAndDownAreCountedAndKeptAfterItEnds() throws {
-        let registry = ChannelStreamRegistry(socket: socket, clock: clock)
+        let transport = FakeTransport()
+        _ = try transport.start(directory: "/data", secret: String(repeating: "ee", count: 32))
         let relay = ForwardRelay(name: "b1/music") {
-            registry.open(kind: Channel.kindConnect, args: ["id": .string("music")], hasBytes: true)
+            do {
+                return .success(
+                    try TransportStream.open(
+                        dialer: transport, secret: transport.secret, binding: "b1",
+                        open: ["kind": .string(Channel.kindConnect), "id": .string("music")], carriage: .raw))
+            } catch {
+                return .failure(.refusal(Channel.codeHubUnreachable))
+            }
         }
         let port = try relay.start(port: 0)
         let client = try XCTUnwrap(LoopbackClient(port: port))
-        turnMainQueue()
-        let open = try XCTUnwrap(socket.frames.first { $0.text("type") == "open" })
-        let stream = try XCTUnwrap(open.number("stream").map(UInt32.init))
+        XCTAssertTrue(RunLoopWait.until { !transport.streams.isEmpty })
+        let end = try XCTUnwrap(transport.streams.first?.end)
+        XCTAssertEqual(transport.streams.first?.open.text("id"), "music")
 
         client.write(Data("hello".utf8))
-        turnMainQueue()
-        XCTAssertEqual(relay.bytesUp, 0)
-        registry.takeCredit(stream: stream, bytes: 1000)
-        XCTAssertEqual(relay.bytesUp, 5)
+        XCTAssertTrue(RunLoopWait.until { end.received == Data("hello".utf8) && relay.bytesUp == 5 })
 
-        registry.takeBinary(ChannelFrames.binary(stream: stream, bytes: Data("world!".utf8)))
-        turnMainQueue()
+        end.write(Data("world!".utf8))
+        RunLoopWait.turn()
         XCTAssertEqual(client.read(), Data("world!".utf8))
         XCTAssertEqual(relay.bytesDown, 6)
 
         relay.close()
-        turnMainQueue()
-        XCTAssertFalse(relay.isCarrying)
+        XCTAssertTrue(RunLoopWait.until { !relay.isCarrying })
         XCTAssertEqual(relay.bytesUp, 5)
         XCTAssertEqual(relay.bytesDown, 6)
+    }
+
+    func testAConnectionTheHubRefusesIsClosedAndItsCodeReported() throws {
+        let transport = FakeTransport()
+        _ = try transport.start(directory: "/data", secret: String(repeating: "ee", count: 32))
+        transport.serve = { _, end in end.refuse("permission_denied", ["kind": .string("file")]) }
+        var refusals: [ClientError] = []
+        let relay = ForwardRelay(name: "b1/music") {
+            do {
+                return .success(
+                    try TransportStream.open(
+                        dialer: transport, secret: transport.secret, binding: "b1",
+                        open: ["kind": .string(Channel.kindConnect), "id": .string("music")], carriage: .raw))
+            } catch {
+                return .failure(.refusal(Channel.codeHubUnreachable))
+            }
+        }
+        relay.onRefused = { refusals.append($0) }
+        let port = try relay.start(port: 0)
+        let client = try XCTUnwrap(LoopbackClient(port: port))
+        client.write(Data("hello".utf8))
+        XCTAssertTrue(RunLoopWait.until { !refusals.isEmpty })
+        XCTAssertEqual(refusals.first?.code, "permission_denied")
+        XCTAssertTrue(RunLoopWait.until { !relay.isCarrying })
     }
 }

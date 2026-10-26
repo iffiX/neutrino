@@ -113,7 +113,7 @@ struct AppShell: View {
         } else {
             switch screen {
             case .hubs: HubsScreen(core: core) { screen = .join }
-            case .web: WebScreen(core: core)
+            case .apps: AppsScreen(core: core)
             case .files:
                 if let share = core.share {
                     ShareScreen(core: core, share: share)
