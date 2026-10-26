@@ -29,6 +29,7 @@ from neutrino_agent.constants import (
     AGENT_DARWIN_LINK_PATH,
     AGENT_DARWIN_LOG_PATH,
     AGENT_DARWIN_PACKAGE_ID,
+    AGENT_BIN_DIR_NAME,
     AGENT_DARWIN_PROGRAM_DIR,
     AGENT_DATA_DIR_DARWIN,
     AGENT_LAUNCHD_DAEMON_DIR,
@@ -339,6 +340,14 @@ class DarwinPlatform(AgentPlatform):
             The absolute directory path.
         """
         return AGENT_VAR_DIR_DARWIN
+
+    def agent_bin_dir(self) -> str:
+        """Where the agent's package puts the Go programs the agent runs.
+
+        Returns:
+            ``bin`` under the agent's program directory.
+        """
+        return os.path.join(AGENT_DARWIN_PROGRAM_DIR, AGENT_BIN_DIR_NAME)
 
     def agent_log_path(self) -> str:
         """The file the agent's LaunchDaemon writes its output to.

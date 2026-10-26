@@ -70,6 +70,7 @@ FLAG_CAPABILITIES = {"packages"}
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
     "agent_log_path": "",
+    "agent_bin_dir": "",
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
@@ -223,3 +224,22 @@ def test_a_name_a_module_gives_what_it_adds_is_taken_with_the_agent(name, prefix
 )
 def test_the_hub_the_client_and_the_agent_itself_are_left_alone(name, prefix):
     assert base_module.is_added_name(name, prefix) is False
+
+
+@pytest.mark.parametrize(
+    "platform, expected",
+    [
+        (LinuxPlatform, "/opt/neutrino/agent/bin"),
+        (DarwinPlatform, "/Library/Application Support/Neutrino/agent/app/bin"),
+    ],
+)
+def test_the_go_programs_are_under_bin_in_the_program_directory(platform, expected):
+    assert platform.__new__(platform).agent_bin_dir() == expected
+
+
+def test_windows_keeps_the_go_programs_under_program_files(monkeypatch):
+    monkeypatch.setenv("ProgramFiles", "D:\\Programs")
+
+    path = WindowsPlatform.__new__(WindowsPlatform).agent_bin_dir()
+
+    assert path == "D:\\Programs\\Neutrino\\agent\\bin"

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from neutrino_agent.constants import (
     AGENT_ADDED_FOREIGN_WORDS,
+    AGENT_BIN_DIR_LINUX,
     AGENT_DATA_DIR_POSIX,
     AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_VAR_DIR,
@@ -137,6 +138,16 @@ class AgentPlatform:
             The absolute directory path.
         """
         return AGENT_VAR_DIR
+
+    def agent_bin_dir(self) -> str:
+        """Where the agent's package puts the Go programs the agent runs.
+
+        ``neutrino_transport`` and ``neutrino_ssh_server`` live here.
+
+        Returns:
+            The absolute directory path.
+        """
+        return AGENT_BIN_DIR_LINUX
 
     def agent_log_path(self) -> str:
         """The file the agent's own log goes to on this platform.

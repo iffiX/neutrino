@@ -28,6 +28,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_ADDED_NAME_PREFIX,
     AGENT_ANSWER_VERB,
+    AGENT_BIN_DIR_NAME,
     AGENT_RELAY_RULE_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
@@ -224,8 +225,13 @@ def run_as_script(
 
 def agent_program_path() -> str:
     """The agent's own program, ``nagent.exe``, under Program Files."""
+    return ntpath.join(agent_program_dir(), AGENT_WINDOWS_BINARY_NAME)
+
+
+def agent_program_dir() -> str:
+    """The agent's program directory, ``Neutrino\\agent`` under Program Files."""
     root = os.environ.get("ProgramFiles", "") or AGENT_WINDOWS_PROGRAM_FILES_DEFAULT
-    return ntpath.join(root, *AGENT_WINDOWS_PROGRAM_SUBDIR, AGENT_WINDOWS_BINARY_NAME)
+    return ntpath.join(root, *AGENT_WINDOWS_PROGRAM_SUBDIR)
 
 
 def system_drive_root() -> str:
@@ -390,6 +396,14 @@ class WindowsPlatform(AgentPlatform):
             The absolute directory path.
         """
         return windows_agent_dir(AGENT_WINDOWS_STATE_DIR_NAME)
+
+    def agent_bin_dir(self) -> str:
+        """Where the agent's package puts the Go programs the agent runs.
+
+        Returns:
+            ``bin`` under the agent's program directory.
+        """
+        return ntpath.join(agent_program_dir(), AGENT_BIN_DIR_NAME)
 
     def agent_log_path(self) -> str:
         """The service's log: ``agent.log`` under ``...\\agent\\log``.

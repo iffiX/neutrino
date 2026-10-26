@@ -205,6 +205,14 @@ AGENT_UPDATE_MSI_BUSY_CODE = 1618
 AGENT_UPDATE_MSI_REBOOT_CODE = 3010
 # The agent's own program as the deb and the rpm install it.
 AGENT_LINUX_PROGRAM_PATH = "/usr/bin/nagent"
+# Where each package puts the Go programs the agent runs, the transport and
+# the SSH server: ``bin/`` in the agent's program directory, under
+# ``/opt/neutrino/agent`` on Linux, under the program directory on macOS and
+# under Program Files on Windows. The variable names another transport, for
+# a checkout.
+AGENT_BIN_DIR_LINUX = "/opt/neutrino/agent/bin"
+AGENT_BIN_DIR_NAME = "bin"
+AGENT_TRANSPORT_BIN_VARIABLE = "NEUTRINO_TRANSPORT_BIN"
 
 # How often a report goes up while nothing changes. Every report carries
 # the machine's metrics, which the panel draws live, so this is the rate
