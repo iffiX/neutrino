@@ -42,7 +42,7 @@ hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
   Podman, ZFS, VS Code, code-server, CloudCLI, Codeg, and the two the
-  agent's own package carries, Terminal and Remote desktop, of the kinds
+  agent's own package carries, Terminal, Remote desktop and the SSH server, of the kinds
   in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
@@ -134,8 +134,8 @@ is told the machine is away, and asks again when it is back.
 
 **One module at a time.** The agent applies the modules a state mentions one
 after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
-Terminal, Gitea, Containers, Hermes WebUI, VS Code, code-server, CloudCLI,
-Codeg, Remote desktop.
+Terminal, the SSH server, Gitea, Containers, Hermes WebUI, VS Code,
+code-server, CloudCLI, Codeg, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
 reported state reports `queued`, until the agent reaches it. The module it
 installs reads `installing`, and a read of every module taken meanwhile
@@ -295,17 +295,18 @@ linked from the table.
 
 | Kind | Modules | Install method | Run |
 | --- | --- | --- | --- |
-| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | `agent`, on every system | the module's own applier per system |
+| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer, and the [SSH server](agent/modules/ssh_server.md), the agent's own Go program run once per enabled account | `agent`, on every system | the module's own applier per system; the SSH server's instances through the account service layer |
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
-Terminal and Remote desktop install nothing: their platform entries name the
-method `agent`, they are never in the Modules page's picker, always a tab,
-and take none of the four presses ([protocol.md](protocol.md), "The modules
-section, one entry per module"); the hub composes both from their own files
-under `config/devices/<id>/`, not from `modules.json`.
+Terminal, Remote desktop and the SSH server install nothing: their platform
+entries name the method `agent`, they are never in the Modules page's picker,
+always a tab, and take none of the four presses ([protocol.md](protocol.md),
+"The modules section, one entry per module"); the hub composes the three
+from their own files under `config/devices/<id>/`, not from
+`modules.json`.
 
 A run is the module's own applier for the first three kinds, one per system
 where the systems differ, under `modules/<module>/`: the agent's code for
@@ -396,8 +397,9 @@ protocol:
 | --- | --- |
 | the file share reports a share | 445, the SMB port |
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
-| the Gitea module reports its URL | that URL's port |
+| the Gitea module reports its URL | that URL's port, and `ssh_listen_port`, its own SSH server's |
 | a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
+| an instance of the SSH server runs | the instance's port |
 | the Hermes WebUI module is configured | its forwarder's port |
 | a running Podman container publishes a host port, other than a hub container's `page_port` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
@@ -434,7 +436,8 @@ connection"), and each also answers the agent's dial on loopback:
 | --- | --- |
 | Samba on Linux | every address; `hosts allow` names the networks the hub composed and `127.0.0.1` |
 | the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
-| Gitea | `127.0.0.1` alone (`HTTP_ADDR = 127.0.0.1`) on every system, and the module opens no port in any firewall ([modules/gitea.md](agent/modules/gitea.md)) |
+| Gitea | `127.0.0.1` alone (`HTTP_ADDR = 127.0.0.1`, `SSH_LISTEN_HOST = 127.0.0.1`) on every system, and the module opens no port in any firewall ([modules/gitea.md](agent/modules/gitea.md)) |
+| the SSH server's instances | `127.0.0.1` alone ([modules/ssh_server.md](agent/modules/ssh_server.md)) |
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
@@ -540,7 +543,8 @@ code-server, CloudCLI and Codeg, whose instances the account service layer,
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
 account's login, the one the account's row names, because LocalSystem
-cannot start a process as another account without its password. Every
+cannot start a process as another account without its password; the SSH
+server's instances run the same way ([modules/ssh_server.md](agent/modules/ssh_server.md)). Every
 instance listens on `127.0.0.1` alone
 and the module opens no port in any firewall, since the hub reaches it
 through the agent's `connect` stream
@@ -587,7 +591,7 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-Terminal and Remote desktop rows every platform has. A platform with
+Terminal, Remote desktop and SSH server rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
 CloudCLI and Codeg, and macOS code-server beside them, and Containers as
 `PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
@@ -692,7 +696,8 @@ module a system cannot run is left out on that system.
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
-| [Terminal](agent/modules/terminal.md) | yes | the shell program alone | yes |
+| [Terminal](agent/modules/terminal.md) | yes | yes | yes |
+| [SSH server](agent/modules/ssh_server.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk; the detection of a person's own AnyDesk or TeamViewer runs on every system) | yes | amd64 | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its

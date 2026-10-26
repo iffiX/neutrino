@@ -5,8 +5,8 @@ The `gitea` module runs Gitea, the release binary its publisher builds
 Gitea's own page "Installation from binary" describes. One applier per
 system sits behind one runner in `agent/neutrino_agent/modules/gitea/`, and
 the configuration, the rendered `app.ini`, the accounts made through the
-gitea CLI, the published `web` entry and the verbs are the same on every
-system.
+gitea CLI, the published app with its `web` and `ssh` entries and the verbs
+are the same on every system.
 
 | | Linux | macOS | Windows |
 | --- | --- | --- | --- |
@@ -17,7 +17,7 @@ system.
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
 | Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
 | Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
-| SSH | the system's `sshd` as `git` | none; clones and pushes over HTTP | none; clones and pushes over HTTP |
+| SSH | Gitea's own SSH server, on `127.0.0.1` alone | the same | the same |
 
 **Gitea listens on loopback alone.** `app.ini` names `HTTP_ADDR =
 127.0.0.1`, and the `web` entry is reached through the agent's end of a
@@ -33,6 +33,21 @@ listened on every address moves to loopback at the next apply, which an
 agent of another build runs once for every module the state names: it
 renders `app.ini` again and restarts the server on the changed file. The
 panel shows no link to it; a client opens it as it opens every `web` entry.
+
+**Gitea's own SSH server is its `ssh` entry.** `app.ini` names
+`START_SSH_SERVER = true`, `SSH_LISTEN_HOST = 127.0.0.1` and
+`SSH_LISTEN_PORT`, a port the agent takes from 2222 up at the first apply
+and reports as `ssh_listen_port`, so git over SSH reaches Gitea through a
+client and never through the machine's own sshd or the agent's SSH server.
+The hub publishes that port as the `ssh` entry of the Gitea app, a TCP
+`port` entry beside `web` ([../../protocol.md](../../protocol.md), "Apps").
+`SSH_DOMAIN` is the app's local name, `gitea.<machine>.localhost`, and
+`SSH_PORT` the local port of the `ssh` entry, both from the state's
+`ssh_domain` and `ssh_port`, so the clone address the page shows,
+`ssh://git@gitea.<machine>.localhost:<port>/<owner>/<repository>.git`, is the
+forward's address on every client ([../../protocol.md](../../protocol.md),
+"The local name and the local port"). Gitea makes its own SSH host key in
+its data directory, and a person adds their SSH keys in Gitea itself.
 
 **Git is the machine's.** The module installs none on macOS and Windows: an
 install or an apply there that finds no usable `git` is refused

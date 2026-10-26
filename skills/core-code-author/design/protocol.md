@@ -1268,12 +1268,13 @@ owner.
 }
 ```
 
-Terminal and Remote desktop are composed from their own files, not from
-`modules.json`, and sent to every managed device:
+Terminal, Remote desktop and the SSH server are composed from their own
+files, not from `modules.json`, and sent to every managed device:
 
 ```json
 "terminal": {"want": "running", "config": {"accounts": [{"account": "lab", "shell_path": "", "password": ""}]}, "install": {"runner": "terminal", "method": "agent", "params": {}}},
-"remote_desktop": {"want": "stopped", "config": {"is_enabled": false}, "install": {"runner": "remote_desktop", "method": "agent", "params": {}}}
+"remote_desktop": {"want": "stopped", "config": {"is_enabled": false}, "install": {"runner": "remote_desktop", "method": "agent", "params": {}}},
+"ssh_server": {"want": "running", "config": {"instances": [{"account": "lab", "authorized_key": "ssh-ed25519 ...", "shell_path": "", "password": ""}]}, "install": {"runner": "ssh_server", "method": "agent", "params": {}}}
 ```
 
 `terminal`'s `want` is always `running`; its `config` holds the module's
@@ -1281,12 +1282,11 @@ enabled accounts ("The account layer in the state"), none when
 `config/devices/<id>/terminal.json` is absent. `remote_desktop`'s `want` is `running` while `is_enabled` is true
 and `stopped` otherwise; its `config` is `remote_desktop.json`,
 `{is_enabled}`, false when the file is absent. Their manifests,
-`terminal.json` and `remote_desktop.json`, name the method `agent` with
-empty `params` in every platform entry: the agent's own package holds the
-module. `GET /api/agent/module`
-answers both `is_supported: true` on every platform, and the four presses
-refuse both 400 `module_not_optional {name}`, as every module the agent
-carries.
+`terminal.json`, `remote_desktop.json` and `ssh_server.json`, name the
+method `agent` with empty `params` in every platform entry: the agent's own
+package holds the module. `GET /api/agent/module` answers the three
+`is_supported: true` on every platform, and the four presses refuse them
+400 `module_not_optional {name}`, as every module the agent carries.
 
 The agent reports `terminal` `running` once it holds the accounts, and
 `remote_desktop` `running` while its RustDesk service runs, with nobody at
@@ -1506,15 +1506,28 @@ release installed. An apply refuses `account_invalid`,
 `account_duplicate` and `secret_missing`, each naming the `account`, and
 `account_unknown {account}` for an account the machine does not have.
 
+The `ssh_server` module runs the agent's own SSH server once per enabled
+account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)). Like
+Terminal and Remote desktop it is composed for every managed device, its
+`want` `running` while it enables an account and `stopped` while it enables
+none, and its recipe is `{runner: ssh_server, method: agent, params: {}}`.
+Its configuration is `{instances: [{account, authorized_key, shell_path,
+password}]}` and its `details` `{host_key, host_key_fingerprint, instances:
+[{account, port, is_running, code}]}`; the module's page has its refusals.
+
 The `gitea` module runs Gitea on Linux, macOS and Windows ([agent/modules/gitea.md](agent/modules/gitea.md)). Its configuration is `{listen_port, root_url,
-is_registration_enabled, address, secrets}` on every system. Its recipe names
+is_registration_enabled, address, secrets, ssh_domain, ssh_port}` on every
+system: `ssh_domain` is the Gitea app's `local_name` and `ssh_port` the
+`local_port` of its `ssh` entry ("The local name and the local port"), which
+Gitea writes into the clone addresses it shows. Its recipe names
 the release binary of the version the machine runs, of kind `binary`, which
 the cache recognises by the ELF, Mach-O or PE header and the agent opens
 `package {module: gitea, artifact, digest}` for, and on Linux the package
 `git` in `packages`. `details` is
-`{is_running, port, url, version, admins}`. The server listens on
-`127.0.0.1` alone, so its `web` entry is reached through the agent's
-`connect` stream ("The connect stream"). On macOS and Windows an install
+`{is_running, port, ssh_listen_port, url, version, admins}`, `ssh_listen_port`
+being the loopback port the agent took for Gitea's own SSH server. The server
+listens on `127.0.0.1` alone, so its `web` and `ssh` entries are reached
+through the agent's `connect` stream ("The connect stream"). On macOS and Windows an install
 and an apply refuse `gitea_git_missing` while the machine has no usable
 `git`, and an install on macOS refuses `user_create_failed {user, detail}`
 when the system will not make the server's account.
@@ -1646,6 +1659,7 @@ the hub generated for each, sealed under the vault's data key:
 | `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret}]}` |
 | `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password}]}` |
 | `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password}]}` |
+| `ssh_server` | `{accounts: [{account, private_key_sealed}]}` | `{instances: [{account, authorized_key, shell_path, password}]}`, `authorized_key` the public half of the sealed key |
 
 | Rule | Reason |
 | --- | --- |
@@ -1666,7 +1680,7 @@ what the entry's `payload` names:
 | --- | --- | --- |
 | `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
-| `ssh` | `{host, port, account}`: `port` the loopback port the account's instance of the machine's SSH server listens on, and `account` the account it runs as | a device's SSH server module runs that account's instance |
+| `ssh` | `{host, port, account, host_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, and `host_key_fingerprint` the machine's host key as `SHA256:<base64>` | a device's SSH server module runs that account's instance ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)) |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
@@ -1747,7 +1761,8 @@ source, device_id, device_name, local_name}`:
 | The app | `id` | `title` | `source` | Its entries, by `name` |
 | --- | --- | --- | --- | --- |
 | an instance of VS Code, code-server, CloudCLI or Codeg | `<module>_<device id>_<account>` | `<module title> (<account>)` | `module` | `web` |
-| Gitea | `gitea_<device id>` | `Gitea` | `module` | `web` |
+| Gitea | `gitea_<device id>` | `Gitea` | `module` | `web`, and `ssh`, a TCP `port` entry for Gitea's own SSH server ([agent/modules/gitea.md](agent/modules/gitea.md)) |
+| the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per running instance, named by its account |
 | a container module, Hermes WebUI among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
 | a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
@@ -1896,6 +1911,7 @@ the reply its code; the panel's are `binding_unknown`, `client_disabled` and
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
 | `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
+| `ssh` | `{account, private_key, host_key}`: the private half of the key the hub made for that account on that machine, in OpenSSH form, and the machine's host public key in OpenSSH form, which the client writes into Neutrino's own known_hosts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md), "Keys") |
 | `file` of a device's Samba module | `{user, password}`: the share's SMB user and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |

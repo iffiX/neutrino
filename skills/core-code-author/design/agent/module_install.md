@@ -49,7 +49,7 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 
 | `method` | `params` | Where the bytes come from | What puts them on the machine | Modules |
 | --- | --- | --- | --- | --- |
-| `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop |
+| `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share, ZFS storage and Containers on Linux |
 | `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, Containers on Windows and macOS |
@@ -69,7 +69,7 @@ before the artifacts, and an uninstall keeps them.
 | A failed install reports | `reinstall_failed`, from the agent's own install | nothing, since nothing is installed | `install_failed {detail}` with the package manager's output | `download_failed {file, sources}` or `module_fetch_too_large` from the cache, then `install_failed {detail}` or the module's own code | `download_failed {file, sources}` when no source serves an image |
 | The version | the agent's | the system's | the system's, locked | the tested one or the machine's choice | the tested tag or the machine's choice; the tested one, locked, where the entry names no `releases` |
 
-Terminal and Remote desktop are in the agent's package on every system.
+Terminal, Remote desktop and the SSH server are in the agent's package on every system.
 Their platform entries name the method `agent`, they are never in the Modules
 page's picker, always a tab, and the four presses on them are refused
 `module_not_optional` ([agent.md](../agent.md), "The kinds of module").
