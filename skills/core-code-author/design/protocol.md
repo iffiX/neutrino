@@ -2209,7 +2209,7 @@ These three are the commands. Besides them the Python sends frames: `welcome`,
 
 | Event | Fields | When |
 | --- | --- | --- |
-| `session_open` | `{session, binding_id, role, address, listener}` | a handshake completed for a key `peer` admitted; the session's frames follow. On a new control connection it comes once for every live session, followed by that session's `hello`; the Python then sends no second `welcome`, and pushes the state at the session's next report as on a first report |
+| `session_open` | `{session, binding_id, role, address, local_address, listener}` | a handshake completed for a key `peer` admitted, `local_address` being the hub's own address the peer's connection reached; the session's frames follow. On a new control connection it comes once for every live session, followed by that session's `hello`; the Python then sends no second `welcome`, and pushes the state at the session's next report as on a first report |
 | `session_end` | `{session, reason}` | the session ended |
 | a frame | `{frame, session}` | each frame of a session `session_open` named, but `ping` and a client's `service`: `hello`, `report`, `leave`, a client's `persist` and `stop_session`, an agent's `reply` |
 | `stream` | `{stream, session, open}` | an agent opened `log` or `package`, which the Python takes with `attach` |
