@@ -67,6 +67,7 @@ from neutrino_hub.modules.overlay.relay_renderer import (
     askpass_program,
     judge_exit,
 )
+from neutrino_hub.modules.transport.ops import probe as transport_probe
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, hub_platform, is_linux
 from neutrino_hub.system.constants import (
@@ -280,8 +281,8 @@ def openssh_key_text(key_id: str) -> str:
     return loaded.export_private_key("openssh").decode()
 
 
-def check_public_address(host: str, port: int, *, timeout_s: float) -> str:
-    """Complete a TLS handshake at the public address and read its certificate.
+def check_public_address(host: str, port: int, *, timeout_s: float) -> bool:
+    """Whether the public address reaches this hub's transport.
 
     Args:
         host: The server's name or address.
@@ -289,20 +290,10 @@ def check_public_address(host: str, port: int, *, timeout_s: float) -> str:
         timeout_s: How long the dial and the handshake may take together.
 
     Returns:
-        The SHA-256 hex of the certificate met there; empty when nothing
-        answered with one in time.
+        True when ``neutrino_transport probe`` completed a handshake there
+        under the hub's own key in time (protocol.md, "The session").
     """
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    try:
-        with socket.create_connection((host, port), timeout=timeout_s) as raw:
-            raw.settimeout(timeout_s)
-            with context.wrap_socket(raw, server_hostname=host) as wrapped:
-                der = wrapped.getpeercert(binary_form=True)
-    except (OSError, ValueError):
-        return ""
-    return hashlib.sha256(der).hexdigest() if der else ""
+    return transport_probe(host, port, timeout_s=timeout_s)
 
 
 class OverlayRelayApplier:
@@ -531,21 +522,18 @@ class OverlayRelayMonitor:
         self,
         *,
         controller,
-        fingerprint_of: Callable[[], str],
         check=check_public_address,
         clock=time.monotonic,
     ):
         """
         Args:
             controller: The process controller the hub runs its daemons with.
-            fingerprint_of: Returns the hub's own agent certificate's
-                SHA-256 hex.
-            check: ``check(host, port, timeout_s=...)`` returns the
-                fingerprint met at the public address, empty for none.
+            check: ``check(host, port, timeout_s=...)`` returns whether a
+                handshake under the hub's own key completes at the public
+                address, which ``neutrino_transport probe`` measures.
             clock: The monotonic clock.
         """
         self._controller = controller
-        self._fingerprint_of = fingerprint_of
         self._check = check
         self._clock = clock
         self._lock = threading.Lock()
@@ -651,21 +639,14 @@ class OverlayRelayMonitor:
         return judge_exit(lines)
 
     def _run_check(self, config: OverlayRelayConfig) -> None:
-        """Dial the public address and compare what answers with the hub."""
+        """Probe the public address: does a handshake under the hub's key complete."""
         address = f"{config.host}:{config.public_port}"
-        met = self._check(
+        is_reached = self._check(
             config.host, config.public_port, timeout_s=OVERLAY_RELAY_CHECK_TIMEOUT_S
         )
-        try:
-            own = self._fingerprint_of()
-        except (OSError, ValueError):
-            own = ""
-        if not met:
-            error = OVERLAY_RELAY_CHECK_NO_ANSWER.format(address=address)
-        elif met != own:
-            error = OVERLAY_RELAY_CHECK_FOREIGN.format(address=address)
-        else:
-            error = ""
+        error = (
+            "" if is_reached else OVERLAY_RELAY_CHECK_NO_ANSWER.format(address=address)
+        )
         with self._lock:
             self._checked_at = self._clock()
             self._checked_at_text = (

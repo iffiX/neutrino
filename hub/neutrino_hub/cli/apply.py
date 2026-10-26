@@ -21,6 +21,7 @@ when it next reports to a running panel.
 """
 
 import argparse
+import json
 import subprocess
 import sys
 from socket import gethostname
@@ -93,6 +94,7 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
     ensure_management_key,
     write_working_key,
 )
+from neutrino_hub.modules.transport.ops import TransportApplier, render_settings
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
@@ -109,7 +111,14 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 PROXY_COMPONENTS = {
     component.name: component for component in edition.hooks("apply_components")
 }
-COMPONENTS = ("router", *PROXY_COMPONENTS, "dnsmasq", "cliproxyapi", "overlay")
+COMPONENTS = (
+    "router",
+    *PROXY_COMPONENTS,
+    "dnsmasq",
+    "cliproxyapi",
+    "overlay",
+    "transport",
+)
 
 
 def main() -> int:
@@ -155,7 +164,7 @@ def main() -> int:
     except (OSError, ValueError) as error:
         code = getattr(error, "code", "agent_tls_key_unavailable")
         print(
-            f'error: {{"code": "{code}"}}: the agent channel has no served key '
+            f'error: {{"code": "{code}"}}: the legacy listener has no served key '
             f"({error})",
             file=sys.stderr,
         )
@@ -265,6 +274,11 @@ def _render(selected: tuple[str, ...]) -> dict:
             artifacts["easytier"] = easytier
         artifacts["relay"] = read_relay()
         artifacts["frp"] = [read_frp(vendor) for vendor in FRP_VENDORS]
+    if "transport" in selected:
+        try:
+            artifacts["transport"] = read_config("web/settings.json")
+        except (FileNotFoundError, ValueError):
+            artifacts["transport"] = {}
     return artifacts
 
 
@@ -329,6 +343,9 @@ def _print_artifacts(artifacts: dict) -> None:
             dropin = SYSTEM_SYSTEMD_DIR / f"{OVERLAY_RELAY_UNIT}.d"
             print(f"\n--- {dropin / SYSTEM_START_LINE_DROPIN_NAME} ---")
             print(start_line_dropin(argv, {}, None), end="")
+    if "transport" in artifacts:
+        print("\n--- generated/transport.json ---")
+        print(json.dumps(render_settings(artifacts["transport"]), indent=2))
     # frpc's file holds the account's token, so a dry run names it and
     # prints none of it.
     for config in artifacts.get("frp", []):
@@ -400,11 +417,14 @@ def _apply(artifacts: dict) -> None:
             controller=process_controller(), agent_port=_agent_port()
         ).apply(artifacts["relay"])
         print(change or "relay unchanged")
+    if "transport" in artifacts:
+        change = TransportApplier(controller=process_controller()).apply(
+            artifacts["transport"]
+        )
+        print(change or "transport unchanged")
     for config in artifacts.get("frp", []):
         controller = process_controller()
-        monitor = FrpMonitor(
-            vendor=config.vendor, controller=controller, fingerprint_of=lambda: ""
-        )
+        monitor = FrpMonitor(vendor=config.vendor, controller=controller)
         change = FrpApplier(controller=controller, monitor=monitor).apply(config)
         print(change or f"{config.vendor} unchanged")
     if router_failure:

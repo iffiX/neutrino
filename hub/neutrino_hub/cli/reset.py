@@ -53,9 +53,12 @@ from neutrino_hub.utils.constants import (
 RESET_COLLECTED_PATHS = (
     "devices/known_hosts",
     "devices/packages",
-    # The agent channel's certificate and key go with the fleet that pinned
-    # them; the next setup generates a fresh identity for its own.
+    # The agent TLS pair of the legacy listener goes with the fleet that
+    # pinned it; the next setup generates a fresh one for its own.
     "web/agent_tls",
+    # The transport's static key, which every binding pins; the transport
+    # makes a new pair at its next start.
+    "transport",
     # The panel's certificate authority, which browsers trusted for this box;
     # the next setup generates another.
     "web/panel_tls",
@@ -96,6 +99,8 @@ RESET_STATE_PATHS = (
 # remove.
 RESET_STATE_DIRS = (
     "agent_module_cache",
+    # The local channel's secret; the next start writes a new one.
+    "transport",
     "cliproxyapi",
     "hub_update",
     "netbird",

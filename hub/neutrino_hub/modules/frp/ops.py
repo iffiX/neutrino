@@ -552,7 +552,6 @@ class FrpMonitor:
         *,
         vendor: str,
         controller,
-        fingerprint_of: Callable[[], str],
         is_listener_taken: Callable[[str], bool] = lambda vendor: False,
         check=check_public_address,
         clock=time.monotonic,
@@ -561,17 +560,15 @@ class FrpMonitor:
         Args:
             vendor: ``sakurafrp`` or ``openfrp``.
             controller: The process controller the hub runs its daemons with.
-            fingerprint_of: Returns the hub's own agent certificate's
-                SHA-256 hex.
             is_listener_taken: Whether the vendor's loopback listener could
                 not open.
-            check: ``check(host, port, timeout_s=...)`` returns the
-                fingerprint met at the public address, empty for none.
+            check: ``check(host, port, timeout_s=...)`` returns whether a
+                handshake under the hub's own key completes at the public
+                address, which ``neutrino_transport probe`` measures.
             clock: The monotonic clock.
         """
         self._vendor = vendor
         self._controller = controller
-        self._fingerprint_of = fingerprint_of
         self._is_listener_taken = is_listener_taken
         self._check = check
         self._clock = clock
@@ -701,21 +698,12 @@ class FrpMonitor:
         return plain_lines(lines)
 
     def _run_check(self, config: FrpConfig) -> None:
-        """Dial the public address and compare what answers with the hub."""
+        """Probe the public address: does a handshake under the hub's key complete."""
         address = f"{config.public_host}:{config.public_port}"
-        met = self._check(
+        is_reached = self._check(
             config.public_host, config.public_port, timeout_s=FRP_CHECK_TIMEOUT_S
         )
-        try:
-            own = self._fingerprint_of()
-        except (OSError, ValueError):
-            own = ""
-        if not met:
-            error = FRP_CHECK_NO_ANSWER.format(address=address)
-        elif met != own:
-            error = FRP_CHECK_FOREIGN.format(address=address)
-        else:
-            error = ""
+        error = "" if is_reached else FRP_CHECK_NO_ANSWER.format(address=address)
         with self._lock:
             self._checked_at = self._clock()
             self._checked_at_text = (

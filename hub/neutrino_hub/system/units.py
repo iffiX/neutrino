@@ -12,7 +12,13 @@ from neutrino_hub import edition
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.installation import checkout_root, is_packaged, venv_python
 from neutrino_hub.platforms.detect import process_controller
-from neutrino_hub.utils.constants import UTILS_DATA_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_CONFIG_DIR,
+    UTILS_DATA_DIR,
+    UTILS_RUNTIME_ROOT,
+    UTILS_STATE_ROOT,
+    carried_program,
+)
 
 # --- config ---
 # The units the hub owns, template name to installed name. The proxy core's
@@ -21,6 +27,7 @@ from neutrino_hub.utils.constants import UTILS_DATA_DIR
 # over one a vendor's script installed.
 SYSTEM_UNIT_TEMPLATES = {
     "neutrino_hub_router.service": "neutrino_hub_router.service",
+    "neutrino_hub_transport.service": "neutrino_hub_transport.service",
     "neutrino_hub_web.service": "neutrino_hub_web.service",
     # Templated by interface. One access point per radio given the LAN role,
     # one supplicant per radio given the WAN role, and one lease client per
@@ -44,6 +51,14 @@ SYSTEM_UNIT_DOCUMENTATION_PREFIX = "Documentation=file://@REPO_ROOT@"
 SYSTEM_UNIT_DOCUMENTATION_URL = "Documentation=https://github.com/iffiX/neutrino"
 # Where an ordering line names the proxy's units, with the space after them.
 SYSTEM_UNIT_PROXY_UNITS = "@PROXY_UNITS@ "
+# The roots a unit names, filled from this installation's, and the carried
+# program the transport's unit starts.
+SYSTEM_UNIT_ROOTS = {
+    "@CONFIG_DIR@": lambda: str(UTILS_CONFIG_DIR),
+    "@STATE_ROOT@": lambda: str(UTILS_STATE_ROOT),
+    "@RUNTIME_ROOT@": lambda: str(UTILS_RUNTIME_ROOT),
+    "@TRANSPORT@": lambda: str(carried_program("neutrino_transport")),
+}
 
 
 class SystemdUnitInstaller:
@@ -95,6 +110,8 @@ class SystemdUnitInstaller:
             SYSTEM_UNIT_PROXY_UNITS,
             "".join(f"{name} " for name in edition.hooks("unit_templates")),
         )
+        for placeholder, root_of in SYSTEM_UNIT_ROOTS.items():
+            template = template.replace(placeholder, root_of())
         if not is_packaged():
             return template.replace("@REPO_ROOT@", str(checkout_root())).replace(
                 "@PYTHON@", python_path

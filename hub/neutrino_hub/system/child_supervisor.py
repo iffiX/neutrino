@@ -15,6 +15,7 @@ Not pure: starts, watches and ends processes.
 import logging
 import logging.handlers
 import os
+import secrets
 import subprocess
 import threading
 import time
@@ -33,7 +34,9 @@ from neutrino_hub.system.constants import (
 )
 
 
-def start_child_process(argv: list, env: dict, cwd, creation_flags: int):
+def start_child_process(
+    argv: list, env: dict, cwd, creation_flags: int, stdin_text: str = ""
+):
     """Start one child with its output as one stream.
 
     Args:
@@ -41,6 +44,8 @@ def start_child_process(argv: list, env: dict, cwd, creation_flags: int):
         env: The whole environment the child runs with.
         cwd: The directory it starts in; None keeps this process's.
         creation_flags: Windows process creation flags; 0 elsewhere.
+        stdin_text: One line written to the child's standard input, which
+            is then closed; empty gives the child no input at all.
 
     Returns:
         The started process.
@@ -48,15 +53,22 @@ def start_child_process(argv: list, env: dict, cwd, creation_flags: int):
     Raises:
         OSError: When it cannot be started.
     """
-    return subprocess.Popen(
+    process = subprocess.Popen(
         argv,
         env=env,
         cwd=cwd,
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         creationflags=creation_flags,
     )
+    if stdin_text and process.stdin is not None:
+        try:
+            process.stdin.write(stdin_text.encode("utf-8"))
+            process.stdin.close()
+        except OSError:
+            pass
+    return process
 
 
 @dataclass
@@ -69,12 +81,16 @@ class ChildStartLine:
         cwd: The directory it starts in; empty keeps this process's.
         log_name: The file its output goes to under the log directory,
             without the suffix; empty is the child's own name.
+        is_secret_on_stdin: Whether the supervisor makes a fresh secret at
+            each start and writes it as the first line of the child's
+            standard input, telling :data:`on_secret` what it made.
     """
 
     argv: list
     env: dict = field(default_factory=dict)
     cwd: str = ""
     log_name: str = ""
+    is_secret_on_stdin: bool = False
 
     def to_dict(self) -> dict:
         """The start line as ``services.json`` keeps it.
@@ -87,6 +103,7 @@ class ChildStartLine:
             "env": {str(key): str(value) for key, value in self.env.items()},
             "cwd": str(self.cwd),
             "log_name": self.log_name,
+            "is_secret_on_stdin": bool(self.is_secret_on_stdin),
         }
 
     @classmethod
@@ -110,6 +127,7 @@ class ChildStartLine:
             env=dict(data.get("env") or {}),
             cwd=str(data.get("cwd") or ""),
             log_name=str(data.get("log_name") or ""),
+            is_secret_on_stdin=data.get("is_secret_on_stdin") is True,
         )
 
 
@@ -127,6 +145,8 @@ class ChildProcessSupervisor:
         requirements: dict | None = None,
         clock=None,
         log=print,
+        on_secret=None,
+        make_secret=None,
     ):
         """
         Args:
@@ -143,6 +163,11 @@ class ChildProcessSupervisor:
                 is none.
             clock: Returns the time in seconds; None is ``time.monotonic``.
             log: Called with each progress line.
+            on_secret: Called with ``(name, secret)`` each time a child whose
+                secret rides its standard input is started; None tells
+                nobody.
+            make_secret: Returns a fresh secret for such a child; None makes
+                32 random bytes in hex.
         """
         self._log_dir = Path(log_dir)
         self._base_env = base_env
@@ -153,6 +178,8 @@ class ChildProcessSupervisor:
         self._watcher = None
         self._clock = clock or time.monotonic
         self._log = log
+        self._on_secret = on_secret
+        self._make_secret = make_secret or (lambda: secrets.token_hex(32))
         self._lock = threading.RLock()
         self._children: dict = {}
         self._loggers: dict = {}
@@ -386,13 +413,23 @@ class ChildProcessSupervisor:
         line = child.line
         env = dict(self._base_env if self._base_env is not None else os.environ)
         env.update({str(key): str(value) for key, value in line.env.items()})
+        secret = self._make_secret() if line.is_secret_on_stdin else ""
         try:
-            process = self._start_process(
-                [str(word) for word in line.argv],
-                env,
-                line.cwd or None,
-                self._creation_flags,
-            )
+            if secret:
+                process = self._start_process(
+                    [str(word) for word in line.argv],
+                    env,
+                    line.cwd or None,
+                    self._creation_flags,
+                    secret + "\n",
+                )
+            else:
+                process = self._start_process(
+                    [str(word) for word in line.argv],
+                    env,
+                    line.cwd or None,
+                    self._creation_flags,
+                )
         except OSError as error:
             self._log(f"{name} could not start: {error}")
             child.restart_at = self._clock() + child.wait_s
@@ -400,6 +437,8 @@ class ChildProcessSupervisor:
             return
         child.process = process
         child.started_at = self._clock()
+        if secret and self._on_secret is not None:
+            self._on_secret(name, secret)
         self._log(f"{name} started as {getattr(process, 'pid', '?')}")
         if self._on_started is not None:
             try:

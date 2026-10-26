@@ -72,6 +72,20 @@ def _archive(url):
     return b"database"
 
 
+@pytest.fixture(autouse=True)
+def go_programs(monkeypatch, tmp_path):
+    """The release's Go programs, built for every target under a dist/go of the test's."""
+    directory = tmp_path / "dist_go"
+    for os_name in ("linux", "darwin", "windows"):
+        for machine in ("amd64", "arm64"):
+            target = directory / f"{os_name}-{machine}"
+            target.mkdir(parents=True)
+            suffix = ".exe" if os_name == "windows" else ""
+            (target / f"neutrino_transport{suffix}").write_bytes(b"transport")
+    monkeypatch.setattr(hub_assets, "HUB_ASSET_GO_DIR", directory)
+    return directory
+
+
 @pytest.fixture
 def fetched(monkeypatch):
     """Every pinned download answered locally; the URLs asked for, in order."""
@@ -179,7 +193,7 @@ def test_a_system_nothing_is_pinned_for_stops_the_build():
 
 
 @pytest.mark.feature("proxy")
-def test_linux_takes_the_six_programs_and_nothing_beside_them(tmp_path, fetched):
+def test_linux_takes_the_seven_programs_and_nothing_beside_them(tmp_path, fetched):
     written = hub_assets.stage_programs(tmp_path, "linux", "amd64")
 
     assert sorted(path.name for path in written) == [
@@ -188,8 +202,10 @@ def test_linux_takes_the_six_programs_and_nothing_beside_them(tmp_path, fetched)
         "easytier-core",
         "frpc",
         "netbird",
+        "neutrino_transport",
         "xray",
     ]
+    assert (tmp_path / "neutrino_transport").read_bytes() == b"transport"
     assert (tmp_path / "easytier-core").read_bytes() == b"engine"
     assert (tmp_path / "frpc").read_bytes() == b"frp client"
     assert (tmp_path / "xray").stat().st_mode & 0o777 == 0o755
@@ -274,6 +290,7 @@ def test_windows_takes_the_executables_and_easytiers_tun_driver(tmp_path, fetche
         "wintun.dll",
         "frpc.exe",
         "tun2socks.exe",
+        "neutrino_transport.exe",
     ]
     assert (tmp_path / "wintun.dll").read_bytes() == b"tun"
     assert (tmp_path / "frpc.exe").read_bytes() == b"frp client"
@@ -381,7 +398,7 @@ def test_a_program_whose_module_the_tree_lacks_is_not_carried(
 
     names = sorted(path.name.removesuffix(".exe") for path in written)
     assert names == sorted(
-        ["cli-proxy-api", "easytier-cli", "easytier-core", "frpc"]
+        ["cli-proxy-api", "easytier-cli", "easytier-core", "frpc", "neutrino_transport"]
         + (["wintun.dll"] if os_name == "windows" else [])
     )
     assert not any(
@@ -435,3 +452,14 @@ def test_the_full_tree_stamps_the_tun2socks_version_the_build_pins():
     assert "tun2socks.exe" in hub_assets.carried_names("windows")
     assert "tun2socks" in hub_assets.carried_names("darwin")
     assert "tun2socks" not in hub_assets.carried_names("linux")
+
+
+def test_a_target_the_release_did_not_build_the_transport_for_stops_the_build(
+    tmp_path, fetched, go_programs
+):
+    (go_programs / "linux-arm64" / "neutrino_transport").unlink()
+
+    with pytest.raises(SystemExit) as refused:
+        hub_assets.stage_programs(tmp_path, "linux", "arm64")
+
+    assert "neutrino_transport is not there" in str(refused.value)

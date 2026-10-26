@@ -143,7 +143,6 @@ def applier(controller, vendor=FRP_SAKURAFRP, **monitor_keywords):
     monitor = FrpMonitor(
         vendor=vendor,
         controller=controller,
-        fingerprint_of=lambda: OWN_FINGERPRINT,
         **monitor_keywords,
     )
     return FrpApplier(controller=controller, monitor=monitor), monitor
@@ -356,14 +355,14 @@ def test_frpc_running_before_its_first_check_is_connecting(box):
     assert monitor.view()["state"] == "connecting"
 
 
-def test_the_check_meeting_the_hubs_certificate_is_connected(box):
+def test_the_probe_reaching_the_hub_is_connected(box):
     controller = FakeController()
     clock = FakeClock()
     checked = []
 
     def check(host, port, *, timeout_s):
         checked.append((host, port, timeout_s))
-        return OWN_FINGERPRINT
+        return True
 
     monitor = started(box, controller, check=check, clock=clock)
     controller.process_ids = [41]
@@ -385,12 +384,9 @@ def test_the_check_meeting_the_hubs_certificate_is_connected(box):
 
 @pytest.mark.parametrize(
     ("met", "error"),
-    [
-        ("", "no answer at frp-a.natfrp.cloud:41234"),
-        ("b" * 64, "another certificate at frp-a.natfrp.cloud:41234"),
-    ],
+    [(False, "no answer at frp-a.natfrp.cloud:41234")],
 )
-def test_a_check_meeting_nothing_or_another_certificate_is_port_closed(box, met, error):
+def test_a_probe_reaching_nothing_is_port_closed(box, met, error):
     controller = FakeController()
     clock = FakeClock()
     monitor = started(

@@ -33,6 +33,7 @@ EVERY_STEP = [
     "config_files",
     "agent_tls",
     "panel_tls",
+    "transport",
     "systemd_units",
     "interfaces",
     "render_all",
@@ -299,7 +300,9 @@ def test_the_core_children_are_enabled_through_the_controller(
 
     setup._step_enable_services(FakeReporter())
 
-    assert controller.asked == [("enable", name) for name in [*XRAY, "cliproxyapi"]]
+    assert controller.asked == [
+        ("enable", name) for name in ["transport", *XRAY, "cliproxyapi"]
+    ]
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -310,7 +313,9 @@ def test_children_the_stopped_service_does_not_run_yet_are_enabled(monkeypatch, 
 
     setup._step_enable_services(FakeReporter())
 
-    assert controller.asked == [("enable", name) for name in [*XRAY, "cliproxyapi"]]
+    assert controller.asked == [
+        ("enable", name) for name in ["transport", *XRAY, "cliproxyapi"]
+    ]
 
 
 def test_linux_enables_its_core_units_through_the_controller(monkeypatch, controller):
@@ -319,7 +324,7 @@ def test_linux_enables_its_core_units_through_the_controller(monkeypatch, contro
     setup._step_enable_services(FakeReporter())
 
     assert controller.asked == [
-        ("enable", name) for name in ["router", *XRAY, "dnsmasq", "web"]
+        ("enable", name) for name in ["router", "transport", *XRAY, "dnsmasq", "web"]
     ]
 
 

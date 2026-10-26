@@ -48,6 +48,11 @@ HUB_ASSET_PROGRAMS = {
     "frp": ("neutrino_hub.modules.frp.constants", "FRP", ("frpc",)),
     "tun2socks": ("shared.constants", "PACKAGING_TUN2SOCKS", ("tun2socks",)),
 }
+# The Go programs of this repository every hub package carries, built by the
+# release into ``dist/go/<os>-<machine>/`` (packaging/shared/go_build.py);
+# the transport holds the agent port.
+HUB_ASSET_GO_PROGRAMS = ("neutrino_transport",)
+HUB_ASSET_GO_DIR = Path("dist") / "go"
 # The programs a system's package carries only there; every other program
 # goes into every package.
 HUB_ASSET_SYSTEMS = {"tun2socks": ("darwin", "windows")}
@@ -126,6 +131,7 @@ def carried_names(os_name: str) -> list:
         names += [_on(os_name, name) for name in files]
         if os_name == "windows":
             names += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
+    names += [_on(os_name, program) for program in HUB_ASSET_GO_PROGRAMS]
     return names
 
 
@@ -174,6 +180,43 @@ def stage_programs(binaries: Path, os_name: str, machine: str) -> list:
     for program in HUB_ASSET_PROGRAMS:
         if _is_carried(program, os_name):
             written += stage_program(binaries, program, os_name, machine)
+    written += stage_go_programs(binaries, os_name, machine)
+    return written
+
+
+def stage_go_programs(
+    binaries: Path, os_name: str, machine: str, *, programs_dir: "Path | None" = None
+) -> list:
+    """Put the repository's own Go programs for one system and machine into a directory.
+
+    Args:
+        binaries: The directory they belong in.
+        os_name: ``linux``, ``darwin`` or ``windows``.
+        machine: ``amd64`` or ``arm64``.
+        programs_dir: Where the release left the built programs, one
+            directory per target; None is :data:`HUB_ASSET_GO_DIR`.
+
+    Returns:
+        The files written.
+
+    Raises:
+        SystemExit: When a program was not built for the target.
+    """
+    binaries.mkdir(parents=True, exist_ok=True)
+    root = HUB_ASSET_GO_DIR if programs_dir is None else programs_dir
+    written = []
+    for program in HUB_ASSET_GO_PROGRAMS:
+        name = _on(os_name, program)
+        source = root / f"{os_name}-{machine}" / name
+        if not source.is_file():
+            raise SystemExit(
+                f"{source} is not there; the release builds it with "
+                "packaging/build/build_transport.py before the hub's package"
+            )
+        target = binaries / name
+        target.write_bytes(source.read_bytes())
+        target.chmod(0o755)
+        written.append(target)
     return written
 
 

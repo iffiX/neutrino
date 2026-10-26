@@ -242,6 +242,7 @@ def test_every_name_the_service_runs_has_a_status(controller):
 
     assert names == [
         "web",
+        "transport",
         *(["xray", "tun2socks"] if edition.has_feature("proxy") else []),
         "netbird",
         "cliproxyapi",

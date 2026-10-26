@@ -119,6 +119,8 @@ from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
 from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.transport.constants import TRANSPORT_BINARY_PATH
+from neutrino_hub.modules.transport.ops import TransportApplier
 from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
@@ -177,7 +179,13 @@ SETUP_BROWSER_HOST = "0.0.0.0"
 # What starting the services means. In a browser the panel is left out and
 # started last, because until then the wizard is what holds its port.
 # The proxy core's unit is the proxy's, from the edition table.
-SETUP_CORE_SERVICES = ("router", *edition.hooks("services"), "dnsmasq", "web")
+SETUP_CORE_SERVICES = (
+    "router",
+    "transport",
+    *edition.hooks("services"),
+    "dnsmasq",
+    "web",
+)
 # Where a signed-in user's session bus lives on Linux; the opener steps down
 # to reach it, because setup runs as root and root has no browser session.
 SETUP_USER_RUNTIME_ROOT = Path(PLATFORM_LINUX_USER_RUNTIME_ROOT)
@@ -1500,14 +1508,30 @@ def _step_config_files(reporter: InstallReporter) -> str:
 
 
 def _step_agent_tls(reporter: InstallReporter) -> str:
-    """Give the agent channel its certificate, once.
+    """Give the legacy listener its certificate, once.
 
-    Regenerating would change the fingerprint every enrolled agent pins, so
-    an existing pair is left alone.
+    Regenerating would change the fingerprint every 0.5 agent pins, so an
+    existing pair is left alone.
     """
     if ensure_certificate():
         return "generated"
     return "present"
+
+
+def _step_transport(reporter: InstallReporter) -> str:
+    """Make what the transport needs: its account, its directories, the
+    local channel's secret and ``transport.json``; the transport makes its
+    own static key at its first start."""
+    applier = TransportApplier(controller=process_controller())
+    made = applier.prepare()
+    try:
+        settings = read_config(PANEL_SETTINGS_FILE)
+    except (FileNotFoundError, ValueError):
+        settings = {}
+    applier.apply(settings)
+    if not TRANSPORT_BINARY_PATH.is_file():
+        reporter.note(f"{TRANSPORT_BINARY_PATH} is not there; no peer reaches the hub")
+    return f"made {', '.join(made)}" if made else "present"
 
 
 def _step_panel_tls(reporter: InstallReporter) -> str:
@@ -1687,8 +1711,9 @@ CORE_STEPS = (
     *(step for steps in edition.hooks("setup_steps") for step in steps),
     ("frpc", "Installing frpc", _step_frpc),
     ("config_files", "Preparing config/ from examples", _step_config_files),
-    ("agent_tls", "Generating the agent channel certificate", _step_agent_tls),
+    ("agent_tls", "Generating the legacy listener certificate", _step_agent_tls),
     ("panel_tls", "Generating the panel's certificates", _step_panel_tls),
+    ("transport", "Preparing the transport", _step_transport),
     ("systemd_units", "Installing systemd units", _step_systemd_units),
     ("interfaces", "Applying the interface roles", _step_interfaces),
     ("render_all", "Rendering and applying configuration", _step_render_all),

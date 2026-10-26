@@ -15,6 +15,9 @@ from neutrino_hub.utils.constants import UTILS_LOG_ROOT, UTILS_STATE_ROOT
 SYSTEM_CORE_UNITS = {
     **dict(edition.hooks("core_units")),
     "router": "neutrino_hub_router.service",
+    # The agent port: the transport holds it as its own account, and no
+    # peer reaches the hub while it is down (privilege.md).
+    "transport": "neutrino_hub_transport.service",
     "dnsmasq": "neutrino_hub_dnsmasq.service",
     "web": "neutrino_hub_web.service",
     # The AI gateway: every machine's tools point at it, so taking it down
@@ -53,6 +56,7 @@ SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 SYSTEM_SUPERVISED_WEB = "web"
 SYSTEM_SUPERVISED_NAMES = (
     "web",
+    "transport",
     *(name for names in edition.hooks("supervised_names") for name in names),
     "netbird",
     "cliproxyapi",
@@ -69,7 +73,7 @@ SYSTEM_CHILD_REQUIREMENTS = {
     for child, parent in requirements.items()
 }
 # The daemons the service runs whether or not a module enabled them.
-SYSTEM_SUPERVISED_CORE = (*edition.hooks("services"), "cliproxyapi")
+SYSTEM_SUPERVISED_CORE = ("transport", *edition.hooks("services"), "cliproxyapi")
 # Which children the service runs and the start lines it was handed.
 SYSTEM_SERVICES_STATE_PATH = UTILS_STATE_ROOT / "services.json"
 SYSTEM_CHILD_LOG_DIR = UTILS_LOG_ROOT

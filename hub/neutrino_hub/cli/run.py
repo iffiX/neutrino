@@ -4,6 +4,7 @@
     sudo nhub run --only-web          # one of them; this is what each unit starts
     sudo nhub run --only-xray         # where the tree carries the proxy
     sudo nhub run --only-cliproxyapi
+    sudo nhub run --only-transport    # the agent port, as its unit does
     sudo nhub run --only-dnsmasq
     sudo nhub run --only-router       # keeps the routing state as configured
     sudo nhub run --only-supplicant --interface wlp3s0
@@ -56,16 +57,22 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
-from neutrino_hub.modules.frp.config import frp_switches
-from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_HOST
 from neutrino_hub.modules.netbird.constants import NETBIRD_HUB_STATE_DIR
 from neutrino_hub.modules.netbird.run_part import (
     child_start_lines as netbird_start_lines,
 )
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_LEGACY_HOST,
+    CHANNEL_LEGACY_TLS_PORT,
     CHANNEL_MESSAGE_BYTES_MAX,
     CHANNEL_PING_INTERVAL_S,
     CHANNEL_PING_TIMEOUT_S,
+    CHANNEL_SETTING_LEGACY,
+)
+from neutrino_hub.modules.transport import ops as transport_ops
+from neutrino_hub.modules.transport.constants import (
+    TRANSPORT_BINARY_PATH,
+    TRANSPORT_SERVICE_NAME,
 )
 from neutrino_hub.modules.router.constants import (
     ROUTER_DEBOUNCE_MAX_S,
@@ -98,7 +105,7 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
-from neutrino_hub.web.agent_port import (
+from neutrino_hub.web.legacy_listener import (
     AgentPortServer,
     ChannelWebSocketProtocol,
     agent_port_context,
@@ -173,6 +180,7 @@ def main() -> int:
         "web",
         *_run_only(),
         "cliproxyapi",
+        "transport",
         "dnsmasq",
         "supplicant",
         "dhcpcd",
@@ -198,6 +206,8 @@ def main() -> int:
         return _run_only()[arguments.only]()
     if arguments.only == "cliproxyapi":
         return _exec_cliproxyapi()
+    if arguments.only == "transport":
+        return _exec_transport()
     if arguments.only == "dnsmasq":
         return _exec_dnsmasq()
     if arguments.only in ("supplicant", "dhcpcd"):
@@ -274,6 +284,7 @@ def child_start_lines() -> dict:
         Name to :class:`ChildStartLine`.
     """
     lines = {
+        TRANSPORT_SERVICE_NAME: transport_ops.start_line(),
         "cliproxyapi": ChildStartLine(
             argv=[
                 str(CLIPROXYAPI_BINARY_PATH),
@@ -321,7 +332,23 @@ def _run_children() -> dict:
     for found in edition.hooks("run_children"):
         children.update(found)
     children["cliproxyapi"] = str(CLIPROXYAPI_BINARY_PATH)
+    children[TRANSPORT_SERVICE_NAME] = str(TRANSPORT_BINARY_PATH)
     return children
+
+
+def _exec_transport() -> int:
+    """Become the transport, on the file the panel rendered and the secret file.
+
+    Returns:
+        Never; the process is replaced. 1 when the transport is not installed.
+    """
+    binary = str(TRANSPORT_BINARY_PATH)
+    if not os.path.isfile(binary):
+        print(f"error: {binary} is not installed", file=sys.stderr)
+        return 1
+    argv = transport_ops.unit_argv()
+    os.execv(binary, argv)
+    return 1
 
 
 def _exec_cliproxyapi() -> int:
@@ -456,14 +483,15 @@ def _first_binary(candidates: tuple, name: str):
 
 
 def _serve_panel(arguments) -> int:
-    """Run the control panel and the agent channel, and nothing else.
+    """Run the control panel, the local channel and the legacy listener.
 
-    Three servers, one loop: the panel over HTTP on its port and over HTTPS
-    on its HTTPS port with its own certificate, whatever ``is_https_enabled``
-    says, and the agent routes on their own TLS port over IPv4 and IPv6, only
-    when the vault's data key can unseal the channel's private key.
-    ``--reload`` serves the panel alone over HTTP, because uvicorn's reloader
-    supervises a single server.
+    Two or three servers, one loop: the panel over HTTP on its port and over
+    HTTPS on its HTTPS port with its own certificate, whatever
+    ``is_https_enabled`` says, and, while ``is_legacy_channel_enabled`` is
+    on and the vault's data key unseals the agent TLS key, the legacy
+    listener on loopback. The local channel to the transport runs on the
+    same loop. ``--reload`` serves the panel alone over HTTP, because
+    uvicorn's reloader supervises a single server.
 
     Args:
         arguments: The parsed command line.
@@ -513,26 +541,61 @@ def _serve_panel(arguments) -> int:
         https_config.load()
         watch_served_context(https_config.ssl)
         servers.append(uvicorn.Server(https_config))
-    agent_key_path = _agent_key()
-    if agent_key_path is not None:
-        servers.append(AgentPortServer(_agent_config(arguments.host, agent_key_path)))
+    _prepare_transport()
+    if _is_legacy_enabled():
+        agent_key_path = _agent_key()
+        if agent_key_path is not None:
+            servers.append(AgentPortServer(_legacy_config(agent_key_path)))
     _finish_first_run()
-    asyncio.run(_serve_together(servers, agent_key_path=agent_key_path))
+    asyncio.run(_serve_together(servers))
     _stop_samplers()
     return 0
 
 
-def _agent_config(host: str, key_path, *, port: "int | None" = None) -> uvicorn.Config:
-    """The agent port's listener, or a frp vendor's loopback listener.
+def _prepare_transport() -> None:
+    """Make what the transport needs before it is started: its account, its
+    directories, the local channel's secret and ``transport.json``; on Linux
+    the unit is written and started here too, so a hub upgraded from 0.5
+    has its transport at the first start."""
+    from neutrino_hub.web.app import shared_runtime
 
-    uvicorn listens over TCP and the port's own protocol runs each TLS
-    handshake under the port's limits before uvicorn's HTTP protocol takes
-    the connection.
+    runtime = shared_runtime()
+    try:
+        runtime.settle_legacy_channel()
+        if is_linux() and not is_dev_root_set() and os.geteuid() == 0:
+            from neutrino_hub.system.units import SystemdUnitInstaller
+
+            SystemdUnitInstaller().install()
+            controller = process_controller()
+            if not controller.status(TRANSPORT_SERVICE_NAME).is_enabled:
+                controller.control(TRANSPORT_SERVICE_NAME, "enable")
+        note = runtime.apply_transport()
+        if note:
+            print(f"  transport: {note}")
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(
+            f"error: the transport is not ready ({command_failure_text(error)})",
+            file=sys.stderr,
+        )
+
+
+def _is_legacy_enabled() -> bool:
+    """Whether the legacy listener is on, from the settings."""
+    try:
+        return read_config(PANEL_SETTINGS_FILE).get(CHANNEL_SETTING_LEGACY) is True
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def _legacy_config(key_path) -> uvicorn.Config:
+    """The legacy listener on loopback, over the agent TLS pair.
+
+    uvicorn listens over TCP and the listener's own protocol runs each TLS
+    handshake under the listener's limits before uvicorn's HTTP protocol
+    takes the connection.
 
     Args:
-        host: The address to bind.
         key_path: The agent certificate's unsealed key.
-        port: The port to bind; None binds the agent port.
 
     Returns:
         The server's configuration.
@@ -540,8 +603,8 @@ def _agent_config(host: str, key_path, *, port: "int | None" = None) -> uvicorn.
     return uvicorn.Config(
         AGENT_APPLICATION_PATH,
         factory=True,
-        host=host,
-        port=_configured_agent_port() if port is None else port,
+        host=CHANNEL_LEGACY_HOST,
+        port=CHANNEL_LEGACY_TLS_PORT,
         log_level="info",
         access_log=False,
         http=agent_port_protocol(
@@ -558,7 +621,7 @@ def _agent_config(host: str, key_path, *, port: "int | None" = None) -> uvicorn.
 
 
 def _agent_port_guard():
-    """The runtime's counts of the agent port, which its routes read too."""
+    """The runtime's counts of the legacy listener, which its routes read too."""
     from neutrino_hub.web.app import shared_runtime
 
     return shared_runtime().channel_port
@@ -651,11 +714,11 @@ def _panel_certificate() -> dict:
 
 
 def _agent_key():
-    """Unseal the agent channel's key into the file uvicorn serves with.
+    """Unseal the agent TLS key into the file the legacy listener serves with.
 
     Returns:
-        The served key's path, or None when the channel cannot start — a
-        locked vault, or a sealed key that will not open. The panel is served
+        The served key's path, or None when the listener cannot start, a
+        locked vault or a sealed key that will not open. The panel is served
         either way; the refusal is one coded line in the log.
     """
     try:
@@ -664,62 +727,41 @@ def _agent_key():
     except (OSError, ValueError) as error:
         code = getattr(error, "code", "agent_tls_key_unavailable")
         print(
-            f'error: {{"code": "{code}"}}: the agent channel cannot start '
+            f'error: {{"code": "{code}"}}: the legacy listener cannot start '
             f"({error}); serving the panel alone",
             file=sys.stderr,
         )
         return None
 
 
-async def _serve_together(servers: list, *, agent_key_path=None) -> None:
+async def _serve_together(servers: list) -> None:
     """Run every server in one loop, and stop them all when one stops.
 
-    With the channel served, the frp vendors' loopback listeners are opened
-    on the same loop while their ways in are on, and closed with the rest.
+    The local channel to the transport runs on the same loop and ends with
+    the servers.
 
     Args:
         servers: Configured uvicorn servers.
-        agent_key_path: The agent certificate's unsealed key; None while the
-            channel is not served.
     """
+    from neutrino_hub.web.app import shared_runtime
+
     quiet_connection_resets(asyncio.get_running_loop())
     _SERVING[:] = servers
     if _STOP_ASKED.is_set():
         for server in servers:
             server.should_exit = True
     tasks = [asyncio.create_task(server.serve()) for server in servers]
-    listeners = None
-    if agent_key_path is not None and not _STOP_ASKED.is_set():
-        listeners = _open_frp_listeners(agent_key_path)
+    channel = shared_runtime().channel
+    channel_task = asyncio.create_task(channel.run())
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for server in servers:
             server.should_exit = True
-        if listeners is not None:
-            await listeners.close()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        channel.stop()
+        channel_task.cancel()
+        await asyncio.gather(*tasks, channel_task, return_exceptions=True)
         _SERVING.clear()
-
-
-def _open_frp_listeners(key_path):
-    """Serve the frp listeners on the running loop, those that are on at once.
-
-    Args:
-        key_path: The agent certificate's unsealed key.
-
-    Returns:
-        The runtime's :class:`FrpLoopbackListeners`.
-    """
-    from neutrino_hub.web.app import shared_runtime
-
-    listeners = shared_runtime().frp_listeners
-    listeners.attach(
-        asyncio.get_running_loop(),
-        lambda port: _agent_config(FRP_LOOPBACK_HOST, key_path, port=port),
-    )
-    listeners.follow(frp_switches())
-    return listeners
 
 
 def _supervise(arguments) -> int:

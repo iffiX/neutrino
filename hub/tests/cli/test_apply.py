@@ -23,6 +23,7 @@ def test_the_components_are_the_hubs_own():
         "dnsmasq",
         "cliproxyapi",
         "overlay",
+        "transport",
     )
 
 

@@ -18,7 +18,7 @@ import pytest
 from neutrino_hub import edition
 from neutrino_hub.cli import run
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
-from neutrino_hub.web.agent_port import AgentPortProtocol, AgentPortServer
+from neutrino_hub.web.legacy_listener import AgentPortProtocol, AgentPortServer
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
@@ -66,7 +66,8 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_agent_key", lambda: "/state/agent_key.pem")
     monkeypatch.setattr(run, "_configured_port", lambda: 80)
     monkeypatch.setattr(run, "_configured_https_port", lambda: 443)
-    monkeypatch.setattr(run, "_configured_agent_port", lambda: 8443)
+    monkeypatch.setattr(run, "_prepare_transport", lambda: None)
+    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: False)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
     monkeypatch.setattr(run, "_agent_port_guard", lambda: "guard")
     monkeypatch.setattr(
@@ -82,7 +83,7 @@ def arguments(port=None) -> argparse.Namespace:
     return argparse.Namespace(host="0.0.0.0", port=port, reload=False)
 
 
-def test_three_servers_each_on_its_own_port(served, monkeypatch):
+def test_two_panel_servers_each_on_its_own_port(served, monkeypatch):
     monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
 
     assert run._serve_panel(arguments()) == 0
@@ -91,9 +92,22 @@ def test_three_servers_each_on_its_own_port(served, monkeypatch):
     assert [config.application for config in configs] == [
         run.APPLICATION_PATH,
         run.APPLICATION_PATH,
-        run.AGENT_APPLICATION_PATH,
     ]
-    assert [config.keywords["port"] for config in configs] == [80, 443, 8443]
+    assert [config.keywords["port"] for config in configs] == [80, 443]
+
+
+def test_the_legacy_listener_is_served_on_loopback_while_its_switch_is_on(
+    served, monkeypatch
+):
+    monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
+    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
+
+    run._serve_panel(arguments())
+
+    configs = [server.config for server in served["servers"]]
+    assert configs[2].application == run.AGENT_APPLICATION_PATH
+    assert configs[2].keywords["host"] == "127.0.0.1"
+    assert configs[2].keywords["port"] == 18445
 
 
 def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
@@ -104,8 +118,9 @@ def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
     assert served["steps"] == ["served", "samplers stopped"]
 
 
-def test_only_the_https_and_agent_ports_speak_tls(served, monkeypatch):
+def test_only_the_https_port_and_the_legacy_listener_speak_tls(served, monkeypatch):
     monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
+    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
 
     run._serve_panel(arguments())
 
@@ -131,14 +146,25 @@ def test_the_https_context_is_the_one_a_renewal_reloads(served, monkeypatch):
     assert served["watched"] == ["context for port 443"]
 
 
-def test_no_certificate_serves_http_and_the_agent_port(served, monkeypatch):
+def test_no_certificate_serves_http_alone(served, monkeypatch):
     monkeypatch.setattr(run, "_panel_certificate", dict)
 
     run._serve_panel(arguments())
 
     ports = [server.config.keywords["port"] for server in served["servers"]]
-    assert ports == [80, 8443]
+    assert ports == [80]
     assert served["watched"] == []
+
+
+def test_a_legacy_key_that_will_not_open_serves_the_panel_alone(served, monkeypatch):
+    monkeypatch.setattr(run, "_panel_certificate", dict)
+    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
+    monkeypatch.setattr(run, "_agent_key", lambda: None)
+
+    run._serve_panel(arguments())
+
+    ports = [server.config.keywords["port"] for server in served["servers"]]
+    assert ports == [80]
 
 
 def test_an_https_port_that_is_the_http_port_is_not_served(served, monkeypatch, capsys):
@@ -148,7 +174,7 @@ def test_an_https_port_that_is_the_http_port_is_not_served(served, monkeypatch, 
     run._serve_panel(arguments())
 
     ports = [server.config.keywords["port"] for server in served["servers"]]
-    assert ports == [80, 8443]
+    assert ports == [80]
     assert '"code": "port_already_in_use"' in capsys.readouterr().err
 
 
@@ -158,7 +184,7 @@ def test_the_command_line_port_moves_the_http_port_alone(served, monkeypatch):
     run._serve_panel(arguments(port=8080))
 
     ports = [server.config.keywords["port"] for server in served["servers"]]
-    assert ports == [8080, 443, 8443]
+    assert ports == [8080, 443]
 
 
 def settings_file(tmp_path, monkeypatch, content: dict):
@@ -308,13 +334,14 @@ def test_the_service_runs_netbird_and_the_proxy_core_where_the_tree_carries_it()
     assert sorted(run.child_start_lines()) == [
         "cliproxyapi",
         "netbird",
+        "transport",
         *(["xray"] if edition.has_feature("proxy") else []),
     ]
 
 
 @pytest.mark.feature("proxy")
 def test_a_plain_run_on_linux_starts_the_proxy_core_first():
-    assert list(run._run_children()) == ["xray", "cliproxyapi"]
+    assert list(run._run_children()) == ["xray", "cliproxyapi", "transport"]
 
 
 def test_the_only_forms_are_refused_outside_linux(monkeypatch, capsys):
@@ -336,7 +363,7 @@ def test_linux_without_only_supervises_as_it_always_did(monkeypatch):
 
     assert run._supervise(argparse.Namespace()) == 0
     assert started == list(run._run_children())
-    assert started[-1] == "cliproxyapi"
+    assert started[-1] == "transport"
 
 
 @pytest.fixture
@@ -426,6 +453,21 @@ def test_a_stop_asked_before_the_servers_start_still_stops_them(monkeypatch):
             while not self.should_exit:
                 await asyncio.sleep(0.01)
 
+    class Channel:
+        def __init__(self):
+            self.stops = 0
+
+        async def run(self):
+            while True:
+                await asyncio.sleep(0.01)
+
+        def stop(self):
+            self.stops += 1
+
+    channel = Channel()
+    monkeypatch.setattr(
+        "neutrino_hub.web.app.shared_runtime", lambda: SimpleNamespace(channel=channel)
+    )
     stop = threading.Event()
     monkeypatch.setattr(run, "_STOP_ASKED", stop)
     run.stop_serving()
@@ -434,6 +476,7 @@ def test_a_stop_asked_before_the_servers_start_still_stops_them(monkeypatch):
     asyncio.run(asyncio.wait_for(run._serve_together(servers), timeout=5))
 
     assert all(server.should_exit for server in servers)
+    assert channel.stops == 1
 
 
 def test_a_development_root_on_linux_not_set_up_exits_and_says_so(monkeypatch, capsys):

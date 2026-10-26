@@ -278,7 +278,7 @@ def test_outside_linux_the_start_line_is_held_by_the_service(box, monkeypatch):
 class Checks:
     """The self-check, answering what a test set."""
 
-    def __init__(self, answer: str = OWN_FINGERPRINT):
+    def __init__(self, answer: bool = True):
         self.answer = answer
         self.asked: list = []
 
@@ -290,7 +290,6 @@ class Checks:
 def monitor(box, checks, clock) -> OverlayRelayMonitor:
     return OverlayRelayMonitor(
         controller=box["controller"],
-        fingerprint_of=lambda: OWN_FINGERPRINT,
         check=checks,
         clock=clock,
     )
@@ -356,24 +355,10 @@ def test_the_hubs_own_certificate_at_the_public_address_is_connected(box):
     assert view["checked_at"] != ""
 
 
-def test_a_foreign_certificate_is_port_closed(box):
-    running(box)
-    clock = FakeClock()
-    watched = monitor(box, Checks("b" * 64), clock)
-
-    watched.tick()
-    clock.now += 5
-    watched.tick()
-
-    view = watched.view()
-    assert view["state"] == "port_closed"
-    assert view["last_error"] == "another certificate at 203.0.113.5:18443"
-
-
 def test_no_answer_at_the_public_address_is_port_closed(box):
     running(box)
     clock = FakeClock()
-    watched = monitor(box, Checks(""), clock)
+    watched = monitor(box, Checks(False), clock)
 
     watched.tick()
     clock.now += 5
@@ -467,36 +452,25 @@ def test_no_recorded_host_key_reads_empty(box):
     assert host_key_fingerprint() == ""
 
 
-def test_the_check_reads_the_certificate_at_the_address(tmp_path):
-    certificate, key, fingerprint = self_signed_pair(tmp_path)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(certificate, key)
-    listener = socket.create_server(("127.0.0.1", 0))
-    port = listener.getsockname()[1]
+def test_the_check_is_a_probe_under_the_hubs_key(monkeypatch):
+    asked = []
 
-    def serve_once():
-        connection, _ = listener.accept()
-        try:
-            with context.wrap_socket(connection, server_side=True):
-                pass
-        except (OSError, ssl.SSLError):
-            pass
+    def probe(host, port, *, timeout_s):
+        asked.append((host, port, timeout_s))
+        return True
 
-    server = threading.Thread(target=serve_once, daemon=True)
-    server.start()
-    try:
-        assert check_public_address("127.0.0.1", port, timeout_s=5) == fingerprint
-    finally:
-        server.join(timeout=5)
-        listener.close()
+    monkeypatch.setattr(relay_ops, "transport_probe", probe)
+
+    assert check_public_address("203.0.113.5", 18443, timeout_s=5) is True
+    assert asked == [("203.0.113.5", 18443, 5)]
 
 
-def test_a_closed_address_answers_with_no_certificate():
-    listener = socket.create_server(("127.0.0.1", 0))
-    port = listener.getsockname()[1]
-    listener.close()
+def test_an_address_the_probe_does_not_reach_reads_false(monkeypatch):
+    monkeypatch.setattr(
+        relay_ops, "transport_probe", lambda host, port, *, timeout_s: False
+    )
 
-    assert check_public_address("127.0.0.1", port, timeout_s=2) == ""
+    assert check_public_address("203.0.113.5", 18443, timeout_s=2) is False
 
 
 def test_the_known_hosts_file_is_root_only_before_ssh_first_runs(box):
@@ -643,9 +617,7 @@ def test_a_login_gone_from_the_vault_is_not_configured(box):
     assert applier(box).apply(relay) == ""
     assert box["controller"].start_line is None
     assert (
-        OverlayRelayMonitor(
-            controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
-        ).view()["state"]
+        OverlayRelayMonitor(controller=box["controller"]).view()["state"]
         == "not_configured"
     )
 
@@ -662,9 +634,7 @@ def test_a_locked_vault_with_no_password_file_is_vault_locked(box, monkeypatch):
     assert applier(box).apply(relay) == ""
     assert not (box["state"] / "relay" / "password").exists()
     assert (
-        OverlayRelayMonitor(
-            controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
-        ).view()["state"]
+        OverlayRelayMonitor(controller=box["controller"]).view()["state"]
         == "vault_locked"
     )
 
@@ -677,9 +647,7 @@ def test_a_wrong_password_ends_in_auth_failed(box):
         "relay@203.0.113.5: Permission denied (publickey,password).",
     ]
 
-    view = OverlayRelayMonitor(
-        controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
-    ).view()
+    view = OverlayRelayMonitor(controller=box["controller"]).view()
 
     assert view["state"] == "auth_failed"
     assert "Permission denied" in view["last_error"]
