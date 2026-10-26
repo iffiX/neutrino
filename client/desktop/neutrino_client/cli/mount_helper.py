@@ -6,8 +6,9 @@
 polkit hands the helper the caller's uid in ``PKEXEC_UID``; everything the
 helper trusts derives from that. The location must be an empty directory the
 caller owns under their own home, the credentials file a 0600 regular file
-of theirs under that home, and the mount lands with their uid and gid. An
-unmount touches only a CIFS mount under the caller's home. Nothing on the
+of theirs under that home, deleted once the mount answered, and the mount
+lands with their uid and gid. An unmount touches only a CIFS mount under the
+caller's home. Nothing on the
 argument vector can widen any of that.
 
 Exit statuses are the typed codes in ``constants.CLIENT_MOUNT_HELPER_EXIT_CODES``.
@@ -199,7 +200,10 @@ def _mount(caller, arguments, run_command) -> int:
         options += f",port={port}"
     command = ["mount", "-t", CIFS_TYPE, share, location, "-o", options]
     started_at = datetime.datetime.now()
-    status, text = _run(command, run_command, failure=EXIT_MOUNT_FAILED)
+    try:
+        status, text = _run(command, run_command, failure=EXIT_MOUNT_FAILED)
+    finally:
+        _delete(credentials)
     if status == EXIT_MOUNT_FAILED:
         return _judge_mount_failure(text, started_at, run_command)
     return status
@@ -326,6 +330,14 @@ def _judge_credentials(caller, path: str) -> "str | None":
     if facts.st_uid != caller.pw_uid or facts.st_mode & 0o777 != 0o600:
         return None
     return real
+
+
+def _delete(path: str) -> None:
+    """Delete the one mount's credentials file; one already gone is nothing."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _run(command: list, run_command, *, failure: int) -> tuple:
