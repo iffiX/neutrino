@@ -158,19 +158,21 @@ is in [connection.md](connection.md), "Before a peer is admitted".
 ### The hub's static key
 
 The hub's static key is the Curve25519 key pair a peer knows the hub by. The
-transport generates it at its first start and keeps it: the private half is
-`static_key` under the transport's state directory, mode 0600, owned by the
-transport's own account ([files.md](files.md)), and the public half is
-`public_key` beside it, 64 lowercase hex characters, readable by root. The
-hub's Python reads the public half to compose a link and never reads the
-private half.
+transport generates it at its first start and keeps it under `config/`: the
+private half is `config/transport/static_key`, mode 0600, in a directory of
+mode 0700, both owned by the transport's own account, which is root or
+SYSTEM on macOS and Windows ([files.md](files.md)), and the public half is
+`public_key` beside it, 64 lowercase hex characters, which root reads. The
+transport is the one program that uses the private half. The hub's Python
+reads the public half to compose a link, and opens the private half only to
+seal it into a backup and to put it back at a restore.
 
 | Rule | Reason |
 | --- | --- |
 | The public half reaches a peer only inside a link a signed-in person generated, as the link's `key`, and every binding keeps it as `hub_key`. | The key has no other channel, so an address that answers without the private half is an impersonation. |
 | A peer's handshake proves the hub holds the private half before any frame of the peer's is sent ("The session"). A handshake that fails on a link's address ends the whole enrolment; on a bound peer's address the round goes on with the other addresses. | A wrong key on a link's own address is an attack, and another network's hub on a stored address is only the wrong hub. |
 | The transport keeps an existing pair. `nhub reset all` deletes it and sends `keys_reload` ("The local channel"), which makes a new pair. | Every binding pins the public half. |
-| The pair is state under the transport's directory and not in `config/`. A backup of `config/` restored on another box gives that box a new pair, and every agent and client joins it again with a new link. | Only the transport holds the private half; the hub's Python, which writes `config/`, never reads it. |
+| The pair is part of `config/`, so a backup of `config/` restored on another box keeps the hub's identity, and every agent and client goes on with its binding there. The Settings tab's backup carries the private half sealed under the vault's data key, as `config/transport/static_key.sealed` in the archive, and is refused `vault_locked` while the vault is locked; a restore unseals it into `config/transport/static_key`, owned by the transport's account, and sends `keys_reload`. | A hub moved to new hardware keeps every agent and client, and the archive still holds no secret in the clear ([../misc/config.md](../misc/config.md), "Backup and migrate"). |
 
 The TLS pair under `config/web/agent_tls/`, `certificate.pem` and
 `key.sealed`, serves the legacy listener alone ("An agent of 0.5"), which

@@ -23,9 +23,9 @@ hub writes about itself goes there:
 
 ```text
 hub_dev_root/
-    etc/neutrino/hub/       the configuration
-    var/lib/neutrino/       generated, geodata, the AI gateway's state, and
-                            the transport's static key
+    etc/neutrino/hub/       the configuration, the transport's static key
+                            among it
+    var/lib/neutrino/       generated, geodata and the AI gateway's state
     var/log/neutrino/
     run/neutrino/           the login lockout and the transport's socket
     opt/neutrino/bin/       neutrino_transport, xray, frpc and the AI gateway

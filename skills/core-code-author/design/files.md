@@ -80,7 +80,7 @@ to dpkg, one to the hub.
 | upgrade / reinstall | replaced whole | untouched, byte for byte | kept; the next render rewrites what it derives |
 | `apt remove` | deleted | **kept** | kept |
 | `apt purge` | deleted | **deleted** | deleted |
-| `nhub reset all` | kept (still installed) | replaced from the examples; the vault key, the agent TLS identity and the panel's certificate authority go with it | cleared of everything the hub wrote |
+| `nhub reset all` | kept (still installed) | replaced from the examples; the vault key, the agent TLS identity, the panel's certificate authority and the transport's static key go with it | cleared of everything the hub wrote |
 | update from the panel or `nhub update` | replaced whole by the package manager, from a file under `/var/lib/neutrino/hub/hub_update/` | untouched, byte for byte | kept; the record of the update lands in `hub_update/state.json` |
 
 `remove` keeps the decisions because that is dpkg's own convention: a package
@@ -149,7 +149,9 @@ Why the hub carries an interpreter at all, and what that costs, is in
 
 ```
 /etc/neutrino/
-    hub/        the hub's configuration, one directory per module
+    hub/        the hub's configuration, one directory per module, and
+                transport/, the hub's static key, mode 0700, owned by the
+                transport's account
     agent/      the agent's binding to its hub and its credentials
     client/     nothing today; a user's decisions are in the user's tree
 ```
@@ -216,11 +218,9 @@ overrides both, which is what makes a second instance testable. Details of the f
                             at the one being installed, the install script,
                             its log, and state.json
         transport/          the transport's own, mode 0700, owned by its
-                            account on Linux: static_key, the hub's static
-                            private key, mode 0600; public_key, its public
-                            half; control_secret, the local channel's
-                            secret, mode 0640 with root as owner and the
-                            transport's group
+                            account on Linux: control_secret, the local
+                            channel's secret, mode 0640 with root as owner
+                            and the transport's group
     agent/
         configured/         the desired state the hub sent, root only
         failures/           each module's last failed step, its state and

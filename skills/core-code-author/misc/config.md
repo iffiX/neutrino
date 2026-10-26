@@ -39,6 +39,7 @@ password and is turned on for one client at a time.
 | `config/web/settings.json` | `settings.example.json` | yes — password hash |
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/web/panel_tls/` | none | yes: the panel's certificate authority, `authority.pem` in the clear and `authority_key.sealed` under the vault's data key, generated at setup |
+| `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the transport generates both, and the backup carries the private half sealed ([../design/protocol.md](../design/protocol.md), "The hub's static key") |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |
@@ -59,7 +60,7 @@ password and is turned on for one client at a time.
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
-`.gitignore` ignores the real names and `config/devices/packages/` wholesale,
+`.gitignore` ignores the real names, `config/transport/` and `config/devices/packages/` wholesale,
 while keeping every `*.example.json` tracked.
 
 The EasyTier engine's start line is a systemd drop-in,
@@ -144,12 +145,17 @@ and your edit will be lost.
 
 - The Settings tab exports one plain `.tar.gz`: a manifest naming what it is,
   a `SHA256SUMS` digest list, then the `config/` tree. Safe to store as it
-  stands — the vault's data key travels only wrapped under the master
-  passphrase.
+  stands: the vault's data key travels only wrapped under the master
+  passphrase, and the hub's static key only as
+  `config/transport/static_key.sealed`, sealed under that data key; the
+  export is refused `vault_locked` while the vault is locked.
 - Restore uploads it on the Settings tab and always asks for the vault
   passphrase: everything is verified in memory — manifest, every digest, the
   wrapped key opening — before a byte lands, and the unwrapped data key is
-  written to `/var/lib/neutrino/hub/vault.key` last.
+  written to `/var/lib/neutrino/hub/vault.key` last. The static key is
+  unsealed into `config/transport/static_key`, owned by the transport's
+  account, and the transport reads it again, so the restored hub answers
+  every binding the backup holds.
 
 ## Field reference
 
