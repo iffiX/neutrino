@@ -8,6 +8,8 @@
     "share_interrupted": "应用转入后台时中断了。",
     "share_name_taken": "这个文件夹里已经有这个名字。",
     "share_photo_unavailable": "“照片”没有交出所选的其中一项。",
+    "transport_failed": "应用的传输层没有启动：{detail}",
+    "transport_missing": "这个版本没有带传输层，请安装正式发布的应用。",
     "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {

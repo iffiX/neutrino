@@ -11,7 +11,8 @@ final class WordCatalogTests: XCTestCase {
         "hub_unreachable", "hub_refused", "client_internal", "enroll_no_token", "port_taken", "forward_failed",
         "web_token_missing", "unknown_request", "disconnect_first", "share_login_rejected", "share_access_denied",
         "share_not_found", "share_unreachable", "share_name_taken", "share_interrupted", "share_photo_unavailable",
-        "rdp_core_missing", "rdp_login_failed", "rdp_closed", "rdp_launch_failed",
+        "rdp_core_missing", "rdp_login_failed", "rdp_closed", "rdp_launch_failed", "transport_missing",
+        "transport_failed",
     ]
 
     func testEveryCodeIsWordedInBothLanguages() {

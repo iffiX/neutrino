@@ -35,8 +35,20 @@ struct ChannelServiceEntry: Equatable, Identifiable {
     /// That machine's id, empty when no managed machine provides it.
     let deviceId: String
 
+    /// The app a `web`, `port` or `ssh` entry, or a declared app's `file` entry, belongs to.
+    var appId = ""
+
+    /// The entry's name inside its app.
+    var name = ""
+
+    /// The hub's local port for a `web`, `port` or `ssh` entry, the same on every client; 0 for none.
+    var localPort = 0
+
     /// Whether the entry is unhealthy: only an explicit `false` is.
     var isUnhealthy: Bool { isHealthy == false }
+
+    /// The protocol of a `port` entry, `tcp` or `udp`; `tcp` for every other entry.
+    var `protocol`: String { type == "port" && payload.text("protocol") == "udp" ? "udp" : "tcp" }
 
     /// Read one entry tolerantly.
     ///
@@ -58,6 +70,9 @@ struct ChannelServiceEntry: Equatable, Identifiable {
             descriptionCode: object.text("description_code"),
             descriptionParams: object.object("description_params"),
             deviceName: object.text("device_name"),
-            deviceId: object.text("device_id"))
+            deviceId: object.text("device_id"),
+            appId: object.text("app_id"),
+            name: object.text("name"),
+            localPort: object.number("local_port") ?? 0)
     }
 }

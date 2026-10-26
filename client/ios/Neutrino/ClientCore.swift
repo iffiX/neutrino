@@ -16,7 +16,7 @@ final class ClientCore: ObservableObject {
     /// The join a person started from the Join page.
     @Published private(set) var joining = HubJoin()
 
-    /// What each forwarded entry's row shows, by `<binding>/<entry>`.
+    /// What each app's row, and each hub's panel, shows of its forwards, by `<binding>/<app>`.
     @Published private(set) var forwardRows: [String: ForwardRow] = [:]
 
     /// Every terminal tab, in the order made.
@@ -27,6 +27,9 @@ final class ClientCore: ObservableObject {
 
     /// The machine a new terminal opens on.
     @Published private(set) var pickedMachine: TerminalMachine?
+
+    /// The account a new terminal runs as on the picked machine, empty for its first enabled one.
+    @Published private(set) var pickedAccount = ""
 
     /// The tabs whose Clear is still dropping what arrives.
     @Published private(set) var clearingTabs: Set<String> = []
@@ -68,8 +71,9 @@ final class ClientCore: ObservableObject {
     let shares: ShareSessions
 
     private let store: BindingStore
+    private let transport: ClientTransport
     private let connections: HubConnections
-    private let forwards: WebForwards
+    private let forwards: AppForwards
     private let desktops: RemoteDesktopSessions
     private let desktopChoices: RemoteDesktopChoiceStore
     private let settingsStore: ClientSettingsStore
@@ -79,7 +83,7 @@ final class ClientCore: ObservableObject {
     ///
     /// - Parameters:
     ///   - secrets: Where the bindings are kept.
-    ///   - transport: How hubs are reached.
+    ///   - transport: The transport's local channel, not yet started.
     ///   - clock: The time and the timers.
     ///   - defaults: Where the settings and the local port table are kept.
     ///   - device: The device's name, the system's version, the architecture and the app's version.
@@ -91,7 +95,7 @@ final class ClientCore: ObservableObject {
     ///   - remoteDesktop: What the remote desktop viewer draws and sends input with.
     ///   - bundle: Where the word catalogs are.
     init(
-        secrets: SecretStore, transport: HubTransport, clock: ClientClock, defaults: UserDefaults,
+        secrets: SecretStore, transport: ClientTransport, clock: ClientClock, defaults: UserDefaults,
         device: ClientDevice, edition: String, hasNetwork: @escaping () -> Bool,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
         localNetworks: @escaping () -> [ChannelLocalNetwork], shareClient: @escaping () -> ShareClient,
@@ -116,20 +120,25 @@ final class ClientCore: ObservableObject {
             store: store, transport: transport, machine: machine, clock: clock, resolveHubName: resolveHubName,
             localNetworks: localNetworks, hasNetwork: hasNetwork, onLeaving: { leaving?($0) })
         self.connections = connections
-        let openConnect: (String, [String: JSONValue]) -> Result<ChannelStream, ClientError> = { bindingId, args in
-            connections.session(bindingId)?.openStream(kind: Channel.kindConnect, args: args, hasBytes: true)
+        self.transport = transport
+        let openConnect: (String, [String: JSONValue]) -> Result<TransportStream, ClientError> = { bindingId, args in
+            var open = args
+            open["kind"] = .string(Channel.kindConnect)
+            return connections.session(bindingId)?.openStream(open, carriage: .raw)
                 ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"]))
         }
-        forwards = WebForwards(
-            table: LocalPortTable(defaults: defaults),
-            openConnect: openConnect,
-            material: { bindingId, args, completion in
+        let material:
+            (String, [String: JSONValue], @escaping (Result<[String: JSONValue], ClientError>) -> Void) -> Void = {
+                bindingId, args, completion in
                 guard let session = connections.session(bindingId) else {
                     completion(.failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"])))
                     return
                 }
                 session.openService(args: args, completion: completion)
-            })
+            }
+        forwards = AppForwards(
+            table: LocalPortTable(defaults: defaults), forwarder: TransportLocalForwarder(transport: transport),
+            clock: clock, material: material)
         let desktopChoices = RemoteDesktopChoiceStore(defaults: defaults)
         self.desktopChoices = desktopChoices
         desktops = RemoteDesktopSessions(
@@ -141,13 +150,9 @@ final class ClientCore: ObservableObject {
                 session.openService(args: ["id": .string(entryId)], completion: completion)
             },
             openConnect: openConnect, choiceOf: { desktopChoices.choice(of: $0) })
-        tabs = TerminalTabs(
-            open: { bindingId, kind, args, hasBytes in
-                connections.session(bindingId)?.openStream(kind: kind, args: args, hasBytes: hasBytes)
-                    ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"]))
-            },
-            clock: clock)
-        shares = ShareSessions(secrets: secrets, makeClient: shareClient, openConnect: openConnect)
+        tabs = TerminalTabs(hubOf: { connections.session($0) }, clock: clock)
+        shares = ShareSessions(
+            secrets: secrets, makeClient: shareClient, openConnect: openConnect, material: material)
         leaving = { [weak self] bindingId in self?.leaving(bindingId) }
         connections.onChange = { [weak self] in self?.hubsChanged() }
         forwards.onChange = { [weak self] in self?.forwardsChanged() }
@@ -155,6 +160,8 @@ final class ClientCore: ObservableObject {
         tabs.onChange = { [weak self] in self?.tabsChanged() }
         shares.onChange = { [weak self] in self?.sharesChanged() }
         shareLogins = shares.heldLogins
+        transport.onForwardEnd = { [weak self] ended in self?.forwards.ended(ended) }
+        transport.start()
         connections.start()
     }
 
@@ -195,48 +202,56 @@ final class ClientCore: ObservableObject {
     /// Whether any hub refreshes now, which disables the refresh button.
     var isRefreshing: Bool { hubs.contains { $0.jobs.isRefreshing } }
 
-    /// Press Open on a web entry: its forward, its token when it needs one, then the in-app browser.
+    /// Press Use on an app: its forwards, the token where its page needs one, then the in-app browser.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - app: The app.
+    func useApp(bindingId: String, app: ChannelApp) {
+        guard let hub = hubs.first(where: { $0.binding.id == bindingId }) else { return }
+        forwards.use(hub: hub, app: app) { [weak self] url in
+            self?.browser = BrowserTarget(bindingId: bindingId, url: url, title: app.title)
+        }
+    }
+
+    /// Press Stop on an app in use: every forward of the app ends.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - appId: The app.
+    func stopApp(bindingId: String, appId: String) {
+        forwards.stop(bindingId: bindingId, appId: appId)
+    }
+
+    /// The local port an app's entry listens on: the person's number, else the hub's.
     ///
     /// - Parameters:
     ///   - bindingId: The hub.
     ///   - entry: The entry.
-    func openWeb(bindingId: String, entry: ChannelServiceEntry) {
-        forwards.open(
-            bindingId: bindingId, entryId: entry.id, url: entry.payload.text("url"),
-            isTokenRequired: entry.payload.flag("is_token_required")
-        ) { [weak self] url in
-            self?.browser = BrowserTarget(bindingId: bindingId, url: url, title: entry.title)
-        }
+    /// - Returns: The number.
+    func localPort(bindingId: String, entry: ChannelServiceEntry) -> Int {
+        forwards.port(bindingId: bindingId, entry: entry)
     }
 
-    /// Press Disconnect on a forwarded web entry.
+    /// The numbers the person set for an app's entries, as its Configure dialog opens on them.
     ///
     /// - Parameters:
     ///   - bindingId: The hub.
-    ///   - entryId: The entry.
-    func disconnectWeb(bindingId: String, entryId: String) {
-        forwards.disconnect(bindingId: bindingId, entryId: entryId)
+    ///   - entries: The app's entries.
+    /// - Returns: Each entry's number by entry id, nil where it takes the hub's.
+    func appNumbers(bindingId: String, entries: [ChannelServiceEntry]) -> [String: Int?] {
+        forwards.numbers(bindingId: bindingId, entries: entries)
     }
 
-    /// One web entry's local port, as its Configure dialog opens on it.
+    /// Save an app's Configure dialog.
     ///
     /// - Parameters:
     ///   - bindingId: The hub.
-    ///   - entryId: The entry.
-    /// - Returns: The choice.
-    func localPort(bindingId: String, entryId: String) -> LocalPortChoice {
-        forwards.choice(bindingId: bindingId, entryId: entryId)
-    }
-
-    /// Save a web entry's Configure dialog.
-    ///
-    /// - Parameters:
-    ///   - bindingId: The hub.
-    ///   - entryId: The entry.
-    ///   - choice: Automatic, or fixed with its number.
+    ///   - appId: The app.
+    ///   - numbers: Each entry's number by entry id, nil to go back to the hub's.
     /// - Throws: `ClientError.refused` with the code the dialog words as `ui.reason.<code>`.
-    func configureLocalPort(bindingId: String, entryId: String, choice: LocalPortChoice) throws {
-        try forwards.configure(bindingId: bindingId, entryId: entryId, choice: choice)
+    func configureApp(bindingId: String, appId: String, numbers: [String: Int?]) throws {
+        try forwards.configure(hubs: hubs, bindingId: bindingId, appId: appId, numbers: numbers)
     }
 
     /// Press Panel on a hub's row: a sign-in token, the panel's forward, then the in-app browser.
@@ -328,6 +343,13 @@ final class ClientCore: ObservableObject {
         tabs.pick(machine)
     }
 
+    /// Pick the account a new terminal runs as on the picked machine.
+    ///
+    /// - Parameter account: One of the machine's enabled accounts.
+    func pickAccount(_ account: String) {
+        tabs.pickAccount(account)
+    }
+
     /// Press New terminal on the picked machine.
     func newTerminal() {
         guard let picked = pickedMachine,
@@ -335,7 +357,8 @@ final class ClientCore: ObservableObject {
                 $0.deviceId == picked.deviceId
             })
         else { return }
-        tabs.create(bindingId: picked.bindingId, deviceId: picked.deviceId, name: machine.name)
+        let account = machine.accounts.contains(pickedAccount) ? pickedAccount : machine.accounts.first ?? ""
+        tabs.create(bindingId: picked.bindingId, deviceId: picked.deviceId, name: machine.name, account: account)
     }
 
     private func leaving(_ bindingId: String) {
@@ -379,12 +402,13 @@ final class ClientCore: ObservableObject {
         terminalTabs = tabs.tabs
         activeTab = tabs.active
         pickedMachine = tabs.picked
+        pickedAccount = tabs.pickedAccount
         clearingTabs = tabs.clearing
     }
 
     private func merged(_ views: [HubView]) -> [HubView] {
         views.map { view in
-            guard let row = forwards.rows[WebForwards.panelKey(view.binding.id)] else { return view }
+            guard let row = forwards.rows[AppForwards.panelKey(view.binding.id)] else { return view }
             var next = view
             next.jobs.isOpeningPanel = row.job == .opening
             if next.jobError == nil { next.jobError = row.error }

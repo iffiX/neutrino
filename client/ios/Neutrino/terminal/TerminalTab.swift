@@ -14,6 +14,9 @@ struct TerminalTab: Equatable, Identifiable {
     /// The machine's name.
     let name: String
 
+    /// The account the shell runs as, empty for the machine's first enabled one.
+    var account = ""
+
     /// What the shell last set as its title.
     var title = ""
 

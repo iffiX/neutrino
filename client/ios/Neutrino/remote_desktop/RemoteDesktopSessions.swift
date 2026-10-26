@@ -8,7 +8,7 @@ import Foundation
 /// the main queue.
 final class RemoteDesktopSessions {
     private let material: (String, String, @escaping (Result<[String: JSONValue], ClientError>) -> Void) -> Void
-    private let openConnect: (String, [String: JSONValue]) -> Result<ChannelStream, ClientError>
+    private let openConnect: (String, [String: JSONValue]) -> Result<TransportStream, ClientError>
     private let choiceOf: (String) -> RemoteDesktopChoice
     private var relay: ForwardRelay?
     private var channelless: Set<String> = []
@@ -45,7 +45,7 @@ final class RemoteDesktopSessions {
     ///   - choiceOf: The codec and quality kept for an entry, by entry key.
     init(
         material: @escaping (String, String, @escaping (Result<[String: JSONValue], ClientError>) -> Void) -> Void,
-        openConnect: @escaping (String, [String: JSONValue]) -> Result<ChannelStream, ClientError>,
+        openConnect: @escaping (String, [String: JSONValue]) -> Result<TransportStream, ClientError>,
         choiceOf: @escaping (String) -> RemoteDesktopChoice
     ) {
         self.material = material

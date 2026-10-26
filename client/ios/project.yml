@@ -3,7 +3,9 @@
 # build settings MARKETING_VERSION, CURRENT_PROJECT_VERSION and
 # NEUTRINO_EDITION, which packaging/build/build_client_ios.py passes. The app
 # target also reads Neutrino.xcconfig, which links the RustDesk core into a
-# device build when cores/rustdesk/ holds it.
+# device build when cores/rustdesk/ holds it. Every target finds the
+# transport's Mobile.xcframework once packaging/build/build_core_transport.py
+# has put it into cores/transport/.
 name: Neutrino
 options:
   deploymentTarget:
@@ -22,6 +24,10 @@ settings:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: minimal
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": >-
+      $(inherited) "$(SRCROOT)/cores/transport/Mobile.xcframework/ios-arm64"
+    "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": >-
+      $(inherited) "$(SRCROOT)/cores/transport/Mobile.xcframework/ios-arm64_x86_64-simulator"
 targets:
   Neutrino:
     type: application
@@ -38,6 +44,7 @@ targets:
       - package: SwiftTerm
       - package: AMSMB2
         embed: true
+      - sdk: libresolv.tbd
     configFiles:
       Debug: Neutrino.xcconfig
       Release: Neutrino.xcconfig

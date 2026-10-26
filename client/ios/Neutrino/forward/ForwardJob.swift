@@ -1,9 +1,9 @@
 import Foundation
 
-/// The job running on a forwarded entry's row, each worded as its button's in-progress word.
+/// The job running on an app's row, or on a hub's Panel, each worded as its button's in-progress word.
 enum ForwardJob: String {
-    /// Open on a web entry, or Panel on a hub row: the forward, the token where one is needed, then the browser.
+    /// Use on an app, or Panel on a hub row: the forwards, the token where one is needed, then the browser.
     case opening = "ui.job.opening"
-    /// Disconnect: the listener and its connections are being closed.
+    /// Stop on an app: every forward of the app is being closed.
     case disconnecting = "ui.job.disconnecting"
 }

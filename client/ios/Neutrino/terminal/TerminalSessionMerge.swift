@@ -36,6 +36,7 @@ enum TerminalSessionMerge {
         let merged = tabs.map { tab -> TerminalTab in
             var next = tab
             if let listing = byId[tab.sessionId] {
+                if !listing.session.account.isEmpty { next.account = listing.session.account }
                 next.title = listing.session.title
                 next.owner = listing.session.owner
                 next.ownerName = listing.session.ownerName
@@ -62,6 +63,7 @@ enum TerminalSessionMerge {
                 bindingId: listing.bindingId,
                 deviceId: listing.deviceId,
                 name: listing.machineName,
+                account: listing.session.account,
                 title: listing.session.title,
                 owner: listing.session.owner,
                 ownerName: listing.session.ownerName,

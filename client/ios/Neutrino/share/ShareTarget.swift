@@ -17,6 +17,10 @@ struct ShareTarget: Equatable, Identifiable {
     /// The accounts the hub names for it; empty when it names none.
     let users: [String]
 
+    /// Whether a declared app names the share, a NAS's share opened with the person's own login; a machine's share
+    /// opens with the login the hub hands at every connect.
+    var isDeclared = false
+
     /// `<binding>/<entry>`, the key of its row, its login and its page.
     var id: String { "\(bindingId)/\(entryId)" }
 
@@ -31,6 +35,7 @@ struct ShareTarget: Equatable, Identifiable {
         guard entry.type == "file", entry.payload.text("protocol") == "smb", !share.isEmpty else { return nil }
         return ShareTarget(
             bindingId: hub.binding.id, entryId: entry.id, title: entry.title, share: share,
-            users: entry.payload["users"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+            users: entry.payload["users"]?.arrayValue?.compactMap(\.stringValue) ?? [],
+            isDeclared: entry.source == "declared")
     }
 }

@@ -23,7 +23,7 @@ final class ChannelFramesTests: XCTestCase {
         XCTAssertEqual(GoldenSchema.protocolNumber, Channel.PROTOCOL)
     }
 
-    func testHelloIsTheGoldensHelloWithEveryField() {
+    func testHelloIsTheGoldensHelloWithEveryFieldAndNoToken() {
         let hello = ChannelFrames.hello(binding: Samples.binding, machine: Samples.machine)
         assertConforms(hello, "ChannelHello")
         XCTAssertEqual(keys(hello), GoldenSchema.properties("ChannelHello"))
@@ -31,7 +31,7 @@ final class ChannelFramesTests: XCTestCase {
         XCTAssertEqual(hello.number("protocol"), Channel.PROTOCOL)
         XCTAssertEqual(hello.text("role"), "client")
         XCTAssertEqual(hello.text("software"), "neutrino_client/0.6.0")
-        XCTAssertEqual(hello.text("token"), "secret-token")
+        XCTAssertNil(hello["token"])
     }
 
     func testReportIsTheGoldensClientReportWithItsMachine() {
@@ -39,8 +39,7 @@ final class ChannelFramesTests: XCTestCase {
         assertConforms(report, "ChannelClientReport")
         XCTAssertEqual(keys(report), GoldenSchema.properties("ChannelClientReport"))
         XCTAssertEqual(Set(report.object("machine").keys), GoldenSchema.properties("ChannelClientMachine"))
-        XCTAssertEqual(
-            Set(report.object("machine").object("platform").keys), ["os", "family", "arch", "version"])
+        XCTAssertEqual(Set(report.object("machine").object("platform").keys), ["os", "family", "arch"])
         XCTAssertEqual(report.object("machine").object("platform").text("os"), "ios")
     }
 
@@ -49,41 +48,30 @@ final class ChannelFramesTests: XCTestCase {
         XCTAssertFalse(ChannelFrames.report(stateHash: "", machine: Samples.machine).flag("is_refresh"))
     }
 
-    func testOpenIsTheGoldensOpenWithItsArgumentsBeside() {
-        let open = ChannelFrames.open(stream: 3, kind: "service", args: ["id": .string("svc")])
-        XCTAssertEqual(open.text("id"), "svc")
-        var head = open
-        head["id"] = nil
-        assertConforms(head, "ChannelOpen")
-    }
-
-    func testCloseCreditAndPingAreTheGoldens() {
-        assertConforms(ChannelFrames.close(stream: 2, code: "kind_unknown"), "ChannelClose")
-        assertConforms(ChannelFrames.close(stream: 5), "ChannelClose")
-        assertConforms(ChannelFrames.credit(stream: 1, bytes: 1024), "ChannelCredit")
+    func testPingServicePersistAndStopSessionAreTheGoldens() {
         let ping = ChannelFrames.ping(nonce: "n7")
         assertConforms(ping, "ChannelPing")
         XCTAssertEqual(keys(ping), GoldenSchema.properties("ChannelPing"))
+        assertConforms(ChannelFrames.service(request: "r1", args: ["id": .string("rdp_d1")]), "ChannelService")
+        assertConforms(ChannelFrames.service(request: "r2", args: ["is_panel": .bool(true)]), "ChannelService")
+        let persist = ChannelFrames.persist(request: "r3", sessionId: "s1", isPersistent: true, isShared: false)
+        assertConforms(persist, "ChannelPersist")
+        XCTAssertEqual(keys(persist), GoldenSchema.properties("ChannelPersist"))
+        let stop = ChannelFrames.stopSession(request: "r4", sessionId: "s1")
+        assertConforms(stop, "ChannelStopSession")
+        XCTAssertEqual(keys(stop), GoldenSchema.properties("ChannelStopSession"))
     }
 
-    func testTheJoinAndLeaveBodiesAreTheGoldensWithEveryField() {
-        let join = ChannelFrames.joinRequest(ticket: "ticket", machine: Samples.machine)
-        assertConforms(join, "ChannelJoinRequest", hasType: false)
-        XCTAssertEqual(Set(join.keys), GoldenSchema.properties("ChannelJoinRequest"))
-        let leave = ChannelFrames.leaveRequest(binding: Samples.binding)
-        assertConforms(leave, "ChannelLeaveRequest", hasType: false)
-        XCTAssertEqual(Set(leave.keys), GoldenSchema.properties("ChannelLeaveRequest"))
-    }
-
-    func testABinaryFrameIsTheBigEndianStreamIdThenTheBytes() {
-        XCTAssertEqual(
-            ChannelFrames.binary(stream: 0x0102_0304, bytes: Data([9, 8])), Data([1, 2, 3, 4, 9, 8]))
+    func testTheJoinBodyIsTheGoldensJoinWithEveryField() {
+        let join = ChannelFrames.join(ticket: "ticket", machine: Samples.machine)
+        assertConforms(join, "ChannelJoin", hasType: false)
+        XCTAssertEqual(Set(join.keys), GoldenSchema.properties("ChannelJoin"))
     }
 
     func testAValueTheGoldenRefusesIsCaught() {
-        var broken = ChannelFrames.credit(stream: 1, bytes: 1)
+        var broken = ChannelFrames.ping(nonce: "n")
         broken["type"] = nil
-        broken["bytes"] = .string("many")
-        XCTAssertEqual(GoldenSchema.problems(.object(broken), "ChannelCredit").count, 1)
+        broken["nonce"] = .int(7)
+        XCTAssertEqual(GoldenSchema.problems(.object(broken), "ChannelPing").count, 1)
     }
 }

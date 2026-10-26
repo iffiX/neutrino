@@ -4,7 +4,7 @@ import Foundation
 /// the main queue.
 final class HubConnections {
     private let store: BindingStore
-    private let transport: HubTransport
+    private let transport: ClientTransport
     private let machine: ClientMachine
     private let clock: ClientClock
     private let resolveHubName: (@escaping (String?) -> Void) -> Void
@@ -28,7 +28,7 @@ final class HubConnections {
     ///
     /// - Parameters:
     ///   - store: The bindings.
-    ///   - transport: How hubs are reached.
+    ///   - transport: The transport's local channel.
     ///   - machine: What this phone says about itself.
     ///   - clock: The time and the timers.
     ///   - resolveHubName: Calls back with the IPv4 address `hub.neutrino.internal` resolves to here, or nil.
@@ -36,7 +36,7 @@ final class HubConnections {
     ///   - hasNetwork: Whether the phone has a network at all.
     ///   - onLeaving: Called with a binding's id as its leave starts: its forwards and its terminals stop.
     init(
-        store: BindingStore, transport: HubTransport, machine: ClientMachine, clock: ClientClock,
+        store: BindingStore, transport: ClientTransport, machine: ClientMachine, clock: ClientClock,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
         localNetworks: @escaping () -> [ChannelLocalNetwork], hasNetwork: @escaping () -> Bool,
         onLeaving: @escaping (String) -> Void
@@ -113,8 +113,8 @@ final class HubConnections {
         if !join.isJoining { join = HubJoin() }
     }
 
-    /// Keep the binding a link names, its ticket unspent: the hub's session spends it at the first address that
-    /// answers. A link whose ticket a binding already holds is that binding.
+    /// Keep the binding a link names, its ticket unspent and a static key made for it: the hub's session spends the
+    /// ticket with the transport's `join`. A link whose ticket a binding already holds is that binding.
     ///
     /// - Parameter link: The link.
     /// - Returns: The binding kept.
@@ -127,7 +127,8 @@ final class HubConnections {
             name: machine.hostname,
             gatewayUrl: link.urls[0],
             gatewayUrls: link.urls,
-            fingerprint: link.fingerprint,
+            hubKey: link.hubKey,
+            privateKey: Self.freshPrivateKey(),
             token: "",
             ticket: link.ticket,
             overlays: link.overlays)
@@ -152,7 +153,7 @@ final class HubConnections {
         onLeaving(bindingId)
         do {
             try store.remove(bindingId)
-            if !binding.isPending { tellLeft(binding) }
+            if isTold(binding) { tellLeft(binding) }
         } catch let refusal as ClientError {
             jobErrors[bindingId] = refusal
         } catch {
@@ -188,39 +189,28 @@ final class HubConnections {
 
     private func tellLeft(_ binding: HubBinding) {
         var seen = Set<String>()
-        let urls = ([binding.gatewayUrl] + binding.storedUrls).filter { !$0.isEmpty && seen.insert($0).inserted }
-        let share = Channel.leaveTellTimeoutSeconds / Double(max(urls.count, 1))
-        tellLeft(binding, urls: urls[...], share: share)
-    }
-
-    private func tellLeft(_ binding: HubBinding, urls: ArraySlice<String>, share: Double) {
-        guard let url = urls.first else {
-            ClientLog.info("the hub of \(binding.id) answered no leave in time")
-            return
+        let addresses = ([binding.gatewayUrl] + binding.storedUrls).filter {
+            $0.hasPrefix(Channel.addressScheme + "://") && seen.insert($0).inserted
         }
-        var isAnswered = false
-        let next = urls.dropFirst()
-        let timer = clock.schedule(after: share) { [weak self] in
-            guard !isAnswered else { return }
-            isAnswered = true
-            self?.tellLeft(binding, urls: next, share: share)
-        }
-        transport.post(
-            baseUrl: url, path: Channel.leavePath, fingerprint: binding.fingerprint,
-            body: ChannelFrames.leaveRequest(binding: binding)
-        ) { [weak self] result in
-            guard !isAnswered else { return }
-            isAnswered = true
-            timer.cancel()
+        let fields: [String: JSONValue] = [
+            "binding": .string(binding.id),
+            "hub_key": .string(binding.hubKey),
+            "private_key": .string(binding.privateKey),
+            "psk": .string(binding.psk),
+            "role": .string(Client.role),
+            "protocol": .int(Channel.PROTOCOL),
+            "addresses": .array(addresses.map { .string($0) }),
+        ]
+        transport.command("leave", fields, timeout: Channel.leaveTellTimeoutSeconds) { result in
             switch result {
-            case .success:
-                ClientLog.info("the hub of \(binding.id) answered the leave: ok")
-            case .failure(let refusal) where refusal.code == Channel.codeHubUnreachable:
-                self?.tellLeft(binding, urls: next, share: share)
-            case .failure(let refusal):
-                ClientLog.info("the hub of \(binding.id) answered the leave: \(refusal.code)")
+            case .success: ClientLog.info("the hub of \(binding.id) answered the leave: ok")
+            case .failure(let refusal): ClientLog.info("the hub of \(binding.id) answered the leave: \(refusal.code)")
             }
         }
+    }
+
+    private func isTold(_ binding: HubBinding) -> Bool {
+        !binding.isPending && !binding.isKeyMissing
     }
 
     private func dropRepeatedHubs() {
@@ -234,7 +224,7 @@ final class HubConnections {
         for held in dropped {
             ClientLog.info("dropped the binding \(held.id): a later one holds its hub")
             onLeaving(held.id)
-            if !held.isPending { tellLeft(held) }
+            if isTold(held) { tellLeft(held) }
         }
     }
 
@@ -253,7 +243,7 @@ final class HubConnections {
             ClientLog.info("the join replaced the binding \(held.id) held here")
             onLeaving(held.id)
             guard (try? store.remove(held.id)) != nil else { continue }
-            if isTold && !held.isPending { tellLeft(held) }
+            if isTold && self.isTold(held) { tellLeft(held) }
         }
     }
 
@@ -275,5 +265,12 @@ final class HubConnections {
             if isSuspended { session.suspend() }
         }
         onChange?()
+    }
+
+    private static func freshPrivateKey() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return (0..<Channel.privateKeyBytes).map { _ in
+            String(format: "%02x", UInt8.random(in: 0...255, using: &generator))
+        }.joined()
     }
 }

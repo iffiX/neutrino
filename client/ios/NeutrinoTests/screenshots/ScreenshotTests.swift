@@ -28,15 +28,26 @@ final class ScreenshotTests: XCTestCase {
     }()
 
     private static let services: [JSONValue] = [
-        web("gitea", "Gitea", "http://nmxrel:3000/"),
-        web("vscode", "VS Code (lab)", "http://nmxrel:3201/"),
-        web("cloudcli", "CloudCLI (demo)", "http://nmxrel:3002/"),
-        web("codeg", "Codeg (lab)", "http://nmxrel:3101/"),
-        web("antigravity", "Antigravity (direct)", "http://192.168.122.132:49723/", isHealthy: false),
+        web("gitea", "Gitea", "http://nmxrel:3000/", port: 24001),
+        port("gitea_ssh", "Gitea SSH", app: "gitea", port: 24002),
+        web("vscode", "VS Code (lab)", "http://nmxrel:3201/", port: 24003),
+        web("cloudcli", "CloudCLI (demo)", "http://nmxrel:3002/", port: 24004),
+        web("codeg", "Codeg (lab)", "http://nmxrel:3101/", port: 24005),
+        web("antigravity", "Antigravity (direct)", "http://192.168.122.132:49723/", port: 24006, isHealthy: false),
+        port("postgres", "Postgres", app: "postgres", port: 24007),
         file("share", "share", host: "192.168.122.46", machine: "nmxwin"),
         file("music", "music, the long library share of the house", host: "nmxrel", machine: "nmxrel"),
         desktop("nmxwin", "nmxwin", host: "192.168.122.46", platform: "windows"),
         desktop("mac", "mac", host: "192.168.122.50", platform: "darwin"),
+    ]
+
+    private static let apps: [JSONValue] = [
+        app("gitea", "Gitea", source: "module", machine: "nmxrel"),
+        app("vscode", "VS Code (lab)", source: "module", machine: "nmxrel"),
+        app("cloudcli", "CloudCLI (demo)", source: "module", machine: "nmxrel"),
+        app("codeg", "Codeg (lab)", source: "declared", machine: "nmxrel"),
+        app("antigravity", "Antigravity (direct)", source: "manual", machine: ""),
+        app("postgres", "Postgres", source: "declared", machine: "nmxrel"),
     ]
 
     private static let machines: [JSONValue] = [
@@ -53,7 +64,7 @@ final class ScreenshotTests: XCTestCase {
 
     func testOneTerminalRepaintedInEachTheme() throws {
         let directory = try directory()
-        let tabs = TerminalTabs(open: { _, _, _, _ in .failure(.refusal("hub_unreachable")) }, clock: FakeClientClock())
+        let tabs = TerminalTabs(hubOf: { _ in nil }, clock: FakeClientClock())
         let sessionId = tabs.create(bindingId: "hub", deviceId: "nmxrel", name: "nmxrel")
         let cache = TerminalViewCache(tabs: tabs)
         let controller = UIViewController()
@@ -119,7 +130,41 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    func testTheWebFilesAndDesktopsListsPutEveryRowsButtonsUnderItsText() throws {
+    func testTheAppsPageInBothThemesWithOneAppInUse() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let hub = try XCTUnwrap(core.hubs.first)
+        core.useApp(bindingId: hub.binding.id, app: try XCTUnwrap(hub.apps.first))
+        XCTAssertTrue(isTrue { core.forwardRows[AppForwards.key(hub.binding.id, "gitea")]?.isInUse == true })
+        core.browser = nil
+        for (name, palette) in [("apps_light", NeutrinoPalette.light), ("apps_dark", NeutrinoPalette.dark)] {
+            let page = VStack(spacing: 0) {
+                TopBar(title: core.words.word(AppScreen.apps.titleKey), onBack: nil, isRefreshing: false) {}
+                AppsScreen(core: core).frame(maxWidth: .infinity, maxHeight: .infinity)
+                PageBar(isSidebar: false, selected: .constant(AppScreen.apps))
+            }
+            .background(palette.bg.ignoresSafeArea())
+            .environment(\.palette, palette)
+            .environment(\.words, core.words)
+            .environmentObject(ArmState())
+            let shown = try show(UIHostingController(rootView: page), palette.isDark ? .dark : .light, size: screen)
+            try save(shown, name, in: directory)
+        }
+        let entries = AppForwards.entries(of: hub, app: try XCTUnwrap(hub.apps.first))
+        let target = LocalPortTarget(bindingId: hub.binding.id, appId: "gitea", title: "Gitea", entries: entries)
+        let dialog = LocalPortDialog(core: core, target: target)
+            .environment(\.palette, NeutrinoPalette.light)
+            .environment(\.words, core.words)
+        let shown = try show(UIHostingController(rootView: dialog), .light, size: screen)
+        try save(shown, "apps_configure", in: directory)
+        core.stopApp(bindingId: hub.binding.id, appId: "gitea")
+    }
+
+    func testTheAppsFilesAndDesktopsListsPutEveryRowsButtonsUnderItsText() throws {
         let directory = try directory()
         let screen = try screenSize()
         let suite = "neutrino.screens.\(UUID().uuidString)"
@@ -127,7 +172,7 @@ final class ScreenshotTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let core = try connectedCore(defaults)
         let pages: [(String, AppScreen, AnyView)] = [
-            ("list_web", .web, AnyView(WebScreen(core: core))),
+            ("list_apps", .apps, AnyView(AppsScreen(core: core))),
             ("list_files", .files, AnyView(FilesScreen(core: core))),
             ("list_desktops", .desktops, AnyView(RemoteDesktopScreen(core: core))),
         ]
@@ -246,7 +291,8 @@ final class ScreenshotTests: XCTestCase {
 
         let hub = try XCTUnwrap(core.hubs.first)
         let entry = try XCTUnwrap(hub.services.first { $0.id == "music" })
-        let target = try XCTUnwrap(ShareTarget.of(hub, entry))
+        var target = try XCTUnwrap(ShareTarget.of(hub, entry))
+        target.isDeclared = true
         core.shares.logIn(target, login: ShareLogin(user: "lab", password: "pw"), isKept: false)
         XCTAssertNotNil(core.share, "the share did not open")
         let shell = AppShell(core: core, cache: cache, screen: .files)
@@ -341,27 +387,43 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    private func makeCore(_ defaults: UserDefaults, transport: FakeHubTransport = FakeHubTransport()) -> ClientCore {
+    private func makeCore(_ defaults: UserDefaults, transport: FakeTransport = FakeTransport()) -> ClientCore {
         ClientCore(
-            secrets: FakeSecretStore(), transport: transport, clock: FakeClientClock(), defaults: defaults,
-            device: Samples.device, edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) },
-            localNetworks: { [] }, shareClient: { FakeShareClient() }, remoteDesktop: FakeRemoteDesktopCore(),
+            secrets: FakeSecretStore(),
+            transport: ClientTransport(
+                library: transport, directory: "/data", dialerOf: { _ in transport }, clock: FakeClientClock()),
+            clock: FakeClientClock(), defaults: defaults, device: Samples.device, edition: Client.editionIntl,
+            hasNetwork: { true }, resolveHubName: { $0(nil) }, localNetworks: { [] },
+            shareClient: { FakeShareClient() }, remoteDesktop: FakeRemoteDesktopCore(),
             bundle: Bundle(for: ClientCore.self))
     }
 
     private func connectedCore(_ defaults: UserDefaults) throws -> ClientCore {
-        let transport = FakeHubTransport()
+        let transport = FakeTransport()
+        transport.answer = { line in
+            switch line.text("command") {
+            case "join": return ["binding_id": .string("hub-binding"), "token": .string("tok")]
+            case "forward_start": return ["listen": line["listen"] ?? .string("")]
+            default: return [:]
+            }
+        }
         let core = makeCore(defaults, transport: transport)
         core.join(
             Samples.link([
-                "urls": .array([.string("https://192.168.1.1:8443")]), "token": .string("TICKET"),
-                "fp": .string(Samples.fingerprint), "role": .string("client"),
+                "urls": .array([.string("tcp://192.168.1.1:8443")]), "token": .string("TICKET"),
+                "key": .string(Samples.hubKey), "role": .string("client"),
             ]))
-        let socket = try XCTUnwrap(transport.sockets.first)
-        socket.deliver(.opened)
-        transport.posts.first?.completion(.success(["id": .string("hub-binding"), "token": .string("tok")]))
-        socket.deliver(frame: Samples.welcome)
-        socket.deliver(frame: Samples.state(["services": .array(Self.services), "terminals": .array(Self.machines)]))
+        let id = try XCTUnwrap(core.joining.joinedId)
+        XCTAssertTrue(isTrue { !transport.sent("dial").isEmpty })
+        transport.event("session_open", id, ["address": .string("tcp://192.168.1.1:8443"), "path": .string("lan")])
+        XCTAssertTrue(isTrue { !transport.written("hello").isEmpty })
+        transport.frame(id, Samples.welcome)
+        transport.frame(
+            id,
+            Samples.state([
+                "services": .array(Self.services), "apps": .array(Self.apps), "terminals": .array(Self.machines),
+            ]))
+        XCTAssertTrue(isTrue { core.hubs.first?.apps.count == Self.apps.count })
         return core
     }
 
@@ -515,10 +577,30 @@ final class ScreenshotTests: XCTestCase {
         try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("\(name).png"))
     }
 
-    private static func web(_ id: String, _ title: String, _ url: String, isHealthy: Bool = true) -> JSONValue {
+    private static func web(_ id: String, _ title: String, _ url: String, port: Int, isHealthy: Bool = true)
+        -> JSONValue
+    {
         .object([
             "id": .string(id), "type": .string("web"), "title": .string(title), "source": .string("module"),
             "payload": .object(["url": .string(url)]), "device_name": .string("nmxrel"), "is_healthy": .bool(isHealthy),
+            "app_id": .string(id), "name": .string("http"), "local_port": .int(port),
+        ])
+    }
+
+    private static func port(_ id: String, _ title: String, app: String, port: Int) -> JSONValue {
+        .object([
+            "id": .string(id), "type": .string("port"), "title": .string(title), "source": .string("module"),
+            "payload": .object(["host": .string("nmxrel"), "port": .int(5432), "protocol": .string("tcp")]),
+            "device_name": .string("nmxrel"), "app_id": .string(app), "name": .string("tcp"),
+            "local_port": .int(port),
+        ])
+    }
+
+    private static func app(_ id: String, _ title: String, source: String, machine: String) -> JSONValue {
+        .object([
+            "id": .string(id), "title": .string(title), "source": .string(source),
+            "device_id": .string(machine), "device_name": .string(machine),
+            "local_name": .string(machine.isEmpty ? "\(id).localhost" : "\(id).\(machine).localhost"),
         ])
     }
 
@@ -544,7 +626,10 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private static func machine(_ name: String, isOnline: Bool) -> JSONValue {
-        .object(["device_id": .string(name), "name": .string(name), "is_online": .bool(isOnline)])
+        .object([
+            "device_id": .string(name), "name": .string(name), "is_online": .bool(isOnline),
+            "accounts": .array([.string("iffi"), .string("lab")]),
+        ])
     }
 
     private func simulatedKeyboard(_ frame: CGRect) -> UIView {

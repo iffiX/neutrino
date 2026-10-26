@@ -1,12 +1,12 @@
 import Foundation
 
-/// One accepted loopback connection joined to one `connect` stream: the bytes are copied both ways, the hub's
-/// under its credit and the connection's as it takes them. The end of either side closes the stream once what
+/// One accepted loopback connection joined to one `connect` stream: the bytes are copied both ways, each side's as
+/// the other takes them. The end of either side closes the stream once what
 /// was read from that side is sent, and the side that ends second writes what it holds and closes. Every call
 /// runs on the main queue.
 final class ForwardPipe {
     private let descriptor: Int32
-    private let stream: ChannelStream
+    private let stream: TransportStream
     private let onEnd: (ForwardPipe) -> Void
     private var readSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
@@ -33,7 +33,7 @@ final class ForwardPipe {
     ///   - descriptor: The accepted connection, non-blocking.
     ///   - stream: The `connect` stream for it.
     ///   - onEnd: Called once both are closed.
-    init(descriptor: Int32, stream: ChannelStream, onEnd: @escaping (ForwardPipe) -> Void) {
+    init(descriptor: Int32, stream: TransportStream, onEnd: @escaping (ForwardPipe) -> Void) {
         self.descriptor = descriptor
         self.stream = stream
         self.onEnd = onEnd
@@ -117,7 +117,6 @@ final class ForwardPipe {
             if written == 0 { break }
             pending.removeFirst(written)
             bytesDown += Int64(written)
-            stream.consumed(written)
         }
         if pending.isEmpty {
             writeSource?.cancel()

@@ -10,9 +10,9 @@ final class ShareSession {
     /// The share.
     let target: ShareTarget
 
-    private let login: ShareLogin
+    private let readLogin: (@escaping (Result<ShareLogin, ClientError>) -> Void) -> Void
     private let makeClient: () -> ShareClient
-    private let openConnect: () -> Result<ChannelStream, ClientError>
+    private let openConnect: () -> Result<TransportStream, ClientError>
     private let directory: URL
     private var client: ShareClient?
     private var relay: ForwardRelay?
@@ -42,24 +42,26 @@ final class ShareSession {
     ///
     /// - Parameters:
     ///   - target: The share.
-    ///   - login: The account it is opened with.
+    ///   - readLogin: Calls back with the account it logs in with at each connect: the hub's for a machine's
+    ///     share, the person's for a declared one, or the refusal.
     ///   - makeClient: Makes the SMB client of one connection.
     ///   - openConnect: Opens one `connect` stream naming the share's entry.
     ///   - directory: The app's temporary directory for shares; this share's files go in a directory of its own
     ///     under it.
     init(
-        target: ShareTarget, login: ShareLogin, makeClient: @escaping () -> ShareClient,
-        openConnect: @escaping () -> Result<ChannelStream, ClientError>, directory: URL
+        target: ShareTarget, readLogin: @escaping (@escaping (Result<ShareLogin, ClientError>) -> Void) -> Void,
+        makeClient: @escaping () -> ShareClient, openConnect: @escaping () -> Result<TransportStream, ClientError>,
+        directory: URL
     ) {
         self.target = target
-        self.login = login
+        self.readLogin = readLogin
         self.makeClient = makeClient
         self.openConnect = openConnect
         self.directory = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         view = ShareView(target: target)
     }
 
-    /// Make the forward, connect through it and log in.
+    /// Read the login, make the forward, connect through it and log in.
     ///
     /// - Parameter completion: Called with nil once logged in, or with the refusal, the connection then closed.
     func start(_ completion: @escaping (ClientError?) -> Void) {
@@ -67,6 +69,16 @@ final class ShareSession {
         generation += 1
         let mine = generation
         hubRefusal = nil
+        readLogin { [weak self] result in
+            guard let self, self.generation == mine else { return }
+            switch result {
+            case .failure(let refusal): completion(refusal)
+            case .success(let login): self.connect(login, generation: mine, completion)
+            }
+        }
+    }
+
+    private func connect(_ login: ShareLogin, generation mine: Int, _ completion: @escaping (ClientError?) -> Void) {
         let relay = ForwardRelay(name: target.id) { [weak self] in
             self?.openConnect()
                 ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "the share page closed"]))

@@ -1,14 +1,15 @@
 import Foundation
 
-/// Every frame and body this phone writes on the channel, each with exactly the fields its protocol defines.
+/// Every frame this phone writes on a hub's control stream, and the fields of the transport's `join`, each with
+/// exactly the fields its protocol defines; a frame's `type` is its name.
 enum ChannelFrames {
-    /// The first frame up: the identity card.
+    /// This phone's identity card, the first frame of a session.
     static let typeHello = "hello"
 
     /// The hub's identity card.
     static let typeWelcome = "welcome"
 
-    /// A refusal, then close 4000.
+    /// A refusal; the hub ends the session after it.
     static let typeRefused = "refused"
 
     /// What is to be true.
@@ -17,25 +18,28 @@ enum ChannelFrames {
     /// What is true.
     static let typeReport = "report"
 
-    /// A stream begins.
-    static let typeOpen = "open"
-
-    /// A stream ends.
-    static let typeClose = "close"
-
-    /// The sender may send more.
-    static let typeCredit = "credit"
-
     /// This phone's own round trip probe.
     static let typePing = "ping"
 
-    /// The hub's answer to a ping, with its nonce.
+    /// The answer to a ping, with its nonce.
     static let typePong = "pong"
 
-    /// The first frame up: this phone's identity card with the binding's token.
+    /// A question for one entry's material, or the panel's sign-in.
+    static let typeService = "service"
+
+    /// Whether a kept shell stays and whether others can attach to it.
+    static let typePersist = "persist"
+
+    /// Ends a kept shell.
+    static let typeStopSession = "stop_session"
+
+    /// The answer to a `service`, `persist` or `stop_session`.
+    static let typeReply = "reply"
+
+    /// The first frame of a session: this phone's identity card.
     ///
     /// - Parameters:
-    ///   - binding: The binding the socket is for.
+    ///   - binding: The binding the session is for.
     ///   - machine: This phone.
     /// - Returns: The frame.
     static func hello(binding: HubBinding, machine: ClientMachine) -> [String: JSONValue] {
@@ -46,7 +50,6 @@ enum ChannelFrames {
             "id": .string(binding.boundId),
             "name": .string(binding.name.isEmpty ? machine.hostname : binding.name),
             "software": .string(machine.software),
-            "token": .string(binding.token),
         ]
     }
 
@@ -70,43 +73,7 @@ enum ChannelFrames {
         ]
     }
 
-    /// A stream begins: the request, its arguments beside `stream` and `kind`.
-    ///
-    /// - Parameters:
-    ///   - stream: The stream's id.
-    ///   - kind: The stream's kind.
-    ///   - args: The kind's own arguments.
-    /// - Returns: The frame.
-    static func open(stream: UInt32, kind: String, args: [String: JSONValue]) -> [String: JSONValue] {
-        var frame = args
-        frame["type"] = .string(typeOpen)
-        frame["stream"] = .int(Int(stream))
-        frame["kind"] = .string(kind)
-        return frame
-    }
-
-    /// A stream ends from this side.
-    ///
-    /// - Parameters:
-    ///   - stream: The stream's id.
-    ///   - code: The refusal's code, empty for a result.
-    ///   - params: The result, or the refusal's parameters.
-    /// - Returns: The frame.
-    static func close(stream: UInt32, code: String = "", params: [String: JSONValue] = [:]) -> [String: JSONValue] {
-        ["type": .string(typeClose), "stream": .int(Int(stream)), "code": .string(code), "params": .object(params)]
-    }
-
-    /// The hub may send this many more bytes on a stream.
-    ///
-    /// - Parameters:
-    ///   - stream: The stream's id.
-    ///   - bytes: The grant.
-    /// - Returns: The frame.
-    static func credit(stream: UInt32, bytes: Int) -> [String: JSONValue] {
-        ["type": .string(typeCredit), "stream": .int(Int(stream)), "bytes": .int(bytes)]
-    }
-
-    /// A round trip probe; the hub echoes its nonce in a `pong`.
+    /// A round trip probe; the hub's transport echoes its nonce in a `pong`.
     ///
     /// - Parameter nonce: The mark of this ping, at most 64 characters.
     /// - Returns: The frame.
@@ -114,13 +81,54 @@ enum ChannelFrames {
         ["type": .string(typePing), "nonce": .string(nonce)]
     }
 
-    /// The body of `POST /api/channel/join`.
+    /// A question for the material one published entry takes, or for the panel's sign-in.
+    ///
+    /// - Parameters:
+    ///   - request: This phone's mark of the question, which the reply names.
+    ///   - args: `{id}` for an entry, `{is_panel: true}` for the panel.
+    /// - Returns: The frame.
+    static func service(request: String, args: [String: JSONValue]) -> [String: JSONValue] {
+        var frame = args
+        frame["type"] = .string(typeService)
+        frame["request"] = .string(request)
+        return frame
+    }
+
+    /// Whether a kept shell stays when its last stream closes, and whether others can attach to it.
+    ///
+    /// - Parameters:
+    ///   - request: This phone's mark of the question.
+    ///   - sessionId: The session.
+    ///   - isPersistent: Whether it outlives every window.
+    ///   - isShared: Whether every client with terminal rights on the machine lists it.
+    /// - Returns: The frame.
+    static func persist(request: String, sessionId: String, isPersistent: Bool, isShared: Bool) -> [String: JSONValue] {
+        [
+            "type": .string(typePersist),
+            "request": .string(request),
+            "session_id": .string(sessionId),
+            "is_persistent": .bool(isPersistent),
+            "is_shared": .bool(isShared),
+        ]
+    }
+
+    /// Ends a kept shell and every program in it.
+    ///
+    /// - Parameters:
+    ///   - request: This phone's mark of the question.
+    ///   - sessionId: The session.
+    /// - Returns: The frame.
+    static func stopSession(request: String, sessionId: String) -> [String: JSONValue] {
+        ["type": .string(typeStopSession), "request": .string(request), "session_id": .string(sessionId)]
+    }
+
+    /// The `join` frame's body, which the transport sends on the round's winner.
     ///
     /// - Parameters:
     ///   - ticket: The link's ticket.
     ///   - machine: This phone.
-    /// - Returns: The body.
-    static func joinRequest(ticket: String, machine: ClientMachine) -> [String: JSONValue] {
+    /// - Returns: The body: `{ticket, role, protocol, machine_id, name, software, platform}`.
+    static func join(ticket: String, machine: ClientMachine) -> [String: JSONValue] {
         [
             "ticket": .string(ticket),
             "role": .string(Client.role),
@@ -130,29 +138,5 @@ enum ChannelFrames {
             "software": .string(machine.software),
             "platform": .object(machine.platform),
         ]
-    }
-
-    /// The body of `POST /api/channel/leave`.
-    ///
-    /// - Parameter binding: The binding being ended.
-    /// - Returns: The body.
-    static func leaveRequest(binding: HubBinding) -> [String: JSONValue] {
-        ["id": .string(binding.boundId), "token": .string(binding.token)]
-    }
-
-    /// One binary frame: the big-endian stream id, then the bytes.
-    ///
-    /// - Parameters:
-    ///   - stream: The stream's id.
-    ///   - bytes: The bytes.
-    /// - Returns: The frame.
-    static func binary(stream: UInt32, bytes: Data) -> Data {
-        var frame = Data(capacity: Channel.streamIdBytes + bytes.count)
-        frame.append(UInt8(truncatingIfNeeded: stream >> 24))
-        frame.append(UInt8(truncatingIfNeeded: stream >> 16))
-        frame.append(UInt8(truncatingIfNeeded: stream >> 8))
-        frame.append(UInt8(truncatingIfNeeded: stream))
-        frame.append(bytes)
-        return frame
     }
 }

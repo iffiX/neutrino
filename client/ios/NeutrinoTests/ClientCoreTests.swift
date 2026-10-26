@@ -4,7 +4,7 @@ import XCTest
 @testable import Neutrino
 
 final class ClientCoreTests: XCTestCase {
-    private var transport = FakeHubTransport()
+    private var transport = FakeTransport()
     private var clock = FakeClientClock()
     private var desktop = FakeRemoteDesktopCore()
     private var defaults = UserDefaults()
@@ -12,7 +12,14 @@ final class ClientCoreTests: XCTestCase {
     private var share = FakeShareClient()
 
     override func setUp() {
-        transport = FakeHubTransport()
+        transport = FakeTransport()
+        transport.answer = { line in
+            switch line.text("command") {
+            case "join": return ["binding_id": .string("hub-binding"), "token": .string("tok")]
+            case "forward_start": return ["listen": line["listen"] ?? .string("")]
+            default: return [:]
+            }
+        }
         clock = FakeClientClock()
         desktop = FakeRemoteDesktopCore()
         share = FakeShareClient()
@@ -25,49 +32,64 @@ final class ClientCoreTests: XCTestCase {
     }
 
     private func core() -> ClientCore {
-        ClientCore(
-            secrets: FakeSecretStore(), transport: transport, clock: clock, defaults: defaults, device: Samples.device,
+        let fake = transport
+        let client = ClientTransport(library: fake, directory: "/data", dialerOf: { _ in fake }, clock: clock)
+        return ClientCore(
+            secrets: FakeSecretStore(), transport: client, clock: clock, defaults: defaults, device: Samples.device,
             edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) }, localNetworks: { [] },
             shareClient: { self.share }, remoteDesktop: desktop, bundle: Bundle(for: ClientCore.self))
     }
 
-    private func joinAndConnect(_ core: ClientCore) throws -> FakeChannelSocket {
+    private static let services: [JSONValue] = [
+        .object([
+            "id": .string("gitea"), "type": .string("web"), "title": .string("Gitea"),
+            "payload": .object(["url": .string("http://10.0.0.5:3000/explore")]),
+            "source": .string("module"), "app_id": .string("gitea"), "local_port": .int(24001),
+        ]),
+        .object([
+            "id": .string("gitea_ssh"), "type": .string("ssh"), "title": .string("Gitea SSH"),
+            "payload": .object(["host": .string("10.0.0.5"), "port": .int(22)]),
+            "source": .string("module"), "app_id": .string("gitea"), "local_port": .int(24002),
+        ]),
+        .object([
+            "id": .string("desk"), "type": .string("rdp"), "title": .string("Desk"),
+            "payload": .object([
+                "host": .string("10.0.0.7"), "port": .int(21118), "platform_os": .string("linux"),
+            ]),
+            "source": .string("device"), "device_name": .string("argon"),
+        ]),
+        .object([
+            "id": .string("music"), "type": .string("file"), "title": .string("music"),
+            "payload": .object([
+                "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("music"),
+                "users": .array([.string("alice")]),
+            ]),
+            "source": .string("module"),
+        ]),
+    ]
+
+    private static let apps: [JSONValue] = [
+        .object([
+            "id": .string("gitea"), "title": .string("Gitea"), "source": .string("module"),
+            "local_name": .string("gitea.home.localhost"),
+        ])
+    ]
+
+    private func joinAndConnect(_ core: ClientCore) throws -> String {
         core.join(
             Samples.link([
-                "urls": .array([.string("https://192.168.1.1:8443")]), "token": .string("TICKET"),
-                "fp": .string(Samples.fingerprint), "role": .string("client"),
+                "urls": .array([.string("tcp://192.168.1.1:8443")]), "token": .string("TICKET"),
+                "key": .string(Samples.hubKey), "role": .string("client"),
             ]))
-        XCTAssertNotNil(core.joining.joinedId)
-        let socket = try XCTUnwrap(transport.sockets.first)
-        socket.deliver(.opened)
-        transport.posts.first?.completion(.success(["id": .string("hub-binding"), "token": .string("tok")]))
-        socket.deliver(frame: Samples.welcome)
-        socket.deliver(
-            frame: Samples.state([
-                "services": .array([
-                    .object([
-                        "id": .string("gitea"), "type": .string("web"), "title": .string("Gitea"),
-                        "payload": .object(["url": .string("http://10.0.0.5:3000/explore")]),
-                        "source": .string("module"),
-                    ]),
-                    .object([
-                        "id": .string("desk"), "type": .string("rdp"), "title": .string("Desk"),
-                        "payload": .object([
-                            "host": .string("10.0.0.7"), "port": .int(21118), "platform_os": .string("linux"),
-                        ]),
-                        "source": .string("device"), "device_name": .string("argon"),
-                    ]),
-                    .object([
-                        "id": .string("music"), "type": .string("file"), "title": .string("music"),
-                        "payload": .object([
-                            "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("music"),
-                            "users": .array([.string("alice")]),
-                        ]),
-                        "source": .string("module"),
-                    ]),
-                ])
-            ]))
-        return socket
+        let id = try XCTUnwrap(core.joining.joinedId)
+        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("dial").isEmpty })
+        transport.event("session_open", id, ["address": .string("tcp://192.168.1.1:8443"), "path": .string("lan")])
+        XCTAssertTrue(RunLoopWait.until { !self.transport.written("hello").isEmpty })
+        transport.frame(id, Samples.welcome)
+        transport.frame(id, Samples.state(["services": .array(Self.services), "apps": .array(Self.apps)]))
+        XCTAssertTrue(
+            RunLoopWait.until { core.hubs.first?.connection == .connected && core.hubs.first?.apps.count == 1 })
+        return id
     }
 
     private func isListening(_ port: Int) -> Bool {
@@ -96,63 +118,70 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertEqual(core.hubs.count, 1)
         XCTAssertEqual(core.hubs.first?.connection, .connected)
         XCTAssertEqual(core.hubs.first?.binding.hubName, "Home")
+        let join = try XCTUnwrap(transport.sent("join").first)
+        XCTAssertEqual(join.text("hub_key"), Samples.hubKey)
+        XCTAssertEqual(join.text("ticket"), "TICKET")
     }
 
-    func testOpenOnAWebEntryForwardsItAndOpensTheInAppBrowserOnTheLoopback() throws {
+    func testUseOnAnAppForwardsItsEntriesAtTheHubsPortsAndOpensTheInAppBrowserOnTheLoopback() throws {
         let core = self.core()
-        _ = try joinAndConnect(core)
+        let id = try joinAndConnect(core)
         let hub = try XCTUnwrap(core.hubs.first)
-        let entry = try XCTUnwrap(hub.services(of: "web").first)
-        core.openWeb(bindingId: hub.binding.id, entry: entry)
-        let row = try XCTUnwrap(core.forwardRows[WebForwards.key(hub.binding.id, "gitea")])
-        XCTAssertTrue(row.isForwarded)
+        core.useApp(bindingId: id, app: try XCTUnwrap(hub.apps.first))
+        XCTAssertTrue(RunLoopWait.until { core.browser != nil })
+        let starts = transport.sent("forward_start")
+        XCTAssertEqual(starts.map { $0.text("listen") }, ["127.0.0.1:24001"])
+        XCTAssertEqual(starts.first?.object("open").text("id"), "gitea")
+        XCTAssertEqual(starts.first?.object("open").text("kind"), "connect")
+        XCTAssertEqual(core.browser?.url, "http://127.0.0.1:24001/explore")
+        let row = try XCTUnwrap(core.forwardRows[AppForwards.key(id, "gitea")])
+        XCTAssertTrue(row.isInUse)
         XCTAssertNil(row.job)
-        XCTAssertEqual(core.browser?.url, "http://127.0.0.1:\(row.localPort)/explore")
-        XCTAssertTrue(isListening(row.localPort))
-        core.disconnectWeb(bindingId: hub.binding.id, entryId: "gitea")
-        turnMainQueue()
+        core.stopApp(bindingId: id, appId: "gitea")
+        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("forward_stop").isEmpty })
+        XCTAssertEqual(transport.sent("forward_stop").first?.text("listen"), "127.0.0.1:24001")
     }
 
-    func testTheEndOfTheBackgroundTimeClosesEveryChannelAndListenerAndTheReturnListensAgainOnTheSamePort() throws {
+    func testTheEndOfTheBackgroundTimeStopsEveryListenerAndTheReturnListensAgainOnTheSamePort() throws {
         let core = self.core()
-        let socket = try joinAndConnect(core)
+        let id = try joinAndConnect(core)
         let hub = try XCTUnwrap(core.hubs.first)
-        core.openWeb(bindingId: hub.binding.id, entry: try XCTUnwrap(hub.services(of: "web").first))
-        let port = try XCTUnwrap(core.forwardRows[WebForwards.key(hub.binding.id, "gitea")]?.localPort)
-        XCTAssertTrue(isListening(port))
+        core.useApp(bindingId: id, app: try XCTUnwrap(hub.apps.first))
+        XCTAssertTrue(RunLoopWait.until { core.browser != nil })
 
         core.suspend()
-        turnMainQueue()
-        XCTAssertTrue(socket.isClosed)
-        XCTAssertFalse(isListening(port))
-        XCTAssertEqual(transport.sockets.count, 1)
+        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("forward_stop").isEmpty })
+        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("undial").isEmpty })
 
         core.foreground()
-        turnMainQueue()
-        XCTAssertEqual(transport.sockets.count, 2)
-        XCTAssertTrue(isListening(port))
-        XCTAssertEqual(core.forwardRows[WebForwards.key(hub.binding.id, "gitea")]?.localPort, port)
-        core.disconnectWeb(bindingId: hub.binding.id, entryId: "gitea")
-        turnMainQueue()
+        XCTAssertTrue(RunLoopWait.until { self.transport.sent("forward_start").count == 2 })
+        XCTAssertEqual(transport.sent("forward_start").last?.text("listen"), "127.0.0.1:24001")
+        XCTAssertTrue(RunLoopWait.until { self.transport.sent("dial").count == 2 })
+        XCTAssertEqual(core.forwardRows[AppForwards.key(id, "gitea")]?.isInUse, true)
     }
 
-    private func openDesktop(_ core: ClientCore, socket: FakeChannelSocket) throws -> RemoteDesktopTarget {
+    private func openDesktop(_ core: ClientCore, id: String) throws -> RemoteDesktopTarget {
         let hub = try XCTUnwrap(core.hubs.first)
-        core.connectDesktop(bindingId: hub.binding.id, entry: try XCTUnwrap(hub.services(of: "rdp").first))
-        XCTAssertEqual(core.desktopsConnecting, ["\(hub.binding.id)/desk"])
-        let open = try XCTUnwrap(socket.frames.last { $0.text("type") == "open" })
-        XCTAssertEqual(open.text("kind"), Channel.kindService)
-        XCTAssertEqual(open.text("id"), "desk")
-        let stream = try XCTUnwrap(open.number("stream").map(UInt32.init))
-        socket.deliver(frame: ChannelFrames.close(stream: stream, params: ["password": .string("seat")]))
+        core.connectDesktop(bindingId: id, entry: try XCTUnwrap(hub.services(of: "rdp").first))
+        XCTAssertEqual(core.desktopsConnecting, ["\(id)/desk"])
+        XCTAssertTrue(RunLoopWait.until { !self.transport.written("service").isEmpty })
+        let service = try XCTUnwrap(transport.written("service").last)
+        XCTAssertEqual(service.text("id"), "desk")
+        transport.frame(
+            id,
+            [
+                "type": .string("reply"), "request": service["request"] ?? .string(""),
+                "params": .object(["password": .string("seat")]),
+            ])
+        XCTAssertTrue(RunLoopWait.until { core.viewing != nil })
         XCTAssertEqual(core.desktopsConnecting, [])
         return try XCTUnwrap(core.viewing)
     }
 
     func testConnectOnADesktopOpensTheViewerOnAForwardOfItsOwn() throws {
         let core = self.core()
-        let socket = try joinAndConnect(core)
-        let target = try openDesktop(core, socket: socket)
+        let id = try joinAndConnect(core)
+        let target = try openDesktop(core, id: id)
         XCTAssertEqual(target.name, "Home:argon")
         XCTAssertEqual(target.password, "seat")
         XCTAssertEqual(target.platformOs, "linux")
@@ -169,8 +198,8 @@ final class ClientCoreTests: XCTestCase {
 
     func testTheEndOfTheBackgroundTimeClosesTheViewerForGood() throws {
         let core = self.core()
-        let socket = try joinAndConnect(core)
-        let target = try openDesktop(core, socket: socket)
+        let id = try joinAndConnect(core)
+        let target = try openDesktop(core, id: id)
 
         core.suspend()
         turnMainQueue()
@@ -188,7 +217,8 @@ final class ClientCoreTests: XCTestCase {
         let core = self.core()
         _ = try joinAndConnect(core)
         let hub = try XCTUnwrap(core.hubs.first)
-        let target = try XCTUnwrap(ShareTarget.of(hub, try XCTUnwrap(hub.services(of: "file").first)))
+        var target = try XCTUnwrap(ShareTarget.of(hub, try XCTUnwrap(hub.services(of: "file").first)))
+        target.isDeclared = true
         share.files = ["song.mp3": Data("la la".utf8)]
         core.shares.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
         XCTAssertEqual(core.share?.items.map(\.name), ["song.mp3"])
@@ -213,12 +243,12 @@ final class ClientCoreTests: XCTestCase {
         turnMainQueue()
     }
 
-    func testLeavingAHubForgetsItsBindingAtOnceAndTellsTheHub() throws {
+    func testLeavingAHubForgetsItsBindingAtOnceAndTellsTheHubThroughTheTransport() throws {
         let core = self.core()
-        _ = try joinAndConnect(core)
-        let id = try XCTUnwrap(core.hubs.first?.binding.id)
+        let id = try joinAndConnect(core)
         core.leave(id)
         XCTAssertTrue(core.hubs.isEmpty)
-        XCTAssertEqual(transport.posts.last?.path, Channel.leavePath)
+        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("leave").isEmpty })
+        XCTAssertEqual(transport.sent("leave").first?.text("hub_key"), Samples.hubKey)
     }
 }

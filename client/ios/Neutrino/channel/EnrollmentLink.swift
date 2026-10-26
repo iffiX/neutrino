@@ -10,8 +10,8 @@ struct EnrollmentLink: Equatable {
     /// The enrolment ticket, spent by the join.
     let ticket: String
 
-    /// The SHA-256 of the hub's certificate, lower-case hex.
-    let fingerprint: String
+    /// The hub's static public key, 64 lowercase hex characters.
+    let hubKey: String
 
     /// The hub's virtual networks, whose hub addresses every round dials.
     let overlays: [ChannelOverlay]
@@ -21,7 +21,7 @@ struct EnrollmentLink: Equatable {
     /// - Parameter text: The link, or its bare payload without the scheme.
     /// - Returns: The link.
     /// - Throws: `ClientError.refused` with `link_missing` for nothing, `link_unreadable` for something that is
-    ///   not a link, `link_incomplete` for a link without an address, a ticket or a fingerprint, and
+    ///   not a link, `link_incomplete` for a link without an address, a ticket or the hub's key, and
     ///   `link_not_for_client {role}` for a device's link.
     static func parse(_ text: String) throws -> EnrollmentLink {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,12 +31,12 @@ struct EnrollmentLink: Equatable {
         guard let object = decode(payload) else { throw ClientError.refusal("link_unreadable") }
         let urls = cleanUrls(object["urls"])
         let ticket = object.text("token")
-        let fingerprint = object.text("fp").trimmingCharacters(in: .whitespaces).lowercased()
+        let hubKey = object.text("key").trimmingCharacters(in: .whitespaces).lowercased()
         let role = object.text("role")
-        if urls.isEmpty || ticket.isEmpty || fingerprint.isEmpty { throw ClientError.refusal("link_incomplete") }
+        if urls.isEmpty || ticket.isEmpty || !isKey(hubKey) { throw ClientError.refusal("link_incomplete") }
         if role != Client.role { throw ClientError.refusal("link_not_for_client", ["role": role]) }
         return EnrollmentLink(
-            urls: urls, ticket: ticket, fingerprint: fingerprint, overlays: ChannelOverlay.list(object["overlays"]))
+            urls: urls, ticket: ticket, hubKey: hubKey, overlays: ChannelOverlay.list(object["overlays"]))
     }
 
     /// A list of addresses as a binding keeps them.
@@ -92,6 +92,10 @@ struct EnrollmentLink: Equatable {
         base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
         guard let packed = Data(base64Encoded: base64), let inflated = inflate(packed) else { return nil }
         return (try? JSONValue.parse(inflated))?.objectValue
+    }
+
+    private static func isKey(_ text: String) -> Bool {
+        text.count == Channel.keyHexLength && text.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
 
     private static func adler32(_ bytes: [UInt8]) -> UInt32 {

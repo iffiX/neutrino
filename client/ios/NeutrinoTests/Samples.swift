@@ -5,15 +5,17 @@ import Foundation
 
 /// The bindings, machines and frames the tests share.
 enum Samples {
-    static let fingerprint = String(repeating: "ab", count: 32)
+    static let hubKey = String(repeating: "ab", count: 32)
+
+    static let privateKey = String(repeating: "cd", count: 32)
 
     static let machine = ClientMachine(
         machineId: "0123456789abcdef0123456789abcdef",  // scan: allow
         hostname: "iPhone", arch: "arm64", osVersion: "16.7", version: "0.6.0")
 
     static let binding = HubBinding(
-        id: "b1", name: "iPhone", hubId: "hub-1", hubName: "Home", gatewayUrl: "https://192.168.1.1:8443",
-        gatewayUrls: ["https://192.168.1.1:8443", "https://203.0.113.7:8443"], fingerprint: fingerprint,
+        id: "b1", name: "iPhone", hubId: "hub-1", hubName: "Home", gatewayUrl: "tcp://192.168.1.1:8443",
+        gatewayUrls: ["tcp://192.168.1.1:8443", "tcp://203.0.113.7:8443"], hubKey: hubKey, privateKey: privateKey,
         token: "secret-token")
 
     static let device = ClientDevice(name: "iPhone", arch: "arm64", osVersion: "16.7", appVersion: "0.6.0")

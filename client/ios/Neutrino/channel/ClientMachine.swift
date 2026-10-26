@@ -20,13 +20,8 @@ struct ClientMachine: Equatable {
     /// `neutrino_client/<version>`.
     var software: String { Client.softwarePrefix + version }
 
-    /// The platform tuple: `{os, family, arch, version}`, family empty off Linux.
+    /// The platform a client names: `{os, family, arch}`, family empty off Linux.
     var platform: [String: JSONValue] {
-        [
-            "os": .string(Client.platformOs),
-            "family": .string(""),
-            "arch": .string(arch),
-            "version": .string(osVersion),
-        ]
+        ["os": .string(Client.platformOs), "family": .string(""), "arch": .string(arch)]
     }
 }
