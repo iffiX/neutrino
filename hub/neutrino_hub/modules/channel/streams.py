@@ -257,11 +257,11 @@ class ChannelStream:
         if self._closed.is_set():
             return
         info = {"code": code, "params": dict(params or {})}
-        self._finish(info)
         try:
             await self._write(encode_json_record(CHANNEL_RECORD_CLOSE, info))
         except AgentOfflineError:
             pass
+        self._finish(info)
         await self._end_connection()
 
     async def wait_closed(self) -> "dict | None":
