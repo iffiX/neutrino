@@ -264,6 +264,9 @@ func (p *peer) admit(t *testing.T, hub *testHub, address, id string) (*connected
 	c.hello(t, id, p.role)
 	opened := hub.python.waitEvent(t, "session_open")
 	sessionID := opened["session"].(string)
+	if opened["address"] != "127.0.0.1" || opened["local_address"] != "127.0.0.1" || opened["listener"] != RelayListenerMain {
+		t.Fatalf("session_open %v", opened)
+	}
 	hub.python.waitFrame(t, session.FrameHello)
 	welcome := session.MakeFrame(session.FrameWelcome, map[string]any{"id": "hub", "protocol": knock.PROTOCOL, "role": "hub", "name": "h", "software": "neutrino_hub/0.6.0", "time": 1.5})
 	if err := hub.hub.WriteFrame(sessionID, welcome, false); err != nil {

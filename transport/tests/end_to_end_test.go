@@ -167,6 +167,9 @@ func (h *hubSide) serveHello(t *testing.T) (string, string) {
 	opened := h.python.waitEvent("session_open")
 	sessionID, _ := opened["session"].(string)
 	bindingID, _ := opened["binding_id"].(string)
+	if opened["local_address"] != "127.0.0.1" {
+		t.Fatalf("session_open without the hub's address: %v", opened)
+	}
 	frame, line := h.python.waitFrame("hello")
 	if line["session"] != sessionID || frame["id"] != bindingID {
 		t.Fatalf("hello %v on %v", frame, line)

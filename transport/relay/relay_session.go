@@ -31,8 +31,10 @@ type RelaySession struct {
 	Role      string
 	Protocol  int
 	Address   string
-	Listener  string
-	PublicKey string
+	// LocalAddress is the hub-side address the peer's connection reached.
+	LocalAddress string
+	Listener     string
+	PublicKey    string
 
 	hub     *Hub
 	session *session.Session
@@ -72,7 +74,7 @@ func (rs *RelaySession) markWelcomed() {
 func (rs *RelaySession) openEvent() map[string]any {
 	return map[string]any{
 		"session": rs.ID, "binding_id": rs.BindingID, "role": rs.Role,
-		"address": rs.Address, "listener": rs.Listener,
+		"address": rs.Address, "local_address": rs.LocalAddress, "listener": rs.Listener,
 	}
 }
 

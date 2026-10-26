@@ -212,7 +212,7 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	}
 	rs := &RelaySession{
 		ID: h.newSessionID(), BindingID: bindingID, Role: role, Protocol: payload.Protocol,
-		Address: peerAddress, Listener: listenerName, PublicKey: publicKey,
+		Address: peerAddress, LocalAddress: FormatIP(PeerIP(conn.LocalAddr())), Listener: listenerName, PublicKey: publicKey,
 		hub: h, session: sess, control: control, streams: make(map[*relayStream]struct{}),
 	}
 	// From here the session ends itself: the admission timer closes it when
