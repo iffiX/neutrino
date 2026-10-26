@@ -1565,10 +1565,10 @@ password}]}` and its `details` `{host_key, host_key_fingerprint, instances:
 [{account, port, is_running, code}]}`; the module's page has its refusals.
 
 The `gitea` module runs Gitea on Linux, macOS and Windows ([agent/modules/gitea.md](agent/modules/gitea.md)). Its configuration is `{listen_port, root_url,
-is_registration_enabled, address, secrets, ssh_domain, ssh_port}` on every
-system: `ssh_domain` is the Gitea app's `local_name` and `ssh_port` the
-`local_port` of its `ssh` entry ("The local name and the local port"), which
-Gitea writes into the clone addresses it shows. Its recipe names
+is_registration_enabled, address, secrets, ssh_port}` on every system:
+`ssh_port` is the `local_port` of the Gitea app's `ssh` entry ("The local
+name and the local port"), which Gitea writes into the clone addresses it
+shows beside `127.0.0.1`. Its recipe names
 the release binary of the version the machine runs, of kind `binary`, which
 the cache recognises by the ELF, Mach-O or PE header and the agent opens
 `package {module: gitea, artifact, digest}` for, and on Linux the package

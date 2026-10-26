@@ -43,13 +43,14 @@ that reports none publishes no `ssh` entry, so git over SSH reaches Gitea throug
 client and never through the machine's own sshd or the agent's SSH server.
 The hub publishes that port as the `ssh` entry of the Gitea app, a TCP
 `port` entry beside `web` ([../../protocol.md](../../protocol.md), "Apps").
-`SSH_DOMAIN` is the app's local name, `gitea.<machine>.localhost`, and
-`SSH_PORT` the local port of the `ssh` entry, both from the state's
-`ssh_domain` and `ssh_port`, so the clone address the page shows,
-`ssh://git@gitea.<machine>.localhost:<port>/<owner>/<repository>.git`, is the
-forward's address on every client ([../../protocol.md](../../protocol.md),
-"The local name and the local port"). Gitea makes its own SSH host key in
-its data directory, and a person adds their SSH keys in Gitea itself.
+`SSH_DOMAIN` is `127.0.0.1` and `SSH_PORT` the local port of the `ssh`
+entry, from the state's `ssh_port`, so the clone address the page shows,
+`ssh://git@127.0.0.1:<port>/<owner>/<repository>.git`, is the forward's
+address on every client ([../../protocol.md](../../protocol.md), "The local
+name and the local port"). A `.localhost` name is not used there, since git
+and ssh do not resolve one on every system, and the forward listens on
+`127.0.0.1` alone. Gitea makes its own SSH host key in its data directory,
+and a person adds their SSH keys in Gitea itself.
 
 **Git is the machine's.** The module installs none on macOS and Windows: an
 install or an apply there that finds no usable `git` is refused
