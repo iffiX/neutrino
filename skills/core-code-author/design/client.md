@@ -422,7 +422,7 @@ browser again with a fresh token.
 | The browser opens `<scheme>://<local name>:<local port><path>`, with `?tkn=<token>` added for an entry with `is_token_required`; `<scheme>` and `<path>` are the entry's url's own. On macOS and iOS the host is `127.0.0.1`. | A browser resolves a `.localhost` name to the loopback by itself and keeps cookies per host, so two apps never overwrite each other's login; Safari and WebKit resolve no `.localhost` name, so on macOS and iOS every app shares one host, and two apps whose cookies have the same name sign each other out. |
 | A token is read at every **Use** that opens the browser. | The token of code-server, CloudCLI, Codeg and Hermes WebUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
 | An entry the hub reports unhealthy keeps its forward and shows `ui.unhealthy` on its line. | The forward stays where the person put it; the service behind it can come back. |
-| A phone's Apps page is this page, with the same entries: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other. |
+| A phone's Apps page is this page, with the same entries but the `ssh` ones: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other, and an `ssh` entry needs the key a phone does not write. |
 
 A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
 while the app is in use, and one `connect` stream:
@@ -452,7 +452,7 @@ agent port is the one address a client dials.
 | `rdp` | from **Connect** until the viewer ends |
 | `file`, on Linux and macOS | from **Mount** until the share is unmounted |
 | `file`, on iOS | from **Open** until the share page closes, on a port the system picks ("The share page") |
-| an `ssh` entry for `nclient ssh` | for as long as one `nclient ssh proxy` runs, on no port: the proxy's standard input and output are the stream |
+| an `ssh` entry for `nclient ssh proxy` | for as long as the proxy runs, on no port: the proxy's standard input and output are the stream |
 | the hub's panel | from the first press of **Panel** until the hub is left or the client quits |
 
 A `file` entry on Windows goes through the files adapter instead ("The
@@ -475,7 +475,7 @@ The local port is the client's to manage:
 | A forward of no app, `ai`, `rdp`, `file` and the panel's, takes the first free port from 20000 up, and the client keeps the pick for it and gives it the same port on every later forward and after a restart. | Those forwards are reached by the client's own programs, which read the port from the client. |
 | A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it; a TCP entry's probe binds TCP sockets and a UDP entry's binds UDP sockets. On Windows a UDP number is not bound at all: it is looked up in the system's own table of UDP endpoints (`GetExtendedUdpTable`, IPv4 and IPv6), and is free only when no endpoint on any address holds it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. A UDP socket bound to a wildcard address makes the Windows firewall ask the person whether to let the client reach their networks. |
 | A number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. An app entry's number another program listens on, or another entry of the same protocol holds, is not listened on: that forward fails `port_taken {port}` on the app's error line, and the number never moves by itself. A kept pick of no app that another program now holds is picked again from 20000 up. | A port moved silently breaks a saved address, a clone address or a tool's setting; the person moves it, in **Configure**. |
-| The client keeps one table of local ports: every number in it with its protocol, no two entries of one protocol holding one number, and a number another entry of the same protocol holds is refused in the dialog with `ui.reason.port_taken`. A TCP entry and a UDP entry can hold one number. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide, and a TCP port and a UDP port of one number are two ports. |
+| The client keeps one table of local ports: the numbers the person set and the picks of forwards of no app, each with its protocol. The dialog refuses with `ui.reason.port_taken` a number that another entry of the same protocol holds in the table or has as its hub number; two entries whose hub numbers collide stay as they are until the person moves one. A TCP entry and a UDP entry can hold one number. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide that the person can see, and a TCP port and a UDP port of one number are two ports. |
 
 ## The AI page
 
@@ -836,14 +836,14 @@ an `ssh` entry's fixed local port on the Apps page. A phone has no such
 configuration; its Apps page forwards the `ssh` entries.
 
 The client writes `~/.ssh/neutrino_config` again whenever the machines it
-reaches by `ssh` change: one block for each machine that has an `ssh` entry
-this client is allowed, across every hub it is bound to.
+reaches by `ssh` change: one block for each machine that has an entry of the
+type `ssh` this client is allowed, across every hub it is bound to.
 
 ```text
 Host lab-gpu.nt
     User iffi
-    ProxyCommand nclient ssh proxy %r@%h
-    IdentityFile ~/.ssh/neutrino/lab-gpu_%r
+    ProxyCommand nclient ssh proxy "%r@%h"
+    IdentityFile "~/.ssh/neutrino/lab-gpu_%r"
     IdentitiesOnly yes
     UserKnownHostsFile ~/.ssh/neutrino/known_hosts
     HostKeyAlias lab-gpu.nt
@@ -851,9 +851,9 @@ Host lab-gpu.nt
 
 | Rule | Reason |
 | --- | --- |
-| A machine's host is the slug of its name, as an app's local name takes it, followed by `.nt`; two hubs that hold a machine of one slug give each `<machine>.<hub>.nt`, the hub's name by the same slug. `User` is the machine's first `ssh` entry's account, the SSH server's first enabled account. | One short name per machine, and the account a person most often means is the one they enabled first. |
-| `ProxyCommand` is `nclient ssh proxy`, which connects the program's standard input and output to the account's `ssh` entry through the running client; `%r` names the account, so `ssh lab@lab-gpu.nt` reaches the instance of `lab`. | The connection goes through the hub as every stream does, and each account has an instance of its own. |
-| The client writes each account's key from the entry's `service` frame to `~/.ssh/neutrino/<machine>_<account>`, mode 0600, and each machine's host key to `~/.ssh/neutrino/known_hosts`, Neutrino's own, as `<host> <key>`. It deletes the key of an entry that leaves its list. | `ssh` refuses a key file others can read, and a known_hosts of the client's own keeps the person's file as it is. |
+| A machine's host is the machine part of its apps' local names, followed by `.nt`; two hubs that hold a machine of one slug give each `<machine>.<hub>.nt`, the hub's name by the same slug. `User` is the machine's first `ssh` entry's account, the SSH server's first enabled account, since the hub lists the entries in that order. | One short name per machine, and the account a person most often means is the one they enabled first. |
+| `ProxyCommand` is `nclient ssh proxy`, which connects the program's standard input and output to the account's `ssh` entry through the running client; it takes the host as `ssh` gives it, `.nt` and all, and `%r` names the account, so `ssh lab@lab-gpu.nt` reaches the instance of `lab`. The two are quoted, since a Windows account's name can hold a space. | The connection goes through the hub as every stream does, and each account has an instance of its own. |
+| The client reads each account's key with the entry's `service` frame when the entry first appears and at each rewrite, and writes it to `~/.ssh/neutrino/<host>_<account>`, `<host>` the machine's host without `.nt`, mode 0600, and each machine's host key to `~/.ssh/neutrino/known_hosts`, Neutrino's own, as `<host> <key>`. An `ssh` entry stays listed while its account is enabled, so a restart of the instance keeps its key; the client deletes the key of an entry that leaves its list. | `ssh` refuses a key file others can read, and a known_hosts of the client's own keeps the person's file as it is. |
 | On Windows the files are the same under `%USERPROFILE%\.ssh`, the key's access list granting the person's account alone, and `ProxyCommand` names `nclient.exe`. | Windows' OpenSSH reads the same configuration and checks the key file by its access list. |
 | The client never edits `~/.ssh/config` by itself. `nclient ssh config install`, or the **Settings** page's switch **SSH programs reach the machines** (`ui.settings.ssh_include`), adds `Include ~/.ssh/neutrino_config` as its first line, once; `uninstall` and the switch turned off take that line out and nothing else. | The person's SSH configuration is the person's, and an `Include` at the top is the one line that makes `<machine>.nt` known to every program. |
 | `~/.ssh/neutrino_config`, the keys and the known_hosts go when the client's last hub is left. | Nothing of a hub stays after the client leaves it. |
@@ -873,7 +873,7 @@ follow the window's pages, with the program itself and `ssh` above them:
 | `ssh open [<account>@]<machine> [-- <command>]` | runs the system's `ssh` with `-F ~/.ssh/neutrino_config` against `<account>@<machine>.nt`, the first account when none is named; with `--` it runs the command alone and exits with its code | `ssh`'s own |
 | `ssh config show` | prints the path and the text of `~/.ssh/neutrino_config` | 0 |
 | `ssh config install`, `ssh config uninstall` | adds or takes out the `Include` line ("SSH for other programs") | 0 |
-| `ssh proxy [<account>@]<machine>` | joins its standard input and output to the account's SSH server, for `ProxyCommand` | 0 when the stream ends, 1 for a refusal |
+| `ssh proxy [<account>@]<machine>` | joins its standard input and output to the account's SSH server, for `ProxyCommand`; `<machine>` can end in `.nt` | 0 when the stream ends, 1 for a refusal |
 | `hub list` | prints each hub: its name, its connection, the way it is reached, and the round trip | 0 |
 | `hub join <link>` | joins a hub with a link, as **Join a hub** does | 0, 1 for a refusal |
 | `hub leave <hub> [--yes]` | leaves a hub, as **Leave** does, after a `[y/N]` question that `--yes` answers | 0, 1 for a refusal |

@@ -603,6 +603,10 @@ table. Three sections follow, top to bottom; what each reads is
 | **Modules** (`ui.machine.modules`) | **Available accounts**, then **Module configuration** |
 | **The agent** (`ui.machine.agent`) | four rows, the version, the platform, the host name and the last report; and two bordered buttons, **Update agent** and **Reinstall**, the latter opening the **Add over SSH** dialog for this machine. Forgetting a machine is on the Agents page alone |
 
+A machine that has not reported yet shows its name and `ui.device_monitor.waiting`
+in each section, and an id the hub holds no row for shows
+`ui.machine.not_found` with the **Agents** button alone.
+
 **Available accounts** (`ui.accounts.title`) is the machine's accounts the
 person added ([agent.md](agent.md), "The two layers and the accounts"). A
 new machine shows none, with `ui.accounts.empty` and its hint; **Add**, a
@@ -611,19 +615,24 @@ list, the panel add of "Inline forms", lit with the accent frame:
 
 | Field | Idiom |
 | --- | --- |
-| **System account** | the panel's own picker over the accounts the machine reports that are not yet available |
+| **System account** | the panel's own picker over the accounts the machine reports that are not yet available, `system_accounts` |
 | **Password** | on a Windows machine alone, a password field kept in the vault as the account's login; left empty on an edit, the login stays |
-| **Share path** | a text field, the account's home by default, with **Browse…** opening the path window in its folder mode |
-| **Shell** | a text field, the account's login shell by default and PowerShell on Windows, with **Browse…** opening the path window in its file mode |
+| **Share path** | a text field showing the account's home as its placeholder, with **Browse…** opening the path window in its folder mode; left empty, it sends empty and the default holds |
+| **Shell** | a text field showing the account's login shell as its placeholder, PowerShell on Windows, with **Browse…** opening the path window in its file mode; left empty, it sends empty |
 | **AI tools use the hub's gateway** | a switch, off by default; turned on, it shows the model rows: Claude Code's four slots, Codex's model and its effort, and Gemini's model, each picker's first choice `ui.ai_tools.gateway_default` |
 
 **Cancel** and **Save** sit at the form's bottom right. A row shows the
-account's name alone with **Edit** and **Remove**, its content centred; **Edit**
-opens the same form in the row's place. **Remove** asks through `useConfirm`,
-the body naming the modules that lose the account.
+account's name, and while its AI tools switch is on the result as a
+`StatusDot` with a word, with **Edit** and **Remove** at its right, its
+content centred; **Edit** opens the same form in the row's place. **Remove**
+asks through `useConfirm`, the body naming the modules that lose the
+account (`ui.accounts.remove_body`, or `ui.accounts.remove_body_none` when
+none enables it).
 
 **Module configuration** (`ui.modules.tabs_title`) is a left and right
-split: on the left a vertical, scrollable list of the machine's modules, each
+split: on the left a vertical, scrollable list of the machine's modules, the
+rows `GET /api/agent/module` marks `is_shown`, the first one picked when the
+page opens and the picked one kept in the address as `?module=`, each
 row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph
 for a module without one) and its title, and under it **+ Add module**, a
 bordered button as wide as the list; on the right the picked module's tab.
@@ -654,7 +663,9 @@ code-server, CloudCLI and Codeg, holds **Enabled accounts**
 account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
 accounts** while there is none. The panel is configurable, with its apply
-bar, and its order is the order of the checks. The tabs of the machine layer,
+bar; an account checked goes to the end of the order, and each row shows the
+module's own field, its running dot and its code's words. The tabs of the
+machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
 
@@ -708,7 +719,10 @@ A module's tab shows a version line under its state line once the module is
 installed, from `GET /api/agent/module/version`
 ([agent/module_install.md](agent/module_install.md), "Module versions"); a
 module that is not installed shows its state, its log box and its buttons
-alone, and its **Install** installs the tested version:
+alone, and its **Install** installs the version the machine chose, the
+tested one when it chose none. Terminal, Remote desktop and the SSH server
+show no version line: they are the agent's, whose version **The agent**
+shows:
 
 | Part | Idiom |
 | --- | --- |
@@ -716,7 +730,7 @@ alone, and its **Install** installs the tested version:
 | **Update** (`ui.modules.update`) | a bordered `button` beside the line, live while the newest version differs from the one installed and the module is installed and not in transit; it sends `POST /api/agent/module/version/set` with the newest version |
 | **Install another version…** (`ui.modules.install_version`) | a bordered `button` beside it, live under the same conditions; it opens a dialog listing the versions newest first, the tested one marked `ui.modules.version_tested` and each newer one `ui.modules.version_untested`, with **Follow the tested version** (`ui.modules.version_follow_tested`) at the top; a press on a row sends `version/set` with that version, or empty for the top row, and closes the dialog |
 | A version older than the one installed | on a module whose manifest says `is_data_forward_only`, the press asks through `useConfirm` first (`ui.modules.downgrade_title`, `ui.modules.downgrade_body`) |
-| A locked version | a module of the `agent`, `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version |
+| A locked version | a module of the `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version as a row that cannot be pressed and no **Follow the tested version** row |
 
 There is no switch that updates a module by itself. A `version_switch_failed`
 shows as the tab's error notice, as any `failed` module's code does, with the

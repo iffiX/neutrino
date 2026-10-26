@@ -365,6 +365,7 @@ walk theirs. A new code and its wording are one change.
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
+| `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
 | `hub_key_missing` | none | an agent's or a client's `last_error` for a binding of the 0.5 shape it cannot move while the legacy listener is off | added |
 | `port_taken` | `{port}` | a client's forward of an app entry whose number another program or entry holds | kept, now for the hub's numbers too |
 | `declared_service_invalid` | `{field}` | `declaration/add`, `field` being `name`, `host`, `entries` or `entries.<n>.<field>` | kept, for apps |
@@ -535,7 +536,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `GET /api/hub/device` | | every managed machine, one row each, as the **Agents** page draws it: `{id, name, icon, ipv4_address, link_mac, is_agent_online, client}`, `client` holding `version`, `platform_os`, `platform_arch`, `hostname`, `last_report_at`, `is_version_mismatched` and `metrics`, the readings the status cell's rings draw, CPU, memory, disk, each GPU and the temperature; and `count`, `{total, online}` for the title's badge |
 | `GET /api/hub/device/online` | | the devices with a session open |
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
-| `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, written by **Rename**; the icon, written by the icon picker at once; the stored SSH credential the hub reaches it with; and which module tabs its machine page shows, written by the catalog's cards |
+| `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, `device_id` and any of the others | the name, written by **Rename**, not empty; the icon, one of the panel's device icons, written by the icon picker at once; the stored SSH credential the hub reaches it with; and `shown_module`, the whole list of the modules whose tabs the machine page shows, written by the catalog's cards, the carried modules and every module that is not `absent` shown whatever it holds; the device list |
 | `POST /api/hub/device/add` | `{host, ...}`, the host the person typed and the fields of `agent/install` except `device_id` | the **Add over SSH** dialog's press: creates the device's row, named by `host` until the machine reports, and starts the agent's install over SSH in the same request; `TaskStarted` |
 | `POST /api/hub/device/remove` | `{device_id}` | **Forget**: forgets the device; its session is ended with `binding_unknown` |
 | `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network of the exposed IPv4 segments, in every mode, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
@@ -676,12 +677,12 @@ it opens. The page reads:
 | Part of the page | Reads |
 | --- | --- |
 | the header and **The agent** | the machine's row of `GET /api/hub/device`: its name, `is_agent_online`, and `client`'s `version`, `platform_os`, `platform_arch`, `hostname`, `last_report_at` and `is_version_mismatched` |
-| **Monitor** | the same row's `client.metrics`, the process table among them, and then the `metrics` event on `/ws/hub/event` |
+| **Monitor** | the same row's `client.metrics`, which holds the agent's `machine.metrics`: CPU in total and per core, memory, the system disk, the temperature, the load average, the uptime, the GPUs and the process table; then each `metrics` event on `/ws/hub/event`, whose readings the charts draw while the page is open; a process row's kill is `POST /api/hub/device/process/kill` |
 | **Available accounts** | `GET /api/agent/module/account?device_id=` |
-| the module tabs | `GET /api/agent/module?device_id=` for the list, and for the tab shown its own `GET /api/agent/module/<name>`, `GET /api/agent/module/version` and `GET /api/agent/module/journal` |
+| the module tabs | `GET /api/agent/module?device_id=` for the list, and for the tab shown its own `GET /api/agent/module/<name>` where the module has one, `GET /api/agent/module/version` and `GET /api/agent/module/journal`, and `GET /api/hub/device/install_output` while the hub holds an install task of the module |
 | **+ Add module** | `GET /api/agent/module/catalog?device_id=`; a card checked or unchecked writes `POST /api/hub/device/set {device_id, shown_module}` |
 | the Remote desktop tab | also `GET /api/hub/device/remote_desktop` and its two writes, `remote_desktop/password/set` and `desktop/seat_password/reset` |
-| **Update agent**, **Reinstall** | `POST /api/hub/device/agent/reinstall`, the `reinstall` verb over the channel; and the install dialog, `POST /api/hub/device/agent/install` |
+| **Update agent**, **Reinstall** | `POST /api/hub/device/agent/reinstall`, the `reinstall` verb over the channel, live while the machine is online and `is_version_mismatched`; and the install dialog, `POST /api/hub/device/agent/install` |
 
 #### `/api/agent/file`
 
@@ -697,13 +698,13 @@ to pick one.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active`, `version` and `details`, `version` being the version installed as the machine reports it |
+| `GET /api/agent/module` | `?device_id=` | one row per module, `{name, want, state, is_active, version, code, params, details, is_supported, is_carried, is_shown}`: `want` the stored one, empty when the hub holds none, `version` the version installed as the machine reports it, `code` and `params` the reported failure or hold-up; the page's tabs are the rows `is_shown` names, in the page's order |
 | `GET /api/agent/module/catalog` | `?device_id=` | `ModuleCatalogView`: `categories`, the activity filters in their order, and `modules`, each `{name, category, is_available, is_supported, is_carried, is_shown, state}`, in the order `data/module_catalog.json` lists them: `is_available` false for a module the hub has no manifest of yet, `is_supported` whether the machine's platform has an entry, `is_carried` for Terminal, Remote desktop and the SSH server, `is_shown` whether its tab is on the page, and `state` as last reported |
 | `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; for a `container` module, first `want: running` on `podman` when its `want` is another ([agent/module_install.md](agent/module_install.md), "From container images") |
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; for a `container` module, first `want: running` on `podman` as **Install** does |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` on `podman` while a `container` module has a `want` other than `absent` |
-| `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method and for a `container` module whose manifest names no `releases`; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one, and the one locked version for a locked module; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
+| `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method and for a `container` module whose manifest names no `releases`; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one, and the one locked version for a locked module; `is_data_forward_only` from the manifest; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
 | `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json` and pushes the state; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
 | `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for every module alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`; 409 `agent_offline` |
@@ -711,8 +712,8 @@ to pick one.
 | `POST /api/agent/module/account/add` | `{device_id, account, password, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `password` on a Windows machine alone, `share_path` and `shell_path` empty for the defaults, each `tool_configs` slot empty for the gateway's default | adds the account: on Windows stores `password` as a vault login and names it `login_id`, turns the AI tools on for it when asked, and pushes the state; `AccountListView`; 400 `account_unknown {account}` for an account the machine does not report, `account_duplicate {account}`, `credential_missing {account}` for a Windows account with no password, `path_invalid {path}` for a path that is not absolute, the agent's own `shell_program_unusable {path}`, `vault_locked`; 409 `gateway_not_serving` for the AI tools turned on while the gateway serves no model, `agent_offline` |
 | `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; `AccountListView`; the refusals of `add` |
 | `POST /api/agent/module/account/remove` | `{device_id, account}` | removes the account from every module that enables it, switches its AI tools back, deletes its login and the secrets its modules generated, and pushes the state; `AccountListView` |
-| `GET /api/agent/module/<name>` for `terminal`, `samba`, `ssh_server`, `vscode`, `code_server`, `cloudcli` and `codeg` | `?device_id=` | `EnabledAccountsView`: the fields of every module view; and `accounts`, every available account in the machine page's order, each `{account, is_enabled, port, is_running, code}` with the last three as last reported, and the module's own field: `shell_path` on `terminal`, `share_path` and `user` on `samba`; `ssh_server` adds `host_key_fingerprint`, and `vscode` `is_terms_accepted` and `terms_url` |
-| `POST /api/agent/module/<name>/set` for the same seven | `{device_id, accounts}`, the enabled accounts in order | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("The modules section, one entry per module"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400 |
+| `GET /api/agent/module/<name>` for `terminal`, `samba`, `ssh_server`, `vscode`, `code_server`, `cloudcli` and `codeg` | `?device_id=` | `EnabledAccountsView`: the fields of every module view; and `accounts`, every available account in the machine page's order, each `{account, is_enabled, port, is_running, code, params}` with the last four as last reported, and on each row the module's own field: `shell_path` on `terminal`, `share_path` and `user`, the SMB user, on `samba`; `ssh_server` adds `host_key_fingerprint` to the view, and `vscode` `is_terms_accepted` and `terms_url` |
+| `POST /api/agent/module/<name>/set` for the same seven | `{device_id, accounts}`, the names of the enabled accounts, in the order they were checked | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("The modules section, one entry per module"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400 |
 | `POST /api/agent/module/vscode/terms/set` | `{device_id, is_accepted}` | records, with `is_accepted` true, that the person accepted the terms for this machine, as `terms_accepted_at` in `config/devices/<id>/vscode.json`; false deletes the record; `EnabledAccountsView`. The panel sends true alone, from the press that opens the terms. Until the record exists, `module/install`, `module/start` and `vscode/set` naming `vscode` on that machine are refused 409 `terms_not_accepted {module}` |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `GET /api/agent/module/gitea` | `?device_id=` | |
@@ -760,8 +761,10 @@ activity it serves, in the order of the catalog's dialog, `{categories:
 [id], modules: [{name, category}]}`, the categories `code`, `paper`, `lab`,
 `design`, `notes`, `files`, `remote` and `other`, and the modules the hub
 has no manifest of yet listed with them. Checking a card adds its module to
-`shown_module`; a module that is not `absent` on the machine, and a carried
-one, stays checked.
+`shown_module` and unchecking takes it out; a module that is not `absent` on
+the machine, and a carried one, stays checked. A module of the `container`
+method has no `GET /api/agent/module/<name>` of its own: its tab draws its
+state, its log and its buttons from `GET /api/agent/module`.
 
 The panel's routes of 0.5 that served the pages this version removed are
 gone: the Files page's `file/download`, `file/directory/download`,
@@ -770,9 +773,10 @@ Terminals page's `GET /api/agent/terminal/session`,
 `POST /api/agent/terminal/session/stop` and the machine shell on
 `/ws/agent/terminal`; the Modules page's **Global configuration**,
 `ai_tool`, `ai_tool/enable`, `ai_tool/disable` and `ai_tool/set`, now each
-account's switch; the file share's `samba`, `samba/import`,
-`samba/share/set`, `samba/user/set` and `samba/user/password/set`, now its
-enabled accounts; `terminal/set {account, shell_path}`; the instance lists
+account's switch; the file share's `samba/import`, `samba/share/set`,
+`samba/user/set` and `samba/user/password/set`, now its enabled accounts,
+and `GET /api/agent/module/samba` answering the enabled accounts in place of
+the shares and the users; `terminal/set {account, shell_path}`; the instance lists
 of `vscode/set`, `code_server/set`, `cloudcli/set` and `codeg/set`; and
 `hermes_webui/set`, its port now the agent's. A person ends a client's kept
 session from a client.
@@ -1697,19 +1701,19 @@ the hub generated for each, sealed under the vault's data key:
 | Module | `config/devices/<id>/<module>.json` | The module's `config` in the state |
 | --- | --- | --- |
 | `terminal` | `{accounts: [{account}]}` | `{accounts: [{account, shell_path, password}]}` |
-| `samba` | `{accounts: [{account, password_sealed}]}` | `{shares, users}` in the module's own shape: for each enabled account a share `{name: <account>, path: <share_path>, valid_users: [<user>]}` and a user `{name: <user>, password}`, the user being the account's SMB user ([agent.md](agent.md), "The file share's accounts") |
+| `samba` | `{accounts: [{account, password_sealed}]}` | `{shares, users, passwords, allowed_subnets}`: for each enabled account a share `{name: <account>, path, comment: "", is_read_only: false, valid_users: [<user>]}`, its user's name in `users`, and `passwords`, `{<user>: <password>}`, the user being the account's SMB user ([agent.md](agent.md), "The file share's accounts"); the agent sets each user's password from `passwords` at every apply whose password differs, in place of the `set_password` verb of 0.5 |
 | `vscode` | `{terms_accepted_at, accounts: [{account, token_sealed}]}` | `{address, instances: [{account, token, password}]}` |
-| `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret}]}` |
-| `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password}]}` |
-| `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password}]}` |
+| `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, local_name, cookie_name}]}` |
+| `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password, local_name, cookie_name}]}`, `token_secret` being the secret its tokens are minted from |
+| `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password, local_name, cookie_name}]}` |
 | `ssh_server` | `{accounts: [{account, private_key_sealed}]}` | `{instances: [{account, authorized_key, shell_path, password}]}`, `authorized_key` the public half of the sealed key |
 
 | Rule | Reason |
 | --- | --- |
-| `shell_path` and the share's `path` are the account row's, its `share_path` and `shell_path`, the account's home and its login shell standing for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ("The two layers and the accounts" there). |
+| The share's `path` is the account row's `share_path`, and the hub writes the account's `home` from the machine's `account_details` for an empty one. `shell_path` goes as the row holds it, and the agent starts the account's login shell, PowerShell on Windows, for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ("The two layers and the accounts" there), and each side fills in the default it knows. |
 | The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
-| Every instance with a forwarder in front of it, code-server's, CloudCLI's and Codeg's, also carries `local_name`, its app's, and `cookie_name`, its entry's ([agent/module_template.md](agent/module_template.md), "The run"); Hermes WebUI's module carries `local_name` beside its own `cookie_name`. | The forwarder checks the `Host` against the one and names its login by the other. |
-| No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's record, and reports it in `details`; the hub publishes the entry at the reported port. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
+| Every instance with a forwarder in front of it, code-server's, CloudCLI's and Codeg's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); Hermes WebUI's module carries `local_name` beside its own `cookie_name`. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
+| No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's root-only record under its state root, across a disable and an enable, and reports it in `details`, the port a `connect` reaches, the forwarder's where the module has one; the hub publishes the entry at the reported port. A kept port another program holds at a start is replaced by the next free one and reported. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
 | An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
 
 The `ai_tools` section is the same layer's: it names the available accounts
@@ -1724,7 +1728,7 @@ what the entry's `payload` names:
 | --- | --- | --- |
 | `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
-| `ssh` | `{host, port, account, host_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, and `host_key_fingerprint` the machine's host key as `SHA256:<base64>` | a device's SSH server module runs that account's instance ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)) |
+| `ssh` | `{host, port, account, host_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, and `host_key_fingerprint` the machine's host key as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
@@ -1748,7 +1752,10 @@ either protocol, is healthy while the container runs, and a container's TCP
 binding is a `web` entry or a `port` entry, never both
 ([agent/modules/containers.md](agent/modules/containers.md), "Services of
 a container"). An `ssh` entry is healthy while its machine reports the
-instance running.
+instance running, and is listed while the account is enabled, so a client
+keeps its key and its configuration across a restart of the instance. A
+client shows a payload's `port` and forwards at `local_port`; it dials
+neither.
 
 `description` is the English provenance line the composer writes, and
 `description_code` names the same provenance for a surface that words it in
@@ -1767,7 +1774,7 @@ its own language:
 | `code_server_module` | `{host, account}`; the same |
 | `codeg_module` | `{host, account}`; the same |
 | `hermes_webui_module` | `{host}`; the entry exists only while the device reports the module `running` |
-| `ssh_server_module` | `{host, account}`; the entry exists only while the device reports the instance running |
+| `ssh_server_module` | `{host, account}`; the entry exists while the module enables the account |
 
 A declared app whose person wrote a line of their own gets that line on each
 of its entries and an empty `description_code`, because those are already
@@ -1836,8 +1843,10 @@ local_port(id)  = 60000 + (the first four bytes of SHA-256 of the entry id in UT
 ```
 
 The machine name is the entry's `device_name`, or the hub's own name for an
-entry no machine the hub knows provides. `local_port` lies in 60000 to
-65535.
+entry no machine the hub knows provides. Two machines of one hub whose names
+give one slug each take `-` and the first six hex characters of its device
+id after it, and so do two apps of one machine. `local_port` lies in 60000
+to 65535.
 
 | Rule | Reason |
 | --- | --- |
@@ -1942,7 +1951,7 @@ the reply its code; the panel's are `binding_unknown`, `client_disabled` and
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, or a code-server, CloudCLI or Codeg instance or Hermes WebUI whose secret does not open |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI or Codeg instance or Hermes WebUI whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as

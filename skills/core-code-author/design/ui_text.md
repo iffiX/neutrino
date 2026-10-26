@@ -266,6 +266,10 @@ where they fit.
 | `ui.accounts.edit`, `ui.accounts.remove` | Edit, Remove | 编辑、移除 |
 | `ui.accounts.remove_title` | Remove {account} | 移除 {account} |
 | `ui.accounts.remove_body` | {modules} stop running as {account}, and its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
+| `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这台机器的可用账户里移除，它的 AI 工具改回原来的设置。 |
+| `ui.machine.version`, `ui.machine.platform`, `ui.machine.hostname`, `ui.machine.last_report` | Version, Platform, Host name, Last report | 版本、平台、主机名、最后上报 |
+| `ui.machine.uptime`, `ui.machine.load`, `ui.machine.disk`, `ui.machine.temperature` | Uptime, Load 1/5/15 min, Disk, Temperature | 运行时间、负载 1/5/15 分钟、磁盘、温度 |
+| `ui.machine.not_found` | This machine is not on record. | 没有这台机器的记录。 |
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |

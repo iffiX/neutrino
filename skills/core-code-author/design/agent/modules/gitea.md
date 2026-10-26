@@ -36,8 +36,10 @@ panel shows no link to it; a client opens it as it opens every `web` entry.
 
 **Gitea's own SSH server is its `ssh` entry.** `app.ini` names
 `START_SSH_SERVER = true`, `SSH_LISTEN_HOST = 127.0.0.1` and
-`SSH_LISTEN_PORT`, a port the agent takes from 2222 up at the first apply
-and reports as `ssh_listen_port`, so git over SSH reaches Gitea through a
+`SSH_LISTEN_PORT`, a port the agent takes from 2222 up at the first apply,
+keeps in the module's root-only record under its state root and writes into
+every render of `app.ini` after, and reports as `ssh_listen_port`; a machine
+that reports none publishes no `ssh` entry, so git over SSH reaches Gitea through a
 client and never through the machine's own sshd or the agent's SSH server.
 The hub publishes that port as the `ssh` entry of the Gitea app, a TCP
 `port` entry beside `web` ([../../protocol.md](../../protocol.md), "Apps").
