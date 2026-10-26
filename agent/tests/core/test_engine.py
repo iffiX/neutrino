@@ -34,6 +34,7 @@ import time
 import pytest
 
 import neutrino_agent.core.engine as engine_module
+from neutrino_agent.core.desired_state import APPLY_ORDER
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.exceptions import (
     InstallError,
@@ -2298,3 +2299,9 @@ def test_an_install_keeps_the_version_and_an_uninstall_forgets_it(tmp_path):
 
     assert kept == {"version": "1.0", "digests": {"app": "sha256:" + DIGEST}}
     assert engine.installed_version("fakedesk") == {}
+
+
+def test_every_module_runner_the_engine_builds_is_in_the_apply_order(tmp_path):
+    for platform in (FakePlatform(), NoPackagesPlatform()):
+        engine = ModuleEngine(platform=platform, configured_dir=str(tmp_path))
+        assert set(engine.module_runners) <= set(APPLY_ORDER)

@@ -85,6 +85,7 @@ APPLY_ORDER = (
     "zfs",
     "samba",
     "terminal",
+    "ssh_server",
     "gitea",
     "podman",
     "hermes_webui",
