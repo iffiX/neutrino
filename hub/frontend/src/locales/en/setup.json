@@ -105,6 +105,7 @@
   "ui.setup.install_fingerprint": "SHA-256 {fingerprint}",
   "ui.setup.review_https_on": "on",
   "ui.setup.review_https_off": "off",
+  "ui.setup.step_transport": "Preparing the transport",
   "ui.setup.token_missing_lead": "Open it from the Neutrino Hub app on this machine, or from the address the install printed.",
   "ui.setup.token_missing_hint": "Or run nhub open as an administrator on this machine."
 }

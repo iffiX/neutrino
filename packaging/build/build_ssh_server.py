@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared import go_build  # noqa: E402
+from shared import edition_build, go_build  # noqa: E402
 from shared.constants import PACKAGING_GO_TARGETS  # noqa: E402
 
 SSH_SERVER_MODULE = REPO_ROOT / "agent" / "sshserver"
@@ -32,12 +32,14 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--target", choices=PACKAGING_GO_TARGETS, help="one target")
     parser.add_argument("--all", action="store_true", help="every target")
     parser.add_argument(
         "--output-dir", default="dist", help="the build's output directory"
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     targets = list(PACKAGING_GO_TARGETS) if arguments.all else [arguments.target]
     if targets == [None]:
         parser.error("--target or --all is required")

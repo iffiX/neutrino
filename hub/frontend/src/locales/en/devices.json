@@ -393,6 +393,7 @@
   "ui.machine.version": "Version",
   "ui.services.add_entry": "Add entry",
   "ui.services.apps_title": "Apps",
+  "ui.services.description_ssh_server_module": "published by the SSH server module on {host} for {account}",
   "ui.services.entries": "Entries",
   "ui.services.entry_path": "Path",
   "ui.services.entry_remove": "Remove",

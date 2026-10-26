@@ -188,7 +188,7 @@ def test_status_says_a_privileged_caller_has_joined_nothing(
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert "hub        this machine has joined no gateway" in out
+    assert "hub        this machine has joined no hub" in out
     assert "service    inactive" in out
     assert "heartbeat" not in out
 
@@ -197,7 +197,7 @@ def test_status_says_a_running_service_has_joined_nothing(running_service, capsy
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert "hub        this machine has joined no gateway" in out
+    assert "hub        this machine has joined no hub" in out
     assert "service    running" in out
     assert "heartbeat" not in out
 
@@ -211,7 +211,7 @@ def test_status_says_why_a_running_service_was_unbound(running_service, capsys):
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
-    assert "hub        this machine has joined no gateway" in out
+    assert "hub        this machine has joined no hub" in out
     assert "heartbeat  the hub no longer knows this machine" in out
     assert "join again with a fresh link from the hub's Agents page" in out
     assert "service    running" in out

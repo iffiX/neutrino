@@ -354,7 +354,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
             UNBIND_TIMEOUT_S,
         )
         assert advice in told, told
-        assert "joined no gateway" not in told, told
+        assert "joined no hub" not in told, told
 
     restored = patch_protocol(host, spoken)
     assert f"PROTOCOL = {spoken}" in restored.stdout, restored.stdout + restored.stderr
@@ -370,7 +370,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     assert panel.status("POST", "/hub/device/remove", {"device_id": device_id}) == 200
     wait_for(
         "the refused agent to let go",
-        lambda: "joined no gateway" in ssh_to(host, "sudo nagent status").stdout,
+        lambda: "joined no hub" in ssh_to(host, "sudo nagent status").stdout,
         DRILL_TIMEOUT_S,
     )
     assert device_by_id(panel, device_id) is None

@@ -10,7 +10,7 @@ from neutrino_agent.cli.status import word_error
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
-SYNC_UNBOUND = "this machine has joined no gateway"
+SYNC_UNBOUND = "this machine has joined no hub"
 SYNC_NO_SERVICE = "the agent service is not running; start it first"
 
 

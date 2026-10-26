@@ -21,7 +21,7 @@ from neutrino_agent.core.loop import Agent
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
-STATUS_UNBOUND = "this machine has joined no gateway"
+STATUS_UNBOUND = "this machine has joined no hub"
 # How long the running service gets to answer on its control socket; a
 # small board under load takes more than a second.
 STATUS_CONTROL_TIMEOUT_S = 5

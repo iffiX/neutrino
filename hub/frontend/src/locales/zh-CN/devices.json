@@ -393,6 +393,7 @@
   "ui.machine.version": "版本",
   "ui.services.add_entry": "添加入口",
   "ui.services.apps_title": "应用",
+  "ui.services.description_ssh_server_module": "由 {host} 上的 SSH 服务器模块为 {account} 发布",
   "ui.services.entries": "入口",
   "ui.services.entry_path": "路径",
   "ui.services.entry_remove": "移除",

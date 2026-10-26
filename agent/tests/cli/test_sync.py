@@ -53,7 +53,7 @@ def test_sync_says_the_machine_has_joined_nothing(running_service, capsys):
     assert sync_cli.main() == 1
 
     assert agent.syncs == 1
-    assert "this machine has joined no gateway" in capsys.readouterr().out
+    assert "this machine has joined no hub" in capsys.readouterr().out
 
 
 def test_sync_words_a_refusal(running_service, config_path, capsys):

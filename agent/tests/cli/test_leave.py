@@ -71,7 +71,7 @@ def test_an_unbound_machine_is_told_it_joined_nothing(monkeypatch, capsys):
     assert leave_cli.main(is_forced=False) == 1
 
     out = capsys.readouterr().out
-    assert "this machine has joined no gateway" in out
+    assert "this machine has joined no hub" in out
     assert LEAVE_WORDS not in out
 
 
