@@ -28,6 +28,7 @@ from neutrino_agent.modules.shared.account_service import (
 from neutrino_agent.modules.shared.instances import InstanceHooks
 from neutrino_agent.modules.vscode.config import VscodeConfig, VscodeInstance
 from neutrino_agent.modules.vscode.constants import (
+    VSCODE_BASE_PORT,
     VSCODE_CLI_NAMES,
     VSCODE_RUNNER,
     VSCODE_LINUX_SYSCTL_FLOORS,
@@ -56,6 +57,7 @@ class VscodeHooks(InstanceHooks):
     instance_class = VscodeInstance
     record_fields = ("account", "port", "host")
     is_forwarded = False
+    base_port = VSCODE_BASE_PORT
 
     def __init__(
         self,
@@ -127,12 +129,16 @@ class VscodeHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before.
+            held: The record held before, with the port the runner took.
 
         Returns:
             ``{account, port, host}``.
         """
-        return {"account": instance.account, "port": instance.port, "host": parsed.host}
+        return {
+            "account": instance.account,
+            "port": int(held.get("port") or 0),
+            "host": parsed.host,
+        }
 
     def service(
         self, instance: VscodeInstance, entry: AccountEntry, record: dict
@@ -142,13 +148,15 @@ class VscodeHooks(InstanceHooks):
         Args:
             instance: The instance.
             entry: Its account.
-            record: Its record, whose ``host`` is the address it listens on.
+            record: Its record, whose ``host`` and ``port`` are where it
+                listens.
 
         Returns:
             The service.
         """
         token_path = self._join(self.token_dir, instance.account + TOKEN_SUFFIX)
         host = str(record.get("host") or VSCODE_LOOPBACK_ADDRESS)
+        port = int(record.get("port") or 0)
         if self._os_name == "linux":
             command = (
                 self.cli_path,
@@ -162,7 +170,7 @@ class VscodeHooks(InstanceHooks):
             )
             environment = {
                 HOST_VARIABLE: host,
-                PORT_VARIABLE: str(instance.port),
+                PORT_VARIABLE: str(port),
                 TOKEN_FILE_VARIABLE: token_path,
             }
         else:
@@ -172,7 +180,7 @@ class VscodeHooks(InstanceHooks):
                 "--host",
                 host,
                 "--port",
-                str(instance.port),
+                str(port),
                 "--connection-token-file",
                 token_path,
             )
@@ -184,7 +192,7 @@ class VscodeHooks(InstanceHooks):
             command=command,
             environment=environment,
             password=instance.password,
-            listen_port=instance.port,
+            listen_port=port,
             environment_dir=self.token_dir,
             files=((token_path, instance.token),),
         )

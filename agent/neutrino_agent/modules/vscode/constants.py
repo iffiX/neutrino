@@ -18,8 +18,8 @@ VSCODE_SERVE_ARGUMENTS = ("serve-web", "--accept-server-license-terms")
 # hub names none: loopback, where the agent's end of a ``connect`` stream
 # reaches it.
 VSCODE_LOOPBACK_ADDRESS = "127.0.0.1"
-VSCODE_PORT_MIN = 1024
-VSCODE_PORT_MAX = 65535
+# The port the agent takes each instance's port from, the first free one up.
+VSCODE_BASE_PORT = 8000
 
 # The file watcher of a served workspace takes one inotify watch per directory
 # and one instance per window; a distribution's defaults (8192 or 65536

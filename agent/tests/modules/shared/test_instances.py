@@ -47,7 +47,7 @@ from neutrino_agent.modules.shared.instances import (
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
-INSTANCE = {"account": "ann", "port": 8443, "secret": "s"}
+INSTANCE = {"account": "ann", "secret": "s"}
 CONFIG = {"instances": [INSTANCE]}
 
 
@@ -88,6 +88,7 @@ class DemoHooks(InstanceHooks):
     instance_class = DemoInstance
     record_fields = ("account", "port", "secret", "upstream_port")
     forwarder_fields = ("account", "port", "secret")
+    base_port = 8443
 
     def __init__(self, *, platform, log=print):
         super().__init__(platform=platform, log=log)
@@ -259,14 +260,20 @@ def platform(tmp_path):
     return Platform(root=str(tmp_path))
 
 
+# The loopback ports another program holds in a test.
+HELD_PORTS: set = set()
+
+
 def make_runner(machine, platform, log=None):
     FakeForwarder.made = []
+    HELD_PORTS.clear()
     return InstancesModuleRunner(
         hooks_class=DemoHooks,
         platform=platform,
         log=log if log is not None else (lambda line: None),
         machine=machine,
         forwarder_factory=FakeForwarder,
+        is_port_free=lambda port: port not in HELD_PORTS,
     )
 
 
@@ -389,7 +396,8 @@ def test_an_account_no_longer_named_loses_its_service_record_and_forwarder(
         systemd.calls
     )
     assert not (tmp_path / "config" / "demo" / "ann.env").exists()
-    assert os.listdir(tmp_path / "config" / "demo") == []
+    assert os.listdir(tmp_path / "config" / "demo") == ["ann.json"]
+    assert runner.details({})["instances"] == []
     assert FakeForwarder.made[0].is_closed
 
 
@@ -491,11 +499,89 @@ def test_an_apply_starts_one_forwarder_per_record_with_the_hooks(runner):
 def test_a_changed_instance_gets_a_new_forwarder_and_an_unchanged_one_stays(runner):
     runner.apply(CONFIG)
     runner.apply(CONFIG)
-    runner.apply({"instances": [dict(INSTANCE, port=8444)]})
+    runner.apply({"instances": [dict(INSTANCE, secret="t")]})
 
     first, second = FakeForwarder.made
     assert first.is_closed and second.is_started
-    assert second.record["port"] == 8444
+    assert second.record["secret"] == "t"
+
+
+# --- the ports the runner takes ---
+
+
+def test_each_instance_takes_the_first_free_port_from_the_base_up(runner, tmp_path):
+    HELD_PORTS.add(8443)
+
+    runner.apply({"instances": [INSTANCE, {"account": "bob", "secret": "b"}]})
+
+    rows = {row["account"]: row["port"] for row in runner.details({})["instances"]}
+    assert rows == {"ann": 8444, "bob": 8445}
+
+
+def test_a_port_given_in_the_state_is_not_read(runner):
+    runner.apply({"instances": [dict(INSTANCE, port=9999)]})
+
+    assert runner.details({})["instances"][0]["port"] == 8443
+
+
+def test_a_kept_port_stays_while_its_instance_runs_whoever_listens(runner):
+    runner.apply(CONFIG)
+    HELD_PORTS.add(8443)
+
+    runner.apply(CONFIG)
+
+    assert runner.details({})["instances"][0]["port"] == 8443
+
+
+def test_a_disabled_account_keeps_its_port_for_when_it_is_enabled_again(
+    runner, tmp_path
+):
+    runner.apply(CONFIG)
+    runner.apply({"instances": []})
+    retired = json.loads((tmp_path / "config" / "demo" / "ann.json").read_text())
+
+    runner.apply({"instances": [{"account": "bob", "secret": "b"}]})
+    runner.apply({"instances": [{"account": "bob", "secret": "b"}, INSTANCE]})
+
+    assert retired == {"account": "ann", "port": 8443, "is_retired": True}
+    rows = {row["account"]: row["port"] for row in runner.details({})["instances"]}
+    assert rows == {"ann": 8443, "bob": 8444}
+
+
+def test_a_kept_port_another_program_took_meanwhile_moves_to_the_next_free(
+    runner, machine, platform
+):
+    runner.apply(CONFIG)
+    runner.apply({"instances": []})
+    HELD_PORTS.add(8443)
+
+    runner.apply(CONFIG)
+
+    assert runner.details({})["instances"][0]["port"] == 8444
+
+
+def test_a_restarted_agent_moves_a_forwarder_whose_port_another_program_took(
+    runner, machine, platform, tmp_path
+):
+    runner.apply(CONFIG)
+    again = make_runner(machine, platform)
+    HELD_PORTS.add(8443)
+
+    again.details({})
+
+    (forwarder,) = FakeForwarder.made
+    assert forwarder.record["port"] == 8444
+    record = json.loads((tmp_path / "config" / "demo" / "ann.json").read_text())
+    assert record["port"] == 8444
+
+
+def test_removing_the_configuration_forgets_the_kept_ports(runner, tmp_path):
+    runner.apply(CONFIG)
+    runner.apply({"instances": []})
+
+    runner.remove_configuration()
+
+    assert os.listdir(tmp_path / "config" / "demo") == []
 
 
 def test_a_stop_closes_the_forwarders_stops_the_units_and_keeps_the_records(

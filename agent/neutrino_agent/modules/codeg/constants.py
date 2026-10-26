@@ -65,8 +65,8 @@ CODEG_WINDOWS_SERVICE_PATH = ("%APPDATA%\\npm", "%PATH%")
 
 # Codeg listens on loopback alone, on a port the agent picks.
 CODEG_UPSTREAM_HOST = "127.0.0.1"
-CODEG_PORT_MIN = 1024
-CODEG_PORT_MAX = 65535
+# The port the agent takes each instance's port from, the first free one up.
+CODEG_BASE_PORT = 3101
 
 # The text the instance token is derived from the instance's secret by.
 CODEG_TOKEN_LABEL = b"neutrino codeg token"
@@ -82,12 +82,19 @@ CODEG_LOGIN_PAGE = (
     '<!doctype html><meta charset="utf-8"><title>Codeg</title>'
     "<script>localStorage.setItem(%s, %s);location.replace(%s);</script>"
 )
-# The forwarder's login cookie, per port, since a cookie belongs to a host
-# and not to a port; its value is the shared forwarder's, the key derived
-# from the instance's secret.
+# The forwarder's login cookie, named per entry by the hub; this name and
+# the port stand in when the state names none. Its value is the shared
+# forwarder's, the key derived from the instance's secret.
 CODEG_COOKIE_PREFIX = "neutrino_codeg_"
 CODEG_COOKIE_LABEL = b"neutrino codeg cookie"
 CODEG_LOGIN_LIFETIME_S = 7 * 24 * 3600
 
 # The fields one instance's record holds.
-CODEG_RECORD_FIELDS = ("account", "port", "upstream_port", "secret")
+CODEG_RECORD_FIELDS = (
+    "account",
+    "port",
+    "upstream_port",
+    "secret",
+    "local_name",
+    "cookie_name",
+)

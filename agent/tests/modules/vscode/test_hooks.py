@@ -33,7 +33,7 @@ from neutrino_agent.modules.shared.package import unpack_artifact
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
 
-CONFIG = {"address": "", "instances": [{"account": "ann", "port": 8000, "token": "t"}]}
+CONFIG = {"address": "", "instances": [{"account": "ann", "token": "t"}]}
 ANN = AccountEntry(1000, 1000, "/home/ann", "/bin/bash")
 
 
@@ -149,7 +149,7 @@ def test_the_linux_service_reads_its_address_port_and_token_from_the_environment
 ):
     hooks = hooks_for("linux", tmp_path)
     config, instance = parsed_instance(hooks)
-    record = hooks.record(config, instance, {})
+    record = hooks.record(config, instance, {"port": 8000})
 
     service = hooks.service(instance, ANN, record)
 
@@ -187,7 +187,7 @@ def test_elsewhere_the_command_line_carries_the_address_port_and_token_file(
     addressed = hooks.parse(
         {"address": "192.168.1.5", "instances": [dict(instance.__dict__)]}
     )
-    record = hooks.record(addressed, instance, {})
+    record = hooks.record(addressed, instance, {"port": 8000})
 
     service = hooks.service(instance, ANN, record)
 
@@ -300,6 +300,7 @@ def test_the_runner_writes_the_token_the_environment_and_the_unit(tmp_path):
         platform=platform,
         log=lambda line: None,
         machine=machine,
+        is_port_free=lambda port: True,
     )
     runner.install_artifact({}, CLI, tarball(tmp_path / "cli.tar.gz", {"code": b"hi"}))
 

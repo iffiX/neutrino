@@ -10,32 +10,29 @@ def config_with(*instances, address="192.168.1.5") -> VscodeConfig:
     return VscodeConfig.from_dict({"address": address, "instances": list(instances)})
 
 
-ANN = {"account": "ann", "port": 8000, "token": "t-ann"}
+ANN = {"account": "ann", "token": "t-ann"}
 
 
-def test_a_sound_configuration_passes_and_names_its_url():
-    config = config_with(ANN, {"account": "bob", "port": 8001, "token": "t-bob"})
+def test_a_sound_configuration_passes_and_names_no_port():
+    config = config_with(ANN, {"account": "bob", "token": "t-bob"})
 
     config.validate()
 
-    assert config.url_of(config.instances[0]) == "http://192.168.1.5:8000/"
+    assert config.host == "192.168.1.5"
+    assert [instance.port for instance in config.instances] == [0, 0]
 
 
-def test_no_address_listens_on_loopback_alone_and_names_it():
+def test_no_address_listens_on_loopback_alone():
     config = config_with(ANN, address="")
 
     assert config.host == "127.0.0.1"
-    assert config.url_of(config.instances[0]) == "http://127.0.0.1:8000/"
 
 
 @pytest.mark.parametrize(
     "instances, code, params",
     [
         ([dict(ANN, account="a b")], "account_invalid", {"account": "a b"}),
-        ([ANN, dict(ANN, account="ANN", port=8001)], "account_duplicate", None),
-        ([dict(ANN, port=80)], "port_invalid", {"port": 80}),
-        ([dict(ANN, port="x")], "port_invalid", {"port": 0}),
-        ([ANN, dict(ANN, account="bob")], "port_duplicate", {"port": 8000}),
+        ([ANN, dict(ANN, account="ANN")], "account_duplicate", None),
         ([dict(ANN, token="")], "token_missing", {"account": "ann"}),
     ],
 )

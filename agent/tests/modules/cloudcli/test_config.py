@@ -1,7 +1,8 @@
 """The CloudCLI configuration: parsing, the checks, and what follows from it.
 
-What these pin: a bad account, a repeated account or port, a port out of
-range and a missing password or secret are refused naming the instance;
+What these pin: an instance names no port, which the agent takes; a bad
+account, a repeated account and a missing password or secret are refused
+naming the instance;
 Windows also needs each account's login; a gateway an older state still
 names is not read; the login secret is a
 function of the instance's secret alone; and a short account is padded to
@@ -17,7 +18,7 @@ from neutrino_agent.modules.cloudcli.config import (
     username_of,
 )
 
-INSTANCE = {"account": "ann", "port": 3001, "web_password": "p", "token_secret": "s"}
+INSTANCE = {"account": "ann", "web_password": "p", "token_secret": "s"}
 
 
 def refusal(instances, os_name="linux"):
@@ -26,8 +27,23 @@ def refusal(instances, os_name="linux"):
     return caught.value.code, caught.value.params
 
 
-def test_a_whole_configuration_passes():
-    CloudcliConfig.from_dict({"instances": [INSTANCE]}).validate()
+def test_a_whole_configuration_passes_and_names_no_port():
+    config = CloudcliConfig.from_dict(
+        {
+            "instances": [
+                dict(INSTANCE, local_name="cloudcli-ann.m.localhost", cookie_name="c")
+            ]
+        }
+    )
+
+    config.validate()
+
+    (instance,) = config.instances
+    assert (instance.port, instance.local_name, instance.cookie_name) == (
+        0,
+        "cloudcli-ann.m.localhost",
+        "c",
+    )
 
 
 @pytest.mark.parametrize(
@@ -35,13 +51,8 @@ def test_a_whole_configuration_passes():
     [
         ([dict(INSTANCE, account="a b")], ("account_invalid", {"account": "a b"})),
         (
-            [INSTANCE, dict(INSTANCE, account="ANN", port=3002)],
+            [INSTANCE, dict(INSTANCE, account="ANN")],
             ("account_duplicate", {"account": "ANN"}),
-        ),
-        ([dict(INSTANCE, port=80)], ("port_invalid", {"port": 80})),
-        (
-            [INSTANCE, dict(INSTANCE, account="bob")],
-            ("port_duplicate", {"port": 3001}),
         ),
         ([dict(INSTANCE, web_password="")], ("token_missing", {"account": "ann"})),
         ([dict(INSTANCE, token_secret="")], ("token_missing", {"account": "ann"})),

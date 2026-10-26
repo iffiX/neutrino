@@ -1,8 +1,10 @@
-"""The CloudCLI module's configuration: which accounts run it, on which port.
+"""The CloudCLI module's configuration: which accounts run it.
 
-Each instance is one account's CloudCLI behind the agent's forwarder on one
-port. The hub sends each instance's CloudCLI password and the secret its
-tokens are signed with. The AI tools CloudCLI starts read the account's own
+Each instance is one account's CloudCLI behind the agent's forwarder, on a
+port the agent takes and keeps in the instance's record. The hub sends each
+instance's CloudCLI password, the secret its tokens are signed with, the
+app's local name the forwarder accepts as a ``Host`` and the name of the
+forwarder's login cookie. The AI tools CloudCLI starts read the account's own
 files, which the machine's AI tools setting points at the gateway. On
 Windows an instance also carries the
 account's password, from the login the hub holds for it, because a task
@@ -23,8 +25,6 @@ from dataclasses import dataclass, field
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_JWT_LABEL,
-    CLOUDCLI_PORT_MAX,
-    CLOUDCLI_PORT_MIN,
     CLOUDCLI_USERNAME_MIN,
 )
 
@@ -66,17 +66,22 @@ class CloudcliInstance:
 
     Attributes:
         account: The account it runs as.
-        port: The port the forwarder listens on.
         web_password: The password CloudCLI's administrator signs in with.
         token_secret: The secret a token for this instance is signed with.
         password: The account's password; Windows only.
+        local_name: Its app's local name, a ``Host`` the forwarder accepts.
+        cookie_name: The name of the forwarder's login cookie.
+        port: The port the forwarder listens on, which the agent took; 0
+            in an instance the state names, which names none.
     """
 
     account: str
-    port: int
     web_password: str = ""
     token_secret: str = ""
     password: str = ""
+    local_name: str = ""
+    cookie_name: str = ""
+    port: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "CloudcliInstance":
@@ -86,10 +91,12 @@ class CloudcliInstance:
             port = 0
         return cls(
             account=str(data.get("account", "") or ""),
-            port=port,
             web_password=str(data.get("web_password", "") or ""),
             token_secret=str(data.get("token_secret", "") or ""),
             password=str(data.get("password", "") or ""),
+            local_name=str(data.get("local_name", "") or ""),
+            cookie_name=str(data.get("cookie_name", "") or ""),
+            port=port,
         )
 
 
@@ -125,7 +132,6 @@ class CloudcliConfig:
             ModuleApplyError: Naming the first problem found.
         """
         accounts: set = set()
-        ports: set = set()
         for instance in self.instances:
             if not ACCOUNT_PATTERN.match(instance.account):
                 raise ModuleApplyError("account_invalid", {"account": instance.account})
@@ -134,11 +140,6 @@ class CloudcliConfig:
                     "account_duplicate", {"account": instance.account}
                 )
             accounts.add(instance.account.lower())
-            if not CLOUDCLI_PORT_MIN <= instance.port <= CLOUDCLI_PORT_MAX:
-                raise ModuleApplyError("port_invalid", {"port": instance.port})
-            if instance.port in ports:
-                raise ModuleApplyError("port_duplicate", {"port": instance.port})
-            ports.add(instance.port)
             if not instance.web_password or not instance.token_secret:
                 raise ModuleApplyError("token_missing", {"account": instance.account})
             if os_name == "windows" and not instance.password:

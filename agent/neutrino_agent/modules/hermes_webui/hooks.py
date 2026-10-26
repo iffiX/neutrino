@@ -1,6 +1,7 @@
 """What Hermes WebUI adds to the ``container`` runner: the page's forwarder, the gateway keys, the health read.
 
-The forwarder listens on ``127.0.0.1`` at the configured port and passes
+The forwarder listens on ``127.0.0.1`` at a port the agent takes from 8787
+up at the first start and keeps in the module's record, and passes
 requests on to the webui's 8787, published on loopback at the port the
 Containers runner picked. A request with a token that verifies is traded for
 the webui's own login: the forwarder posts the password to
@@ -46,6 +47,7 @@ from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.hermes_webui.config import HermesWebuiConfig
 from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_AGENT_CONTAINER,
+    HERMES_WEBUI_BASE_PORT,
     HERMES_WEBUI_BASE_URL_SUFFIX,
     HERMES_WEBUI_CACHE_VOLUMES,
     HERMES_WEBUI_CONFIG_COMMAND,
@@ -77,6 +79,7 @@ from neutrino_agent.modules.shared.http_forward import (
     answered,
     refused,
 )
+from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 
@@ -262,6 +265,7 @@ class HermesWebuiHooks(ContainerHooks):
         save_settings=webui_settings,
         forwarder_factory=None,
         record_dir: str = "",
+        is_port_free=is_port_free,
     ):
         """
         Args:
@@ -282,6 +286,7 @@ class HermesWebuiHooks(ContainerHooks):
                 report interval.
             record_dir: Where the record lives; empty is the module's
                 directory under ``platform.agent_data_dir()``.
+            is_port_free: Answers whether a loopback port can be bound now.
         """
         super().__init__(platform=platform, name=name, containers=containers, log=log)
         self._run = run_command
@@ -289,6 +294,7 @@ class HermesWebuiHooks(ContainerHooks):
         self._login = login
         self._save_settings = save_settings
         self._forwarder_factory = forwarder_factory or _forwarder
+        self._is_port_free = is_port_free
         self._records = InstanceRecordStore(
             directory=record_dir or os.path.join(platform.agent_data_dir(), name),
             fields=HERMES_WEBUI_RECORD_FIELDS,
@@ -305,15 +311,9 @@ class HermesWebuiHooks(ContainerHooks):
         """Take the module's configuration.
 
         Args:
-            config: ``{port, secret, password}``.
-
-        Raises:
-            ModuleApplyError: ``port_invalid {port}`` for a port outside 1024
-                to 65535.
+            config: ``{secret, password, cookie_name, local_name}``.
         """
-        parsed = HermesWebuiConfig.from_dict(config)
-        parsed.validate()
-        self._config = parsed
+        self._config = HermesWebuiConfig.from_dict(config)
 
     def installed(self, version: str) -> None:
         """Note the pair the install pulled; a new one makes ``agent`` and ``app`` again.
@@ -394,14 +394,12 @@ class HermesWebuiHooks(ContainerHooks):
         return is_starting and not self._record().get("is_ready")
 
     def details(self) -> dict:
-        """The forwarder's port.
+        """The forwarder's port, the one the agent took.
 
         Returns:
-            ``{"port"}``.
+            ``{"port"}``, 0 before the first start took one.
         """
         record = self._resume()
-        if self._config is not None:
-            return {"port": self._config.port}
         return {"port": int(record.get("port", 0) or 0)}
 
     def remove(self) -> None:
@@ -517,16 +515,22 @@ class HermesWebuiHooks(ContainerHooks):
         self._log(f"{self._name}: the webui's update check is off")
 
     def _started_record(self) -> dict:
-        """The record as this start serves it: the configuration, the published port, running.
+        """The record as this start serves it: the configuration, the ports, running.
 
         Raises:
-            ModuleApplyError: When the published port cannot be kept.
+            ModuleApplyError: When the published port cannot be kept, or
+                no port from 8787 up is free for the forwarder.
         """
         record = self._record()
         config = self._config or HermesWebuiConfig.from_dict(record)
         try:
             upstream = self._containers.page_port(
                 self._name, HERMES_WEBUI_WEBUI_CONTAINER
+            )
+            port = int(record.get("port", 0) or 0) or pick_port(
+                HERMES_WEBUI_BASE_PORT,
+                taken=[upstream],
+                is_free=self._is_port_free,
             )
         except OSError as error:
             raise ModuleApplyError(
@@ -535,10 +539,11 @@ class HermesWebuiHooks(ContainerHooks):
         return self._keep(
             {
                 **record,
-                "port": config.port,
+                "port": port,
                 "secret": config.secret,
                 "password": config.password,
                 "cookie_name": config.cookie_name,
+                "local_name": config.local_name,
                 "upstream_port": upstream,
                 "is_stopped": False,
             }

@@ -71,8 +71,8 @@ CLOUDCLI_INSTALL_PATH = {
 
 # CloudCLI listens on loopback alone, on a port the agent picks.
 CLOUDCLI_UPSTREAM_HOST = "127.0.0.1"
-CLOUDCLI_PORT_MIN = 1024
-CLOUDCLI_PORT_MAX = 65535
+# The port the agent takes each instance's port from, the first free one up.
+CLOUDCLI_BASE_PORT = 3001
 
 # What CloudCLI 1.37.3 answers on: the first-run check, the two routes the
 # forwarder never passes on, and where its page keeps the login.
@@ -89,8 +89,8 @@ CLOUDCLI_USERNAME_MIN = 3
 # matches.
 CLOUDCLI_LOGIN_LIFETIME_S = 7 * 24 * 3600
 
-# The cookie the forwarder keeps CloudCLI's login in, per port, since a
-# cookie belongs to a host and not to a port.
+# The cookie the forwarder keeps CloudCLI's login in, named per entry by the
+# hub; this name and the port stand in when the state names none.
 CLOUDCLI_COOKIE_PREFIX = "neutrino_cloudcli_"
 # The text CloudCLI's login secret is derived from the instance's secret by.
 CLOUDCLI_JWT_LABEL = b"neutrino cloudcli jwt"
@@ -129,6 +129,8 @@ CLOUDCLI_RECORD_FIELDS = (
     "web_password",
     "token_secret",
     "database",
+    "local_name",
+    "cookie_name",
 )
 CLOUDCLI_FORWARDER_FIELDS = (
     "account",
@@ -136,4 +138,6 @@ CLOUDCLI_FORWARDER_FIELDS = (
     "upstream_port",
     "web_password",
     "token_secret",
+    "local_name",
+    "cookie_name",
 )

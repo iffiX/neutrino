@@ -1,9 +1,10 @@
-"""The code-server module's configuration: which accounts run it, on which port.
+"""The code-server module's configuration: which accounts run it.
 
-Each instance is one account's code-server behind the agent's forwarder on
-one port. The hub sends each instance's token secret, which signs the
-one-time tokens a client opens the instance with and keys the forwarder's
-login cookie.
+Each instance is one account's code-server behind the agent's forwarder, on
+a port the agent takes and keeps in the instance's record. The hub sends
+each instance's token secret, which signs the one-time tokens a client
+opens the instance with and keys the forwarder's login cookie, the app's
+local name the forwarder accepts as a ``Host``, and the cookie's name.
 
 Pure: parsing, validation and what follows from the values.
 """
@@ -18,11 +19,7 @@ import re
 from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.code_server.constants import (
-    CODE_SERVER_COOKIE_LABEL,
-    CODE_SERVER_PORT_MAX,
-    CODE_SERVER_PORT_MIN,
-)
+from neutrino_agent.modules.code_server.constants import CODE_SERVER_COOKIE_LABEL
 
 # An account name that survives a unit name, a launchd label, a path and a
 # command line.
@@ -49,13 +46,18 @@ class CodeServerInstance:
 
     Attributes:
         account: The account it runs as.
-        port: The port the forwarder listens on.
         secret: The secret a token for this instance is signed with.
+        local_name: Its app's local name, a ``Host`` the forwarder accepts.
+        cookie_name: The name of the forwarder's login cookie.
+        port: The port the forwarder listens on, which the agent took; 0
+            in an instance the state names, which names none.
     """
 
     account: str
-    port: int
     secret: str = ""
+    local_name: str = ""
+    cookie_name: str = ""
+    port: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "CodeServerInstance":
@@ -65,8 +67,10 @@ class CodeServerInstance:
             port = 0
         return cls(
             account=str(data.get("account", "") or ""),
-            port=port,
             secret=str(data.get("secret", "") or ""),
+            local_name=str(data.get("local_name", "") or ""),
+            cookie_name=str(data.get("cookie_name", "") or ""),
+            port=port,
         )
 
 
@@ -95,12 +99,10 @@ class CodeServerConfig:
         """Check the configuration holds together.
 
         Raises:
-            ModuleApplyError: ``account_invalid``, ``account_duplicate``,
-                ``port_invalid``, ``port_duplicate`` or ``secret_missing``,
-                naming the first problem found.
+            ModuleApplyError: ``account_invalid``, ``account_duplicate`` or
+                ``secret_missing``, naming the first problem found.
         """
         accounts: set = set()
-        ports: set = set()
         for instance in self.instances:
             if not ACCOUNT_PATTERN.match(instance.account):
                 raise ModuleApplyError("account_invalid", {"account": instance.account})
@@ -109,10 +111,5 @@ class CodeServerConfig:
                     "account_duplicate", {"account": instance.account}
                 )
             accounts.add(instance.account.lower())
-            if not CODE_SERVER_PORT_MIN <= instance.port <= CODE_SERVER_PORT_MAX:
-                raise ModuleApplyError("port_invalid", {"port": instance.port})
-            if instance.port in ports:
-                raise ModuleApplyError("port_duplicate", {"port": instance.port})
-            ports.add(instance.port)
             if not instance.secret:
                 raise ModuleApplyError("secret_missing", {"account": instance.account})

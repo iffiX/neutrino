@@ -1,11 +1,13 @@
-"""The Codeg module's configuration: which accounts run it, on which port.
+"""The Codeg module's configuration: which accounts run it.
 
-Each instance is one account's Codeg behind the agent's forwarder on one
-port. The hub sends each instance's token secret, which signs the one-time
-tokens a client opens the instance with, derives the token Codeg's own
-page keeps and keys the forwarder's login cookie. On Windows an instance also carries the account's password,
-from the login the hub holds for it, because a task that runs as an account
-needs its password to sign in.
+Each instance is one account's Codeg behind the agent's forwarder, on a
+port the agent takes and keeps in the instance's record. The hub sends each
+instance's token secret, which signs the one-time tokens a client opens the
+instance with, derives the token Codeg's own page keeps and keys the
+forwarder's login cookie, with the app's local name the forwarder accepts
+as a ``Host`` and the cookie's name. On Windows an instance also carries
+the account's password, from the login the hub holds for it, because a task
+that runs as an account needs its password to sign in.
 
 Pure: parsing, validation and what follows from the values.
 """
@@ -23,8 +25,6 @@ from dataclasses import dataclass, field
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.codeg.constants import (
     CODEG_COOKIE_LABEL,
-    CODEG_PORT_MAX,
-    CODEG_PORT_MIN,
     CODEG_SUBPROTOCOL_PREFIX,
     CODEG_TOKEN_LABEL,
 )
@@ -79,15 +79,20 @@ class CodegInstance:
 
     Attributes:
         account: The account it runs as.
-        port: The port the forwarder listens on.
         secret: The secret a token for this instance is signed with.
         password: The account's password; Windows only.
+        local_name: Its app's local name, a ``Host`` the forwarder accepts.
+        cookie_name: The name of the forwarder's login cookie.
+        port: The port the forwarder listens on, which the agent took; 0
+            in an instance the state names, which names none.
     """
 
     account: str
-    port: int
     secret: str = ""
     password: str = ""
+    local_name: str = ""
+    cookie_name: str = ""
+    port: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "CodegInstance":
@@ -97,9 +102,11 @@ class CodegInstance:
             port = 0
         return cls(
             account=str(data.get("account", "") or ""),
-            port=port,
             secret=str(data.get("secret", "") or ""),
             password=str(data.get("password", "") or ""),
+            local_name=str(data.get("local_name", "") or ""),
+            cookie_name=str(data.get("cookie_name", "") or ""),
+            port=port,
         )
 
 
@@ -132,13 +139,12 @@ class CodegConfig:
                 instance needs its account's password.
 
         Raises:
-            ModuleApplyError: ``account_invalid``, ``account_duplicate``,
-                ``port_invalid``, ``port_duplicate`` or ``secret_missing``,
-                naming the first problem found, and on Windows
-                ``credential_missing`` for an instance with no password.
+            ModuleApplyError: ``account_invalid``, ``account_duplicate`` or
+                ``secret_missing``, naming the first problem found, and on
+                Windows ``credential_missing`` for an instance with no
+                password.
         """
         accounts: set = set()
-        ports: set = set()
         for instance in self.instances:
             if not ACCOUNT_PATTERN.match(instance.account):
                 raise ModuleApplyError("account_invalid", {"account": instance.account})
@@ -147,11 +153,6 @@ class CodegConfig:
                     "account_duplicate", {"account": instance.account}
                 )
             accounts.add(instance.account.lower())
-            if not CODEG_PORT_MIN <= instance.port <= CODEG_PORT_MAX:
-                raise ModuleApplyError("port_invalid", {"port": instance.port})
-            if instance.port in ports:
-                raise ModuleApplyError("port_duplicate", {"port": instance.port})
-            ports.add(instance.port)
             if not instance.secret:
                 raise ModuleApplyError("secret_missing", {"account": instance.account})
             if os_name == "windows" and not instance.password:

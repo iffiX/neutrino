@@ -5,8 +5,8 @@ publishes, which carries its own Node.js, and the shared unpack puts it
 under ``release`` in the module's directory. Each instance runs the
 launcher as its account on a socket in that account's run directory, with
 code-server's own login off, so root and the account alone can open it.
-The forwarder admits a browser by its own login cookie,
-``neutrino_code_server_<port>``, traded once for the token the hub minted.
+The forwarder admits a browser by its own login cookie, named by the
+instance's ``cookie_name``, traded once for the token the hub minted.
 
 Not pure: opens the socket.
 """
@@ -32,6 +32,7 @@ from neutrino_agent.modules.code_server.config import (
     cookie_key,
 )
 from neutrino_agent.modules.code_server.constants import (
+    CODE_SERVER_BASE_PORT,
     CODE_SERVER_COOKIE_PREFIX,
     CODE_SERVER_DARWIN_PATH,
     CODE_SERVER_DARWIN_SHELL,
@@ -142,9 +143,17 @@ def server_arguments(root: str, account: str) -> list:
     ]
 
 
-def cookie_name(port: int) -> str:
-    """The cookie the forwarder of one port keeps its login in."""
-    return f"{CODE_SERVER_COOKIE_PREFIX}{int(port)}"
+def cookie_name(record: dict) -> str:
+    """The cookie one instance's forwarder keeps its login in.
+
+    Args:
+        record: The instance's record.
+
+    Returns:
+        The record's ``cookie_name``, else the module's prefix and the port.
+    """
+    named = str(record.get("cookie_name", "") or "")
+    return named or f"{CODE_SERVER_COOKIE_PREFIX}{int(record.get('port', 0) or 0)}"
 
 
 def address_without_token(path: str, query: dict) -> str:
@@ -177,6 +186,7 @@ class CodeServerHooks(InstanceHooks):
     instance_class = CodeServerInstance
     record_fields = CODE_SERVER_RECORD_FIELDS
     secret_field = "secret"
+    base_port = CODE_SERVER_BASE_PORT
 
     def __init__(self, *, platform, log=print, clock=time.time):
         """
@@ -198,10 +208,10 @@ class CodeServerHooks(InstanceHooks):
             The configuration.
 
         Raises:
-            ModuleApplyError: ``account_invalid``, ``account_duplicate``,
-                ``port_invalid``, ``port_duplicate`` or ``secret_missing``,
-                naming the first problem found; ``account_invalid`` as well
-                for an account whose socket path is too long.
+            ModuleApplyError: ``account_invalid``, ``account_duplicate`` or
+                ``secret_missing``, naming the first problem found;
+                ``account_invalid`` as well for an account whose socket
+                path is too long.
         """
         parsed = CodeServerConfig.from_dict(config)
         parsed.validate()
@@ -260,13 +270,13 @@ class CodeServerHooks(InstanceHooks):
             relay for a good cookie, 401 otherwise.
         """
         key = cookie_key(str(record.get("secret", "") or ""))
-        port = int(record.get("port", 0) or 0)
+        name = cookie_name(record)
         if request.token:
             if not request.take_token():
                 return refused()
             expiry = int(self._clock()) + CODE_SERVER_LOGIN_LIFETIME_S
             cookie = (
-                f"{cookie_name(port)}={mint_login(key, expiry)}; Path=/; "
+                f"{name}={mint_login(key, expiry)}; Path=/; "
                 f"HttpOnly; SameSite=Lax; Max-Age={CODE_SERVER_LOGIN_LIFETIME_S}"
             )
             return answered(
@@ -280,8 +290,7 @@ class CodeServerHooks(InstanceHooks):
             )
         now = self._clock()
         if any(
-            is_login_valid(value, key, now)
-            for value in request.cookie_values(cookie_name(port))
+            is_login_valid(value, key, now) for value in request.cookie_values(name)
         ):
             return RELAY
         return refused()

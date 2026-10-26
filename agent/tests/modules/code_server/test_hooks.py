@@ -50,7 +50,17 @@ from neutrino_agent.platforms.base import AgentPlatform
 
 SECRET = "instance-secret"  # scan: allow
 NOW = 1_800_000_000
-CONFIG = {"instances": [{"account": "ann", "port": 8443, "secret": SECRET}]}
+COOKIE = "neutrino_0123456789ab"
+CONFIG = {
+    "instances": [
+        {
+            "account": "ann",
+            "secret": SECRET,
+            "local_name": "code-server-ann.m.localhost",
+            "cookie_name": COOKIE,
+        }
+    ]
+}
 ANN = AccountEntry(1001, 1002, "/home/ann", "/bin/bash")
 MAC_ANN = AccountEntry(501, 20, "/Users/ann", "")
 
@@ -138,13 +148,11 @@ def test_a_socket_path_the_system_cannot_bind_is_refused():
         "darwin", "/Library/Application Support/Neutrino/agent/state/code_server"
     )
 
-    linux.parse({"instances": [{"account": "a" * 50, "port": 8443, "secret": "s"}]})
-    mac.parse({"instances": [{"account": "a" * 20, "port": 8443, "secret": "s"}]})
+    linux.parse({"instances": [{"account": "a" * 50, "secret": "s"}]})
+    mac.parse({"instances": [{"account": "a" * 20, "secret": "s"}]})
     for hooks, account in ((linux, "a" * 51), (mac, "a" * 21)):
         with pytest.raises(ModuleApplyError) as caught:
-            hooks.parse(
-                {"instances": [{"account": account, "port": 8443, "secret": "s"}]}
-            )
+            hooks.parse({"instances": [{"account": account, "secret": "s"}]})
         assert caught.value.code == "account_invalid"
         assert caught.value.params == {"account": account}
 
@@ -152,7 +160,7 @@ def test_a_socket_path_the_system_cannot_bind_is_refused():
 def test_a_missing_secret_is_refused_by_name():
     with pytest.raises(ModuleApplyError) as caught:
         hooks_for("linux", "/m").parse(
-            {"instances": [{"account": "ann", "port": 8443, "secret": ""}]}
+            {"instances": [{"account": "ann", "secret": ""}]}
         )
 
     assert caught.value.code == "secret_missing"
@@ -163,7 +171,9 @@ def test_an_instance_runs_without_its_own_login_on_its_socket_in_its_run_directo
     config = hooks.parse(CONFIG)
 
     service = hooks.service(
-        config.instances[0], ANN, hooks.record(config, config.instances[0], {})
+        config.instances[0],
+        ANN,
+        hooks.record(config, config.instances[0], {"port": 8443}),
     )
 
     assert service.command == (
@@ -181,10 +191,12 @@ def test_an_instance_runs_without_its_own_login_on_its_socket_in_its_run_directo
     assert service.working_directory == "~"
     assert service.directories == ("/m/run/ann",)
     assert service.files == ()
-    assert hooks.record(config, config.instances[0], {}) == {
+    assert hooks.record(config, config.instances[0], {"port": 8443}) == {
         "account": "ann",
         "port": 8443,
         "secret": SECRET,
+        "local_name": "code-server-ann.m.localhost",
+        "cookie_name": COOKIE,
     }
 
 
@@ -277,7 +289,12 @@ def free_port() -> int:
 
 def make_forwarder(module_dir, *, clock=time.time, port=None):
     hooks = hooks_for("linux", module_dir, clock=clock)
-    record = {"account": "ann", "port": port or free_port(), "secret": SECRET}
+    record = {
+        "account": "ann",
+        "port": port or free_port(),
+        "secret": SECRET,
+        "cookie_name": COOKIE,
+    }
     return InstanceForwarder(
         name="code_server",
         record=record,
@@ -308,6 +325,10 @@ def listening(code_server, module_dir):
 
 
 def ask(port, request: bytes) -> bytes:
+    """One request on a connection it closes, its Host loopback's."""
+    request = request.replace(b"Host: x\r\n", b"").replace(
+        b"\r\n\r\n", b"\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", 1
+    )
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(request)
         received = b""
@@ -332,7 +353,7 @@ def header_of(answer: bytes, name: bytes) -> str:
 
 def good_cookie(port, *, expiry=None):
     expiry = int(time.time()) + 3600 if expiry is None else expiry
-    return f"{cookie_name(port)}={mint_login(cookie_key(SECRET), expiry)}"
+    return f"{COOKIE}={mint_login(cookie_key(SECRET), expiry)}"
 
 
 def test_the_forwarder_listens_on_loopback_alone(listening):
@@ -351,7 +372,7 @@ def test_a_token_is_traded_once_for_a_cookie_and_a_redirect(listening, code_serv
     assert status_of(first) == 302
     assert header_of(first, b"location") == "/app?x=1"
     cookie = header_of(first, b"set-cookie")
-    assert cookie.startswith(f"{cookie_name(port)}=")
+    assert cookie.startswith(f"{COOKIE}=")
     assert "HttpOnly" in cookie and "SameSite=Lax" in cookie
     assert header_of(first, b"cache-control") == "no-store"
     assert status_of(second) == 401
@@ -378,9 +399,9 @@ def test_a_request_with_neither_a_token_nor_a_cookie_is_refused(listening, code_
 def test_a_forged_or_expired_cookie_is_refused(listening):
     _forwarder, port = listening
     expired = good_cookie(port, expiry=int(time.time()) - 1)
-    forged = f"{cookie_name(port)}={mint_login(cookie_key('other'), NOW + 10**6)}"
+    forged = f"{COOKIE}={mint_login(cookie_key('other'), NOW + 10**6)}"
 
-    for cookie in (expired, forged, f"{cookie_name(port)}=junk"):
+    for cookie in (expired, forged, f"{COOKIE}=junk"):
         request = f"GET / HTTP/1.1\r\nCookie: {cookie}\r\n\r\n".encode()
         assert status_of(ask(port, request)) == 401
 
@@ -410,7 +431,7 @@ def test_a_websocket_with_a_good_cookie_is_relayed_both_ways(listening, code_ser
 
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(
-            f"GET /ws HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n"
+            f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: {cookie}\r\n"
             "Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n".encode()
         )
         received = b""
@@ -474,8 +495,14 @@ def test_a_login_verifies_only_under_its_key_and_before_its_expiry():
 
 def test_a_forwarder_follows_the_account_the_port_and_the_secret(module_dir):
     forwarder = make_forwarder(module_dir, port=8443)
-    record = {"account": "ann", "port": 8443, "secret": SECRET}
+    record = {"account": "ann", "port": 8443, "secret": SECRET, "cookie_name": COOKIE}
 
     assert forwarder.matches(record)
     assert not forwarder.matches(dict(record, port=8444))
     assert not forwarder.matches(dict(record, secret="t"))
+    assert not forwarder.matches(dict(record, cookie_name="neutrino_other"))
+
+
+def test_with_no_cookie_name_the_cookie_is_named_after_the_port():
+    assert cookie_name({"port": 8443}) == "neutrino_code_server_8443"
+    assert cookie_name({"port": 8443, "cookie_name": COOKIE}) == COOKIE

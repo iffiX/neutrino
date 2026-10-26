@@ -62,11 +62,19 @@ from neutrino_agent.platforms.base import AgentPlatform
 
 SECRET = "instance-secret"  # scan: allow
 TOKEN = instance_token(SECRET)
-CONFIG = {"instances": [{"account": "ann", "port": 3101, "secret": SECRET}]}
-WINDOWS_CONFIG = {
+COOKIE = "neutrino_0123456789ab"
+CONFIG = {
     "instances": [
-        {"account": "ann", "port": 3101, "secret": SECRET, "password": "login-pw"}
+        {
+            "account": "ann",
+            "secret": SECRET,
+            "local_name": "codeg-ann.m.localhost",
+            "cookie_name": COOKIE,
+        }
     ]
+}
+WINDOWS_CONFIG = {
+    "instances": [{"account": "ann", "secret": SECRET, "password": "login-pw"}]
 }
 ANN = AccountEntry(1000, 1000, "/home/ann", "/bin/bash")
 MAC_ANN = AccountEntry(501, 20, "/Users/ann", "/bin/zsh")
@@ -175,7 +183,7 @@ def test_a_refusal_of_the_configuration_names_what_it_is_about():
         hooks_for("windows", WIN_STATE).parse(CONFIG)
     assert caught.value.code == "credential_missing"
     assert caught.value.params == {"account": "ann"}
-    assert hooks_for("linux", LINUX_STATE).parse(CONFIG).instances[0].port == 3101
+    assert hooks_for("linux", LINUX_STATE).parse(CONFIG).instances[0].port == 0
 
 
 def test_the_record_keeps_the_loopback_port_across_applies():
@@ -183,7 +191,7 @@ def test_the_record_keeps_the_loopback_port_across_applies():
     config = hooks.parse(CONFIG)
     (instance,) = config.instances
 
-    first = hooks.record(config, instance, {})
+    first = hooks.record(config, instance, {"port": 3101})
     again = hooks.record(config, instance, dict(first, upstream_port=41234))
 
     assert first == {
@@ -191,9 +199,18 @@ def test_the_record_keeps_the_loopback_port_across_applies():
         "port": 3101,
         "upstream_port": 41000,
         "secret": SECRET,
+        "local_name": "codeg-ann.m.localhost",
+        "cookie_name": COOKIE,
     }
     assert again["upstream_port"] == 41234
-    assert hooks.forwarder_fields == ("account", "port", "upstream_port", "secret")
+    assert hooks.forwarder_fields == (
+        "account",
+        "port",
+        "upstream_port",
+        "secret",
+        "local_name",
+        "cookie_name",
+    )
 
 
 def test_the_service_runs_the_server_alone_from_a_root_only_discarded_environment():
@@ -478,6 +495,7 @@ def record_for(upstream_port, *, port=0):
         "port": port,
         "upstream_port": upstream_port,
         "secret": SECRET,
+        "cookie_name": COOKIE,
     }
 
 
@@ -514,6 +532,10 @@ def listening(codeg):
 
 
 def ask(port, request: bytes) -> bytes:
+    """One request on a connection it closes, its Host loopback's."""
+    request = request.replace(b"Host: x\r\n", b"").replace(
+        b"\r\n\r\n", b"\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", 1
+    )
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(request)
         received = b""
@@ -542,7 +564,7 @@ def fresh_token() -> str:
 
 def good_cookie(port, *, expiry=None, secret=SECRET) -> str:
     expiry = int(time.time()) + 3600 if expiry is None else expiry
-    return f"{cookie_name(port)}={mint_login(cookie_key(secret), expiry)}"
+    return f"{COOKIE}={mint_login(cookie_key(secret), expiry)}"
 
 
 def test_the_forwarder_listens_on_loopback_alone(listening):
@@ -585,7 +607,7 @@ def test_the_page_sets_the_login_cookie_of_the_port_for_seven_days(listening, co
     cookie = header_of(answer, b"set-cookie")
     pair, *attributes = [part.strip() for part in cookie.split(";")]
     name, _, value = pair.partition("=")
-    assert name == f"neutrino_codeg_{port}" == cookie_name(port)
+    assert name == COOKIE == cookie_name(record_for(0))
     assert attributes == ["Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=604800"]
     assert is_login_valid(value, cookie_key(SECRET), time.time()) is True
     assert is_login_valid(value, cookie_key("other"), time.time()) is False
@@ -635,19 +657,19 @@ def test_a_request_with_a_good_cookie_is_passed_on_unchanged(listening, codeg):
     assert (method, target, body) == ("GET", "/workspace", b"")
     assert ("Cookie", f"other=1; {cookie}") in headers
     assert ("Accept", "text/html") in headers
-    assert ("Host", "x") in headers
+    assert ("Host", "127.0.0.1") in headers
     assert asset_target == "/assets/index.js"
 
 
 def test_a_forged_expired_or_misnamed_cookie_is_refused(listening, codeg):
+    """A cookie under any name but the entry's own is not the forwarder's."""
     _forwarder, port = listening
     expired = good_cookie(port, expiry=int(time.time()) - 1)
     forged = good_cookie(port, secret="other")
-    other_port = good_cookie(port + 1)
-    junk = f"{cookie_name(port)}=junk"
+    junk = f"{COOKIE}=junk"
     renamed = f"neutrino_code_server_{port}={good_cookie(port).split('=', 1)[1]}"
 
-    for cookie in (expired, forged, other_port, junk, renamed):
+    for cookie in (expired, forged, junk, renamed):
         answer = ask(
             port,
             f"GET /workspace HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n\r\n".encode(),
@@ -671,7 +693,7 @@ def test_the_instance_token_as_bearer_is_passed_on_unchanged(listening, codeg):
     assert (method, target, body) == ("POST", "/api/health", b"{}")
     assert ("Authorization", f"Bearer {TOKEN}") in headers
     assert ("X-Extra", "kept") in headers
-    assert ("Host", "x") in headers
+    assert ("Host", "127.0.0.1") in headers
 
 
 def test_a_wrong_bearer_is_refused(listening, codeg):
@@ -699,7 +721,7 @@ def test_a_websocket_with_the_subprotocol_is_relayed_both_ways_with_its_headers(
 
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(
-            f"GET /ws/events HTTP/1.1\r\nHost: x\r\n"
+            f"GET /ws/events HTTP/1.1\r\nHost: 127.0.0.1\r\n"
             f"Connection: Upgrade\r\nUpgrade: websocket\r\n"
             f"Sec-WebSocket-Protocol: codeg-events, {protocol}\r\n"
             f"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n".encode()

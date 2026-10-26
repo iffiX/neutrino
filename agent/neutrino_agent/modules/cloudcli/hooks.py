@@ -46,6 +46,7 @@ from neutrino_agent.modules.cloudcli.config import (
     username_of,
 )
 from neutrino_agent.modules.cloudcli.constants import (
+    CLOUDCLI_BASE_PORT,
     CLOUDCLI_ACCOUNT_PARTS,
     CLOUDCLI_ACCOUNT_PATH_PARTS,
     CLOUDCLI_APP_DIR_NAME,
@@ -514,9 +515,17 @@ def is_login_valid(login: str, secret: str, now: float) -> bool:
     return isinstance(expiry, (int, float)) and expiry > now
 
 
-def cookie_name(port: int) -> str:
-    """The cookie the forwarder of one port keeps CloudCLI's login in."""
-    return f"{CLOUDCLI_COOKIE_PREFIX}{int(port)}"
+def cookie_name(record: dict) -> str:
+    """The cookie one instance's forwarder keeps CloudCLI's login in.
+
+    Args:
+        record: The instance's record.
+
+    Returns:
+        The record's ``cookie_name``, else the module's prefix and the port.
+    """
+    named = str(record.get("cookie_name", "") or "")
+    return named or f"{CLOUDCLI_COOKIE_PREFIX}{int(record.get('port', 0) or 0)}"
 
 
 def free_loopback_port() -> int:
@@ -571,6 +580,7 @@ class CloudcliHooks(InstanceHooks):
     record_fields = CLOUDCLI_RECORD_FIELDS
     forwarder_fields = CLOUDCLI_FORWARDER_FIELDS
     secret_field = "token_secret"
+    base_port = CLOUDCLI_BASE_PORT
 
     def __init__(
         self,
@@ -760,19 +770,21 @@ class CloudcliHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before; its loopback port and its
-                database are kept.
+            held: The record held before, with the port the runner took;
+                its loopback port and its database are kept.
 
         Returns:
             The record.
         """
         return {
             "account": instance.account,
-            "port": instance.port,
+            "port": int(held.get("port") or 0),
             "upstream_port": int(held.get("upstream_port") or 0) or self._pick_port(),
             "web_password": instance.web_password,
             "token_secret": instance.token_secret,
             "database": str(held.get("database") or CLOUDCLI_DATABASE_NAME),
+            "local_name": instance.local_name,
+            "cookie_name": instance.cookie_name,
         }
 
     def service(
@@ -884,9 +896,8 @@ class CloudcliHooks(InstanceHooks):
             if not login:
                 return answered(502)
             page = EXCHANGE_PAGE % (json.dumps(CLOUDCLI_STORAGE_KEY), json.dumps(login))
-            port = int(record.get("port", 0) or 0)
             cookie = (
-                f"{cookie_name(port)}={login}; Path=/; HttpOnly; "
+                f"{cookie_name(record)}={login}; Path=/; HttpOnly; "
                 f"SameSite=Lax; Max-Age={CLOUDCLI_LOGIN_LIFETIME_S}"
             )
             return answered(
@@ -1266,9 +1277,7 @@ class CloudcliHooks(InstanceHooks):
                 scheme, _, credential = value.strip().partition(" ")
                 if scheme.lower() == "bearer":
                     candidates.append(credential.strip())
-        candidates += request.cookie_values(
-            cookie_name(int(record.get("port", 0) or 0))
-        )
+        candidates += request.cookie_values(cookie_name(record))
         return any(is_login_valid(candidate, secret, now) for candidate in candidates)
 
     def _login(self, record: dict) -> str:

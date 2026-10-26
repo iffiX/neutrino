@@ -12,10 +12,14 @@ A token is ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
 nonce))``, checked here against the hub's time with no call to the hub. A
 login cookie, which a module's rule trades a token for, is
 ``base64url(expiry || HMAC-SHA256(key, expiry))`` with a key the module
-derives from the instance's secret. Each connection carries one request: an
-ordinary request is passed on with ``Connection: close`` in place of its own
-and its body cut at its ``Content-Length``; a WebSocket is passed on
-unchanged and relayed both ways until either side closes.
+derives from the instance's secret. A browser's connection stays open across
+requests: each request goes through the checks again, a ``Host`` that is
+not loopback's or the instance's local name answered 421 and an ``Origin``
+that is not the ``Host``'s answered 403, and is passed on unchanged over one
+connection to the page kept for that browser's connection, its body cut at
+its ``Content-Length``; a WebSocket is passed on unchanged and relayed both
+ways until either side closes. Both of a forwarder's connections send at
+once, with ``TCP_NODELAY``.
 
 Not pure: opens sockets.
 """
@@ -26,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import functools
 import hashlib
 import hmac
@@ -58,9 +63,14 @@ STATUS_LINES = {
     200: b"HTTP/1.1 200 OK",
     302: b"HTTP/1.1 302 Found",
     401: b"HTTP/1.1 401 Unauthorized",
+    403: b"HTTP/1.1 403 Forbidden",
     411: b"HTTP/1.1 411 Length Required",
+    421: b"HTTP/1.1 421 Misdirected Request",
     502: b"HTTP/1.1 502 Bad Gateway",
 }
+# The names a ``Host`` may carry, its port aside, beside the instance's own
+# local name.
+HTTP_FORWARD_LOOPBACK_HOSTS = ("127.0.0.1", "[::1]", "localhost")
 # A login cookie's value: the expiry eight bytes big-endian, then the
 # HMAC-SHA256 over it.
 HTTP_FORWARD_COOKIE_EXPIRY_BYTES = 8
@@ -175,22 +185,134 @@ def is_login_valid(login: str, key: bytes, now: float) -> bool:
     return int.from_bytes(body, "big") > now
 
 
+class ConnectionReader:
+    """One connection's bytes read through a buffer: heads, lines and lengths.
+
+    Attributes:
+        socket: The connection.
+    """
+
+    def __init__(self, connection: socket.socket, buffered: bytes = b""):
+        """
+        Args:
+            connection: The connection.
+            buffered: Bytes already read from it.
+        """
+        self.socket = connection
+        self._buffer = bytearray(buffered)
+
+    def read_head(self) -> "bytes | None":
+        """The next head, through its blank line.
+
+        Returns:
+            The head; None when the connection ended first or the head ran
+            past the limit.
+
+        Raises:
+            OSError: When the connection fails.
+        """
+        while True:
+            end = self._buffer.find(HEAD_END)
+            if end >= 0:
+                head = bytes(self._buffer[: end + len(HEAD_END)])
+                del self._buffer[: end + len(HEAD_END)]
+                return head
+            if len(self._buffer) > AGENT_FORWARD_HEAD_LIMIT_BYTES:
+                return None
+            if not self._fill():
+                return None
+
+    def read_line(self) -> bytes:
+        """The next line with its ending; empty when the connection ended first.
+
+        Raises:
+            OSError: When the connection fails.
+        """
+        while True:
+            end = self._buffer.find(b"\r\n")
+            if end >= 0:
+                line = bytes(self._buffer[: end + 2])
+                del self._buffer[: end + 2]
+                return line
+            if len(self._buffer) > AGENT_FORWARD_HEAD_LIMIT_BYTES:
+                return b""
+            if not self._fill():
+                return b""
+
+    def copy_exact(self, size: int, target: socket.socket) -> bool:
+        """Copy so many bytes to another connection.
+
+        Args:
+            size: How many.
+            target: Where they go.
+
+        Returns:
+            False when this connection ended first.
+
+        Raises:
+            OSError: When either connection fails.
+        """
+        remaining = int(size)
+        while remaining > 0:
+            if not self._buffer and not self._fill():
+                return False
+            piece = bytes(self._buffer[:remaining])
+            del self._buffer[: len(piece)]
+            target.sendall(piece)
+            remaining -= len(piece)
+        return True
+
+    def copy_to_end(self, target: socket.socket) -> None:
+        """Copy every byte to another connection until this one ends.
+
+        Raises:
+            OSError: When either connection fails.
+        """
+        while True:
+            if self._buffer:
+                target.sendall(bytes(self._buffer))
+                self._buffer.clear()
+            if not self._fill():
+                return
+
+    def take_buffer(self) -> bytes:
+        """What was read past the last head or line, handed over and forgotten."""
+        held = bytes(self._buffer)
+        self._buffer.clear()
+        return held
+
+    def _fill(self) -> bool:
+        """Read more into the buffer; False once the connection ended."""
+        chunk = self.socket.recv(AGENT_FORWARD_CHUNK_BYTES)
+        if not chunk:
+            return False
+        self._buffer += chunk
+        return True
+
+
+def set_no_delay(connection: socket.socket) -> None:
+    """Send what the connection is given at once, for a TCP connection.
+
+    Args:
+        connection: The connection; a Unix socket takes nothing.
+    """
+    try:
+        connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        return
+
+
 def read_head(client: socket.socket) -> tuple:
     """``(head, rest)`` of a request; head None when it ended or ran past the limit.
 
     Raises:
         OSError: When the connection fails.
     """
-    received = b""
-    while HEAD_END not in received:
-        if len(received) > AGENT_FORWARD_HEAD_LIMIT_BYTES:
-            return None, b""
-        chunk = client.recv(AGENT_FORWARD_CHUNK_BYTES)
-        if not chunk:
-            return None, b""
-        received += chunk
-    head, _, rest = received.partition(HEAD_END)
-    return head + HEAD_END, rest
+    reader = ConnectionReader(client)
+    head = reader.read_head()
+    if head is None:
+        return None, b""
+    return head, reader.take_buffer()
 
 
 def parse_head(head: bytes) -> "tuple | None":
@@ -210,6 +332,23 @@ def parse_head(head: bytes) -> "tuple | None":
     return words[0], words[1], headers
 
 
+def parse_status(head: bytes) -> "tuple | None":
+    """The version, the status and the headers of an answer's head, None when malformed."""
+    lines = head.decode("latin-1").split("\r\n")
+    words = lines[0].split(" ", 2)
+    if len(words) < 2 or not words[1].isdigit():
+        return None
+    headers = []
+    for line in lines[1:]:
+        if not line:
+            continue
+        name, separator, value = line.partition(":")
+        if not separator:
+            return None
+        headers.append((name.strip(), value.strip()))
+    return words[0], int(words[1]), headers
+
+
 def header(headers: list, name: str) -> str:
     """The first value of one header, empty when the request has none.
 
@@ -224,6 +363,25 @@ def header(headers: list, name: str) -> str:
         if held.lower() == name:
             return value
     return ""
+
+
+def header_tokens(headers: list, name: str) -> list:
+    """The comma-separated words of every header of one name, in lower case.
+
+    Args:
+        headers: ``[(name, value)]``.
+        name: The header's name in lower case.
+
+    Returns:
+        The words, in order.
+    """
+    return [
+        token.strip().lower()
+        for held, value in headers
+        if held.lower() == name
+        for token in value.split(",")
+        if token.strip()
+    ]
 
 
 def cookie_values(headers: list, name: str) -> list:
@@ -256,15 +414,85 @@ def split_target(target: str) -> tuple:
     return path, query
 
 
-def closing_head(head: bytes) -> bytes:
-    """A request's head with ``Connection: close`` in place of its own."""
-    lines = head[: -len(HEAD_END)].split(b"\r\n")
-    kept = [lines[0]] + [
-        line
-        for line in lines[1:]
-        if line.split(b":", 1)[0].strip().lower() not in (b"connection", b"keep-alive")
-    ]
-    return b"\r\n".join(kept + [b"Connection: close"]) + HEAD_END
+def host_name(host: str) -> str:
+    """A ``Host`` header's name without its port, in lower case.
+
+    Args:
+        host: The header's value, such as ``127.0.0.1:24100`` or
+            ``[::1]:24100``.
+
+    Returns:
+        The name, an IPv6 address kept in its brackets.
+    """
+    text = host.strip().lower()
+    if text.startswith("["):
+        return text.split("]", 1)[0] + "]"
+    return text.split(":", 1)[0]
+
+
+def check_origin(headers: list, local_name: str = "") -> int:
+    """The status a request is refused with for where it comes from, 0 when it passes.
+
+    Args:
+        headers: ``[(name, value)]`` as :func:`parse_head` gives them.
+        local_name: The instance's app's local name, a name its ``Host``
+            may carry beside the loopback names.
+
+    Returns:
+        421 for a ``Host`` that names neither loopback nor the local name,
+        403 for an ``Origin`` that names another scheme, host or port than
+        the ``Host``, 0 otherwise.
+    """
+    host = header(headers, "host")
+    names = set(HTTP_FORWARD_LOOPBACK_HOSTS)
+    if local_name:
+        names.add(local_name.strip().lower())
+    if not host or host_name(host) not in names:
+        return 421
+    origin = header(headers, "origin")
+    if origin and _origin_place(origin) != _host_place(host):
+        return 403
+    return 0
+
+
+def _host_place(host: str) -> str:
+    """A ``Host`` as an origin's place: ``http://`` and the host, its default port dropped."""
+    text = host.strip().lower()
+    if text.endswith(":80"):
+        text = text[: -len(":80")]
+    return "http://" + text
+
+
+def _origin_place(origin: str) -> str:
+    """An ``Origin`` in the same form, its default port dropped."""
+    text = origin.strip().lower().rstrip("/")
+    if text.startswith("http://") and text.endswith(":80"):
+        text = text[: -len(":80")]
+    return text
+
+
+def is_upgrade(headers: list) -> bool:
+    """Whether a request asks for a WebSocket or another protocol."""
+    return header(headers, "upgrade") != "" and "upgrade" in header_tokens(
+        headers, "connection"
+    )
+
+
+def is_closing(version: str, headers: list) -> bool:
+    """Whether a request or an answer ends its connection after it.
+
+    Args:
+        version: ``HTTP/1.1`` or ``HTTP/1.0``.
+        headers: Its headers.
+
+    Returns:
+        True for ``Connection: close``, and for HTTP/1.0 without
+        ``Connection: keep-alive``.
+    """
+    tokens = header_tokens(headers, "connection")
+    if "close" in tokens:
+        return True
+    return version.upper() == "HTTP/1.0" and "keep-alive" not in tokens
 
 
 def answer(
@@ -274,8 +502,9 @@ def answer(
     *,
     content_type: str = "text/plain; charset=utf-8",
     extra: "list | None" = None,
+    is_closing: bool = True,
 ) -> None:
-    """Write one whole answer of the forwarder's own and close the exchange.
+    """Write one whole answer of the forwarder's own.
 
     Args:
         client: The browser's connection.
@@ -283,6 +512,8 @@ def answer(
         body: What the answer carries; empty writes the status's words.
         content_type: The body's type.
         extra: More ``(name, value)`` headers.
+        is_closing: Whether the answer ends the connection, which it then
+            says with ``Connection: close``.
 
     Raises:
         OSError: When the connection fails.
@@ -293,62 +524,84 @@ def answer(
         STATUS_LINES[status],
         f"Content-Type: {content_type}".encode("latin-1"),
         f"Content-Length: {len(body)}".encode("latin-1"),
-        b"Connection: close",
     ]
+    if is_closing:
+        lines.append(b"Connection: close")
     lines += [f"{name}: {value}".encode("latin-1") for name, value in extra or []]
     client.sendall(b"\r\n".join(lines) + HEAD_END + body)
 
 
-def relay(
-    client: socket.socket, head: bytes, rest: bytes, headers: list, connect
-) -> None:
-    """Pass one request on to the page and its answer back.
+def relay_answer(upstream: ConnectionReader, client: socket.socket, method: str):
+    """Pass the page's answer to one request back to the browser.
 
-    A request whose body comes in chunks is refused 411, and a page that
-    does not answer is 502.
+    An interim answer is passed on and the final one read after it. The
+    body follows its length, its chunks, or the end of the connection.
 
     Args:
+        upstream: The connection to the page, read through its buffer.
         client: The browser's connection.
-        head: The request's head as read.
-        rest: What was read past the head.
-        headers: ``[(name, value)]`` as :func:`parse_head` gives them.
-        connect: Returns a connected socket to the page; raises OSError
-            when the page does not answer.
+        method: The request's method, ``HEAD`` taking an answer with no body.
+
+    Returns:
+        True when both connections can carry the next request; False when
+        the answer ended the page's connection or said it would; None when
+        the page ended the connection before the first byte of an answer.
 
     Raises:
-        OSError: When the browser's connection fails.
+        OSError: When either connection fails, or the answer is malformed.
     """
-    is_upgrade = header(headers, "upgrade") != "" and "upgrade" in [
-        token.strip().lower() for token in header(headers, "connection").split(",")
-    ]
-    if not is_upgrade and header(headers, "transfer-encoding"):
-        answer(client, 411)
-        return
-    try:
-        upstream = connect()
-    except OSError:
-        answer(client, 502)
-        return
-    with upstream:
-        if is_upgrade:
-            upstream.sendall(head + rest)
-            _relay_both_ways(client, upstream)
-            return
-        try:
-            length = int(header(headers, "content-length") or 0)
-        except ValueError:
-            answer(client, 411)
-            return
-        upstream.sendall(closing_head(head) + rest[:length])
-        remaining = length - min(len(rest), length)
-        while remaining > 0:
-            chunk = client.recv(min(remaining, AGENT_FORWARD_CHUNK_BYTES))
-            if not chunk:
-                return
-            upstream.sendall(chunk)
-            remaining -= len(chunk)
-        upstream.settimeout(AGENT_FORWARD_IDLE_TIMEOUT_S)
-        _copy(upstream, client)
+    is_first = True
+    while True:
+        head = upstream.read_head()
+        if head is None:
+            if is_first:
+                return None
+            raise ConnectionError("the page ended its answer early")
+        is_first = False
+        parsed = parse_status(head)
+        if parsed is None:
+            raise ConnectionError("the page answered with no status")
+        version, status, headers = parsed
+        client.sendall(head)
+        if 100 <= status < 200 and status != 101:
+            continue
+        break
+    if method.upper() == "HEAD" or status in (204, 304) or 100 <= status < 200:
+        return not is_closing(version, headers)
+    if "chunked" in header_tokens(headers, "transfer-encoding"):
+        _relay_chunks(upstream, client)
+        return not is_closing(version, headers)
+    length_text = header(headers, "content-length")
+    if length_text:
+        if not upstream.copy_exact(int(length_text), client):
+            raise ConnectionError("the page ended its answer early")
+        return not is_closing(version, headers)
+    upstream.copy_to_end(client)
+    return False
+
+
+def _relay_chunks(upstream: ConnectionReader, client: socket.socket) -> None:
+    """Pass a chunked body on, chunk by chunk, through its trailer.
+
+    Raises:
+        OSError: When either connection fails or a chunk is malformed.
+    """
+    while True:
+        line = upstream.read_line()
+        if not line:
+            raise ConnectionError("the page ended its chunks early")
+        client.sendall(line)
+        size = int(line.split(b";", 1)[0].strip() or b"0", 16)
+        if size == 0:
+            while True:
+                trailer = upstream.read_line()
+                if not trailer:
+                    raise ConnectionError("the page ended its trailer early")
+                client.sendall(trailer)
+                if trailer == b"\r\n":
+                    return
+        if not upstream.copy_exact(size + 2, client):
+            raise ConnectionError("the page ended a chunk early")
 
 
 def _copy(source: socket.socket, target: socket.socket) -> None:
@@ -473,6 +726,8 @@ class ForwardDecision:
 
 
 RELAY = ForwardDecision()
+# What a request's turn answers once the browser's connection is to end.
+_CLOSED = object()
 
 
 def refused() -> ForwardDecision:
@@ -607,26 +862,153 @@ class InstanceForwarder:
             server.server_close()
 
     def handle(self, client: socket.socket) -> None:
-        """Judge the one request a connection carries, and answer or pass it on.
+        """Judge each request a connection carries, and answer or pass it on.
+
+        The connection stays open across requests while both sides allow
+        it, each request going through the checks and the module's rule
+        again and on to the page over one connection kept for it. A
+        WebSocket is relayed both ways once passed on.
 
         Args:
             client: The browser's connection, closed by the caller.
         """
-        client.settimeout(AGENT_FORWARD_UPSTREAM_TIMEOUT_S)
+        set_no_delay(client)
+        client.settimeout(AGENT_FORWARD_IDLE_TIMEOUT_S)
+        reader = ConnectionReader(client)
+        kept: "ConnectionReader | None" = None
         try:
-            head, rest = read_head(client)
+            while True:
+                kept = self._serve_one(client, reader, kept)
+                if kept is _CLOSED:
+                    kept = None
+                    return
         except OSError:
             return
+        finally:
+            if isinstance(kept, ConnectionReader):
+                with contextlib.suppress(OSError):
+                    kept.socket.close()
+
+    def _serve_one(self, client: socket.socket, reader: ConnectionReader, kept):
+        """Serve the next request on a browser's connection.
+
+        Args:
+            client: The browser's connection.
+            reader: Its bytes, read through a buffer.
+            kept: The connection to the page kept for it, None while none is.
+
+        Returns:
+            The connection to the page to keep for the next request, None
+            while none is kept, or :data:`_CLOSED` once the browser's
+            connection is to end.
+
+        Raises:
+            OSError: When either connection fails.
+        """
+        head = reader.read_head()
         if head is None:
-            return
+            return _CLOSED
         request = parse_head(head)
         if request is None:
-            return
+            return _CLOSED
         method, target, headers = request
+        version = head.split(b"\r\n", 1)[0].rsplit(b" ", 1)[-1].decode("latin-1")
+        has_body = bool(header(headers, "transfer-encoding")) or header(
+            headers, "content-length"
+        ) not in ("", "0")
+        refusal = check_origin(headers, str(self.record.get("local_name", "") or ""))
+        if refusal:
+            answer(client, refusal)
+            return _CLOSED
+        decision = self._hooks.admit(
+            self._request(method, target, headers), self.record
+        )
+        if decision.status:
+            is_ending = has_body or is_closing(version, headers)
+            answer(
+                client,
+                decision.status,
+                decision.body,
+                content_type=decision.content_type,
+                extra=list(decision.headers),
+                is_closing=is_ending,
+            )
+            return _CLOSED if is_ending else kept
+        if is_upgrade(headers):
+            if kept is not None:
+                kept.socket.close()
+            upstream = self._open_upstream()
+            if upstream is None:
+                answer(client, 502)
+                return _CLOSED
+            with upstream:
+                upstream.sendall(head + reader.take_buffer())
+                _relay_both_ways(client, upstream)
+            return _CLOSED
+        if header(headers, "transfer-encoding"):
+            answer(client, 411)
+            return _CLOSED
+        try:
+            length = int(header(headers, "content-length") or 0)
+        except ValueError:
+            answer(client, 411)
+            return _CLOSED
+        is_reused = kept is not None
+        if kept is None:
+            kept = self._open_reader()
+            if kept is None:
+                answer(client, 502)
+                return _CLOSED
+        outcome = self._pass_on(kept, client, reader, head, length, method)
+        if outcome is None and is_reused and length == 0:
+            kept.socket.close()
+            kept = self._open_reader()
+            if kept is None:
+                answer(client, 502)
+                return _CLOSED
+            outcome = self._pass_on(kept, client, reader, head, length, method)
+        if outcome is None:
+            kept.socket.close()
+            answer(client, 502)
+            return _CLOSED
+        if not outcome or is_closing(version, headers):
+            kept.socket.close()
+            return _CLOSED
+        return kept
+
+    def _pass_on(
+        self,
+        upstream: ConnectionReader,
+        client: socket.socket,
+        reader: ConnectionReader,
+        head: bytes,
+        length: int,
+        method: str,
+    ):
+        """Send one request to the page, its body cut at its length, and relay the answer.
+
+        Returns:
+            What :func:`relay_answer` returns; None as well when the page's
+            connection failed before the request was sent.
+
+        Raises:
+            OSError: When the browser's connection fails, or the page's
+                after its answer began.
+        """
+        try:
+            upstream.socket.sendall(head)
+        except OSError:
+            return None
+        if not reader.copy_exact(length, upstream.socket):
+            raise ConnectionError("the browser ended its request early")
+        return relay_answer(upstream, client, method)
+
+    def _request(self, method: str, target: str, headers: list) -> ForwardRequest:
+        """One request as the module's rule reads it."""
         path, query_text = split_target(target)
         query = urllib.parse.parse_qs(query_text, keep_blank_values=True)
         tokens = query.get(AGENT_FORWARD_TOKEN_PARAMETER) or [""]
-        forwarded = ForwardRequest(
+        return ForwardRequest(
             method=method,
             path=path,
             query=query,
@@ -634,21 +1016,21 @@ class InstanceForwarder:
             token=tokens[0],
             take_token=functools.partial(self.take_token, tokens[0]),
         )
+
+    def _open_upstream(self) -> "socket.socket | None":
+        """A connection to the page, sending at once; None when the page does not answer."""
         try:
-            decision = self._hooks.admit(forwarded, self.record)
-            if decision.status == 0:
-                connect = functools.partial(self._hooks.connect, self.record)
-                relay(client, head, rest, headers, connect)
-            else:
-                answer(
-                    client,
-                    decision.status,
-                    decision.body,
-                    content_type=decision.content_type,
-                    extra=list(decision.headers),
-                )
+            upstream = self._hooks.connect(self.record)
         except OSError:
-            return
+            return None
+        set_no_delay(upstream)
+        upstream.settimeout(AGENT_FORWARD_IDLE_TIMEOUT_S)
+        return upstream
+
+    def _open_reader(self) -> "ConnectionReader | None":
+        """A connection to the page read through a buffer; None when it does not answer."""
+        upstream = self._open_upstream()
+        return ConnectionReader(upstream) if upstream is not None else None
 
     def take_token(self, token: str) -> bool:
         """Whether a token verifies and was never spent; spends it if so.

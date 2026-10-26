@@ -43,10 +43,10 @@ SECRET = "token-secret-of-the-module"
 PASSWORD = "webui-password"
 COOKIE_NAME = "hermes_session_a9cae9416662"
 CONFIG = {
-    "port": 8787,
     "secret": SECRET,
     "password": PASSWORD,
     "cookie_name": COOKIE_NAME,
+    "local_name": "hermes-webui.m.localhost",
 }
 PODMAN = "/usr/bin/podman"
 URL = "http://host.containers.internal:8317"
@@ -140,6 +140,7 @@ class Box:
         self.forwarders: list = []
         self.lines: list = []
         self.record_dir = str(tmp_path / "hermes_webui")
+        self.held_ports: set = set()
         self.hooks = self.make()
 
     def make(self) -> HermesWebuiHooks:
@@ -154,6 +155,7 @@ class Box:
             save_settings=self.save_settings,
             forwarder_factory=self.forwarder,
             record_dir=self.record_dir,
+            is_port_free=lambda port: port not in self.held_ports,
         )
 
     def health(self, port):
@@ -183,11 +185,21 @@ def box(tmp_path):
     return Box(tmp_path)
 
 
-def test_a_port_outside_the_range_is_refused(box):
-    with pytest.raises(ModuleApplyError) as refused:
-        box.hooks.apply({**CONFIG, "port": 80})
+def test_the_forwarder_takes_the_first_free_port_from_8787_and_keeps_it(box):
+    box.held_ports.add(8787)
+    box.hooks.apply({**CONFIG, "port": 9100})
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
 
-    assert refused.value.code == "port_invalid"
+    box.held_ports.clear()
+    box.hooks.apply(CONFIG)
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
+
+    (forwarder,) = box.forwarders
+    assert forwarder.record["port"] == 8788
+    assert box.record()["port"] == 8788
+    assert box.hooks.details() == {"port": 8788}
 
 
 def test_before_config_yaml_exists_the_start_waits_and_writes_no_key(box):
@@ -406,18 +418,18 @@ def test_stop_closes_the_forwarder_and_remove_forgets_the_record(box):
     assert not os.path.exists(box.record_dir)
 
 
-def test_a_new_port_starts_another_forwarder(box):
+def test_a_new_local_name_starts_another_forwarder(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
         box.hooks.start()
 
-    box.hooks.apply({**CONFIG, "port": 9100})
+    box.hooks.apply({**CONFIG, "local_name": "hermes-webui-1.m.localhost"})
     with pytest.raises(ModuleInstallPending):
         box.hooks.start()
 
     first, second = box.forwarders
     assert first.is_closed and second.is_started
-    assert second.record["port"] == 9100
+    assert second.record["local_name"] == "hermes-webui-1.m.localhost"
 
 
 def test_the_record_keeps_the_cookie_name_and_a_new_one_starts_another_forwarder(
@@ -438,7 +450,7 @@ def test_the_record_keeps_the_cookie_name_and_a_new_one_starts_another_forwarder
 
 
 def test_a_state_with_no_cookie_name_uses_the_webui_s_default(box):
-    box.hooks.apply({"port": 8787, "secret": SECRET, "password": PASSWORD})
+    box.hooks.apply({"secret": SECRET, "password": PASSWORD})
     with pytest.raises(ModuleInstallPending):
         box.hooks.start()
 
@@ -629,6 +641,10 @@ def page(webui, tmp_path):
 
 
 def ask(port, request: bytes) -> bytes:
+    """One request on a connection it closes, its Host loopback's unless it names one."""
+    request = request.replace(b"Host: x\r\n", b"")
+    extra = b"" if b"\r\nHost: " in request else b"\r\nHost: 127.0.0.1"
+    request = request.replace(b"\r\n\r\n", extra + b"\r\nConnection: close\r\n\r\n", 1)
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(request)
         received = b""

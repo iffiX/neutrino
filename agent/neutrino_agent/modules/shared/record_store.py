@@ -4,7 +4,9 @@ The hub stops naming a module in its state once the machine has settled
 it, so the forwarder of a running instance starts again after the agent
 restarts from what is kept here: one file per account holding the fields
 the module names, mode 0600 in a directory only the agent's own account
-reads.
+reads. An instance whose account is no longer enabled keeps a retired
+record of its port alone, so the account takes the same port when it is
+enabled again.
 
 Not pure: writes files.
 """
@@ -20,6 +22,9 @@ import tempfile
 
 # The end of every record's file name.
 RECORD_SUFFIX = ".json"
+# What a retired record holds beside the account: its port, and the mark.
+RECORD_PORT_FIELD = "port"
+RECORD_RETIRED_FIELD = "is_retired"
 
 
 class InstanceRecordStore:
@@ -35,21 +40,32 @@ class InstanceRecordStore:
         self._fields = tuple(fields)
 
     def read_all(self) -> list:
-        """Every record held, by account.
+        """Every record held, by account; a retired one left out.
 
         Returns:
             The records, an unreadable one left out.
         """
-        records = []
-        for account in self.accounts():
+        return [
+            {name: held.get(name) for name in self._fields}
+            for held in self._read_files()
+            if not held.get(RECORD_RETIRED_FIELD)
+        ]
+
+    def kept_ports(self) -> dict:
+        """The port every record keeps, a retired one's included.
+
+        Returns:
+            Account to port, a record with no port left out.
+        """
+        ports = {}
+        for held in self._read_files():
             try:
-                with open(self._path(account), "r", encoding="utf-8") as stream:
-                    held = json.load(stream)
-            except (OSError, ValueError):
-                continue
-            if isinstance(held, dict):
-                records.append({name: held.get(name) for name in self._fields})
-        return records
+                port = int(held.get(RECORD_PORT_FIELD) or 0)
+            except (TypeError, ValueError):
+                port = 0
+            if port:
+                ports[str(held.get("account", "") or "")] = port
+        return ports
 
     def read(self, account: str) -> dict:
         """One account's record.
@@ -74,20 +90,30 @@ class InstanceRecordStore:
         Raises:
             OSError: When the file cannot be written.
         """
-        os.makedirs(self.directory, mode=0o700, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=self.directory, prefix=".record_")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                json.dump({name: record.get(name) for name in self._fields}, stream)
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, self._path(str(record["account"])))
-        except BaseException:
-            with contextlib.suppress(OSError):
-                os.unlink(temporary)
-            raise
+        self._write_file(
+            str(record["account"]), {name: record.get(name) for name in self._fields}
+        )
+
+    def retire(self, account: str) -> None:
+        """Keep one account's port alone, and forget the rest of its record.
+
+        Args:
+            account: The account.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        port = self.kept_ports().get(account, 0)
+        if not port:
+            self.remove(account)
+            return
+        self._write_file(
+            account,
+            {"account": account, RECORD_PORT_FIELD: port, RECORD_RETIRED_FIELD: True},
+        )
 
     def remove(self, account: str) -> None:
-        """Forget one account's record.
+        """Forget one account's record, a retired one's port included.
 
         Args:
             account: The account.
@@ -109,3 +135,30 @@ class InstanceRecordStore:
 
     def _path(self, account: str) -> str:
         return os.path.join(self.directory, account + RECORD_SUFFIX)
+
+    def _read_files(self) -> list:
+        """Every file's object, retired ones among them; an unreadable one left out."""
+        found = []
+        for account in self.accounts():
+            try:
+                with open(self._path(account), "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                continue
+            if isinstance(held, dict):
+                found.append(held)
+        return found
+
+    def _write_file(self, account: str, content: dict) -> None:
+        """Write one account's file whole, mode 0600, through a file beside it."""
+        os.makedirs(self.directory, mode=0o700, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=self.directory, prefix=".record_")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                json.dump(content, stream)
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._path(account))
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(temporary)
+            raise

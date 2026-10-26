@@ -2,12 +2,16 @@
 
 One instance runs per account the configuration names, as one account
 service through :mod:`account_service`, with the agent's forwarder in
-front of it where the module names an admission rule. The runner keeps a
-root-only record per instance, so a forwarder starts again after the agent
-restarts, answers ``details`` and ``journal`` in the one shape, and asks the
-module's :class:`InstanceHooks` for what differs: how the software is
-installed and found, what each instance's service runs, what its first
-start needs, and what its forwarder admits.
+front of it where the module names an admission rule. The runner takes each
+instance's port itself, the first free port on loopback from the module's
+``base_port`` up, at the instance's first start, and keeps it in the
+instance's root-only record, a retired one while the account is not
+enabled; a kept port another program holds at a start is replaced by the
+next free one. The record lets a forwarder start again after the agent
+restarts. The runner answers ``details`` and ``journal`` in the one shape,
+and asks the module's :class:`InstanceHooks` for what differs: how the
+software is installed and found, what each instance's service runs, what
+its first start needs, and what its forwarder admits.
 
 Not pure: drives the account service layer and the forwarders.
 """
@@ -37,6 +41,7 @@ from neutrino_agent.modules.shared.account_service.constants import (
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.package import joiner, unpacked_paths
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
@@ -130,6 +135,8 @@ class InstanceHooks:
         secret_field: The record field holding the token secret.
         is_forwarded: Whether the agent's forwarder stands in front of
             each instance; False for a page that admits the browser itself.
+        base_port: The port the runner takes each instance's port from,
+            the first free one from it up on loopback.
         installing: The accounts whose install the module runs or waits on.
     """
 
@@ -141,6 +148,7 @@ class InstanceHooks:
     forwarder_fields = None
     secret_field = "secret"
     is_forwarded = True
+    base_port = 0
 
     def __init__(self, *, platform, log=print):
         """
@@ -265,13 +273,20 @@ class InstanceHooks:
         Args:
             parsed: The parsed configuration.
             instance: The instance.
-            held: The record held before this apply, empty for a new one.
+            held: The record held before this apply, with the ``port`` the
+                runner took for the instance.
 
         Returns:
-            The record, every field in ``record_fields``.
+            The record, every field in ``record_fields``: the port the
+            runner took, and every other field the instance's or, where it
+            has none, the record's before.
         """
         return {
-            field: getattr(instance, field, held.get(field))
+            field: (
+                held.get(field)
+                if field == "port"
+                else getattr(instance, field, held.get(field))
+            )
             for field in self.record_fields
         }
 
@@ -399,6 +414,7 @@ class InstancesModuleRunner(ModuleRunner):
         machine: "ServiceMachine | None" = None,
         forwarder_factory=None,
         clock=time.monotonic,
+        is_port_free=is_port_free,
     ):
         """
         Args:
@@ -413,9 +429,11 @@ class InstancesModuleRunner(ModuleRunner):
                 and ``log``; returns a started-on-demand forwarder. None
                 makes an :class:`InstanceForwarder`.
             clock: The monotonic clock the instances' reading ages on.
+            is_port_free: Answers whether a loopback port can be bound now.
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._hooks = hooks_class(platform=platform, log=log)
+        self._is_port_free = is_port_free
         self.runner = self._hooks.runner
         self.name = self._hooks.name
         self._machine = (
@@ -574,6 +592,8 @@ class InstancesModuleRunner(ModuleRunner):
         try:
             for record in self._records.read_all():
                 self._retire(record)
+            for account in self._records.accounts():
+                self._records.remove(account)
             account_service.forget(self.name, self._machine)
             self._hooks.forget_module()
         finally:
@@ -708,10 +728,16 @@ class InstancesModuleRunner(ModuleRunner):
             if account not in wanted:
                 self._retire(record)
                 notes.append(f"stopped the instance of {account}")
+        ports = self._records.kept_ports()
         records = []
         for instance in parsed.instances:
             account = instance.account
-            record = self._hooks.record(parsed, instance, held.get(account, {}))
+            port = self._take_port(account, ports, is_held=account in held)
+            ports[account] = port
+            record = self._hooks.record(
+                parsed, instance, {**held.get(account, {}), "port": port}
+            )
+            record["port"] = port
             service = self._hooks.service(instance, entries[account], record)
             is_changed = account_service.write(service, self._machine)
             is_restart = is_changed or is_defined or account not in held
@@ -727,9 +753,52 @@ class InstancesModuleRunner(ModuleRunner):
         return notes
 
     def _retire(self, record: dict) -> None:
-        """Remove one instance's service and forget its record."""
+        """Remove one instance's service and keep its port alone in its record."""
         account_service.remove(self._service_of(record), self._machine)
-        self._records.remove(str(record["account"]))
+        self._records.retire(str(record["account"]))
+
+    def _take_port(self, account: str, ports: dict, *, is_held: bool) -> int:
+        """The port one instance runs on: the one kept for it, else the next free.
+
+        A port kept for an instance whose record is live is its own, whoever
+        listens there. A port kept for an account enabled again, or for a
+        new one, is taken only while nothing else holds it.
+
+        Args:
+            account: The instance's account.
+            ports: Account to the port every record keeps.
+            is_held: Whether the instance's record is live.
+
+        Returns:
+            The port.
+
+        Raises:
+            ModuleApplyError: ``apply_failed {detail}`` when no port from
+                the module's base up is free.
+        """
+        kept = int(ports.get(account, 0) or 0)
+        if kept and (is_held or self._is_port_free(kept)):
+            return kept
+        others = [port for name, port in ports.items() if name != account]
+        try:
+            port = pick_port(
+                self._base_port(), taken=others, is_free=self._is_port_free
+            )
+        except OSError as error:
+            raise ModuleApplyError("apply_failed", {"detail": str(error)})
+        if kept:
+            self._log(f"{self.name}: {account} moved from port {kept} to {port}")
+        return port
+
+    def _base_port(self) -> int:
+        """The module's base port.
+
+        Raises:
+            RuntimeError: For a module whose hooks name none.
+        """
+        if not self._hooks.base_port:
+            raise RuntimeError(f"{self.name}: no base port")
+        return int(self._hooks.base_port)
 
     def _service_of(self, record: dict):
         """The service one record's instance runs as, from the record alone."""
@@ -881,15 +950,46 @@ class InstancesModuleRunner(ModuleRunner):
         for forwarder in closing:
             forwarder.close()
         for account in missing:
+            record = self._free_forwarder_port(records[account])
             forwarder = self._forwarder_factory(
                 name=self.name,
-                record=records[account],
+                record=record,
                 hooks=self._hooks,
                 log=self._log,
             )
             with self._lock:
                 self._forwarders[account] = forwarder
             forwarder.start()
+
+    def _free_forwarder_port(self, record: dict) -> dict:
+        """One record whose port another program holds, moved to the next free port.
+
+        A forwarder that starts for a record finds its kept port taken only
+        when something else took it while no forwarder held it; the record
+        then keeps the next free one, which the report names.
+
+        Args:
+            record: The instance's record.
+
+        Returns:
+            The record as the forwarder serves it.
+        """
+        port = int(record.get("port", 0) or 0)
+        if not port or self._is_port_free(port):
+            return record
+        account = str(record.get("account", "") or "")
+        ports = self._records.kept_ports()
+        try:
+            moved = self._take_port(account, ports, is_held=False)
+        except ModuleApplyError:
+            return record
+        changed = {**record, "port": moved}
+        try:
+            self._records.write(changed)
+        except OSError as error:
+            self._log(f"{self.name}: could not keep the port of {account}: {error}")
+            return record
+        return changed
 
     def _close_forwarders(self) -> None:
         with self._lock:

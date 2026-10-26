@@ -23,10 +23,15 @@ from neutrino_agent.modules.codeg.config import (
     subprotocol_of,
 )
 
-GOOD = {"account": "ann", "port": 3101, "secret": "s"}
+GOOD = {
+    "account": "ann",
+    "secret": "s",
+    "local_name": "codeg-ann.m.localhost",
+    "cookie_name": "neutrino_0123456789ab",
+}
 
 
-def test_the_hub_s_shape_parses():
+def test_the_hub_s_shape_parses_with_no_port():
     config = CodegConfig.from_dict(
         {"instances": [dict(GOOD, password="login-pw"), "junk"]}
     )
@@ -34,24 +39,20 @@ def test_the_hub_s_shape_parses():
     (instance,) = config.instances
     assert (instance.account, instance.port, instance.secret, instance.password) == (
         "ann",
-        3101,
+        0,
         "s",
         "login-pw",
     )
+    assert instance.local_name == "codeg-ann.m.localhost"
+    assert instance.cookie_name == "neutrino_0123456789ab"
     assert CodegConfig.from_dict({}).instances == []
-    assert (
-        CodegConfig.from_dict({"instances": [dict(GOOD, port="x")]}).instances[0].port
-        == 0
-    )
 
 
 @pytest.mark.parametrize(
     ("instances", "code", "params"),
     [
         ([dict(GOOD, account="a b")], "account_invalid", {"account": "a b"}),
-        ([GOOD, dict(GOOD, account="ANN", port=3102)], "account_duplicate", {}),
-        ([dict(GOOD, port=80)], "port_invalid", {"port": 80}),
-        ([GOOD, dict(GOOD, account="bob")], "port_duplicate", {"port": 3101}),
+        ([GOOD, dict(GOOD, account="ANN")], "account_duplicate", {}),
         ([dict(GOOD, secret="")], "secret_missing", {"account": "ann"}),
     ],
 )

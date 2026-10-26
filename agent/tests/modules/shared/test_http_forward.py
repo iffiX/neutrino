@@ -5,17 +5,19 @@ only with its secret, only before its expiry and within the horizon; a
 spent nonce is dropped once its token expired; a login cookie is the layout
 the standard names and works with its key before its expiry; a request's head is read up
 to its end and refused past the limit; a cookie's values are found across
-headers; an ordinary request is passed on with ``Connection: close`` and
-its body cut at its length; a chunked body is 411; a page that does not
-answer is 502; and the server hands each connection to its callable. The
-forwarder in front of one instance: it listens on loopback once the
-hooks say the page is ready, trying again while it is not; a token is
-spent once and what follows is the hooks' decision; a request the hooks
-admit reaches the page, a WebSocket relayed both ways; a taken port is
-reported until it frees; a forwarder follows the record fields the
-hooks name; and a token's expiry is judged by the hub's time, so a machine
-whose clock is hours off, or is set while the socket stays open, accepts a
-fresh one.
+headers; a ``Host`` outside loopback and the instance's local name is 421,
+an ``Origin`` other than the ``Host``'s 403; the page's answer is passed on
+by its length, its chunks, or the end of its connection; and the server
+hands each connection to its callable. The forwarder in front of one
+instance: it listens on loopback once the hooks say the page is ready,
+trying again while it is not; a token is spent once and what follows is
+the hooks' decision; requests on one browser connection reach the page over
+one kept connection, their heads unchanged and each judged again; a chunked
+body is 411 and a page that does not answer 502; both sockets send at once;
+a WebSocket is relayed both ways; a taken port is reported until it frees;
+a forwarder follows the record fields the hooks name; and a token's expiry
+is judged by the hub's time, so a machine whose clock is hours off, or is
+set while the socket stays open, accepts a fresh one.
 """
 
 import base64
@@ -29,14 +31,16 @@ import time
 
 import pytest
 
+import neutrino_agent.modules.shared.http_forward as http_forward_module
 import neutrino_agent.modules.shared.hub_clock as hub_clock_module
 from neutrino_agent.modules.shared.hub_clock import HubClock
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
+    ConnectionReader,
     ForwarderServer,
     InstanceForwarder,
     answered,
-    closing_head,
+    check_origin,
     cookie_values,
     is_login_valid,
     mint_login,
@@ -44,7 +48,7 @@ from neutrino_agent.modules.shared.http_forward import (
     parse_head,
     read_head,
     refused,
-    relay,
+    relay_answer,
     split_target,
     take_token,
 )
@@ -144,67 +148,116 @@ def test_a_target_splits_in_either_form_and_a_cookie_is_found_in_every_header():
     assert cookie_values(headers, "c") == []
 
 
-def test_closing_head_replaces_the_connection_header():
-    head = b"GET / HTTP/1.1\r\nConnection: keep-alive\r\nKeep-Alive: 5\r\n\r\n"
-
-    assert closing_head(head) == b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n"
-
-
-def _relay_once(request: bytes, connect) -> bytes:
-    left, right = socket.socketpair()
-    with left, right:
-        left.sendall(request)
-        head, rest = read_head(right)
-        _method, _target, headers = parse_head(head)
-        relay(right, head, rest, headers, connect)
-        right.shutdown(socket.SHUT_WR)
-        received = b""
-        left.settimeout(5)
-        while True:
-            data = left.recv(65536)
-            if not data:
-                return received
-            received += data
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1:24100",
+        "[::1]:24100",
+        "localhost:24100",
+        "LocalHost",
+        "app.m.localhost:7",
+    ],
+)
+def test_a_host_of_loopback_or_the_local_name_passes(host):
+    assert check_origin([("Host", host)], "app.m.localhost") == 0
 
 
-def test_an_ordinary_request_is_passed_on_closed_and_its_body_cut_at_its_length():
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [("Host", "evil.example:24100")],
+        [("Host", "app.m.localhost:24100")],
+        [("Host", "127.0.0.2:24100")],
+        [],
+    ],
+)
+def test_any_other_host_is_421(headers):
+    assert check_origin(headers) == 421
+
+
+@pytest.mark.parametrize(
+    "origin, status",
+    [
+        ("http://127.0.0.1:24100", 0),
+        ("HTTP://127.0.0.1:24100/", 0),
+        ("http://127.0.0.1:24101", 403),
+        ("https://127.0.0.1:24100", 403),
+        ("http://evil.example", 403),
+        ("null", 403),
+    ],
+)
+def test_an_origin_is_its_own_hosts_or_403(origin, status):
+    headers = [("Host", "127.0.0.1:24100"), ("Origin", origin)]
+
+    assert check_origin(headers) == status
+
+
+def _answered(page_answer: bytes, method: str = "GET", *, is_closed: bool = False):
+    """What one answer of the page passes on, and what it says of the connection."""
     page, ours = socket.socketpair()
-    seen = []
-
-    def serve():
+    browser, theirs = socket.socketpair()
+    with page, ours, browser, theirs:
+        page.sendall(page_answer)
+        if is_closed:
+            page.shutdown(socket.SHUT_WR)
+        outcome = relay_answer(ConnectionReader(ours), theirs, method)
+        theirs.shutdown(socket.SHUT_WR)
+        browser.settimeout(5)
         received = b""
-        while b"\r\n\r\n" not in received or not received.endswith(b"hello"):
-            received += page.recv(65536)
-        seen.append(received)
-        page.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-        page.close()
+        while True:
+            chunk = browser.recv(65536)
+            if not chunk:
+                return outcome, received
+            received += chunk
 
-    server = threading.Thread(target=serve)
-    server.start()
-    answer = _relay_once(
-        b"POST /x HTTP/1.1\r\nContent-Length: 5\r\nConnection: keep-alive\r\n\r\n"
-        b"helloEXTRA",
-        lambda: ours,
+
+def test_an_answer_is_passed_on_by_its_length_and_keeps_the_connection():
+    outcome, received = _answered(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nokNEXT")
+
+    assert outcome is True
+    assert received == b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
+
+
+def test_a_chunked_answer_is_passed_on_through_its_trailer():
+    body = b"3\r\nabc\r\n0\r\nX-T: 1\r\n\r\n"
+    outcome, received = _answered(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + body + b"NEXT"
     )
-    server.join(timeout=5)
 
-    assert seen == [
-        b"POST /x HTTP/1.1\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello"
-    ]
-    assert answer.endswith(b"ok")
+    assert outcome is True
+    assert received.endswith(body)
 
 
-def test_a_chunked_body_is_411_and_a_page_that_does_not_answer_is_502():
-    def refused():
-        raise ConnectionRefusedError()
-
-    chunked = _relay_once(
-        b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", refused
+def test_an_answer_with_no_length_ends_with_its_connection():
+    outcome, received = _answered(
+        b"HTTP/1.1 200 OK\r\n\r\nuntil the end", is_closed=True
     )
-    silent = _relay_once(b"GET / HTTP/1.1\r\n\r\n", refused)
 
-    assert chunked.startswith(b"HTTP/1.1 411")
-    assert silent.startswith(b"HTTP/1.1 502")
+    assert outcome is False
+    assert received.endswith(b"until the end")
+
+
+def test_an_answer_that_says_close_ends_the_connection_and_head_has_no_body():
+    closing, _ = _answered(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+    head, received = _answered(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n", method="HEAD"
+    )
+    interim, both = _answered(
+        b"HTTP/1.1 100 Continue\r\n\r\n" b"HTTP/1.1 204 No Content\r\n\r\n"
+    )
+
+    assert closing is False
+    assert head is True and received.endswith(b"\r\n\r\n")
+    assert interim is True and both.count(b"HTTP/1.1") == 2
+
+
+def test_a_page_that_ends_before_its_answer_reads_none():
+    outcome, received = _answered(b"", is_closed=True)
+
+    assert outcome is None
+    assert received == b""
 
 
 def test_the_server_hands_each_connection_to_its_callable():
@@ -235,13 +288,14 @@ def test_the_server_hands_each_connection_to_its_callable():
 
 
 class FakePage(socketserver.ThreadingTCPServer):
-    """An echo of every request, and a WebSocket echo, on loopback."""
+    """An echo of every request, many on one connection, and a WebSocket echo, on loopback."""
 
     allow_reuse_address = True
     daemon_threads = True
 
     def __init__(self):
         self.requests: list = []
+        self.connections = 0
         super().__init__(("127.0.0.1", 0), FakePageConnection)
         threading.Thread(
             target=self.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
@@ -258,28 +312,38 @@ class FakePage(socketserver.ThreadingTCPServer):
 
 class FakePageConnection(socketserver.BaseRequestHandler):
     def handle(self):
+        self.server.connections += 1
         received = b""
-        while b"\r\n\r\n" not in received:
-            chunk = self.request.recv(65536)
-            if not chunk:
-                return
-            received += chunk
-        head, _, body = received.partition(b"\r\n\r\n")
-        self.server.requests.append(head)
-        if b"Upgrade: websocket" in head:
-            self.request.sendall(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
-            while True:
+        while True:
+            while b"\r\n\r\n" not in received:
                 chunk = self.request.recv(65536)
                 if not chunk:
                     return
-                self.request.sendall(chunk)
-        payload = head + b"\r\n\r\n" + body
-        self.request.sendall(
-            b"HTTP/1.1 200 OK\r\nContent-Length: "
-            + str(len(payload)).encode()
-            + b"\r\nConnection: close\r\n\r\n"
-            + payload
-        )
+                received += chunk
+            head, _, received = received.partition(b"\r\n\r\n")
+            self.server.requests.append(head)
+            if b"Upgrade: websocket" in head:
+                self.request.sendall(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
+                while True:
+                    chunk = self.request.recv(65536)
+                    if not chunk:
+                        return
+                    self.request.sendall(chunk)
+            length = 0
+            for line in head.split(b"\r\n")[1:]:
+                name, _, value = line.partition(b":")
+                if name.strip().lower() == b"content-length":
+                    length = int(value)
+            while len(received) < length:
+                received += self.request.recv(65536)
+            body, received = received[:length], received[length:]
+            payload = head + b"\r\n\r\n" + body
+            self.request.sendall(
+                b"HTTP/1.1 200 OK\r\nContent-Length: "
+                + str(len(payload)).encode()
+                + b"\r\n\r\n"
+                + payload
+            )
 
 
 class DemoHooks:
@@ -294,6 +358,7 @@ class DemoHooks:
         self.codes = list(codes)
         self.ready_calls = 0
         self.admitted: list = []
+        self.upstreams: list = []
 
     def on_first_start(self, record) -> str:
         self.ready_calls += 1
@@ -315,7 +380,9 @@ class DemoHooks:
         return refused()
 
     def connect(self, record):
-        return socket.create_connection(("127.0.0.1", self.page_port), timeout=5)
+        upstream = socket.create_connection(("127.0.0.1", self.page_port), timeout=5)
+        self.upstreams.append(upstream)
+        return upstream
 
 
 def free_port() -> int:
@@ -324,8 +391,13 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def forwarder_for(hooks, port: int, log=None, **changes):
-    record = {"account": "ann", "port": port, "secret": SECRET}
+def forwarder_for(hooks, port: int, log=None, local_name="", **changes):
+    record = {
+        "account": "ann",
+        "port": port,
+        "secret": SECRET,
+        "local_name": local_name,
+    }
     return InstanceForwarder(
         name="demo",
         record=record,
@@ -345,6 +417,7 @@ def wait_until(condition, timeout_s=5.0) -> None:
 
 
 def exchange(port: int, request: bytes) -> bytes:
+    """One request on a connection of its own, read until the forwarder ends it."""
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(request)
         received = b""
@@ -353,6 +426,21 @@ def exchange(port: int, request: bytes) -> bytes:
             if not chunk:
                 return received
             received += chunk
+
+
+def read_answer(client: socket.socket) -> bytes:
+    """One whole answer read off a kept connection, by its length."""
+    reader = ConnectionReader(client)
+    head = reader.read_head()
+    length = 0
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            length = int(value)
+    body = reader.take_buffer()
+    while len(body) < length:
+        body += client.recv(65536)
+    return head + body
 
 
 def good_token() -> str:
@@ -386,19 +474,20 @@ def test_a_token_is_traded_once_and_the_login_is_relayed():
         wait_until(lambda: forwarder.is_listening)
         token = good_token()
         port = forwarder.port
+        host = f"Host: 127.0.0.1:{port}\r\nConnection: close"
 
         traded = exchange(
-            port, f"GET /app?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode()
+            port, f"GET /app?tkn={token} HTTP/1.1\r\n{host}\r\n\r\n".encode()
         )
         again = exchange(
-            port, f"GET /app?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode()
+            port, f"GET /app?tkn={token} HTTP/1.1\r\n{host}\r\n\r\n".encode()
         )
-        forged = exchange(port, b"GET /app?tkn=bad HTTP/1.1\r\nHost: x\r\n\r\n")
-        bare = exchange(port, b"GET /app HTTP/1.1\r\nHost: x\r\n\r\n")
+        forged = exchange(port, f"GET /app?tkn=bad HTTP/1.1\r\n{host}\r\n\r\n".encode())
+        bare = exchange(port, f"GET /app HTTP/1.1\r\n{host}\r\n\r\n".encode())
         relayed = exchange(
             port,
-            b"POST /api HTTP/1.1\r\nHost: x\r\nCookie: demo=ok\r\n"
-            b"Content-Length: 2\r\n\r\nhi",
+            f"POST /api HTTP/1.1\r\n{host}\r\nCookie: demo=ok\r\n"
+            "Content-Length: 2\r\n\r\nhi".encode(),
         )
 
         assert traded.startswith(b"HTTP/1.1 302 Found")
@@ -407,11 +496,132 @@ def test_a_token_is_traded_once_and_the_login_is_relayed():
         assert forged.startswith(b"HTTP/1.1 401")
         assert bare.startswith(b"HTTP/1.1 401")
         assert relayed.startswith(b"HTTP/1.1 200")
-        assert relayed.endswith(b"Connection: close\r\n\r\nhi")
+        assert relayed.endswith(
+            b"Connection: close\r\nCookie: demo=ok\r\nContent-Length: 2\r\n\r\nhi"
+        )
         assert page.requests[0].startswith(b"POST /api HTTP/1.1")
         assert hooks.admitted == ["/app", "/app", "/app", "/app", "/api"]
     finally:
         forwarder.close()
+        page.stop()
+
+
+def test_requests_on_one_connection_reach_the_page_over_one_kept_connection():
+    page = FakePage()
+    hooks = DemoHooks(page.port)
+    forwarder = forwarder_for(hooks, free_port(), local_name="app.m.localhost")
+    try:
+        forwarder.start()
+        wait_until(lambda: forwarder.is_listening)
+        port = forwarder.port
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+            first_head = (
+                f"GET /a HTTP/1.1\r\nHost: app.m.localhost:{port}\r\n"
+                "Cookie: demo=ok\r\nConnection: keep-alive\r\n\r\n"
+            ).encode()
+            client.sendall(first_head)
+            first = read_answer(client)
+            client.sendall(
+                f"POST /b HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                "Cookie: demo=ok\r\nContent-Length: 2\r\n\r\nhi".encode()
+            )
+            second = read_answer(client)
+            client.sendall(
+                f"GET /c HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode()
+            )
+            third = read_answer(client)
+
+        assert first.startswith(b"HTTP/1.1 200") and first.endswith(first_head)
+        assert second.endswith(b"\r\n\r\nhi")
+        assert third.startswith(b"HTTP/1.1 401")
+        assert page.connections == 1
+        assert [head.split(b"\r\n")[0] for head in page.requests] == [
+            b"GET /a HTTP/1.1",
+            b"POST /b HTTP/1.1",
+        ]
+        assert hooks.admitted == ["/a", "/b", "/c"]
+    finally:
+        forwarder.close()
+        page.stop()
+
+
+def test_a_wrong_host_is_421_and_a_wrong_origin_403_passed_to_nobody():
+    page = FakePage()
+    hooks = DemoHooks(page.port)
+    forwarder = forwarder_for(hooks, free_port())
+    try:
+        forwarder.start()
+        wait_until(lambda: forwarder.is_listening)
+        port = forwarder.port
+
+        rebound = exchange(
+            port, b"GET / HTTP/1.1\r\nHost: evil.example\r\nCookie: demo=ok\r\n\r\n"
+        )
+        crossed = exchange(
+            port,
+            f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            "Origin: http://127.0.0.1:1\r\nCookie: demo=ok\r\n\r\n".encode(),
+        )
+
+        assert rebound.startswith(b"HTTP/1.1 421")
+        assert crossed.startswith(b"HTTP/1.1 403")
+        assert hooks.admitted == []
+        assert page.requests == []
+    finally:
+        forwarder.close()
+        page.stop()
+
+
+def test_a_chunked_body_is_411_and_a_page_that_does_not_answer_is_502():
+    hooks = DemoHooks(free_port())
+    forwarder = forwarder_for(hooks, free_port())
+    try:
+        forwarder.start()
+        wait_until(lambda: forwarder.is_listening)
+        port = forwarder.port
+        host = f"Host: 127.0.0.1:{port}\r\nCookie: demo=ok"
+
+        chunked = exchange(
+            port,
+            f"POST / HTTP/1.1\r\n{host}\r\nTransfer-Encoding: chunked\r\n\r\n".encode(),
+        )
+        silent = exchange(port, f"GET / HTTP/1.1\r\n{host}\r\n\r\n".encode())
+
+        assert chunked.startswith(b"HTTP/1.1 411")
+        assert silent.startswith(b"HTTP/1.1 502")
+    finally:
+        forwarder.close()
+
+
+def test_both_sockets_of_a_forwarder_send_at_once(monkeypatch):
+    page = FakePage()
+    hooks = DemoHooks(page.port)
+    forwarder = forwarder_for(hooks, free_port())
+    nodelay = (socket.IPPROTO_TCP, socket.TCP_NODELAY)
+    seen = []
+    real = http_forward_module.set_no_delay
+
+    def spy(connection):
+        real(connection)
+        seen.append(connection.getsockopt(*nodelay))
+
+    monkeypatch.setattr(http_forward_module, "set_no_delay", spy)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    try:
+        browser = socket.create_connection(listener.getsockname(), timeout=5)
+        accepted, _ = listener.accept()
+        with browser, accepted:
+            browser.sendall(
+                b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: demo=ok\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            forwarder.handle(accepted)
+
+        assert len(seen) == 2 and all(seen)
+    finally:
+        listener.close()
         page.stop()
 
 
@@ -424,7 +634,7 @@ def test_a_websocket_is_relayed_both_ways():
 
         with socket.create_connection(("127.0.0.1", forwarder.port), timeout=5) as ws:
             ws.sendall(
-                b"GET /ws HTTP/1.1\r\nHost: x\r\nCookie: demo=ok\r\n"
+                b"GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: demo=ok\r\n"
                 b"Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
             )
             received = b""

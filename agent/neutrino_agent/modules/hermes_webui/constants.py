@@ -3,10 +3,8 @@
 # The module's name on the wire, which names its record's directory and file.
 HERMES_WEBUI_NAME = "hermes_webui"
 
-# The forwarder's port: 8787 unless the person sets another, within these.
-HERMES_WEBUI_DEFAULT_PORT = 8787
-HERMES_WEBUI_PORT_MIN = 1024
-HERMES_WEBUI_PORT_MAX = 65535
+# The port the agent takes the forwarder's port from, the first free one up.
+HERMES_WEBUI_BASE_PORT = 8787
 
 # The module's two hub containers, as the hub composes them.
 HERMES_WEBUI_AGENT_CONTAINER = "neutrino_hermes_webui_agent"
@@ -54,8 +52,8 @@ HERMES_WEBUI_SETTINGS_PATH = "/api/settings"
 HERMES_WEBUI_UPDATE_CHECK_OFF = {"check_for_updates": False}
 
 # What the module keeps, root-only, in its record: the forwarder's port and
-# secrets, the login cookie's name, the loopback port the webui is published
-# at, the pair it last installed, the base URL the keys were written with,
+# secrets, the login cookie's name, the app's local name, the loopback port
+# the webui is published at, the pair it last installed, the base URL the keys were written with,
 # whether its first start has ended, whether the webui's update check is
 # off, and whether it was stopped.
 HERMES_WEBUI_RECORD_FIELDS = (
@@ -64,6 +62,7 @@ HERMES_WEBUI_RECORD_FIELDS = (
     "secret",
     "password",
     "cookie_name",
+    "local_name",
     "upstream_port",
     "version",
     "base_url",
@@ -77,6 +76,7 @@ HERMES_WEBUI_FORWARDER_FIELDS = (
     "secret",
     "password",
     "cookie_name",
+    "local_name",
     "upstream_port",
 )
 # What the module waits on while its first start runs.

@@ -224,7 +224,9 @@ def test_vscode_windows_arguments():
         }
     )
 
-    service = hooks.service(config.instances[0], WIN_ANN, {"host": "127.0.0.1"})
+    service = hooks.service(
+        config.instances[0], WIN_ANN, {"host": "127.0.0.1", "port": 8000}
+    )
 
     assert windows_layer.arguments_of(service, machine) == (
         golden_json("vscode_windows.json")["arguments"]

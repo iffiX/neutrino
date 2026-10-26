@@ -74,12 +74,14 @@ SECRET = "instance-secret"  # scan: allow
 PASSWORD = "hub-password-1"  # scan: allow
 NOW = 1_800_000_000
 NODE = "node-v22.23.3-linux-x64"
+COOKIE = "neutrino_0123456789ab"
 INSTANCE = {
     "account": "ann",
-    "port": 3001,
     "web_password": PASSWORD,
     "token_secret": SECRET,
     "password": "login-pw",
+    "local_name": "cloudcli-ann.m.localhost",
+    "cookie_name": COOKIE,
 }
 CONFIG = CloudcliConfig.from_dict({"instances": [INSTANCE]})
 INTEGRITY = "sha512-pinned"
@@ -923,7 +925,7 @@ def test_the_record_keeps_the_loopback_port_and_the_database_across_applies(tmp_
     hooks = hooks_for("linux", with_node(tmp_path), pick_port=lambda: next(ports))
     instance = CONFIG.instances[0]
 
-    first = hooks.record(CONFIG, instance, {})
+    first = hooks.record(CONFIG, instance, {"port": 3001})
     again = hooks.record(CONFIG, instance, first)
     fresh = hooks.record(CONFIG, instance, dict(first, database="auth-x.db"))
 
@@ -934,6 +936,8 @@ def test_the_record_keeps_the_loopback_port_and_the_database_across_applies(tmp_
         "web_password": PASSWORD,
         "token_secret": SECRET,
         "database": "auth.db",
+        "local_name": "cloudcli-ann.m.localhost",
+        "cookie_name": COOKIE,
     }
     assert again == first
     assert fresh["database"] == "auth-x.db" and fresh["upstream_port"] == 41000
@@ -943,6 +947,8 @@ def test_the_record_keeps_the_loopback_port_and_the_database_across_applies(tmp_
         "upstream_port",
         "web_password",
         "token_secret",
+        "local_name",
+        "cookie_name",
     )
 
 
@@ -978,7 +984,7 @@ def test_an_environment_is_written_from_scratch_naming_no_gateway():
         {
             "gateway_url": "http://10.0.0.1:8317",
             "gateway_key": "k",
-            "instances": [{"account": "ann", "port": 3001, "token_secret": "s"}],
+            "instances": [{"account": "ann", "token_secret": "s"}],
         }
     )
 
@@ -1152,6 +1158,7 @@ def record_for(upstream_port, *, account="ann", port=0):
         "web_password": PASSWORD,
         "token_secret": SECRET,
         "database": "auth.db",
+        "cookie_name": COOKIE,
     }
 
 
@@ -1194,6 +1201,10 @@ def listening(cloudcli, tmp_path):
 
 
 def ask(port, request: bytes) -> bytes:
+    """One request on a connection it closes, its Host loopback's."""
+    request = request.replace(b"Host: x\r\n", b"").replace(
+        b"\r\n\r\n", b"\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", 1
+    )
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(request)
         received = b""
@@ -1317,7 +1328,7 @@ def test_a_token_is_traded_for_cloudclis_login_kept_in_the_browser(listening):
     assert b"localStorage.setItem(" in body
     assert b'"auth-token"' in body
     assert b"location.replace('/')" in body
-    assert f"Set-Cookie: {cookie_name(port)}=".encode() in head
+    assert f"Set-Cookie: {COOKIE}=".encode() in head
     assert b"HttpOnly" in head
     assert status_of(again) == 401
 
@@ -1343,7 +1354,7 @@ def test_a_request_with_cloudclis_login_is_passed_on_with_its_body(listening, cl
     )
     cookie = ask(
         port,
-        f"GET /api/y HTTP/1.1\r\nHost: x\r\nCookie: {cookie_name(port)}={login}\r\n\r\n".encode(),
+        f"GET /api/y HTTP/1.1\r\nHost: x\r\nCookie: {COOKIE}={login}\r\n\r\n".encode(),
     )
     query = ask(port, f"GET /ws?token={login} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
 
@@ -1374,7 +1385,7 @@ def test_a_websocket_with_cloudclis_login_is_relayed_both_ways(listening, cloudc
 
     with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
         client.sendall(
-            f"GET /ws?token={login} HTTP/1.1\r\nHost: x\r\n"
+            f"GET /ws?token={login} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
             "Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n".encode()
         )
         received = b""

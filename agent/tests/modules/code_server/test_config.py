@@ -1,8 +1,9 @@
 """The code-server module's configuration.
 
-What these pin: the shape the hub sends parses; every refusal the standard
-names comes with the account or the port it is about; and the cookie key
-is derived from the instance's secret and from nothing else.
+What these pin: the shape the hub sends parses, with no port, which the
+agent takes; every refusal the standard names comes with the account it is
+about; and the cookie key is derived from the instance's secret and from
+nothing else.
 """
 
 import pytest
@@ -10,14 +11,21 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.code_server.config import CodeServerConfig, cookie_key
 
-GOOD = {"account": "ann", "port": 8443, "secret": "s"}
+GOOD = {
+    "account": "ann",
+    "secret": "s",
+    "local_name": "code-server-ann.m.localhost",
+    "cookie_name": "neutrino_0123456789ab",
+}
 
 
 def test_the_hub_s_shape_parses():
     config = CodeServerConfig.from_dict({"instances": [GOOD, "junk"]})
 
     (instance,) = config.instances
-    assert (instance.account, instance.port, instance.secret) == ("ann", 8443, "s")
+    assert (instance.account, instance.port, instance.secret) == ("ann", 0, "s")
+    assert instance.local_name == "code-server-ann.m.localhost"
+    assert instance.cookie_name == "neutrino_0123456789ab"
     assert CodeServerConfig.from_dict({}).instances == []
 
 
@@ -25,9 +33,7 @@ def test_the_hub_s_shape_parses():
     ("instances", "code", "params"),
     [
         ([dict(GOOD, account="a b")], "account_invalid", {"account": "a b"}),
-        ([GOOD, dict(GOOD, account="ANN", port=8444)], "account_duplicate", {}),
-        ([dict(GOOD, port=80)], "port_invalid", {"port": 80}),
-        ([GOOD, dict(GOOD, account="bob")], "port_duplicate", {"port": 8443}),
+        ([GOOD, dict(GOOD, account="ANN")], "account_duplicate", {}),
         ([dict(GOOD, secret="")], "secret_missing", {"account": "ann"}),
     ],
 )

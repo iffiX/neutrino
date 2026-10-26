@@ -33,12 +33,12 @@ CODE_SERVER_FLAGS = (
     "--disable-update-check",
 )
 
-CODE_SERVER_PORT_MIN = 1024
-CODE_SERVER_PORT_MAX = 65535
+# The port the agent takes each instance's port from, the first free one up.
+CODE_SERVER_BASE_PORT = 8444
 
-# The forwarder's login cookie, per port, since a cookie belongs to a host
-# and not to a port; its value is the shared forwarder's, the key derived
-# from the instance's secret.
+# The forwarder's login cookie, named per entry by the hub; this name and the
+# port stand in when the state names none. Its value is the shared
+# forwarder's, the key derived from the instance's secret.
 CODE_SERVER_COOKIE_PREFIX = "neutrino_code_server_"
 CODE_SERVER_COOKIE_LABEL = b"neutrino code_server cookie"
 CODE_SERVER_LOGIN_LIFETIME_S = 7 * 24 * 3600
@@ -49,4 +49,4 @@ CODE_SERVER_DARWIN_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 CODE_SERVER_DARWIN_SHELL = "/bin/zsh"
 
 # The fields one instance's record holds.
-CODE_SERVER_RECORD_FIELDS = ("account", "port", "secret")
+CODE_SERVER_RECORD_FIELDS = ("account", "port", "secret", "local_name", "cookie_name")

@@ -1,9 +1,10 @@
-"""The VS Code module's configuration: which accounts run a server, where.
+"""The VS Code module's configuration: which accounts run a server.
 
-Each instance is one account's ``code serve-web`` on one port, reached with
-the connection token the hub generated for it. On Windows an instance also
-carries the account's password, from the login the hub holds for it,
-because a task that runs as an account needs its password to sign in.
+Each instance is one account's ``code serve-web``, reached with the
+connection token the hub generated for it, on a port the agent takes and
+keeps in the instance's record. On Windows an instance also carries the
+account's password, from the login the hub holds for it, because a task
+that runs as an account needs its password to sign in.
 
 Pure: parsing and validation only.
 """
@@ -16,11 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.vscode.constants import (
-    VSCODE_LOOPBACK_ADDRESS,
-    VSCODE_PORT_MAX,
-    VSCODE_PORT_MIN,
-)
+from neutrino_agent.modules.vscode.constants import VSCODE_LOOPBACK_ADDRESS
 
 # An account name that survives a unit name, a launchd label, a task name
 # and a command line.
@@ -33,15 +30,16 @@ class VscodeInstance:
 
     Attributes:
         account: The account it runs as.
-        port: The port it listens on.
         token: The connection token a browser opens it with.
         password: The account's password; Windows only.
+        port: The port it listens on, which the agent took; 0 in an
+            instance the state names, which names none.
     """
 
     account: str
-    port: int
     token: str = ""
     password: str = ""
+    port: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "VscodeInstance":
@@ -51,9 +49,9 @@ class VscodeInstance:
             port = 0
         return cls(
             account=str(data.get("account", "") or ""),
-            port=port,
             token=str(data.get("token", "") or ""),
             password=str(data.get("password", "") or ""),
+            port=port,
         )
 
 
@@ -92,17 +90,6 @@ class VscodeConfig:
         """The address a reported url names."""
         return self.address or VSCODE_LOOPBACK_ADDRESS
 
-    def url_of(self, instance: VscodeInstance) -> str:
-        """Where one instance answers, without its token.
-
-        Args:
-            instance: The instance.
-
-        Returns:
-            ``http://<address>:<port>/``.
-        """
-        return f"http://{self.url_host}:{instance.port}/"
-
     def validate(self, *, os_name: str = "linux") -> None:
         """Check the configuration holds together.
 
@@ -114,7 +101,6 @@ class VscodeConfig:
             ModuleApplyError: Naming the first problem found.
         """
         accounts: set = set()
-        ports: set = set()
         for instance in self.instances:
             if not ACCOUNT_PATTERN.match(instance.account):
                 raise ModuleApplyError("account_invalid", {"account": instance.account})
@@ -123,11 +109,6 @@ class VscodeConfig:
                     "account_duplicate", {"account": instance.account}
                 )
             accounts.add(instance.account.lower())
-            if not VSCODE_PORT_MIN <= instance.port <= VSCODE_PORT_MAX:
-                raise ModuleApplyError("port_invalid", {"port": instance.port})
-            if instance.port in ports:
-                raise ModuleApplyError("port_duplicate", {"port": instance.port})
-            ports.add(instance.port)
             if not instance.token:
                 raise ModuleApplyError("token_missing", {"account": instance.account})
             if os_name == "windows" and not instance.password:

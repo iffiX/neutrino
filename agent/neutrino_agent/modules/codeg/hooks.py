@@ -7,8 +7,8 @@ as its account, from an environment written from scratch, on a loopback
 port the agent picks and keeps in the record, with its data directory
 under the account's home and its output discarded on every system. The
 forwarder trades the hub's token for a page that keeps the instance token in
-the browser and for its own login cookie, ``neutrino_codeg_<port>``, and
-passes on a request carrying that token as its Bearer header or as the
+the browser and for its own login cookie, named by the instance's
+``cookie_name``, and passes on a request carrying that token as its Bearer header or as the
 subprotocol of Codeg's WebSocket, or carrying a good cookie.
 
 Not pure: writes the data directory and talks to Codeg.
@@ -35,6 +35,7 @@ from neutrino_agent.modules.codeg.config import (
     subprotocol_of,
 )
 from neutrino_agent.modules.codeg.constants import (
+    CODEG_BASE_PORT,
     CODEG_ACCOUNT_PATH_PARTS,
     CODEG_BRIDGE_PORTS_OFF,
     CODEG_COOKIE_PREFIX,
@@ -272,9 +273,17 @@ def has_subprotocol(request, token: str) -> bool:
     return False
 
 
-def cookie_name(port: int) -> str:
-    """The cookie the forwarder of one port keeps its login in."""
-    return f"{CODEG_COOKIE_PREFIX}{int(port)}"
+def cookie_name(record: dict) -> str:
+    """The cookie one instance's forwarder keeps its login in.
+
+    Args:
+        record: The instance's record.
+
+    Returns:
+        The record's ``cookie_name``, else the module's prefix and the port.
+    """
+    named = str(record.get("cookie_name", "") or "")
+    return named or f"{CODEG_COOKIE_PREFIX}{int(record.get('port', 0) or 0)}"
 
 
 def login_page(token: str) -> bytes:
@@ -303,6 +312,7 @@ class CodegHooks(InstanceHooks):
     instance_class = CodegInstance
     record_fields = CODEG_RECORD_FIELDS
     secret_field = "secret"
+    base_port = CODEG_BASE_PORT
 
     def __init__(self, *, platform, log=print, pick_port=None, clock=time.time):
         """
@@ -401,16 +411,19 @@ class CodegHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before; its loopback port is kept.
+            held: The record held before, with the port the runner took;
+                its loopback port is kept.
 
         Returns:
             The record.
         """
         return {
             "account": instance.account,
-            "port": instance.port,
+            "port": int(held.get("port") or 0),
             "upstream_port": int(held.get("upstream_port") or 0) or self._pick_port(),
             "secret": instance.secret,
+            "local_name": instance.local_name,
+            "cookie_name": instance.cookie_name,
         }
 
     def service(
@@ -467,13 +480,13 @@ class CodegHooks(InstanceHooks):
         secret = str(record.get("secret", "") or "")
         token = instance_token(secret)
         key = cookie_key(secret)
-        port = int(record.get("port", 0) or 0)
+        name = cookie_name(record)
         if request.token:
             if not request.take_token():
                 return refused()
             expiry = int(self._clock()) + CODEG_LOGIN_LIFETIME_S
             cookie = (
-                f"{cookie_name(port)}={mint_login(key, expiry)}; Path=/; "
+                f"{name}={mint_login(key, expiry)}; Path=/; "
                 f"HttpOnly; SameSite=Lax; Max-Age={CODEG_LOGIN_LIFETIME_S}"
             )
             return answered(
@@ -490,8 +503,7 @@ class CodegHooks(InstanceHooks):
             return RELAY
         now = self._clock()
         if any(
-            is_login_valid(value, key, now)
-            for value in request.cookie_values(cookie_name(port))
+            is_login_valid(value, key, now) for value in request.cookie_values(name)
         ):
             return RELAY
         return refused()
