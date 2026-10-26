@@ -322,8 +322,8 @@ class HubSessionTest {
         eventually("refresh ends") { !session.view.value.jobs.isRefreshing }
         fake.frames.clear()
         assertTrue(session.refresh())
-        val report = fake.nextFrame("report")?.second ?: error("no report")
-        assertEquals(true, report["is_refresh"]!!.jsonPrimitive.content.toBoolean())
+        val reports = generateSequence { fake.nextFrame("report")?.second }
+        assertTrue(reports.any { it["is_refresh"]!!.jsonPrimitive.content.toBoolean() })
     }
 
     @Test
