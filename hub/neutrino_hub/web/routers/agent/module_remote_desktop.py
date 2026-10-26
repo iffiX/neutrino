@@ -15,6 +15,7 @@ from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     RemoteDesktopConfigUpdate,
     RemoteDesktopDeviceView,
+    RemoteDesktopShareView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
@@ -40,13 +41,32 @@ def device_view(
 
     Returns:
         The switch as stored, the module's state as the machine last
-        reported it, and the machine's system.
+        reported it, the machine's system, and what the machine last said
+        about sharing its desktop. Only a machine reporting the host absent
+        reads unavailable: one nobody has heard from says nothing either way.
     """
     platform = runtime.device_platform.get(context.key, {})
+    reported = context.details
+    share = next(
+        (
+            held
+            for held in runtime.device_shares.live()
+            if held.device_id == context.key
+        ),
+        None,
+    )
     return RemoteDesktopDeviceView(
         **context.fields(),
         is_enabled=runtime.desired_states.remote_desktop(context.key)["is_enabled"],
         platform_os=str(platform.get("os", "") or ""),
+        rdp=RemoteDesktopShareView(
+            is_shared=share is not None,
+            account=share.account if share is not None else "",
+            port=share.port if share is not None else 0,
+            attention=share.attention if share is not None else "",
+            connected_count=share.connected_count if share is not None else 0,
+            is_available=reported.get("is_available") is not False,
+        ),
     )
 
 

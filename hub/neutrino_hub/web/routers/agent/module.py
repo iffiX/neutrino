@@ -49,6 +49,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
+    DEVICE_MODULE_CATALOG_PATH,
     DEVICE_PODMAN_MODULE,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
@@ -56,6 +57,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
+from neutrino_hub.modules.devices.module_releases import is_locked
 from neutrino_hub.modules.clients.ai_keys import ensure_module_key, revoke_module_key
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.hermes_webui import ensure_config
@@ -81,6 +83,11 @@ from neutrino_hub.web.models import (
     DeviceModuleView,
     DeviceRequest,
     JournalView,
+    ModuleCatalogEntryView,
+    ModuleCatalogView,
+    ModuleVersionEntryView,
+    ModuleVersionRequest,
+    ModuleVersionView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -98,6 +105,8 @@ CODE_MODULE_CONFIGURED = "module_configured"
 CODE_TERMS_NOT_ACCEPTED = "terms_not_accepted"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
 CODE_MODULE_IN_USE = "module_in_use"
+CODE_VERSION_UNKNOWN = "version_unknown"
+CODE_VERSION_LOCKED = "version_locked"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -207,6 +216,8 @@ def list_modules(
                 ),
                 is_configured=bool(runtime.desired_states.read(key, name)),
                 task_id=module_task_id(runtime, key, name),
+                is_carried=is_carried,
+                is_shown=is_shown(device, name, reported["state"], is_carried),
                 **{**reported, "details": panel_details(reported["details"])},
             )
         )
@@ -214,6 +225,189 @@ def list_modules(
         modules=modules,
         is_agent_managed=device.is_managed,
         is_agent_online=runtime.agent_sessions.is_online(key),
+    )
+
+
+def is_shown(device: ManagedDevice, name: str, state: str, is_carried: bool) -> bool:
+    """Whether the machine page shows one module's tab.
+
+    Args:
+        device: The stored device, whose ``shown_modules`` the catalog's
+            cards write.
+        name: The module.
+        state: The module's state as last reported.
+        is_carried: Whether the agent's package carries it.
+
+    Returns:
+        True for a carried module, for one that is not ``absent`` on the
+        machine, and for one the catalog's cards checked.
+    """
+    if is_carried or name in device.shown_modules:
+        return True
+    return state not in (STATE_UNKNOWN, CHANNEL_MODULE_STATE_ABSENT)
+
+
+@router.get("/catalog", response_model=ModuleCatalogView)
+def module_catalog(
+    device_id: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> ModuleCatalogView:
+    """Read the module catalog for one machine: every module by its activity.
+
+    Args:
+        device_id: The device, from the query.
+        runtime: The shared runtime.
+
+    Returns:
+        The categories in their order and the modules in the catalog's
+        order, each with whether the hub has its manifest, whether the
+        machine's platform has an entry, whether the agent carries it,
+        whether its tab is on the page, and its state as last reported.
+
+    Raises:
+        HTTPException: 404 ``device_unknown``.
+    """
+    device = _require_device(device_id)
+    key = device.id
+    platform = runtime.device_platform.get(key, {})
+    keys = platform_keys(platform)
+    manifests = load_module_manifests()
+    catalog = read_module_catalog()
+    rows = []
+    for item in catalog.get("modules") or []:
+        name = str(item.get("name", "") or "")
+        manifest = manifests.get(name)
+        if manifest is None:
+            rows.append(
+                ModuleCatalogEntryView(
+                    name=name,
+                    title=str(item.get("title", "") or name),
+                    category=str(item.get("category", "") or ""),
+                    is_available=False,
+                    is_supported=False,
+                )
+            )
+            continue
+        _, entry = resolve_platform_entry(manifest, platform)
+        is_carried = DEVICE_METHOD_AGENT in manifest_methods(manifest)
+        state = module_status(runtime, key, name, manifest=manifest)["state"]
+        rows.append(
+            ModuleCatalogEntryView(
+                name=name,
+                title=str(manifest.get("title", "") or name),
+                category=str(item.get("category", "") or ""),
+                is_available=True,
+                is_supported=(entry is not None if keys and not is_carried else True),
+                is_carried=is_carried,
+                is_shown=is_shown(device, name, state, is_carried),
+                state=state,
+            )
+        )
+    return ModuleCatalogView(
+        categories=[str(name) for name in catalog.get("categories") or []],
+        modules=rows,
+    )
+
+
+def read_module_catalog() -> dict:
+    """The shipped catalog, ``{categories, modules}``."""
+    import json
+
+    try:
+        catalog = json.loads(DEVICE_MODULE_CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"categories": [], "modules": []}
+    return catalog if isinstance(catalog, dict) else {"categories": [], "modules": []}
+
+
+@router.get("/version", response_model=ModuleVersionView)
+def module_version(
+    device_id: str, module: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> ModuleVersionView:
+    """Read one module's versions on one machine.
+
+    Args:
+        device_id: The device, from the query.
+        module: The module, from the query.
+        runtime: The shared runtime.
+
+    Returns:
+        The version installed, the machine's choice, the tested and the
+        newest, whether the version is locked, every version the machine may
+        choose, and when the feeds were last read.
+
+    Raises:
+        HTTPException: 404 ``device_unknown``, ``module_unknown``.
+    """
+    key = _require_device(device_id).id
+    manifest = load_module_manifests().get(module)
+    if manifest is None:
+        raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
+    return _version_view(runtime, key, module, manifest)
+
+
+@router.post("/version/set", response_model=ModuleVersionView)
+def set_module_version(
+    request: ModuleVersionRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> ModuleVersionView:
+    """Write one machine's choice of a module's version and push the state.
+
+    Args:
+        request: The device, the module and the version; empty follows the
+            tested one.
+        runtime: The shared runtime.
+
+    Returns:
+        The versions afterwards.
+
+    Raises:
+        HTTPException: 404 ``device_unknown``, ``module_unknown``; 400
+            ``version_unknown {version}`` for a version the feeds did not
+            list for the machine's platform; 409 ``version_locked {module}``
+            for a module whose version is locked, ``agent_offline``; 500
+            ``config_unwritable``.
+    """
+    key = _require_device(request.device_id).id
+    module = request.module
+    manifest = load_module_manifests().get(module)
+    if manifest is None:
+        raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
+    platform = runtime.device_platform.get(key, {})
+    _, entry = resolve_platform_entry(manifest, platform)
+    if is_locked(manifest, entry):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_VERSION_LOCKED, module=module)
+    listed = {
+        row["version"] for row in runtime.module_releases.versions(module, platform)
+    }
+    if request.version and request.version not in listed:
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST, CODE_VERSION_UNKNOWN, version=request.version
+        )
+    if not runtime.agent_sessions.is_online(key):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    try:
+        runtime.desired_states.set_version(key, module, request.version)
+    except OSError as error:
+        raise _config_unwritable(error) from error
+    push_state(runtime, key)
+    return _version_view(runtime, key, module, manifest)
+
+
+def _version_view(
+    runtime: PanelRuntime, key: str, module: str, manifest: dict
+) -> ModuleVersionView:
+    platform = runtime.device_platform.get(key, {})
+    _, entry = resolve_platform_entry(manifest, platform)
+    versions = runtime.module_releases.versions(module, platform)
+    tested = next((row["version"] for row in versions if row["is_tested"]), "")
+    return ModuleVersionView(
+        installed=module_status(runtime, key, module, manifest=manifest)["version"],
+        chosen=runtime.desired_states.version_of(key, module),
+        tested=tested,
+        newest=versions[0]["version"] if versions else tested,
+        is_locked=is_locked(manifest, entry),
+        versions=[ModuleVersionEntryView(**row) for row in versions],
+        is_data_forward_only=manifest.get("is_data_forward_only") is True,
+        read_at=runtime.module_releases.read_at(),
     )
 
 
@@ -438,7 +632,7 @@ def import_details(
     context.config = dict(config)
     if context.want in CHANNEL_MODULE_CONFIGURED_WANTS:
         push_state(runtime, context.key)
-    _recompose_published(runtime, context.module)
+    recompose_published(runtime, context.module)
 
 
 def is_hosted(runtime: PanelRuntime, key: str, module: str) -> bool:
@@ -497,7 +691,7 @@ def module_status(
             reads it when the report leaves the module out.
 
     Returns:
-        ``{"state", "is_active", "code", "params", "details"}``, the details
+        ``{"state", "is_active", "version", "code", "params", "details"}``, the details
         as the agent sent them; the state is ``unknown`` until the agent has
         said, and ``absent`` for a ``container`` module a report from the
         device leaves out, since the agent observes one only once a state
@@ -509,6 +703,7 @@ def module_status(
     return {
         "state": state or _unreported_state(runtime, key, module, manifest),
         "is_active": bool(reported.get("is_active", False)),
+        "version": str(reported.get("version") or ""),
         "code": str(reported.get("code") or ""),
         "params": dict(reported.get("params") or {}),
         "details": dict(details) if isinstance(details, dict) else {},
@@ -623,7 +818,7 @@ def store_config(
     context.config = written
     _claim_reported(runtime, context)
     push_state(runtime, context.key)
-    _recompose_published(runtime, context.module)
+    recompose_published(runtime, context.module)
 
 
 def _claim_reported(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
@@ -840,7 +1035,7 @@ def _set_want(
     except OSError as error:
         raise _config_unwritable(error) from error
     push_state(runtime, key)
-    _recompose_published(runtime, module)
+    recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
 
 
@@ -1011,7 +1206,7 @@ def _require_device(device_id: str) -> ManagedDevice:
     return device
 
 
-def _recompose_published(runtime: PanelRuntime, module: str) -> None:
+def recompose_published(runtime: PanelRuntime, module: str) -> None:
     """Say the published list may read differently, for the modules it reads.
 
     Args:

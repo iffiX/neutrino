@@ -1,39 +1,26 @@
-"""File transfer between the browser and a device, over the device's agent.
+"""The path window's listing of a machine's folders, over the device's agent.
 
-The panel is the middleman: the browser never talks to the device, so this
-works from anywhere the panel does. Each request is one ``file`` stream on
-the device's socket, its ``op`` naming the operation, and what the agent
-refuses comes back typed.
+The panel moves no file: a person reaches a machine's files through a
+client's mount or SSH, and the path window lists folders and files to pick
+one. Each request is one ``file {op: list}`` stream on the device's
+session, and what the agent refuses comes back typed.
 """
 
 import asyncio
 import ntpath
 import posixpath
-from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_FILE_OP_DIRECTORY_CREATE,
-    CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD,
-    CHANNEL_FILE_OP_DOWNLOAD,
     CHANNEL_FILE_OP_LIST,
-    CHANNEL_FILE_OP_REMOVE,
-    CHANNEL_FILE_OP_RENAME,
-    CHANNEL_FILE_OP_UPLOAD,
     CHANNEL_STREAM_FILE,
 )
-from neutrino_hub.modules.channel.sessions import ChannelStream
+from neutrino_hub.modules.channel.streams import ChannelStream
 from neutrino_hub.modules.devices.constants import DEVICE_FILE_OP_TIMEOUT_S
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.models import (
-    DeviceFileEntryView,
-    DeviceFileListView,
-    DeviceFilePath,
-    DeviceFileRename,
-)
+from neutrino_hub.web.models import DeviceFileEntryView, DeviceFileListView
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
 # The platform tuple's ``os`` for a machine whose paths use backslashes.
@@ -47,7 +34,6 @@ router = APIRouter(
 
 # Where a listing starts when the browser names no directory.
 ROOT_PATH = "/"
-UPLOAD_CHUNK_BYTES = 64 * 1024
 
 # How each of the agent's typed codes answers on this surface.
 FILE_CODE_STATUS = {
@@ -84,186 +70,6 @@ async def list_files(
         separator=str(info.get("separator") or _paths(runtime, device_id).sep),
         entries=entries,
     )
-
-
-@router.get("/download")
-async def download_file(
-    device_id: str, path: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> StreamingResponse:
-    """Stream one file from a device to the browser.
-
-    Args:
-        device_id: The device, from the query.
-        path: The file to download.
-        runtime: The shared runtime.
-
-    Returns:
-        The file as an attachment, sized only when it is done.
-    """
-    stream = await _open(
-        runtime, device_id, {"op": CHANNEL_FILE_OP_DOWNLOAD, "path": path}
-    )
-    first = await _first_bytes(stream)
-    name = _paths(runtime, device_id).basename(path) or "download"
-    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"}
-    return StreamingResponse(
-        _chunks(stream, first), media_type="application/octet-stream", headers=headers
-    )
-
-
-@router.get("/directory/download")
-async def download_dir(
-    device_id: str, path: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> StreamingResponse:
-    """Stream one directory, or one dot-named file, as a tar.gz archive.
-
-    Browsers refuse to save a download under a hidden-file name; inside an
-    archive the real name survives.
-
-    Args:
-        device_id: The device, from the query.
-        path: The directory or file to pack.
-        runtime: The shared runtime.
-
-    Returns:
-        The archive as an attachment, sized only when it is done.
-    """
-    stream = await _open(
-        runtime, device_id, {"op": CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD, "path": path}
-    )
-    first = await _first_bytes(stream)
-    paths = _paths(runtime, device_id)
-    base = paths.basename(paths.normpath(path)) or "archive"
-    name = base.lstrip(".") or "archive"
-    return StreamingResponse(
-        _chunks(stream, first),
-        media_type="application/gzip",
-        headers={
-            "Content-Disposition": (
-                f"attachment; filename*=UTF-8''{quote(name)}.tar.gz"
-            )
-        },
-    )
-
-
-@router.post("/upload")
-async def upload_file(
-    request: Request, runtime: PanelRuntime = Depends(get_runtime)
-) -> dict:
-    """Write one uploaded file into a directory on a device.
-
-    The body is a multipart form: ``device_id`` names the device, ``path``
-    the destination directory, and ``file`` is the file, which lands under
-    its own name, joined with the device's own separator.
-
-    Args:
-        request: The incoming request.
-        runtime: The shared runtime.
-
-    Returns:
-        An empty acknowledgement.
-
-    Raises:
-        HTTPException: 400 when the form lacks its three fields or the name
-            is not a plain file name.
-    """
-    form = await request.form()
-    upload = form.get("file")
-    device_id = str(form.get("device_id", "") or "")
-    directory = str(form.get("path", "") or "")
-    name = getattr(upload, "filename", None) or ""
-    if upload is None or not device_id or not directory or not _is_plain_name(name):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "path_invalid", "params": {"path": name}},
-        )
-    size = upload.size if upload.size is not None else len(await upload.read())
-    await upload.seek(0)
-    stream = await _open(
-        runtime,
-        device_id,
-        {
-            "op": CHANNEL_FILE_OP_UPLOAD,
-            "path": _joined(runtime, device_id, directory, name),
-            "size": int(size),
-        },
-    )
-    try:
-        while True:
-            chunk = await upload.read(UPLOAD_CHUNK_BYTES)
-            if not chunk:
-                break
-            await stream.send_bytes(chunk)
-    except AgentOfflineError as error:
-        info = stream.close_info or {}
-        if info.get("code"):
-            _refuse(str(info["code"]), dict(info.get("params") or {}))
-        raise _offline(error)
-    info = await _collect(stream)
-    _refuse_if_coded(info)
-    return {}
-
-
-@router.post("/directory/create")
-async def make_dir(
-    body: DeviceFilePath, runtime: PanelRuntime = Depends(get_runtime)
-) -> dict:
-    """Create a directory on a device.
-
-    Args:
-        body: The device, and the directory to create.
-        runtime: The shared runtime.
-
-    Returns:
-        An empty acknowledgement.
-    """
-    await _run_stream(
-        runtime,
-        body.device_id,
-        {"op": CHANNEL_FILE_OP_DIRECTORY_CREATE, "path": body.path},
-    )
-    return {}
-
-
-@router.post("/rename")
-async def rename_path(
-    body: DeviceFileRename,
-    runtime: PanelRuntime = Depends(get_runtime),
-) -> dict:
-    """Rename or move a file or directory on a device.
-
-    Args:
-        body: The device, the path and its new name.
-        runtime: The shared runtime.
-
-    Returns:
-        An empty acknowledgement.
-    """
-    await _run_stream(
-        runtime,
-        body.device_id,
-        {"op": CHANNEL_FILE_OP_RENAME, "path": body.path, "new_path": body.new_path},
-    )
-    return {}
-
-
-@router.post("/remove")
-async def delete_path(
-    body: DeviceFilePath, runtime: PanelRuntime = Depends(get_runtime)
-) -> dict:
-    """Delete a file, or a directory with everything in it, on a device.
-
-    Args:
-        body: The device, and the path to delete.
-        runtime: The shared runtime.
-
-    Returns:
-        An empty acknowledgement.
-    """
-    await _run_stream(
-        runtime, body.device_id, {"op": CHANNEL_FILE_OP_REMOVE, "path": body.path}
-    )
-    return {}
 
 
 def _is_plain_name(name: str) -> bool:

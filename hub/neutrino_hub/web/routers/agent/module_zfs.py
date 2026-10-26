@@ -12,6 +12,7 @@ Samba configuration.
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
+from neutrino_hub.modules.devices.desired_state import smb_user
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     DeviceRequest,
@@ -130,11 +131,7 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> ZfsDevic
         ],
         samba=ZfsSambaView(
             is_ready=is_samba_ready,
-            users=(
-                [str(user) for user in samba_config.get("users", [])]
-                if is_samba_ready
-                else []
-            ),
+            users=_samba_users(runtime, context.key) if is_samba_ready else [],
         ),
     )
 
@@ -372,7 +369,7 @@ def share_dataset(
     name = request.dataset.rsplit("/", 1)[-1]
     if any(share.get("name") == name for share in shares):
         raise _bad_request("share_name_taken", name=name)
-    users = config.get("users", [])
+    users = _samba_users(runtime, device_id)
     for user in request.users:
         if user not in users:
             raise _bad_request("share_user_unknown", user=user)
@@ -408,6 +405,15 @@ def _op(runtime: PanelRuntime, device_id: str, op: str, args: dict) -> ZfsDevice
     context = device_context(runtime, MODULE, device_id)
     run_command(runtime, context, COMMAND_OP, {"op": op, "args": dict(args)})
     return device_view(runtime, context)
+
+
+def _samba_users(runtime: PanelRuntime, device_id: str) -> list:
+    """The SMB users a dataset's share may name: the file share's enabled accounts'."""
+    platform = runtime.device_platform.get(device_id, {})
+    return [
+        smb_user(account, platform)
+        for account in runtime.desired_states.enabled_accounts(device_id, SAMBA_MODULE)
+    ]
 
 
 def _find_dataset(context: DeviceModuleContext, name: str) -> dict:

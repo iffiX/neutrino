@@ -31,8 +31,11 @@ def test_only_the_hash_reaches_the_device_file(config_dir, device_id):
     client = stored_client(config_dir, device_id)
     assert client["token_sha256"] == hashlib.sha256(token.encode()).hexdigest()
     assert token not in (config_dir / "devices" / "devices.json").read_text()
-    # Presence is runtime state: no version, no last-seen stamp on disk.
-    assert set(client) == {"token_sha256"}
+    # Presence is runtime state: no last-seen stamp on disk. The agent's
+    # version and public key stay, since the legacy listener switch and the
+    # peer question read them before the agent is online.
+    assert set(client) == {"token_sha256", "public_key", "agent_version"}
+    assert (client["public_key"], client["agent_version"]) == (None, "")
 
 
 def test_the_raw_token_still_authenticates(config_dir, device_id):

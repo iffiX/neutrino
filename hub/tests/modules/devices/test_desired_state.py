@@ -1,53 +1,37 @@
 """One desired state per device under config/, composed under one hash.
 
 What these pin: the directory a device id names, the module files and the
-wants beside them, a module the file does not name being mentioned nowhere,
-a module the machine settled keeping its want and leaving the state,
-a hash that moves only with the state, the composed shape the agent
-applies, the secrets a device's Gitea is handed once and kept, the fence
-and address the hub folds in, the sweep that removes a directory no
-stored device names, the recipe each entry carries as the manifest names
-it, the cc-switch artifact beside its version, and the Containers Run
-settings: sent to Windows and macOS alone, with the login's password on
-Windows and never the login's id, and a Linux entry unchanged by them.
+wants and versions beside them, a module the file does not name being
+mentioned nowhere, a module the machine settled keeping its want and
+leaving the state, a hash that moves only with the state, the composed
+shape the agent applies, and the account layer: the available accounts,
+each module's enabled accounts with secrets generated once and kept across
+a disable, the file share's shares, users and passwords, the SSH server's
+public keys, the local names and cookie names of the programs behind a
+forwarder, a Windows machine's login passwords, the removal of an account
+from every module, and the Containers Run settings naming an account.
 """
 
 import json
 
 import pytest
 
+from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.devices import desired_state as desired_state_module
-from neutrino_hub.modules.devices.desired_state import DesiredStateStore, state_hash
+from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+from neutrino_hub.modules.devices.desired_state import (
+    DesiredStateStore,
+    smb_user,
+    state_hash,
+)
+from neutrino_hub.modules.devices.ssh_account_keys import public_key_of
+from neutrino_hub.modules.services.apps import entry_id, local_port
+from tests.conftest import unlock_vault
 
 DEVICE = "device-one"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
-# cc-switch's artifact for a Linux amd64 machine, as cc_switch.json pins it.
-CC_SWITCH_LINUX = {
-    "name": "cc_switch",
-    "kind": "tar_gz",
-    "digest": "sha256:a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3",  # scan: allow
-}
-# The section while the setting is off: the pinned cc-switch version and its
-# artifact beside it.
-AI_TOOLS_OFF = {
-    "is_enabled": False,
-    "is_forwarded": False,
-    "gateway_port": 0,
-    "cc_switch_version": "5.10.4",
-    "cc_switch_artifact": CC_SWITCH_LINUX,
-}
-# The recipe of a module the agent's own package carries.
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64"}
 AGENT_RECIPE = {"method": "agent", "params": {}}
-SAMBA_RECIPE = {
-    "runner": "samba",
-    "method": "system",
-    "params": {
-        "version": "system",
-        "packages": ["samba"],
-        "verify": "smbd -V",
-        "uninstall": {"packages": ["samba"], "post_uninstall": []},
-    },
-}
 
 
 @pytest.fixture
@@ -58,1052 +42,414 @@ def config(monkeypatch, tmp_path):
         desired_state_module,
         "resolved_modules",
         lambda platform: {
-            "samba": {"recipe": SAMBA_RECIPE},
+            "samba": {"recipe": {"method": "system", "params": {}}},
             "gitea": {"recipe": {}},
+            "vscode": {"recipe": {"method": "hub", "params": {"version": "1.0"}}},
             "terminal": {"recipe": {"runner": "terminal", **AGENT_RECIPE}},
             "remote_desktop": {"recipe": {"runner": "remote_desktop", **AGENT_RECIPE}},
+            "ssh_server": {"recipe": {"runner": "ssh_server", **AGENT_RECIPE}},
         },
     )
     return tmp_path
 
 
+@pytest.fixture
+def unlocked(config, monkeypatch):
+    unlock_vault(monkeypatch, config)
+    return config
+
+
+def with_accounts(
+    store: DesiredStateStore, *names: str, **fields
+) -> DeviceAccountStore:
+    accounts = DeviceAccountStore(store)
+    for name in names:
+        accounts.add(DEVICE, DeviceAccount(account=name, **fields))
+    return accounts
+
+
 def test_module_files_land_under_the_devices_directory(config):
     store = DesiredStateStore()
 
-    store.write(DEVICE, "samba", {"shares": [], "users": ["ann"]})
+    store.write(DEVICE, "gitea", {"listen_port": 3000})
 
-    path = config / f"devices/{DEVICE}/samba.json"
-    assert json.loads(path.read_text())["users"] == ["ann"]
-    assert store.read(DEVICE, "samba") == {"shares": [], "users": ["ann"]}
-    assert store.read(DEVICE, "gitea") == {}
+    path = config / f"devices/{DEVICE}/gitea.json"
+    assert json.loads(path.read_text())["listen_port"] == 3000
+    assert store.read(DEVICE, "gitea") == {"listen_port": 3000}
+    assert store.read(DEVICE, "samba") == {}
 
 
-def test_a_module_is_named_only_once_a_want_is_written_for_it(config):
+def test_a_module_is_named_once_a_want_is_written_and_keeps_its_version(config):
     store = DesiredStateStore()
 
     assert store.modules(DEVICE) == {}
-    assert store.want_of(DEVICE, "samba") == ""
-
     store.set_want(DEVICE, "samba", "running")
-    store.set_want(DEVICE, "podman", "installed")
+    store.set_version(DEVICE, "vscode", "1.2.3")
+    store.set_want(DEVICE, "vscode", "installed")
 
     assert store.modules(DEVICE) == {
-        "samba": {"want": "running", "is_settled": False},
-        "podman": {"want": "installed", "is_settled": False},
+        "samba": {"want": "running", "is_settled": False, "version": ""},
+        "vscode": {"want": "installed", "is_settled": False, "version": "1.2.3"},
     }
-    assert store.want_of(DEVICE, "samba") == "running"
-    assert store.want_of(DEVICE, "gitea") == ""
-    stored = json.loads((config / f"devices/{DEVICE}/modules.json").read_text())
-    assert stored["modules"]["samba"] == {"want": "running", "is_settled": False}
-
-
-def test_a_want_outside_the_four_is_refused_and_one_on_disk_is_skipped(config):
-    store = DesiredStateStore()
-
+    assert store.version_of(DEVICE, "vscode") == "1.2.3"
+    assert store.named_versions() == {"vscode": {"1.2.3"}}
     with pytest.raises(ValueError):
         store.set_want(DEVICE, "samba", "installing")
 
-    path = config / f"devices/{DEVICE}/modules.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({"modules": {"samba": {"want": "nonsense"}}}))
-    assert store.modules(DEVICE) == {}
-
 
 def test_settling_a_module_keeps_its_want_and_leaves_it_out_of_the_state(config):
-    """What an uninstall the machine confirmed leaves behind: the row still
-    says what was asked, and the state names the module no more, so nothing
-    installed on that machine afterwards is taken off again."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "samba", "absent")
     store.set_want(DEVICE, "gitea", "running")
 
     assert store.settle_want(DEVICE, "samba") is True
     assert store.settle_want(DEVICE, "samba") is False
-    assert store.settle_want(DEVICE, "podman") is False
 
-    assert store.want_of(DEVICE, "samba") == "absent"
-    assert store.modules(DEVICE) == {
-        "samba": {"want": "absent", "is_settled": True},
-        "gitea": {"want": "running", "is_settled": False},
-    }
     desired, _ = store.compose(DEVICE, PLATFORM)
-    assert set(desired["modules"]) == {"gitea", "terminal", "remote_desktop"}
-
-
-def test_a_press_asks_again_for_a_module_the_machine_had_settled(config):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "absent")
-    store.settle_want(DEVICE, "samba")
-
-    store.set_want(DEVICE, "samba", "installed")
-
-    assert store.modules(DEVICE) == {
-        "samba": {"want": "installed", "is_settled": False}
+    assert set(desired["modules"]) == {
+        "gitea",
+        "terminal",
+        "remote_desktop",
+        "ssh_server",
     }
-    desired, _ = store.compose(DEVICE, PLATFORM)
-    assert desired["modules"]["samba"]["want"] == "installed"
+    assert store.named_modules() == {"gitea"}
 
 
-def test_the_hash_is_stable_and_moves_with_the_state():
-    assert state_hash({"a": 1, "b": [2]}) == state_hash({"b": [2], "a": 1})
-    assert state_hash({"a": 1}) != state_hash({"a": 2})
-    assert len(state_hash({})) == 64
-
-
-def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop(
-    config,
-):
-    """A named module is sent with its want, its configuration and the
-    recipe resolved for the platform; one the file does not name is not
-    mentioned, so the agent leaves it as it is, and the two the agent
-    carries come with their ``agent`` recipe."""
+def test_the_three_carried_modules_are_always_composed_with_the_agent_recipe(config):
     store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.set_want(DEVICE, "gitea", "absent")
-    store.write(
-        DEVICE, "samba", {"shares": [{"name": "s", "path": "/srv"}], "users": []}
-    )
-    store.write(DEVICE, "gitea", {"listen_port": 3100, "root_url": ""})
-    store.write(DEVICE, "podman", {"containers": []})
 
-    desired, digest = store.compose(
-        DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
-    )
+    desired, _ = store.compose(DEVICE, PLATFORM)
 
+    assert desired["modules"]["terminal"] == {
+        "want": "running",
+        "config": {"accounts": []},
+        "install": {"runner": "terminal", **AGENT_RECIPE},
+    }
+    assert desired["modules"]["ssh_server"]["want"] == "stopped"
+    assert desired["modules"]["ssh_server"]["config"] == {"instances": []}
+    assert desired["modules"]["remote_desktop"]["config"] == {"is_enabled": False}
     assert set(desired) == {"modules", "desktop", "urls", "ai_tools", "source_sets"}
-    assert desired["ai_tools"] == AI_TOOLS_OFF
-    assert set(desired["modules"]) == {"samba", "gitea", "terminal", "remote_desktop"}
-    samba = desired["modules"]["samba"]
-    assert set(samba) == {"want", "config", "install"}
-    assert samba["want"] == "running"
-    assert samba["config"]["shares"] == [{"name": "s", "path": "/srv"}]
-    assert samba["config"]["allowed_subnets"] == ["192.168.100.0/24"]
-    assert samba["install"] == SAMBA_RECIPE
-    for name in ("terminal", "remote_desktop"):
-        assert desired["modules"][name]["install"] == {"runner": name, **AGENT_RECIPE}
-    gitea = desired["modules"]["gitea"]
-    assert gitea["want"] == "absent"
-    assert gitea["config"]["listen_port"] == 3100
-    assert gitea["config"]["address"] == "192.168.100.7"
-    assert set(gitea["config"]["secrets"]) == {
-        "SECRET_KEY",
-        "INTERNAL_TOKEN",
-        "JWT_SECRET",
-        "LFS_JWT_SECRET",
-    }
-    assert gitea["install"] == {}
-    assert desired["desktop"] == {"seat_password": ""}
-    assert digest == state_hash(desired)
 
 
-@pytest.fixture
-def shipped(monkeypatch, tmp_path):
-    """A config directory, with the shipped manifests resolved as they are."""
-    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
-    return tmp_path
-
-
-def test_a_recipe_carries_each_artifact_without_where_it_comes_from(shipped):
-    """The agent opens ``package {module, artifact, digest}`` for each file
-    the hub serves and is told its kind, directory and digest; the sources
-    and the release feeds stay the hub's. An npm artifact keeps its source
-    set and hosts, since the machine fetches it, and the state carries the
-    set."""
+def test_the_hash_moves_with_the_state_and_nothing_else(config):
     store = DesiredStateStore()
-    store.set_want(DEVICE, "cloudcli", "running")
-    store.write(DEVICE, "cloudcli", {"instances": []})
+    first, hash_one = store.compose(DEVICE, PLATFORM)
+    _, hash_again = store.compose(DEVICE, PLATFORM)
+    store.set_want(DEVICE, "gitea", "running")
+    _, hash_two = store.compose(DEVICE, PLATFORM)
 
-    desired, _ = store.compose(DEVICE, PLATFORM)
-
-    recipe = desired["modules"]["cloudcli"]["install"]
-    assert (recipe["runner"], recipe["method"]) == ("cloudcli", "hub")
-    assert set(recipe["params"]) == {"version", "artifacts", "verify", "uninstall"}
-    node, package = recipe["params"]["artifacts"]
-    assert node == {
-        "name": "node",
-        "kind": "tar_gz",
-        "directory": "node",
-        "digest": "sha256:1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",  # scan: allow
-    }
-    assert package["source_set"] == "npm"
-    assert set(desired["source_sets"]) == {"npm"}
-    assert desired["source_sets"]["npm"]["probe"] == "/npm/latest"
-    assert "nodejs.org" not in json.dumps(recipe)
-    assert recipe["params"]["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+    assert hash_one == hash_again == state_hash(first)
+    assert hash_two != hash_one
 
 
-@pytest.mark.parametrize(
-    "platform",
-    [
-        {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
-        {"os": "linux", "family": "rhel", "arch": "arm64", "version": "2.34"},
-        {"os": "linux", "family": "arch", "arch": "amd64", "version": "2.40"},
-    ],
-)
-def test_the_linux_containers_recipe_installs_podman_alone_by_the_system(
-    shipped, platform
-):
+def test_the_available_accounts_are_kept_in_the_order_they_were_added(unlocked):
     store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
+    accounts = with_accounts(store, "bob", "ann", shell_path="/bin/zsh")
 
-    desired, _ = store.compose(DEVICE, platform)
-
-    assert desired["modules"]["podman"]["install"] == {
-        "runner": "podman",
-        "method": "system",
-        "params": {
-            "version": "system",
-            "packages": ["podman", "runc"],
-            "verify": "podman --version && runc --version",
-            "uninstall": {"packages": ["podman"], "post_uninstall": []},
-        },
-    }
-
-
-@pytest.mark.parametrize(
-    ("platform", "version", "verify", "artifacts"),
-    [
-        (
-            {"os": "windows", "family": "", "arch": "amd64", "version": "26100"},
-            "6.1.4",
-            '"C:\\Program Files\\Podman\\podman.exe" --version',
-            [("wsl", "msi"), ("podman", "msi"), ("image", "tar_zst")],
-        ),
-        (
-            {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3"},
-            "6.1.4",
-            "/opt/podman/bin/podman --version",
-            [("podman", "pkg"), ("image", "raw_zst")],
-        ),
-        (
-            {"os": "darwin", "family": "", "arch": "amd64", "version": "14.7"},
-            "5.8.9",
-            "/opt/podman/bin/podman --version",
-            [("podman", "pkg"), ("image", "raw_zst")],
-        ),
-    ],
-)
-def test_a_containers_recipe_off_linux_is_the_hub_method_of_podman_machine(
-    shipped, platform, version, verify, artifacts
-):
-    """The entry's runner, method and params, with no feed, no source and no
-    identity field, and the file share's builtin recipe beside it."""
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
-    store.set_want(DEVICE, "samba", "running")
-
-    desired, _ = store.compose(DEVICE, platform)
-
-    install = desired["modules"]["podman"]["install"]
-    assert (install["runner"], install["method"]) == ("podman_machine", "hub")
-    params = install["params"]
-    assert set(params) == {"version", "artifacts", "packages", "verify", "uninstall"}
-    assert (params["version"], params["verify"]) == (version, verify)
-    assert [(item["name"], item["kind"]) for item in params["artifacts"]] == artifacts
-    assert all(
-        set(item) == {"name", "kind", "digest", "directory"}
-        and item["directory"] == item["name"]
-        for item in params["artifacts"]
+    assert [row.account for row in store.available_accounts(DEVICE)] == ["bob", "ann"]
+    assert accounts.get(DEVICE, "ann").shell_path == "/bin/zsh"
+    with pytest.raises(ValueError):
+        accounts.add(DEVICE, DeviceAccount(account="ann"))
+    accounts.replace(
+        DEVICE, DeviceAccount(account="ann", is_ai_tools_enabled=True, tool_configs={})
     )
-    assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
-    assert desired["modules"]["samba"]["install"] == {
-        "runner": "samba_native",
-        "method": "builtin",
-        "params": {},
-    }
+    assert [row.account for row in store.ai_tool_accounts(DEVICE)] == ["ann"]
+    assert accounts.remove(DEVICE, "bob").account == "bob"
+    assert accounts.remove(DEVICE, "bob") is None
 
 
-def test_a_platform_below_the_entrys_floor_is_sent_no_recipe(shipped):
+def test_enabling_an_account_seals_its_secret_once_and_a_disable_keeps_it(unlocked):
     store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
+    with_accounts(store, "ann")
+
+    first = store.set_enabled_accounts(DEVICE, "samba", ["ann"])
+    secret = store.account_secret(DEVICE, "samba", "ann", "password_sealed")
+    store.set_enabled_accounts(DEVICE, "samba", [])
+    disabled = store.read(DEVICE, "samba")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann"])
+
+    assert [row["account"] for row in first["accounts"]] == ["ann"]
+    assert len(secret) >= 24
+    assert disabled["accounts"] == []
+    assert [row["account"] for row in disabled["disabled"]] == ["ann"]
+    assert store.account_secret(DEVICE, "samba", "ann", "password_sealed") == secret
+    assert store.enabled_accounts(DEVICE, "samba") == ["ann"]
+
+
+def test_an_enabled_account_that_is_no_longer_available_is_composed_nowhere(unlocked):
+    store = DesiredStateStore()
+    accounts = with_accounts(store, "ann", "bob")
+    store.set_enabled_accounts(DEVICE, "terminal", ["ann", "bob"])
+
+    accounts.remove(DEVICE, "bob")
+
+    assert store.enabled_accounts(DEVICE, "terminal") == ["ann"]
+    desired, _ = store.compose(DEVICE, PLATFORM)
+    assert [
+        row["account"] for row in desired["modules"]["terminal"]["config"]["accounts"]
+    ] == ["ann"]
+
+
+def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann", share_path="")
+    DeviceAccountStore(store).add(
+        DEVICE, DeviceAccount(account="bob", share_path="/srv/b")
+    )
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
+    store.set_want(DEVICE, "samba", "running")
 
     desired, _ = store.compose(
-        DEVICE, {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+        DEVICE,
+        PLATFORM,
+        allowed_subnets=["192.168.1.0/24"],
+        account_details={"ann": {"home": "/home/ann", "shell": "/bin/bash"}},
     )
 
-    assert desired["modules"]["podman"]["install"] == {}
+    config = desired["modules"]["samba"]["config"]
+    assert config["shares"] == [
+        {
+            "name": "ann",
+            "path": "/home/ann",
+            "comment": "",
+            "is_read_only": False,
+            "valid_users": ["ann"],
+        },
+        {
+            "name": "bob",
+            "path": "/srv/b",
+            "comment": "",
+            "is_read_only": False,
+            "valid_users": ["bob"],
+        },
+    ]
+    assert config["users"] == ["ann", "bob"]
+    assert set(config["passwords"]) == {"ann", "bob"}
+    assert config["passwords"]["ann"] == store.account_secret(
+        DEVICE, "samba", "ann", "password_sealed"
+    )
+    assert config["allowed_subnets"] == ["192.168.1.0/24"]
 
 
-def test_the_modules_named_are_every_devices_unsettled_wants(config):
+def test_a_windows_or_mac_share_user_is_smb_and_the_account_cut_to_twenty(unlocked):
     store = DesiredStateStore()
+    with_accounts(store, "averyveryverylongaccountname", share_path="C:\\Share")
+    store.set_enabled_accounts(DEVICE, "samba", ["averyveryverylongaccountname"])
     store.set_want(DEVICE, "samba", "running")
-    store.set_want(DEVICE, "gitea", "absent")
-    store.set_want("device-two", "codeg", "installed")
-    store.set_want("device-two", "podman", "absent")
-    store.settle_want("device-two", "podman")
-    (config / "devices" / "packages").mkdir(parents=True)
 
-    assert store.named_modules() == {"samba", "gitea", "codeg"}
+    desired, _ = store.compose(DEVICE, WINDOWS)
+
+    assert smb_user("averyveryverylongaccountname", WINDOWS) == "smb_averyveryverylon"
+    assert desired["modules"]["samba"]["config"]["users"] == ["smb_averyveryverylon"]
 
 
-def test_compose_is_the_same_twice_and_moves_with_a_write(config):
+def test_an_enabled_account_with_no_share_path_and_no_reported_home_is_left_out(
+    unlocked,
+):
     store = DesiredStateStore()
-
-    first = store.compose(DEVICE, PLATFORM)
-    again = store.compose(DEVICE, PLATFORM)
-    store.set_want(DEVICE, "podman", "installed")
-    changed = store.compose(DEVICE, PLATFORM)
-
-    assert first[1] == again[1]
-    assert changed[1] != first[1]
-
-
-def test_compose_names_the_hubs_addresses_under_the_hash(config):
-    """The agent keeps the set it is handed and reconnects by it, so a set
-    that moved is a state that moved."""
-    store = DesiredStateStore()
-    urls = ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
-
-    desired, digest = store.compose(DEVICE, PLATFORM, urls=urls)
-    moved = store.compose(DEVICE, PLATFORM, urls=urls[:1])
-
-    assert desired["urls"] == urls
-    assert set(desired) == {"modules", "desktop", "urls", "ai_tools", "source_sets"}
-    assert desired["ai_tools"] == AI_TOOLS_OFF
-    assert digest == state_hash(desired)
-    assert moved[0]["urls"] == urls[:1]
-    assert moved[1] != digest
-
-
-def test_gitea_secrets_are_generated_once_and_kept(config):
-    store = DesiredStateStore()
-
-    first = store.gitea_secrets(DEVICE)
-    again = store.gitea_secrets(DEVICE)
-
-    assert first == again
-    assert all(len(value) >= 40 for value in first.values())
-    path = config / f"devices/{DEVICE}/gitea_secrets.json"
-    assert json.loads(path.read_text()) == first
-    assert store.gitea_secrets("another-device") != first
-
-
-def test_the_seat_password_is_empty_until_rdp_json_exists(config):
-    """What ``rdp.json`` seals, and what a locked vault leaves of it, is
-    ``test_rdp_passwords.py``'s case."""
-    store = DesiredStateStore()
-
-    assert store.seat_password(DEVICE) == ""
-
-
-def test_forget_removes_the_devices_directory(config):
-    store = DesiredStateStore()
+    with_accounts(store, "ann", share_path="")
+    DeviceAccountStore(store).add(DEVICE, DeviceAccount(account="bob", share_path=""))
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
     store.set_want(DEVICE, "samba", "running")
+
+    desired, _ = store.compose(
+        DEVICE,
+        WINDOWS,
+        account_details={
+            "ann": {"home": "", "shell": ""},
+            "bob": {"home": "C:\\Users\\bob", "shell": ""},
+        },
+    )
+
+    config = desired["modules"]["samba"]["config"]
+    assert [share["name"] for share in config["shares"]] == ["bob"]
+    assert config["shares"][0]["path"] == "C:\\Users\\bob"
+    assert config["users"] == ["smb_bob"]
+    assert list(config["passwords"]) == ["smb_bob"]
+    assert smb_user("ann", PLATFORM) == "ann"
+
+
+def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann", share_path="/home/ann")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann"])
+    stored = store.read(DEVICE, "samba")
+    stored["shares"] = [
+        {"name": "media", "path": "/tank/media", "valid_users": ["ann", "gone"]}
+    ]
+    store.write(DEVICE, "samba", stored)
+    store.set_want(DEVICE, "samba", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    assert desired["modules"]["samba"]["config"]["shares"][1] == {
+        "name": "media",
+        "path": "/tank/media",
+        "comment": "",
+        "is_read_only": False,
+        "valid_users": ["ann"],
+    }
+
+
+def test_the_ssh_server_sends_each_accounts_public_key_and_shell(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann", shell_path="/bin/fish")
+    store.set_enabled_accounts(DEVICE, "ssh_server", ["ann"])
+
+    desired, _ = store.compose(DEVICE, PLATFORM)
+    private = store.account_secret(DEVICE, "ssh_server", "ann", "private_key_sealed")
+
+    assert desired["modules"]["ssh_server"]["want"] == "running"
+    assert desired["modules"]["ssh_server"]["config"] == {
+        "instances": [
+            {
+                "account": "ann",
+                "authorized_key": public_key_of(private, comment="neutrino"),
+                "shell_path": "/bin/fish",
+            }
+        ]
+    }
+    assert private.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+
+
+def test_a_program_behind_a_forwarder_carries_its_local_name_and_cookie(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann")
+    store.set_enabled_accounts(DEVICE, "codeg", ["ann"])
+    store.set_want(DEVICE, "codeg", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, machine_slug="argon")
+
+    (instance,) = desired["modules"]["codeg"]["config"]["instances"]
+    assert instance["local_name"] == "codeg-ann.argon.localhost"
+    assert instance["cookie_name"].startswith("neutrino_")
+    assert len(instance["cookie_name"]) == len("neutrino_") + 12
+    assert instance["secret"] == store.account_secret(
+        DEVICE, "codeg", "ann", "secret_sealed"
+    )
+    assert "port" not in instance
+
+
+def test_gitea_is_handed_the_local_port_of_its_ssh_entry(unlocked):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "gitea", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, address="192.168.100.7")
+
+    assert desired["modules"]["gitea"]["config"]["ssh_port"] == local_port(
+        entry_id(f"gitea_{DEVICE}", "ssh")
+    )
+    assert 24000 <= desired["modules"]["gitea"]["config"]["ssh_port"] < 32000
+
+
+def test_a_windows_machine_is_sent_each_accounts_login_password(unlocked):
+    store = DesiredStateStore()
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    login = SecretVault().add(
+        kind="login", name="ann", secret={"username": "ann", "password": "pw-ann"}
+    )
+    DeviceAccountStore(store).add(
+        DEVICE, DeviceAccount(account="ann", login_id=login.id)
+    )
+    store.set_enabled_accounts(DEVICE, "terminal", ["ann"])
+    store.set_enabled_accounts(DEVICE, "ssh_server", ["ann"])
+
+    windows, _ = store.compose(DEVICE, WINDOWS)
+    linux, _ = store.compose(DEVICE, PLATFORM)
+
+    assert (
+        windows["modules"]["terminal"]["config"]["accounts"][0]["password"] == "pw-ann"
+    )
+    assert windows["modules"]["ssh_server"]["config"]["instances"][0]["password"] == (
+        "pw-ann"
+    )
+    assert "password" not in linux["modules"]["terminal"]["config"]["accounts"][0]
+    assert "pw-ann" not in json.dumps(store.read(DEVICE, "accounts"))
+
+
+def test_forgetting_an_account_takes_it_out_of_every_module_and_names_them(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann", "bob")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
+    store.set_enabled_accounts(DEVICE, "vscode", ["ann"])
+    store.set_enabled_accounts(DEVICE, "codeg", ["bob"])
+
+    modules = store.forget_account(DEVICE, "ann")
+
+    assert sorted(modules) == ["samba", "vscode"]
+    assert store.enabled_accounts(DEVICE, "samba") == ["bob"]
+    assert store.enabled_accounts(DEVICE, "vscode") == []
+    assert store.account_secret(DEVICE, "vscode", "ann", "token_sealed") == ""
+    assert "ann" not in json.dumps(store.read(DEVICE, "vscode"))
+
+
+def test_the_containers_run_settings_name_an_account_and_its_login_on_windows(
+    unlocked,
+):
+    store = DesiredStateStore()
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    login = SecretVault().add(
+        kind="login", name="lab", secret={"username": "lab", "password": "pw-lab"}
+    )
+    DeviceAccountStore(store).add(
+        DEVICE, DeviceAccount(account="lab", login_id=login.id)
+    )
+    stored = {
+        "containers": [],
+        "machine": {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120},
+    }
+
+    windows = desired_state_module.podman_agent_config(
+        stored, WINDOWS, store.available_accounts(DEVICE)
+    )
+    darwin = desired_state_module.podman_agent_config(
+        stored, {"os": "darwin", "arch": "arm64"}, store.available_accounts(DEVICE)
+    )
+    linux = desired_state_module.podman_agent_config(
+        stored, PLATFORM, store.available_accounts(DEVICE)
+    )
+
+    assert windows["machine"] == {
+        "account": "lab",
+        "cpus": 4,
+        "memory_gib": 8,
+        "disk_gib": 120,
+        "password": "pw-lab",
+    }
+    assert darwin["machine"] == {
+        "account": "lab",
+        "cpus": 4,
+        "memory_gib": 8,
+        "disk_gib": 120,
+    }
+    assert "machine" not in linux
+
+
+def test_the_seat_password_is_generated_once_and_reset_on_demand(unlocked):
+    store = DesiredStateStore()
+
+    assert store.ensure_seat_password(DEVICE) is True
+    first = store.seat_password(DEVICE)
+    assert store.ensure_seat_password(DEVICE) is False
+    store.reset_seat_password(DEVICE)
+
+    assert first and store.seat_password(DEVICE) != first
+    sealed = store.read(DEVICE, "rdp")
+    assert "seat_password" not in json.dumps(sealed) or first not in json.dumps(sealed)
+
+
+def test_forgetting_a_device_and_the_orphans_removes_their_directories(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "gitea", "running")
+    store.set_want("device-two", "gitea", "running")
 
     store.forget(DEVICE)
-
-    assert not (config / f"devices/{DEVICE}").exists()
-    assert store.modules(DEVICE) == {}
-
-
-def test_the_sweep_removes_a_directory_no_stored_id_names_and_keeps_the_rest(
-    config,
-):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.set_want("aa-bb-cc-dd-ee-ff", "samba", "running")
-    (config / "devices" / "packages").mkdir()
-    (config / "devices" / "devices.json").write_text("{}")
-
-    removed = store.forget_orphans({DEVICE})
-
-    assert removed == ["aa-bb-cc-dd-ee-ff"]
-    assert (config / f"devices/{DEVICE}/modules.json").exists()
-    assert (config / "devices" / "packages").is_dir()
-    assert (config / "devices" / "devices.json").exists()
-    assert not (config / "devices" / "aa-bb-cc-dd-ee-ff").exists()
-    assert store.forget_orphans({DEVICE}) == []
-
-
-# --- the machine's AI tools ---
-
-AI_GATEWAY = {"gateway_url": "http://127.0.0.1:8317", "gateway_key": "dev-key"}
-WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
-
-
-def ai_tools_box(monkeypatch, *, models=("gw-model", "other")):
-    """Three modules naming accounts, the gateway reachable with a key."""
-    from neutrino_hub.modules.devices import desired_state
-
-    monkeypatch.setattr(
-        desired_state, "device_gateway", lambda key, is_hub_machine=False: AI_GATEWAY
-    )
-    monkeypatch.setattr(
-        desired_state, "_login_password", lambda login_id: f"pw-{login_id}"
-    )
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "vscode", "running")
-    store.set_want(DEVICE, "cloudcli", "running")
-    store.set_want(DEVICE, "code_server", "absent")
-    store.write(
-        DEVICE,
-        "vscode",
-        {"instances": [{"account": "bob", "port": 8001, "login_id": "login-bob"}]},
-    )
-    store.write(
-        DEVICE,
-        "cloudcli",
-        {
-            "instances": [
-                {"account": "alice", "port": 3001, "login_id": "login-alice"},
-                {"account": "bob", "port": 3002, "login_id": "login-other"},
-            ]
-        },
-    )
-    store.write(DEVICE, "code_server", {"instances": [{"account": "carol", "port": 9}]})
-    store.set_want(DEVICE, "codeg", "running")
-    store.write(
-        DEVICE,
-        "codeg",
-        {"instances": [{"account": "bob", "port": 3101, "login_id": "login-third"}]},
-    )
-    return store, list(models)
-
-
-def test_the_ai_tools_accounts_are_every_instance_of_a_module_not_withdrawn(
-    config,
-    monkeypatch,
-):
-    store, _ = ai_tools_box(monkeypatch)
-
-    assert store.ai_tool_accounts(DEVICE) == [
-        ("alice", "login-alice", ["cloudcli"]),
-        ("bob", "login-bob", ["vscode", "cloudcli", "codeg"]),
-    ]
-
-
-def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
-    config, monkeypatch
-):
-    store, models = ai_tools_box(monkeypatch)
-    store.set_ai_tools(
-        DEVICE,
-        is_enabled=True,
-        tool_configs={
-            "claude": {"opus": "big", "nonsense": "x"},
-            "codex": {"model_reasoning_effort": "extreme"},
-            "lisp": {"model": "y"},
-        },
-    )
-
-    desired, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-
-    assert desired["ai_tools"] == {
-        "is_enabled": True,
-        "is_forwarded": True,
-        "gateway_port": 0,
-        "base_url": "http://127.0.0.1:8317",
-        "api_key": "dev-key",
-        "tool_configs": {
-            "claude": {
-                "default": "gw-model",
-                "opus": "big",
-                "sonnet": "gw-model",
-                "haiku": "gw-model",
-            },
-            "codex": {"model": "", "model_reasoning_effort": ""},
-            "gemini": {"model": ""},
-        },
-        "accounts": [{"account": "alice"}, {"account": "bob"}],
-        "cc_switch_version": "5.10.4",
-        "cc_switch_artifact": CC_SWITCH_LINUX,
-    }
-
-
-def test_a_platform_cc_switch_names_no_entry_for_is_sent_no_artifact(
-    config, monkeypatch
-):
-    store, models = ai_tools_box(monkeypatch)
-    windows_arm = {"os": "windows", "family": "", "arch": "arm64", "version": "26100"}
-
-    off, _ = store.compose(DEVICE, windows_arm, ai_models=models)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-    on, _ = store.compose(DEVICE, windows_arm, ai_models=models)
-
-    assert off["ai_tools"] == {
-        "is_enabled": False,
-        "is_forwarded": False,
-        "gateway_port": 0,
-        "cc_switch_version": "5.10.4",
-    }
-    assert on["ai_tools"]["cc_switch_version"] == "5.10.4"
-    assert "cc_switch_artifact" not in on["ai_tools"]
-
-
-def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
-    config, monkeypatch
-):
-    """A managed machine is sent its agent's forward to open; the hub's own
-    machine, the gateway's own port and no forward."""
-    from neutrino_hub.modules.devices import desired_state
-
-    store, models = ai_tools_box(monkeypatch)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-    asked: list = []
-
-    def gateway(key, is_hub_machine=False):
-        asked.append(is_hub_machine)
-        port = 9417 if is_hub_machine else 8317
-        return {"gateway_url": f"http://127.0.0.1:{port}", "gateway_key": "k"}
-
-    monkeypatch.setattr(desired_state, "device_gateway", gateway)
-
-    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
-
-    assert asked == [False, True]
-    assert managed["ai_tools"]["base_url"] == "http://127.0.0.1:8317"
-    assert managed["ai_tools"]["is_forwarded"] is True
-    assert own["ai_tools"]["base_url"] == "http://127.0.0.1:9417"
-    assert own["ai_tools"]["is_forwarded"] is False
-    assert own["ai_tools"]["gateway_port"] == 0
-
-
-def gateway_module_box(monkeypatch, *, want="running"):
-    """A device whose AI tools setting is off, with a container module that
-    uses the gateway, ``hermes_webui`` standing in, at ``want``."""
-    from neutrino_hub.modules.devices import desired_state
-
-    store, models = ai_tools_box(monkeypatch)
-    monkeypatch.setattr(
-        desired_state, "gateway_module_names", lambda: ("hermes_webui",)
-    )
-    monkeypatch.setattr(desired_state, "gateway_port", lambda: 9417)
-    store.set_want(DEVICE, "hermes_webui", want)
-    return store, models
-
-
-def test_a_container_module_that_uses_the_gateway_opens_the_forward_the_setting_off(
-    config, monkeypatch
-):
-    store, models = gateway_module_box(monkeypatch)
-
-    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-
-    assert managed["ai_tools"] == {
-        **AI_TOOLS_OFF,
-        "is_forwarded": True,
-        "gateway_port": 0,
-    }
-
-
-def test_on_the_hubs_own_machine_such_a_module_has_the_gateways_port_relayed(
-    config, monkeypatch
-):
-    store, models = gateway_module_box(monkeypatch)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-
-    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
-
-    assert own["ai_tools"]["is_forwarded"] is False
-    assert own["ai_tools"]["gateway_port"] == 9417
-
-
-def test_a_container_module_wanted_absent_opens_nothing(config, monkeypatch):
-    store, models = gateway_module_box(monkeypatch, want="absent")
-
-    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
-
-    assert store.has_gateway_module(DEVICE) is False
-    assert managed["ai_tools"] == AI_TOOLS_OFF
-    assert own["ai_tools"] == AI_TOOLS_OFF
-
-
-def test_a_composed_state_is_the_channels_agent_state(config, monkeypatch):
-    """Every field the composer writes is one the pinned model names."""
-    from neutrino_hub.web.models import ChannelAgentState
-
-    store, models = ai_tools_box(monkeypatch)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-    on, digest = store.compose(DEVICE, WINDOWS, ai_models=models)
-    off, _ = store.compose(DEVICE, PLATFORM, ai_models=[])
-
-    for desired in (on, off):
-        held = ChannelAgentState.model_validate({"hash": digest, **desired})
-        assert held.ai_tools.model_dump(exclude_unset=True) == desired["ai_tools"]
-
-
-def test_a_windows_machine_is_sent_each_accounts_login_password(config, monkeypatch):
-    store, models = ai_tools_box(monkeypatch)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-
-    desired, _ = store.compose(DEVICE, WINDOWS, ai_models=models)
-
-    assert desired["ai_tools"]["accounts"] == [
-        {"account": "alice", "password": "pw-login-alice"},
-        {"account": "bob", "password": "pw-login-bob"},
-    ]
-
-
-def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
-    config,
-    monkeypatch,
-):
-    from neutrino_hub.modules.devices import desired_state
-
-    store, models = ai_tools_box(monkeypatch)
-    off, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-    serving, served_hash = store.compose(DEVICE, PLATFORM, ai_models=models)
-    stopped, stopped_hash = store.compose(DEVICE, PLATFORM, ai_models=[])
-    monkeypatch.setattr(
-        desired_state,
-        "device_gateway",
-        lambda key, is_hub_machine=False: {"gateway_url": "", "gateway_key": ""},
-    )
-    keyless, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
-
-    assert off["ai_tools"] == AI_TOOLS_OFF
-    assert serving["ai_tools"]["is_enabled"] is True
-    assert stopped["ai_tools"] == AI_TOOLS_OFF
-    assert keyless["ai_tools"] == AI_TOOLS_OFF
-    assert served_hash != stopped_hash
-    assert store.ai_tools(DEVICE)["is_enabled"] is True
-
-
-# --- the retry marks ---
-
-
-@pytest.mark.parametrize("name", ["samba", "gitea", "terminal"])
-def test_the_section_checked_on_an_apply_is_the_one_the_state_carries(config, name):
-    """One step composes a module's section for the push and for the check."""
-    store = DesiredStateStore()
-    store.set_want(DEVICE, name, "running")
-    store.write(DEVICE, name, {"listen_port": 3000} if name == "gitea" else {})
-    subnets = ["192.168.10.0/24"]
-
-    desired, _ = store.compose(
-        DEVICE, PLATFORM, address="192.168.10.7", allowed_subnets=subnets
-    )
-    checked = store.agent_config(
-        DEVICE,
-        name,
-        store.read(DEVICE, name),
-        PLATFORM,
-        address="192.168.10.7",
-        allowed_subnets=subnets,
-    )
-
-    assert checked == desired["modules"][name]["config"]
-
-
-def test_a_retry_mark_rides_its_module_entry_and_moves_the_hash(config):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.write(DEVICE, "samba", {"shares": [], "users": []})
-
-    plain, plain_hash = store.compose(DEVICE, PLATFORM)
-    marked, marked_hash = store.compose(
-        DEVICE, PLATFORM, retry_marks={"samba": "a1b2", "gitea": "c3d4"}
-    )
-    again, again_hash = store.compose(DEVICE, PLATFORM, retry_marks={"samba": "e5f6"})
-
-    assert "retry_mark" not in plain["modules"]["samba"]
-    assert marked["modules"]["samba"]["retry_mark"] == "a1b2"
-    assert marked["modules"]["samba"]["config"] == plain["modules"]["samba"]["config"]
-    assert "gitea" not in marked["modules"]
-    assert len({plain_hash, marked_hash, again_hash}) == 3
-
-
-def test_the_ai_tools_mark_rides_the_section_on_and_off(config, monkeypatch):
-    """Off, the mark is what retries a switch back that could not run."""
-    store, models = ai_tools_box(monkeypatch)
-    marks = {"ai_tools": "a1b2"}
-
-    plain, plain_hash = store.compose(DEVICE, PLATFORM, ai_models=models)
-    off, off_hash = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
-    store.set_ai_tools(DEVICE, is_enabled=True)
-    on, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
-
-    assert plain["ai_tools"] == AI_TOOLS_OFF
-    assert off["ai_tools"] == {**AI_TOOLS_OFF, "retry_mark": "a1b2"}
-    assert off_hash != plain_hash
-    assert on["ai_tools"]["retry_mark"] == "a1b2"
-
-
-def test_the_retry_marks_keep_one_per_module_and_go_with_the_device(tmp_path):
-    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
-
-    marks = DeviceRetryMarks(path=tmp_path / "marks.json")
-    first = marks.mark(DEVICE, "code_server")
-    second = marks.mark(DEVICE, "code_server")
-    marks.mark("other", "samba")
-
-    assert first != second
-    assert DeviceRetryMarks(path=tmp_path / "marks.json").marks(DEVICE) == {
-        "code_server": second
-    }
-    marks.forget(DEVICE)
-    assert marks.marks(DEVICE) == {}
-    assert set(marks.marks("other")) == {"samba"}
-
-
-# --- the compositions the description table drives, pinned to the code before it ---
-
-# The platform tuples the fixtures were captured under.
-PINNED_PLATFORMS = {
-    "linux": {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
-    "windows": {"os": "windows", "family": "", "arch": "amd64", "version": "26100"},
-    "darwin": {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"},
-}
-# Each module's file as it was handed to the composition: seals stand in as
-# ``{"v": ...}`` and open to ``<v>:<aad>``, a login's password to ``pw-<id>``.
-PINNED_STORED = {
-    "vscode": {
-        "terms_accepted_at": "2026-10-05T08:00:00+00:00",
-        "instances": [
-            {
-                "account": "alice",
-                "port": 8000,
-                "login_id": "l-a",
-                "token_sealed": {"v": "tok-a"},
-            },
-            {
-                "account": "bob",
-                "port": 8001,
-                "login_id": "",
-                "token_sealed": {"v": "tok-b"},
-            },
-            {"account": "carol", "port": 8002},
-            "junk",
-        ],
-    },
-    "cloudcli": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 3001,
-                "login_id": "l-a",
-                "web_password_sealed": {"v": "pw-a"},
-                "token_secret_sealed": {"v": "sec-a"},
-            },
-            {
-                "account": "bob",
-                "port": 3002,
-                "login_id": "l-b",
-                "token_secret_sealed": {},
-            },
-            {"account": "carol", "port": 3003},
-            7,
-        ]
-    },
-    "code_server": {
-        "instances": [
-            {"account": "alice", "port": 8443, "secret_sealed": {"v": "sec-a"}},
-            {"account": "bob", "port": 8444, "login_id": "l-b"},
-            None,
-        ]
-    },
-}
-# What ``vscode_agent_config``, ``code_server_agent_config`` and
-# ``cloudcli_agent_config`` answered for those files before the table drove
-# one composition, keyed ``<module>/<platform>``; CloudCLI's registries are
-# its npm artifact's, in the recipe, and no longer in its configuration.
-PINNED_CONFIGS = {
-    "cloudcli/darwin": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",  # scan: allow
-                "web_password": "pw-a:device_cloudcli:web_password",  # scan: allow
-            },
-            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-    },
-    "cloudcli/linux": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",
-                "web_password": "pw-a:device_cloudcli:web_password",
-            },
-            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-    },
-    "cloudcli/windows": {
-        "instances": [
-            {
-                "account": "alice",
-                "password": "pw-l-a",
-                "port": 3001,
-                "token_secret": "sec-a:device_cloudcli:token_secret",
-                "web_password": "pw-a:device_cloudcli:web_password",
-            },
-            {
-                "account": "bob",
-                "password": "pw-l-b",
-                "port": 3002,
-                "token_secret": "",
-                "web_password": "",
-            },
-            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
-        ],
-    },
-    "code_server/darwin": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 8443,
-                "secret": "sec-a:device_code_server:secret",  # scan: allow
-            },
-            {"account": "bob", "port": 8444, "secret": ""},
-        ]
-    },
-    "code_server/linux": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 8443,
-                "secret": "sec-a:device_code_server:secret",
-            },
-            {"account": "bob", "port": 8444, "secret": ""},
-        ]
-    },
-    "code_server/windows": {
-        "instances": [
-            {
-                "account": "alice",
-                "port": 8443,
-                "secret": "sec-a:device_code_server:secret",
-            },
-            {"account": "bob", "port": 8444, "secret": ""},
-        ]
-    },
-    "vscode/darwin": {
-        "address": "",
-        "instances": [
-            {"account": "alice", "port": 8000, "token": "tok-a:device_vscode:token"},
-            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
-            {"account": "carol", "port": 8002, "token": ""},
-        ],
-    },
-    "vscode/linux": {
-        "address": "",
-        "instances": [
-            {"account": "alice", "port": 8000, "token": "tok-a:device_vscode:token"},
-            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
-            {"account": "carol", "port": 8002, "token": ""},
-        ],
-    },
-    "vscode/windows": {
-        "address": "",
-        "instances": [
-            {
-                "account": "alice",
-                "password": "pw-l-a",
-                "port": 8000,
-                "token": "tok-a:device_vscode:token",
-            },
-            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
-            {"account": "carol", "port": 8002, "token": ""},
-        ],
-    },
-}
-
-
-def _opened_for_pin(sealed, aad: bytes) -> str:
-    if not isinstance(sealed, dict) or not sealed:
-        return ""
-    return f"{sealed['v']}:{aad.decode()}"
-
-
-def _password_for_pin(login_id: str) -> str:
-    return f"pw-{login_id}"
-
-
-@pytest.mark.parametrize("pinned", sorted(PINNED_CONFIGS))
-def test_the_one_composition_answers_byte_for_byte_what_the_three_did(
-    pinned, monkeypatch
-):
-    from neutrino_hub.modules.devices.desired_state import instances_agent_config
-    from neutrino_hub.modules.devices.module_table import module_row
-
-    monkeypatch.setattr(desired_state_module, "_unsealed_text", _opened_for_pin)
-    monkeypatch.setattr(desired_state_module, "_login_password", _password_for_pin)
-    module, platform_name = pinned.split("/")
-
-    composed = instances_agent_config(
-        module_row(module), PINNED_STORED[module], PINNED_PLATFORMS[platform_name]
-    )
-
-    # The state hash is over the canonical JSON, which is what is compared.
-    assert json.dumps(composed, sort_keys=True) == json.dumps(
-        PINNED_CONFIGS[pinned], sort_keys=True
-    )
-
-
-# --- Containers: the Run settings ---
-
-PODMAN_STORED = {
-    "containers": [
-        {
-            "name": "web",
-            "image": "docker.io/library/nginx:1.27",
-            "ports": ["8080:80", "5353:53/udp"],
-            "volumes": ["/srv/web:/usr/share/nginx/html", "data:/data"],
-            "environment": ["NGINX_PORT=80"],
-            "command": "",
-            "is_autostart": True,
-        }
-    ],
-    "mirrors": ["mirror.example"],
-}
-PODMAN_RUN_SETTINGS = {
-    "account": "lab",
-    "login_id": "l-lab",
-    "cpus": 4,
-    "memory_gib": 8,
-    "disk_gib": 120,
-}
-PODMAN_SENT_MACHINE = {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120}
-
-
-@pytest.fixture
-def podman_config(monkeypatch, tmp_path):
-    """The config dir under tmp_path, the catalog's own recipes, pinned logins."""
-    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
-    monkeypatch.setattr(desired_state_module, "_login_password", _password_for_pin)
-    return tmp_path
-
-
-def test_a_linux_podman_entry_names_no_machine_whatever_the_run_settings(
-    podman_config,
-):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
-    store.write(DEVICE, "podman", PODMAN_STORED)
-    before, before_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
-    store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
-    after, after_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
-
-    assert before["modules"]["podman"]["config"] == {
-        **PODMAN_STORED,
-        "hub_containers": [],
-    }
-    assert after == before
-    assert after_hash == before_hash
-
-
-@pytest.mark.parametrize(
-    "platform, machine",
-    [
-        ("windows", {**PODMAN_SENT_MACHINE, "password": "pw-l-lab"}),
-        ("darwin", PODMAN_SENT_MACHINE),
-        ("linux", None),
-        ("unreported", None),
-    ],
-)
-def test_the_run_settings_reach_windows_and_macos_alone_with_a_password_on_windows(
-    podman_config, platform, machine
-):
-    from neutrino_hub.modules.devices.desired_state import podman_agent_config
-
-    composed = podman_agent_config(
-        {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS},
-        PINNED_PLATFORMS.get(platform, {}),
-    )
-
-    assert composed.get("machine") == machine
-    assert {key: value for key, value in composed.items() if key != "machine"} == (
-        PODMAN_STORED
-    )
-
-
-def test_a_windows_machine_with_no_login_is_sent_no_password(podman_config):
-    from neutrino_hub.modules.devices.desired_state import podman_agent_config
-
-    composed = podman_agent_config(
-        {"machine": {**PODMAN_RUN_SETTINGS, "login_id": ""}},
-        PINNED_PLATFORMS["windows"],
-    )
-
-    assert composed == {"machine": PODMAN_SENT_MACHINE}
-
-
-def test_the_podman_section_checked_on_an_apply_is_the_one_a_windows_state_carries(
-    podman_config,
-):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
-    store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
-    windows = PINNED_PLATFORMS["windows"]
-
-    desired, digest = store.compose(DEVICE, windows)
-    checked = store.agent_config(
-        DEVICE, "podman", store.read(DEVICE, "podman"), windows
-    )
-    store.write(
-        DEVICE,
-        "podman",
-        {**PODMAN_STORED, "machine": {**PODMAN_RUN_SETTINGS, "cpus": 2}},
-    )
-    _, moved = store.compose(DEVICE, windows)
-
-    assert checked == desired["modules"]["podman"]["config"]
-    assert checked["machine"] == {**PODMAN_SENT_MACHINE, "password": "pw-l-lab"}
-    assert moved != digest
-
-
-def test_the_containers_state_carries_the_container_modules_hub_containers(
-    podman_config, demo_container_module
-):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
-    store.write(DEVICE, "podman", PODMAN_STORED)
-    store.set_want(DEVICE, "demo", "running")
-    store.write(DEVICE, "demo", {"password": "pw"})
-
-    desired, _ = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
-
-    hub = desired["modules"]["podman"]["config"]["hub_containers"]
-    assert [(c["module"], c["name"], c["is_autostart"]) for c in hub] == [
-        ("demo", "neutrino_demo_worker", True),
-        ("demo", "neutrino_demo", True),
-    ]
-    assert desired["modules"]["demo"]["install"]["method"] == "container"
-    assert desired["modules"]["demo"]["install"]["params"]["source_sets"] == ["pypi"]
-    assert list(desired["source_sets"]) == ["pypi"]
-
-
-def test_a_container_module_wanted_absent_leaves_the_containers_state(
-    podman_config, demo_container_module
-):
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "podman", "running")
-    store.set_want(DEVICE, "demo", "absent")
-
-    desired, _ = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
-
-    assert desired["modules"]["podman"]["config"]["hub_containers"] == []
-
-
-def test_a_container_module_s_token_is_minted_from_the_secret_its_file_seals(
-    config, monkeypatch
-):
-    import base64
-    import hashlib
-    import hmac
-
-    from neutrino_hub.modules.credentials.vault import unseal_bytes
-    from neutrino_hub.modules.devices.hermes_webui import ensure_config
-    from tests.conftest import unlock_vault
-
-    unlock_vault(monkeypatch, config)
-    store = DesiredStateStore()
-    stored = ensure_config(store, "dev-1")
-    secret = unseal_bytes(stored["secret_sealed"], b"device_hermes_webui:secret")
-
-    token = store.module_token("dev-1", "hermes_webui", now=1_000_000)
-
-    raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
-    body, mac = raw[:24], raw[24:]
-    assert int.from_bytes(body[:8], "big") == 1_000_060
-    assert hmac.compare_digest(mac, hmac.new(secret, body, hashlib.sha256).digest())
-    assert store.module_token("other", "hermes_webui") == ""
+    orphans = store.forget_orphans({"device-two"})
+
+    assert not (config / "devices" / DEVICE).exists()
+    assert orphans == []
+    assert (config / "devices" / "device-two").is_dir()
+    assert store.forget_orphans(set()) == ["device-two"]
+    assert not (config / "devices" / "device-two").exists()

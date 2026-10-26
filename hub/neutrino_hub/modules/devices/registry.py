@@ -93,9 +93,17 @@ class DeviceClientInfo:
         token_sha256: SHA-256 hex of the shared secret the agent
             authenticates its channel with; the raw token exists only in
             the enroll reply and on the device.
+        public_key: The agent's static public key, 64 hex characters, which
+            its knock names the binding by; None until the agent joined or
+            moved its binding to the transport.
+        agent_version: The version the agent's last hello named, kept so a
+            hub that starts again knows which rows still need the legacy
+            listener; empty until the agent said hello.
     """
 
     token_sha256: str | None = None
+    public_key: str | None = None
+    agent_version: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeviceClientInfo":
@@ -107,7 +115,11 @@ class DeviceClientInfo:
         Returns:
             The parsed info.
         """
-        return cls(token_sha256=data.get("token_sha256"))
+        return cls(
+            token_sha256=data.get("token_sha256"),
+            public_key=str(data.get("public_key") or "") or None,
+            agent_version=str(data.get("agent_version") or ""),
+        )
 
     def to_dict(self) -> dict:
         """Serialize the persistent fields.
@@ -118,7 +130,11 @@ class DeviceClientInfo:
         Returns:
             A JSON-ready object.
         """
-        return {"token_sha256": self.token_sha256}
+        return {
+            "token_sha256": self.token_sha256,
+            "public_key": self.public_key,
+            "agent_version": self.agent_version,
+        }
 
 
 @dataclass
@@ -414,6 +430,59 @@ class DeviceRegistry:
                 return self._from_stored(device_id, entry)
         return None
 
+    def find_by_public_key(self, public_key: str) -> "ManagedDevice | None":
+        """The device whose agent holds a static public key.
+
+        Args:
+            public_key: The key a knock named, 64 hex characters.
+
+        Returns:
+            The matching device, or None when no row holds the key.
+        """
+        wanted = str(public_key or "").lower()
+        if not wanted:
+            return None
+        for device_id, entry in self._stored.items():
+            stored = str(entry.get("client", {}).get("public_key") or "").lower()
+            if stored and secrets.compare_digest(stored, wanted):
+                return self._from_stored(device_id, entry)
+        return None
+
+    def note_agent_version(self, device_id: str, version: str) -> bool:
+        """Keep the version a device's agent said hello with.
+
+        Args:
+            device_id: The device.
+            version: The version its software named; empty keeps the stored.
+
+        Returns:
+            Whether the row changed.
+        """
+        if not version:
+            return False
+        with CONFIG_WRITE_LOCK:
+            device = self._fresh(device_id)
+            if device is None or device.client.agent_version == version:
+                return False
+            device.client.agent_version = str(version)
+            self._store(device)
+        return True
+
+    def set_public_key(self, device_id: str, public_key: "str | None") -> None:
+        """Record the static public key a device's agent knocks with.
+
+        Args:
+            device_id: The device.
+            public_key: The key, or None to drop it.
+
+        Raises:
+            KeyError: When there is no such device.
+        """
+        with CONFIG_WRITE_LOCK:
+            device = self._require(device_id)
+            device.client.public_key = str(public_key).lower() if public_key else None
+            self._store(device)
+
     def find_by_machine_id(self, machine_id: str) -> "ManagedDevice | None":
         """Look up the device a machine id belongs to.
 
@@ -457,8 +526,8 @@ class DeviceRegistry:
     def drop_token(self, device_id: str) -> None:
         """Record that a device's agent has left.
 
-        The token goes so the old one cannot beat again; the name, the icon
-        and the SSH credentials stay.
+        The token and the static key go so the old ones cannot knock again;
+        the name, the icon and the SSH credentials stay.
 
         Args:
             device_id: The device. Unknown ids are ignored.
@@ -468,6 +537,7 @@ class DeviceRegistry:
             if device is None or device.is_scan_row:
                 return
             device.client.token_sha256 = None
+            device.client.public_key = None
             self._store(device)
 
     def note_machine(

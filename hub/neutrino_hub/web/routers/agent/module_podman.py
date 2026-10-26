@@ -68,6 +68,7 @@ LOGIN_KIND = "login"
 CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
 CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
 CODE_CREDENTIAL_MISSING = "credential_missing"
+CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_MACHINE_DISK_INVALID = "machine_disk_invalid"
 CODE_CONTAINER_NAME_RESERVED = "container_name_reserved"
 CODE_CONTAINER_HUB_OWNED = "container_hub_owned"
@@ -246,8 +247,8 @@ def update_machine(
     """Replace the Run settings of a Windows or macOS machine.
 
     Args:
-        update: The device, the account whose Podman machine runs the
-            containers, its vault login, and the machine's resources.
+        update: The device, the available account whose Podman machine runs
+            the containers, and the machine's resources.
         runtime: The shared runtime.
 
     Returns:
@@ -255,8 +256,8 @@ def update_machine(
 
     Raises:
         HTTPException: 400 ``unsupported_platform`` for a machine that is
-            not Windows or macOS, ``unknown_credential`` for a login the
-            vault does not hold, ``credential_missing`` for an account of a
+            not Windows or macOS, ``account_unknown`` for an account that is
+            not available, ``credential_missing`` for an account of a
             Windows machine with no login, ``machine_disk_invalid`` for a
             Windows machine with a disk limit of 0; 409 ``agent_offline``;
             400 with the agent's code when it refuses the settings.
@@ -265,11 +266,17 @@ def update_machine(
     os_name = runtime.device_platform.get(context.key, {}).get("os")
     if os_name not in DEVICE_PODMAN_MACHINE_OS:
         raise _refusal(CODE_UNSUPPORTED_PLATFORM)
-    if update.login_id:
-        record = SecretVault().get(update.login_id)
-        if record is None or record.kind != LOGIN_KIND:
-            raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_INSTANCE_LOGIN_KEY)
-    elif os_name == OS_WINDOWS and update.account:
+    available = {
+        row.account: row
+        for row in runtime.desired_states.available_accounts(context.key)
+    }
+    if update.account and update.account not in available:
+        raise _refusal(CODE_ACCOUNT_UNKNOWN, account=update.account)
+    if (
+        os_name == OS_WINDOWS
+        and update.account
+        and not available[update.account].login_id
+    ):
         raise _refusal(CODE_CREDENTIAL_MISSING, account=update.account)
     if os_name == OS_WINDOWS and update.disk_gib < 1:
         raise _refusal(CODE_MACHINE_DISK_INVALID, disk_gib=update.disk_gib)

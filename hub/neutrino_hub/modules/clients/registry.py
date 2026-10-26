@@ -14,9 +14,12 @@ import uuid
 from dataclasses import dataclass, field
 
 from neutrino_hub.modules.clients.constants import (
-    CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_DEFAULT_PERMISSION_KINDS,
+    CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_KINDS,
+    CLIENT_PERMISSION_SSH,
+    CLIENT_PERMISSION_TERMINAL,
+    CLIENT_SSH_GRANTED_KEY,
     CLIENT_TOKEN_BYTES,
     CLIENTS_CONFIG_PATH,
 )
@@ -62,6 +65,27 @@ def _permission_document(kinds: list, devices: dict) -> dict:
     return document
 
 
+def _with_ssh(kinds: list, devices: dict) -> "tuple | None":
+    """A permission with ``ssh`` added beside its ``terminal``.
+
+    Args:
+        kinds: The permission's kinds.
+        devices: Its device filter.
+
+    Returns:
+        ``(kinds, devices)`` with ``ssh`` added, ``terminal``'s device list
+        copied to it when there is one; None when the permission names no
+        ``terminal`` or already names ``ssh``.
+    """
+    if CLIENT_PERMISSION_TERMINAL not in kinds or CLIENT_PERMISSION_SSH in kinds:
+        return None
+    granted = permission_kinds(list(kinds) + [CLIENT_PERMISSION_SSH])
+    filters = dict(devices)
+    if devices.get(CLIENT_PERMISSION_TERMINAL):
+        filters[CLIENT_PERMISSION_SSH] = list(devices[CLIENT_PERMISSION_TERMINAL])
+    return granted, permission_devices(filters)
+
+
 def _without_device(kinds: list, devices: dict, device_id: str) -> tuple:
     """A permission with one device taken out of every list.
 
@@ -90,6 +114,9 @@ class Client:
         name: What the person called it when the link was minted.
         token_sha256: The digest of its token; None until it joins, or once
             it has left.
+        public_key: Its static public key, 64 hex characters, which its
+            knock names the binding by; None until it joined or moved its
+            binding to the transport.
         hostname: What the program's machine called itself.
         machine_id: The id the machine reports for itself, empty until it
             has joined.
@@ -107,6 +134,7 @@ class Client:
     id: str
     name: str = ""
     token_sha256: "str | None" = None
+    public_key: "str | None" = None
     hostname: str = ""
     machine_id: str = ""
     os_machine_id: str = ""
@@ -138,6 +166,7 @@ class Client:
             id=client_id,
             name=str(data.get("name", "") or ""),
             token_sha256=data.get("token_sha256") or None,
+            public_key=str(data.get("public_key") or "") or None,
             hostname=str(data.get("hostname", "") or ""),
             machine_id=str(data.get("machine_id", "") or ""),
             os_machine_id=str(data.get("os_machine_id", "") or ""),
@@ -154,6 +183,7 @@ class Client:
         return {
             "name": self.name,
             "token_sha256": self.token_sha256,
+            "public_key": self.public_key,
             "hostname": self.hostname,
             "machine_id": self.machine_id,
             "os_machine_id": self.os_machine_id,
@@ -179,6 +209,8 @@ class ClientRegistry:
     def __init__(self):
         self._default = None
         self._default_devices = {}
+        self._is_ssh_granted = False
+        self._is_file_present = False
         self._stored = self._read_stored()
 
     def all(self) -> list:
@@ -235,6 +267,38 @@ class ClientRegistry:
             if stored and secrets.compare_digest(str(stored), presented):
                 return Client.from_dict(client_id, entry)
         return None
+
+    def find_by_public_key(self, public_key: str) -> "Client | None":
+        """The client whose static public key a knock named, or None.
+
+        Args:
+            public_key: The key, 64 hex characters.
+
+        Returns:
+            The client holding it, or None when no row does.
+        """
+        wanted = str(public_key or "").lower()
+        if not wanted:
+            return None
+        for client_id, entry in self._stored.items():
+            stored = str(entry.get("public_key") or "").lower()
+            if stored and secrets.compare_digest(stored, wanted):
+                return Client.from_dict(client_id, entry)
+        return None
+
+    def set_public_key(self, client_id: str, public_key: "str | None") -> None:
+        """Record the static public key a client knocks with.
+
+        Args:
+            client_id: The client.
+            public_key: The key, or None to drop it.
+
+        Raises:
+            KeyError: When there is no such client.
+        """
+        self._update(
+            client_id, {"public_key": str(public_key).lower() if public_key else None}
+        )
 
     def find_by_machine_id(self, machine_id: str) -> "Client | None":
         """The client stored for a machine, or None.
@@ -332,7 +396,7 @@ class ClientRegistry:
         self._update(client_id, {"ai_key_id": key_id})
 
     def drop_token(self, client_id: str) -> None:
-        """Take a client's token back; the row stays.
+        """Take a client's token and static key back; the row stays.
 
         Args:
             client_id: The client.
@@ -340,7 +404,7 @@ class ClientRegistry:
         Raises:
             KeyError: When there is no such client.
         """
-        self._update(client_id, {"token_sha256": None})
+        self._update(client_id, {"token_sha256": None, "public_key": None})
 
     def default_permission(self) -> list:
         """The kinds a client with no set of its own is allowed.
@@ -403,6 +467,36 @@ class ClientRegistry:
             )
         self._update(client_id, {"permission": chosen})
 
+    def grant_ssh_once(self) -> bool:
+        """Add ``ssh`` to every stored permission that names ``terminal``, once.
+
+        The first 0.6.0 start of a hub whose file predates the ``ssh`` kind
+        gives it to the default permission and to each client's own, with
+        ``terminal``'s device list when it has one, and marks the file so a
+        person who takes ``ssh`` away later keeps it away.
+
+        Returns:
+            Whether the file was written.
+        """
+        with CONFIG_WRITE_LOCK:
+            self._stored = self._read_stored()
+            if self._is_ssh_granted or not self._is_file_present:
+                return False
+            if self._default is not None:
+                granted = _with_ssh(self._default, self._default_devices)
+                if granted is not None:
+                    self._default, self._default_devices = granted
+            for client_id, entry in self._stored.items():
+                client = Client.from_dict(client_id, entry)
+                if client.permission is None:
+                    continue
+                granted = _with_ssh(client.permission, client.permission_devices)
+                if granted is not None:
+                    entry["permission"] = _permission_document(*granted)
+            self._is_ssh_granted = True
+            self._write_stored()
+        return True
+
     def forget_device(self, device_id: str) -> bool:
         """Take one device out of every filter, the default's and each client's.
 
@@ -460,7 +554,11 @@ class ClientRegistry:
         except FileNotFoundError:
             self._default = None
             self._default_devices = {}
+            self._is_ssh_granted = False
+            self._is_file_present = False
             return {}
+        self._is_file_present = True
+        self._is_ssh_granted = data.get(CLIENT_SSH_GRANTED_KEY) is True
         self._default = _stored_kinds(data.get("default_permission"))
         self._default_devices = _stored_devices(data.get("default_permission"))
         clients = data.get("clients", {})
@@ -475,4 +573,9 @@ class ClientRegistry:
                 ),
                 **document,
             }
+        # A file this hub writes is one the ``ssh`` grant has run on, or one
+        # made after the kind existed; either way the grant is not owed.
+        document = {CLIENT_SSH_GRANTED_KEY: True, **document}
+        self._is_ssh_granted = True
+        self._is_file_present = True
         write_config(CLIENTS_CONFIG_PATH, document)

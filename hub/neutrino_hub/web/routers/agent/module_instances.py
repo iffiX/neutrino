@@ -1,81 +1,70 @@
-"""One router for every program run as a person's account.
+"""One router for every module of the account layer.
 
 ``GET /api/agent/module/<module>`` and ``POST /api/agent/module/<module>/set``
-are served for each row of that kind in the description table, with the
-module's own view and body models. Each instance is one account on one port
-behind the agent's forwarder, and the hub generates the fields the row seals
-the first time the account is saved and keeps them sealed in the device's
-file; the agent checks the instances as the state will carry them, the
-seals opened and, on a Windows machine, each login's password.
+are served for each account-layer row of the description table: Terminal,
+the file share, the SSH server, VS Code, code-server, CloudCLI and Codeg.
+The view lists every available account with whether the module enables it
+and what the machine reports of its instance; the set replaces the enabled
+accounts, generating each newly enabled account's secrets, and writes
+``want: running`` with it as an apply of a configuration does (protocol.md,
+"The account layer in the state").
 """
 
 import functools
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_STATE_RUNNING,
+    CHANNEL_STREAM_COMMAND,
+    CHANNEL_VERB_VALIDATE,
+)
+from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_INSTANCE_LOGIN_KEY,
+    DEVICE_AGENT_MODULES,
+    DEVICE_MODULE_VALIDATE_TIMEOUT_S,
+    DEVICE_SAMBA_MODULE,
+    DEVICE_SSH_SERVER_MODULE,
+    DEVICE_TERMINAL_MODULE,
+    DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_VSCODE_TERMS_URL,
 )
+from neutrino_hub.modules.devices.desired_state import smb_user
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
-    account_program_rows,
+    account_layer_rows,
 )
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
-    CloudcliConfigUpdate,
-    CloudcliDeviceView,
-    CloudcliInstanceView,
-    CodegConfigUpdate,
-    CodegDeviceView,
-    CodegInstanceView,
-    CodeServerConfigUpdate,
-    CodeServerDeviceView,
-    CodeServerInstanceView,
-    VscodeConfigUpdate,
-    VscodeDeviceView,
-    VscodeInstanceView,
+    EnabledAccountRowView,
+    EnabledAccountsUpdate,
+    EnabledAccountsView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
+    CODE_AGENT_OFFLINE,
     DeviceModuleContext,
     device_context,
     module_router,
+    push_state,
+    recompose_published,
+    require_online,
     require_terms,
-    store_config,
+    write_module_config,
 )
 
-# The platform whose instances start only with the account's password.
-OS_WINDOWS = "windows"
-LOGIN_KIND = "login"
-
+CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
-CODE_PORT_DUPLICATE = "port_duplicate"
-CODE_CREDENTIAL_MISSING = "credential_missing"
-CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
-
-# Each module's own models: the device view, one instance of it, and the
-# body of a set. A view field beyond the shared ones is filled when the
-# model declares it.
-MODELS = {
-    "vscode": (VscodeDeviceView, VscodeInstanceView, VscodeConfigUpdate),
-    "code_server": (
-        CodeServerDeviceView,
-        CodeServerInstanceView,
-        CodeServerConfigUpdate,
-    ),
-    "cloudcli": (CloudcliDeviceView, CloudcliInstanceView, CloudcliConfigUpdate),
-    "codeg": (CodegDeviceView, CodegInstanceView, CodegConfigUpdate),
-}
-# The view fields a module's model may declare beyond the shared ones.
-VIEW_FIELD_VERSION = "version"
-VIEW_FIELD_TERMS = "is_terms_accepted"
+CODE_ACCOUNT_HOME_UNKNOWN = "account_home_unknown"
+CODE_CONFIG_UNWRITABLE = "config_unwritable"
 
 
-def device_view(row: DeviceModuleRow, runtime: PanelRuntime, context):
-    """One device's module: the instances and the machine's accounts.
+def device_view(
+    row: DeviceModuleRow, runtime: PanelRuntime, context: DeviceModuleContext
+) -> EnabledAccountsView:
+    """One account-layer module on one device: every available account.
 
     Args:
         row: The module's row in the description table.
@@ -83,147 +72,197 @@ def device_view(row: DeviceModuleRow, runtime: PanelRuntime, context):
         context: The device.
 
     Returns:
-        The module's own view: the instances as configured, each with
-        whether the machine reports it running and why not, and the login it
-        runs as where the row names one; the human accounts the machine last
-        reported; the release the machine reports where the view declares
-        ``version``; and whether the person accepted the terms, with their
-        address, where it declares ``is_terms_accepted``.
+        The view: each available account with whether the module enables it,
+        the port the agent took and whether the instance runs as last
+        reported, and the module's own field on each row; the module's own
+        view fields beside them. A file share row of an enabled account with
+        no share path whose home the machine has not reported carries
+        ``account_home_unknown {account}``.
     """
-    view_model, instance_model, _ = MODELS[row.name]
+    store = DeviceAccountStore(runtime.desired_states)
+    enabled = runtime.desired_states.enabled_accounts(context.key, row.name)
+    platform = runtime.device_platform.get(context.key, {})
+    homes = runtime.device_account_details.get(context.key, {})
     reported = {
         str(instance.get("account", "")): instance
         for instance in context.details.get("instances") or []
         if isinstance(instance, dict)
     }
-    instances = []
-    for instance in context.config.get("instances") or []:
-        if not isinstance(instance, dict):
-            continue
-        account = str(instance.get("account", ""))
-        seen = reported.get(account, {})
+    rows = []
+    for account in store.accounts(context.key):
+        seen = reported.get(account.account, {})
+        params = seen.get("params")
         fields = {
-            "account": account,
-            "port": int(instance.get("port", 0)),
+            "account": account.account,
+            "is_enabled": account.account in enabled,
+            "port": _port(seen.get("port")),
             "is_running": bool(seen.get("is_running")),
             "code": str(seen.get("code", "") or ""),
+            "params": dict(params) if isinstance(params, dict) else {},
         }
-        if row.is_login_named:
-            fields[DEVICE_INSTANCE_LOGIN_KEY] = str(
-                instance.get(DEVICE_INSTANCE_LOGIN_KEY, "") or ""
-            )
-        instances.append(instance_model(**fields))
-    extra = {}
-    if VIEW_FIELD_VERSION in view_model.model_fields:
-        extra[VIEW_FIELD_VERSION] = str(context.details.get("version", "") or "")
-    if VIEW_FIELD_TERMS in view_model.model_fields:
-        extra[VIEW_FIELD_TERMS] = bool(context.config.get(DEVICE_VSCODE_TERMS_KEY))
+        if row.name in (DEVICE_TERMINAL_MODULE, DEVICE_SSH_SERVER_MODULE):
+            fields["shell_path"] = account.shell_path
+        if row.name == DEVICE_SAMBA_MODULE:
+            fields["share_path"] = account.share_path
+            fields["user"] = smb_user(account.account, platform)
+            home = str((homes.get(account.account) or {}).get("home", "") or "")
+            if fields["is_enabled"] and not account.share_path and not home:
+                fields["code"] = CODE_ACCOUNT_HOME_UNKNOWN
+                fields["params"] = {"account": account.account}
+        rows.append(EnabledAccountRowView(**fields))
+    extra = {"version": str(context.details.get("version", "") or "")}
+    if row.name == DEVICE_SSH_SERVER_MODULE:
+        extra["host_key_fingerprint"] = str(
+            context.details.get("host_key_fingerprint", "") or ""
+        )
+    if row.name == DEVICE_VSCODE_MODULE:
+        extra["is_terms_accepted"] = bool(context.config.get(DEVICE_VSCODE_TERMS_KEY))
         extra["terms_url"] = DEVICE_VSCODE_TERMS_URL
-    return view_model(
-        **context.fields(),
-        instances=instances,
-        accounts=[str(name) for name in runtime.device_accounts.get(context.key, [])],
-        is_active=context.is_active,
-        **extra,
+    return EnabledAccountsView(
+        **context.fields(), accounts=rows, is_active=context.is_active, **extra
     )
 
 
-def replace_instances(row: DeviceModuleRow, update, runtime: PanelRuntime):
-    """Replace one module's instances on one device.
+def replace_accounts(
+    row: DeviceModuleRow, update: EnabledAccountsUpdate, runtime: PanelRuntime
+) -> EnabledAccountsView:
+    """Replace one module's enabled accounts on one device.
 
-    Each field the row seals is generated the first time its account is
-    saved, and sealed beside it; the file's other fields, VS Code's terms
-    acceptance among them, stay. The agent checks the instances as it will
-    receive them.
+    Each newly enabled account gets the fields the row seals, generated
+    once; a disabled account keeps its record for its next enabling. The
+    agent checks the module's section as the state will carry it before the
+    change holds, and the module is wanted running with it.
 
     Args:
         row: The module's row in the description table.
-        update: The device and its instances, the module's own body model.
+        update: The device and the enabled accounts, in the order checked.
         runtime: The shared runtime.
 
     Returns:
         The device's view afterwards.
 
     Raises:
-        HTTPException: 400 ``account_duplicate`` or ``port_duplicate`` for
-            two instances sharing one; for a row that names a login, 400
-            ``unknown_credential`` for a login the vault does not hold and
-            ``credential_missing`` for an instance of a Windows machine with
-            no login; 409 ``terms_not_accepted`` for VS Code before the
-            person accepted the terms on this machine; 409
-            ``agent_offline``; 400 with the agent's code when it refuses
-            the configuration.
-        VaultLockedError: If a seal has to be made and the vault is locked.
+        HTTPException: 400 ``account_unknown {account}`` for an account that
+            is not available, ``account_duplicate {account}``; 409
+            ``terms_not_accepted {module}`` for VS Code before its terms,
+            ``agent_offline``; 400 with the agent's code when it refuses the
+            configuration; 500 ``config_unwritable``.
+        VaultLockedError: When a secret has to be sealed and the vault is
+            locked.
     """
     context = device_context(runtime, row.name, update.device_id)
     require_terms(runtime, context.key, row.name)
-    is_windows = runtime.device_platform.get(context.key, {}).get("os") == OS_WINDOWS
-    vault = SecretVault()
-    accounts: set = set()
-    ports: set = set()
-    for instance in update.instances:
-        if instance.account.lower() in accounts:
-            raise _refusal(CODE_ACCOUNT_DUPLICATE, account=instance.account)
-        if instance.port in ports:
-            raise _refusal(CODE_PORT_DUPLICATE, port=instance.port)
-        accounts.add(instance.account.lower())
-        ports.add(instance.port)
-        if not row.is_login_named:
-            continue
-        if instance.login_id:
-            record = vault.get(instance.login_id)
-            if record is None or record.kind != LOGIN_KIND:
-                raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_INSTANCE_LOGIN_KEY)
-        elif is_windows:
-            raise _refusal(CODE_CREDENTIAL_MISSING, account=instance.account)
-    stored = {key: value for key, value in context.config.items() if key != "instances"}
-    stored["instances"] = [
-        _record(row, runtime, context, instance) for instance in update.instances
-    ]
-    store_config(runtime, context, stored)
+    require_online(context)
+    available = {
+        account.account
+        for account in DeviceAccountStore(runtime.desired_states).accounts(context.key)
+    }
+    chosen: list = []
+    for account in update.accounts:
+        if account not in available:
+            raise _refusal(
+                status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_UNKNOWN, account=account
+            )
+        if account in chosen:
+            raise _refusal(
+                status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_DUPLICATE, account=account
+            )
+        chosen.append(account)
+    previous = dict(context.config)
+    try:
+        written = runtime.desired_states.set_enabled_accounts(
+            context.key, row.name, chosen
+        )
+    except OSError as error:
+        raise _config_unwritable(error) from error
+    try:
+        _validate(runtime, context, written)
+    except HTTPException:
+        write_module_config(runtime, context.key, row.name, previous)
+        raise
+    context.config = written
+    if row.name not in DEVICE_AGENT_MODULES:
+        try:
+            runtime.desired_states.set_want(
+                context.key, row.name, CHANNEL_MODULE_STATE_RUNNING
+            )
+        except OSError as error:
+            raise _config_unwritable(error) from error
+    push_state(runtime, context.key)
+    recompose_published(runtime, row.name)
     return device_view(row, runtime, context)
 
 
-def _record(
-    row: DeviceModuleRow, runtime: PanelRuntime, context: DeviceModuleContext, instance
-) -> dict:
-    """One instance as the module's file stores it: its fields, then its seals."""
-    record = {"account": instance.account, "port": instance.port}
-    if row.is_login_named:
-        record[DEVICE_INSTANCE_LOGIN_KEY] = instance.login_id
-    for sealed in row.sealed_fields:
-        record[sealed.key] = runtime.desired_states.sealed_instance_field(
-            context.key, row.name, instance.account, sealed.key
+def _validate(runtime: PanelRuntime, context: DeviceModuleContext, config: dict):
+    """Ask the agent whether the module's section holds together."""
+    try:
+        verdict = runtime.agent_sessions.run_stream_from_thread(
+            context.key,
+            CHANNEL_STREAM_COMMAND,
+            {
+                "module": context.module,
+                "verb": CHANNEL_VERB_VALIDATE,
+                "config": runtime.module_agent_config(
+                    context.key, context.module, config
+                ),
+            },
+            timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
         )
-    return record
+    except AgentOfflineError:
+        raise _refusal(
+            status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=context.key
+        )
+    except StreamRefusedError as error:
+        raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
+    params = dict(verdict.get("params") or {})
+    if verdict.get("code") or int(params.get("exit_code", 1) or 0) != 0:
+        for name in ("exit_code", "output", "result"):
+            params.pop(name, None)
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST,
+            str(verdict.get("code") or "config_invalid"),
+            **params,
+        )
 
 
-def _refusal(code: str, **params) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"code": code, "params": dict(params)},
+def _port(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _config_unwritable(error: OSError) -> HTTPException:
+    return _refusal(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        CODE_CONFIG_UNWRITABLE,
+        detail=str(error)[:200],
     )
 
 
-def _instances_router(row: DeviceModuleRow) -> APIRouter:
-    """The router one module of the kind talks to: the read, the apply, the set."""
-    view_model, _, update_model = MODELS[row.name]
+def _refusal(status_code: int, code: str, **params) -> HTTPException:
+    return HTTPException(
+        status_code=status_code, detail={"code": code, "params": dict(params)}
+    )
+
+
+def _accounts_router(row: DeviceModuleRow) -> APIRouter:
+    """The router one account-layer module talks to: the read, the apply, the set."""
     router = module_router(
         row.name,
-        view_model=view_model,
+        view_model=EnabledAccountsView,
         build_view=functools.partial(device_view, row),
     )
 
-    @router.post("/set", response_model=view_model)
-    def update_settings(
-        update: update_model, runtime: PanelRuntime = Depends(get_runtime)
+    @router.post("/set", response_model=EnabledAccountsView)
+    def update_accounts(
+        update: EnabledAccountsUpdate, runtime: PanelRuntime = Depends(get_runtime)
     ):
-        """Replace the instances, as :func:`replace_instances` says."""
-        return replace_instances(row, update, runtime)
+        """Replace the enabled accounts, as :func:`replace_accounts` says."""
+        return replace_accounts(row, update, runtime)
 
     return router
 
 
-# One router per program run as an account, by module name, in the table's
-# order.
-ROUTERS = {row.name: _instances_router(row) for row in account_program_rows()}
+# One router per account-layer module, by module name, in the table's order.
+ROUTERS = {row.name: _accounts_router(row) for row in account_layer_rows()}

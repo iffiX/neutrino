@@ -64,7 +64,7 @@ def test_a_created_device_is_a_row_under_a_generated_id(stored, config_dir):
         "mac_addresses": [MAC],
         "link_mac": MAC,
         "ssh": None,
-        "client": {"token_sha256": None},
+        "client": {"token_sha256": None, "public_key": None, "agent_version": ""},
         "shown_modules": [],
         "platform": {},
     }

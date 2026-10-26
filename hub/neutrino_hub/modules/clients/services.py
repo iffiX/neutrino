@@ -3,17 +3,19 @@
 A ``service {is_panel: true}`` stream is answered with a panel sign-in
 token for a client that holds the ``panel`` permission.
 
-A ``service`` stream's close is the material: ``{password}`` for a desktop,
+A ``service`` frame's reply is the material: ``{password}`` for a desktop,
 ``{api_key, model}`` for the AI gateway, ``{token}`` for a VS Code
 instance, and for a CloudCLI, code-server or Codeg instance and for Hermes
-WebUI a ``{token}`` minted for that one answer. The published list carries no secret; this is where the one secret
-a service takes from the hub is opened, for one close.
+WebUI a ``{token}`` minted for that one answer, ``{account, private_key,
+host_key}`` for an ``ssh`` entry and ``{user, password}`` for a machine's
+share. The published list carries no secret; this is where the one secret a
+service takes from the hub is opened, for one reply.
 
 A ``connect`` stream is judged by the same checks, with the stream limit
 among them, and is answered with where its bytes go: a managed machine's
-agent at a port, or an address the hub dials itself. An agent's ``connect``,
-opened by its AI gateway forward, names the ``ai`` entry and goes to the
-gateway while that machine's AI tools setting is on.
+agent at a port, or an address the hub's transport dials itself. An agent's
+``connect``, opened by its AI gateway forward, names the ``ai`` entry and
+goes to the gateway while that machine's AI tools setting is on.
 """
 
 from dataclasses import dataclass, field
@@ -44,7 +46,13 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
-from neutrino_hub.modules.devices.constants import DEVICE_HERMES_WEBUI_MODULE
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_HERMES_WEBUI_MODULE,
+    DEVICE_SAMBA_MODULE,
+    DEVICE_SAMBA_PASSWORD_KEY,
+    DEVICE_SSH_SERVER_KEY_KEY,
+    DEVICE_SSH_SERVER_MODULE,
+)
 from neutrino_hub.modules.devices.module_table import account_program_rows
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -56,10 +64,12 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_SAMBA_DEFAULT_PORT,
     SERVICES_SOURCE_DECLARED,
+    SERVICES_SOURCE_MODULE,
     SERVICES_TYPE_AI,
     SERVICES_TYPE_FILE,
     SERVICES_TYPE_PORT,
     SERVICES_TYPE_RDP,
+    SERVICES_TYPE_SSH,
     SERVICES_TYPE_WEB,
 )
 from neutrino_hub.modules.services.host_scope import (
@@ -125,6 +135,10 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         if credential is None:
             return VaultLockedError.code, {}
         return "", credential
+    if entry["type"] == SERVICES_TYPE_SSH:
+        return _ssh_material(runtime, raw, entry)
+    if entry["type"] == SERVICES_TYPE_FILE:
+        return _share_material(runtime, raw, entry)
     if entry["description_code"] == SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE:
         token = runtime.desired_states.module_token(
             str(raw.get("device_id") or ""), DEVICE_HERMES_WEBUI_MODULE
@@ -317,7 +331,7 @@ def entry_port(entry: dict) -> int:
         except ValueError:
             return 0
         return port or SCHEME_PORTS.get(parts.scheme, 0)
-    if entry.get("type") in (SERVICES_TYPE_PORT, SERVICES_TYPE_RDP):
+    if entry.get("type") in (SERVICES_TYPE_PORT, SERVICES_TYPE_SSH, SERVICES_TYPE_RDP):
         try:
             return int(payload.get("port") or 0)
         except (TypeError, ValueError):
@@ -419,6 +433,74 @@ def _unresolved_entry(runtime, entry_id: str) -> dict:
         if entry["id"] == entry_id:
             return entry
     return {}
+
+
+def _ssh_material(runtime, raw: dict, entry: dict) -> tuple:
+    """The key and the host key an ``ssh`` entry's client takes.
+
+    Returns:
+        ``("", {account, private_key, host_key})``, or ``vault_locked`` when
+        the account's key does not open.
+    """
+    device_id = str(raw.get("device_id") or "")
+    account = str(entry["payload"].get("account", "") or "")
+    private_key = runtime.desired_states.account_secret(
+        device_id, DEVICE_SSH_SERVER_MODULE, account, DEVICE_SSH_SERVER_KEY_KEY
+    )
+    if not private_key:
+        return VaultLockedError.code, {}
+    return "", {
+        "account": account,
+        "private_key": private_key,
+        "host_key": host_key_of(runtime, device_id),
+    }
+
+
+def _share_material(runtime, raw: dict, entry: dict) -> tuple:
+    """The SMB login a machine's share is mounted with.
+
+    A declared app's ``file`` entry has no login the hub knows: its reply is
+    empty, and the person types the login on the client.
+
+    Returns:
+        ``("", {user, password})`` for a machine's share, ``("", {})`` for a
+        declared one, or ``vault_locked`` when the password does not open.
+    """
+    device_id = str(raw.get("device_id") or "")
+    if raw.get("source") != SERVICES_SOURCE_MODULE or not device_id:
+        return "", {}
+    payload = entry["payload"]
+    account = str(payload.get("share", "") or "")
+    users = payload.get("users") or []
+    password = runtime.desired_states.account_secret(
+        device_id, DEVICE_SAMBA_MODULE, account, DEVICE_SAMBA_PASSWORD_KEY
+    )
+    if not password:
+        return VaultLockedError.code, {}
+    return "", {"user": str(users[0]) if users else account, "password": password}
+
+
+def host_key_of(runtime, device_id: str) -> str:
+    """The public host key a machine's SSH server last reported.
+
+    Args:
+        runtime: The shared runtime, for the agents' reports.
+        device_id: The machine.
+
+    Returns:
+        The key in OpenSSH form, empty while the machine has not reported it.
+    """
+    report = runtime.agent_sessions.reports().get(device_id) or {}
+    modules = report.get("modules") if isinstance(report, dict) else None
+    status = (
+        (modules or {}).get(DEVICE_SSH_SERVER_MODULE)
+        if isinstance(modules, dict)
+        else None
+    )
+    details = status.get("details") if isinstance(status, dict) else None
+    if not isinstance(details, dict):
+        return ""
+    return str(details.get("host_key", "") or "")
 
 
 def _instance_row(description_code: str):

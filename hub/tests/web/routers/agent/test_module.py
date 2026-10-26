@@ -375,7 +375,9 @@ def test_each_press_writes_its_want_and_pushes_the_state(api, tmp_path, press, w
 
     assert answer.status_code == 200
     assert answer.json()["modules"][0]["want"] == want
-    assert modules_file(tmp_path) == {"fakedesk": {"want": want, "is_settled": False}}
+    assert modules_file(tmp_path) == {
+        "fakedesk": {"want": want, "is_settled": False, "version": ""}
+    }
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
@@ -464,6 +466,7 @@ def test_vscode_is_stopped_and_uninstalled_without_its_terms(api, monkeypatch):
 # the picker lets a person choose there.
 SUPPORTED_OFF_LINUX = {
     "remote_desktop": (True, True),
+    "ssh_server": (True, True),
     "terminal": (True, True),
     "cloudcli": (True, True),
     "code_server": (False, True),
@@ -816,16 +819,20 @@ def test_a_configuration_is_checked_on_the_agent_then_stored_then_pushed(box):
     _, runtime = box
     context = device_modules.device_context(runtime, MODULE, LAPTOP)
 
-    device_modules.store_config(runtime, context, {"users": ["ann"]})
+    device_modules.store_config(runtime, context, {"accounts": []})
 
     # The agent checks the section the state will carry: Samba's with the
     # networks its shares answer, which the file does not hold.
     assert runtime.agent_sessions.validations == [
-        (LAPTOP, MODULE, {"users": ["ann"], "allowed_subnets": []})
+        (
+            LAPTOP,
+            MODULE,
+            {"shares": [], "users": [], "passwords": {}, "allowed_subnets": []},
+        )
     ]
-    assert runtime.desired_states.read(LAPTOP, MODULE) == {"users": ["ann"]}
+    assert runtime.desired_states.read(LAPTOP, MODULE) == {"accounts": []}
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
-    assert context.config == {"users": ["ann"]}
+    assert context.config == {"accounts": []}
     # What a machine shares is what the published list reads.
     assert runtime.published_services.refreshes == 1
 
@@ -1139,8 +1146,8 @@ def test_a_container_module_s_install_or_start_wants_containers_running_first(
 
     assert answer.status_code == 200
     assert modules_file(tmp_path) == {
-        "podman": {"want": "running", "is_settled": False},
-        "demo": {"want": want, "is_settled": False},
+        "podman": {"want": "running", "is_settled": False, "version": ""},
+        "demo": {"want": want, "is_settled": False, "version": ""},
     }
     # The report leaves demo out, so it reads absent and its press marks it.
     assert set(retry_marks()) == {"podman", "demo"}
@@ -1154,7 +1161,11 @@ def test_containers_already_wanted_running_is_left_as_it_is(containers_api, tmp_
 
     client.post(f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "demo"})
 
-    assert modules_file(tmp_path)["podman"] == {"want": "running", "is_settled": False}
+    assert modules_file(tmp_path)["podman"] == {
+        "want": "running",
+        "is_settled": False,
+        "version": "",
+    }
     assert "podman" not in retry_marks()
 
 

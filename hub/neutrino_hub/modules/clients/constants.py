@@ -1,8 +1,11 @@
-from neutrino_hub.modules.services.constants import SERVICES_TYPES
+from neutrino_hub.modules.services.constants import SERVICES_TYPE_SSH, SERVICES_TYPES
 
 # Where the enrolled clients live under config/. Real file gitignored; the
 # example beside it in data/examples documents the shape.
 CLIENTS_CONFIG_PATH = "clients/clients.json"
+# The key the file carries once the first 0.6.0 start added ``ssh`` to every
+# stored permission that names ``terminal``; a file without it is a 0.5 one.
+CLIENT_SSH_GRANTED_KEY = "is_ssh_granted"
 CLIENT_TOKEN_BYTES = 24
 
 # The gateway key label every client's key carries: the prefix, then its name.
@@ -32,6 +35,7 @@ CLIENT_CODE_PERMISSION_KIND_UNKNOWN = "permission_kind_unknown"
 CLIENT_PERMISSION_OVERLAY = "overlay"
 CLIENT_PERMISSION_TERMINAL = "terminal"
 CLIENT_PERMISSION_PANEL = "panel"
+CLIENT_PERMISSION_SSH = SERVICES_TYPE_SSH
 CLIENT_PERMISSION_KINDS = SERVICES_TYPES + (
     CLIENT_PERMISSION_OVERLAY,
     CLIENT_PERMISSION_TERMINAL,

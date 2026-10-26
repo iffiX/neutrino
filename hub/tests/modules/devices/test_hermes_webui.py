@@ -1,9 +1,9 @@
 """Hermes WebUI on the hub: its file, the configuration the state sends, its two containers.
 
-What these pin: the first install or port set generates the token secret and
-the webui's password once and keeps them; a port outside 1024 to 65535 is
-refused; the state carries ``{port, secret, password}`` opened and the login
-cookie's name, ``hermes_session_`` and the device id's first 12 characters;
+What these pin: the first install generates the token secret and the
+webui's password once and keeps them; the state carries ``{secret,
+password}`` opened, the login cookie's name, ``hermes_session_`` and the
+device id's first 12 characters, and the app's local name;
 the two hub containers as the module's page lists them, the cookie's name in
 the webui's environment, with the gateway's address on a
 managed machine and on the hub's own; no container while the password does
@@ -61,49 +61,33 @@ def test_the_first_install_generates_both_secrets_once_and_keeps_them(store):
     again = hermes_webui.ensure_config(store, DEVICE)
 
     assert first == again == store.read(DEVICE, "hermes_webui")
-    assert first["port"] == 8787
+    assert set(first) == {"secret_sealed", "password_sealed"}
     secret = opened(first, "secret_sealed", b"device_hermes_webui:secret")
     password = opened(first, "password_sealed", b"device_hermes_webui:password")
     assert len(secret) >= 40 and len(password) >= 40 and secret != password
 
 
-def test_a_port_set_is_stored_beside_the_kept_secrets(store):
-    first = hermes_webui.ensure_config(store, DEVICE)
+def test_the_state_carries_both_secrets_opened_and_the_local_name(store):
+    stored = hermes_webui.ensure_config(store, DEVICE)
 
-    moved = hermes_webui.ensure_config(store, DEVICE, port=9100)
-
-    assert moved["port"] == 9100
-    assert moved["secret_sealed"] == first["secret_sealed"]
-    assert moved["password_sealed"] == first["password_sealed"]
-    assert hermes_webui.ensure_config(store, DEVICE)["port"] == 9100
-
-
-@pytest.mark.parametrize("port", [0, 80, 1023, 65536, True, "8787"])
-def test_a_port_outside_1024_to_65535_is_refused(store, port):
-    with pytest.raises(ValueError):
-        hermes_webui.ensure_config(store, DEVICE, port=port)
-    assert store.read(DEVICE, "hermes_webui") == {}
-
-
-def test_the_state_carries_the_port_and_both_secrets_opened(store):
-    stored = hermes_webui.ensure_config(store, DEVICE, port=9000)
-
-    config = store.agent_config(DEVICE, "hermes_webui", stored, LINUX)
+    config = store.agent_config(
+        DEVICE, "hermes_webui", stored, LINUX, machine_slug="argon"
+    )
 
     assert config == {
-        "port": 9000,
         "secret": opened(stored, "secret_sealed", b"device_hermes_webui:secret"),
         "password": opened(stored, "password_sealed", b"device_hermes_webui:password"),
         "cookie_name": "hermes_session_dev-1",
+        "local_name": "hermes-webui.argon.localhost",
     }
 
 
-def test_a_file_with_nothing_sealed_sends_empty_secrets_and_the_default_port():
+def test_a_file_with_nothing_sealed_sends_empty_secrets():
     assert hermes_webui.agent_config({}, DEVICE) == {
-        "port": 8787,
         "secret": "",
         "password": "",
         "cookie_name": "hermes_session_dev-1",
+        "local_name": "",
     }
 
 

@@ -7,7 +7,10 @@ Samba configuration through the same checked door every save uses.
 
 import pytest
 
+from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+
 from neutrino_hub.web.routers.agent import module_zfs as zfs_router
+from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, HOST, OFFLINE, module_box
 
 BASE = "/api/agent/module/zfs"
@@ -66,6 +69,7 @@ DISK = {
 
 @pytest.fixture
 def box(monkeypatch, tmp_path):
+    unlock_vault(monkeypatch, tmp_path)
     client, runtime = module_box(monkeypatch, tmp_path, zfs_router.router)
     runtime.report(
         DEVICE,
@@ -78,10 +82,12 @@ def box(monkeypatch, tmp_path):
     )
     runtime.desired_states.set_want(DEVICE, "samba", "running")
     runtime.desired_states.write(
-        DEVICE,
-        "samba",
-        {"shares": [{"name": "old", "path": "/srv/old"}], "users": ["ann"]},
+        DEVICE, "samba", {"shares": [{"name": "old", "path": "/srv/old"}]}
     )
+    DeviceAccountStore(runtime.desired_states).add(
+        DEVICE, DeviceAccount(account="ann", share_path="/home/ann")
+    )
+    runtime.desired_states.set_enabled_accounts(DEVICE, "samba", ["ann"])
     runtime.report(DEVICE, "samba", "installed", is_active=True)
     with client:
         yield client, runtime
@@ -89,11 +95,9 @@ def box(monkeypatch, tmp_path):
 
 def test_the_view_nests_datasets_under_their_pool_with_their_share(box):
     client, runtime = box
-    runtime.desired_states.write(
-        DEVICE,
-        "samba",
-        {"shares": [{"name": "media", "path": "/srv/media"}], "users": ["ann"]},
-    )
+    stored = runtime.desired_states.read(DEVICE, "samba")
+    stored["shares"] = [{"name": "media", "path": "/srv/media"}]
+    runtime.desired_states.write(DEVICE, "samba", stored)
 
     payload = client.get(BASE, params={"device_id": DEVICE}).json()
 

@@ -1,13 +1,14 @@
 """Hermes WebUI on the hub: its file, the configuration the state sends, and its two containers.
 
-The file is ``config/devices/<id>/hermes_webui.json``: ``port``, the
-forwarder's, 8787 unless the person sets another; the token secret and the
-webui's password, generated the first time the module is installed or its
-port is set and sealed under the vault's data key; and the module's gateway
-key. The state carries ``{port, secret, password}`` opened, and the name
-of the webui's login cookie on the device. The module runs two hub
-containers on Containers: the agent's gateway first, then the webui, which
-starts after it and whose 8787 the module's forwarder serves.
+The file is ``config/devices/<id>/hermes_webui.json``: the token secret and
+the webui's password, generated the first time the module is installed and
+sealed under the vault's data key, and the module's gateway key. The state
+carries ``{secret, password, cookie_name, local_name}`` opened: the name of
+the webui's login cookie on the device and the app's local name, which its
+forwarder checks the ``Host`` against. The forwarder's port is the agent's.
+The module runs two hub containers on Containers: the agent's gateway first,
+then the webui, which starts after it and whose 8787 the module's forwarder
+serves.
 
 Pure apart from the module's file, read and written through the store.
 """
@@ -25,11 +26,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_AGENT_CONTAINER,
     DEVICE_HERMES_WEBUI_AGENT_IMAGE,
     DEVICE_HERMES_WEBUI_AGENT_VOLUMES,
-    DEVICE_HERMES_WEBUI_DEFAULT_PORT,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_HERMES_WEBUI_PAGE_PORT,
-    DEVICE_HERMES_WEBUI_PORT_MAX,
-    DEVICE_HERMES_WEBUI_PORT_MIN,
     DEVICE_HERMES_WEBUI_STATE_DIR,
     DEVICE_HERMES_WEBUI_UID,
     DEVICE_HERMES_WEBUI_WEBUI_CONTAINER,
@@ -45,60 +43,25 @@ from neutrino_hub.modules.devices.module_table import module_row
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 
 
-def is_port_valid(port) -> bool:
-    """Whether a port is one the forwarder may listen on.
-
-    Args:
-        port: What was asked for.
-
-    Returns:
-        True for an integer from 1024 to 65535.
-    """
-    return (
-        isinstance(port, int)
-        and not isinstance(port, bool)
-        and DEVICE_HERMES_WEBUI_PORT_MIN <= port <= DEVICE_HERMES_WEBUI_PORT_MAX
-    )
-
-
-def stored_port(stored: dict) -> int:
-    """The forwarder's port the module's file holds, 8787 when it holds none.
-
-    Args:
-        stored: The module's file.
-
-    Returns:
-        The port.
-    """
-    port = stored.get("port")
-    return port if is_port_valid(port) else DEVICE_HERMES_WEBUI_DEFAULT_PORT
-
-
-def ensure_config(store, key: str, *, port: "int | None" = None) -> dict:
-    """Write the module's file with its port and both secrets, generating a secret it lacks.
+def ensure_config(store, key: str) -> dict:
+    """Write the module's file with both secrets, generating a secret it lacks.
 
     Args:
         store: The desired state store.
         key: The device.
-        port: The forwarder's port; None keeps the stored one, 8787 when
-            the file holds none.
 
     Returns:
         The file as it stands afterwards.
 
     Raises:
-        ValueError: For a port outside 1024 to 65535.
         VaultLockedError: When a secret is missing and there is no data key
             to seal one under.
         OSError: When the file cannot be written.
     """
-    if port is not None and not is_port_valid(port):
-        raise ValueError(f"port {port!r} is outside 1024 to 65535")
     row = module_row(DEVICE_HERMES_WEBUI_MODULE)
     with CONFIG_WRITE_LOCK:
         held = store.read(key, DEVICE_HERMES_WEBUI_MODULE)
-        written = dict(held)
-        written["port"] = port if port is not None else stored_port(held)
+        written = {name: value for name, value in held.items() if name != "port"}
         for sealed in row.sealed_fields:
             current = held.get(sealed.key)
             if isinstance(current, dict) and current:
@@ -123,21 +86,24 @@ def cookie_name(key: str) -> str:
     return DEVICE_HERMES_WEBUI_COOKIE_PREFIX + key[:DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS]
 
 
-def agent_config(stored: dict, key: str) -> dict:
+def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
     """What the agent is sent for Hermes WebUI.
 
     Args:
         stored: The module's file.
         key: The device.
+        local_name: The app's local name, which the forwarder checks the
+            ``Host`` against.
 
     Returns:
-        ``{port, secret, password, cookie_name}``, each secret opened, empty
-        when the file holds none or the vault cannot open it.
+        ``{secret, password, cookie_name, local_name}``, each secret opened,
+        empty when the file holds none or the vault cannot open it.
     """
-    config = {"port": stored_port(stored)}
+    config = {}
     for sealed in module_row(DEVICE_HERMES_WEBUI_MODULE).sealed_fields:
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
     config["cookie_name"] = cookie_name(key)
+    config["local_name"] = local_name
     return config
 
 

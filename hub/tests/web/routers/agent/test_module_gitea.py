@@ -2,6 +2,7 @@
 
 import pytest
 
+from neutrino_hub.modules.services.apps import entry_id, local_port
 from neutrino_hub.web.routers.agent import module_gitea as gitea_router
 from tests.web.module_api_box import DEVICE, HOST, OFFLINE, module_box
 
@@ -115,6 +116,7 @@ def test_saving_settings_checks_stores_and_pushes(box):
                 "is_registration_enabled": True,
                 "address": HOST,
                 "secrets": secrets,
+                "ssh_port": local_port(entry_id(f"gitea_{DEVICE}", "ssh")),
             },
         )
     ]

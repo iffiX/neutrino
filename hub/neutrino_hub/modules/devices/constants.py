@@ -163,10 +163,12 @@ DEVICE_MODULE_PANEL_INSTANCES = "instances"
 DEVICE_INSTANCE_LOGIN_KEY = "login_id"
 
 # The modules a device hosts from the hub's desired state, in the order the
-# agent applies them. One file per module under the device's directory.
+# agent applies them, the SSH server the agent carries among them. One file
+# per module under the device's directory.
 DEVICE_MODULE_NAMES = (
     "zfs",
     "samba",
+    "ssh_server",
     "gitea",
     "podman",
     "hermes_webui",
@@ -182,18 +184,37 @@ DEVICE_CONFIG_DIR_NAME = "devices"
 DEVICE_MODULES_FILE = "modules.json"
 DEVICE_RDP_FILE = "rdp.json"
 DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
-# The machine's AI tools setting, read and written by the name its file
-# takes beside the modules' own: whether its tools use the hub's gateway, and
-# the tool configuration the client's Configure dialog saves.
+# The machine's available accounts, the account layer's one form per account
+# (agent.md, "The two layers and the accounts"): the name the file takes
+# beside the modules' own, and each row's fields.
+DEVICE_ACCOUNTS_NAME = "accounts"
+DEVICE_ACCOUNTS_FILE = f"{DEVICE_ACCOUNTS_NAME}.json"
+DEVICE_ACCOUNT_FIELDS = (
+    "account",
+    "login_id",
+    "share_path",
+    "shell_path",
+    "is_ai_tools_enabled",
+    "tool_configs",
+)
+# The key the machine's AI tools setting takes in the state and in the
+# retry marks; the setting itself is each account's switch.
 DEVICE_AI_TOOLS_NAME = "ai_tools"
+# The 0.5 file of the machine-wide AI tools setting, read once at the first
+# start to move its switch onto each account.
 DEVICE_AI_TOOLS_FILE = f"{DEVICE_AI_TOOLS_NAME}.json"
 # The files a device directory may hold that are not a module's own.
 DEVICE_DIR_FILES = (
     DEVICE_MODULES_FILE,
     DEVICE_RDP_FILE,
     DEVICE_GITEA_SECRETS_FILE,
-    DEVICE_AI_TOOLS_FILE,
+    DEVICE_ACCOUNTS_FILE,
 )
+# The key an account-layer module's file holds its enabled accounts under,
+# and the one its records of accounts disabled since keep their secrets
+# under, so a toggle keeps a login a browser or a client holds.
+DEVICE_ENABLED_ACCOUNTS_KEY = "accounts"
+DEVICE_DISABLED_ACCOUNTS_KEY = "disabled"
 
 # The module whose configuration is the hub's own secrets and nothing the
 # machine can be read for.
@@ -242,16 +263,49 @@ DEVICE_AI_SWITCHER_NAME = "cc_switch"
 # account and port, the secret its tokens are signed with, which the hub
 # generates once and keeps sealed.
 DEVICE_CODE_SERVER_MODULE = "code_server"
-# The two modules the agent's package carries, each composed from its own
+# The three modules the agent's package carries, each composed from its own
 # file under the device's directory and sent to every managed device. The
-# Terminal module's settings name the account a shell runs as and its shell
-# program, both empty for the default; a Windows machine is sent no account.
-# The Remote desktop module's switch is its ``want``: running while on,
-# stopped while off.
+# Terminal module's file holds its enabled accounts, and so does the SSH
+# server's, whose ``want`` is running while it enables one; the Remote
+# desktop module's switch is its ``want``: running while on, stopped while
+# off.
 DEVICE_TERMINAL_MODULE = "terminal"
 DEVICE_REMOTE_DESKTOP_MODULE = "remote_desktop"
-DEVICE_AGENT_MODULES = (DEVICE_TERMINAL_MODULE, DEVICE_REMOTE_DESKTOP_MODULE)
-DEVICE_TERMINAL_ACCOUNT_OS = ("linux", "darwin")
+DEVICE_SSH_SERVER_MODULE = "ssh_server"
+DEVICE_AGENT_MODULES = (
+    DEVICE_TERMINAL_MODULE,
+    DEVICE_REMOTE_DESKTOP_MODULE,
+    DEVICE_SSH_SERVER_MODULE,
+)
+# The system whose accounts start a process only with their password, so
+# every feature of an account there is sent the account's login.
+DEVICE_PASSWORD_OS = "windows"
+# The file share's SMB user of an enabled account (agent.md, "The file
+# share's accounts"): the account itself on Linux, ``smb_<account>`` cut to
+# 20 characters on Windows and macOS; its generated password, 24 random bytes
+# in base64url, sealed in samba.json under this key.
+DEVICE_SAMBA_MODULE = "samba"
+DEVICE_SAMBA_USER_PREFIX = "smb_"
+DEVICE_SAMBA_USER_CHARS_MAX = 20
+DEVICE_SAMBA_USER_PREFIX_OS = ("windows", "darwin")
+# The shares the file names beside the accounts': a ZFS dataset's, each with
+# its valid_users among the enabled accounts' SMB users.
+DEVICE_SAMBA_SHARES_KEY = "shares"
+DEVICE_SAMBA_PASSWORD_KEY = "password_sealed"  # scan: allow
+DEVICE_SAMBA_PASSWORD_AAD = b"device_samba:password"
+DEVICE_SAMBA_PASSWORD_BYTES = 24
+# The SSH server's key for an enabled account, one Ed25519 pair per account
+# and machine: the private half sealed in ssh_server.json under this key,
+# the public half the instance's one authorized key.
+DEVICE_SSH_SERVER_KEY_KEY = "private_key_sealed"  # scan: allow
+DEVICE_SSH_SERVER_KEY_AAD = b"device_ssh_server:private_key"
+DEVICE_SSH_SERVER_KEY_COMMENT = "neutrino"
+# Where the module versions feature keeps the publishers' feeds as last read
+# (module_install.md, "Module versions"), how often it reads them, and what
+# a feed answer may weigh.
+DEVICE_MODULE_RELEASES_PATH = UTILS_STATE_ROOT / "module_releases.json"
+DEVICE_MODULE_RELEASES_INTERVAL_S = 24 * 60 * 60
+DEVICE_MODULE_RELEASES_VERSIONS_MAX = 50
 # The systems whose containers run in an account's Podman machine; only these
 # are sent the Run settings, ``machine`` in ``podman.json``.
 DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")
@@ -275,13 +329,10 @@ DEVICE_MODULE_GATEWAY_LABEL = "device/{device}/{module}"
 DEVICE_CONTAINER_GATEWAY_URL = "http://host.containers.internal:{port}"
 DEVICE_CONTAINER_GATEWAY_FORWARD_PORT = 8317
 # Hermes WebUI: two hub containers, the agent's gateway and the webui. Its
-# file under the device's directory holds the forwarder's port, two secrets
-# the hub generates once and keeps sealed, the token secret and the webui's
-# password, and the module's gateway key.
+# file under the device's directory holds two secrets the hub generates once
+# and keeps sealed, the token secret and the webui's password, and the
+# module's gateway key; the forwarder's port is the agent's.
 DEVICE_HERMES_WEBUI_MODULE = "hermes_webui"
-DEVICE_HERMES_WEBUI_DEFAULT_PORT = 8787
-DEVICE_HERMES_WEBUI_PORT_MIN = 1024
-DEVICE_HERMES_WEBUI_PORT_MAX = 65535
 DEVICE_HERMES_WEBUI_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_HERMES_WEBUI_PASSWORD_KEY = "password_sealed"  # scan: allow
 DEVICE_HERMES_WEBUI_SECRET_AAD = b"device_hermes_webui:secret"
@@ -382,3 +433,7 @@ DEVICE_KEY_ERROR_NO_BCRYPT = "key_encryption_unsupported"
 DEVICE_KEY_ERROR_PASSPHRASE_WRONG = "key_passphrase_wrong"
 DEVICE_KEY_ERROR_PASSPHRASE_NEEDED = "key_passphrase_needed"
 DEVICE_KEY_ERROR_UNREADABLE = "key_unreadable"
+
+# The module catalog the machine page's Add module dialog draws, shipped in
+# the package: every module by the activity it serves, in the dialog's order.
+DEVICE_MODULE_CATALOG_PATH = UTILS_DATA_DIR / "module_catalog.json"

@@ -390,6 +390,16 @@ def _record_machine(runtime, key: str, machine) -> None:
     accounts = machine.get("accounts")
     if isinstance(accounts, list):
         runtime.device_accounts[key] = [str(account) for account in accounts]
+    details = machine.get("account_details")
+    if isinstance(details, list):
+        runtime.device_account_details[key] = {
+            str(entry.get("account", "")): {
+                "home": str(entry.get("home", "") or ""),
+                "shell": str(entry.get("shell", "") or ""),
+            }
+            for entry in details
+            if isinstance(entry, dict) and entry.get("account")
+        }
     metrics = machine.get("metrics")
     runtime.device_metrics[key] = dict(metrics) if isinstance(metrics, dict) else {}
 

@@ -59,7 +59,7 @@ def test_filtering_keeps_the_allowed_entries_in_order():
 def test_kinds_come_back_once_each_in_the_one_order():
     assert permission_kinds(["terminal", "web", "terminal"]) == ["web", "terminal"]
     with pytest.raises(ValueError):
-        permission_kinds(["web", "ssh"])
+        permission_kinds(["web", "exec"])
 
 
 def test_a_device_filter_drops_empty_lists_and_repeats_and_refuses_the_overlay():

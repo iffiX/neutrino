@@ -2,7 +2,7 @@
 
 The module opens on a machine only once the person has accepted the terms
 for it, recorded as ``terms_accepted_at`` in the device's ``vscode.json``
-beside the instances the shared router keeps there. The press that opens
+beside the enabled accounts the shared router keeps there. The press that opens
 the terms records the acceptance; a false withdraws it.
 """
 
@@ -16,7 +16,7 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.module_table import module_row
 from neutrino_hub.web.dependencies import get_runtime, require_session
-from neutrino_hub.web.models import VscodeDeviceView, VscodeTermsUpdate
+from neutrino_hub.web.models import EnabledAccountsView, VscodeTermsUpdate
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
     device_context,
@@ -33,11 +33,11 @@ router = APIRouter(
 )
 
 
-@router.post("/terms/set", response_model=VscodeDeviceView)
+@router.post("/terms/set", response_model=EnabledAccountsView)
 def update_terms(
     update: VscodeTermsUpdate,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> VscodeDeviceView:
+) -> EnabledAccountsView:
     """Record or withdraw the person's acceptance of the terms on one machine.
 
     An acceptance already recorded keeps its first time.

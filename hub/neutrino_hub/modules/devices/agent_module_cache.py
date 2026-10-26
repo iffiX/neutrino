@@ -34,6 +34,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
     DEVICE_ARTIFACT_FILE_KINDS,
 )
+from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.manifests import (
     artifact_file,
     artifact_sources,
@@ -104,20 +105,23 @@ def format_megabytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f}"
 
 
-def artifact_title(manifest: dict, entry: dict, artifact: dict) -> str:
+def artifact_title(
+    manifest: dict, entry: dict, artifact: dict, *, version: str = ""
+) -> str:
     """What progress lines call one artifact: its module's title and version.
 
     Args:
         manifest: The module's or the tool's manifest.
         entry: The entry for the machine's platform.
         artifact: The artifact.
+        version: The version installed; empty is the entry's tested one.
 
     Returns:
         Such as ``VS Code 1.140.0``, or ``Containers 6.1.4 (image)`` for an
         entry with more than one artifact.
     """
     title = str(manifest.get("title", "") or manifest.get("name", ""))
-    version = entry_version(manifest, entry)
+    version = version or entry_version(manifest, entry)
     titled = f"{title} {version}" if version else title
     if len(entry_artifacts(manifest, entry)) > 1:
         return f"{titled} ({artifact['name']})"
@@ -189,6 +193,8 @@ class AgentModuleCache:
         root: "Path | None" = None,
         fetcher: "SourceFetcher | None" = None,
         named_modules: "Callable[[], set] | None" = None,
+        named_versions: "Callable[[], dict] | None" = None,
+        releases: "ModuleReleaseStore | None" = None,
     ):
         """
         Args:
@@ -199,10 +205,18 @@ class AgentModuleCache:
             named_modules: Returns the modules some machine names; their
                 files are kept and every other module's go. None keeps every
                 module's files.
+            named_versions: Returns module to the versions some machine
+                chose; the files of those listed versions are kept too. None
+                keeps the tested versions' files alone.
+            releases: The publishers' feeds as last read, where a chosen
+                version's digests and sources come from; None reads the
+                state root's.
         """
         self._root = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
         self._fetcher = fetcher if fetcher is not None else SourceFetcher()
         self._named_modules = named_modules
+        self._named_versions = named_versions
+        self._releases = releases if releases is not None else ModuleReleaseStore()
         self._guard = threading.Lock()
         self._fetch_locks: dict = {}
 
@@ -252,7 +266,13 @@ class AgentModuleCache:
         _, entry = resolve_platform_entry(manifest, platform)
         if entry is None:
             raise AgentArtifactFetchError("no_platform_build", module=module)
+        version = entry_version(manifest, entry)
         named = self._named_artifact(manifest, entry, artifact, digest)
+        sources = None
+        if named is None:
+            named, version, sources = self._listed_artifact(
+                manifest, entry, module, platform, artifact, digest
+            )
         if named is None:
             raise AgentArtifactFetchError(
                 "module_artifact_unknown",
@@ -260,9 +280,8 @@ class AgentModuleCache:
                 artifact=artifact,
                 digest=digest,
             )
-        version = entry_version(manifest, entry)
         file = artifact_file(named, version)
-        title = artifact_title(manifest, entry, named)
+        title = artifact_title(manifest, entry, named, version=version)
         hexed = hex_of(digest)
         path = self._root / hexed
         with self._lock_for(hexed):
@@ -270,7 +289,18 @@ class AgentModuleCache:
                 if on_progress is not None:
                     on_progress(f"hub: {title} is in the cache")
             else:
-                self._fetch(named, file, version, digest, path, on_progress)
+                self._fetch(
+                    named,
+                    file,
+                    digest,
+                    path,
+                    on_progress,
+                    sources=(
+                        sources
+                        if sources is not None
+                        else artifact_sources(named, version)
+                    ),
+                )
                 self._prune()
         return AgentModuleArtifact(path=path, digest=digest, file=file, title=title)
 
@@ -282,6 +312,7 @@ class AgentModuleCache:
             module some machine names, and of every tool's artifacts.
         """
         named = self._named_modules() if self._named_modules is not None else None
+        versions = self._named_versions() if self._named_versions is not None else {}
         kept = set()
         sources = list(load_module_manifests().items())
         sources += list(load_tool_manifests().items())
@@ -289,11 +320,42 @@ class AgentModuleCache:
         for name, manifest in sources:
             if named is not None and name not in named and name not in tools:
                 continue
-            for entry in (manifest.get("platforms") or {}).values():
+            for platform_key, entry in (manifest.get("platforms") or {}).items():
                 for artifact in entry_artifacts(manifest, entry):
                     if artifact.get("kind") in DEVICE_ARTIFACT_FILE_KINDS:
                         kept.add(hex_of(artifact["digest"]))
+                for listed in self._releases.listed_by_key(name, platform_key):
+                    if str(listed.get("version", "")) not in versions.get(name, ()):
+                        continue
+                    for held in (listed.get("artifacts") or {}).values():
+                        if held.get("digest"):
+                            kept.add(hex_of(held["digest"]))
         return kept
+
+    def _listed_artifact(
+        self,
+        manifest: dict,
+        entry: dict,
+        module: str,
+        platform: dict,
+        name: str,
+        digest: str,
+    ) -> tuple:
+        """One artifact of a listed version by its digest: the artifact, the
+        version and its sources, or ``(None, "", None)``."""
+        for artifact in entry_artifacts(manifest, entry):
+            if artifact.get("name") != name:
+                continue
+            if artifact.get("kind") not in DEVICE_ARTIFACT_FILE_KINDS:
+                return None, "", None
+            for listed in self._releases.listed(module, platform):
+                held = (listed.get("artifacts") or {}).get(name)
+                if not held or held.get("digest") != digest:
+                    continue
+                version = str(listed.get("version", ""))
+                sources = held.get("sources") or artifact_sources(artifact, version)
+                return artifact, version, list(sources)
+        return None, "", None
 
     @staticmethod
     def _named_artifact(manifest: dict, entry: dict, name: str, digest: str):
@@ -307,7 +369,7 @@ class AgentModuleCache:
                 return artifact
         return None
 
-    def _fetch(self, artifact, file, version, digest, path, on_progress) -> None:
+    def _fetch(self, artifact, file, digest, path, on_progress, *, sources) -> None:
         """Fetch one artifact from its sources, check it, and put it in place.
 
         Raises:
@@ -318,7 +380,7 @@ class AgentModuleCache:
         try:
             download = self._fetcher.fetch_file(
                 file=file,
-                sources=artifact_sources(artifact, version),
+                sources=sources,
                 digest=digest,
                 directory=self._root,
                 limit=AGENT_MODULE_FETCH_LIMIT_BYTES,

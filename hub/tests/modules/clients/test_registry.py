@@ -55,6 +55,7 @@ def test_create_makes_a_row_that_has_not_joined(config_dir):
     assert set(stored(config_dir)[client_id]) == {
         "name",
         "token_sha256",
+        "public_key",
         "hostname",
         "machine_id",
         "os_machine_id",
@@ -174,6 +175,7 @@ def test_a_file_with_no_default_allows_every_kind_but_the_panel_and_exec(
     assert registry.default_permission() == [
         "web",
         "port",
+        "ssh",
         "ai",
         "file",
         "rdp",

@@ -408,6 +408,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
     inside each."""
     assert list(load_module_manifests()) == [
         "remote_desktop",
+        "ssh_server",
         "terminal",
         "podman",
         "samba",
@@ -464,6 +465,7 @@ def test_every_shipped_manifest_names_its_publisher():
 
     assert publishers == {
         "remote_desktop": "Neutrino",
+        "ssh_server": "Neutrino",
         "terminal": "Neutrino",
         "podman": "podman-container-tools/podman",
         "samba": "Samba Team",
@@ -479,7 +481,7 @@ def test_every_shipped_manifest_names_its_publisher():
 
 @pytest.mark.parametrize(
     "name",
-    ["ssh_server", "samba_mount", "cc_switch", "rustdesk"],
+    ["samba_mount", "cc_switch", "rustdesk"],
 )
 def test_the_modules_that_left_are_not_shipped_any_more(name):
     assert name not in load_module_manifests()
