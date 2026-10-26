@@ -1055,6 +1055,7 @@ yamux's own ping, which every side sends every `KeepAliveInterval`.
 | Windows | yamux's window per stream, from `StreamWindowInitialBytes` growing with the round trip to `StreamWindowMaxBytes`. A receiver takes bytes as it consumes them, so a long transfer starves nothing. |
 | Result | `close {code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. The side that receives a close writes nothing more and closes the stream, so a stream one side closed gets no close back. A TCP `connect` stream after its `accept` carries no record, so it ends with no code: its end is the end of its bytes, or a yamux reset in the place of the refusing `close` any other stream takes. |
 | Order | The records of one stream arrive in the order they were written. |
+| Small writes | Every socket that carries a stream's bytes over TCP sends them at once, with `TCP_NODELAY` on: the transport's sockets by Go's default, and every Python socket that relays a stream, an agent forwarder's both sockets ([agent/module_template.md](agent/module_template.md), "The run"), the legacy listener's and the Windows client's files adapter's among them, set by hand. |
 
 | `type` | Record | Payload |
 | --- | --- | --- |
