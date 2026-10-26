@@ -161,6 +161,33 @@ jobs:
 
       - run: swift-format lint --strict --recursive client/ios
 
+      # The transport's framework, built by gomobile from transport/mobile and
+      # cached under its own name: this job builds no RustDesk core.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+
+      - name: Name the transport's framework
+        id: transport_key
+        run: echo "key=$(python3 packaging/build/build_core_transport.py --cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the transport's framework
+        id: transport
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.transport_key.outputs.key }}
+
+      - name: Put the transport into the app
+        run: python3 packaging/build/build_core_transport.py
+
+      - name: Save the transport's framework
+        if: steps.transport.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.transport_key.outputs.key }}
+
       - run: xcodegen generate
         working-directory: client/ios
 
@@ -297,7 +324,15 @@ jobs:
       - name: Put the core into the app
         run: python3 packaging/build/build_core_rustdesk_ios.py
 
-      - name: Save the core
+      # The transport's framework, the second core the cache key names.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+
+      - name: Put the transport into the app
+        run: python3 packaging/build/build_core_transport.py
+
+      - name: Save the cores
         if: steps.core.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:

@@ -3,8 +3,10 @@
     python3 packaging/build/build_client_ios.py --output-dir dist/
 
 Runs on: macOS with Xcode and XcodeGen. ``build_core_rustdesk_ios.py`` puts
-the RustDesk core into ``client/ios/cores/rustdesk`` first, from the cores
-cache or built, which needs what that script names. ``xcodegen generate``
+the RustDesk core into ``client/ios/cores/rustdesk`` first, and
+``build_core_transport.py`` the transport's ``Mobile.xcframework`` into
+``client/ios/cores/transport``, each from the cores cache or built, which
+needs what those scripts name. ``xcodegen generate``
 writes the project from ``client/ios/project.yml``, ``xcodebuild`` builds the
 app for ``generic/platform=iOS`` with code signing off, the app's binary must
 define ``_nd_start``, and the ``.app`` is zipped under ``Payload/`` as
@@ -17,7 +19,7 @@ off the hub's pyproject, and the edition reach the app as the build settings
 ``MARKETING_VERSION``, ``CURRENT_PROJECT_VERSION`` and ``NEUTRINO_EDITION``.
 ``--build-settings`` prints those settings, one ``NAME=value`` per line, for
 the CI jobs' ``xcodebuild``, and builds nothing; ``--cache-key`` prints the
-name the core is cached under in CI, and builds nothing.
+one name the two cores are cached under in CI, and builds nothing.
 
 Not pure: runs the core build, xcodegen, xcodebuild, nm and actool, writes
 the .ipa.
@@ -40,9 +42,9 @@ from shared import edition_build  # noqa: E402
 IOS_DIR = REPO_ROOT / "client" / "ios"
 BUILD_DIR = Path(__file__).resolve().parent
 
-# The script that puts the RustDesk core into the app, and the symbol the
-# built app must define to carry it.
-IOS_CORE_SCRIPT = "build_core_rustdesk_ios.py"
+# The scripts that put the cores into the app, in the order they run, and
+# the symbol the built app must define to carry the RustDesk core.
+IOS_CORE_SCRIPTS = ("build_core_rustdesk_ios.py", "build_core_transport.py")
 IOS_CORE_SYMBOL = "_nd_start"
 
 # The scheme and the app's product name, as project.yml names them, and the
@@ -89,11 +91,13 @@ def main() -> int:
         print("\n".join(settings))
         return 0
     if arguments.cache_key:
-        print(_run_core("--cache-key"), end="")
+        keys = [_run_core(script, "--cache-key") for script in IOS_CORE_SCRIPTS]
+        print("cores-" + "-".join(" ".join(keys).split()))
         return 0
     _check_tools()
 
-    _run_core()
+    for script in IOS_CORE_SCRIPTS:
+        _run_core(script)
 
     shutil.rmtree(IOS_BUILD_DIR, ignore_errors=True)
     subprocess.run(["xcodegen", "generate"], cwd=IOS_DIR, check=True)
@@ -204,13 +208,14 @@ def _add_icon(app: Path) -> None:
         plistlib.dump(info, stream, fmt=plistlib.FMT_BINARY)
 
 
-def _run_core(*arguments: str) -> str:
-    """Run the core script, which puts the RustDesk core into the app.
+def _run_core(script: str, *arguments: str) -> str:
+    """Run one core script, which puts its core into the app.
 
-    The script takes no edition: the core is the same in both, and the
-    script's own bytes are what its cache name digests.
+    The scripts take no edition: the cores are the same in both, and each
+    script's own bytes are part of what its cache name digests.
 
     Args:
+        script: The script under ``packaging/build``.
         *arguments: What it is run with.
 
     Returns:
@@ -219,12 +224,12 @@ def _run_core(*arguments: str) -> str:
     Raises:
         SystemExit: When it fails.
     """
-    command = [sys.executable, str(BUILD_DIR / IOS_CORE_SCRIPT), *arguments]
+    command = [sys.executable, str(BUILD_DIR / script), *arguments]
     result = subprocess.run(
         command, capture_output=bool(arguments), text=True, check=False
     )
     if result.returncode != 0:
-        raise SystemExit(f"{IOS_CORE_SCRIPT} exited {result.returncode}")
+        raise SystemExit(f"{script} exited {result.returncode}")
     return result.stdout or ""
 
 

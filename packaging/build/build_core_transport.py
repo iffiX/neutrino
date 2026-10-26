@@ -4,9 +4,10 @@
 
 Runs on: macOS with Xcode and the pinned Go; ``gomobile`` and ``gobind`` are
 installed at the version ``transport/go.mod`` pins when they are missing.
-``gomobile bind -target ios -iosversion 16.0`` over ``transport/mobile``
-writes the framework, cached under
-``~/.cache/neutrino/cores/transport-<sources>-ios-arm64-<recipe>/`` as every
+``gomobile bind -target ios,iossimulator -iosversion 16.0`` over
+``transport/mobile`` writes the framework with its device and Simulator
+slices, cached under
+``~/.cache/neutrino/cores/transport-<sources>-ios-arm64+simulator-<recipe>/`` as every
 core is, ``<sources>`` being a digest of the transport's Go files, and
 copied to ``client/ios/cores/transport/Mobile.xcframework``. ``--cache-key``
 prints that cache name and builds nothing.
@@ -33,10 +34,10 @@ from shared import cores_cache  # noqa: E402
 from shared import go_build  # noqa: E402
 
 TRANSPORT_MOBILE_PACKAGE = "./mobile"
-TRANSPORT_MOBILE_TARGET = "ios"
+TRANSPORT_MOBILE_TARGET = "ios,iossimulator"
 TRANSPORT_MOBILE_IOS_VERSION = "16.0"
 TRANSPORT_MOBILE_LIBRARY = "Mobile.xcframework"
-TRANSPORT_MOBILE_ABI = "ios-arm64"
+TRANSPORT_MOBILE_ABI = "ios-arm64+simulator"
 TRANSPORT_MOBILE_OUTPUT = REPO_ROOT / "client" / "ios" / "cores" / "transport"
 TRANSPORT_MOBILE_RECIPE = cores_cache.recipe(Path(__file__).resolve())
 
