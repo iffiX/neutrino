@@ -124,7 +124,9 @@ against a fake SMB
 client: folders before files, each by name; the numbered name an upload and
 a new folder take; the code of each failure, the hub's own among them; a
 login kept only once the share took it, in the fake Keychain or until the
-app quits, and forgotten on `share_login_rejected`; the share's forward
+app quits, and forgotten on `share_login_rejected`, while a machine's share
+refusing the hub's login reads `share_hub_login_rejected` and forgets
+nothing; the share's forward
 opening one `connect {id}` stream per connection; a cancelled read and a
 cancelled write leaving no file; one transfer at a time in the order added,
 a waiting row going at its **Cancel**, and the shown bytes taken from the

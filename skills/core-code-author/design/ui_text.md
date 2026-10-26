@@ -635,6 +635,10 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | Key | English | Chinese |
 | --- | --- | --- |
 | `code.control_unavailable` | The hub is busy and did not answer; try again. | 中枢正忙，没有应答，稍后再试。 |
+| `code.transport_key_missing` | The transport has not written its key yet; try again in a moment. | 传输层还没有写出密钥，稍后再试。 |
+| `code.transport_apply_failed` | The transport could not be started: {detail} | 传输层没能启动：{detail} |
+| `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这台机器还没有报告 {account} 的家目录，请填写它的共享路径。 |
+| `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这台机器的文件共享。 |
 | `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |
 | `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这台机器的终端没有启用 {account}。 |
 | `code.key_missing` | The SSH server of {account} has no key from the hub; apply the module again. | {account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。 |
