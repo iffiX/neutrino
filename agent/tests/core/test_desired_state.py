@@ -568,7 +568,6 @@ def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
     name, received = engine.installs[0]
     assert name == "gitea"
     assert received["path"].startswith(str(tmp_path / "packages"))
-    assert channel.credits[0] > 0
     assert held.applied_hash == "h1"
 
 
@@ -1204,7 +1203,9 @@ def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
 
     engine = ModuleEngine(platform=Carried(), configured_dir=str(tmp_path / "marks"))
     held, _ = applier(engine.module_runners, engine=engine, tmp_path=tmp_path)
-    settings = {"account": "ann", "shell_path": "/bin/zsh"}
+    settings = {
+        "accounts": [{"account": "ann", "shell_path": "/bin/zsh", "password": ""}]
+    }
 
     held.apply(
         {

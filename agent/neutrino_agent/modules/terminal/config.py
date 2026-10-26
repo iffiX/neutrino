@@ -1,9 +1,10 @@
 """The Terminal module's configuration and the checks a shell open makes of it.
 
-``{account, shell_path}``, both strings, both empty for the shell the agent
-runs today as itself. An account is one the machine's account database
-has; a shell path is an absolute path to a file that can be run. Windows
-reads the shell path alone.
+``{accounts: [{account, shell_path, password}]}``: the module's enabled
+accounts, the first being the one a stream that names none runs as. An
+account's ``shell_path`` is the shell its terminal starts, empty for its
+login shell, and PowerShell on Windows; ``password`` is its login, sent to a
+Windows machine alone.
 
 Not pure: the checks read the account database and the file system.
 """
@@ -13,13 +14,20 @@ Not pure: the checks read the account database and the file system.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.terminal.constants import (
     TERMINAL_ACCOUNT_KEY,
+    TERMINAL_ACCOUNTS_KEY,
+    TERMINAL_CODE_ACCOUNT_DUPLICATE,
+    TERMINAL_CODE_ACCOUNT_MISSING,
+    TERMINAL_CODE_ACCOUNT_NOT_ENABLED,
     TERMINAL_CODE_ACCOUNT_UNKNOWN,
     TERMINAL_CODE_CONFIG_INVALID,
+    TERMINAL_CODE_CREDENTIAL_MISSING,
     TERMINAL_CODE_SHELL_UNUSABLE,
+    TERMINAL_PASSWORD_KEY,
     TERMINAL_SHELL_PATH_KEY,
 )
 
@@ -29,71 +37,168 @@ except ImportError:  # Windows carries no pwd.
     pwd = None
 
 
-class TerminalConfig:
-    """The account and the shell program a new shell runs."""
+@dataclass(frozen=True)
+class TerminalAccount:
+    """One enabled account of the module.
 
-    def __init__(self, *, account: str = "", shell_path: str = ""):
+    Attributes:
+        account: The account's name on the machine.
+        shell_path: The shell its terminal starts; empty for its login
+            shell, and PowerShell on Windows.
+        password: Its login, on Windows alone; empty elsewhere.
+    """
+
+    account: str
+    shell_path: str = ""
+    password: str = ""
+
+    def to_dict(self) -> dict:
+        """The account as the state carries it."""
+        return {
+            TERMINAL_ACCOUNT_KEY: self.account,
+            TERMINAL_SHELL_PATH_KEY: self.shell_path,
+            TERMINAL_PASSWORD_KEY: self.password,
+        }
+
+
+class TerminalConfig:
+    """The enabled accounts a shell or a command runs as."""
+
+    def __init__(self, *, accounts=()):
         """
         Args:
-            account: The account; empty runs the shell as the agent runs.
-            shell_path: The shell program; empty is the shell the stream
-                picks.
+            accounts: The enabled accounts, as :class:`TerminalAccount`, in
+                the order the person enabled them.
         """
-        self.account = account
-        self.shell_path = shell_path
+        self.accounts = list(accounts)
 
     @classmethod
-    def from_dict(cls, raw, *, os_name: str) -> "TerminalConfig":
+    def from_dict(cls, raw) -> "TerminalConfig":
         """Read a configuration as the state carries it.
 
         Args:
-            raw: ``{account, shell_path}``; anything else is the defaults.
-            os_name: ``linux``, ``darwin`` or ``windows``; Windows drops the
-                account.
+            raw: ``{accounts: [{account, shell_path, password}]}``; anything
+                but a dict is no account.
 
         Returns:
             The configuration.
 
         Raises:
-            ModuleApplyError: ``config_invalid {field}`` for a setting that
-                is not a string.
+            ModuleApplyError: ``config_invalid {field}`` for an account list
+                that is not a list, an entry that is not an object or names
+                no account, or a field that is not a string;
+                ``account_duplicate {account}`` for an account named twice.
         """
         raw = raw if isinstance(raw, dict) else {}
-        values = {}
-        for key in (TERMINAL_ACCOUNT_KEY, TERMINAL_SHELL_PATH_KEY):
-            value = raw.get(key, "")
-            if value is None:
-                value = ""
-            if not isinstance(value, str):
-                raise ModuleApplyError(TERMINAL_CODE_CONFIG_INVALID, {"field": key})
-            values[key] = value.strip()
-        if os_name == "windows":
-            values[TERMINAL_ACCOUNT_KEY] = ""
-        return cls(
-            account=values[TERMINAL_ACCOUNT_KEY],
-            shell_path=values[TERMINAL_SHELL_PATH_KEY],
-        )
+        entries = raw.get(TERMINAL_ACCOUNTS_KEY)
+        if entries is None:
+            entries = []
+        if not isinstance(entries, list):
+            raise ModuleApplyError(
+                TERMINAL_CODE_CONFIG_INVALID, {"field": TERMINAL_ACCOUNTS_KEY}
+            )
+        accounts = []
+        for entry in entries:
+            held = _account_of(entry)
+            if any(each.account == held.account for each in accounts):
+                raise ModuleApplyError(
+                    TERMINAL_CODE_ACCOUNT_DUPLICATE, {"account": held.account}
+                )
+            accounts.append(held)
+        return cls(accounts=accounts)
 
     def to_dict(self) -> dict:
         """The configuration as the state carries it."""
-        return {
-            TERMINAL_ACCOUNT_KEY: self.account,
-            TERMINAL_SHELL_PATH_KEY: self.shell_path,
-        }
+        return {TERMINAL_ACCOUNTS_KEY: [held.to_dict() for held in self.accounts]}
 
-    def validate(self) -> None:
-        """Check that a shell can run as these settings say.
+    def names(self) -> list:
+        """The enabled accounts' names, in order."""
+        return [held.account for held in self.accounts]
+
+    def chosen(self, account: str = "") -> TerminalAccount:
+        """The enabled account a stream runs as.
+
+        Args:
+            account: The account the open names; empty is the first one.
+
+        Returns:
+            The account.
+
+        Raises:
+            ModuleApplyError: ``terminal_account_missing`` while the module
+                enables no account, ``account_not_enabled {account}`` for
+                one it does not enable.
+        """
+        if not self.accounts:
+            raise ModuleApplyError(TERMINAL_CODE_ACCOUNT_MISSING)
+        if not account:
+            return self.accounts[0]
+        for held in self.accounts:
+            if held.account == account:
+                return held
+        raise ModuleApplyError(TERMINAL_CODE_ACCOUNT_NOT_ENABLED, {"account": account})
+
+    def validate(self, *, os_name: str, known_accounts=None) -> None:
+        """Check that a shell can run for every enabled account.
+
+        Args:
+            os_name: ``linux``, ``darwin`` or ``windows``.
+            known_accounts: Windows: the machine's accounts; None checks no
+                account there.
 
         Raises:
             ModuleApplyError: ``account_unknown {account}`` for an account
-                the machine does not have, and ``shell_program_unusable
-                {path}`` for a shell program that is missing, not absolute
-                or not executable.
+                the machine does not have, ``shell_program_unusable {path}``
+                for a shell that is missing or cannot be run, and on Windows
+                ``credential_missing {account}`` for an account with no
+                login.
         """
-        if self.account:
-            account_entry(self.account)
-        if self.shell_path:
-            check_shell_program(self.shell_path)
+        for held in self.accounts:
+            if os_name != "windows":
+                account_entry(held.account)
+                if held.shell_path:
+                    check_shell_program(held.shell_path)
+                continue
+            if known_accounts is not None and held.account not in known_accounts:
+                raise ModuleApplyError(
+                    TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": held.account}
+                )
+            if not held.password:
+                raise ModuleApplyError(
+                    TERMINAL_CODE_CREDENTIAL_MISSING, {"account": held.account}
+                )
+            if held.shell_path:
+                check_windows_program(held.shell_path)
+
+
+def _account_of(entry) -> TerminalAccount:
+    """One entry of the state's account list.
+
+    Raises:
+        ModuleApplyError: ``config_invalid {field}``.
+    """
+    if not isinstance(entry, dict):
+        raise ModuleApplyError(
+            TERMINAL_CODE_CONFIG_INVALID, {"field": TERMINAL_ACCOUNTS_KEY}
+        )
+    values = {}
+    for key in (TERMINAL_ACCOUNT_KEY, TERMINAL_SHELL_PATH_KEY, TERMINAL_PASSWORD_KEY):
+        value = entry.get(key, "")
+        if value is None:
+            value = ""
+        if not isinstance(value, str):
+            raise ModuleApplyError(TERMINAL_CODE_CONFIG_INVALID, {"field": key})
+        values[key] = value
+    name = values[TERMINAL_ACCOUNT_KEY].strip()
+    if not name:
+        raise ModuleApplyError(
+            TERMINAL_CODE_CONFIG_INVALID, {"field": TERMINAL_ACCOUNT_KEY}
+        )
+    return TerminalAccount(
+        account=name,
+        shell_path=values[TERMINAL_SHELL_PATH_KEY].strip(),
+        password=values[TERMINAL_PASSWORD_KEY],
+    )
 
 
 def account_entry(account: str):
@@ -130,4 +235,18 @@ def check_shell_program(path: str) -> None:
             not absolute, names no file, or names one with no execute bit.
     """
     if not (os.path.isabs(path) and os.path.isfile(path) and os.access(path, os.X_OK)):
+        raise ModuleApplyError(TERMINAL_CODE_SHELL_UNUSABLE, {"path": path})
+
+
+def check_windows_program(path: str) -> None:
+    """Refuse a Windows shell program that is not there.
+
+    Args:
+        path: The program's path, absolute from a drive.
+
+    Raises:
+        ModuleApplyError: ``shell_program_unusable {path}`` when the path is
+            not absolute or names no file.
+    """
+    if not (os.path.isabs(path) and os.path.isfile(path)):
         raise ModuleApplyError(TERMINAL_CODE_SHELL_UNUSABLE, {"path": path})

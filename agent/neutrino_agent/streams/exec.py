@@ -6,8 +6,8 @@ with its environment. With ``is_tty`` it runs on the terminal a shell gets,
 :class:`~neutrino_agent.streams.shell.ShellStream` or on Windows
 :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`, never
 kept. Without it, :class:`ExecStream` starts it on three pipes: stdout and
-stderr are read apart and sent up, each frame headed with its ``fd``, no
-faster than the hub's credit; the hub's bytes go to stdin in order, and
+stderr are read apart and sent up, stdout as ``data`` records and stderr
+as ``stderr`` records; the hub's ``data`` goes to stdin in order, and
 ``eof`` closes stdin. The stream closes with the exit code once the process
 ended and both outputs reached end of file. A stream the hub closes first
 ends the process and everything it started.
@@ -26,18 +26,15 @@ import sys
 import threading
 
 from neutrino_agent.constants import (
-    AGENT_EXEC_FD_STDERR,
-    AGENT_EXEC_FD_STDOUT,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
 )
-from neutrino_agent.exceptions import StreamClosed, StreamRefused
+from neutrino_agent.exceptions import StreamClosed
 from neutrino_agent.modules.terminal.config import TerminalConfig
-from neutrino_agent.platforms import win32
 from neutrino_agent.streams.shell import (
     ShellStream,
     check_exec_argv,
+    chosen_account,
     end_session,
     exec_plan,
     login_home,
@@ -54,48 +51,70 @@ def open_exec_stream(channel, args: dict, *, terminal=None, platform=None):
 
     Args:
         channel: The stream's channel.
-        args: ``{"argv", "is_tty", "cols", "rows"}``.
+        args: ``{"argv", "is_tty", "cols", "rows", "account"}``.
         terminal: Returns the Terminal module's
             :class:`~neutrino_agent.modules.terminal.config.TerminalConfig`
-            the command runs with; None runs it as the agent.
+            whose enabled account the command runs as; None enables no
+            account.
         platform: The machine's platform, which steps down to an account.
 
     Returns:
         The handler, not yet opened.
     """
     argv = args.get("argv")
+    account = str(args.get("account", "") or "")
     if not bool(args.get("is_tty", False)):
-        return ExecStream(channel, argv, terminal=terminal, platform=platform)
-    size = {key: args[key] for key in ("cols", "rows") if key in args}
+        return ExecStream(
+            channel, argv, account=account, terminal=terminal, platform=platform
+        )
+    opened = {key: args[key] for key in ("cols", "rows") if key in args}
+    opened["account"] = account
     if sys.platform == "win32":
         from neutrino_agent.streams.windows_shell import WindowsShellStream
 
-        return WindowsShellStream(channel, size, platform=platform, argv=argv)
-    return ShellStream(channel, size, argv=argv, terminal=terminal, platform=platform)
+        return WindowsShellStream(
+            channel, opened, platform=platform, terminal=terminal, argv=argv
+        )
+    return ShellStream(channel, opened, argv=argv, terminal=terminal, platform=platform)
 
 
 class ExecStream:
     """One command on three pipes, its two outputs sent apart."""
 
-    def __init__(self, channel, argv, *, terminal=None, platform=None):
+    def __init__(
+        self,
+        channel,
+        argv,
+        *,
+        account: str = "",
+        terminal=None,
+        platform=None,
+        logon_class=None,
+    ):
         """
         Args:
             channel: The stream's channel.
             argv: The command, as the open carries it.
-            terminal: Returns the Terminal module's settings; None is the
-                defaults.
+            account: The enabled account the command runs as; empty is the
+                first one.
+            terminal: Returns the Terminal module's settings; None enables
+                no account.
             platform: The machine's platform, which steps down to an
-                account and, on Windows, names the directory a shell starts
-                in.
+                account and, on Windows, names the account's profile.
+            logon_class: Windows: logs an account on, called with
+                ``(account, password)``; None is
+                :class:`~neutrino_agent.platforms.windows_logon.WindowsAccountLogon`.
         """
         self._channel = channel
         self._argv = argv
+        self._account = account
         self._terminal = terminal
         self._platform = platform
+        self._logon_class = logon_class
+        self._logon = None
         self._command: list = []
         self._process_arguments: dict = {}
-        self._process: "subprocess.Popen | None" = None
-        self._job = None
+        self._process = None
         self._is_done = threading.Event()
         self._wake = threading.Event()
 
@@ -103,19 +122,36 @@ class ExecStream:
         """Settle what runs and as whom; nothing starts yet.
 
         Raises:
-            StreamRefused: ``account_unknown {account}`` or
-                ``shell_program_unusable {path}``.
+            StreamRefused: ``terminal_account_missing``,
+                ``account_not_enabled {account}``, ``account_unknown
+                {account}`` or ``shell_program_unusable {path}``, and on
+                Windows ``credential_missing {account}`` and
+                ``credential_invalid {account}``.
         """
-        if sys.platform == "win32":
-            check_exec_argv(self._argv)
-            self._command = list(self._argv)
-            self._process_arguments = {
-                "cwd": self._windows_platform().shell_start_dir()
-            }
-            return
         settings = self._terminal() if self._terminal else TerminalConfig()
-        self._command, process, _ = exec_plan(self._argv, settings, self._platform)
+        held = chosen_account(settings, self._account)
+        if sys.platform == "win32":
+            self._open_windows(held)
+            return
+        self._command, process, _ = exec_plan(self._argv, held, self._platform)
         self._process_arguments = dict(process)
+
+    def _open_windows(self, held) -> None:
+        """Check the command and log the account on.
+
+        Raises:
+            StreamRefused: as :meth:`open`.
+        """
+        from neutrino_agent.streams.windows_shell import account_logon
+
+        check_exec_argv(self._argv)
+        self._command = list(self._argv)
+        self._logon = account_logon(held, logon_class=self._windows_logon_class())
+        try:
+            cwd = self._windows_platform().account_home(held.account)
+        except (KeyError, OSError):
+            cwd = self._windows_platform().shell_start_dir()
+        self._process_arguments = {"cwd": cwd}
 
     def run(self) -> dict:
         """Run the command until it ended or the stream closed.
@@ -129,16 +165,16 @@ class ExecStream:
         try:
             process = self._start()
         except OSError as error:
+            self._close_logon()
             return {"code": "shell_failed", "params": {"detail": str(error)[:200]}}
         self._process = process
-        self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
         ended = [threading.Event(), threading.Event()]
         readers = [
             self._thread(
-                self._pump_output, process.stdout, AGENT_EXEC_FD_STDOUT, ended[0]
+                self._pump_output, process.stdout, self._channel.send_bytes, ended[0]
             ),
             self._thread(
-                self._pump_output, process.stderr, AGENT_EXEC_FD_STDERR, ended[1]
+                self._pump_output, process.stderr, self._channel.send_stderr, ended[1]
             ),
         ]
         self._thread(self._feed_input, process.stdin)
@@ -183,15 +219,13 @@ class ExecStream:
             "stderr": subprocess.PIPE,
         }
         if sys.platform == "win32":
-            process = subprocess.Popen(
-                self._command,
-                **pipes,
-                cwd=cwd,
-                creationflags=win32.CREATE_NO_WINDOW,
-                **arguments,
+            from neutrino_agent.platforms.windows_logon import (
+                WindowsAccountPipeProcess,
             )
-            self._job = self._windows_job(process)
-            return process
+
+            return WindowsAccountPipeProcess(
+                self._logon, self._command, start_dir=cwd or ""
+            )
         if cwd is None:
             cwd = login_home()
         return subprocess.Popen(
@@ -212,23 +246,23 @@ class ExecStream:
         """
         process = self._process
         if sys.platform == "win32":
-            if self._job is not None:
-                # Closing the job ends every process still in it.
-                with contextlib.suppress(OSError):
-                    win32.libraries().kernel32.CloseHandle(self._job)
-                self._job = None
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                process.wait(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-            exit_code = process.returncode if process.returncode is not None else 1
+            exit_code = process.end()
+            self._close_logon()
         else:
             exit_code = end_session(process)
         with contextlib.suppress(OSError, ValueError):
             process.stdin.close()
         return exit_code
 
-    def _pump_output(self, pipe, fd: int, ended: threading.Event) -> None:
-        """Send one output, each frame headed with its ``fd``, until it ends."""
-        head = bytes([fd])
+    def _pump_output(self, pipe, send, ended: threading.Event) -> None:
+        """Send one output as its own records until it ends.
+
+        Args:
+            pipe: The process's stdout or stderr.
+            send: The channel's ``send_bytes`` for stdout, ``send_stderr``
+                for stderr.
+            ended: Set once the output reached end of file.
+        """
         try:
             while True:
                 try:
@@ -238,7 +272,7 @@ class ExecStream:
                 if not chunk:
                     return
                 try:
-                    self._channel.send_bytes(chunk, head=head)
+                    send(chunk)
                 except StreamClosed:
                     return
         finally:
@@ -257,7 +291,6 @@ class ExecStream:
                     with contextlib.suppress(OSError, ValueError):
                         pipe.write(item[1])
                         pipe.flush()
-                self._channel.offer_credit(len(item[1]))
             elif item[0] == "eof" and not is_ended:
                 is_ended = True
                 with contextlib.suppress(OSError, ValueError):
@@ -289,10 +322,16 @@ class ExecStream:
             self._platform = WindowsPlatform()
         return self._platform
 
-    @staticmethod
-    def _windows_job(process: subprocess.Popen):
-        """A job holding the process, that ends everything in it when closed."""
-        kernel32 = win32.libraries().kernel32
-        job = win32.kill_on_close_job(kernel32)
-        kernel32.AssignProcessToJobObject(job, int(process._handle))
-        return job
+    def _close_logon(self) -> None:
+        """Release the Windows logon the command ran under."""
+        logon, self._logon = self._logon, None
+        if logon is not None:
+            logon.close()
+
+    def _windows_logon_class(self):
+        """What logs an account on, the real one unless a test stands in."""
+        if self._logon_class is None:
+            from neutrino_agent.platforms.windows_logon import WindowsAccountLogon
+
+            self._logon_class = WindowsAccountLogon
+        return self._logon_class

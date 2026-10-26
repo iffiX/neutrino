@@ -2,8 +2,8 @@
 
 What these pin: the shell's output arrives as bytes, its exit status is
 the close's params, the first size and a resize both reach the terminal,
-the hub's bytes reach the shell's input with credit offered back as each
-piece is written, a close from the hub ends a shell that would run on, the
+the hub's bytes reach the shell's input, a close from the hub ends a shell
+that would run on, the
 ``shell`` kind's entry picks the machine's shell or a container's by the
 open's ``module``, a container shell is refused typed when podman does
 not list the container, a container's shell on a Podman machine runs
@@ -14,13 +14,17 @@ and is swept through the same podman command with it once it exits, its
 exit code kept, or its stream closes, the sweep's script kills the marked
 processes and their sessions and nothing else, and a shell opened with a session id and made
 persistent keeps running when its stream closes and is attached again with
-its output. The Terminal module: a shell for a named account starts as the
-platform steps down to it, with its login shell or the module's program as
+its output. The Terminal module: a shell for an enabled account starts as
+the platform steps down to it, with its login shell or its row's program as
 a login shell, in its home with its environment, on a terminal handed to
-it, and is listed under that account; the module's program alone runs as
-the agent; an account the machine does not have and a program that cannot
-be run refuse the open with no fallback; a session already open keeps what
-it runs when the settings change; a container's shell reads none of them.
+it, and is listed under that account; an open that names no account runs
+as the first enabled one and one that names another enabled account as
+that one; no enabled account is ``terminal_account_missing``, an account
+the module does not enable ``account_not_enabled``, one the machine does
+not have ``account_unknown`` and a program that cannot be run
+``shell_program_unusable``, each with no fallback and nothing started; a
+session already open keeps the account it runs as when the settings
+change; a container's shell reads none of them and runs as the agent.
 """
 
 import contextlib
@@ -37,7 +41,7 @@ import pytest
 
 from neutrino_agent.streams import shell as shell_module
 from neutrino_agent.exceptions import ModuleApplyError, StreamRefused
-from neutrino_agent.modules.terminal.config import TerminalConfig
+from neutrino_agent.modules.terminal.config import TerminalAccount, TerminalConfig
 from neutrino_agent.streams.shell import (
     ContainerShellStream,
     ShellStream,
@@ -69,7 +73,6 @@ def test_output_arrives_as_bytes_and_the_exit_status_closes():
 
     assert b"hi" in channel.output()
     assert closed == {"code": "", "params": {"exit_code": 3}}
-    assert channel.credits[0] > 0
     assert channel.closed is None
 
 
@@ -100,7 +103,7 @@ def test_a_resize_reaches_the_terminal():
     assert b"50 132" in channel.output()
 
 
-def test_the_hubs_bytes_reach_the_shells_input_and_credit_comes_back():
+def test_the_hubs_bytes_reach_the_shells_input():
     channel = FakeChannel()
     channel.feed(("data", b"echo typed\n"))
     channel.feed(("data", b"exit 4\n"))
@@ -109,7 +112,6 @@ def test_the_hubs_bytes_reach_the_shells_input_and_credit_comes_back():
 
     assert b"typed" in channel.output()
     assert closed["params"]["exit_code"] == 4
-    assert channel.credits[1:] == [len(b"echo typed\n"), len(b"exit 4\n")]
 
 
 def test_a_close_from_the_hub_ends_a_shell_that_would_run_on():
@@ -516,6 +518,16 @@ def test_without_pseudo_terminals_a_shell_is_refused(monkeypatch):
 ME = getpass.getuser()
 
 
+def enabled(*accounts) -> TerminalConfig:
+    """The Terminal module's settings with these accounts enabled."""
+    return TerminalConfig(
+        accounts=[
+            each if isinstance(each, TerminalAccount) else TerminalAccount(each)
+            for each in accounts
+        ]
+    )
+
+
 class StepDownPlatform:
     """Steps down by running a stand-in command, and records what it was asked."""
 
@@ -558,7 +570,7 @@ def test_a_shell_for_an_account_starts_as_the_platform_steps_down(tmp_path):
     )
     channel = FakeChannel()
     stream = terminal_stream(
-        channel, TerminalConfig(account=ME, shell_path="/bin/sh"), platform
+        channel, enabled(TerminalAccount(ME, shell_path="/bin/sh")), platform
     )
 
     stream.open()
@@ -575,7 +587,7 @@ def test_a_shell_for_an_account_starts_as_the_platform_steps_down(tmp_path):
 
 def test_an_account_with_no_program_named_gets_its_own_login_shell(tmp_path):
     platform = StepDownPlatform(tmp_path, ["/bin/true"])
-    stream = terminal_stream(FakeChannel(), TerminalConfig(account=ME), platform)
+    stream = terminal_stream(FakeChannel(), enabled(ME), platform)
 
     stream.open()
     stream.run()
@@ -585,50 +597,65 @@ def test_an_account_with_no_program_named_gets_its_own_login_shell(tmp_path):
     assert platform.asked == [(ME, [expected, "-l"])]
 
 
-def test_the_program_alone_runs_as_the_agent_as_a_login_shell(tmp_path):
-    program = tmp_path / "myshell"
-    program.write_text('#!/bin/sh\necho "args:$*"\n')
-    program.chmod(0o755)
-    channel = FakeChannel()
-    stream = terminal_stream(channel, TerminalConfig(shell_path=str(program)))
+def test_an_open_naming_no_account_runs_as_the_first_enabled_one(tmp_path):
+    platform = StepDownPlatform(tmp_path, ["/bin/true"])
+    stream = terminal_stream(
+        FakeChannel(),
+        enabled(TerminalAccount(ME, "/bin/sh"), TerminalAccount("root", "/bin/sh")),
+        platform,
+    )
 
     stream.open()
-    stream.run()
 
-    assert b"args:-l" in channel.output()
-    assert stream._session.account == shell_module.shell_account()
+    assert platform.asked == [(ME, ["/bin/sh", "-l"])]
+    assert stream._session.account == ME
+
+
+def test_an_open_naming_an_enabled_account_runs_as_it(tmp_path):
+    platform = StepDownPlatform(tmp_path, ["/bin/true"])
+    stream = terminal_stream(
+        FakeChannel(),
+        enabled(TerminalAccount("root", "/bin/sh"), TerminalAccount(ME, "/bin/sh")),
+        platform,
+        account=ME,
+    )
+
+    stream.open()
+
+    assert platform.asked == [(ME, ["/bin/sh", "-l"])]
 
 
 @pytest.mark.parametrize(
-    "settings, code, params",
+    "settings, account, code, params",
     [
+        (enabled(), "", "terminal_account_missing", {}),
+        (enabled(), ME, "terminal_account_missing", {}),
+        (enabled(ME), "root", "account_not_enabled", {"account": "root"}),
         (
-            TerminalConfig(account="nobody-here-xyz"),
+            enabled("nobody-here-xyz"),
+            "",
             "account_unknown",
             {"account": "nobody-here-xyz"},
         ),
         (
-            TerminalConfig(shell_path="/no/such/shell"),
+            enabled(TerminalAccount(ME, shell_path="/no/such/shell")),
+            "",
             "shell_program_unusable",
             {"path": "/no/such/shell"},
         ),
         (
-            TerminalConfig(account=ME, shell_path="/no/such/shell"),
-            "shell_program_unusable",
-            {"path": "/no/such/shell"},
-        ),
-        (
-            TerminalConfig(shell_path="bin/sh"),
+            enabled(TerminalAccount(ME, shell_path="bin/sh")),
+            "",
             "shell_program_unusable",
             {"path": "bin/sh"},
         ),
     ],
 )
 def test_what_cannot_run_refuses_the_open_with_no_fallback(
-    tmp_path, settings, code, params
+    tmp_path, settings, account, code, params
 ):
     platform = StepDownPlatform(tmp_path, ["/bin/true"])
-    stream = terminal_stream(FakeChannel(), settings, platform)
+    stream = terminal_stream(FakeChannel(), settings, platform, account=account)
 
     with pytest.raises(StreamRefused) as refused:
         stream.open()
@@ -637,32 +664,42 @@ def test_what_cannot_run_refuses_the_open_with_no_fallback(
     assert platform.asked == []
 
 
+def test_no_terminal_settings_enable_no_account():
+    with pytest.raises(StreamRefused) as refused:
+        ShellStream(FakeChannel(), {"cols": 80, "rows": 24}).open()
+
+    assert refused.value.code == "terminal_account_missing"
+
+
 def test_a_program_with_no_execute_bit_and_a_directory_are_unusable(tmp_path):
     plain = tmp_path / "plain"
     plain.write_text("#!/bin/sh\n")
+    platform = StepDownPlatform(tmp_path, ["/bin/true"])
     for path in (str(plain), str(tmp_path)):
-        stream = terminal_stream(FakeChannel(), TerminalConfig(shell_path=path))
+        stream = terminal_stream(
+            FakeChannel(), enabled(TerminalAccount(ME, shell_path=path)), platform
+        )
         with pytest.raises(StreamRefused) as refused:
             stream.open()
         assert refused.value.code == "shell_program_unusable"
 
 
-def test_a_session_already_open_keeps_what_it_runs(tmp_path):
+def test_a_session_already_open_keeps_the_account_it_runs_as(tmp_path):
     registry = ShellSessionRegistry()
-    settings = {"held": TerminalConfig()}
+    settings = {"held": enabled(TerminalAccount(ME, "/bin/sh"))}
     first = FakeChannel()
     opened = ShellStream(
         first,
         {"cols": 80, "rows": 24, "session_id": "tab-k"},
         sessions=registry,
         terminal=lambda: settings["held"],
-        platform=StepDownPlatform(tmp_path, ["/bin/true"]),
+        platform=StepDownPlatform(tmp_path, ["/bin/sh"]),
     )
     opened.open()
     thread = threading.Thread(target=opened.run)
     thread.start()
     assert registry.persist("tab-k", True)
-    settings["held"] = TerminalConfig(account="nobody-here-xyz")
+    settings["held"] = enabled()
 
     again = ShellStream(
         FakeChannel(),
@@ -673,7 +710,7 @@ def test_a_session_already_open_keeps_what_it_runs(tmp_path):
     again.open()
 
     assert again._session is opened._session
-    assert again._session.account == shell_module.shell_account()
+    assert again._session.account == ME
     first.close_from_hub()
     thread.join(timeout=5)
     again._session.end()
@@ -683,7 +720,7 @@ def test_a_container_shell_reads_no_terminal_settings():
     inside = open_shell_stream(
         FakeChannel(),
         {"module": "podman", "container": "kuma", "cols": 1, "rows": 1},
-        terminal=lambda: TerminalConfig(account="nobody-here-xyz"),
+        terminal=lambda: enabled(),
     )
 
     session = inside._make_session()

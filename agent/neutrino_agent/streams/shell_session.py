@@ -33,7 +33,6 @@ from neutrino_agent.constants import (
     AGENT_SHELL_KEPT_BYTES,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_PENDING_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
 )
 from neutrino_agent.exceptions import StreamClosed, StreamRefused
 
@@ -541,9 +540,7 @@ class SessionShellStream:
     ``session_id``, ``is_resumed``, ``owner`` and ``is_shared`` from its open.
     """
 
-    def __init__(
-        self, channel, args: dict, *, sessions=None, frame_head=b"", on_end=None
-    ):
+    def __init__(self, channel, args: dict, *, sessions=None, on_end=None):
         """
         Args:
             channel: The stream's channel.
@@ -553,13 +550,10 @@ class SessionShellStream:
                 for a new one.
             sessions: The agent's :class:`ShellSessionRegistry`; None keeps
                 no shell past its stream.
-            frame_head: What every frame of output carries before its
-                bytes: stdout's ``fd`` on an ``exec`` stream, else nothing.
             on_end: Called with the session once a shell no registry holds
                 has ended; None calls nothing.
         """
         self._channel = channel
-        self._frame_head = bytes(frame_head)
         self._columns = max(1, int(args.get("cols", DEFAULT_COLUMNS) or 0))
         self._rows = max(1, int(args.get("rows", DEFAULT_ROWS) or 0))
         self._session_id = str(args.get("session_id", "") or "")
@@ -610,7 +604,6 @@ class SessionShellStream:
                 if self._sessions is not None and self._session_id:
                     self._sessions.forget(session)
                 return {"code": "shell_failed", "params": {"detail": str(error)[:200]}}
-        self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
         feeder = threading.Thread(
             target=self._feed_input,
             args=(session, attachment),
@@ -649,7 +642,7 @@ class SessionShellStream:
             chunk = attachment.pull(SESSION_POLL_S)
             if chunk:
                 try:
-                    self._channel.send_bytes(chunk, head=self._frame_head)
+                    self._channel.send_bytes(chunk)
                 except StreamClosed:
                     return None
                 continue
@@ -667,7 +660,6 @@ class SessionShellStream:
                 continue
             if item[0] == "data":
                 session.write(item[1])
-                self._channel.offer_credit(len(item[1]))
             elif item[0] == "resize":
                 self._columns = max(1, int(item[1]))
                 self._rows = max(1, int(item[2]))

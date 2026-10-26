@@ -244,7 +244,7 @@ def impersonated(account: str, password: str, *, advapi32=None, kernel32=None):
         libraries = win32.libraries()
     advapi32 = advapi32 or libraries.advapi32
     kernel32 = kernel32 or libraries.kernel32
-    token = _logon(advapi32, account, password)
+    token = logon_token(advapi32, account, password)
     try:
         if not advapi32.ImpersonateLoggedOnUser(token):
             raise win32.last_error()
@@ -257,10 +257,27 @@ def impersonated(account: str, password: str, *, advapi32=None, kernel32=None):
         kernel32.CloseHandle(token)
 
 
-def _logon(advapi32, account: str, password: str):
-    """A logon of the account, each kind tried in turn."""
+def logon_token(
+    advapi32, account: str, password: str, *, kinds=WINDOWS_ACCOUNTS_LOGON_KINDS
+):
+    """A logon of the account, each kind tried in turn.
+
+    Args:
+        advapi32: The bound advapi32.
+        account: The account's name on this computer.
+        password: Its password.
+        kinds: The logon kinds, tried in order.
+
+    Returns:
+        The logon's token handle.
+
+    Raises:
+        ModuleApplyError: ``credential_invalid {account}`` when Windows
+            refuses the password.
+        OSError: When no kind of logon is granted.
+    """
     refused = None
-    for kind in WINDOWS_ACCOUNTS_LOGON_KINDS:
+    for kind in kinds:
         token = ctypes.c_void_p()
         if advapi32.LogonUserW(
             account,

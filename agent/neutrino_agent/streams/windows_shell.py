@@ -1,20 +1,23 @@
 """PowerShell on a Windows pseudo console, over one stream.
 
 Two anonymous pipes carry the console's input and output, and the console is
-created at the size the hub opened the stream with. PowerShell is started
-suspended on it, in the console account's profile directory or the system
-drive's root, with the agent's own standard handles set aside so the
-child is born with the console's, put into a job object that kills every
-process in it when its last handle closes, and then resumed. The console's
-output is read and sent up, no faster than the hub's credit; the hub's bytes
-are written to the console's input, a resize resizes the console, and ending
-the shell terminates it. Once the shell exits the console is closed, which
-ends its output. The shell is a
+created at the size the hub opened the stream with. The shell runs as an
+enabled account of the Terminal module, the one the open names or the first
+one, never as SYSTEM: the account is logged on with its password
+(:class:`~neutrino_agent.platforms.windows_logon.WindowsAccountLogon`), and
+its shell, PowerShell when its row names none, is started suspended on the
+console under that logon, in the account's profile directory, with the
+agent's own standard handles set aside so the child is born with the
+console's, put into a job object that kills every process in it when its
+last handle closes, and then resumed. The console's output is read and sent
+up; the hub's bytes are written to the console's input, a resize resizes the
+console, and ending the shell terminates it. Once the shell exits the
+console is closed, which ends its output. The shell is a
 :class:`~neutrino_agent.streams.shell_session.ShellSession`, kept by id when
 the stream's open names one. An ``exec`` stream opened with ``is_tty`` runs
-its ``argv`` on the console in place of PowerShell, never kept, every frame
-down headed with stdout's ``fd``. A container's shell runs its ``podman
-exec -it`` the same way, its frames sent as they are.
+its ``argv`` on the console in place of the shell, as the same account,
+never kept. A container's shell runs its ``podman exec -it`` the same way,
+as the agent.
 
 Windows 10 1809 is the first with a pseudo console; an older Windows refuses
 the stream with ``unsupported_platform``.
@@ -36,18 +39,26 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_ANSWER_PROMPT_TIMEOUT_S,
-    AGENT_EXEC_FD_STDOUT,
-    AGENT_SHELL_COMMANDS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
     AGENT_SHELL_WINDOWS_ACCOUNT,
+    AGENT_SHELL_WINDOWS_COMMAND,
 )
 from neutrino_agent.exceptions import ModuleApplyError, StreamRefused
-from neutrino_agent.modules.terminal.config import check_shell_program
+from neutrino_agent.modules.terminal.config import (
+    TerminalConfig,
+    check_windows_program,
+)
+from neutrino_agent.modules.terminal.constants import (
+    TERMINAL_CODE_ACCOUNT_UNKNOWN,
+    TERMINAL_CODE_CREDENTIAL_MISSING,
+)
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.answered_run import answer_on_prompt
 from neutrino_agent.platforms.windows import WindowsPlatform
-from neutrino_agent.streams.shell import check_exec_argv
+from neutrino_agent.platforms.windows_accounts import account_sid
+from neutrino_agent.platforms.windows_logon import WindowsAccountLogon
+from neutrino_agent.streams.shell import chosen_account, check_exec_argv, refusal
 from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
 # How long the wait for the shell's exit sleeps before looking again.
@@ -124,7 +135,7 @@ def _attribute_list(kernel32, console):
     return attributes
 
 
-def _start(kernel32, argv: list, attributes, start_dir: str):
+def _start(kernel32, argv: list, attributes, start_dir: str, logon=None):
     """Start the shell suspended on the pseudo console.
 
     Args:
@@ -132,6 +143,9 @@ def _start(kernel32, argv: list, attributes, start_dir: str):
         argv: Argument vector.
         attributes: The attribute list naming the console.
         start_dir: The shell's working directory.
+        logon: The account's opened
+            :class:`~neutrino_agent.platforms.windows_logon.WindowsAccountLogon`
+            the shell runs under; None runs it as the agent.
 
     Returns:
         The :class:`win32.ProcessInformation` of the started shell.
@@ -150,20 +164,29 @@ def _start(kernel32, argv: list, attributes, start_dir: str):
     held = [kernel32.GetStdHandle(name) for name in win32.STD_HANDLE_NAMES]
     for name in win32.STD_HANDLE_NAMES:
         kernel32.SetStdHandle(name, None)
+    flags = win32.EXTENDED_STARTUPINFO_PRESENT | win32.CREATE_SUSPENDED
+    error = None
     try:
-        is_started = kernel32.CreateProcessW(
+        if logon is not None:
+            process = logon.start(
+                subprocess.list2cmdline(argv),
+                start_dir=start_dir,
+                startup=startup,
+                flags=flags,
+            )
+        elif not kernel32.CreateProcessW(
             None,
             subprocess.list2cmdline(argv),
             None,
             None,
             False,
-            win32.EXTENDED_STARTUPINFO_PRESENT | win32.CREATE_SUSPENDED,
+            flags,
             None,
             start_dir,
             ctypes.byref(startup),
             ctypes.byref(process),
-        )
-        error = None if is_started else win32.last_error()
+        ):
+            error = win32.last_error()
     finally:
         for name, handle in zip(win32.STD_HANDLE_NAMES, held):
             kernel32.SetStdHandle(name, handle)
@@ -183,6 +206,7 @@ class ConsoleTerminal:
         rows: int,
         start_dir: str,
         argv: "list | None" = None,
+        logon=None,
     ):
         """
         Args:
@@ -190,11 +214,16 @@ class ConsoleTerminal:
             cols: The console's first width.
             rows: The console's first height.
             start_dir: The program's working directory.
-            argv: The program; None is the shell.
+            argv: The program; None is PowerShell.
+            logon: The account's opened
+                :class:`~neutrino_agent.platforms.windows_logon.WindowsAccountLogon`
+                the program runs under, which the terminal closes when it is
+                released; None runs it as the agent.
         """
         self._kernel32 = kernel32
         self._start_dir = start_dir
-        self._argv = list(argv) if argv else list(AGENT_SHELL_COMMANDS["win32"])
+        self._logon = logon
+        self._argv = list(argv) if argv else list(AGENT_SHELL_WINDOWS_COMMAND)
         self._columns = cols
         self._rows = rows
         self._console = None
@@ -237,6 +266,7 @@ class ConsoleTerminal:
                 self._argv,
                 self._attributes,
                 self._start_dir,
+                self._logon,
             )
             self._job = win32.kill_on_close_job(kernel32)
             kernel32.AssignProcessToJobObject(self._job, self._process.hProcess)
@@ -347,6 +377,9 @@ class ConsoleTerminal:
             if handle is not None:
                 with contextlib.suppress(OSError):
                     kernel32.CloseHandle(handle)
+        logon, self._logon = self._logon, None
+        if logon is not None:
+            logon.close()
 
 
 def run_answering(
@@ -415,8 +448,46 @@ def run_answering(
     return terminal.finish(), output.decode("utf-8", "replace")
 
 
+def account_logon(held, *, logon_class=WindowsAccountLogon, find_sid=None):
+    """An enabled account logged on with its password, for its shell or command.
+
+    Args:
+        held: The account's :class:`~neutrino_agent.modules.terminal.config.TerminalAccount`.
+        logon_class: Logs an account on, called with ``(account,
+            password)``.
+        find_sid: Reads the account's SID, raising :class:`KeyError` for an
+            account this computer does not have; None asks Windows.
+
+    Returns:
+        The opened logon, which the caller closes.
+
+    Raises:
+        StreamRefused: ``account_unknown {account}``, ``credential_missing
+            {account}``, ``credential_invalid {account}``, or
+            ``shell_failed {detail}`` when Windows grants no logon.
+    """
+    try:
+        (find_sid or account_sid)(held.account)
+    except KeyError:
+        raise StreamRefused(
+            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": held.account}
+        ) from None
+    except OSError:
+        pass
+    if not held.password:
+        raise StreamRefused(TERMINAL_CODE_CREDENTIAL_MISSING, {"account": held.account})
+    logon = logon_class(held.account, held.password)
+    try:
+        logon.open()
+    except ModuleApplyError as error:
+        raise refusal(error) from None
+    except OSError as error:
+        raise StreamRefused("shell_failed", {"detail": str(error)[:200]}) from None
+    return logon
+
+
 class WindowsShellStream(SessionShellStream):
-    """PowerShell on a pseudo console, kept by id when the open names one."""
+    """A shell on a pseudo console as an enabled account, kept by id when the open names one."""
 
     def __init__(
         self,
@@ -428,44 +499,47 @@ class WindowsShellStream(SessionShellStream):
         platform=None,
         terminal=None,
         argv: "list | None" = None,
-        is_exec: bool = True,
+        is_as_agent: bool = False,
         on_end=None,
+        logon_class=WindowsAccountLogon,
     ):
         """
         Args:
             channel: The stream's channel.
-            args: ``{"cols", "rows"}``, the console's first size, with
-                ``session_id`` and ``is_resumed`` for a kept shell.
+            args: ``{"cols", "rows", "account"}``, the console's first size
+                and the enabled account to run as, the first one when
+                empty, with ``session_id`` and ``is_resumed`` for a kept
+                shell.
             kernel32: The bound kernel32; None binds the real one.
             sessions: The agent's shell registry; None keeps no shell past
                 its stream.
-            platform: Names the directory the shell starts in; None asks
-                the Windows platform.
-            terminal: Returns the Terminal module's settings, of which only
-                the shell program is read; None is PowerShell.
-            argv: A command run in place of the shell with no settings
-                read: an ``exec`` stream's, or a container's shell. None is
-                a shell.
-            is_exec: Whether ``argv`` is an ``exec`` stream's, whose output
-                is headed with stdout's ``fd``; a container's shell sends
-                its output as it is.
+            platform: Names the account's profile directory; None asks the
+                Windows platform.
+            terminal: Returns the Terminal module's settings; None enables
+                no account.
+            argv: A command run in place of the shell: an ``exec`` stream's,
+                or a container's shell. None is a shell.
+            is_as_agent: Whether ``argv`` runs as the agent, a container's
+                shell, reading no Terminal module settings.
             on_end: Called with the session once a shell no registry holds
                 has ended, a container's shell among them; None calls
                 nothing.
+            logon_class: Logs an account on, called with ``(account,
+                password)``; tests stand in for it.
         """
         super().__init__(
             channel,
             args,
             sessions=sessions,
-            frame_head=(
-                bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None and is_exec else b""
-            ),
             on_end=on_end,
         )
         self._argv = argv
+        self._is_as_agent = is_as_agent
+        self._account = str(args.get("account", "") or "")
         self._kernel32 = kernel32
         self._platform = platform
         self._terminal = terminal
+        self._logon_class = logon_class
 
     def _check_platform(self) -> None:
         """Refuse a Windows with no pseudo console, or no kernel32."""
@@ -477,38 +551,67 @@ class WindowsShellStream(SessionShellStream):
             raise StreamRefused("unsupported_platform")
 
     def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
-        """A new console, running the Terminal module's shell program as SYSTEM.
+        """A new console, running the account's shell or the open's command.
 
         Raises:
-            StreamRefused: ``shell_program_unusable {path}`` for a program
-                that cannot be run.
+            StreamRefused: ``terminal_account_missing``,
+                ``account_not_enabled {account}``, ``account_unknown
+                {account}``, ``credential_missing {account}``,
+                ``credential_invalid {account}``, ``shell_program_unusable
+                {path}``, or ``shell_failed {detail}`` when the account
+                cannot be logged on.
         """
-        shell_path = ""
-        if self._argv is None and self._terminal:
-            shell_path = self._terminal().shell_path
-        argv = None
-        title = AGENT_SHELL_COMMANDS["win32"][0]
+        if self._is_as_agent:
+            return self._session_of(
+                argv=list(self._argv),
+                title=ntpath.basename(self._argv[0]),
+                account=AGENT_SHELL_WINDOWS_ACCOUNT,
+                start_dir=self._bound_platform().shell_start_dir(),
+                on_change=on_change,
+                on_end=on_end,
+            )
+        settings = self._terminal() if self._terminal else TerminalConfig()
+        held = chosen_account(settings, self._account)
         if self._argv is not None:
             check_exec_argv(self._argv)
             argv = list(self._argv)
-            title = ntpath.basename(argv[0])
-        elif shell_path:
+        elif held.shell_path:
             try:
-                check_shell_program(shell_path)
+                check_windows_program(held.shell_path)
             except ModuleApplyError as error:
-                raise StreamRefused(error.code, dict(error.params)) from None
-            argv = [shell_path]
-            title = ntpath.basename(shell_path)
+                raise refusal(error) from None
+            argv = [held.shell_path]
+        else:
+            argv = list(AGENT_SHELL_WINDOWS_COMMAND)
+        logon = account_logon(held, logon_class=self._logon_class)
+        try:
+            start_dir = self._bound_platform().account_home(held.account)
+        except (KeyError, OSError):
+            start_dir = self._bound_platform().shell_start_dir()
+        return self._session_of(
+            argv=argv,
+            title=ntpath.basename(argv[0]),
+            account=held.account,
+            start_dir=start_dir,
+            logon=logon,
+            on_change=on_change,
+            on_end=on_end,
+        )
+
+    def _session_of(
+        self, *, argv, title, account, start_dir, logon=None, on_change, on_end
+    ) -> ShellSession:
         return ShellSession(
             session_id=self._session_id,
             terminal=ConsoleTerminal(
                 self._bound_kernel32(),
                 cols=self._columns,
                 rows=self._rows,
-                start_dir=self._bound_platform().shell_start_dir(),
+                start_dir=start_dir,
                 argv=argv,
+                logon=logon,
             ),
-            account=AGENT_SHELL_WINDOWS_ACCOUNT,
+            account=account,
             title=title,
             on_change=on_change,
             on_end=on_end,

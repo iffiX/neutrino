@@ -18,18 +18,21 @@ session of one. On Windows the shell is PowerShell on a pseudo console,
 served by :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`,
 which also serves a container's shell there.
 
-A new shell runs as the Terminal module says: as the agent runs, which is
-root, with the shell picked here while its settings are empty; as the
-account it names, through the platform's step-down, in that account's home
-with its environment; with the shell program it names. A named account the
-machine does not have, or a shell program that cannot be run, refuses the
-open with no fallback. A shell already running keeps what it runs, and a
-container's shell reads none of it. Ending a shell kills its whole terminal
-session, background jobs included, so a closed tab leaves nothing behind.
+A new shell runs as an enabled account of the Terminal module: the one the
+open names, the first one when it names none, through the platform's
+step-down, in that account's home with its environment, its row's shell or
+its login shell as a login shell, never as the agent. With no account
+enabled the open is refused ``terminal_account_missing``; an account the
+module does not enable ``account_not_enabled``, one the machine does not
+have ``account_unknown``, and a shell program that cannot be run
+``shell_program_unusable``, with no fallback. A shell already running keeps
+the account it runs as, and a container's shell reads none of it and runs
+as the agent. Ending a shell kills its whole terminal session, background
+jobs included, so a closed tab leaves nothing behind.
 
 An ``exec`` stream opened with ``is_tty`` runs its ``argv`` here in place
-of the shell, as the same account, never kept, every frame down headed
-with stdout's ``fd``; :mod:`neutrino_agent.streams.exec` serves the rest.
+of the shell, as the same account, never kept, every record down ``data``;
+:mod:`neutrino_agent.streams.exec` serves the rest.
 
 Not pure: starts processes and owns file descriptors.
 """
@@ -51,8 +54,6 @@ import threading
 import uuid
 
 from neutrino_agent.constants import (
-    AGENT_EXEC_FD_STDOUT,
-    AGENT_SHELL_COMMANDS,
     AGENT_SHELL_FALLBACKS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
@@ -67,6 +68,7 @@ from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
 from neutrino_agent.modules.shared.subprocess_run import run
 from neutrino_agent.modules.terminal.config import (
+    TerminalAccount,
     TerminalConfig,
     account_entry,
     check_shell_program,
@@ -158,21 +160,8 @@ def login_shell(shell: str = "") -> str:
     return AGENT_SHELL_FALLBACKS[-1]
 
 
-def shell_command() -> list:
-    """What a shell stream runs on this machine.
-
-    Returns:
-        The platform's own shell where it names one, else the login shell
-        run interactively.
-    """
-    named = AGENT_SHELL_COMMANDS.get(sys.platform)
-    if named is not None:
-        return list(named)
-    return [login_shell(), "-i"]
-
-
 def shell_account() -> str:
-    """The account a shell here runs as.
+    """The account the agent runs as, which a container's shell runs as.
 
     Returns:
         The agent's own account's name; ``SYSTEM`` on Windows.
@@ -278,14 +267,15 @@ def open_shell_stream(
 
     Args:
         channel: The stream's channel.
-        args: ``{"cols", "rows"}``, with ``session_id`` and ``is_resumed``
-            for a kept shell, or ``{"module", "container"}`` for a shell
-            inside a container.
+        args: ``{"cols", "rows", "account"}``, with ``session_id``,
+            ``is_resumed``, ``owner`` and ``is_shared`` for a kept shell, or
+            ``{"module", "container"}`` for a shell inside a container.
         sessions: The agent's shell registry; None keeps no shell past its
             stream.
         terminal: Returns the Terminal module's
             :class:`~neutrino_agent.modules.terminal.config.TerminalConfig`
-            a new shell runs with; None runs every shell as the agent.
+            whose enabled accounts a new shell runs as; None enables no
+            account.
         platform: The machine's platform, which steps down to an account.
         container_podman: Returns the podman command a container's shell
             runs through, the Podman machine's read command on Windows and
@@ -335,7 +325,7 @@ def open_shell_stream(
             args,
             platform=platform,
             argv=container_shell_command(podman, name, mark),
-            is_exec=False,
+            is_as_agent=True,
             on_end=functools.partial(
                 end_container_shell, podman=podman, name=name, mark=mark
             ),
@@ -365,18 +355,71 @@ def refusal(error: ModuleApplyError) -> StreamRefused:
     return StreamRefused(error.code, dict(error.params))
 
 
-def shell_plan(settings: TerminalConfig, platform) -> tuple:
-    """What a new shell runs, as whom, and how it starts, by the Terminal module's settings.
+def chosen_account(settings: TerminalConfig, account: str) -> TerminalAccount:
+    """The enabled account a shell or a command runs as.
 
     Args:
-        settings: The module's settings.
-        platform: The machine's platform, which steps down to an account.
+        settings: The Terminal module's settings.
+        account: The account the open names; empty is the first enabled one.
+
+    Returns:
+        The account's row.
+
+    Raises:
+        StreamRefused: ``terminal_account_missing`` while the module enables
+            no account, ``account_not_enabled {account}`` for one it does
+            not enable.
+    """
+    try:
+        return settings.chosen(account)
+    except ModuleApplyError as error:
+        raise refusal(error) from None
+
+
+def stepped_down(account: str, argv: list, platform) -> tuple:
+    """How a process starts as an account through the platform's step-down.
+
+    Args:
+        account: The account.
+        argv: What runs as it.
+        platform: The machine's platform.
+
+    Returns:
+        ``(command, process)``, as the platform's ``account_process`` gives
+        them, the environment copied out.
+
+    Raises:
+        StreamRefused: ``account_unknown {account}`` for an account the
+            platform does not know, ``unsupported_platform`` with no
+            step-down.
+    """
+    try:
+        if platform is None:
+            raise PlatformUnsupportedError("no platform to step down with")
+        command, process = platform.account_process(account, list(argv))
+    except KeyError:
+        raise StreamRefused(
+            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": account}
+        ) from None
+    except PlatformUnsupportedError:
+        raise StreamRefused("unsupported_platform") from None
+    process = dict(process)
+    process["env"] = dict(process.get("env") or os.environ)
+    return command, process
+
+
+def shell_plan(held: TerminalAccount, platform) -> tuple:
+    """What a new shell runs for an enabled account, and how it starts.
+
+    Args:
+        held: The enabled account's row.
+        platform: The machine's platform, which steps down to the account.
 
     Returns:
         ``(command, process, account, title)``: the argument vector, what
         :class:`subprocess.Popen` takes beside it (``cwd``, ``env``, and
-        ``owner``, the uid the terminal is handed to; empty for the agent's
-        own), the account the shell runs as, and the shell's name.
+        ``owner``, the uid the terminal is handed to), the account the
+        shell runs as, and the shell's name.
 
     Raises:
         StreamRefused: ``account_unknown {account}`` for an account the
@@ -384,35 +427,18 @@ def shell_plan(settings: TerminalConfig, platform) -> tuple:
             shell program that cannot be run.
     """
     try:
-        if settings.shell_path:
-            check_shell_program(settings.shell_path)
-        if not settings.account:
-            if settings.shell_path:
-                command = [settings.shell_path, *TERMINAL_LOGIN_ARGUMENTS]
-            else:
-                command = shell_command()
-            return command, {}, shell_account(), os.path.basename(command[0])
-        entry = account_entry(settings.account)
+        entry = account_entry(held.account)
+        if held.shell_path:
+            check_shell_program(held.shell_path)
     except ModuleApplyError as error:
         raise refusal(error) from None
-    shell = settings.shell_path or login_shell(entry.pw_shell)
-    try:
-        if platform is None:
-            raise PlatformUnsupportedError("no platform to step down with")
-        command, process = platform.account_process(
-            settings.account, [shell, *TERMINAL_LOGIN_ARGUMENTS]
-        )
-    except KeyError:
-        raise StreamRefused(
-            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": settings.account}
-        ) from None
-    except PlatformUnsupportedError:
-        raise StreamRefused("unsupported_platform") from None
-    process = dict(process)
-    process["env"] = dict(process.get("env") or os.environ)
+    shell = held.shell_path or login_shell(entry.pw_shell)
+    command, process = stepped_down(
+        held.account, [shell, *TERMINAL_LOGIN_ARGUMENTS], platform
+    )
     process["env"]["SHELL"] = shell
     process["owner"] = entry.pw_uid
-    return command, process, settings.account, os.path.basename(shell)
+    return command, process, held.account, os.path.basename(shell)
 
 
 def check_exec_argv(argv, environment: "dict | None" = None) -> None:
@@ -443,50 +469,36 @@ def check_exec_argv(argv, environment: "dict | None" = None) -> None:
         raise StreamRefused(TERMINAL_CODE_SHELL_UNUSABLE, {"path": argv[0]})
 
 
-def exec_plan(argv, settings: TerminalConfig, platform) -> tuple:
-    """What an ``exec`` stream runs here, and as whom, by the Terminal module's settings.
+def exec_plan(argv, held: TerminalAccount, platform) -> tuple:
+    """What an ``exec`` stream runs here for an enabled account.
 
     Args:
         argv: The open's ``argv``, run as given with no shell between.
-        settings: The module's settings; its shell program is not read.
-        platform: The machine's platform, which steps down to an account.
+        held: The enabled account's row; its shell is not read.
+        platform: The machine's platform, which steps down to the account.
 
     Returns:
         ``(command, process, account)``: the argument vector, what
         :class:`subprocess.Popen` takes beside it (``cwd``, ``env``, and
-        ``owner``, the uid a terminal is handed to; empty for the agent's
-        own), and the account the command runs as.
+        ``owner``, the uid a terminal is handed to), and the account the
+        command runs as.
 
     Raises:
         StreamRefused: ``account_unknown {account}`` for an account the
             machine does not have; ``shell_program_unusable {path}`` for an
             ``argv`` :func:`check_exec_argv` refuses.
     """
-    if not settings.account:
-        check_exec_argv(argv)
-        return list(argv), {}, shell_account()
     try:
-        entry = account_entry(settings.account)
+        entry = account_entry(held.account)
     except ModuleApplyError as error:
         raise refusal(error) from None
-    try:
-        if platform is None:
-            raise PlatformUnsupportedError("no platform to step down with")
-        command, process = platform.account_process(
-            settings.account, list(argv) if isinstance(argv, list) else []
-        )
-    except KeyError:
-        raise StreamRefused(
-            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": settings.account}
-        ) from None
-    except PlatformUnsupportedError:
-        raise StreamRefused("unsupported_platform") from None
-    process = dict(process)
-    process["env"] = dict(process.get("env") or os.environ)
+    command, process = stepped_down(
+        held.account, list(argv) if isinstance(argv, list) else [], platform
+    )
     process["env"]["SHELL"] = login_shell(entry.pw_shell)
     process["owner"] = entry.pw_uid
     check_exec_argv(argv, process["env"])
-    return command, process, settings.account
+    return command, process, held.account
 
 
 def _session_members(session_id: int) -> list:
@@ -716,18 +728,19 @@ class ShellStream(SessionShellStream):
         """
         Args:
             channel: The stream's channel.
-            args: ``{"cols", "rows"}``, the terminal's first size, with
-                ``session_id`` and ``is_resumed`` for a kept shell.
+            args: ``{"cols", "rows", "account"}``, the terminal's first
+                size and the enabled account to run as, the first one when
+                empty, with ``session_id`` and ``is_resumed`` for a kept
+                shell.
             command: What to run on the terminal, as the agent and with no
-                Terminal module settings read. None is the shell the
-                settings say.
+                Terminal module settings read: a container's shell. None is
+                the shell of the account the open names.
             argv: An ``exec`` stream's command, run in place of the shell
-                as the settings' account, its output headed with stdout's
-                ``fd``. None is a shell.
+                as the account the open names. None is a shell.
             sessions: The agent's shell registry; None keeps no shell past
                 its stream.
-            terminal: Returns the Terminal module's settings; None is the
-                defaults.
+            terminal: Returns the Terminal module's settings; None enables
+                no account.
             platform: The machine's platform, which steps down to an
                 account.
             on_end: Called with the session once a shell no registry holds
@@ -737,11 +750,11 @@ class ShellStream(SessionShellStream):
             channel,
             args,
             sessions=sessions,
-            frame_head=bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None else b"",
             on_end=on_end,
         )
         self._command = list(command) if command else None
         self._argv = argv
+        self._account = str(args.get("account", "") or "")
         self._terminal = terminal
         self._platform = platform
 
@@ -751,24 +764,24 @@ class ShellStream(SessionShellStream):
             raise StreamRefused("unsupported_platform")
 
     def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
-        """A new shell, as the Terminal module's settings say.
+        """A new shell for the enabled account the open names.
 
         Raises:
-            StreamRefused: ``account_unknown {account}`` or
-                ``shell_program_unusable {path}``.
+            StreamRefused: ``terminal_account_missing``,
+                ``account_not_enabled {account}``, ``account_unknown
+                {account}`` or ``shell_program_unusable {path}``.
         """
         if self._command:
             command, process = self._command, {}
             account, title = shell_account(), os.path.basename(self._command[0])
         else:
             settings = self._terminal() if self._terminal else TerminalConfig()
+            held = chosen_account(settings, self._account)
             if self._argv is not None:
-                command, process, account = exec_plan(
-                    self._argv, settings, self._platform
-                )
+                command, process, account = exec_plan(self._argv, held, self._platform)
                 title = os.path.basename(self._argv[0])
             else:
-                command, process, account, title = shell_plan(settings, self._platform)
+                command, process, account, title = shell_plan(held, self._platform)
         return ShellSession(
             session_id=self._session_id,
             terminal=PtyTerminal(

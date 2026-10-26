@@ -1,11 +1,11 @@
-"""The Terminal module: settings a new shell reads, with nothing to install.
+"""The Terminal module: the enabled accounts a new shell runs as, with nothing to install.
 
-The agent carries the module, so it is always there and always running.
-Its apply holds the account and the shell program the state names; a
-``shell`` stream opened afterwards reads them, and a shell already running
-keeps what it runs. Until a state is applied after a start, the settings
-are the ones the kept desired state carries, so a restart changes nothing a
-new shell runs.
+The agent carries the module, so it is always there. Its apply holds the
+enabled accounts the state names; a ``shell`` or an ``exec`` stream opened
+afterwards reads them, and a shell already running keeps the account it
+runs as. Until a state is applied after a start, the accounts are the ones
+the kept desired state carries, so a restart changes nothing a new shell
+runs. The module reads ``running`` once it holds them.
 
 Not pure: reads the kept desired state.
 """
@@ -19,10 +19,10 @@ import os
 import threading
 
 from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.terminal.config import TerminalConfig
-from neutrino_agent.modules.terminal.constants import TERMINAL_RUNNER, TERMINAL_NAME
+from neutrino_agent.modules.terminal.constants import TERMINAL_NAME, TERMINAL_RUNNER
 
 
 def kept_settings(path: str) -> dict:
@@ -32,8 +32,8 @@ def kept_settings(path: str) -> dict:
         path: The kept state's file.
 
     Returns:
-        ``{account, shell_path}`` as the state carries it; empty when the
-        file or the entry is not there.
+        ``{accounts}`` as the state carries it; empty when the file or the
+        entry is not there.
     """
     try:
         with open(path, "r", encoding="utf-8") as stream:
@@ -47,7 +47,7 @@ def kept_settings(path: str) -> dict:
 
 
 class TerminalModuleRunner(ModuleRunner):
-    """Holds the account and the shell program a new shell runs."""
+    """Holds the enabled accounts a new shell or command runs as."""
 
     runner = TERMINAL_RUNNER
     name = TERMINAL_NAME
@@ -58,7 +58,7 @@ class TerminalModuleRunner(ModuleRunner):
             platform: The machine's platform.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
-            state_path: The kept desired state the settings start from;
+            state_path: The kept desired state the accounts start from;
                 empty is the one beside the agent's configuration.
         """
         super().__init__(platform=platform, log=log, publish=publish)
@@ -83,56 +83,61 @@ class TerminalModuleRunner(ModuleRunner):
         """Whether the module serves.
 
         Returns:
-            True: every new shell reads its settings.
+            True: every new shell reads its accounts.
         """
         return True
 
     def validate(self, config: dict) -> None:
-        """Check that a shell can run as a configuration says.
+        """Check that a shell can run for every account a configuration enables.
 
         Args:
-            config: ``{account, shell_path}``.
+            config: ``{accounts: [{account, shell_path, password}]}``.
 
         Raises:
             ModuleApplyError: ``config_invalid {field}``,
-                ``account_unknown {account}`` or ``shell_program_unusable
-                {path}``.
+                ``account_duplicate {account}``, ``account_unknown
+                {account}``, ``shell_program_unusable {path}``, and on
+                Windows ``credential_missing {account}``.
         """
-        TerminalConfig.from_dict(config, os_name=self._platform.os_name).validate()
-
-    def apply(self, config: dict) -> None:
-        """Hold the settings every shell opened from now on reads.
-
-        Args:
-            config: ``{account, shell_path}``.
-
-        Raises:
-            ModuleApplyError: ``config_invalid {field}`` for a setting that
-                is not a string.
-        """
-        held = TerminalConfig.from_dict(config, os_name=self._platform.os_name)
-        with self._lock:
-            self._config = held
-        self._log(
-            f"terminal: account={held.account or '-'} "
-            f"shell_path={held.shell_path or '-'}"
+        known = None
+        if self._platform.os_name == "windows":
+            try:
+                known = self._platform.human_accounts()
+            except PlatformUnsupportedError:
+                known = None
+        TerminalConfig.from_dict(config).validate(
+            os_name=self._platform.os_name, known_accounts=known
         )
 
+    def apply(self, config: dict) -> None:
+        """Hold the accounts every shell opened from now on reads.
+
+        Args:
+            config: ``{accounts: [{account, shell_path, password}]}``.
+
+        Raises:
+            ModuleApplyError: ``config_invalid {field}`` or
+                ``account_duplicate {account}`` for a list that does not
+                read.
+        """
+        held = TerminalConfig.from_dict(config)
+        with self._lock:
+            self._config = held
+        self._log(f"terminal: accounts={','.join(held.names()) or '-'}")
+
     def settings(self) -> TerminalConfig:
-        """The settings a shell opened now runs with.
+        """The accounts a shell opened now runs as.
 
         Returns:
             What the last apply held, or what the kept state carries before
             any apply since the agent started; a kept entry that cannot be
-            read is the defaults.
+            read enables no account.
         """
         with self._lock:
             held = self._config
         if held is not None:
             return held
         try:
-            return TerminalConfig.from_dict(
-                kept_settings(self._state_path), os_name=self._platform.os_name
-            )
+            return TerminalConfig.from_dict(kept_settings(self._state_path))
         except ModuleApplyError:
             return TerminalConfig()

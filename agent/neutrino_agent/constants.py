@@ -234,16 +234,12 @@ AGENT_HUB_NAME = "hub.neutrino.internal"
 AGENT_COMMAND_TIMEOUT_S = 900
 AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 
-# The shell a stream opens for the hub: this account's own where it is
-# usable, else the first of these.
+# The shell an account's terminal starts when its login shell is not
+# usable: the first of these that is.
 AGENT_SHELL_FALLBACKS = ("/bin/bash", "/bin/sh")
-# The shell a stream opens where the platform names its own, by
-# ``sys.platform``: zsh as a login shell on a Mac, PowerShell on a pseudo
-# console on Windows.
-AGENT_SHELL_COMMANDS = {
-    "darwin": ("/bin/zsh", "-il"),
-    "win32": ("powershell.exe", "-NoLogo"),
-}
+# The shell an account's terminal starts on Windows when its row names none,
+# on a pseudo console.
+AGENT_SHELL_WINDOWS_COMMAND = ("powershell.exe", "-NoLogo")
 AGENT_SHELL_READ_BYTES = 4096
 # How long a shell's process group may take to die after the hub closes
 # the stream, per signal.
@@ -254,12 +250,9 @@ AGENT_SHELL_KEPT_BYTES = 256 * 1024
 # How much output may wait for an attached stream before the shell's
 # output is no longer read.
 AGENT_SHELL_PENDING_BYTES = 1024 * 1024
-# The account a shell runs as on Windows, where the agent is LocalSystem.
+# The account a container's shell runs as on Windows, where the agent is
+# LocalSystem.
 AGENT_SHELL_WINDOWS_ACCOUNT = "SYSTEM"
-# The byte after the stream id on a frame down an ``exec`` stream: which of
-# the process's outputs the bytes came from.
-AGENT_EXEC_FD_STDOUT = 1
-AGENT_EXEC_FD_STDERR = 2
 # How long a signalled process may take to leave before it is killed.
 AGENT_KILL_GRACE_S = 2.0
 # The pids the kill verb never ends: the idle process and init on every

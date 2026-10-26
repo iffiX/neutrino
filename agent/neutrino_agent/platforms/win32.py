@@ -61,7 +61,17 @@ STD_HANDLE_NAMES = (0xFFFFFFF6, 0xFFFFFFF5, 0xFFFFFFF4)
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 CREATE_SUSPENDED = 0x00000004
 CREATE_NO_WINDOW = 0x08000000
+CREATE_UNICODE_ENVIRONMENT = 0x00000400
 WAIT_OBJECT_0 = 0
+INFINITE = 0xFFFFFFFF
+# A process started with three pipes of its own: the attribute that limits
+# the handles it inherits to those, the flag that hands them over, and the
+# handle flag that makes one inheritable.
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+STARTF_USESTDHANDLES = 0x00000100
+HANDLE_FLAG_INHERIT = 0x00000001
+# Loading an account's profile without a dialog when it cannot be loaded.
+PI_NOUI = 0x00000001
 
 # The local security policy: the access a policy handle is opened with to
 # grant an account a right, and the answer a first sizing call gives.
@@ -137,12 +147,15 @@ SID_TYPE_USER = 1
 ERROR_NONE_MAPPED = 1332
 COMPUTER_NAME_CHARS = 256
 
-# Logons: the two kinds tried for an account's files, and the answer a wrong
-# password gets.
+# Logons: the kinds tried for an account's files and for its terminal, the
+# answer a wrong password gets, and the one a kind the account may not use
+# gets.
+LOGON32_LOGON_INTERACTIVE = 2
 LOGON32_LOGON_BATCH = 4
 LOGON32_LOGON_NETWORK_CLEARTEXT = 8
 LOGON32_PROVIDER_DEFAULT = 0
 ERROR_LOGON_FAILURE = 1326
+ERROR_LOGON_TYPE_NOT_GRANTED = 1385
 
 # Another process's memory: the access it is opened with, its basic
 # information, and where its parameters hold the image path and the command
@@ -304,7 +317,7 @@ class MemoryStatusEx(ctypes.Structure):
 
 
 class SecurityAttributes(ctypes.Structure):
-    """The SECURITY_ATTRIBUTES a pipe instance is created with."""
+    """SECURITY_ATTRIBUTES: a pipe instance's access, or an inheritable handle."""
 
     _fields_ = [
         ("nLength", DWORD),
@@ -361,6 +374,21 @@ class StartupInfo(ctypes.Structure):
         ("hStdInput", ctypes.c_void_p),
         ("hStdOutput", ctypes.c_void_p),
         ("hStdError", ctypes.c_void_p),
+    ]
+
+
+class ProfileInfo(ctypes.Structure):
+    """PROFILEINFOW, what loading an account's profile takes and gives."""
+
+    _fields_ = [
+        ("dwSize", DWORD),
+        ("dwFlags", DWORD),
+        ("lpUserName", ctypes.c_wchar_p),
+        ("lpProfilePath", ctypes.c_wchar_p),
+        ("lpDefaultPath", ctypes.c_wchar_p),
+        ("lpServerName", ctypes.c_wchar_p),
+        ("lpPolicyPath", ctypes.c_wchar_p),
+        ("hProfile", ctypes.c_void_p),
     ]
 
 
@@ -739,6 +767,7 @@ class Win32Libraries:
         self.gdi32 = ctypes.WinDLL("gdi32")
         self.iphlpapi = ctypes.WinDLL("iphlpapi")
         self.netapi32 = ctypes.WinDLL("netapi32")
+        self.userenv = ctypes.WinDLL("userenv", use_last_error=True)
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_shell32()
@@ -1074,6 +1103,31 @@ class Win32Libraries:
         ]
         self.advapi32.ImpersonateLoggedOnUser.argtypes = [ctypes.c_void_p]
         self.advapi32.RevertToSelf.argtypes = []
+        self.advapi32.CreateProcessAsUserW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            DWORD,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ProcessInformation),
+        ]
+        self.userenv.LoadUserProfileW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ProfileInfo),
+        ]
+        self.userenv.UnloadUserProfile.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.userenv.CreateEnvironmentBlock.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        self.userenv.DestroyEnvironmentBlock.argtypes = [ctypes.c_void_p]
+        self.kernel32.SetHandleInformation.argtypes = [ctypes.c_void_p, DWORD, DWORD]
         self.kernel32.GetComputerNameW.argtypes = [
             ctypes.c_wchar_p,
             ctypes.POINTER(DWORD),

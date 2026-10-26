@@ -120,6 +120,14 @@ CLI_CODE_WORDS = {
     "account_invalid": "{account} is not a usable account name",
     "account_duplicate": "{account} is named for two servers",
     "account_unknown": "this machine has no account {account}",
+    "terminal_account_missing": (
+        "no account is enabled for the terminal on this machine; enable one "
+        "on the machine page"
+    ),
+    "account_not_enabled": "{account} is not enabled for the terminal",
+    "shell_program_unusable": "{path} is not a program this machine can run",
+    "config_invalid": "the configuration's {field} is not usable",
+    "op_unknown": "the agent lists directories alone, not {op}",
     "port_duplicate": "port {port} is named for two servers",
     "token_missing": "the hub sent no token for the server of {account}",
     "credential_missing": "the hub sent no login for {account}",

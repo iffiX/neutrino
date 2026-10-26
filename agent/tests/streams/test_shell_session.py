@@ -344,7 +344,6 @@ def test_the_hubs_bytes_and_resizes_reach_the_kept_shell(registry):
 
     assert terminal.written == [b"ls\r"]
     assert terminal.resizes == [(132, 50)]
-    assert channel.credits[1:] == [3]
     terminal.exit(0)
     served.join()
 
