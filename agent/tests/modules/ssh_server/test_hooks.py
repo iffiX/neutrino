@@ -20,6 +20,7 @@ refused, one disabled losing its unit and its run directory.
 
 import functools
 import os
+import socket
 import stat
 
 import pytest
@@ -36,6 +37,7 @@ from neutrino_agent.modules.ssh_server.config import SshServerInstance
 from neutrino_agent.modules.ssh_server.hooks import (
     SshServerHooks,
     binary_path,
+    is_loopback_port_free,
     windows_powershell,
 )
 from neutrino_agent.platforms.base import AgentPlatform
@@ -312,6 +314,19 @@ def test_a_port_another_record_holds_is_skipped(tmp_path):
     hooks.prepare_module()
 
     assert hooks.record(None, instance(), {})["port"] == 22001
+
+
+def test_a_port_a_listener_holds_is_not_free():
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    try:
+        assert is_loopback_port_free(port) is False
+    finally:
+        listener.close()
+
+    assert is_loopback_port_free(port) is True
 
 
 def test_a_running_instance_keeps_its_port(tmp_path):

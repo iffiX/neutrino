@@ -123,7 +123,7 @@ func (s *AccountServer) serveChannel(ctx context.Context, remote string, request
 			return
 		}
 		kind, err := session.NewShellSession(channel, requests, s.account, peer).Serve(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			s.onEvent("session_failed", "remote", remote, "kind", kind, "error", err.Error())
 		}
 	case ServerChannelDirectTCPIP:
@@ -185,7 +185,7 @@ func Run(ctx context.Context, listen, hostKeyPath, authorizedKeyPath, shell stri
 	if err != nil {
 		return err
 	}
-	onEvent("listening", "address", listener.Addr().String(), "key", ssh.FingerprintSHA256(authorizedKey))
+	onEvent("listening", "address", listener.Addr().String(), "authorized_key", ssh.FingerprintSHA256(authorizedKey))
 	server := NewAccountServer(hostKey, authorizedKey, session.CurrentAccount(shell), onEvent)
 	return server.Serve(ctx, listener)
 }

@@ -104,7 +104,10 @@ def windows_powershell() -> str:
 
 
 def is_loopback_port_free(port: int) -> bool:
-    """Whether a port on ``127.0.0.1`` can be bound now.
+    """Whether a port on ``127.0.0.1`` can be bound now, as the server binds it.
+
+    On Linux and macOS the probe reuses the address, as the server's
+    listener does.
 
     Args:
         port: The port.
@@ -114,6 +117,8 @@ def is_loopback_port_free(port: int) -> bool:
     """
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        if os.name == "posix":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((SSH_SERVER_LISTEN_HOST, port))
     except OSError:
         return False
@@ -150,7 +155,7 @@ class SshServerHooks(InstanceHooks):
         self._is_port_free = (
             is_port_free if is_port_free is not None else is_loopback_port_free
         )
-        # The ports this apply gave out, so two new instances never share one.
+        # The ports this apply gave out; a new instance takes none of them.
         self._given_ports: set = set()
 
     @property
