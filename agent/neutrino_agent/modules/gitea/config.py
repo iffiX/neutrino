@@ -2,8 +2,9 @@
 
 Deliberately thin. Gitea carries a complete admin UI of its own, so this
 holds only the seams the hub owns: the port, the address clients are told
-to use, whether strangers can register, and the machine secrets the hub
-generated for this device.
+to use, whether strangers can register, the machine secrets the hub
+generated for this device, and the local port a client forwards the Gitea
+app's ``ssh`` entry on, which clone addresses name.
 
 Pure: parsing and validation only.
 """
@@ -42,6 +43,8 @@ class GiteaConfig:
         address: This machine's address, as the hub composed it, for the
             derived root URL.
         secrets: The machine secrets by name.
+        ssh_port: The local port of the Gitea app's ``ssh`` entry, which
+            SSH clone addresses name; 0 while the hub names none.
     """
 
     listen_port: int = GITEA_DEFAULT_PORT
@@ -49,6 +52,7 @@ class GiteaConfig:
     is_registration_enabled: bool = False
     address: str = ""
     secrets: dict = field(default_factory=dict)
+    ssh_port: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "GiteaConfig":
@@ -56,6 +60,10 @@ class GiteaConfig:
             listen_port = int(data.get("listen_port", GITEA_DEFAULT_PORT))
         except (TypeError, ValueError):
             listen_port = 0
+        try:
+            ssh_port = int(data.get("ssh_port", 0) or 0)
+        except (TypeError, ValueError):
+            ssh_port = -1
         secrets = data.get("secrets")
         return cls(
             listen_port=listen_port,
@@ -63,6 +71,7 @@ class GiteaConfig:
             is_registration_enabled=bool(data.get("is_registration_enabled", False)),
             address=str(data.get("address", "") or ""),
             secrets=dict(secrets) if isinstance(secrets, dict) else {},
+            ssh_port=ssh_port,
         )
 
     def to_dict(self) -> dict:
@@ -72,6 +81,7 @@ class GiteaConfig:
             "is_registration_enabled": self.is_registration_enabled,
             "address": self.address,
             "secrets": dict(self.secrets),
+            "ssh_port": self.ssh_port,
         }
 
     @property
@@ -89,6 +99,8 @@ class GiteaConfig:
             raise ModuleApplyError("port_invalid", {"port": self.listen_port})
         if self.listen_port in RESERVED_PORTS:
             raise ModuleApplyError("port_reserved", {"port": self.listen_port})
+        if not 0 <= self.ssh_port <= 65535:
+            raise ModuleApplyError("port_invalid", {"port": self.ssh_port})
         if self.root_url and not self.root_url.startswith(("http://", "https://")):
             raise ModuleApplyError("root_url_invalid", {"root_url": self.root_url})
         if "\n" in self.root_url:

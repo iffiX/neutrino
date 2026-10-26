@@ -107,7 +107,6 @@ def test_the_layout_runs_as_localsystem_with_forward_slashes(sc, tmp_path):
     assert layout.run_user == "NMXWIN$"
     assert layout.work_path == "C:/ProgramData/Neutrino/agent/state/gitea_data"
     assert layout.git_path == "C:/Program Files/Git/cmd/git.exe"
-    assert layout.is_ssh_served is False
     assert layout.windows_service_name == "neutrino_gitea"
 
 

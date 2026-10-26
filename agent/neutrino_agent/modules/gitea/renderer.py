@@ -1,9 +1,10 @@
 """Rendering the whole of ``app.ini`` from the git server's configuration.
 
 The whole file, with ``INSTALL_LOCK`` already set: Gitea's browser install
-wizard asks questions the hub already knows the answers to. The server
-listens on ``127.0.0.1`` alone, where the agent's ``connect`` stream dials
-it.
+wizard asks questions the hub already knows the answers to. The server and
+its own SSH server listen on ``127.0.0.1`` alone, where the agent's
+``connect`` stream dials them, and SSH clone addresses name ``127.0.0.1``
+and the local port a client forwards the ``ssh`` entry on.
 
 Pure: text in, text out.
 """
@@ -18,6 +19,7 @@ from neutrino_agent.modules.gitea.config import GiteaConfig
 from neutrino_agent.modules.gitea.constants import (
     GITEA_DIR,
     GITEA_LISTEN_HOST,
+    GITEA_SSH_DOMAIN,
     GITEA_USER,
 )
 
@@ -31,8 +33,6 @@ class GiteaLayout:
         work_path: Its data directory, with ``/`` between the parts on every
             system.
         git_path: The git it runs; empty leaves git to ``PATH``.
-        is_ssh_served: Whether clone addresses offer SSH through the
-            system's own ``sshd``.
         windows_service_name: The Windows service it runs as; empty
             elsewhere.
     """
@@ -40,21 +40,29 @@ class GiteaLayout:
     run_user: str = GITEA_USER
     work_path: str = GITEA_DIR
     git_path: str = ""
-    is_ssh_served: bool = True
     windows_service_name: str = ""
 
 
 class GiteaConfigRenderer:
     """Builds ``app.ini`` from the parsed configuration."""
 
-    def __init__(self, *, config: GiteaConfig, layout: "GiteaLayout | None" = None):
+    def __init__(
+        self,
+        *,
+        config: GiteaConfig,
+        layout: "GiteaLayout | None" = None,
+        ssh_listen_port: int = 0,
+    ):
         """
         Args:
             config: The parsed configuration, secrets included.
             layout: Where the server runs; None is the Linux one.
+            ssh_listen_port: The loopback port Gitea's own SSH server
+                listens on, which the agent took.
         """
         self._config = config
         self._layout = layout if layout is not None else GiteaLayout()
+        self._ssh_listen_port = int(ssh_listen_port)
 
     def render(self) -> str:
         """Render the configuration file.
@@ -71,7 +79,7 @@ class GiteaConfigRenderer:
         secrets = config.secrets
         layout = self._layout
         work = layout.work_path
-        ssh_disabled = "false" if layout.is_ssh_served else "true"
+        ssh_port = config.ssh_port or self._ssh_listen_port
         extra = ""
         if layout.git_path:
             extra += f"\n[git]\nPATH = {layout.git_path}\n"
@@ -91,10 +99,12 @@ HTTP_PORT = {config.listen_port}
 DOMAIN = {domain}
 ROOT_URL = {root_url}
 PUBLIC_URL_DETECTION = auto
-DISABLE_SSH = {ssh_disabled}
-START_SSH_SERVER = false
-SSH_DOMAIN = {domain}
-SSH_PORT = 22
+DISABLE_SSH = false
+START_SSH_SERVER = true
+SSH_DOMAIN = {GITEA_SSH_DOMAIN}
+SSH_PORT = {ssh_port}
+SSH_LISTEN_HOST = {GITEA_LISTEN_HOST}
+SSH_LISTEN_PORT = {self._ssh_listen_port}
 LFS_START_SERVER = true
 LFS_JWT_SECRET = {secrets.get("LFS_JWT_SECRET", "")}
 OFFLINE_MODE = true

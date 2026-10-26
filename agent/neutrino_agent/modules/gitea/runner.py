@@ -6,7 +6,9 @@ machine's own, and an install or an apply refuses ``gitea_git_missing``
 while there is none. What makes the binary this hub's git server, the
 rendered ``app.ini`` and the first administrator, is applied here through
 the system's applier: a systemd unit on Linux, a LaunchDaemon of a hidden
-account on macOS, a LocalSystem service on Windows. Only the hub's own
+account on macOS, a LocalSystem service on Windows. Gitea's own SSH server
+listens on loopback at a port the agent takes from 2222 up at the first
+apply and keeps in the module's root-only record. Only the hub's own
 instance is served: one somebody installed by hand reports as running on
 its port and nothing more.
 
@@ -35,6 +37,9 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_CODE_GIT_MISSING,
     GITEA_COMMAND_ADMIN,
     GITEA_COMMAND_PASSWORD,
+    GITEA_RECORD_FIELDS,
+    GITEA_RECORD_NAME,
+    GITEA_SSH_BASE_PORT,
     GITEA_SURVEY_TTL_S,
     GITEA_UNIT,
 )
@@ -42,6 +47,8 @@ from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
 from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
+from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
 
 
@@ -135,19 +142,37 @@ class GiteaModuleRunner(ModuleRunner):
     runner = "gitea"
     name = "gitea"
 
-    def __init__(self, *, platform, log=print, publish=None, applier=None):
+    def __init__(
+        self,
+        *,
+        platform,
+        log=print,
+        publish=None,
+        applier=None,
+        record_dir: str = "",
+        is_port_free=is_port_free,
+    ):
         """
         Args:
             platform: The machine's platform.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
             applier: The system's applier; None picks the platform's own.
+            record_dir: Where the module's record lives; empty is
+                ``gitea`` under ``platform.agent_data_dir()``.
+            is_port_free: Answers whether a loopback port can be bound now.
 
         Raises:
             PlatformUnsupportedError: On a system with no applier.
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._applier = applier if applier is not None else gitea_applier_for(platform)
+        self._records = InstanceRecordStore(
+            directory=record_dir
+            or os.path.join(platform.agent_data_dir(), GITEA_RECORD_NAME),
+            fields=GITEA_RECORD_FIELDS,
+        )
+        self._is_port_free = is_port_free
         self._config: "GiteaConfig | None" = None
         self._survey = None
         self._surveyed_at = 0.0
@@ -202,7 +227,11 @@ class GiteaModuleRunner(ModuleRunner):
         """
         parsed = GiteaConfig.from_dict(config)
         parsed.validate()
-        GiteaConfigRenderer(config=parsed, layout=self._applier.layout("")).render()
+        GiteaConfigRenderer(
+            config=parsed,
+            layout=self._applier.layout(""),
+            ssh_listen_port=self._kept_ssh_port() or GITEA_SSH_BASE_PORT,
+        ).render()
 
     def apply(self, config: dict) -> None:
         """Render ``app.ini`` and run the server on it.
@@ -212,14 +241,17 @@ class GiteaModuleRunner(ModuleRunner):
 
         Raises:
             ModuleApplyError: When the configuration is refused, the
-                machine has no git (``gitea_git_missing``), or the server
-                will not come up.
+                machine has no git (``gitea_git_missing``), no port from
+                2222 up is free for its SSH server, or the server will not
+                come up.
         """
         parsed = GiteaConfig.from_dict(config)
         parsed.validate()
         git_path = self._git_path()
         rendered = GiteaConfigRenderer(
-            config=parsed, layout=self._applier.layout(git_path)
+            config=parsed,
+            layout=self._applier.layout(git_path),
+            ssh_listen_port=self._take_ssh_port(),
         ).render()
         try:
             note = self._applier.apply(rendered, git_path=git_path)
@@ -265,9 +297,10 @@ class GiteaModuleRunner(ModuleRunner):
             recipe: The module's recipe.
 
         Returns:
-            ``{"is_running", "port", "url", "version", "admins"}``; the
-            port is the held configuration's, else the installed
-            ``app.ini``'s.
+            ``{"is_running", "port", "ssh_listen_port", "url", "version",
+            "admins"}``; the port is the held configuration's, else the
+            installed ``app.ini``'s, and ``ssh_listen_port`` the one the
+            agent took for Gitea's own SSH server, 0 before the first apply.
         """
         state = self._surveyed()
         config = self._config
@@ -278,6 +311,7 @@ class GiteaModuleRunner(ModuleRunner):
                 if config is not None
                 else self._applier.read_listen_port()
             ),
+            "ssh_listen_port": self._kept_ssh_port(),
             "url": config.derived_root_url if config is not None else "",
             "version": state.version if state is not None else "",
             "admins": list(state.admin_usernames) if state is not None else [],
@@ -328,6 +362,32 @@ class GiteaModuleRunner(ModuleRunner):
             )
         self._survey = None
         return command_outcome(0, output=f"{subject}\n")
+
+    def _kept_ssh_port(self) -> int:
+        """The port the record keeps for Gitea's own SSH server, 0 when none."""
+        record = self._records.read(GITEA_RECORD_NAME)
+        try:
+            return int(record.get("ssh_listen_port") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _take_ssh_port(self) -> int:
+        """The port Gitea's own SSH server listens on: the kept one, else the first free from 2222.
+
+        Raises:
+            ModuleApplyError: ``apply_failed {detail}`` when no port is free
+                or the record cannot be written.
+        """
+        kept = self._kept_ssh_port()
+        if kept:
+            return kept
+        try:
+            port = pick_port(GITEA_SSH_BASE_PORT, is_free=self._is_port_free)
+            self._records.write({"account": GITEA_RECORD_NAME, "ssh_listen_port": port})
+        except OSError as error:
+            raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
+        self._log(f"gitea: its SSH server takes port {port}")
+        return port
 
     def _git_path(self) -> str:
         """The git the server runs, where the module needs to find one.

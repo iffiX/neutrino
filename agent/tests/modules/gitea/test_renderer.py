@@ -11,12 +11,12 @@ SECRETS = {
 }
 
 
-def render(**fields) -> str:
+def render(ssh_listen_port=2222, **fields) -> str:
     config = GiteaConfig.from_dict(
         {"secrets": SECRETS, "address": "192.168.100.7", **fields}
     )
     config.validate()
-    return GiteaConfigRenderer(config=config).render()
+    return GiteaConfigRenderer(config=config, ssh_listen_port=ssh_listen_port).render()
 
 
 def test_the_install_wizard_is_locked_out():
@@ -35,8 +35,7 @@ def test_a_root_url_override_carries_its_own_domain():
     rendered = render(root_url="http://gateway.tail:3000/")
 
     assert "ROOT_URL = http://gateway.tail:3000/" in rendered
-    assert "DOMAIN = gateway.tail" in rendered
-    assert "SSH_DOMAIN = gateway.tail" in rendered
+    assert "\nDOMAIN = gateway.tail\n" in rendered
 
 
 def test_registration_follows_the_switch():
@@ -55,14 +54,30 @@ def test_the_ui_never_reaches_for_a_cdn():
     assert "OFFLINE_MODE = true" in render()
 
 
-def test_the_linux_layout_names_the_git_account_the_work_root_and_ssh():
+def test_the_linux_layout_names_the_git_account_and_the_work_root():
     rendered = render()
 
     assert "RUN_USER = git\n" in rendered
     assert "WORK_PATH = /var/lib/gitea\n" in rendered
-    assert "DISABLE_SSH = false\n" in rendered
     assert "[git]" not in rendered
     assert "[windows]" not in rendered
+
+
+def test_gitea_s_own_ssh_server_listens_on_loopback_and_clones_name_the_forward():
+    """git over SSH reaches Gitea through a client's forward of the ssh entry,
+    whose local port is the same on every client."""
+    rendered = render(ssh_listen_port=2223, ssh_port=27654)
+
+    assert "DISABLE_SSH = false\n" in rendered
+    assert "START_SSH_SERVER = true\n" in rendered
+    assert "SSH_LISTEN_HOST = 127.0.0.1\n" in rendered
+    assert "SSH_LISTEN_PORT = 2223\n" in rendered
+    assert "SSH_DOMAIN = 127.0.0.1\n" in rendered
+    assert "SSH_PORT = 27654\n" in rendered
+
+
+def test_with_no_local_port_named_clones_name_the_listen_port():
+    assert "SSH_PORT = 2222\n" in render()
 
 
 def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
@@ -71,18 +86,19 @@ def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
         run_user="NMXWIN$",
         work_path="C:/ProgramData/Neutrino/agent/state/gitea_data",
         git_path="C:/Program Files/Git/cmd/git.exe",
-        is_ssh_served=False,
         windows_service_name="neutrino_gitea",
     )
 
-    rendered = GiteaConfigRenderer(config=config, layout=layout).render()
+    rendered = GiteaConfigRenderer(
+        config=config, layout=layout, ssh_listen_port=2222
+    ).render()
 
     data = "C:/ProgramData/Neutrino/agent/state/gitea_data"
     assert "RUN_USER = NMXWIN$\n" in rendered
     assert f"WORK_PATH = {data}\n" in rendered
     assert f"PATH = {data}/data/gitea.db\n" in rendered
     assert f"ROOT_PATH = {data}/log\n" in rendered
-    assert "DISABLE_SSH = true\n" in rendered
+    assert "START_SSH_SERVER = true\n" in rendered
     assert rendered.endswith(
         "\n[git]\nPATH = C:/Program Files/Git/cmd/git.exe\n"
         "\n[windows]\nSERVICE_NAME = neutrino_gitea\n"
@@ -99,13 +115,11 @@ def test_the_server_listens_on_loopback_alone_on_every_system():
             run_user="neutrino_gitea",
             work_path="/Library/Application Support/Neutrino/agent/state/gitea_data",
             git_path="/opt/homebrew/bin/git",
-            is_ssh_served=False,
         ),
         GiteaLayout(
             run_user="NMXWIN$",
             work_path="C:/ProgramData/Neutrino/agent/state/gitea_data",
             git_path="C:/Program Files/Git/cmd/git.exe",
-            is_ssh_served=False,
             windows_service_name="neutrino_gitea",
         ),
     )
@@ -113,6 +127,7 @@ def test_the_server_listens_on_loopback_alone_on_every_system():
     for layout in layouts:
         rendered = GiteaConfigRenderer(config=config, layout=layout).render()
         assert "\nHTTP_ADDR = 127.0.0.1\n" in rendered
+        assert "\nSSH_LISTEN_HOST = 127.0.0.1\n" in rendered
         assert "0.0.0.0" not in rendered
 
 

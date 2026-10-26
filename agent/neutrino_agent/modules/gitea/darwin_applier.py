@@ -198,13 +198,12 @@ class GiteaDarwinApplier:
             git_path: The git :meth:`find_git` found.
 
         Returns:
-            The account, the data directory, that git, and no SSH.
+            The account, the data directory and that git.
         """
         return GiteaLayout(
             run_user=GITEA_DARWIN_ACCOUNT,
             work_path=self.data_dir,
             git_path=git_path,
-            is_ssh_served=False,
         )
 
     def install(self, binary_path: str) -> None:

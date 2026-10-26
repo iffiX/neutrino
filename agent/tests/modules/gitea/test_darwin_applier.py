@@ -122,13 +122,12 @@ def test_git_is_found_by_the_tools_own_paths_and_never_the_stub(applier, tools):
     assert applier.find_git() == ""
 
 
-def test_the_layout_names_the_account_the_data_and_no_ssh(applier, tmp_path):
+def test_the_layout_names_the_account_and_the_data(applier, tmp_path):
     layout = applier.layout("/opt/homebrew/bin/git")
 
     assert layout.run_user == "neutrino_gitea"
     assert layout.work_path == str(tmp_path / "state" / "gitea_data")
     assert layout.git_path == "/opt/homebrew/bin/git"
-    assert layout.is_ssh_served is False
 
 
 def test_an_install_makes_the_hidden_account_and_puts_the_binary_in_place(

@@ -166,13 +166,12 @@ class GiteaWindowsApplier:
 
         Returns:
             LocalSystem's name, the data directory and that git with ``/``
-            between the parts, no SSH, and the service's name.
+            between the parts, and the service's name.
         """
         return GiteaLayout(
             run_user=self._user if self._user is not None else run_user(),
             work_path=self.data_dir.replace("\\", "/"),
             git_path=git_path.replace("\\", "/"),
-            is_ssh_served=False,
             windows_service_name=GITEA_WINDOWS_SERVICE,
         )
 

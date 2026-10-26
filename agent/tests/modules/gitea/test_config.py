@@ -68,3 +68,12 @@ def test_missing_secrets_are_refused_by_name():
         "JWT_SECRET",
         "LFS_JWT_SECRET",
     ]
+
+
+def test_the_ssh_entry_s_local_port_is_read_and_checked():
+    assert config(ssh_port=27654).ssh_port == 27654
+    assert config().ssh_port == 0
+    for port in (70000, "x"):
+        with pytest.raises(ModuleApplyError) as refused:
+            config(ssh_port=port).validate()
+        assert refused.value.code == "port_invalid"

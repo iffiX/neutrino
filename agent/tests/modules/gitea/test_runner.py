@@ -318,7 +318,6 @@ class SystemApplier:
             run_user="neutrino_gitea",
             work_path="/state/gitea_data",
             git_path=git_path,
-            is_ssh_served=False,
         )
 
     def install(self, binary_path):
@@ -365,7 +364,7 @@ def test_without_git_an_install_and_an_apply_are_refused(tmp_path):
     assert applier.applied == []
 
 
-def test_the_git_found_is_named_in_app_ini_and_ssh_is_off(tmp_path):
+def test_the_git_found_is_named_in_app_ini_with_gitea_s_own_ssh(tmp_path):
     applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
     runner = GiteaModuleRunner(
         platform=MacPlatform(), log=lambda m: None, applier=applier
@@ -378,7 +377,7 @@ def test_the_git_found_is_named_in_app_ini_and_ssh_is_off(tmp_path):
     assert git_path == "/opt/homebrew/bin/git"
     assert "RUN_USER = neutrino_gitea" in rendered
     assert "HTTP_ADDR = 127.0.0.1\n" in rendered
-    assert "DISABLE_SSH = true" in rendered
+    assert "START_SSH_SERVER = true" in rendered
     assert "PATH = /state/gitea_data/data/gitea.db" in rendered
     assert "[git]\nPATH = /opt/homebrew/bin/git\n" in rendered
     assert applier.installed == ["/tmp/gitea"]
@@ -414,3 +413,33 @@ def test_each_system_gets_its_own_applier(os_name, kind, tmp_path):
 
     assert type(applier).__name__ == kind
     assert applier.is_git_required is True
+
+
+def test_its_ssh_server_takes_the_first_free_port_from_2222_and_keeps_it(tmp_path):
+    held = {2222}
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=applier,
+        record_dir=str(tmp_path / "record"),
+        is_port_free=lambda port: port not in held,
+    )
+    assert runner.details({})["ssh_listen_port"] == 0
+
+    runner.apply(CONFIG)
+    held.add(2223)
+    runner.apply(dict(CONFIG, ssh_port=27654))
+    again = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=applier,
+        record_dir=str(tmp_path / "record"),
+        is_port_free=lambda port: True,
+    )
+
+    first, second = (rendered for rendered, _git in applier.applied)
+    assert "SSH_LISTEN_PORT = 2223\n" in first and "SSH_PORT = 2223\n" in first
+    assert "SSH_LISTEN_PORT = 2223\n" in second and "SSH_PORT = 27654\n" in second
+    assert runner.details({})["ssh_listen_port"] == 2223
+    assert again.details({})["ssh_listen_port"] == 2223

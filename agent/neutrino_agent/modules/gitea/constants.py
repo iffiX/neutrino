@@ -10,9 +10,17 @@ GITEA_UNIT_SOURCE_NAME = "neutrino_gitea.service"
 GITEA_SYSTEMD_DIR = "/etc/systemd/system"
 
 GITEA_DEFAULT_PORT = 3000
-# The one address the server listens on; a client reaches it through the
-# agent's connect stream.
+# The one address the server listens on, its web page and its own SSH server
+# alike; a client reaches it through the agent's connect stream.
 GITEA_LISTEN_HOST = "127.0.0.1"
+# The port the agent takes Gitea's own SSH server's port from, the first free
+# one up, kept in the module's root-only record; and the host SSH clone
+# addresses name, a client's own forward.
+GITEA_SSH_BASE_PORT = 2222
+GITEA_SSH_DOMAIN = "127.0.0.1"
+# The module's record: its file's name and the fields it holds.
+GITEA_RECORD_NAME = "gitea"
+GITEA_RECORD_FIELDS = ("account", "ssh_listen_port")
 
 # Machine secrets app.ini needs: session signing, internal auth, JWTs. The
 # hub generates them once per device and hands them down in the desired
