@@ -400,7 +400,7 @@ the answer to one `service` frame of one client: its own gateway key, a
 desktop's seat password, a page's token, a share's password, an account's
 SSH key ([protocol.md](protocol.md), "The service frame"). The panel's Services page shows
 the four kinds it can declare or module-publish; a shared desktop appears
-only in the device drawer and on clients.
+only in the machine page's Remote desktop tab and on clients.
 
 **What a person does with a service is their machine's state.** A mount's
 login and path, which tools point at the gateway, which ports are
@@ -436,7 +436,7 @@ that exist:
 - **The device lets go by leaving** — `nagent leave` or the package's
   own removal — which tells the hub first; the hub drops
   the token and keeps the row with everything the owner typed, the module
-  configuration included, until the Devices page's remove deletes it.
+  configuration included, until the Agents page's **Forget** deletes it.
 - A device that joins a different hub cannot tell the first one, which keeps
   a managed-and-quiet row until somebody forgets it there.
 
@@ -457,7 +457,7 @@ vault, and one place to look when something goes wrong.
 
 What is wanted is one word per module, `want`, in
 `config/devices/<id>/modules.json`: `absent`, `installed`, `stopped` or
-`running`. The Modules page writes it directly. The hub composes it with the
+`running`. The machine page writes it directly. The hub composes it with the
 module's configuration and the recipes for the machine's platform into the
 `state` it pushes ([protocol.md](protocol.md), "The channel").
 
@@ -486,14 +486,14 @@ machine-wide lock. The SSH bootstrap that puts the agent on a machine takes
 the same lock.
 
 During an install or an uninstall the agent opens a `log` stream and sends
-the output line by line, success included. The drawer shows
+the output line by line, success included. The module's tab shows
 the hub's copy of it as it arrives, so no surface tells a different story
 about what is happening to the machine.
 
 A change therefore walks one way and never loops back:
 
 ```text
-a person presses a button on the Modules page
+a person presses a button on the machine page
   → want is written to config/devices/<id>/modules.json
   → the hub pushes the state with the configuration and the recipes
   → the agent opens a package stream, installs, configures, starts or stops

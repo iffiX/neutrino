@@ -54,7 +54,7 @@ and keeps it in the instance's record ([../protocol.md](../protocol.md), "The
 account layer in the state"). The instance listens on loopback alone, and
 the agent's forwarder,
 `modules/shared/http_forward.py`, is in front of it on `127.0.0.1` at
-the configured port, where the agent's end of a `connect` stream reaches it.
+the instance's port, where the agent's end of a `connect` stream reaches it.
 The hub generates a token from the instance's secret on every `service` ask,
 `base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))` with
 `expiry` 60 seconds ahead by the hub's clock, and the forwarder checks it on
@@ -66,6 +66,17 @@ state or a value in the browser's storage, is its hook, and every module's
 forwarder answers 401 to a request carrying neither a token nor the login.
 A module whose page admits the browser by a token of its own, VS Code,
 names no rule, and its server takes the token itself.
+
+Every forwarder holds the same checks before its module's rule, because a
+client opens every app on its own loopback, where any page the person's
+browser loads can send it requests:
+
+| Rule | Reason |
+| --- | --- |
+| A request whose `Host`, its port aside, is not `127.0.0.1`, `[::1]`, `localhost` or the instance's `local_name`, its app's local name the state carries with the instance, is answered 421 and passed to nobody. | A page whose own domain resolves to `127.0.0.1` sends its own name as `Host`, so no other site reaches an instance through an open forward. |
+| A request whose `Origin` is present and names another scheme, host or port than its own `Host` is answered 403. A WebSocket upgrade always carries `Origin`. | A browser sends every cookie of `127.0.0.1` to every port of it, so on macOS and iOS a page of one app could otherwise act with another app's login. |
+| The forwarder's login cookie is named per entry, `cookie_name`, which the state carries with the instance: `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id. | Cookies on `127.0.0.1` are kept by name alone, and two instances' cookies of one name sign each other out. |
+| A token on the address, `?tkn=`, is traded for the login at the first request and answered with a redirect to the same path without it. | The token leaves the address bar and the browser's history at once. |
 
 The per-account data, what the program writes for that account, is under
 the account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on
@@ -92,7 +103,7 @@ frame hands.
 The hub describes every module once, in the description table
 `modules/devices/module_table.py`: its kind, its configuration file name under
 `config/devices/<id>/`, the fields the vault seals in it, the published
-entry's `description_code`, and the panel kind the Modules page draws. The
+entry's `description_code`, and the panel kind the machine page draws. The
 four programs run as an account share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
@@ -101,7 +112,7 @@ each from that table; VS Code's terms acceptance stays in
 and CloudCLI's password, are generated the first time the account is enabled
 and kept sealed under the vault's data key in
 `config/devices/<id>/<module>.json`, and the state carries them opened. The panel draws the four with one `instances_panel.tsx`
-([ui_behavior.md](../ui_behavior.md), "The Modules page").
+([ui_behavior.md](../ui_behavior.md), "The machine page").
 
 ## What a module owns
 

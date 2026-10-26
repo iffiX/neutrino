@@ -265,7 +265,7 @@ the hub filled, the other is largely what dpkg put there.
 names, and deletes the rest after it places a new file
 ([agent/module_install.md](agent/module_install.md), "From the hub's
 cache"). `hub/module_releases.json` is the last daily read of the
-publishers' feeds; losing it costs a read, and until then the Modules page
+publishers' feeds; losing it costs a read, and until then the machine page
 offers the tested versions alone.
 
 `hub/hub_update/` is where the hub updates itself from. The panel, or `nhub

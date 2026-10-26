@@ -10,11 +10,12 @@ module's software is container images, installed by the `container` method
 `agent/neutrino_agent/modules/hermes_webui/` holds `config.py`,
 `constants.py` and `hooks.py`: the forwarder's login, the gateway keys and the
 health read, which the `container` runner calls. The configuration is
-`{port, secret, password, cookie_name}`: the forwarder's port, 8787 unless the
-person sets another, the token secret, the webui's password, and the name of
-the webui's login cookie ("The page"). The hub generates the
-secret and the password the first time the module is installed or its port
-is set, and seals both in
+`{secret, password, cookie_name, local_name}`: the token secret, the webui's
+password, the name of the webui's login cookie ("The page"), and the app's
+local name, which the forwarder checks the `Host` against
+([../module_template.md](../module_template.md), "The run"). The hub
+generates the secret and the password the first time the module is
+installed, and seals both in
 `config/devices/<id>/hermes_webui.json`, beside the module's gateway key. The
 module runs wherever Containers runs ([containers.md](containers.md)).
 
@@ -88,10 +89,9 @@ The page is the `web` entry of the app `hermes_webui_<device id>`, titled
 
 | Rule | Reason |
 | --- | --- |
-| The agent's forwarder listens on `127.0.0.1` at the configured port, where the agent's end of a `connect` stream reaches it. | The configured port is the page's, as a program run as an account has its forwarder at the configured port ([module_template.md](../module_template.md), "The run"). |
-| The webui's 8787 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply. The agent keeps it in the module's record, root-only under `platform.agent_data_dir()`, and writes it into the container's unit. | The forwarder holds the configured port, which is 8787 too unless the person sets another. A port picked one time keeps the container's unit the same across applies. |
+| The agent's forwarder listens on `127.0.0.1` at a port the agent takes from 8787 up at the first apply and keeps in the module's record, where the agent's end of a `connect` stream reaches it, and reports it as `port`. | The page's port is the agent's, as a program run as an account has its forwarder at a port the agent takes ([../module_template.md](../module_template.md), "The run"). |
+| The webui's 8787 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply. The agent keeps it in the module's record, root-only under `platform.agent_data_dir()`, and writes it into the container's unit. | The forwarder holds its own port. A port picked one time keeps the container's unit the same across applies. |
 | The published port is in no entry, and the `connect` stream does not serve it. | Every request from a client reaches the webui through the forwarder's check. |
-| A configured port another program holds is one line in the agent's log, and the forwarder tries it again every report interval. | The page is there when the other program lets the port go. |
 | The webui's own password stays set. | A program on the machine that finds the published port still meets the webui's login. On macOS every container in the Podman machine reaches the Mac's loopback. |
 
 The forwarder turns the hub's token into the webui's own login:

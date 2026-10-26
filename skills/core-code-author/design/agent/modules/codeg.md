@@ -59,7 +59,7 @@ stream reaches it, and passes what it admits to `127.0.0.1:<CODEG_PORT>`:
 
 | A request | The forwarder |
 | --- | --- |
-| carries `?tkn=<token>` that verifies | answers a page of its own that stores the instance token in `localStorage['codeg_token']`, sets the forwarder's own login cookie, `neutrino_codeg_<port>`, as code-server's forwarder does, and sends the browser to `/workspace` |
+| carries `?tkn=<token>` that verifies | answers a page of its own that stores the instance token in `localStorage['codeg_token']`, sets the forwarder's own login cookie, named by the instance's `cookie_name`, as code-server's forwarder does, and sends the browser to `/workspace` |
 | carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
 | carries `Authorization: Bearer <token>` equal to the instance token, or is a WebSocket upgrade whose `Sec-WebSocket-Protocol` carries `codeg-token.<base64url(token) without padding>` | passed on unchanged |
 | carries the login cookie with a good signature and expiry | passed on unchanged, pages and files included |

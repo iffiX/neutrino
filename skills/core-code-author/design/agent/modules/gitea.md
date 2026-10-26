@@ -66,7 +66,7 @@ it down `package {module: gitea, artifact, digest}`.
 
 **An older version asks first.** Gitea migrates its database forward at its
 first start on a new version, and an older Gitea cannot read it. The
-manifest therefore names `is_data_forward_only`, and the Modules page asks
+manifest therefore names `is_data_forward_only`, and the machine page asks
 before it installs a version older than the one installed
 ([module_install.md](../module_install.md), "Module versions").
 

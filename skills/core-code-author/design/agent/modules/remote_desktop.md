@@ -68,7 +68,7 @@ files are never changed or deleted. `nagent service uninstall` turns the
 switch off first. A machine that leaves the hub cuts its share off at once
 the same way, whatever the switch said: on `nagent leave`, and when a
 `binding_unknown` refusal ends the binding because the device was removed on
-the Devices page ([agent.md](../../agent.md), "What a refusal means to the
+the Agents page ([agent.md](../../agent.md), "What a refusal means to the
 agent").
 
 A failed step reports the module `failed` with `rdp_takeover_failed {step,
@@ -83,10 +83,10 @@ writes it into RustDesk's settings whenever it changed and keeps it in a
 root-only file so it knows what it already set. It enters neither the
 agent's store nor any report.
 
-The panel never shows it: the device drawer offers **Reset seat password**,
+The panel never shows it: the machine page's Remote desktop tab offers **Reset seat password**,
 which generates a new one and disconnects every viewer. A client that presses
-**Connect** opens a `service` stream, the hub unseals the password for that
-one close, and the viewer is spawned with it.
+**Connect** sends a `service` frame, the hub unseals the password for that
+one reply, and the viewer is spawned with it.
 
 **What leaves the machine.** With the rendezvous and relay servers on the
 loopback the host sends nothing to RustDesk's servers. One thing remains
@@ -153,7 +153,7 @@ The module also detects a person's own AnyDesk or TeamViewer, which is a
 detection of this module and no module of its own: the commands that find
 each program are the module's constants, under `REMOTE_DESKTOP_`. The agent
 detects what is there, brings a stopped daemon up, reads the id a peer
-connects to and sets the unattended password when the drawer asks, as the
+connects to and sets the unattended password when the Remote desktop tab asks, as the
 seated account for AnyDesk and as root for TeamViewer, because that is where
 each keeps its configuration.
 

@@ -159,7 +159,7 @@ docs: the documentation style now covers reference, usage and development guides
 fix: various bug fixes and improvements
 fix: fixed the bug in the settings router where the tarfile member check was
      insufficient because it only used startswith
-feature: refactored the device drawer
+feature: refactored the machine page
 ```
 
 A release with nothing under a heading omits the heading.
@@ -288,11 +288,11 @@ x86-64 only, because RustDesk publishes no Windows ARM64 build.
 
 ```bash
 sudo apt install ./neutrino-agent_<version>_amd64.deb
-sudo nagent join '<enrollment link from the Devices page>'
+sudo nagent join '<enrollment link from the Agents page>'
 ```
 
 Most people never download a Linux agent package: the hub installs the
-right one over SSH from the Devices page, from the one its own package
+right one over SSH from the Agents page, from the one its own package
 holds or from the release sites, and enables EPEL first on the RHEL family
 ("Hub"). The two installers are downloaded and
 run on the machine, then `nagent join` runs in a terminal opened as

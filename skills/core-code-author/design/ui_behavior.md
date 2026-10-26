@@ -35,7 +35,7 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
-something the whole page is about: `Add over SSH`, `New terminal`, `Default
+something the whole page is about: `Add over SSH`, `Declare a service`, `Default
 permission`. Those sit in `page_actions`, and a page with none is the normal
 case.
 
@@ -150,9 +150,9 @@ chips are derived from the data rather than from a fixed set of states, a chip
 with nothing behind it is not rendered.
 
 A search input sits in the same row and narrows the same list. A list narrowed
-to nothing says so differently from a list that is empty — `No devices match` /
-`Try a different filter or clear the search.` against `No devices yet` /
-`Run a LAN scan to discover what is connected.`
+to nothing says so differently from a list that is empty: `No matches` with
+`Try a different filter or clear the search.`, against the list's own empty
+state ("Empty states and loading").
 
 ## Tables
 
@@ -177,9 +177,8 @@ time.
 
 An action a row shows only on hover sits behind a `⋯` button as well, which is
 always there on a touch screen or in a narrow window (`row_menu.tsx`, used by
-`device_monitor` and the file browser). The menu lists the row's actions, and
-an item that arms keeps the menu open, so the second press acts. A file row at
-phone width takes two lines: the icon and the name, then the size and the time.
+`device_monitor`). The menu lists the row's actions, and an item that arms
+keeps the menu open, so the second press acts.
 
 ## Inline forms
 
@@ -231,8 +230,9 @@ box inside the card rather than in this dialog ([visual.md](visual.md)).
 The panel has no drawer: nothing pins to the right edge over a list, and a
 list page has no second level. A record with sections of its own is a page:
 a managed machine's monitor, its modules and its agent are `/agents/<id>`,
-one entry per machine in the sidebar's agent group. A record edited in one or
-two fields is edited in its row: a device's name and icon on the Devices page,
+one entry per machine in the sidebar's agent group ("The machine page"). A
+record edited in one or two fields is edited in its row: a device's name and
+icon on the Agents page,
 a client's name and permission on the Clients page, the row lit as the inline
 form is while the edit is open. A setting that belongs to the whole page, the
 clients' default permission, is a dialog from the page header.
@@ -441,7 +441,7 @@ resolvers its lease gives, from `link.lease_dns`.
 
 A module whose publisher asks for acceptance of its terms opens on a machine
 only after the person accepts them for that machine. VS Code is the one such
-module, and its tab on the Modules page is the reference:
+module, and its tab on the machine page is the reference:
 
 | Step | What the tab shows |
 | --- | --- |
@@ -456,16 +456,23 @@ shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
 and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
-## The Devices page
+## The Agents page
 
-The page is one table of the managed machines alone, one row each, every row
-the same height. A row holds the icon, a button that opens a small picker of
-the device icons under it and writes the pick at once; the status dot; the
-name, a link to `/agents/<id>`; the address; the MAC; the status cell; the
-agent's version; when the agent was last seen; and the row's actions as ghost
-buttons: **Manage**, **Rename**, **Wake**, **Reboot**, **Shut down**, and
-**Forget** last in the danger tier. **Rename** turns the name into an input
-and the actions cell into **Save** and **Cancel** alone. The actions are
+The **Agents** page (被控端), at `/agents`, is one table of the managed
+machines, one row each, every row the same height. Every machine on it was
+added as an agent, so the page and its sidebar entry in the hub group take
+the agent's name. The sidebar's machine group below the hub group is headed
+with the same word and lists each machine on its own, a link to its machine
+page; the hub group's entry opens this table of all of them. A panel address
+`/devices` from 0.5 answers with the panel's redirect to `/agents`.
+
+A row holds the icon, a button that opens a small picker of the device icons
+under it and writes the pick at once; the status dot; the name, a link to
+`/agents/<id>`; the address; the MAC; the status cell; the agent's version;
+when the agent was last seen; and the row's actions as ghost buttons:
+**Manage**, **Rename**, **Wake**, **Reboot**, **Shut down**, and **Forget**
+last in the danger tier. **Rename** turns the name into an input and the
+actions cell into **Save** and **Cancel** alone. The actions are
 right-aligned in their cell, as the Clients page's are.
 
 The status cell of a reporting machine is five ring gauges, 30 px each, the
@@ -485,7 +492,8 @@ SSH 添加), the install dialog with **Host**, **Port**, **User name**,
 the machine's row, named by its host until it reports, and starts the install
 ([protocol.md](protocol.md), `POST /api/hub/device/add`). Wake-on-LAN stays
 on this page: it is a packet on the network and needs no agent
-([protocol.md](protocol.md), `POST /api/hub/device/wake`).
+([protocol.md](protocol.md), `POST /api/hub/device/wake`). The words are
+[ui_text.md](ui_text.md), "The Agents page's words".
 
 ## The Exposure section on the Network page
 
@@ -550,7 +558,7 @@ The relay's section holds two panels:
 | Panel | Kind | Holds |
 | --- | --- | --- |
 | Status | visualizing, read from `GET /api/hub/overlay/relay` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Address for clients**, the `url` in mono; **Host key**, the `host_key_fingerprint` in mono with **Forget host key** beside it while one is recorded; `last_error` in mono under the state while it is not empty. No link: the guide page stays in the guide |
-| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **Credential** and **Public port**, then the vault picker of the credential chosen. **Credential** is the Devices page's **Install agent** picker, with its words and the hint `ui.overlay.relay_credential_hint`: **SSH key** shows the picker of the vault's SSH keys, **Password** the picker of its logins, and the request names the one picked as `key_id` or `login_id`, as the install's does. No link to the Credentials page. The bar's label is **Apply SSH relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
+| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **Credential** and **Public port**, then the vault picker of the credential chosen. **Credential** is the **Add over SSH** dialog's picker, with its words and the hint `ui.overlay.relay_credential_hint`: **SSH key** shows the picker of the vault's SSH keys, **Password** the picker of its logins, and the request names the one picked as `key_id` or `login_id`, as the install's does. No link to the Credentials page. The bar's label is **Apply SSH relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
 
 The state's tone follows "Status dots and badges": `connected` is `ok`,
 `connecting` is `warn`, `disabled` and `not_configured` are `idle`, and every
@@ -579,24 +587,76 @@ The state's tone follows "Status dots and badges": `connected` is `ok`,
 key** ask through `useConfirm`, with the apply warning's sentence as the body
 while the state is `connected`.
 
-## The Modules page
+## The machine page
 
-The **Modules** page has three panels, top to bottom:
+The machine page, `/agents/<id>`, is one managed machine: what it does now,
+what it hosts, and its agent. Its header holds the machine's name, its
+online dot, the chip `ui.machine.agent_version` with the agent's version,
+the system and the architecture, the host name and the address, and at the
+right one bordered `button`, **Agents** (`ui.nav.devices`), back to the
+table. Three sections follow, top to bottom; what each reads is
+[protocol.md](protocol.md), "The agent group":
 
-| Panel | Holds |
+| Section | Holds |
 | --- | --- |
-| the machine picker | the managed machines, as before |
-| **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
-| **Module configuration** | a left and right split under the title `ui.modules.tabs_title`: on the left a vertical, scrollable list of the machine's modules, each row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph for a module without one) and its title; on the right the picked module's panels, its output box and its buttons, the buttons aligned to the right edge |
+| **Monitor** (`ui.machine.monitor`) | four number tiles, uptime, load over 1, 5 and 15 minutes, disk and temperature, the last two toned by their thresholds; then the CPU and memory charts, one chart per GPU, and the process table; an offline machine shows `ui.device_monitor.waiting` alone |
+| **Modules** (`ui.machine.modules`) | **Available accounts**, then **Module configuration** |
+| **The agent** (`ui.machine.agent`) | four rows, the version, the platform, the host name and the last report; and two bordered buttons, **Update agent** and **Reinstall**, the latter opening the **Add over SSH** dialog for this machine. Forgetting a machine is on the Agents page alone |
+
+**Available accounts** (`ui.accounts.title`) is the machine's accounts the
+person added ([agent.md](agent.md), "The two layers and the accounts"). A
+new machine shows none, with `ui.accounts.empty` and its hint; **Add**, a
+bordered `button` at the panel's top right, opens the inline form under the
+list, the panel add of "Inline forms", lit with the accent frame:
+
+| Field | Idiom |
+| --- | --- |
+| **System account** | the panel's own picker over the accounts the machine reports that are not yet available |
+| **Password** | on a Windows machine alone, a password field kept in the vault as the account's login; left empty on an edit, the login stays |
+| **Share path** | a text field, the account's home by default, with **Browse…** opening the path window in its folder mode |
+| **Shell** | a text field, the account's login shell by default and PowerShell on Windows, with **Browse…** opening the path window in its file mode |
+| **AI tools use the hub's gateway** | a switch, off by default; turned on, it shows the model rows: Claude Code's four slots, Codex's model and its effort, and Gemini's model, each picker's first choice `ui.ai_tools.gateway_default` |
+
+**Cancel** and **Save** sit at the form's bottom right. A row shows the
+account's name alone with **Edit** and **Remove**, its content centred; **Edit**
+opens the same form in the row's place. **Remove** asks through `useConfirm`,
+the body naming the modules that lose the account.
+
+**Module configuration** (`ui.modules.tabs_title`) is a left and right
+split: on the left a vertical, scrollable list of the machine's modules, each
+row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph
+for a module without one) and its title, and under it **+ Add module**, a
+bordered button as wide as the list; on the right the picked module's tab.
+A tab reads, top to bottom: its state line; `ui.modules.log_title` and the
+log box; `ui.modules.config_title` and the module's panel, which **Configure**
+opens and **Hide configuration** closes; and the buttons **Install**,
+**Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
+to the right edge.
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
 module, and that row scrolls sideways.
 
-The module picker opens under the `+` ending the list, and above it when
-less than 160 px is free under it and more above. Its greatest height is
-the room free on that side, 160 px at least, and a longer list scrolls
-inside it.
+**+ Add module** opens the module catalog, a dialog in the install dialog's
+frame, wider: the title with a search box at its right, a row of activity
+filters (`ui.module_catalog.category_<id>`, **All** first), and a grid of
+cards, each the module's icon, its name, one line on it, its activity and a
+check at its top right. Checking a card adds its tab, and unchecking takes
+it away; Terminal, Remote desktop and the SSH server are checked and locked,
+since the agent carries them, a module installed on the machine stays
+checked, a module the machine cannot run is greyed out, and a module the hub
+has no manifest of yet is drawn with no check. The dialog's foot holds
+**Close** alone.
+
+A tab of the account layer, File share, Terminal, the SSH server, VS Code,
+code-server, CloudCLI and Codeg, holds **Enabled accounts**
+(`ui.modules.enabled_accounts`) in its panel: one check row per available
+account, Terminal's showing each account's shell and the file share's each
+account's share path, and `ui.modules.no_accounts` pointing at **Available
+accounts** while there is none. The panel is configurable, with its apply
+bar, and its order is the order of the checks. The tabs of the machine layer,
+Remote desktop, Gitea, Containers and the container modules, hold no
+accounts. No module asks for a port: the agent takes them.
 
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
@@ -644,9 +704,11 @@ after the press asks the machine to apply it again, as **Start** on a module
 that reads `installed` while its `want` is `running` does. A press on a
 module that reads its `want` asks for nothing new.
 
-A module's tab shows a version line under its state line, from `GET
-/api/agent/module/version` ([agent/module_install.md](agent/module_install.md),
-"Module versions"):
+A module's tab shows a version line under its state line once the module is
+installed, from `GET /api/agent/module/version`
+([agent/module_install.md](agent/module_install.md), "Module versions"); a
+module that is not installed shows its state, its log box and its buttons
+alone, and its **Install** installs the tested version:
 
 | Part | Idiom |
 | --- | --- |
@@ -654,50 +716,48 @@ A module's tab shows a version line under its state line, from `GET
 | **Update** (`ui.modules.update`) | a bordered `button` beside the line, live while the newest version differs from the one installed and the module is installed and not in transit; it sends `POST /api/agent/module/version/set` with the newest version |
 | **Install another version…** (`ui.modules.install_version`) | a bordered `button` beside it, live under the same conditions; it opens a dialog listing the versions newest first, the tested one marked `ui.modules.version_tested` and each newer one `ui.modules.version_untested`, with **Follow the tested version** (`ui.modules.version_follow_tested`) at the top; a press on a row sends `version/set` with that version, or empty for the top row, and closes the dialog |
 | A version older than the one installed | on a module whose manifest says `is_data_forward_only`, the press asks through `useConfirm` first (`ui.modules.downgrade_title`, `ui.modules.downgrade_body`) |
-| A locked version | a module of the `agent`, `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the version line alone, with neither button |
+| A locked version | a module of the `agent`, `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version |
 
 There is no switch that updates a module by itself. A `version_switch_failed`
 shows as the tab's error notice, as any `failed` module's code does, with the
 old version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
-every system runs first: File share, Terminal, Remote desktop, Gitea, VS
-Code, code-server, CloudCLI, Codeg, Containers, Hermes WebUI, ZFS storage. VS Code,
-code-server, CloudCLI and Codeg are drawn by one `instances_panel.tsx` from
-the hub's description table. A module the machine cannot
+every system runs first: File share, Terminal, the SSH server, Remote
+desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, Containers, Hermes
+WebUI, ZFS storage. The seven modules of the account layer are drawn by one
+`instances_panel.tsx` from the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").
 
-Terminal and Remote desktop are a tab on every managed machine and never in
-the picker. Their tab draws the module's state line and its panel, and none
-of **Install**, **Start**, **Stop**, **Uninstall**, **Configure** or the
-output box, since the agent's package carries them:
+Terminal, Remote desktop and the SSH server are a tab on every managed
+machine, checked and locked in the catalog. Their tab draws the module's
+state line and its panel, and none of **Install**, **Start**, **Stop**,
+**Uninstall**, **Configure** or the output box, since the agent's package
+carries them:
 
 | Tab | Its panel | Idiom |
 | --- | --- | --- |
-| Terminal | **Account**, a picker over the human accounts the machine reported with the agent's own first (`ui.terminal_module.account_agent`); **Shell program**, a text field with **Browse…** beside it, which opens the panel's path window on that machine in its file mode, where a press on a file picks it | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply`; on a Windows machine **Account** is disabled with the line `ui.terminal_module.account_windows` under it |
+| Terminal | **Enabled accounts**, each check row showing the account's shell | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply` |
+| SSH server | **Enabled accounts**, and the machine's host key fingerprint in mono under them, `ui.ssh_server.host_key` | one configurable `settings_group` with its own apply bar, `ui.ssh_server.apply` |
 | Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step is the module's notice with its code's words, and the apply bar's Apply tries again |
 
-The Hermes WebUI tab draws one configurable `settings_group`, as the
-Remote desktop tab does, under the line `ui.hermes_webui.owner_notice`, or
-`ui.hermes_webui.owner_notice_version` once the machine reports the version:
-
-| Control | Idiom |
-| --- | --- |
-| **Port** (`ui.hermes_webui.port`) | a number field from 1024 to 65535, `ui.hermes_webui.port_hint` under it; a value outside the range disables the apply bar and shows `code.port_invalid` in place of the hint |
-| The apply bar, `ui.hermes_webui.apply` | sends `POST /api/agent/module/hermes_webui/set`, and with nothing changed `POST /api/agent/module/hermes_webui/apply`; it stays busy after its press until the machine reports the module where its `want` asks, at most two minutes, as `instances_panel.tsx` waits, and a failure shows as the tab's notice |
+The Hermes WebUI tab draws the line `ui.hermes_webui.owner_notice`, or
+`ui.hermes_webui.owner_notice_version` once the machine reports the version,
+over its state, its log and its buttons; it has no panel, since the agent
+takes its port.
 
 The tab holds no link to the page: a client opens it from its **Apps** page
 with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
 "The page").
 
-The path window is the one Samba's share folders use
+The path window is the one the account form's **Browse…** opens
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or
 at the machine's root, lists files beside folders, and a press on a file
-hands its path back. The Devices page holds no desktop section: this tab is
-the one place the share is set, and it shows beside the switch what the
-device drawer once showed, the RustDesk state with **Reset seat password**,
-and the AnyDesk and TeamViewer detection with their unattended passwords.
+hands its path back. The Agents page holds no desktop section: the Remote
+desktop tab is the one place the share is set, and it shows beside the
+switch the RustDesk state with **Reset seat password**, and the AnyDesk and
+TeamViewer detection with their unattended passwords.
 
 A tab whose module the machine reports `unsupported`, an agent older than the
 module, keeps its state word `unsupported` and draws its panel with every
@@ -712,8 +772,7 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 | Control | Idiom |
 | --- | --- |
-| **Account** | a picker over the human accounts the machine reported, as `instances_panel.tsx` draws one |
-| **Windows login for {account}** | on Windows alone, a `VaultPicker` that adds a login in place, with no link to the Credentials page |
+| **Account** | a picker over the machine's available accounts; on Windows the account's login is the one its form holds |
 | **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
 | **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 
@@ -762,25 +821,10 @@ with a port added to **Ports** and goes with a port removed; the row is part
 of the editor's draft, and the apply bar writes it with the container
 ([protocol.md](protocol.md), "The modules section, one entry per module").
 
-The AI tools part follows the client's AI page ([client.md](client.md), "The
-AI page") and adds nothing to it:
-
-| Control | Enabled | Does |
-| --- | --- | --- |
-| **This machine's AI tools use the hub's AI gateway** (a chip) | when the machine's agent is online and no write of this part is in flight; turning it on also needs the gateway to serve a model, else the reason `code.gateway_not_serving` is under the chip | reads on while `is_in_use`, any account still on the gateway, and off only once every account is on its own settings; pressed while on it sends `ai_tool/disable`, while off `ai_tool/enable`, at once, as a module's buttons on this page act ([protocol.md](protocol.md), `/api/agent/module`); so after a switch back that failed it still reads on, and a press tries the switch back again |
-| **Configure** | when the machine's agent is online | opens the client's dialog in place, the inline-form idiom with a dirty frame: a picker per tool for its model over the gateway's models and, for Codex, its effort; **Save** sends `ai_tool/set` and **Cancel** closes it |
-
-Under the controls, the line `ui.ai_tools.accounts` names the accounts the
-setting acts on, and a row per account follows: its name, the modules it has
-an instance in, and its last result as a `StatusDot` with a word (`switched`
-`ok`, `switched_back` `idle`, `failed` `error` with the code's words, and
-`ui.device_monitor.waiting` `idle` before the machine reported it while the
-setting is on; with the setting off, an account the machine does not name
-keeps its own settings and reads as `switched_back`, since no report of it
-will come). With no
-such account the line is `ui.ai_tools.no_accounts` and no row is drawn; the
-chip can be turned on all the same, and an account gained later is switched
-then.
+The AI tools of each account are its switch and its model rows in its form
+(**Available accounts** above), and the account's row shows its last result
+as a `StatusDot` with a word: `switched` `ok`, `switched_back` `idle`, and
+`failed` `error` with the code's words.
 
 ## Account sign-in on the AI page
 

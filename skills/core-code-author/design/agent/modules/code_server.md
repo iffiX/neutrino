@@ -9,7 +9,7 @@ a program run as a person's account ([module_template.md](../module_template.md)
 configuration is `{instances: [{account, secret}]}`, and the agent takes
 each instance's port itself ([../../protocol.md](../../protocol.md), "The
 account layer in the state"). Its manifest has
-no Windows entry, so the Modules page greys it out on Windows.
+no Windows entry, so the machine page's catalog greys it out on Windows.
 
 **The account service layer runs it as the account, never as root**
 ([module_template.md](../module_template.md), "The run"): a unit
@@ -48,7 +48,7 @@ listens on `127.0.0.1` at the instance's port, where the agent's end of a
 
 | A request | The forwarder |
 | --- | --- |
-| carries `?tkn=<token>` that verifies | sets its own login cookie, `neutrino_code_server_<port>`, and redirects to the same path without the token |
+| carries `?tkn=<token>` that verifies | sets its own login cookie, named by the instance's `cookie_name`, and redirects to the same path without the token |
 | carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
 | carries the login cookie with a good signature and expiry | passes it on unchanged, WebSocket included |
 | carries neither | 401 |

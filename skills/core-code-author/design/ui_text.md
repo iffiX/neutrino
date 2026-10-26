@@ -151,15 +151,16 @@ its own word, and a string in one language carries no word of the other.
 | the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
 | the way in through the person's own server | SSH relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The client's word, `reached_through`, is `ssh_relay`; the configuration, routes and codes keep `relay`. |
 | the two frp vendors | SakuraFrp, OpenFrp | SakuraFrp，OpenFrp | Spelled as each vendor spells itself, in both languages; never 樱花 or a shortened name. The program both run is frpc, and a sentence about the tunnel says "tunnel" (隧道). |
+| the page of the managed machines | **Agents** | **被控端** | The page, its sidebar entry in the hub group, the header chip and the Overview card use this name, and the sidebar's machine group below carries the same word. The routes keep `device` (`/api/hub/device`) and the catalog keys keep `devices`; the panel's address is `/agents`. |
+| a managed machine's page | the machine page | 机器页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page. |
 
-The sidebar's lines under the two renamed entries:
+The sidebar's lines under the renamed entries, the Agents page's among them in "The Agents page's words":
 
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.nav.overlay`, `ui.overlay.title` | Access | 外部访问 |
 | `ui.overlay.apply_engine`, the engine panel's apply bar | Apply access | 应用外部访问 |
 | `ui.nav.overlay_description` | Reaching this hub from outside | 从外面连回这台中枢 |
-| `ui.nav.modules_description`, `ui.nav.modules_description_other` | Features configured on each machine | 每台机器配置的功能 |
 | `ui.overlay.join_step_network`, `ui.overlay.join_step_peer`, `ui.overlay.join_step_key` | In the console, open Setup Keys and create a key. Make the key reusable with no usage limit, so every client of this hub can join with it. Copy the key it shows once and paste it below. | 在控制台里打开 Setup Keys，新建一把 key。把它设成可重复使用（reusable）、不限使用次数，这台中枢的每个客户端都用它加入。复制它只显示一次的 key，粘贴到下面。 |
 
 A docs page follows this table where the term list in
@@ -206,40 +207,96 @@ The VS Code notice and its button:
 | `ui.vscode.terms_accept` | Open and accept the terms | 打开并接受条款 |
 | `ui.vscode.terms_accepted` | Terms accepted | 已接受条款 |
 
-## The Modules page's words
+## The Agents page's words
 
-The panel titles, a module's version line and the AI tools part of
-**Global configuration** ([ui_behavior.md](ui_behavior.md), "The Modules
-page"). The chip, the
-dialog and the reason follow the desktop client's words for its AI page
-where they fit, and a managed machine is a managed device, as the
-**Devices** page calls it.
+The hub group's page of managed machines is **Agents** in English and
+**被控端** in Chinese, the word every surface already uses for an agent
+([ui_behavior.md](ui_behavior.md), "The Agents page"). Every key that named
+that page, its count or its sidebar entry as a device changes with it:
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.modules.global_title` | Global configuration | 全局配置 |
+| `ui.nav.devices`, `ui.devices.title` | Agents | 被控端 |
+| `ui.nav.devices_description` | Managed machines and what you do with them | 被管理的机器和对它们的操作 |
+| `ui.shell.chip_devices`, the header chip's label | agents | 被控端 |
+| `ui.dashboard.tile_devices`, the Overview card, which links to `/agents` | Agents | 被控端 |
+| `ui.devices.badge`, beside the title | {total} agents, {online} online | {total} 台被控端，{online} 台在线 |
+| `ui.usage.device_row`, a usage row of a machine's key | agent {device} | 被控端 {device} |
+| `ui.settings.update_confirm_body`, `ui.settings.update_confirm_body_installer` | The panel restarts, and agents on an older protocol need Reinstall on their machine page. If {version} does not answer within three minutes, {from} is put back. | 面板会重启，协议更旧的被控端要在各自的机器页上重新安装。{version} 三分钟内没有应答时，会装回 {from}。 |
+| `ui.device_pick.no_devices_hint` | Add a machine on the Agents page. | 到“被控端”页添加一台机器。 |
+| `ui.clients.filter_no_devices` | No agents yet. | 还没有被控端。 |
+| `ui.nav.services_description` | What the hub publishes to clients | 中枢向客户端发布的内容 |
+
+`ui.zfs.detail_device` names a disk's device and stays 设备. The keys of the
+LAN scan and of unmanaged devices, `ui.devices.scan`, `ui.devices.scanning`,
+`ui.devices.add_by_address`, `ui.devices.search_placeholder`,
+`ui.devices.none_title`, `ui.devices.none_hint`, `ui.devices.managed_*`,
+`ui.devices.unmanaged_*` and `ui.devices.filtered_*`, go with the scan; the
+**Add over SSH** button is `ui.devices.add_by_ssh`, **Add over SSH** / **用
+SSH 添加**. `ui.services.source_device` goes with the Services page's
+sources: an app's source is `ui.app_source.module`, `ui.app_source.declared`
+or `ui.app_source.manual`. `ui.device_chip_strip.label` goes with the
+Terminals and Files pages, the only pages that drew the strip.
+
+## The machine page's words
+
+The machine page's sections, the available accounts, the catalog and a
+module's version line ([ui_behavior.md](ui_behavior.md), "The machine
+page"). The model pickers follow the desktop client's words for its AI page
+where they fit.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.machine.agent_version` | Agent v{version} | 被控端 v{version} |
+| `ui.machine.monitor` | Monitor | 监控 |
+| `ui.machine.modules` | Modules | 模块 |
+| `ui.machine.agent` | The agent | 被控端本身 |
+| `ui.machine.agent_update` | Update agent | 更新被控端 |
+| `ui.machine.agent_reinstall` | Reinstall | 重新安装 |
+| `ui.accounts.title` | Available accounts | 可用账户 |
+| `ui.accounts.empty` | No account added yet. | 还没有添加账户。 |
+| `ui.accounts.empty_hint` | Add the accounts of this machine its terminal, files and programs run as. | 添加这台机器上的账户，终端、文件和各个程序都以这些账户运行。 |
+| `ui.accounts.add` | Add | 添加 |
+| `ui.accounts.system_account` | System account | 系统账户 |
+| `ui.accounts.password` | Password | 密码 |
+| `ui.accounts.password_hint` | Windows signs this account in with it for every feature. | Windows 的各项功能都用它登录这个账户。 |
+| `ui.accounts.share_path` | Share path | 文件共享路径 |
+| `ui.accounts.shell` | Shell | 默认 shell |
+| `ui.accounts.ai_tools` | AI tools use the hub's gateway | AI 工具走中枢网关 |
+| `ui.accounts.edit`, `ui.accounts.remove` | Edit, Remove | 编辑、移除 |
+| `ui.accounts.remove_title` | Remove {account} | 移除 {account} |
+| `ui.accounts.remove_body` | {modules} stop running as {account}, and its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
+| `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
-| `ui.ai_tools.title` | AI tools | AI 工具 |
-| `ui.ai_tools.use` | This machine's AI tools use the hub's AI gateway | 这台机器的 AI 工具使用中枢的 AI 网关 |
-| `ui.ai_tools.accounts` | Applies to the accounts that run VS Code, code-server, CloudCLI or Codeg here: {accounts} | 作用于在这台机器上运行 VS Code、code-server、CloudCLI 或 Codeg 的账户：{accounts} |
-| `ui.ai_tools.no_accounts` | No account runs VS Code, code-server, CloudCLI or Codeg on this machine yet. | 这台机器上还没有账户运行 VS Code、code-server、CloudCLI 或 Codeg。 |
-| `ui.ai_tools.tool_claude`, `ui.ai_tools.tool_codex`, `ui.ai_tools.tool_gemini` | Claude Code, Codex, Gemini | Claude Code、Codex、Gemini |
-| `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
-| `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
+| `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
+| `ui.modules.config_title` | Configuration | 配置 |
+| `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
+| `ui.modules.no_accounts` | Add an account under Available accounts first. | 先在“可用账户”里添加账户。 |
+| `ui.modules.add_module` | + Add module | + 添加模块 |
+| `ui.module_catalog.title` | Add module | 添加模块 |
+| `ui.module_catalog.search` | Search names and descriptions | 搜索名称或说明 |
+| `ui.module_catalog.close` | Close | 关闭 |
+| `ui.module_catalog.category_all`, `_code`, `_paper`, `_lab`, `_design`, `_notes`, `_files`, `_remote`, `_other` | All, Coding, Writing papers, Experiments, Design and creation, Notes, Files, Remote desktop, Other | 全部、写代码、写论文、跑实验、设计与创作、笔记、文件、远程桌面、其它 |
+| `ui.module_catalog.<module>` | one line on the module, in each language | |
+| `ui.ssh_server.host_key` | Host key {fingerprint} | 主机密钥 {fingerprint} |
+| `ui.ssh_server.apply` | Apply SSH server | 应用 SSH 服务器 |
 | `state.queued` | queued | 排队中 |
 | `state.install_failed`, and `ui.module_state.install_failed` on a machine chip | install failed | 安装失败 |
 | `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
 | `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |
-| `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while the setting is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
+| `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while its switch is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
+| `ui.ai_tools.tool_claude`, `ui.ai_tools.tool_codex`, `ui.ai_tools.tool_gemini` | Claude Code, Codex, Gemini | Claude Code、Codex、Gemini |
+| `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
+| `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
 | `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
 | `code.zfs_kernel_module_missing`, on an `absent` ZFS storage tab | The running kernel {kernel} has no ZFS module; install the module again. | 正在运行的内核 {kernel} 没有 ZFS 模块，重新安装这个模块。 |
-| `ui.modules.version_installed` | Version {version} | 版本 {version} |
+| `ui.modules.version_installed` | Installed {version} | 已安装 {version} |
 | `ui.modules.version_newest` | newest {version} | 最新 {version} |
 | `ui.modules.update` | Update | 更新 |
-| `ui.modules.install_version` | Install another version… | 安装其他版本… |
+| `ui.modules.install_version` | Install another version… | 安装另一个版本… |
 | `ui.modules.version_tested` | tested | 已测试 |
 | `ui.modules.version_untested` | untested | 未测试 |
-| `ui.modules.version_follow_tested` | Follow the tested version | 跟随已测试版本 |
+| `ui.modules.version_follow_tested` | Follow the tested version | 跟随已测试的版本 |
 | `ui.modules.downgrade_title` | Install {module} {version}? | 安装 {module} {version}？ |
 | `ui.modules.downgrade_body` | {module} moves its data forward when it starts on a newer version, and {version} is older than the one installed, so it can fail to read that data. | {module} 换到新版本启动时会把数据往前迁移，{version} 比装着的版本旧，可能读不了这些数据。 |
 | `code.download_failed` | No source served {file}: {sources} | 没有来源能提供 {file}：{sources} |
@@ -247,28 +304,30 @@ where they fit, and a managed machine is a managed device, as the
 | `code.version_unknown` | Version {version} is not listed for this machine. | 这台机器没有版本 {version}。 |
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
 
-**Configure** is `ui.modules.configure`, the page's existing word. The
-desktop client's reason for its disabled AI page and the code its command
-line refuses with:
+The keys of the Modules page's machine picker and **Global configuration**,
+`ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,
+`ui.modules.no_instances`, `ui.ai_tools.title`, `ui.ai_tools.use`,
+`ui.ai_tools.accounts` and `ui.ai_tools.no_accounts`, go with them.
+**Configure** is `ui.modules.configure` and its closing word
+`ui.modules.configure_close`, the page's existing words. The desktop
+client's reason for its disabled AI page and the code its command line
+refuses with:
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.reason.ai_managed`, `code.ai_tools_managed` | This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration. | 这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。 |
+| `ui.reason.ai_managed`, `code.ai_tools_managed` | This is an agent's machine: set its AI tools on the hub's panel, in the account's form on its machine page. | 这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。 |
 
 ## The Terminal and Remote desktop tabs' words
 
 The tabs' names are the module titles of "Names that are fixed":
 **Terminal** and **Remote desktop** in English, **终端** and **远程桌面** in
-Chinese.
+Chinese. The Terminal tab's panel is its enabled accounts, each row with the
+account's shell; `ui.terminal_module.account`, `account_agent`,
+`account_windows`, `shell_path`, `shell_path_hint` and `browse` go with the
+account and the shell program it set before.
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.terminal_module.account` | Account | 账户 |
-| `ui.terminal_module.account_agent` | The agent's own (root; SYSTEM on Windows) | 被控端自己的账户（root；Windows 上是 SYSTEM） |
-| `ui.terminal_module.account_windows` | On Windows a terminal runs as SYSTEM; only the shell program can be set. | 在 Windows 上终端以 SYSTEM 运行，只能设置 shell 程序。 |
-| `ui.terminal_module.shell_path` | Shell program | Shell 程序 |
-| `ui.terminal_module.shell_path_hint` | Leave it empty for the account's login shell, or PowerShell on Windows. | 留空则用该账户的登录 shell，Windows 上是 PowerShell。 |
-| `ui.terminal_module.browse` | Browse… | 浏览… |
 | `ui.terminal_module.apply` | Apply terminal | 应用终端设置 |
 | `ui.terminal_module.apply_hint` | Terminals opened from now on use these; open ones keep what they run. | 之后打开的终端用这些设置，已打开的不变。 |
 | `ui.remote_desktop_module.switch` | Share this machine's desktop | 共享这台机器的桌面 |
@@ -282,24 +341,21 @@ Chinese.
 
 ## The Hermes WebUI tab's words
 
-[ui_behavior.md](ui_behavior.md), "The Modules page", places them. The keys
-are in `locales/<language>/modules.json`; `code.port_invalid` is the one
-`codes.json` already holds.
+[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
+are in `locales/<language>/modules.json`. The tab has no panel, since the
+agent takes its port, so `ui.hermes_webui.port`, `port_hint`, `apply` and
+`apply_hint` go.
 
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
 | `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
-| `ui.hermes_webui.port` | Port | 端口 |
-| `ui.hermes_webui.port_hint` | The port clients open the page at on this machine. | 客户端在这台机器的这个端口上打开网页。 |
-| `ui.hermes_webui.apply` | Apply Hermes WebUI | 应用 Hermes WebUI |
-| `ui.hermes_webui.apply_hint` | Saves the port and serves the page on it. | 保存端口，并在这个端口上提供网页。 |
 
 ## The Containers tab's words
 
 The Run settings, the container editor's **Services** row, the restart
 notice and the codes Containers adds. [ui_behavior.md](ui_behavior.md),
-"The Modules page", places them. The `ui.*` keys are in
+"The machine page", places them. The `ui.*` keys are in
 `locales/<language>/modules.json` and the `code.*` keys in `codes.json`;
 the agent's `cli/wording.py` words the same codes in English.
 
@@ -307,9 +363,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | --- | --- | --- |
 | `ui.containers.run_title` | Run settings | 运行设置 |
 | `ui.containers.run_account` | Account | 账户 |
-| `ui.containers.run_account_hint` | The account whose Podman machine runs the containers. | 用这个账户的 Podman 虚拟机运行容器。 |
-| `ui.containers.run_login` | Windows login for {account} | {account} 的 Windows 登录 |
-| `ui.containers.run_login_hint` | Windows uses this login to start the machine at boot. | Windows 用这个登录在开机时启动虚拟机。 |
+| `ui.containers.run_account_hint` | The available account whose Podman machine runs the containers; on Windows it starts at boot with the account's login. | 用这个可用账户的 Podman 虚拟机运行容器；Windows 上开机时用这个账户的登录启动。 |
 | `ui.containers.run_cpus` | CPUs | CPU 数 |
 | `ui.containers.run_memory` | Memory (GiB) | 内存（GiB） |
 | `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |

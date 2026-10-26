@@ -35,8 +35,8 @@ A platform entry is `{runner, min_version, install}`:
 | Rule | Reason |
 | --- | --- |
 | A platform key is `<os>-<family>-<arch>`, `<os>-<family>`, `<os>-<arch>` or `<os>`, tried in that order, and the first key the manifest names wins. | A `system` entry differs by distribution family, a download by architecture, and a `builtin` entry by system alone. |
-| `resolve_platform_entry(manifest, platform)` in `modules/devices/manifests.py` is the one function that picks a machine's entry. The catalog's row, the Modules page's list, the cache and the state's recipe all read it. | Two resolvers can disagree about which entry a machine has. |
-| A machine whose platform has no entry, or whose system version is below the entry's `min_version`, cannot run the module. The Modules page greys it out, and a press on it is refused `no_platform_build {module}` ([protocol.md](../protocol.md), "The modules section, one entry per module"). | A machine that reports no system version is not ruled out, since its floor is unknown. |
+| `resolve_platform_entry(manifest, platform)` in `modules/devices/manifests.py` is the one function that picks a machine's entry. The catalog's row, the machine page's tabs, the cache and the state's recipe all read it. | Two resolvers can disagree about which entry a machine has. |
+| A machine whose platform has no entry, or whose system version is below the entry's `min_version`, cannot run the module. The machine page's catalog greys it out, and a press on it is refused `no_platform_build {module}` ([protocol.md](../protocol.md), "The modules section, one entry per module"). | A machine that reports no system version is not ruled out, since its floor is unknown. |
 | The catalog shows the licence and the source address for a `hub` or a `container` entry alone. | The other methods install the system's own software or the agent's. |
 | The loader refuses a manifest whose keys or `params` fall outside the shapes on this page, so a wrong file fails the suite. | The hub acts on a manifest as root on every managed machine. |
 
@@ -316,7 +316,7 @@ version list can be read.
 | A `system` entry has one version, the system's, locked. An `agent` module follows the agent, and a `builtin` one the system. | Their software comes from outside the hub's cache. |
 | A `container` entry that names no `releases` has one version, its tested one, locked as a `system` entry's is. | Hermes WebUI's two images run as one tested pair, and its publishers state no pairs ([modules/hermes_webui.md](modules/hermes_webui.md)). |
 | A `container` version is a tag, which the `oci` feed resolves to the image's digest. | A digest pins the bytes, and the person chooses a tag. |
-| A module whose manifest says `is_data_forward_only` asks before it installs a version older than the one installed ([../ui_behavior.md](../ui_behavior.md), "The Modules page"). | Gitea migrates its database forward at its first start, and an older Gitea cannot read it. |
+| A module whose manifest says `is_data_forward_only` asks before it installs a version older than the one installed ([../ui_behavior.md](../ui_behavior.md), "The machine page"). | Gitea migrates its database forward at its first start, and an older Gitea cannot read it. |
 
 | Feed `kind` | Its keys | The versions | A version's digest |
 | --- | --- | --- | --- |

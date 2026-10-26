@@ -302,7 +302,7 @@ linked from the table.
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
 Terminal, Remote desktop and the SSH server install nothing: their platform
-entries name the method `agent`, they are never in the Modules page's picker,
+entries name the method `agent`, they are locked checked in the machine page's catalog,
 always a tab, and take none of the four presses ([protocol.md](protocol.md),
 "The modules section, one entry per module"); the hub composes the three
 from their own files under `config/devices/<id>/`, not from
@@ -681,7 +681,7 @@ no output and no place in the report's `sessions`.
 A module runs on a system when its manifest has a platform entry for the
 machine and the machine's `version` is not below that entry's
 `min_version` ([module_install.md](agent/module_install.md), "The
-manifest"). The Modules page greys out every other module in its picker
+manifest"). The machine page's catalog greys out every other module
 and never shows it as a tab. The agent's minimum system stays where it is; a
 module a system cannot run is left out on that system.
 
