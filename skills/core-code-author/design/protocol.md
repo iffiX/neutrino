@@ -621,9 +621,9 @@ has is refused 400 `permission_device_unknown {device_id}`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port}`, a module's apps first, then the declared, then the manual, each group by title; and `services`, the `ai`, `file` and `rdp` entries as a client's list holds them |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port}`, a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
 | `GET /api/hub/service/share` | | the shares devices declared |
-| `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol}`: `type` `web` or `port`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; one entry at least, and no two of one type, port and protocol | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
+| `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
 | `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
 | `POST /api/hub/service/declaration/probe` | `{app_id}` | one health probe of each entry the app has; `ServiceListView` |
 
@@ -631,14 +631,14 @@ has is refused 400 `permission_device_unknown {device_id}`.
 description, created_at, entries}` as `declaration/add` takes it, beside
 `services`, the records of 0.5. A 0.5 record of the kind `http`,
 `generic_tcp` or `generic_udp` reads as an app of one entry with the
-record's id, and is written into `apps` at the next write of the file; a
-`samba` record stays a declared share, a `file` entry with no app. The
+record's id, a `samba` record as an app with one `file` entry for each share
+it names, and each is written into `apps` at the next write of the file. The
 **Declare a service** dialog ([ui_behavior.md](ui_behavior.md), "The
-page") declares an app alone.
+page") declares an app alone, a NAS's share as a `file` entry of one.
 
 A declared app's entry is probed as a 0.5 record of its kind was: a `web`
-entry by an HTTP request to its path, a TCP `port` entry by a connection,
-and a UDP one never.
+entry by an HTTP request to its path, a TCP `port` entry and a `file` entry
+by a connection to the port, and a UDP one never.
 
 #### `/api/hub/credential`
 
@@ -1733,7 +1733,7 @@ what the entry's `payload` names:
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, and `host_key_fingerprint` the machine's host key as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
-| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record | a device's Samba module reports the share, or a `samba` record is declared |
+| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared app's entry | a device's Samba module reports the share, or a declared app names a `file` entry |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
 
 The six types are closed, `SERVICES_TYPES` in
@@ -1809,7 +1809,9 @@ one or more entries. Every `web`, `port` and `ssh` entry belongs to exactly
 one app and carries three fields more: `app_id`, the app's id; `name`, the
 entry's name inside its app; and `local_port`, the port a client forwards it
 on ("The local name and the local port"). An entry's `id` is
-`<app id>_<name>`. `ai`, `file` and `rdp` entries belong to no app. The
+`<app id>_<name>`. A declared app's `file` entry belongs to its app too and
+carries no `local_port`. The `ai` and `rdp` entries and a machine's `file`
+entries belong to no app. The
 client's `apps` section lists the apps its entries name, each `{id, title,
 source, device_id, device_name, local_name}`:
 
@@ -1821,12 +1823,13 @@ source, device_id, device_name, local_name}`:
 | a container module, Hermes WebUI among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
 | a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
-| an app declared on the Services page | the declaration's `id` | its `name` | `declared` | `web_<port>` for a `web` entry, `port_<port>` for a TCP `port` entry, `port_<port>_udp` for a UDP one |
+| an app declared on the Services page | the declaration's `id` | its `name` | `declared` | `web_<port>` for a `web` entry, `port_<port>` for a TCP `port` entry, `port_<port>_udp` for a UDP one, `file_<slug of the share>` for a `file` entry |
 
 | Rule | Reason |
 | --- | --- |
 | A module the hub manages is one app however many containers it runs, and its source is `module`. A container the hub does not manage is one app of its own, `declared` when the Containers module's configuration names it and `manual` when a person started it by hand, the owners the Containers tab's chips name ([agent/modules/containers.md](agent/modules/containers.md), "Hub containers"). | The person thinks of Hermes WebUI as one thing and of each container they run as one thing, and the chip says who answers for it. |
 | An app's entries are in the list only while the entry kind is allowed to the client on that machine; an app none of whose entries is allowed is not in `apps`. | The permission stays per kind and per machine, as on every other entry. |
+| A declared app's `file` entry is mounted on the Files page as a machine's share is, at a port the client picks, and with the login the person types there ([client.md](client.md), "The Files page"). The hub generates no password for it. | A NAS's share has its own users, which the hub neither makes nor knows. |
 | `app_id` and `name` are added fields and keep `PROTOCOL`; `apps` is an added section. | A reader that predates them reads each entry as before. |
 
 ### The local name and the local port
@@ -2018,7 +2021,7 @@ and the hub's transport alone dials it:
 | The entry | The hub connects the stream to |
 | --- | --- |
 | provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port, protocol}` on the agent's session; `agent_offline {device}` when the machine has no session, and the same code when its session ends under an open stream |
-| a declared record, `source` `declared` | the record's own host and port, dialled by the hub's transport, since the hub is on the LAN of the machines it serves |
+| a declared app's entry, `source` `declared` | the app's host at the entry's port, dialled by the hub's transport, since the hub is on the LAN of the machines it serves |
 | the `ai` entry | the gateway on `127.0.0.1` at its `listen_port` |
 | the panel | the panel's HTTP port on `127.0.0.1`, over plain HTTP; the panel's login guards it as on the LAN ("The panel ports") |
 

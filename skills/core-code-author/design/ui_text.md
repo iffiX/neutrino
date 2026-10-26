@@ -654,6 +654,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `ui.settings.ssh_include_hint` | Whether ssh, scp, git and VS Code reach each machine as `<machine>.nt`. | 是否让 ssh、scp、git 和 VS Code 用 `<机器>.nt` 直接连到每台机器。 |
 | `ui.services.apps_title`, the Services page's section | Apps | 应用 |
 | `ui.services.entries`, `ui.services.add_entry`, `ui.services.entry_type`, `ui.services.entry_path`, `ui.services.entry_remove` | Entries, Add entry, Type, Path, Remove | 入口、添加入口、类型、路径、移除 |
+| `ui.services.entry_share`, a `file` entry's field | Share name | 共享名 |
 
 `ui.panel_web` and `ui.panel_ports` go with the Web and Ports pages.
 
