@@ -1,8 +1,8 @@
 """Making the state's ``ai_tools`` section true, account by account.
 
 The section says whether the machine's AI tools use the hub's gateway, with
-its endpoint, the device's key and each tool's models, and names the
-accounts it acts on. While it is on, each named account is switched with the
+its endpoint and the device's key, and names the accounts it acts on, each
+with its own models for each tool. While it is on, each named account is switched with the
 desktop client's steps, run as that account; an account this agent switched
 that the section no longer names, and every one of them when the section is
 off, is switched back with the client's deactivation. An account whose
@@ -144,8 +144,12 @@ class AiToolsApplier:
                 return
         results = []
         for entry in named:
+            configs = entry.get("tool_configs")
             switched = self._switch(
-                str(entry["account"]), str(entry.get("password", "") or ""), section
+                str(entry["account"]),
+                str(entry.get("password", "") or ""),
+                section,
+                configs if isinstance(configs, dict) else {},
             )
             if switched is not None:
                 results.append(switched)
@@ -215,8 +219,16 @@ class AiToolsApplier:
             if not name.startswith(".") and self._has_records(name)
         )
 
-    def _switch(self, account: str, password: str, section: dict) -> "dict | None":
+    def _switch(
+        self, account: str, password: str, section: dict, tool_configs: dict
+    ) -> "dict | None":
         """Point one account's tools at the hub, holding its lock, or say why not.
+
+        Args:
+            account: The account.
+            password: Its login, on Windows alone.
+            section: The state's ``ai_tools`` section.
+            tool_configs: The account's own models for each tool.
 
         Returns:
             The account's result, None when the machine has no binding any
@@ -226,12 +238,14 @@ class AiToolsApplier:
             with self._account_lock(account):
                 if self._is_bound is not None and not self._is_bound():
                     return None
-                return self._switch_held(account, password, section)
+                return self._switch_held(account, password, section, tool_configs)
         except ToolSwitchError as error:
             return self._refused(account, error)
 
-    def _switch_held(self, account: str, password: str, section: dict) -> dict:
-        """Point one account's tools at the hub, or say why not."""
+    def _switch_held(
+        self, account: str, password: str, section: dict, tool_configs: dict
+    ) -> dict:
+        """Point one account's tools at the hub with its own models, or say why not."""
         session = self._session(account, password)
         if isinstance(session, dict):
             return session
@@ -240,8 +254,7 @@ class AiToolsApplier:
         )
         base_url = str(section.get("base_url", "") or "")
         api_key = str(section.get("api_key", "") or "")
-        configs = section.get("tool_configs")
-        configs = configs if isinstance(configs, dict) else {}
+        configs = tool_configs
         if switcher.is_current(
             base_url=base_url, api_key=api_key, tool_configs=configs
         ):

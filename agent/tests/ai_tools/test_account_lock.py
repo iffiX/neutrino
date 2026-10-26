@@ -141,8 +141,7 @@ def test_the_applier_reports_a_held_account_and_runs_nothing_as_it(
                 "is_enabled": True,
                 "base_url": "http://192.168.10.1:8317",
                 "api_key": "k",  # scan: allow
-                "tool_configs": {},
-                "accounts": [{"account": "ann"}],
+                "accounts": [{"account": "ann", "tool_configs": {}}],
             },
             "h1",
         )

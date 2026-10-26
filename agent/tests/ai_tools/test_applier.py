@@ -1,7 +1,8 @@
 """The state's ``ai_tools`` section, made true account by account.
 
 What these pin: every account the section names is switched as itself,
-with the section's endpoint, key and models, and reported switched; nothing
+with the section's endpoint and key and its own models, and reported
+switched; nothing
 runs when the records already carry the settings, and a state applied once
 is not applied again; an account the section no longer names, and every
 account when it is off, is switched back and its records removed; an
@@ -41,9 +42,12 @@ def section(*accounts, **extra):
         "is_enabled": True,
         "base_url": HUB,
         "api_key": KEY,
-        "tool_configs": CONFIGS,
         "accounts": [
-            {"account": name, "password": extra.get("password", "")}
+            {
+                "account": name,
+                "password": extra.get("password", ""),
+                "tool_configs": extra.get("configs", {}).get(name, CONFIGS),
+            }
             for name in accounts
         ],
     }
@@ -96,6 +100,18 @@ def test_each_named_account_is_switched_as_itself(tmp_path, binary):
     ]
     assert stat.S_IMODE(os.stat(record_dir).st_mode) == 0o700
     assert not [path for path in platform.files if path.endswith("/payload")]
+
+
+def test_each_account_is_switched_with_its_own_models(tmp_path, binary):
+    applier, platform = make(
+        tmp_path, binary, homes={"ann": "/home/ann", "bob": "/home/bob"}
+    )
+    bobs = {"claude": {"default": "m9"}, "codex": {}, "gemini": {}}
+
+    applier.apply(section("ann", "bob", configs={"bob": bobs}), "h1")
+
+    assert "--model=m1" in platform.store("ann").added["claude"]
+    assert "--model=m9" in platform.store("bob").added["claude"]
 
 
 def test_nothing_runs_when_nothing_changed_and_a_state_is_applied_once(
