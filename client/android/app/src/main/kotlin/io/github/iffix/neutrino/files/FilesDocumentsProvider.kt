@@ -25,14 +25,14 @@ import io.github.iffix.neutrino.words.WordCatalog
 import java.io.FileNotFoundException
 import java.io.IOException
 
+/** The code a machine's share refusing the login the hub gave reads as. */
+internal const val CODE_HUB_LOGIN_REJECTED = "share_hub_login_rejected"
+
 /**
  * The shares the joined hubs publish, as the system's Files shows them: one root per share,
  * opened with the login given on the Files screen. A server that does not answer lists as the
  * error `share_unreachable` rather than waiting.
  */
-/** The code a machine's share refusing the login the hub gave reads as. */
-internal const val CODE_HUB_LOGIN_REJECTED = "share_hub_login_rejected"
-
 class FilesDocumentsProvider : DocumentsProvider() {
     private val handler by lazy { Handler(HandlerThread("shares").apply { start() }.looper) }
 
