@@ -2,12 +2,12 @@
 
 An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
-resolved for the scope its socket arrived from, whether it is switched
-off, the join material of every running overlay and the machines it may
-open a shell or run a command on,
-each as far as its permission allows, whether it may open the hub's panel
-and the way its socket reached the hub; every entry names the machine that
-provides it. Both name every address the hub answers the channel on. Each
+resolved for the scope its socket arrived from, the apps those entries
+belong to, whether it is switched off, the join material of every running
+overlay and the machines it may open a shell or run a command on, each as
+far as its permission allows, whether it may open the hub's panel and the
+way its socket reached the hub; every entry names the machine that provides
+it. Both name every address the hub answers the channel on. Each
 carries the hash the peer's reports name back; a client's is computed on the
 resolved list, so the same list hashes differently for two scopes. An agent
 is pushed its state on a connection's first report whose hash differs, a
@@ -40,10 +40,12 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import device_owners
+from neutrino_hub.modules.devices.constants import DEVICE_TERMINAL_MODULE
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.frp.constants import FRP_OPENFRP, FRP_SAKURAFRP
 from neutrino_hub.modules.services.constants import (
+    SERVICES_APP_ENTRY_TYPES,
     SERVICES_REACHED_SSH_RELAY,
     SERVICES_SOURCE_DECLARED,
 )
@@ -89,15 +91,18 @@ def client_state(runtime, client_id: str) -> dict:
             whether it may open the hub's panel.
 
     Returns:
-        ``{hash, is_disabled, services, urls, ssh_relay_url, sakurafrp_url,
-        openfrp_url, overlays, terminals, is_panel_allowed,
+        ``{hash, is_disabled, services, apps, urls, ssh_relay_url,
+        sakurafrp_url, openfrp_url, overlays, terminals, is_panel_allowed,
         reached_through}``, each of the three server addresses being the
-        member of ``urls`` its way in adds, empty while it adds none.
+        member of ``urls`` its way in adds, empty while it adds none, and
+        ``apps`` the apps the allowed ``web``, ``port`` and ``ssh`` entries
+        belong to.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
     is_disabled = client is None or client.is_disabled
     services = []
+    apps = []
     overlays = []
     terminals = []
     is_panel_allowed = False
@@ -131,6 +136,7 @@ def client_state(runtime, client_id: str) -> dict:
             own_machine_id=own_machine_id,
             device_ids_by_address=device_ids_by_address,
         )
+        apps = _apps_of(runtime, services)
         if CLIENT_PERMISSION_OVERLAY in kinds:
             overlays = channel_overlay.overlay_materials(runtime)
         if CLIENT_PERMISSION_TERMINAL in kinds:
@@ -151,6 +157,7 @@ def client_state(runtime, client_id: str) -> dict:
     body = {
         "is_disabled": is_disabled,
         "services": services,
+        "apps": apps,
         "urls": urls,
         **{key: url if url in urls else "" for key, url in servers.items()},
         "overlays": overlays,
@@ -287,8 +294,9 @@ def _hub_name() -> str:
 
 
 def _terminals(runtime, viewer: str) -> list:
-    """Every managed machine, online or not, by its name, its presence and
-    the shell sessions the viewer sees on it, oldest first."""
+    """Every managed machine, online or not, by its name, its presence, the
+    Terminal module's enabled accounts and the shell sessions the viewer sees
+    on it, oldest first."""
     held: dict = {}
     for session in sessions_for(runtime, viewer):
         held.setdefault(session["device_id"], []).append(session)
@@ -297,11 +305,38 @@ def _terminals(runtime, viewer: str) -> list:
             "device_id": device.id,
             "name": device_name(runtime, device),
             "is_online": runtime.agent_sessions.is_online(device.id),
+            "accounts": runtime.desired_states.enabled_accounts(
+                device.id, DEVICE_TERMINAL_MODULE
+            ),
             "sessions": held.get(device.id, []),
         }
         for device in DeviceRegistry().all_stored()
         if device.is_managed
     ]
+
+
+def _apps_of(runtime, services: list) -> list:
+    """The apps the named entries belong to, in the order their first entry
+    is listed, each with the machine name its entries carry."""
+    named = {entry["app_id"]: entry for entry in services if entry.get("app_id")}
+    if not named:
+        return []
+    apps = []
+    for app in runtime.published_services.apps():
+        entry = named.get(app["id"])
+        if entry is None:
+            continue
+        apps.append(
+            {
+                "id": app["id"],
+                "title": app["title"],
+                "source": app["source"],
+                "device_id": entry["device_id"],
+                "device_name": entry["device_name"],
+                "local_name": app["local_name"],
+            }
+        )
+    return apps
 
 
 def _named_entries(runtime, entries: list) -> list:
@@ -334,6 +369,14 @@ def _named_entries(runtime, entries: list) -> list:
             provider = by_address.get(entry_host(entry), "")
         else:
             provider = hub_machine
+        if catalog["type"] not in SERVICES_APP_ENTRY_TYPES and catalog.get("app_id"):
+            # A declared app's file entry belongs to its app and carries no
+            # local port.
+            catalog.pop("local_port", None)
+        elif catalog["type"] not in SERVICES_APP_ENTRY_TYPES:
+            catalog.pop("app_id", None)
+            catalog.pop("name", None)
+            catalog.pop("local_port", None)
         named.append({**catalog, "device_id": device_id, "device_name": provider})
     return named
 

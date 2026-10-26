@@ -24,8 +24,8 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_UNADMITTED_MAX,
 )
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
-from neutrino_hub.web import agent_port
-from neutrino_hub.web.agent_port import (
+from neutrino_hub.web import legacy_listener as agent_port
+from neutrino_hub.web.legacy_listener import (
     AgentPortProtocol,
     ChannelWebSocketProtocol,
     LatePongJournal,
@@ -306,7 +306,7 @@ def test_the_wildcard_is_served_on_an_ipv4_and_an_ipv6_only_socket():
 
 
 def test_a_machine_without_ipv6_serves_ipv4_and_says_so_once(monkeypatch, caplog):
-    from neutrino_hub.web import agent_port
+    from neutrino_hub.web import legacy_listener as agent_port
 
     real = agent_port.bound_socket
 
@@ -317,7 +317,7 @@ def test_a_machine_without_ipv6_serves_ipv4_and_says_so_once(monkeypatch, caplog
 
     monkeypatch.setattr(agent_port, "bound_socket", no_ipv6)
 
-    with caplog.at_level("WARNING", logger="neutrino_hub.web.agent_port"):
+    with caplog.at_level("WARNING", logger="neutrino_hub.web.legacy_listener"):
         listeners = agent_port_sockets("0.0.0.0", 0)
     for sock in listeners:
         sock.close()
@@ -601,7 +601,7 @@ def test_a_late_pong_is_said_in_the_journal_and_the_socket_closed(monkeypatch, c
     monkeypatch.setattr(agent_port, "LATE_PONGS", LatePongJournal())
     protocol = late_socket()
 
-    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.agent_port"):
+    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.legacy_listener"):
         protocol.keepalive_timeout()
     protocol.loop.close()
 
@@ -616,7 +616,7 @@ def test_a_late_pong_is_said_in_the_journal_and_the_socket_closed(monkeypatch, c
 def test_the_late_pong_line_is_written_once_a_minute_for_each_address(caplog):
     journal = LatePongJournal(interval_s=60.0)
 
-    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.agent_port"):
+    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.legacy_listener"):
         said = [
             journal.note("10.0.0.5", "/api/channel/socket", 60.0, 100.0),
             journal.note("10.0.0.5", "/api/channel/socket", 60.0, 130.0),

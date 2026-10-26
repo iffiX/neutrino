@@ -24,15 +24,76 @@ CHANNEL_ROLE_AGENT = "agent"
 CHANNEL_ROLE_CLIENT = "client"
 CHANNEL_ROLE_HUB = "hub"
 
-# The three endpoints on the agent port.
-CHANNEL_JOIN_PATH = "/api/channel/join"
-CHANNEL_LEAVE_PATH = "/api/channel/leave"
+# The legacy listener: the 0.5 channel of an agent updating itself, served
+# over the agent TLS pair on loopback alone, and the route an updated peer
+# moves its binding to the transport with.
+CHANNEL_LEGACY_HOST = "127.0.0.1"
+CHANNEL_LEGACY_TLS_PORT = 18445
 CHANNEL_WS_PATH = "/api/channel/socket"
+CHANNEL_KEY_SET_PATH = "/api/channel/key/set"
+# The switch in settings.json that keeps the legacy listener open.
+CHANNEL_SETTING_LEGACY = "is_legacy_channel_enabled"
+# The first release whose agents and clients speak PROTOCOL 4; a device row
+# whose agent reports an older one keeps the legacy listener open.
+CHANNEL_TRANSPORT_FIRST_VERSION = "0.6.0"
 
-# Close codes: a refused hello, and a socket replaced by a second one for the
-# same binding.
+# The legacy listener's close codes: a refused hello, and a socket replaced
+# by a second one for the same binding.
 CHANNEL_CLOSE_REFUSED = 4000
 CHANNEL_CLOSE_REPLACED = 4010
+
+# The local channel between the hub's Python and its transport: the first
+# line's operations, the questions the transport asks, the commands the
+# Python sends and the events the transport raises (protocol.md, "The local
+# channel").
+CHANNEL_LOCAL_OP_CONTROL = "control"
+CHANNEL_LOCAL_OP_ATTACH = "attach"
+CHANNEL_LOCAL_OP_OPEN = "open"
+CHANNEL_QUESTION_PEER = "peer"
+CHANNEL_QUESTION_TICKET = "ticket"
+CHANNEL_QUESTION_ENTRY = "entry"
+CHANNEL_QUESTION_TOKEN = "token"
+CHANNEL_COMMAND_SESSION_CLOSE = "session_close"
+CHANNEL_COMMAND_STREAMS_CLOSE = "streams_close"
+CHANNEL_COMMAND_KEYS_RELOAD = "keys_reload"
+CHANNEL_EVENT_SESSION_OPEN = "session_open"
+CHANNEL_EVENT_SESSION_END = "session_end"
+CHANNEL_EVENT_STREAM = "stream"
+# The reason a session_end carries for a session its binding's newer one
+# replaced.
+CHANNEL_SESSION_END_REPLACED = "replaced"
+# The listener a session arrived on: the agent port, or a frp vendor's.
+CHANNEL_LISTENER_MAIN = "main"
+# How long the Python waits for the transport's answer to a command, and for
+# an agent's reply to a relayed persist or stop_session.
+CHANNEL_CONTROL_COMMAND_TIMEOUT_S = 5.0
+CHANNEL_REPLY_TIMEOUT_S = 15.0
+# The pause before the Python dials its transport again, doubled up to the
+# longest while the transport is not there.
+CHANNEL_CONTROL_REDIAL_MIN_S = 0.5
+CHANNEL_CONTROL_REDIAL_MAX_S = 10.0
+# The largest local line, the transport's ControlFrameBytesMax.
+CHANNEL_CONTROL_LINE_BYTES_MAX = 2 * 1024 * 1024
+# A frame line from the Python that ends the session once written.
+CHANNEL_FRAME_IS_LAST = "is_last"
+
+# A stream's records, ``<u8 type><u32 length><payload>``.
+CHANNEL_RECORD_HEADER_BYTES = 5
+CHANNEL_RECORD_BYTES_MAX = 64 * 1024
+CHANNEL_RECORD_OPEN = 1
+CHANNEL_RECORD_ACCEPT = 2
+CHANNEL_RECORD_DATA = 3
+CHANNEL_RECORD_STDERR = 4
+CHANNEL_RECORD_EOF = 5
+CHANNEL_RECORD_RESIZE = 6
+CHANNEL_RECORD_DATAGRAM = 7
+CHANNEL_RECORD_CLOSE = 8
+# What recv() names each record it hands on.
+CHANNEL_ITEM_DATA = "data"
+CHANNEL_ITEM_STDERR = "stderr"
+CHANNEL_ITEM_EOF = "eof"
+CHANNEL_ITEM_RESIZE = "resize"
+CHANNEL_ITEM_DATAGRAM = "datagram"
 
 # The frame words.
 CHANNEL_FRAME_HELLO = "hello"
@@ -40,13 +101,24 @@ CHANNEL_FRAME_WELCOME = "welcome"
 CHANNEL_FRAME_REFUSED = "refused"
 CHANNEL_FRAME_STATE = "state"
 CHANNEL_FRAME_REPORT = "report"
+CHANNEL_FRAME_JOIN = "join"
+CHANNEL_FRAME_JOINED = "joined"
+CHANNEL_FRAME_LEAVE = "leave"
+CHANNEL_FRAME_LEFT = "left"
+CHANNEL_FRAME_SERVICE = "service"
+CHANNEL_FRAME_PERSIST = "persist"
+CHANNEL_FRAME_STOP_SESSION = "stop_session"
+CHANNEL_FRAME_REPLY = "reply"
+# The legacy listener's WebSocket frames: a stream's open and close, its
+# credit, and the end of input on an exec stream.
 CHANNEL_FRAME_OPEN = "open"
 CHANNEL_FRAME_CLOSE = "close"
 CHANNEL_FRAME_CREDIT = "credit"
 CHANNEL_FRAME_PING = "ping"
 CHANNEL_FRAME_PONG = "pong"
-# No more input follows on an ``exec`` stream.
 CHANNEL_FRAME_EOF = "eof"
+# A frame's ``request``, the asker's own string, holds this many characters.
+CHANNEL_REQUEST_CHARS_MAX = 64
 # A ``pong`` echoes the ``ping``'s nonce up to this many characters.
 CHANNEL_PING_NONCE_CHARS_MAX = 64
 
@@ -149,12 +221,12 @@ CHANNEL_UDP_HELD_DATAGRAMS_MAX = 16
 CHANNEL_UDP_SOURCE_BYTES = 2
 # The loopback address the hub dials its own gateway and panel on.
 CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
-# The agent port's limits, each over the whole port and never per peer
-# address (connection.md, "What an unadmitted peer can cost the hub"): a
-# socket's time to its first byte, a TLS handshake's time from that byte,
+# The legacy listener's limits, each over the whole listener and never per
+# peer address (connection.md, "What an unadmitted peer can cost the hub"):
+# a socket's time to its first byte, a TLS handshake's time from that byte,
 # the time from accept to an admitted hello, the connections not yet past
 # hello, the sockets past it, and the failed admissions within the window
-# that pause join.
+# that pause join, which the transport's admissions count into as well.
 CHANNEL_FIRST_BYTE_TIMEOUT_S = 3.0
 CHANNEL_TLS_HANDSHAKE_TIMEOUT_S = 10.0
 CHANNEL_ADMISSION_TIMEOUT_S = 30.0
@@ -184,14 +256,15 @@ CHANNEL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
 CHANNEL_CODE_PROTOCOL_TOO_NEW = "protocol_too_new"
 CHANNEL_CODE_KIND_UNKNOWN = "kind_unknown"
 CHANNEL_CODE_VERB_UNKNOWN = "verb_unknown"
-# A client's resize names a shell stream it has no bridge open on.
-CHANNEL_CODE_SHELL_UNKNOWN = "shell_unknown"
 # A session verb names a session no online machine reports, or a persist
 # comes from a viewer that did not open the session.
 CHANNEL_CODE_SESSION_UNKNOWN = "session_unknown"
 CHANNEL_CODE_SESSION_NOT_OWNED = "session_not_owned"
 CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
+# The hub's Python did not answer its transport in time, or is not there.
+CHANNEL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
+
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"
 CHANNEL_CODE_ROLE_MISMATCH = "role_mismatch"
 # A first frame that is late, not text, not a hello, or not one this hub reads.

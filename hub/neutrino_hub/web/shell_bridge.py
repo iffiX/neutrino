@@ -1,15 +1,14 @@
-"""What every bridge to an agent's shell stream shares.
+"""What every view of an agent's shell sessions shares.
 
-The panel's terminal socket and a client's ``shell`` stream both drive one
-agent shell: its output read as it arrives, its end settled when either side
-stops, and a later size sent on a ``command {agent, resize}`` stream the
-agent closes itself. A shell is a session its opener names by a generated
-id: the hub stamps the opener as its ``owner``, the agent reports every
-session it holds, a ``persist`` command from the owner keeps one past its
-streams or shares it, and ``stop_session`` ends one. Which sessions a viewer
-sees is :func:`sessions_for`; which it may join or change is
-:func:`is_session_refused`, read from what the hub stamped and relayed
-itself before the machines' reports.
+The panel's container terminal drives one agent shell: its output read as
+it arrives, its end settled when either side stops, and a later size a
+``resize`` record on the stream. A client's shell is a session its opener
+names by a generated id: the hub stamps the opener as its ``owner``, the
+agent reports every session it holds, a ``persist`` frame from the owner
+keeps one past its streams or shares it, and ``stop_session`` ends one.
+Which sessions a viewer sees is :func:`sessions_for`; which it may join or
+change is :func:`is_session_refused`, read from what the hub stamped and
+relayed itself before the machines' reports.
 """
 
 import asyncio
@@ -17,18 +16,11 @@ import contextlib
 import functools
 import time
 
-from neutrino_hub.exceptions import AgentOfflineError
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_CALL_TIMEOUT_S,
-    CHANNEL_CODE_NEVER_REPORTED,
     CHANNEL_CODE_SESSION_NOT_OWNED,
-    CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_SHELL_OWNER_CLIENT_PREFIX,
     CHANNEL_SHELL_OWNER_HUB,
-    CHANNEL_STREAM_COMMAND,
-    CHANNEL_VERB_PERSIST,
-    CHANNEL_VERB_RESIZE,
-    CHANNEL_VERB_STOP_SESSION,
 )
 from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_TERMINAL
 from neutrino_hub.modules.clients.permissions import (
@@ -142,60 +134,6 @@ async def settle_shell(stream, reader: asyncio.Task, pump: asyncio.Task):
         with contextlib.suppress(asyncio.CancelledError):
             await task
     return info
-
-
-async def resize_shell(sessions, device_id: str, shell_id: int, cols: int, rows: int):
-    """Tell the agent a shell's new size, on a command stream it closes itself.
-
-    Args:
-        sessions: The agents' sessions.
-        device_id: The device.
-        shell_id: The agent shell stream's id.
-        cols: Columns.
-        rows: Rows.
-
-    Raises:
-        AgentOfflineError: When the device has no channel.
-    """
-    await sessions.open_stream(
-        device_id,
-        CHANNEL_STREAM_COMMAND,
-        {
-            "module": CHANNEL_COMMAND_MODULE_AGENT,
-            "verb": CHANNEL_VERB_RESIZE,
-            "shell": shell_id,
-            "cols": cols,
-            "rows": rows,
-        },
-    )
-
-
-async def persist_session(
-    sessions, device_id: str, session_id: str, flags: dict
-) -> None:
-    """Set a session's two flags on the agent; it closes the command.
-
-    Args:
-        sessions: The agents' sessions.
-        device_id: The device.
-        session_id: The session, by the id its opener generated.
-        flags: ``is_persistent``, whether it stays when its last stream
-            closes, and ``is_shared``, whether every viewer with terminal
-            rights on the machine sees it; a flag left out keeps its value.
-
-    Raises:
-        AgentOfflineError: When the device has no channel.
-    """
-    await sessions.open_stream(
-        device_id,
-        CHANNEL_STREAM_COMMAND,
-        {
-            "module": CHANNEL_COMMAND_MODULE_AGENT,
-            "verb": CHANNEL_VERB_PERSIST,
-            "session_id": session_id,
-            **flags,
-        },
-    )
 
 
 def persist_flags(message: dict) -> dict:
@@ -330,37 +268,36 @@ async def record_sharing(
 async def close_other_viewers(
     runtime, device_id: str, session_id: str, owner: str
 ) -> list:
-    """Close every client ``shell`` stream on a session but its owner's.
+    """Close every client's streams on a kept shell but its owner's.
+
+    The transport holds the streams; each client's are closed through
+    ``streams_close`` on that client's binding, naming the machine and the
+    session.
 
     Args:
-        runtime: The shared runtime, holding the clients' sockets.
+        runtime: The shared runtime, holding the clients' sessions.
         device_id: The machine holding the session.
         session_id: The session.
         owner: The session's owner stamp; its own streams stay.
 
     Returns:
-        ``(client_id, stream_id)`` of each stream closed.
+        The clients whose streams were asked closed.
     """
     closed = []
     for session in runtime.client_sessions.sessions():
         if client_owner(session.key) == owner:
             continue
-        for stream_id, bridged in dict(session.shells).items():
-            if bridged[0] != device_id or bridged[2] != session_id:
-                continue
-            params = {"session_id": session_id}
-            if session.loop is asyncio.get_running_loop():
-                await session.close_stream(
-                    stream_id, CHANNEL_CODE_SESSION_NOT_OWNED, params
-                )
-            else:
-                await asyncio.to_thread(
-                    session.close_stream_from_thread,
-                    stream_id,
-                    CHANNEL_CODE_SESSION_NOT_OWNED,
-                    params,
-                )
-            closed.append((session.key, stream_id))
+        try:
+            await session.close_streams(
+                kind=CLIENT_PERMISSION_TERMINAL,
+                device_id=device_id,
+                session_id=session_id,
+                code=CHANNEL_CODE_SESSION_NOT_OWNED,
+                params={"session_id": session_id},
+            )
+        except StreamRefusedError:
+            continue
+        closed.append(session.key)
     return closed
 
 
@@ -460,40 +397,6 @@ def device_name(runtime, device) -> str:
         or device.ipv4_address
         or device.id
     )
-
-
-async def session_command(sessions, device_id: str, verb: str, args: dict) -> dict:
-    """Run one session verb on the agent and wait for its close.
-
-    Args:
-        sessions: The agents' sessions.
-        device_id: The device.
-        verb: ``persist`` or ``stop_session``.
-        args: What the verb takes beside the module and the verb.
-
-    Returns:
-        The close, ``{"code", "params"}``; ``agent_never_reported`` when the
-        agent did not close it in time.
-
-    Raises:
-        AgentOfflineError: When the device has no channel, or the socket
-            ends before the close.
-    """
-    stream = await sessions.open_stream(
-        device_id,
-        CHANNEL_STREAM_COMMAND,
-        {"module": CHANNEL_COMMAND_MODULE_AGENT, "verb": verb, **args},
-    )
-    try:
-        info = await asyncio.wait_for(stream.wait_closed(), CHANNEL_CALL_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        return {"code": CHANNEL_CODE_NEVER_REPORTED, "params": {}}
-    if info is None:
-        raise AgentOfflineError(device_id)
-    return {
-        "code": str(info.get("code", "") or ""),
-        "params": dict(info.get("params") or {}),
-    }
 
 
 def reported_sessions(agent_sessions) -> list:

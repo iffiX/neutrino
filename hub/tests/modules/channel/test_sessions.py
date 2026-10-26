@@ -1,32 +1,24 @@
-"""The session registry: one socket per binding, streams multiplexed on it.
+"""The session registry over the local channel: one session per binding.
 
-A fake socket records what the hub sends and lets a test play the peer:
-open a stream, deliver bytes, grant credit, close. What these pin is the
-framing both sides must match, the even ids the hub allots, the first
-credit that opens every window, the close as the one place a result goes,
-a peer-opened stream handed to its kind's handler or closed
-``kind_unknown``, an ``eof`` reaching an ``exec`` stream in order with its
-bytes and no other kind, each chunk of a prefixed send carrying the prefix
-within the credit, the replaced-socket close, the presence the registry
-keeps in memory after a session ends, and that a socket going away fails
-every stream on it with ``agent_offline`` rather than leaving a caller
-waiting.
+A fake local channel records what a session sends and lets a test play the
+transport. What these pin: a frame goes out as ``{frame, session}``, a
+state push is one ``state`` frame that remembers the hash, a refusal is the
+``session_close`` command, a stream the hub opens is one ``open``
+connection whose records come back, the presence the registry keeps after a
+session ends, a replaced session left to the transport, the reports kept
+per binding, and that a thread's call rides the loop and comes back or is
+given a code.
 """
 
 import asyncio
-import json
 import threading
 
 import pytest
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_CHUNK_BYTES,
-    CHANNEL_CLOSE_REFUSED,
-    CHANNEL_CLOSE_REPLACED,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
-    CHANNEL_STREAM_CREDIT_BYTES,
 )
 from neutrino_hub.modules.channel.sessions import (
     ChannelSession,
@@ -37,817 +29,308 @@ from neutrino_hub.modules.channel.sessions import (
 DEVICE = "device-one"
 
 
-class FakeWebSocket:
-    """Records every frame the hub sends; a dead one refuses to send."""
+class FakeLocalChannel:
+    """What a session writes through, recorded."""
 
     def __init__(self):
-        self.texts: list = []
-        self.binaries: list = []
-        self.closes: list = []
-        self.is_dead = False
+        self.frames: list = []
+        self.commands: list = []
+        self.opened: list = []
+        self.refuse_command: "str | None" = None
 
-    async def send_text(self, text: str) -> None:
-        if self.is_dead:
-            raise RuntimeError("socket closed")
-        self.texts.append(json.loads(text))
+    async def send_frame(self, session, frame, *, is_last=False):
+        self.frames.append((session, frame, is_last))
 
-    async def send_bytes(self, data: bytes) -> None:
-        if self.is_dead:
-            raise RuntimeError("socket closed")
-        self.binaries.append(data)
+    async def send_command(self, command, **fields):
+        self.commands.append((command, fields))
+        if self.refuse_command:
+            raise StreamRefusedError(self.refuse_command, {})
+        return {}
 
-    async def close(self, code: int, reason: str = "") -> None:
-        self.closes.append((code, reason))
-
-    def sent(self, kind: str) -> list:
-        return [message for message in self.texts if message["type"] == kind]
+    async def open_stream(self, session, open_body, *, peer_key=""):
+        self.opened.append((session, open_body, peer_key))
+        return FakeOpenedStream(open_body)
 
 
-def session(
-    key: str = DEVICE,
-    socket: "FakeWebSocket | None" = None,
-    role: str = CHANNEL_ROLE_AGENT,
-) -> ChannelSession:
+class FakeOpenedStream:
+    def __init__(self, open_body):
+        self.kind = open_body["kind"]
+        self.args = {key: value for key, value in open_body.items() if key != "kind"}
+        self.is_accepted = True
+        self.is_abandoned = False
+        self.close_info = {"code": "", "params": {"exit_code": 0}}
+        self._items = [("data", b"out"), None]
+
+    async def recv(self):
+        return self._items.pop(0)
+
+    async def send_bytes(self, data):
+        self.sent = data
+
+
+def session(channel, key=DEVICE, role=CHANNEL_ROLE_AGENT, session_id="s1"):
     return ChannelSession(
         key=key,
         role=role,
-        websocket=socket or FakeWebSocket(),
+        session_id=session_id,
+        channel=channel,
         loop=asyncio.get_running_loop(),
         name="box",
-        software="neutrino_agent/0.3.0",
+        software="neutrino_agent/0.6.0",
         address="192.168.100.7",
+        listener="main",
     )
-
-
-def frame(stream_id: int, data: bytes) -> bytes:
-    """A binary frame as the peer sends it."""
-    return stream_id.to_bytes(4, "big") + data
 
 
 def run(coroutine_function):
     return asyncio.run(coroutine_function())
 
 
-# --- opening ---
-
-
-def test_an_open_carries_the_kinds_arguments_and_the_first_credit_follows():
+def test_a_frame_goes_out_on_the_sessions_control_stream():
     async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-
-        stream = await made.open_stream("command", {"action": "reboot", "args": {}})
-
-        assert socket.texts == [
-            {
-                "type": "open",
-                "stream": stream.id,
-                "kind": "command",
-                "action": "reboot",
-                "args": {},
-            },
-            {
-                "type": "credit",
-                "stream": stream.id,
-                "bytes": CHANNEL_STREAM_CREDIT_BYTES,
-            },
-        ]
-        assert not stream.is_closed
-
-    run(scenario)
-
-
-def test_the_hub_allots_even_ids_counting_upward():
-    async def scenario():
-        made = session()
-
-        ids = [(await made.open_stream("shell", {})).id for _ in range(3)]
-
-        assert ids == [0, 2, 4]
-
-    run(scenario)
-
-
-def test_an_open_waits_for_no_answer():
-    """The peer's close is the answer; nothing else is."""
-
-    async def scenario():
-        made = session()
-
-        stream = await asyncio.wait_for(made.open_stream("order", {}), 0.5)
-
-        assert stream.close_info is None
-
-    run(scenario)
-
-
-# --- what rides a stream ---
-
-
-def test_bytes_arrive_in_order_then_the_close_then_none():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("command", {"action": "x"})
-        made.dispatch_bytes(frame(stream.id, b"one\n"))
-        made.dispatch_bytes(frame(stream.id, b"two\n"))
-        made.dispatch_text(
-            {
-                "type": "close",
-                "stream": stream.id,
-                "code": "",
-                "params": {"exit_code": 0, "output": "x"},
-            }
-        )
-
-        first = await stream.recv()
-        second = await stream.recv()
-        end = await stream.recv()
-
-        assert first == ("data", b"one\n")
-        assert second == ("data", b"two\n")
-        assert end is None
-        assert stream.is_closed
-        assert stream.close_info == {
-            "code": "",
-            "params": {"exit_code": 0, "output": "x"},
-        }
-        assert await stream.wait_closed() == stream.close_info
-
-    run(scenario)
-
-
-def test_binary_frames_route_by_their_u32_prefix_and_earn_credit_back():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("file_download", {})
-        other = await made.open_stream("file_download", {})
-        made.dispatch_bytes(frame(stream.id, b"payload"))
-        made.dispatch_bytes(frame(other.id, b"elsewhere"))
-        made.dispatch_bytes(frame(77, b"nobody"))
-        made.dispatch_bytes(b"\x00")
-
-        kind, data = await stream.recv()
-
-        assert (kind, data) == ("data", b"payload")
-        assert socket.sent("credit")[-1] == {
-            "type": "credit",
-            "stream": stream.id,
-            "bytes": len(b"payload"),
-        }
-        assert (await other.recv())[1] == b"elsewhere"
-
-    run(scenario)
-
-
-def test_sending_bytes_waits_for_credit_and_chunks_within_it():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("file_upload", {})
-        payload = bytes(range(256)) * ((CHANNEL_CHUNK_BYTES // 256) + 8)
-        sending = asyncio.ensure_future(stream.send_bytes(payload))
-        await asyncio.sleep(0.01)
-        assert socket.binaries == []
-
-        made.dispatch_text({"type": "credit", "stream": stream.id, "bytes": 1000})
-        await asyncio.sleep(0.01)
-        assert len(socket.binaries) == 1
-        assert socket.binaries[0] == frame(stream.id, payload[:1000])
-
-        made.dispatch_text(
-            {"type": "credit", "stream": stream.id, "bytes": len(payload)}
-        )
-        await sending
-
-        frames = [held[4:] for held in socket.binaries]
-        assert b"".join(frames) == payload
-        assert all(len(held) <= CHANNEL_CHUNK_BYTES for held in frames)
-        assert any(len(held) == CHANNEL_CHUNK_BYTES for held in frames)
-
-    run(scenario)
-
-
-def test_a_close_from_this_side_carries_its_result_and_ends_the_stream():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("shell", {"cols": 80, "rows": 24})
-
-        await stream.close("", {"done": True})
-        await stream.close("again", {})
-
-        assert socket.sent("close") == [
-            {"type": "close", "stream": stream.id, "code": "", "params": {"done": True}}
-        ]
-        assert stream.is_closed
-        assert await stream.recv() is None
-
-    run(scenario)
-
-
-def test_a_stream_closed_from_this_side_is_forgotten_and_its_late_bytes_dropped():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("connect", {"port": 445})
-
-        await stream.close()
-        made.dispatch_bytes(frame(stream.id, b"late"))
-
-        assert stream.id not in made._streams
-        assert await stream.recv() is None
-
-    run(scenario)
-
-
-def test_a_stream_the_peer_closed_gets_no_close_back():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("command", {})
-        made.dispatch_text({"type": "close", "stream": stream.id, "params": {}})
-
-        await stream.close()
-
-        assert socket.sent("close") == []
-
-    run(scenario)
-
-
-def test_sending_prefixed_bytes_puts_the_prefix_on_every_chunk_within_credit():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket, role=CHANNEL_ROLE_CLIENT)
-        stream = await made.open_stream("exec", {})
-        payload = b"x" * (CHANNEL_CHUNK_BYTES + 10)
-        sending = asyncio.ensure_future(stream.send_bytes(payload, prefix=b"\x02"))
-        made.dispatch_text({"type": "credit", "stream": stream.id, "bytes": 1})
-        await asyncio.sleep(0.01)
-        assert socket.binaries == []
-
-        made.dispatch_text({"type": "credit", "stream": stream.id, "bytes": 100})
-        await asyncio.sleep(0.01)
-        assert socket.binaries == [frame(stream.id, b"\x02" + b"x" * 100)]
-
-        made.dispatch_text(
-            {"type": "credit", "stream": stream.id, "bytes": 2 * len(payload)}
-        )
-        await sending
-
-        frames = [held[4:] for held in socket.binaries]
-        assert all(held[:1] == b"\x02" for held in frames)
-        assert all(len(held) <= CHANNEL_CHUNK_BYTES for held in frames)
-        assert b"".join(held[1:] for held in frames) == payload
-
-    run(scenario)
-
-
-def test_an_eof_reaches_an_exec_stream_after_its_bytes_and_no_other_kind():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket, role=CHANNEL_ROLE_CLIENT)
-        command = await made.open_stream("exec", {})
-        shell = await made.open_stream("shell", {})
-        made.dispatch_bytes(frame(command.id, b"stdin"))
-        is_taken = made.dispatch_text({"type": "eof", "stream": command.id})
-        made.dispatch_text({"type": "eof", "stream": shell.id})
-        made.dispatch_bytes(frame(shell.id, b"keys"))
-
-        first = await command.recv()
-        second = await command.recv()
-        granted = [held["bytes"] for held in socket.sent("credit")[2:]]
-        await command.send_eof()
-        sent_eof = socket.texts[-1]
-
-        assert is_taken
-        assert (first, second) == (("data", b"stdin"), ("eof", b""))
-        assert granted == [len(b"stdin")]
-        assert sent_eof == {"type": "eof", "stream": command.id}
-        assert await shell.recv() == ("data", b"keys")
-
-    run(scenario)
-
-
-def test_only_close_credit_and_eof_are_stream_messages():
-    async def scenario():
-        made = session()
-
-        assert made.dispatch_text({"type": "close", "stream": 9, "params": {}})
-        assert made.dispatch_text({"type": "credit", "stream": 9, "bytes": 1})
-        assert made.dispatch_text({"type": "eof", "stream": 9})
-        assert not made.dispatch_text({"type": "report", "state_hash": ""})
-        assert not made.dispatch_text({"type": "opened", "stream": 0})
-        assert not made.dispatch_text({"type": "event", "stream": 0})
-
-    run(scenario)
-
-
-# --- streams the peer opens ---
-
-
-def test_a_peer_opened_stream_is_handed_to_its_kinds_handler_with_credit():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        served: list = []
-
-        async def handler(owner, stream):
-            served.append((owner, stream.kind, stream.args))
-            await stream.close("", {"sha256": "abc"})
-
-        made.stream_handlers["package"] = handler
-
-        stream = await made.accept_stream(
-            {"type": "open", "stream": 1, "kind": "package", "module": "samba"}
-        )
-        await asyncio.sleep(0.01)
-
-        assert stream.id == 1
-        assert served == [(made, "package", {"module": "samba"})]
-        assert socket.sent("credit") == [
-            {"type": "credit", "stream": 1, "bytes": CHANNEL_STREAM_CREDIT_BYTES}
-        ]
-        assert socket.sent("close") == [
-            {"type": "close", "stream": 1, "code": "", "params": {"sha256": "abc"}}
-        ]
-
-    run(scenario)
-
-
-def test_a_kind_with_no_handler_is_closed_kind_unknown():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-
-        stream = await made.accept_stream({"type": "open", "stream": 3, "kind": "log"})
-
-        assert stream is None
-        assert socket.sent("close") == [
-            {
-                "type": "close",
-                "stream": 3,
-                "code": "kind_unknown",
-                "params": {"kind": "log"},
-            }
-        ]
-        assert socket.sent("credit") == []
-
-    run(scenario)
-
-
-def test_an_open_with_no_usable_id_is_dropped():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        made.stream_handlers["package"] = None
-
-        assert await made.accept_stream({"type": "open", "kind": "package"}) is None
-        assert (
-            await made.accept_stream({"type": "open", "stream": "1", "kind": "x"})
-            is None
-        )
-        assert socket.texts == []
-
-    run(scenario)
-
-
-def test_a_handler_that_ends_without_closing_leaves_a_closed_stream():
-    async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-
-        async def handler(owner, stream):
-            return None
-
-        made.stream_handlers["service"] = handler
-
-        stream = await made.accept_stream(
-            {"type": "open", "stream": 1, "kind": "service"}
-        )
-        await asyncio.sleep(0.01)
-
-        assert stream.is_closed
-        assert socket.sent("close") == [
-            {"type": "close", "stream": 1, "code": "", "params": {}}
-        ]
-
-    run(scenario)
-
-
-# --- the state and the refusal ---
+        channel = FakeLocalChannel()
+        held = session(channel)
+        await held.send_json({"type": "welcome", "id": "hub"})
+        await held.send_json({"type": "left"}, is_last=True)
+        return channel.frames
+
+    assert run(scenario) == [
+        ("s1", {"type": "welcome", "id": "hub"}, False),
+        ("s1", {"type": "left"}, True),
+    ]
 
 
 def test_push_state_is_one_state_frame_and_remembers_the_hash():
     async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
+        channel = FakeLocalChannel()
+        held = session(channel)
+        await held.push_state({"hash": "h1", "modules": {}})
+        return channel.frames, held.offered_hash
 
-        await made.push_state({"hash": "h1", "modules": {}, "desktop": {}})
-
-        assert socket.sent("state") == [
-            {"type": "state", "hash": "h1", "modules": {}, "desktop": {}}
-        ]
-        assert made.offered_hash == "h1"
-
-    run(scenario)
+    frames, offered = run(scenario)
+    assert frames == [("s1", {"type": "state", "hash": "h1", "modules": {}}, False)]
+    assert offered == "h1"
 
 
-def test_a_refusal_is_the_refused_frame_then_the_refused_close():
+def test_a_refusal_is_the_session_close_command_and_ends_the_session():
     async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
+        channel = FakeLocalChannel()
+        held = session(channel)
+        await held.refuse("binding_unknown", {})
+        await held.refuse("binding_unknown", {})
+        return channel.commands, held.is_closed
 
-        await made.refuse("binding_unknown", {})
-
-        assert socket.sent("refused") == [
-            {"type": "refused", "code": "binding_unknown", "params": {}}
-        ]
-        assert socket.closes == [(CHANNEL_CLOSE_REFUSED, "binding_unknown")]
-        assert made.is_closed
-
-    run(scenario)
-
-
-# --- the socket going away ---
+    commands, is_closed = run(scenario)
+    assert commands == [
+        ("session_close", {"session": "s1", "code": "binding_unknown", "params": {}})
+    ]
+    assert is_closed
 
 
-def test_closing_the_session_fails_every_stream_as_offline():
+def test_closing_streams_names_the_binding_the_kind_the_machine_and_the_shell():
     async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        stream = await made.open_stream("order", {})
-        sending = asyncio.ensure_future(stream.send_bytes(b"x"))
-        await asyncio.sleep(0)
+        channel = FakeLocalChannel()
+        held = session(channel, key="client-a", role=CHANNEL_ROLE_CLIENT)
+        await held.close_streams(
+            kind="terminal",
+            code="session_not_owned",
+            params={"session_id": "x"},
+            device_id=DEVICE,
+            session_id="x",
+        )
+        return channel.commands
 
-        await made.close(CHANNEL_CLOSE_REPLACED, "replaced")
+    assert run(scenario) == [
+        (
+            "streams_close",
+            {
+                "binding_id": "client-a",
+                "kind": "terminal",
+                "device_id": DEVICE,
+                "session_id": "x",
+                "code": "session_not_owned",
+                "params": {"session_id": "x"},
+            },
+        )
+    ]
 
-        assert stream.is_closed and stream.is_abandoned
-        assert stream.close_info["code"] == "agent_offline"
-        with pytest.raises(AgentOfflineError):
-            await sending
-        assert socket.closes == [(CHANNEL_CLOSE_REPLACED, "replaced")]
-        with pytest.raises(AgentOfflineError):
-            await made.send_json({"type": "state"})
 
-    run(scenario)
-
-
-def test_a_send_that_fails_reads_as_the_peer_offline():
+def test_a_stream_the_hub_opens_rides_one_open_connection():
     async def scenario():
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        socket.is_dead = True
-
-        with pytest.raises(AgentOfflineError):
-            await made.send_json({"type": "state"})
-
-    run(scenario)
-
-
-# --- the registry ---
-
-
-def test_attach_replaces_an_older_socket_with_the_replaced_code():
-    async def scenario():
+        channel = FakeLocalChannel()
         registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        first_socket = FakeWebSocket()
-        first = session(socket=first_socket)
-        second = session()
+        registry.attach(session(channel))
+        info = await registry.run_stream(
+            DEVICE, "command", {"module": "agent", "verb": "reboot"}, on_chunk=None
+        )
+        return channel.opened, info
 
-        await registry.attach(first)
-        await registry.attach(second)
-
-        assert registry.get(DEVICE) is second
-        assert first_socket.closes == [(CHANNEL_CLOSE_REPLACED, "replaced")]
-        assert first_socket.sent("refused") == []
-        assert first.is_closed
-        assert registry.is_online(DEVICE)
-        assert registry.keys() == [DEVICE]
-
-    run(scenario)
+    opened, info = run(scenario)
+    assert opened == [
+        ("s1", {"kind": "command", "module": "agent", "verb": "reboot"}, DEVICE)
+    ]
+    assert info == {"code": "", "params": {"exit_code": 0}}
 
 
-def test_detaching_a_replaced_socket_leaves_the_binding_online():
+def test_a_closed_session_sends_nothing_and_opens_nothing():
     async def scenario():
+        channel = FakeLocalChannel()
+        held = session(channel)
+        held.mark_ended()
+        refusals = []
+        for call in (held.send_json({"type": "state"}), held.open_stream("file", {})):
+            try:
+                await call
+            except AgentOfflineError:
+                refusals.append(True)
+        return refusals, channel.frames, channel.opened
+
+    assert run(scenario) == ([True, True], [], [])
+
+
+def test_attach_leaves_a_replaced_session_to_the_transport_and_marks_it_ended():
+    async def scenario():
+        channel = FakeLocalChannel()
         registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        first = session()
-        second = session()
-        await registry.attach(first)
-        await registry.attach(second)
+        first = session(channel, session_id="s1")
+        second = session(channel, session_id="s2")
+        registry.attach(first)
+        registry.attach(second)
+        is_first_current = registry.detach(first)
+        return (
+            channel.commands,
+            first.is_closed,
+            registry.get(DEVICE) is second,
+            is_first_current,
+        )
 
-        assert registry.detach(first) is False
-        assert registry.is_online(DEVICE)
-        assert registry.last_seen_at(DEVICE) is None
-        assert registry.detach(second) is True
-        assert not registry.is_online(DEVICE)
-
-    run(scenario)
+    commands, is_first_closed, is_second_current, is_first_current = run(scenario)
+    assert commands == []
+    assert is_first_closed
+    assert is_second_current
+    assert is_first_current is False
 
 
 def test_a_detach_stamps_the_binding_and_keeps_its_software():
     async def scenario():
+        channel = FakeLocalChannel()
         registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session()
-        await registry.attach(made)
-
-        assert registry.software_of(DEVICE) == "neutrino_agent/0.3.0"
-        assert registry.version_of(DEVICE) == "0.3.0"
-        assert registry.last_seen_at(DEVICE) is None
-        registry.detach(made)
-
-        assert registry.last_seen_at(DEVICE)
-        assert registry.version_of(DEVICE) == "0.3.0"
-
-    run(scenario)
-
-
-def test_a_binding_this_hub_has_not_seen_has_no_version_and_no_stamp():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-
-        assert registry.version_of(DEVICE) == ""
-        assert registry.last_seen_at(DEVICE) is None
-
-    run(scenario)
-
-
-def test_the_version_is_what_follows_the_slash():
-    assert version_of_software("neutrino_client/0.3.0") == "0.3.0"
-    assert version_of_software("0.3.0") == ""
-    assert version_of_software("") == ""
-
-
-def test_attached_sessions_share_the_registrys_handlers():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session()
-        await registry.attach(made)
-
-        async def handler(owner, stream):
-            await stream.close()
-
-        registry.stream_handlers["package"] = handler
-
-        assert made.stream_handlers["package"] is handler
-
-    run(scenario)
-
-
-def test_reports_are_kept_per_binding():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session()
-        await registry.attach(made)
-        made.record_report(
-            {"type": "report", "machine": {"metrics": {"cpu": 3}}, "state_hash": "h"}
+        held = session(channel)
+        registry.attach(held)
+        is_online_before = registry.is_online(DEVICE)
+        registry.detach(held)
+        return (
+            is_online_before,
+            registry.is_online(DEVICE),
+            registry.last_seen_at(DEVICE) is not None,
+            registry.version_of(DEVICE),
+            registry.by_session_id("s1"),
         )
 
-        assert registry.reports()[DEVICE]["machine"] == {"metrics": {"cpu": 3}}
-        assert made.state_hash == "h"
-
-    run(scenario)
+    assert run(scenario) == (True, False, True, "0.6.0", None)
 
 
-def test_a_binding_with_no_socket_is_offline_to_every_ask():
+def test_the_registry_finds_a_session_by_the_transports_id():
+    async def scenario():
+        channel = FakeLocalChannel()
+        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        held = session(channel, session_id="s7")
+        registry.attach(held)
+        return registry.by_session_id("s7") is held, registry.by_session_id("s8")
+
+    assert run(scenario) == (True, None)
+
+
+def test_reports_are_kept_per_binding_and_counted():
+    async def scenario():
+        channel = FakeLocalChannel()
+        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        held = session(channel)
+        registry.attach(held)
+        held.record_report({"state_hash": "h2", "modules": {"samba": {}}})
+        held.note_report_recorded()
+        return registry.reports(), held.state_hash, registry.report_serial_of(DEVICE)
+
+    reports, state_hash, serial = run(scenario)
+    assert reports == {DEVICE: {"state_hash": "h2", "modules": {"samba": {}}}}
+    assert state_hash == "h2"
+    assert serial == 1
+
+
+def test_a_binding_with_no_session_is_offline_to_every_ask():
     async def scenario():
         registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-
-        with pytest.raises(AgentOfflineError) as offline:
-            await registry.open_stream(DEVICE, "order", {})
-        assert offline.value.code == "agent_offline"
-        with pytest.raises(AgentOfflineError):
-            await registry.push_state(DEVICE, {"hash": "h"})
-        with pytest.raises(AgentOfflineError):
-            await registry.run_stream(DEVICE, "command", {})
-        with pytest.raises(AgentOfflineError):
-            registry.run_stream_from_thread(DEVICE, "command", {})
-
-    run(scenario)
-
-
-def test_run_stream_hands_chunks_on_and_returns_the_close():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        await registry.attach(made)
-        chunks: list = []
-        running = asyncio.ensure_future(
-            registry.run_stream(
-                DEVICE, "command", {"action": "reboot"}, on_chunk=chunks.append
-            )
-        )
-        await asyncio.sleep(0)
-        stream_id = socket.sent("open")[0]["stream"]
-        made.dispatch_bytes(frame(stream_id, b"going\n"))
-        made.dispatch_text(
-            {
-                "type": "close",
-                "stream": stream_id,
-                "code": "",
-                "params": {"exit_code": 0, "output": "bye"},
-            }
-        )
-
-        info = await running
-
-        assert socket.sent("open")[0]["action"] == "reboot"
-        assert chunks == [b"going\n"]
-        assert info == {"code": "", "params": {"exit_code": 0, "output": "bye"}}
-
-    run(scenario)
-
-
-def test_run_stream_sends_its_payload_under_credit_before_the_close():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        await registry.attach(made)
-        running = asyncio.ensure_future(
-            registry.run_stream(DEVICE, "file_upload", {"path": "/x"}, payload=b"abc")
-        )
-        await asyncio.sleep(0.01)
-        stream_id = socket.sent("open")[0]["stream"]
-        assert socket.binaries == []
-        made.dispatch_text({"type": "credit", "stream": stream_id, "bytes": 10})
-        await asyncio.sleep(0.01)
-        made.dispatch_text({"type": "close", "stream": stream_id, "params": {}})
-
-        info = await running
-
-        assert socket.binaries == [frame(stream_id, b"abc")]
-        assert info == {"code": "", "params": {}}
-
-    run(scenario)
-
-
-def test_a_stream_cut_off_by_the_socket_reads_as_the_peer_offline():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session()
-        await registry.attach(made)
-        running = asyncio.ensure_future(registry.run_stream(DEVICE, "command", {}))
-        await asyncio.sleep(0)
-
-        registry.detach(made)
-
-        with pytest.raises(AgentOfflineError):
-            await running
-
-    run(scenario)
-
-
-def test_a_stream_from_a_thread_rides_the_loop_and_comes_back():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        await registry.attach(made)
-        chunks: list = []
-        result: dict = {}
-
-        def worker():
-            result["info"] = registry.run_stream_from_thread(
-                DEVICE,
-                "order",
-                {"id": "o1", "module": "fakedesk"},
-                on_chunk=chunks.append,
-            )
-
-        thread = threading.Thread(target=worker)
-        thread.start()
-        while not socket.sent("open"):
-            await asyncio.sleep(0.01)
-        stream_id = socket.sent("open")[0]["stream"]
-        made.dispatch_bytes(frame(stream_id, b"step\n"))
-        made.dispatch_text(
-            {"type": "close", "stream": stream_id, "params": {"state": "done"}}
-        )
-        while thread.is_alive():
-            await asyncio.sleep(0.01)
-
-        assert socket.sent("open")[0] == {
-            "type": "open",
-            "stream": stream_id,
-            "kind": "order",
-            "id": "o1",
-            "module": "fakedesk",
-        }
-        assert chunks == [b"step\n"]
-        assert result["info"]["params"]["state"] == "done"
-
-    run(scenario)
-
-
-def test_a_thread_that_waits_too_long_gets_a_code_and_the_call_is_cancelled():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session()
-        await registry.attach(made)
-        outcome: dict = {}
-
-        def worker():
+        refused = []
+        for call in (
+            registry.push_state(DEVICE, {"hash": "h"}),
+            registry.open_stream(DEVICE, "file", {}),
+        ):
             try:
-                registry.run_stream_from_thread(DEVICE, "command", {}, timeout=0.05)
-            except StreamRefusedError as refused:
-                outcome["code"] = refused.code
+                await call
+            except AgentOfflineError:
+                refused.append(True)
+        return refused, registry.send_json_from_thread(DEVICE, {"type": "x"})
 
-        thread = threading.Thread(target=worker)
-        thread.start()
-        while thread.is_alive():
-            await asyncio.sleep(0.01)
-
-        assert outcome["code"] == "agent_never_reported"
-
-    run(scenario)
-
-
-def test_a_refusal_from_a_thread_turns_a_live_socket_away():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        await registry.attach(made)
-        done = threading.Event()
-
-        def worker():
-            registry.refuse_from_thread(DEVICE, "binding_unknown")
-            registry.refuse_from_thread("nobody", "binding_unknown")
-            done.set()
-
-        threading.Thread(target=worker).start()
-        while not done.is_set():
-            await asyncio.sleep(0.01)
-
-        assert socket.sent("refused") == [
-            {"type": "refused", "code": "binding_unknown", "params": {}}
-        ]
-        assert socket.closes == [(CHANNEL_CLOSE_REFUSED, "binding_unknown")]
-
-    run(scenario)
+    assert run(scenario) == ([True, True], False)
 
 
 def test_a_registry_holds_one_role_and_takes_no_other():
     async def scenario():
-        clients = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
-        agents = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        made = session(key="c1", role=CHANNEL_ROLE_CLIENT)
-        await clients.attach(made)
-
-        assert clients.is_online("c1")
-        assert clients.sessions() == [made]
-        assert not agents.is_online("c1")
+        registry = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         with pytest.raises(ValueError):
-            await agents.attach(made)
-        with pytest.raises(ValueError):
-            await clients.attach(session())
+            registry.attach(session(FakeLocalChannel()))
 
     run(scenario)
 
 
-def test_a_frame_from_a_thread_lands_on_the_session_without_waiting():
-    async def scenario():
-        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
-        socket = FakeWebSocket()
-        made = session(socket=socket)
-        await registry.attach(made)
+def test_a_push_from_a_thread_rides_the_loop_and_comes_back():
+    channel = FakeLocalChannel()
+    registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
 
-        assert registry.send_json_from_thread(DEVICE, {"type": "state", "hash": "h"})
-        assert not registry.send_json_from_thread("nobody", {"type": "x"})
-        for _ in range(10):
-            await asyncio.sleep(0)
-        assert socket.sent("state") == [{"type": "state", "hash": "h"}]
+        async def attach():
+            registry.attach(session(channel))
 
-    run(scenario)
-
-
-def test_a_wait_for_a_report_ends_with_the_next_one_counted():
-    async def scenario():
-        made = session()
-        made.note_report_recorded()
-        before = made.report_serial
-
-        async def report_later():
-            await asyncio.sleep(0.01)
-            made.record_report({"modules": {}})
-            made.note_report_recorded()
-
-        asyncio.create_task(report_later())
-        is_newer = await made.wait_for_report(before, timeout=2.0)
-
-        assert is_newer
-        assert made.report_serial == before + 1
-
-    run(scenario)
+        asyncio.run_coroutine_threadsafe(attach(), loop).result(5)
+        registry.push_state_from_thread(DEVICE, {"hash": "h3"})
+        assert channel.frames == [("s1", {"type": "state", "hash": "h3"}, False)]
+        assert registry.close_streams_from_thread(
+            DEVICE, kind="web", code="permission_denied", params={"kind": "web"}
+        )
+        assert channel.commands[0][0] == "streams_close"
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(5)
+        loop.close()
 
 
-def test_a_wait_with_no_report_ends_at_its_timeout():
-    async def scenario():
-        made = session()
+def test_a_thread_that_waits_too_long_gets_a_code():
+    channel = FakeLocalChannel()
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
 
-        assert await made.wait_for_report(made.report_serial, timeout=0.02) is False
+        async def make():
+            return session(channel)
 
-    run(scenario)
+        held = asyncio.run_coroutine_threadsafe(make(), loop).result(5)
+
+        async def forever():
+            await asyncio.sleep(10)
+
+        with pytest.raises(StreamRefusedError) as refused:
+            held.call(forever(), timeout=0.05)
+        assert refused.value.code == "agent_never_reported"
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(5)
+        loop.close()
+
+
+def test_the_version_is_what_follows_the_slash():
+    assert version_of_software("neutrino_agent/0.6.0") == "0.6.0"
+    assert version_of_software("neutrino_agent") == ""

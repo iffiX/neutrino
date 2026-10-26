@@ -422,7 +422,7 @@ def test_the_hubs_own_agent_is_given_loopback_before_the_exposed_set(live):
 def test_only_a_link_for_another_machine_is_refused_with_nothing_exposed(
     live, monkeypatch
 ):
-    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", lambda: "f" * 64)
+    monkeypatch.setattr(channel_addresses, "read_public_key", lambda: "f" * 64)
     runtime = FakeRuntime(network_config(overlays=[]))
 
     urls, fingerprint = enrollment_link_parts(runtime, is_hub=True)

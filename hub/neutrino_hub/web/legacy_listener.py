@@ -1,15 +1,16 @@
-"""The agent port's connections, from accept to the protocol that serves them.
+"""The legacy listener's connections, from accept to the protocol that serves them.
 
-uvicorn serves the agent port over plain TCP with this protocol in front:
-each accepted connection is counted, closed when it sends no byte within
-``CHANNEL_FIRST_BYTE_TIMEOUT_S``, given its TLS handshake under
-``CHANNEL_TLS_HANDSHAKE_TIMEOUT_S`` from its first byte and its admission
-under ``CHANNEL_ADMISSION_TIMEOUT_S``, and only then handed to uvicorn's own
-HTTP protocol on the TLS transport. The port listens on two sockets, IPv4 and
-IPv6, and one protocol class and one count serve both. The counts are the runtime's
+uvicorn serves the legacy listener, ``127.0.0.1:18445`` over the agent TLS
+pair, with this protocol in front: each accepted connection is counted,
+closed when it sends no byte within ``CHANNEL_FIRST_BYTE_TIMEOUT_S``, given
+its TLS handshake under ``CHANNEL_TLS_HANDSHAKE_TIMEOUT_S`` from its first
+byte and its admission under ``CHANNEL_ADMISSION_TIMEOUT_S``, and only then
+handed to uvicorn's own HTTP protocol on the TLS transport. The transport
+relays an agent of 0.5 to it while ``is_legacy_channel_enabled`` is on
+(protocol.md, "An agent of 0.5"). The counts are the runtime's
 :class:`neutrino_hub.modules.channel.port_guard.ChannelPortGuard`. The
-middleware here refuses a join or a leave whose body is past
-``CHANNEL_REQUEST_BYTES_MAX`` before the application reads it.
+middleware here refuses a body past ``CHANNEL_REQUEST_BYTES_MAX`` before the
+application reads it.
 
 Not pure: holds sockets.
 """

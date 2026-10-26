@@ -22,7 +22,7 @@ from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.web import channel_state
-from tests.conftest import FakeChannelSessions, unlock_vault
+from tests.conftest import FakeChannelSessions, StubDesiredStates, unlock_vault
 from tests.web.test_channel_state import LAN, OVERLAY
 
 MACHINES = 64
@@ -98,6 +98,7 @@ class LargeRuntime:
             )
         self.published_services = Services(entries)
         self.agent_sessions = FakeChannelSessions(online=[d.id for d in devices])
+        self.desired_states = StubDesiredStates()
         self.client_scope: dict = {}
         self.client_reached: dict = {}
         self.device_hostname = {d.id: text(32, d.id) for d in devices}

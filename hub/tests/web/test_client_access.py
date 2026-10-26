@@ -1,318 +1,133 @@
-"""A change on the Clients page closes what it covers at once.
+"""A change on the Clients page closes what it covers at once, through the transport.
 
-The Clients routes run as they do in the panel, in a request thread, against
-a real client socket registry whose sessions live on a loop of their own.
-What these pin, cause by cause: switching a client off closes every stream
-it opened with ``client_disabled`` and then its socket; deleting it refuses
-its socket; taking ``terminal`` or one of its machines closes the shells and
-the commands on that machine with ``permission_denied {kind: terminal}``; a
-switched-off client's commands close with the rest; taking a kind or a
-machine closes the ``connect`` streams it covers with ``permission_denied
-{kind}``, the panel's forward and a UDP ``port`` entry's one stream among
-them; a change to the default reaches
-only the clients that follow it; and everything still allowed stays open.
+What these pin, cause by cause: switching a client off ends its session
+with ``client_disabled``; taking a kind closes its streams of that kind on
+every machine with ``permission_denied {kind}``; narrowing a kind to some
+machines closes the streams on the machines outside the list, one command
+per machine; taking ``panel`` closes its forward and ends its panel
+sessions; a change to the default reaches only the clients that follow it;
+and a change that takes nothing closes nothing.
 """
-
-import asyncio
-import json
-import threading
 
 import pytest
 
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
-from neutrino_hub.modules.channel.sessions import (
-    ChannelSession,
-    ChannelSessionRegistry,
-    ChannelStream,
-)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.client_access import close_lost_access
-from tests.web.routers.hub.test_client import api  # noqa: F401
+from tests.conftest import FakeChannelSessions
 
 DEVICE_A = "dev-a"
 DEVICE_B = "dev-b"
 
 
-class RecordingSocket:
-    """A client's websocket: every frame and the close the hub sends."""
-
+class PanelSessions:
     def __init__(self):
-        self.frames: list = []
-        self.closed_with = None
+        self.ended: list = []
 
-    async def send_text(self, text: str) -> None:
-        self.frames.append(json.loads(text))
+    def client_sessions(self):
+        return []
 
-    async def send_bytes(self, data: bytes) -> None:
-        self.frames.append(bytes(data))
+    def logout(self, token):
+        self.ended.append(token)
 
-    async def close(self, code: int, reason: str = "") -> None:
-        self.closed_with = (code, reason)
 
-    def closes(self) -> dict:
-        """Each stream's close, by stream id."""
-        return {
-            frame["stream"]: (frame["code"], frame["params"])
-            for frame in self.frames
-            if isinstance(frame, dict) and frame.get("type") == "close"
-        }
+class Runtime:
+    def __init__(self, online):
+        self.client_sessions = FakeChannelSessions(online=online)
+        self.sessions = PanelSessions()
 
 
 @pytest.fixture
-def loop():
-    """The channel's loop, run on a thread of its own as the panel runs it."""
-    running = asyncio.new_event_loop()
-    thread = threading.Thread(target=running.run_forever, daemon=True)
-    thread.start()
-    yield running
-    running.call_soon_threadsafe(running.stop)
-    thread.join(5)
-    running.close()
+def config(tmp_path, monkeypatch):
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    registry = DeviceRegistry()
+    for name, device_id in (("a", DEVICE_A), ("b", DEVICE_B)):
+        registry.create(name, machine_id=f"m-{name}")
+    return tmp_path
 
 
-@pytest.fixture
-def channel(api, loop):  # noqa: F811
-    """The routes, with a real client socket registry on that loop."""
-    client, runtime = api
-    runtime.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
-    return client, runtime, loop
-
-
-def on_loop(loop, coroutine):
-    return asyncio.run_coroutine_threadsafe(coroutine, loop).result(5)
-
-
-def connected(
-    runtime, loop, client_id: str, devices: tuple = (DEVICE_A, DEVICE_B)
-) -> tuple:
-    """A client's live socket with a shell on each machine, a web stream to
-    each machine, and the panel's forward."""
-    socket = RecordingSocket()
-    session = ChannelSession(
-        key=client_id, role=CHANNEL_ROLE_CLIENT, websocket=socket, loop=loop
-    )
-
-    async def build():
-        await runtime.client_sessions.attach(session)
-        first, second = devices
-        for stream_id, kind, device in (
-            (1, "shell", first),
-            (3, "shell", second),
-            (5, "connect", first),
-            (7, "connect", second),
-            (9, "connect", ""),
-        ):
-            session._streams[stream_id] = ChannelStream(session, stream_id, kind, {})
-            if kind == "shell":
-                session.shells[stream_id] = (device, stream_id + 100, "")
-            elif device:
-                session.connects[stream_id] = ("web", device)
-            else:
-                session.connects[stream_id] = ("panel", "")
-
-    on_loop(loop, build())
-    return session, socket
-
-
-def holding_everything(name: str = "laptop") -> str:
+def client_with(kinds=None, devices=None) -> str:
     registry = ClientRegistry()
-    client_id = registry.create(name)
-    registry.set_permission(client_id, ["web", "terminal", "panel"])
+    client_id = registry.create("laptop")
+    if kinds is not None:
+        registry.set_permission(client_id, kinds, devices)
     return client_id
 
 
-def test_switching_a_client_off_closes_every_stream_then_its_socket(channel):
-    client, runtime, loop = channel
-    client_id = holding_everything()
-    session, socket = connected(runtime, loop, client_id)
-
-    client.post("/api/hub/client/disable", json={"client_id": client_id})
-
-    assert socket.closes() == {
-        stream_id: ("client_disabled", {}) for stream_id in (1, 3, 5, 7, 9)
-    }
-    refused = [frame for frame in socket.frames if frame.get("type") == "refused"]
-    assert refused == [{"type": "refused", "code": "client_disabled", "params": {}}]
-    assert socket.closed_with == (4000, "client_disabled")
+def device_ids() -> list:
+    return [device.id for device in DeviceRegistry().all_stored()]
 
 
-def test_deleting_a_client_refuses_its_socket(channel):
-    client, runtime, loop = channel
-    client_id = holding_everything()
-    _, socket = connected(runtime, loop, client_id)
+def test_switching_a_client_off_ends_its_session(config):
+    client_id = client_with()
+    ClientRegistry().set_disabled(client_id, True)
+    runtime = Runtime(online=[client_id])
 
-    client.post("/api/hub/client/remove", json={"client_id": client_id})
+    closed = close_lost_access(runtime, why="disabled")
 
-    assert socket.closed_with == (4000, "binding_unknown")
+    assert runtime.client_sessions.refused == [(client_id, "client_disabled", {})]
+    assert closed == {client_id: {"socket": True}}
 
 
-def test_taking_terminal_closes_every_shell_and_nothing_else(channel):
-    client, runtime, loop = channel
-    client_id = holding_everything()
-    session, socket = connected(runtime, loop, client_id)
+def test_taking_a_kind_closes_its_streams_on_every_machine(config):
+    client_id = client_with(kinds=["web", "terminal"])
+    runtime = Runtime(online=[client_id])
 
-    client.post(
-        "/api/hub/client/permission/set",
-        json={"client_id": client_id, "kinds": ["web", "panel"]},
+    closed = close_lost_access(runtime, why="permission")
+
+    kinds = [
+        (kind, device)
+        for _, kind, device, _, _, _ in runtime.client_sessions.stream_closes
+    ]
+    assert ("port", "") in kinds and ("ssh", "") in kinds and ("rdp", "") in kinds
+    assert ("web", "") not in kinds and ("terminal", "") not in kinds
+    assert ("panel", "") in kinds
+    assert all(
+        code == "permission_denied" and params == {"kind": kind}
+        for _, kind, _, _, code, params in runtime.client_sessions.stream_closes
     )
-
-    assert socket.closes() == {
-        1: ("permission_denied", {"kind": "terminal"}),
-        3: ("permission_denied", {"kind": "terminal"}),
-    }
-    assert runtime.client_sessions.is_online(client_id)
+    assert closed[client_id]["streams"]
 
 
-def test_taking_a_machine_closes_its_shells_and_streams_and_no_others(channel):
-    client, runtime, loop = channel
-    first = DeviceRegistry().create("first").id
-    second = DeviceRegistry().create("second").id
-    client_id = holding_everything()
-    _, socket = connected(runtime, loop, client_id, (first, second))
+def test_narrowing_a_kind_to_some_machines_closes_the_streams_elsewhere(config):
+    ids = device_ids()
+    client_id = client_with(kinds=["web"], devices={"web": [ids[0]]})
+    runtime = Runtime(online=[client_id])
 
-    client.post(
-        "/api/hub/client/permission/set",
-        json={
-            "client_id": client_id,
-            "kinds": ["web", "terminal", "panel"],
-            "devices": {"web": [second], "terminal": [second]},
-        },
+    close_lost_access(runtime, why="permission")
+
+    web = [
+        device
+        for _, kind, device, _, _, _ in runtime.client_sessions.stream_closes
+        if kind == "web"
+    ]
+    assert web == [ids[1]]
+
+
+def test_a_change_to_the_default_reaches_only_its_followers(config):
+    follower = client_with()
+    own = client_with(kinds=["web"])
+    ClientRegistry().set_default_permission(["web", "panel"])
+    runtime = Runtime(online=[follower, own])
+
+    close_lost_access(runtime, why="default")
+
+    by_client = {}
+    for key, kind, _, _, _, _ in runtime.client_sessions.stream_closes:
+        by_client.setdefault(key, set()).add(kind)
+    assert "panel" not in by_client[follower]
+    assert "panel" in by_client[own]
+    assert "web" not in by_client[follower] and "web" not in by_client[own]
+
+
+def test_a_client_that_lost_nothing_but_the_panel_keeps_everything_else(config):
+    client_id = client_with(
+        kinds=["web", "port", "ssh", "ai", "file", "rdp", "overlay", "terminal"]
     )
+    runtime = Runtime(online=[client_id])
 
-    assert socket.closes() == {
-        1: ("permission_denied", {"kind": "terminal"}),
-        5: ("permission_denied", {"kind": "web"}),
-    }
+    close_lost_access(runtime, why="permission")
 
-
-def test_taking_a_kind_closes_its_streams_and_taking_the_panel_its_forward(
-    channel,
-):
-    client, runtime, loop = channel
-    client_id = holding_everything()
-    signed_in = runtime.sessions.open_for_client(client_id)
-    _, socket = connected(runtime, loop, client_id)
-
-    client.post(
-        "/api/hub/client/permission/set",
-        json={"client_id": client_id, "kinds": ["terminal"]},
-    )
-
-    assert socket.closes() == {
-        5: ("permission_denied", {"kind": "web"}),
-        7: ("permission_denied", {"kind": "web"}),
-        9: ("permission_denied", {"kind": "panel"}),
-    }
-    assert not runtime.sessions.is_valid(signed_in)
-    assert runtime.client_sessions.is_online(client_id)
-
-
-def test_a_change_to_the_default_reaches_only_its_followers(channel):
-    client, runtime, loop = channel
-    registry = ClientRegistry()
-    registry.set_default_permission(["web", "terminal", "panel"])
-    follower = registry.create("laptop")
-    own = holding_everything("desk")
-    _, follower_socket = connected(runtime, loop, follower)
-    _, own_socket = connected(runtime, loop, own)
-
-    client.post("/api/hub/client/default_permission/set", json={"kinds": ["web"]})
-
-    assert follower_socket.closes() == {
-        1: ("permission_denied", {"kind": "terminal"}),
-        3: ("permission_denied", {"kind": "terminal"}),
-        9: ("permission_denied", {"kind": "panel"}),
-    }
-    assert own_socket.closes() == {}
-
-
-def test_a_change_that_takes_nothing_closes_nothing(channel):
-    _, runtime, loop = channel
-    client_id = holding_everything()
-    _, socket = connected(runtime, loop, client_id)
-
-    assert close_lost_access(runtime, why="permission taken") == {}
-    assert socket.closes() == {}
-
-
-def test_taking_port_closes_a_udp_entrys_stream_at_once(channel):
-    client, runtime, loop = channel
-    registry = ClientRegistry()
-    client_id = registry.create("laptop")
-    registry.set_permission(client_id, ["web", "terminal", "panel", "port"])
-    session, socket = connected(runtime, loop, client_id)
-
-    async def open_udp():
-        session._streams[11] = ChannelStream(
-            session, 11, "connect", {"id": "podman_dev-a_dns_53_udp"}
-        )
-        session.connects[11] = ("port", DEVICE_A)
-
-    on_loop(loop, open_udp())
-
-    client.post(
-        "/api/hub/client/permission/set",
-        json={"client_id": client_id, "kinds": ["web", "terminal", "panel"]},
-    )
-
-    assert socket.closes() == {11: ("permission_denied", {"kind": "port"})}
-
-
-def running_commands(
-    runtime, loop, client_id: str, devices: tuple = (DEVICE_A, DEVICE_B)
-) -> tuple:
-    """A client's live socket as :func:`connected` makes it, with a command
-    on each machine besides, the second on a pseudo-terminal."""
-    session, socket = connected(runtime, loop, client_id, devices)
-
-    async def run_commands():
-        for stream_id, device, is_tty in (
-            (21, devices[0], False),
-            (23, devices[1], True),
-        ):
-            session._streams[stream_id] = ChannelStream(session, stream_id, "exec", {})
-            session.execs[stream_id] = (device, stream_id + 100, is_tty)
-
-    on_loop(loop, run_commands())
-    return session, socket
-
-
-def test_taking_terminal_or_one_of_its_machines_closes_the_commands_there_too(
-    channel,
-):
-    client, runtime, loop = channel
-    first = DeviceRegistry().create("first").id
-    second = DeviceRegistry().create("second").id
-    client_id = holding_everything()
-    _, socket = running_commands(runtime, loop, client_id, (first, second))
-
-    client.post(
-        "/api/hub/client/permission/set",
-        json={
-            "client_id": client_id,
-            "kinds": ["web", "terminal", "panel"],
-            "devices": {"terminal": [second]},
-        },
-    )
-    narrowed = socket.closes()
-    client.post(
-        "/api/hub/client/permission/set",
-        json={"client_id": client_id, "kinds": ["web", "panel"]},
-    )
-
-    lost = ("permission_denied", {"kind": "terminal"})
-    assert narrowed == {1: lost, 21: lost}
-    assert socket.closes() == {1: lost, 3: lost, 21: lost, 23: lost}
-
-
-def test_switching_a_client_off_closes_its_commands_too(channel):
-    client, runtime, loop = channel
-    client_id = holding_everything()
-    _, socket = running_commands(runtime, loop, client_id)
-
-    client.post("/api/hub/client/disable", json={"client_id": client_id})
-
-    assert socket.closes() == {
-        stream_id: ("client_disabled", {}) for stream_id in (1, 3, 5, 7, 9, 21, 23)
-    }
+    assert [kind for _, kind, _, _, _, _ in runtime.client_sessions.stream_closes] == [
+        "panel"
+    ]

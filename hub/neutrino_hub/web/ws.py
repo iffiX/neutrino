@@ -7,17 +7,12 @@ checks its session every ``WEB_SOCKET_SESSION_CHECK_INTERVAL_S`` and closes
 with the same code once the session has ended: signed out, expired, or
 ended by the Clients page.
 
-A terminal reaches a device through its agent: the browser's socket and the
-agent's shell stream are bridged here, frame for frame. The browser sends
-``{"type": "input", "data"}``, ``{"type": "resize", "cols", "rows"}`` and
-``{"type": "persist", "is_persistent", "is_shared"}``; it receives
-``{"type": "output", "data"}``, ``{"type": "refused", "code", "params"}``
-for a persist on a session the panel does not own, and, once the shell is
-gone, ``{"type": "exit", "code"}``. A shell's first size, its session id and
-the ``owner: hub`` stamp ride its open; a later size is a ``command {agent,
-resize, shell, cols, rows}`` stream and a persist a ``command {agent,
-persist, session_id, is_persistent, is_shared}``, each closed by the agent
-as soon as it is applied.
+A container's shell reaches a device through its agent: the browser's
+socket and the agent's shell stream are bridged here, frame for frame. The
+browser sends ``{"type": "input", "data"}`` and ``{"type": "resize", "cols",
+"rows"}``; it receives ``{"type": "output", "data"}`` and, once the shell is
+gone, ``{"type": "exit", "code"}``. A shell's first size rides its open; a
+later size is a ``resize`` record on the same stream.
 """
 
 import asyncio
@@ -34,9 +29,7 @@ from neutrino_hub.modules.devices.hub_containers import (
     is_hub_container,
 )
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_CODE_SESSION_NOT_OWNED,
     CHANNEL_SHELL_CONTAINER_MODULE,
-    CHANNEL_SHELL_OWNER_HUB,
     CHANNEL_STREAM_SHELL,
 )
 from neutrino_hub.web.constants import (
@@ -45,18 +38,12 @@ from neutrino_hub.web.constants import (
     WEB_SOCKET_SESSION_END_GRACE_S,
     WEB_STATS_PUSH_INTERVAL_S,
 )
-from neutrino_hub.web.dependencies import session_cookie
+from neutrino_hub.web.dependencies import request_cookie
 from neutrino_hub.web.dns_log import DnsLogReader
 from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
-    is_session_refused,
-    persist_flags,
-    persist_session,
-    record_opened,
-    record_sharing,
-    resize_shell,
     settle_shell,
     shell_output,
 )
@@ -127,49 +114,26 @@ async def task_socket(websocket: WebSocket, task_id: str) -> None:
 
 
 @router.websocket("/ws/agent/terminal")
-async def terminal_socket(
-    websocket: WebSocket,
-    device_id: str,
-    container: str = "",
-    session_id: str = "",
-    is_resumed: bool = False,
-    is_shared: bool = False,
-) -> None:
-    """Bridge a browser terminal to a shell on a device, over its agent.
-
-    A shell with a session id is opened as the panel's own, ``owner: hub``.
-    The panel joins any session, whoever owns it.
+async def terminal_socket(websocket: WebSocket, device_id: str, container: str) -> None:
+    """Bridge a browser terminal to a shell inside one of a device's containers.
 
     Args:
         websocket: The client socket.
-        device_id: Which device to open the shell on, from the query.
-        container: A container on the device to open the shell inside of,
-            from the query; empty opens a root shell on the device itself. A
-            container a module runs closes ``container_hub_owned {name}``.
-        session_id: The session the page generated for the shell, from the
-            query.
-        is_resumed: Whether the page attaches to a session the machine
-            listed, from the query; the agent refuses one it does not hold
-            and sends the kept output first.
-        is_shared: Whether a new session starts shared, from the query.
+        device_id: Which device the container runs on, from the query.
+        container: The container to open the shell inside of, from the
+            query. A container a module runs closes ``container_hub_owned
+            {name}``.
     """
-    args = {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS}
-    if session_id:
-        args["session_id"] = session_id
-        args["owner"] = CHANNEL_SHELL_OWNER_HUB
-        args["is_shared"] = is_shared
-        if is_resumed:
-            args["is_resumed"] = True
-    if container:
-        runtime = websocket.app.state.runtime
-        if await asyncio.to_thread(_is_hub_owned, runtime, device_id, container):
-            await _refuse_hub_container(websocket, container)
-            return
-        args = {
-            "module": CHANNEL_SHELL_CONTAINER_MODULE,
-            "container": container,
-            **args,
-        }
+    runtime = websocket.app.state.runtime
+    if await asyncio.to_thread(_is_hub_owned, runtime, device_id, container):
+        await _refuse_hub_container(websocket, container)
+        return
+    args = {
+        "module": CHANNEL_SHELL_CONTAINER_MODULE,
+        "container": container,
+        "cols": DEFAULT_COLUMNS,
+        "rows": DEFAULT_ROWS,
+    }
     await _serve_agent_stream(websocket, device_id, args)
 
 
@@ -308,24 +272,13 @@ async def _bridge_shell(websocket: WebSocket, device_id: str, args: dict) -> Non
     """Bridge an accepted socket to a new shell stream until either ends."""
     runtime = websocket.app.state.runtime
     sessions = runtime.agent_sessions
-    session_id = str(args.get("session_id", "") or "")
-    if session_id and args.get("is_resumed") is not True:
-        record_opened(
-            runtime,
-            device_id,
-            session_id,
-            CHANNEL_SHELL_OWNER_HUB,
-            args.get("is_shared") is True,
-        )
     try:
         stream = await sessions.open_stream(device_id, CHANNEL_STREAM_SHELL, args)
     except AgentOfflineError as offline:
         await websocket.close(code=POLICY_VIOLATION_CODE, reason=offline.code)
         return
 
-    reader = asyncio.create_task(
-        _read_input(websocket, stream, sessions, device_id, args)
-    )
+    reader = asyncio.create_task(_read_input(websocket, stream))
     pump = asyncio.create_task(_pump_stream(websocket, stream))
     info = await settle_shell(stream, reader, pump)
     refusal = str(info.get("code", "") or "") if info is not None else ""
@@ -382,10 +335,8 @@ async def _pump_stream(websocket: WebSocket, stream) -> None:
                 await websocket.send_json({"type": "output", "data": text})
 
 
-async def _read_input(
-    websocket: WebSocket, stream, sessions, device_id: str, args: dict
-) -> None:
-    """Forward keystrokes, resizes and persists until the browser goes away.
+async def _read_input(websocket: WebSocket, stream) -> None:
+    """Forward keystrokes and resizes until the browser goes away.
 
     Returns when the socket closes, which is how the caller learns the
     browser shut the terminal.
@@ -393,13 +344,7 @@ async def _read_input(
     Args:
         websocket: The client socket.
         stream: The live shell stream to drive.
-        sessions: The agents' sessions, which a resize or a persist opens
-            its command on.
-        device_id: The device the shell runs on.
-        args: What the shell's open carried; a persist names its
-            ``session_id`` and is dropped when it has none.
     """
-    session_id = str(args.get("session_id", "") or "")
     try:
         while True:
             message = await websocket.receive_json()
@@ -407,34 +352,9 @@ async def _read_input(
             if kind == "input":
                 await stream.send_bytes(str(message.get("data", "")).encode("utf-8"))
             elif kind == "resize":
-                await resize_shell(
-                    sessions,
-                    device_id,
-                    stream.id,
+                await stream.send_resize(
                     int(message.get("cols", DEFAULT_COLUMNS)),
                     int(message.get("rows", DEFAULT_ROWS)),
-                )
-            elif kind == "persist" and session_id:
-                runtime = websocket.app.state.runtime
-                if is_session_refused(
-                    runtime,
-                    device_id,
-                    session_id,
-                    CHANNEL_SHELL_OWNER_HUB,
-                    is_join=False,
-                ):
-                    await websocket.send_json(
-                        {
-                            "type": "refused",
-                            "code": CHANNEL_CODE_SESSION_NOT_OWNED,
-                            "params": {"session_id": session_id},
-                        }
-                    )
-                    continue
-                flags = persist_flags(message)
-                await persist_session(sessions, device_id, session_id, flags)
-                await record_sharing(
-                    runtime, device_id, session_id, CHANNEL_SHELL_OWNER_HUB, flags
                 )
     except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
         return
@@ -474,14 +394,14 @@ async def _while_signed_in(websocket: WebSocket, serving) -> None:
 async def _session_ended(websocket: WebSocket) -> None:
     """Return once the socket's session is no longer valid."""
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(session_cookie(runtime))
+    token = websocket.cookies.get(request_cookie(runtime, websocket))
     while runtime.sessions.is_valid(token):
         await asyncio.sleep(WEB_SOCKET_SESSION_CHECK_INTERVAL_S)
 
 
 async def _accept(websocket: WebSocket) -> bool:
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(session_cookie(runtime))
+    token = websocket.cookies.get(request_cookie(runtime, websocket))
     if not runtime.sessions.is_valid(token):
         await websocket.close(code=POLICY_VIOLATION_CODE, reason="not authenticated")
         return False

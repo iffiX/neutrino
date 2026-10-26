@@ -33,7 +33,7 @@ from neutrino_hub.modules.router.link_status import (
     device_addresses,
     device_ipv6_addresses,
 )
-from neutrino_hub.web.agent_tls import certificate_fingerprint
+from neutrino_hub.modules.transport.ops import read_public_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_LOOPBACK_HOST,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -314,13 +314,13 @@ def enrollment_link_parts(runtime, *, is_hub: bool = False) -> tuple[list, str]:
             an exposed address.
 
     Returns:
-        The agent channel's URLs and the certificate fingerprint.
+        The agent channel's URLs and the hub's static public key.
 
     Raises:
         HTTPException: 400 when no served network has an address, so there is
             nothing for a machine to reach the panel at; 409 with
-            ``{"code": "agent_tls_missing"}`` when the channel has no
-            certificate to pin.
+            ``{"code": "transport_key_missing"}`` while the transport has made
+            no key for a peer to pin.
     """
     urls = own_agent_urls(runtime) if is_hub else channel_urls(runtime)
     if not urls:
@@ -329,10 +329,10 @@ def enrollment_link_parts(runtime, *, is_hub: bool = False) -> tuple[list, str]:
             detail={"code": "no_reachable_address", "params": {}},
         )
     try:
-        fingerprint = certificate_fingerprint()
+        key = read_public_key()
     except (OSError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_tls_missing", "params": {}},
+            detail={"code": "transport_key_missing", "params": {}},
         ) from error
-    return urls, fingerprint
+    return urls, key

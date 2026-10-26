@@ -6,9 +6,11 @@ with, that it closes once its session ends, and that the things a page
 watches — a machine's channel, a report
 saying something new, a report saying nothing new, a machine's vitals, and a
 write under ``config/`` — reach it exactly as often as they should, carrying
-what they carry.
+what they carry. The agent arrives as the transport brings it: a
+``session_open`` event and its frames, through the control handler.
 """
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -30,9 +32,9 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
     WEB_EVENT_METRICS,
 )
+from neutrino_hub.web.channel_serve import ChannelControlHandler
 from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.events import PanelEventBus
-from neutrino_hub.web.routers import channel as channel_router
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
 SESSION_TOKEN = "panel-session"
@@ -51,12 +53,26 @@ class StubSessions:
         return token == SESSION_TOKEN and not self.is_ended
 
 
+class FakeChannel:
+    """The local channel as the handler writes to it: every frame kept."""
+
+    def __init__(self):
+        self.frames: list = []
+
+    async def send_frame(self, session, frame, *, is_last=False):
+        self.frames.append((session, frame, is_last))
+
+    async def send_command(self, command, **fields):
+        return {}
+
+
 class FakeRuntime:
-    """The runtime both sockets reach, wired to the bus as the panel's is."""
+    """The runtime the socket and the handler reach, wired to the bus as the panel's is."""
 
     def __init__(self):
         self.settings: dict = {}
         self.events = PanelEventBus()
+        self.channel = FakeChannel()
         self.channel_port = ChannelPortGuard()
         self.sessions = StubSessions()
         self.device_metrics = {}
@@ -82,6 +98,9 @@ class FakeRuntime:
     def desired_state_for(self, device):
         return self.desired
 
+    def settle_legacy_channel(self):
+        return None
+
     def push_desired_state(self, key):
         return None
 
@@ -96,10 +115,9 @@ class FakeRuntime:
 def box(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     identity.ensure_hub_identity()
-    monkeypatch.setattr(channel_router, "HUB_VERSION", "1.2.3")
+    monkeypatch.setattr("neutrino_hub.web.channel_serve.HUB_VERSION", "1.2.3")
     app = FastAPI()
     app.include_router(ws.router)
-    app.include_router(channel_router.router)
     runtime = FakeRuntime()
     app.state.runtime = runtime
     set_config_write_hook(runtime._publish_config_write)
@@ -111,12 +129,13 @@ def box(monkeypatch, tmp_path):
 
 @pytest.fixture
 def device():
-    """One bound device: its id and the token its hello carries."""
+    """One bound device's id."""
     stored = DeviceRegistry().create("testbox")
-    return stored.id, DeviceRegistry().issue_token(stored.id)
+    DeviceRegistry().issue_token(stored.id)
+    return stored.id
 
 
-def hello(device_id: str, token: str) -> dict:
+def hello(device_id: str) -> dict:
     return {
         "type": "hello",
         "protocol": PROTOCOL,
@@ -124,8 +143,42 @@ def hello(device_id: str, token: str) -> dict:
         "id": device_id,
         "name": "box",
         "software": "neutrino_agent/1.2.3",
-        "token": token,
     }
+
+
+class Agent:
+    """One agent's session, driven through the control handler as the
+    transport drives it: a ``session_open`` event, then its frames."""
+
+    def __init__(self, runtime, device_id: str):
+        self.handler = ChannelControlHandler(runtime)
+        self.session_id = "s-1"
+        self.device_id = device_id
+
+    def open(self) -> None:
+        asyncio.run(self._open())
+
+    def send(self, frame: dict) -> None:
+        asyncio.run(self.handler.take_frame(self.session_id, frame))
+
+    def close(self) -> None:
+        asyncio.run(
+            self.handler.take_event("session_end", {"session": self.session_id})
+        )
+
+    async def _open(self):
+        await self.handler.take_event(
+            "session_open",
+            {
+                "session": self.session_id,
+                "binding_id": self.device_id,
+                "role": CHANNEL_ROLE_AGENT,
+                "address": "192.168.100.7",
+                "listener": "main",
+                "local_address": "192.168.100.1",
+            },
+        )
+        await self.handler.take_frame(self.session_id, hello(self.device_id))
 
 
 def report(**sections) -> dict:
@@ -154,20 +207,21 @@ def opened(client):
     return socket
 
 
-def closed(*sockets) -> None:
-    """Shut every socket a case opened, newest first."""
-    for socket in reversed(sockets):
-        socket.__exit__(None, None, None)
+def closed(*opened) -> None:
+    """Shut every socket and session a case opened, newest first."""
+    for held in reversed(opened):
+        if isinstance(held, Agent):
+            held.close()
+        else:
+            held.__exit__(None, None, None)
 
 
-def agent_of(client, panel, device):
-    """One agent's channel, with the presence event it caused read off."""
-    socket = client.websocket_connect("/api/channel/socket")
-    socket.__enter__()
-    socket.send_json(hello(*device))
-    socket.receive_json()
+def agent_of(runtime, panel, device) -> Agent:
+    """One agent's session, with the presence event it caused read off."""
+    agent = Agent(runtime, device)
+    agent.open()
     assert panel.receive_json()["type"] == WEB_EVENT_DEVICES
-    return socket
+    return agent
 
 
 def frames_until(panel, event_type: str) -> list:
@@ -203,31 +257,30 @@ def test_the_socket_opens_with_a_hello_frame(box):
 
 
 def test_a_channel_opening_says_the_device_list_moved(box, device):
-    client, _ = box
+    client, runtime = box
     panel = opened(client)
 
-    agent = client.websocket_connect("/api/channel/socket")
-    agent.__enter__()
-    agent.send_json(hello(*device))
-    agent.receive_json()
+    agent = Agent(runtime, device)
+    agent.open()
     frame = panel.receive_json()
     closed(agent, panel)
 
     assert frame["type"] == WEB_EVENT_DEVICES
     assert frame["key"] == ""
+    assert runtime.channel.frames[0][1]["type"] == "welcome"
 
 
 def test_a_report_with_a_new_module_state_says_so_for_that_device(box, device):
-    client, _ = box
+    client, runtime = box
     panel = opened(client)
-    agent = agent_of(client, panel, device)
+    agent = agent_of(runtime, panel, device)
 
-    agent.send_json(report())
+    agent.send(report())
     frame = panel.receive_json()
     closed(agent, panel)
 
     assert frame["type"] == WEB_EVENT_DEVICE_REPORT
-    assert frame["key"] == device[0]
+    assert frame["key"] == device
 
 
 def vitals(**metrics) -> dict:
@@ -243,29 +296,29 @@ def vitals(**metrics) -> dict:
 
 
 def test_every_report_carries_the_machines_vitals(box, device):
-    client, _ = box
+    client, runtime = box
     panel = opened(client)
-    agent = agent_of(client, panel, device)
+    agent = agent_of(runtime, panel, device)
 
-    agent.send_json(vitals(cpu_percent=91.0, gpus=[]))
+    agent.send(vitals(cpu_percent=91.0, gpus=[]))
     frames = frames_until(panel, WEB_EVENT_METRICS)
     closed(agent, panel)
 
     metrics = frames[-1]
-    assert metrics["key"] == device[0]
+    assert metrics["key"] == device
     assert metrics["data"] == {"cpu_percent": 91.0, "gpus": []}
 
 
 def test_a_report_saying_nothing_new_asks_for_no_refetch(box, device):
-    client, _ = box
+    client, runtime = box
     panel = opened(client)
-    agent = agent_of(client, panel, device)
-    agent.send_json(report())
+    agent = agent_of(runtime, panel, device)
+    agent.send(report())
     assert frames_until(panel, WEB_EVENT_METRICS)[0]["type"] == (
         WEB_EVENT_DEVICE_REPORT
     )
 
-    agent.send_json(vitals(cpu_percent=91.0))
+    agent.send(vitals(cpu_percent=91.0))
     metrics = frames_until(panel, WEB_EVENT_METRICS)
     write_config("router/network.json", {"interfaces": []})
     config = frames_until(panel, WEB_EVENT_CONFIG)

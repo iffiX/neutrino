@@ -27,8 +27,8 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.modules.services.host_scope import HostScope, link_scope
 from neutrino_hub.web import channel_state, identity
-from tests.conftest import FakeChannelSessions
-from tests.modules.channel.test_sessions import FakeWebSocket
+from tests.conftest import FakeChannelSessions, StubDesiredStates
+from tests.modules.channel.test_sessions import FakeLocalChannel
 
 DEVICE = "device-one"
 ENTRY = {
@@ -72,6 +72,7 @@ class FakeRuntime:
     def __init__(self):
         self.agent_sessions = FakeChannelSessions(online=[DEVICE])
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
+        self.desired_states = StubDesiredStates()
         self.client_scope: dict = {}
         self.client_reached: dict = {}
         self.published_services = StubPublishedServices()
@@ -406,12 +407,14 @@ def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
             "device_id": online.id,
             "name": "lepton",
             "is_online": True,
+            "accounts": [],
             "sessions": [],
         },
         {
             "device_id": offline.id,
             "name": "muon",
             "is_online": False,
+            "accounts": [],
             "sessions": [],
         },
     ]
@@ -619,16 +622,17 @@ def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):
     current_id = registry.create("current")
 
     async def scenario():
-        stale_socket, current_socket = FakeWebSocket(), FakeWebSocket()
-        for client_id, socket in (
-            (stale_id, stale_socket),
-            (current_id, current_socket),
+        stale_channel, current_channel = FakeLocalChannel(), FakeLocalChannel()
+        for client_id, channel in (
+            (stale_id, stale_channel),
+            (current_id, current_channel),
         ):
-            await runtime.client_sessions.attach(
+            runtime.client_sessions.attach(
                 ChannelSession(
                     key=client_id,
                     role=CHANNEL_ROLE_CLIENT,
-                    websocket=socket,
+                    session_id=f"s-{client_id[:4]}",
+                    channel=channel,
                     loop=asyncio.get_running_loop(),
                     address="192.168.100.9",
                 )
@@ -640,10 +644,12 @@ def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):
         for _ in range(10):
             await asyncio.sleep(0)
 
-        (pushed,) = stale_socket.sent("state")
+        (pushed,) = [
+            frame for _, frame, _ in stale_channel.frames if frame["type"] == "state"
+        ]
         assert pushed["is_disabled"] is False
         assert [entry["id"] for entry in pushed["services"]] == ["web_gitea"]
-        assert current_socket.sent("state") == []
+        assert current_channel.frames == []
         assert runtime.client_sessions.get(stale_id).offered_hash == pushed["hash"]
         # The scope is settled afresh from the socket's peer: on the served
         # network, so the list is resolved for the network's own address.
