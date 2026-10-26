@@ -504,7 +504,6 @@ class Agent:
                 self._backoff_s = min(self._backoff_s * 2, AGENT_BACKOFF_MAX_S)
             return delay
         self._ensure_dialed()
-        # The transport refuses a listener before its first dial.
         self._ai_forward.take(self._desired.latest())
         with self._lock:
             session = self._session
