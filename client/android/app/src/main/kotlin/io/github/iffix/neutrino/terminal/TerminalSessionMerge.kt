@@ -46,6 +46,7 @@ object TerminalSessionMerge {
             val listing = byId[tab.sessionId]
             when {
                 listing != null -> tab.copy(
+                    account = listing.session.account.ifEmpty { tab.account },
                     title = listing.session.title,
                     owner = listing.session.owner,
                     ownerName = listing.session.ownerName,
@@ -71,6 +72,7 @@ object TerminalSessionMerge {
                     bindingId = listing.bindingId,
                     deviceId = listing.deviceId,
                     name = listing.machineName,
+                    account = listing.session.account,
                     title = listing.session.title,
                     owner = listing.session.owner,
                     ownerName = listing.session.ownerName,

@@ -41,8 +41,10 @@ import io.github.iffix.neutrino.files.ShareRoot
 import kotlinx.coroutines.launch
 
 /**
- * The shares the joined hubs publish, each a place in the system's Files: the password is asked
- * once, here, and kept in the Keystore when the person says so; Forget password arms and removes it.
+ * The shares the joined hubs publish, each a place in the system's Files. A machine's share opens
+ * with the login the hub hands at every connect, and asks nothing; a declared share's password is
+ * asked once, here, and kept in the Keystore when the person says so; Forget password arms and
+ * removes it.
  *
  * @param hubs Every hub joined.
  * @param hasLogin Whether a share has a login already, by its root id.
@@ -63,7 +65,7 @@ fun FilesScreen(
     var forgets by remember { mutableIntStateOf(0) }
     ServiceList(hubs, "file", "ui.empty_files") { hub, entry, hasDivider ->
         val root = ShareRoot.of(hub, entry) ?: return@ServiceList
-        val isKept = forgets >= 0 && hasLogin(root.key)
+        val isKept = !root.isDeclared || (forgets >= 0 && hasLogin(root.key))
         val isUsable = entry.isHealthy != false && !hub.jobs.isRefreshing
         FeatureRow(
             marker = entryTone(hub, entry),
@@ -79,7 +81,7 @@ fun FilesScreen(
                         isSmall = true,
                         isEnabled = isUsable,
                     )
-                    if (isKept) {
+                    if (isKept && root.isDeclared) {
                         ArmedButton(
                             key = "forget-${root.key}",
                             label = words.word("ui.forget_password"),
@@ -99,7 +101,7 @@ fun FilesScreen(
                 if (!isKept) Badge(words.word("ui.password_not_saved"), icon = AppIcon.LOCK)
             }
             if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
-            BasicText("smb://${root.host}/${root.share}", style = NeutrinoTheme.mono)
+            BasicText("//${root.host}/${root.share}", style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, root.host), style = NeutrinoTheme.note)
             if (!hub.jobs.isRefreshing) ReasonLine(openInFilesReasonKey(entry)?.let { words.word(it) })
             if (asking == root.key) {

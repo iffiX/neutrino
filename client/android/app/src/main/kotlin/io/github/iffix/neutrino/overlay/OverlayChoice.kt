@@ -1,6 +1,7 @@
 package io.github.iffix.neutrino.overlay
 
-import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
+import io.github.iffix.neutrino.CLIENT_ADDRESS_SCHEME
+import io.github.iffix.neutrino.CLIENT_AGENT_PORT_DEFAULT
 import io.github.iffix.neutrino.OVERLAY_NETBIRD_NETWORK
 import io.github.iffix.neutrino.OVERLAY_PROVIDER_NETBIRD
 import io.github.iffix.neutrino.binding.HubBinding
@@ -23,10 +24,10 @@ object OverlayChoice {
 
     /**
      * The hub's channel address on one of its networks: the hub's own address on it as the
-     * material names it; else an address of the hub's list whose host is an IP inside the
-     * network (NetBird's 100.64.0.0/10, or the EasyTier network this phone is on); else the
-     * hub's NetBird name. An address of the hub's list on the chosen host is taken as it is;
-     * otherwise the host takes the port the binding last answered on.
+     * material names it, never the hub's name there; else an address of the hub's list whose
+     * host is an IP inside the network (NetBird's 100.64.0.0/10, or the EasyTier network this
+     * phone is on). An address of the hub's list on the chosen host is taken as it is; otherwise
+     * the host takes the port the binding last answered on.
      *
      * @param binding The binding.
      * @param overlay The network.
@@ -41,18 +42,14 @@ object OverlayChoice {
         } else {
             address to prefix
         }
-        binding.storedUrls.firstOrNull { isInside(hostOf(it), network, length) }?.let { return it }
-        if (overlay.provider == OVERLAY_PROVIDER_NETBIRD && overlay.fqdn.isNotEmpty()) {
-            return urlOn(binding, overlay.fqdn)
-        }
-        return ""
+        return binding.storedUrls.firstOrNull { isInside(hostOf(it), network, length) }.orEmpty()
     }
 
     private fun urlOn(binding: HubBinding, host: String): String {
         binding.storedUrls.firstOrNull { hostOf(it) == host }?.let { return it }
         val port = portOf(binding.gatewayUrl)
         val bracketed = if (':' in host) "[$host]" else host
-        return "https://$bracketed:$port"
+        return "$CLIENT_ADDRESS_SCHEME://$bracketed:$port"
     }
 
     private fun isInside(host: String, network: String, length: Int): Boolean {
@@ -74,8 +71,8 @@ object OverlayChoice {
     }
 
     private fun portOf(url: String): Int = try {
-        URI(url).port.takeIf { it > 0 } ?: CLIENT_HTTPS_DEFAULT_PORT
+        URI(url).port.takeIf { it > 0 } ?: CLIENT_AGENT_PORT_DEFAULT
     } catch (_: URISyntaxException) {
-        CLIENT_HTTPS_DEFAULT_PORT
+        CLIENT_AGENT_PORT_DEFAULT
     }
 }

@@ -1,15 +1,14 @@
 package io.github.iffix.neutrino
 
 import java.io.IOException
-import java.security.cert.CertificateException
 import kotlinx.serialization.json.JsonObject
 
 /**
- * The certificate a hub's address presented is not the one the binding pins.
+ * This build carries no transport library: the class it is bound to is not in the app.
  *
- * @param message What was presented.
+ * @param className The class that was looked for.
  */
-class HubUntrustedException(message: String) : CertificateException(message)
+class TransportMissingException(className: String) : IllegalStateException("no transport library: $className")
 
 /**
  * A share's server did not answer in time, or could not be reached at all.

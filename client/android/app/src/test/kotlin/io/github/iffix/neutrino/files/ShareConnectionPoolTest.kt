@@ -9,7 +9,7 @@ import org.junit.Test
 class ShareConnectionPoolTest {
     private val root =
         ShareRoot("r1", "media", "10.0.0.5", "media", emptyList(), "", bindingId = "b1", entryId = "f1")
-    private val login = ShareLogin("alice", "secret")
+    private val login = { ShareLogin("alice", "secret") }
     private var now = 0L
     private var made = 0
     private val closed = mutableListOf<Int>()

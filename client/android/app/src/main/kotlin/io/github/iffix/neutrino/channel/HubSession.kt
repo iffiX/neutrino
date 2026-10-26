@@ -2,44 +2,42 @@ package io.github.iffix.neutrino.channel
 
 import android.os.SystemClock
 import android.util.Log
-import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
+import io.github.iffix.neutrino.CLIENT_ADDRESS_SCHEME
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MAX_S
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MIN_S
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
-import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HUB_ROLE
-import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
-import io.github.iffix.neutrino.CLIENT_JOIN_PATH
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_PROTOCOL_REFUSAL_CODES
-import io.github.iffix.neutrino.CLIENT_REDIAL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_REPLACED
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
-import io.github.iffix.neutrino.CLIENT_STREAM_KIND_CONNECT
-import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SERVICE
+import io.github.iffix.neutrino.CLIENT_ROLE
+import io.github.iffix.neutrino.CLIENT_ROUND_RETRIED_CODES
+import io.github.iffix.neutrino.CLIENT_ROUND_SILENT_CODES
 import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
-import io.github.iffix.neutrino.CLIENT_WS_CLOSE_NORMAL
-import io.github.iffix.neutrino.CLIENT_WS_CLOSE_REFUSED
-import io.github.iffix.neutrino.CLIENT_WS_CLOSE_REPLACED
+import io.github.iffix.neutrino.PROTOCOL
+import io.github.iffix.neutrino.TRANSPORT_JOIN_TIMEOUT_S
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
+import io.github.iffix.neutrino.transport.ClientTransport
+import io.github.iffix.neutrino.transport.TransportEvent
+import io.github.iffix.neutrino.transport.TransportStream
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.DurationUnit
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,62 +45,56 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 /**
- * The one socket to one hub: a connection round over the hub's addresses, the handshake, the
- * state taken and the reports sent, and the rounds again with the desktop client's backoff.
+ * One hub's channel, run by the transport the app embeds: the binding's ticket spent with the
+ * transport's `join`, then `dial` with every candidate address and its path, the `hello` on each
+ * session the transport opens, the state taken and the reports sent, and the row's state from the
+ * transport's events.
  *
- * A round dials at once the hub's address on the virtual network that is up, the address the
- * hub's name resolves to, and the binding's addresses, each with its own connect time; an address
- * that refuses is dialled again every second until the round's connect time ends. The first
- * socket to open on the pinned certificate is the round's: the others are closed before any
- * hello, and the one hello of the round goes there. The view is `connecting` while a round dials,
- * `connected` while the socket is open, and `waiting` with a [HubWaitReason] otherwise, with the
- * moment of the next round when one is due. Every address failing waits 5 s, doubled up to 60 s,
- * as `hub_silent`, or `hub_off_overlay` while this phone is on the hub's virtual network, or as
- * `no_network` with no next round while the phone has no network; `hub_untrusted` waits 60 s;
- * `binding_unknown`, a protocol refusal and a socket another replaced wait for a person. A socket
- * that closes runs the next round at once. A round that fails on an exception waits like every
- * address failing. The open socket sends a `ping` frame every 20 s and once after a move, and the
- * `pong` echoing its nonce sets the view's `rttMs`.
+ * A round dials the hub's address on the virtual network that is on, the address the hub's name
+ * resolves to, and the binding's addresses, each with the path it reaches the hub by. The view is
+ * `connecting` while a round dials, `connected` from the `welcome`, and `waiting` with a
+ * [HubWaitReason] otherwise, counting down to the next round the transport names. Every address
+ * failing waits as `hub_silent`, or `hub_off_overlay` while this phone is on the hub's virtual
+ * network, or as `no_network` while the phone has no network; `hub_untrusted` waits 60 s;
+ * `binding_unknown`, a protocol refusal and `replaced` wait for a person. A session that ends with
+ * no refusal is dialled again at once by the transport. A session the transport moved to a better
+ * path is greeted again, and the channel stays connected. The live session sends a `ping` frame
+ * every 20 s and once after each welcome, and the `pong` echoing its nonce sets the view's `rttMs`.
  *
- * A network change ([networkChanged]) runs a round at once. On a hub with no open socket it ends
- * the wait and the round still dialling, whose sockets are closed. On a connected hub that round
- * runs beside the channel: its winner takes the channel only when its path ranks higher than the
- * channel's, or ranks the same and opened faster; a winner that is no better is closed before
- * its hello. A better winner says hello, and the hub's `replaced` close of the socket moved off
- * is expected and not shown.
+ * A binding whose ticket is unspent spends it with the transport's `join`; a refusal of the
+ * ticket is `join_refused` with its code, and no round runs after it, except `admission_paused`:
+ * the ticket is kept, and the join runs again after the `retry_after_s` it names. A binding of
+ * 0.5's shape, with no hub key, is `join_refused` with `hub_key_missing` and dials nothing.
  *
- * A binding whose ticket is unspent spends it at the round's socket's address, and the hello
- * follows on that socket with the token it returned. A refusal of the ticket is `join_refused`
- * with its code, and no round runs after it, except `admission_paused`: the ticket is kept, and
- * the join runs again after the `retry_after_s` it names.
- *
- * @param bindingId The binding the session is for.
+ * @param bindingId The binding the session is for, and the name the transport knows it by.
  * @param store Where the binding is kept and noted.
- * @param transport How the hub is reached.
+ * @param transport The transport's local channel.
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param onJoined Called with the binding's id and the hub's id for it once its ticket is spent.
- * @param onWelcomed Called with the binding's id and the hub id after each welcome that opens a channel, before
- *   the binding takes that id and before the socket's first state is read.
- * @param clock The time in milliseconds, stamped on the view when the open socket closes and for the next round.
- * @param localNetworks The networks this phone holds an address in, read at each comparison of paths.
- * @param nanoClock The time in nanoseconds, by which each socket's opening and each ping's round trip are measured.
- * @param hasNetwork Whether the phone has a network at all, read when every address of a round failed.
+ * @param onWelcomed Called with the binding's id and the hub id after each welcome, before the binding
+ *   takes that id and before the session's first state is read.
+ * @param clock The time in milliseconds, stamped on the view when the live session ends and for the next round.
+ * @param localNetworks The networks this phone holds an address in, read for each candidate's path.
+ * @param nanoClock The time in nanoseconds, by which each ping's round trip is measured.
+ * @param hasNetwork Whether the phone has a network at all, read when a round ended with no session.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
     val bindingId: String,
     private val store: BindingStore,
-    private val transport: HubTransport,
+    private val transport: ClientTransport,
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val onJoined: (String, String) -> Unit = { _, _ -> },
@@ -114,17 +106,25 @@ class HubSession(
 ) {
     private val current = MutableStateFlow(HubView(requireNotNull(store.get(bindingId))))
     private val news = Channel<Unit>(Channel.CONFLATED)
+    private val requests = ConcurrentHashMap<String, CompletableDeferred<ChannelResult<JsonObject>>>()
     private var job: Job? = null
     private var scope: CoroutineScope? = null
     private var refreshTimer: Job? = null
+    private var countdown: Job? = null
+    private var liveJobs: Job? = null
     private var backoffS = CLIENT_BACKOFF_MIN_S
     private var stateHash = ""
+    private var sessionAddress = ""
+    private var dialled: List<ChannelCandidate>? = null
 
     @Volatile
     private var held: HubWaitReason? = null
 
-    private val changes = Channel<Unit>(Channel.CONFLATED)
-    private val moves = Channel<Moved>(Channel.UNLIMITED)
+    @Volatile
+    private var isLive = false
+
+    @Volatile
+    private var isJoining = false
 
     @Volatile
     private var overlay: ChannelOverlayRoute? = null
@@ -133,60 +133,60 @@ class HubSession(
     private var serverUrls: Map<ChannelPath, String> = emptyMap()
 
     @Volatile
-    private var movingFrom: ChannelSocket? = null
+    private var pingNonce = ""
 
     @Volatile
-    private var live: LiveSocket? = null
+    private var pingSentNanos = 0L
 
     /** The hub as the screens read it. */
     val view: StateFlow<HubView> = current.asStateFlow()
 
     /**
-     * Run the rounds until [stop].
+     * Join and dial the hub, and follow the transport's events until [stop].
      *
-     * @param scope Where the loop and the refresh's timer run.
+     * @param scope Where the session's work and the refresh's timer run.
      */
     fun start(scope: CoroutineScope) {
         this.scope = scope
         if (job != null) return
+        val events = transport.subscribe(bindingId)
         job = scope.launch {
-            while (isActive) {
-                val waitS = try {
-                    runOnce()
-                } catch (error: Exception) {
-                    if (error is CancellationException) throw error
-                    Log.e(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: the round failed", error)
-                    val detail = error.message ?: error.javaClass.simpleName
-                    onUnreachable(ChannelResult.refused("client_internal", "error" to detail))
-                }
-                if (waitS > 0) withTimeoutOrNull(waitS * 1000) { news.receive() }
+            val binding = store.get(bindingId) ?: return@launch
+            if (binding.isKeyMissing) {
+                hold(HubWaitReason.JOIN_REFUSED, ChannelResult.refused("hub_key_missing"))
+                return@launch
             }
+            if (binding.isPending && !join()) return@launch
+            dial(isForced = true)
+            for (event in events) take(event)
         }
     }
 
-    /** End the loop and close the socket. */
+    /** Stop following the hub, and tell the transport to dial it no more. */
     fun stop() {
         job?.cancel()
         job = null
         refreshTimer?.cancel()
-        live?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
+        countdown?.cancel()
+        endLive()
+        transport.unsubscribe(bindingId)
+        scope?.launch { transport.command("undial", fields()) }
     }
 
-    /** Take the binding back from a socket that replaced this one, and connect now. */
+    /** Take the binding back from a client that replaced this one, and dial now. */
     fun reconnect() {
         if (held != HubWaitReason.REPLACED) return
         held = null
         backoffS = CLIENT_BACKOFF_MIN_S
         current.update { it.dialling() }
-        news.trySend(Unit)
+        scope?.launch { dial(isForced = true) }
     }
 
     /**
      * A network changed: a virtual network of the hub's turned on or its peer list changed, the
      * phone's connectivity changed, or the hub's state named other addresses. A hub that waits for
-     * a person, or the hub's admission, runs nothing; a hub with no open socket ends its wait and
-     * the round still dialling, and runs a round now with the backoff at its floor; a connected hub
-     * runs a round beside its channel.
+     * a person, or the hub's admission, runs nothing; any other hub dials its candidates again and
+     * starts a round now, beside the live session when there is one, with the backoff at its floor.
      */
     fun networkChanged() {
         when (held) {
@@ -195,19 +195,18 @@ class HubSession(
             else -> return
         }
         val reason = current.value.waitReason
-        if (reason == HubWaitReason.DISABLED) return
-        if (live != null) {
-            changes.trySend(Unit)
+        if (reason == HubWaitReason.DISABLED || reason == HubWaitReason.ADMISSION_PAUSED) return
+        backoffS = CLIENT_BACKOFF_MIN_S
+        if (isJoining) {
+            news.trySend(Unit)
             return
         }
-        if (reason == HubWaitReason.ADMISSION_PAUSED) return
-        backoffS = CLIENT_BACKOFF_MIN_S
-        news.trySend(Unit)
+        scope?.launch { roundNow() }
     }
 
-    /** The app came back to the foreground: a hub with no open socket runs a round now, as on a network change. */
+    /** The app came back to the foreground: a hub with no live session runs a round now, as on a network change. */
     fun resume() {
-        if (live == null) networkChanged()
+        if (!isLive) networkChanged()
     }
 
     /**
@@ -219,14 +218,17 @@ class HubSession(
     fun overlayChanged(route: ChannelOverlayRoute?) {
         val previous = overlay
         overlay = route
-        if (route != null && route != previous) networkChanged()
+        if (route != null && route != previous) {
+            networkChanged()
+        } else if (route == null && previous != null) {
+            scope?.launch { dial() }
+        }
     }
 
     /**
      * A person pressed refresh: the hub is asked again. A connected hub gets a report with
-     * `is_refresh`; a hub with no open socket ends its wait and the round still dialling, and runs
-     * a round now. A replaced or disabled hub, or one that waits only for Leave, takes no refresh.
-     * The refresh ends on a state frame, a code, or after 10 s.
+     * `is_refresh`; a hub with no live session runs a round now. A replaced or disabled hub, or one
+     * that waits only for Leave, takes no refresh. The refresh ends on a state frame, a code, or after 10 s.
      *
      * @return Whether the hub entered refreshing, or already was.
      */
@@ -242,485 +244,377 @@ class HubSession(
             refreshTimer = null
             current.update { it.copy(jobs = it.jobs.copy(isRefreshing = false)) }
         }
-        val socket = live
-        if (socket == null) {
-            held = null
+        if (isLive) {
+            report(isRefresh = true)
+        } else {
+            if (held == HubWaitReason.TOO_OLD || held == HubWaitReason.NO_NETWORK) held = null
             backoffS = CLIENT_BACKOFF_MIN_S
-            news.trySend(Unit)
-        } else if (!report(socket.socket, isRefresh = true)) {
-            socket.socket.close(CLIENT_WS_CLOSE_NORMAL, "report not taken")
+            if (isJoining) news.trySend(Unit) else scope?.launch { roundNow() }
         }
         return true
     }
 
     /**
-     * Open a stream on the live socket.
+     * Open one stream on the live session, on a local connection of its own. Blocks until the hub answers.
      *
-     * @param kind The kind.
-     * @param args Its arguments.
-     * @param hasBytes Whether it carries bytes.
-     * @return The stream, or `hub_unreachable` while the hub is not connected.
+     * @param open The stream's `open` record, `{kind, ...args}`.
+     * @return The stream, or the refusal; `hub_unreachable` while the hub is not connected.
      */
-    fun openStream(
-        kind: String,
-        args: Map<String, JsonElement>,
-        hasBytes: Boolean = false,
-    ): ChannelResult<ChannelStream> {
-        val socket = live ?: return ChannelResult.refused("hub_unreachable", "detail" to "this hub is not connected")
-        return socket.streams.open(kind, args, hasBytes)
+    fun openStream(open: JsonObject): ChannelResult<TransportStream> {
+        if (!isLive) return ChannelResult.refused("hub_unreachable", "detail" to "this hub is not connected")
+        return transport.open(bindingId, open)
     }
 
     /**
-     * The material one published entry takes from the hub: the close of a `service` stream.
+     * The material one published entry takes from the hub: the reply to a `service` frame.
      *
      * @param entryId The entry's id.
-     * @return The close's params, or its refusal.
+     * @return The reply's params, or its refusal.
      */
     suspend fun openService(entryId: String): ChannelResult<JsonObject> =
         openService(ChannelFrames.args("id" to entryId))
 
     /**
-     * What the hub hands this phone on a `service` stream: an entry's material for `{id}`, the
-     * panel's one-time `{token}` for `{is_panel: true}`.
+     * What the hub hands this phone on a `service` frame: an entry's material for `{id}`, the
+     * panel's one-time `{token}` for `{is_panel: true}`. The material is logged nowhere.
      *
-     * @param args The stream's arguments.
-     * @return The close's params, or its refusal.
+     * @param args The frame's arguments.
+     * @return The reply's params, or its refusal.
      */
     suspend fun openService(args: Map<String, JsonElement>): ChannelResult<JsonObject> =
-        when (val opened = openStream(CLIENT_STREAM_KIND_SERVICE, args)) {
-            is ChannelResult.Refused -> opened
-            is ChannelResult.Ok -> opened.value.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)
-        }
+        ask { ChannelFrames.service(it, args) }
 
     /**
-     * Open one `connect` stream: one TCP connection to a published entry or to the hub's panel.
+     * Set whether a kept shell stays and whether others can attach to it.
      *
-     * @param args `{id}` for an entry, `{is_panel: true}` for the panel.
-     * @return The stream, or `hub_unreachable` while the hub is not connected.
+     * @param sessionId The session.
+     * @param isPersistent Whether it outlives every window.
+     * @param isShared Whether every client with terminal rights on the machine lists it.
+     * @return The reply, or its refusal.
      */
-    fun openConnect(args: Map<String, JsonElement>): ChannelResult<ChannelStream> =
-        openStream(CLIENT_STREAM_KIND_CONNECT, args, hasBytes = true)
+    suspend fun persist(sessionId: String, isPersistent: Boolean, isShared: Boolean): ChannelResult<JsonObject> =
+        ask { ChannelFrames.persist(it, sessionId, isPersistent, isShared) }
 
     /**
-     * One round, or one idle turn.
+     * End a kept shell and every program in it.
      *
-     * @return How many seconds to wait before the next; 0 runs the next at once.
+     * @param sessionId The session.
+     * @return The reply, or its refusal.
      */
-    internal suspend fun runOnce(): Long {
-        if (held != null) return CLIENT_IDLE_POLL_INTERVAL_S
-        var binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
-        news.tryReceive()
-        current.update { it.dialling() }
-        val nameUrl = nameUrlOf(binding)
-        val urls = binding.candidateUrls(nameUrl, overlay?.url.orEmpty())
-        val round = dialAll(urls, binding.fingerprint, isInterruptible = true)
-        if (round.isInterrupted) {
-            log("the round ended before its dials did: a network change or a refresh starts the next")
-            return 0
-        }
-        var untrusted: ChannelResult.Refused? = null
-        var failure: ChannelResult.Refused? = null
-        for ((url, refusal) in round.refusals) {
-            if (refusal.code != "hub_untrusted") {
-                failure = refusal
-            } else if (url != nameUrl || url in binding.storedUrls) {
-                untrusted = refusal
-            }
-        }
-        val winner = round.winner
-        if (winner == null) {
-            untrusted?.let { return onRejected(it) }
-            return onUnreachable(failure ?: unreachable("no address"))
-        }
-        if (binding.isPending) {
-            when (val spent = spend(binding, winner.url)) {
-                is ChannelResult.Ok -> binding = spent.value
+    suspend fun stopSession(sessionId: String): ChannelResult<JsonObject> =
+        ask { ChannelFrames.stopSession(it, sessionId) }
 
-                is ChannelResult.Refused -> {
-                    winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                    return when (spent.code) {
-                        "hub_unreachable" -> onUnreachable(spent)
-                        "hub_untrusted" -> onRejected(spent)
-                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> onAdmissionPaused(spent)
-                        else -> onJoinRefused(spent)
-                    }
-                }
-            }
+    private suspend fun ask(frameOf: (String) -> JsonObject): ChannelResult<JsonObject> {
+        if (!isLive) return ChannelResult.refused("hub_unreachable", "detail" to "this hub is not connected")
+        val request = UUID.randomUUID().toString()
+        val answer = CompletableDeferred<ChannelResult<JsonObject>>()
+        requests[request] = answer
+        val frame = frameOf(request)
+        if (!transport.frame(bindingId, frame)) {
+            requests.remove(request)
+            return ChannelResult.refused("hub_unreachable", "detail" to "the transport is gone")
         }
-        return when (val outcome = handshake(binding, winner.socket, winner.events)) {
-            is Handshake.Welcomed -> afterServing(serve(winner, outcome.welcome))
-
-            is Handshake.Rejected -> {
-                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                onRejected(outcome.refusal)
-            }
-
-            is Handshake.Failed -> {
-                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                onUnreachable(outcome.refusal)
-            }
-        }
+        val got = withTimeoutOrNull(CLIENT_STREAM_TIMEOUT_S * 1000) { answer.await() }
+        requests.remove(request)
+        val result = got ?: ChannelResult.refused("hub_unreachable", "detail" to "the hub did not answer")
+        if (result is ChannelResult.Refused) log("the hub refused a ${frame.text("type")}: ${result.code}")
+        return result
     }
 
     /**
-     * Dial every address at once, each with its own connect time. An address that refuses is
-     * dialled again every second until the round's connect time ends. The first socket that opens
-     * on the pinned certificate is the round's; every other socket, and every socket of a round
-     * that is cancelled or interrupted, is closed before this returns.
+     * Spend the binding's ticket with the transport's `join`, again after each wait, until the hub
+     * takes it or refuses it.
      *
-     * @param urls The round's addresses.
-     * @param fingerprint The pinned SHA-256.
-     * @param isInterruptible Whether a network change or a refresh ends the round before its dials do.
-     * @return The round's socket or null, the refusal of each address that failed, and whether it was interrupted.
+     * @return Whether the binding now holds its token.
      */
-    private suspend fun dialAll(urls: List<String>, fingerprint: String, isInterruptible: Boolean): Round {
-        val opens = Channel<Dialled>(Channel.UNLIMITED)
-        val sockets = mutableListOf<DialledSocket>()
-        val refusals = mutableListOf<Pair<String, ChannelResult.Refused>>()
-        var winner: DialledSocket? = null
-        var isInterrupted = false
-        var isSettled = false
+    private suspend fun join(): Boolean {
+        isJoining = true
         try {
-            for (url in urls) sockets += dial(url, fingerprint)
-            coroutineScope {
-                val watchers = sockets.indices.map { index ->
-                    launch {
-                        var dialled = sockets[index]
-                        var refused: ChannelSocketEvent.Failed? = null
-                        val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {
-                            var event = dialled.events.receive()
-                            while (event is ChannelSocketEvent.Failed && event.isPortClosed) {
-                                refused = event
-                                delay(CLIENT_REDIAL_INTERVAL_S * 1000)
-                                dialled.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                                dialled = dial(dialled.url, fingerprint)
-                                sockets[index] = dialled
-                                event = dialled.events.receive()
-                            }
-                            event
-                        } ?: refused ?: ChannelSocketEvent.Failed(
-                            unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
-                        )
-                        dialled.openNanos = nanoClock() - dialled.startedNanos
-                        opens.send(Dialled(dialled, first))
+            while (true) {
+                val binding = store.get(bindingId) ?: return false
+                if (!binding.isPending) return true
+                news.tryReceive()
+                current.update { it.dialling() }
+                val fields = buildJsonObject {
+                    put("binding", bindingId)
+                    put("hub_key", binding.hubKey)
+                    put("private_key", binding.privateKey)
+                    put("addresses", JsonArray(candidates(binding).map { JsonPrimitive(it.address) }))
+                    ChannelFrames.join(binding.ticket, machine).forEach { (name, value) -> put(name, value) }
+                }
+                val waitS = when (val answer = transport.command("join", fields, TRANSPORT_JOIN_TIMEOUT_S * 1000)) {
+                    is ChannelResult.Ok -> {
+                        if (spend(answer.value)) return true
+                        hold(HubWaitReason.JOIN_REFUSED, ChannelResult.refused("enroll_no_token"))
+                        return false
+                    }
+
+                    is ChannelResult.Refused -> when (answer.code) {
+                        "hub_untrusted" -> waitFor(HubWaitReason.UNTRUSTED, answer, CLIENT_BACKOFF_MAX_S)
+
+                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> {
+                            val retryS = (answer.params["retry_after_s"] as? JsonPrimitive)?.longOrNull
+                            waitFor(
+                                HubWaitReason.ADMISSION_PAUSED,
+                                answer,
+                                (retryS ?: CLIENT_BACKOFF_MAX_S).coerceAtLeast(1),
+                            )
+                        }
+
+                        in CLIENT_ROUND_SILENT_CODES -> silent(answer, null)
+
+                        in CLIENT_ROUND_RETRIED_CODES -> waitFor(silentReason(), answer, CLIENT_BACKOFF_MAX_S)
+
+                        else -> {
+                            hold(HubWaitReason.JOIN_REFUSED, answer)
+                            return false
+                        }
                     }
                 }
-                var waiting = sockets.size
-                while (winner == null && waiting > 0) {
-                    val dial = if (isInterruptible) nextDialOrNews(opens) else opens.receive()
-                    if (dial == null) {
-                        isInterrupted = true
-                        break
-                    }
-                    val dialled = dial.socket
-                    waiting -= 1
-                    when (val event = dial.event) {
-                        is ChannelSocketEvent.Opened -> winner = dialled
-                        is ChannelSocketEvent.Failed -> refusals += dialled.url to event.refusal
-                        else -> refusals += dialled.url to unreachable("the socket did not open")
-                    }
-                }
-                watchers.forEach { it.cancel() }
+                withTimeoutOrNull(waitS * 1000) { news.receive() }
             }
-            isSettled = true
         } finally {
-            val kept = if (isSettled) winner else null
-            sockets.filter { it !== kept }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
+            isJoining = false
         }
-        return Round(winner, refusals, isInterrupted)
     }
 
-    private fun dial(url: String, fingerprint: String): DialledSocket {
-        val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-        val startedNanos = nanoClock()
-        return DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
-    }
-
-    private suspend fun nextDialOrNews(opens: Channel<Dialled>): Dialled? = select {
-        opens.onReceive { it }
-        news.onReceive { null }
+    private fun spend(answer: JsonObject): Boolean {
+        val id = answer.text("binding_id")
+        val token = answer.text("token")
+        if (id.isEmpty() || token.isEmpty()) return false
+        val kept = try {
+            store.update(bindingId) { it.copy(hubBindingId = id, token = token, ticket = "") }
+        } catch (error: IOException) {
+            log("the joined binding could not be written: ${error.message}")
+            null
+        } ?: return false
+        current.update { it.copy(binding = kept) }
+        log("joined the hub as $id")
+        onJoined(bindingId, id)
+        return true
     }
 
     /**
-     * A round beside the open channel: its winner takes the channel only on a better path, and
-     * is closed before its hello otherwise.
+     * Give the transport the hub's candidates; unchanged candidates are not sent again unless forced.
+     *
+     * @param isForced Whether the `dial` goes even with the candidates it last named.
      */
-    private suspend fun moveIfBetter() {
-        val from = live ?: return
+    private suspend fun dial(isForced: Boolean = false) {
         val binding = store.get(bindingId) ?: return
-        val urls = binding.candidateUrls(nameUrlOf(binding), overlay?.url.orEmpty())
-        val winner = dialAll(urls, binding.fingerprint, isInterruptible = false).winner ?: return
-        val path = pathOf(winner.url)
-        val livePath = pathOf(from.url)
-        val isBetter = path.rank < livePath.rank || (path.rank == livePath.rank && winner.openNanos < from.openNanos)
-        if (!isBetter || live !== from) {
-            winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-            log(
-                "the channel stays on ${from.url} (${livePath.wireName}); ${winner.url} (${path.wireName}) is no better",
+        if (binding.isPending || binding.isKeyMissing || held == HubWaitReason.REPLACED) return
+        val candidates = candidates(binding)
+        if (!isForced && candidates == dialled) return
+        dialled = candidates
+        val fields = fields {
+            put("hub_key", binding.hubKey)
+            put("private_key", binding.privateKey)
+            put("psk", binding.psk)
+            put("role", CLIENT_ROLE)
+            put("protocol", PROTOCOL)
+            put(
+                "candidates",
+                JsonArray(
+                    candidates.map {
+                        buildJsonObject {
+                            put("address", it.address)
+                            put("path", it.path)
+                        }
+                    },
+                ),
             )
+        }
+        val answer = transport.command("dial", fields)
+        if (answer is ChannelResult.Refused) {
+            dialled = null
+            log("the transport did not take the dial: ${answer.code}")
+            if (!isLive) {
+                val waitS = silent(answer, null)
+                countdown = scope?.launch {
+                    delay(waitS * 1000)
+                    dial(isForced = true)
+                }
+            }
+        }
+    }
+
+    private suspend fun roundNow() {
+        dial()
+        transport.command("round", fields())
+    }
+
+    private suspend fun take(event: TransportEvent) {
+        when (event) {
+            is TransportEvent.SessionOpen -> open(event)
+
+            is TransportEvent.Frame -> takeFrame(event.frame)
+
+            is TransportEvent.RoundEnd -> roundEnded(event)
+
+            is TransportEvent.SessionEnd -> sessionEnded(event.refusal)
+
+            TransportEvent.Restarted -> {
+                endLive()
+                current.update { it.dialling() }
+                dial(isForced = true)
+            }
+        }
+    }
+
+    private fun open(event: TransportEvent.SessionOpen) {
+        val binding = store.get(bindingId) ?: return
+        if (held == HubWaitReason.TOO_OLD || held == HubWaitReason.NO_NETWORK) held = null
+        sessionAddress = event.address
+        val isMove = isLive
+        log(
+            if (isMove) {
+                "the channel moves to ${event.address} (${event.path}) after a ${event.handshakeMs} ms handshake"
+            } else {
+                "a session opened at ${event.address} (${event.path}) after a ${event.handshakeMs} ms handshake"
+            },
+        )
+        transport.frame(bindingId, ChannelFrames.hello(binding, machine))
+    }
+
+    private fun takeFrame(frame: JsonObject) {
+        val inbound = try {
+            ChannelInbound.decode(frame)
+        } catch (error: IllegalArgumentException) {
+            log("a frame the hub sent does not read: ${error.message.orEmpty()}")
             return
         }
-        movingFrom = from.socket
-        var isTaken = false
-        try {
-            val outcome = handshake(binding, winner.socket, winner.events)
-            if (outcome is Handshake.Welcomed) {
-                moves.send(Moved(winner, outcome.welcome))
-                isTaken = true
-            } else {
-                log("the channel stays on ${from.url}: ${winner.url} answered no welcome")
+        when (inbound) {
+            is ChannelInbound.Welcome -> if (inbound.role == CLIENT_HUB_ROLE) welcome(inbound)
+
+            is ChannelInbound.State -> {
+                takeState(inbound.state)
+                report()
             }
-        } finally {
-            if (!isTaken) {
-                movingFrom = null
-                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-            }
+
+            is ChannelInbound.Reply -> requests.remove(inbound.request)?.complete(inbound.result)
+
+            is ChannelInbound.Pong -> takePong(inbound.nonce)
+
+            is ChannelInbound.Refused -> refused(inbound.refusal)
+
+            is ChannelInbound.Unknown -> Unit
         }
     }
 
-    private fun pathOf(url: String): ChannelPath = ChannelPath.of(url, overlay, serverUrls, localNetworks())
-
-    private suspend fun nameUrlOf(binding: HubBinding): String {
-        val firstUrl = binding.storedUrls.firstOrNull() ?: return ""
-        return resolveHubName()?.let { nameUrlOf(firstUrl, it) }.orEmpty()
-    }
-
-    private fun log(text: String) {
-        Log.i(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: $text")
-    }
-
-    private suspend fun spend(binding: HubBinding, url: String): ChannelResult<HubBinding> {
-        val body = ChannelFrames.joinRequest(binding.ticket, machine)
-        val answer = when (val posted = transport.post(url, CLIENT_JOIN_PATH, binding.fingerprint, body)) {
-            is ChannelResult.Refused -> return posted
-            is ChannelResult.Ok -> posted.value
-        }
-        val id = (answer["id"] as? JsonPrimitive)?.content.orEmpty()
-        val token = (answer["token"] as? JsonPrimitive)?.content.orEmpty()
-        if (id.isEmpty() || token.isEmpty()) return ChannelResult.refused("enroll_no_token")
-        val kept = try {
-            store.update(bindingId) { it.copy(hubBindingId = id, token = token, ticket = "", gatewayUrl = url) }
-        } catch (error: IOException) {
-            return ChannelResult.refused("client_internal", "error" to (error.message ?: "IOException"))
-        } ?: return ChannelResult.refused("client_internal", "error" to "the binding is gone")
-        current.update { it.copy(binding = kept) }
-        onJoined(bindingId, id)
-        return ChannelResult.Ok(kept)
-    }
-
-    private fun onJoinRefused(refusal: ChannelResult.Refused): Long = hold(HubWaitReason.JOIN_REFUSED, refusal)
-
-    private fun onAdmissionPaused(refusal: ChannelResult.Refused): Long {
-        val retryS = (refusal.params["retry_after_s"] as? JsonPrimitive)?.longOrNull ?: CLIENT_BACKOFF_MAX_S
-        return waitFor(HubWaitReason.ADMISSION_PAUSED, refusal, retryS.coerceAtLeast(1))
-    }
-
-    private suspend fun handshake(
-        binding: HubBinding,
-        socket: ChannelSocket,
-        events: Channel<ChannelSocketEvent>,
-    ): Handshake = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {
-        socket.sendText(ChannelFrames.hello(binding, machine).toString())
-        val answer = when (val event = events.receive()) {
-            is ChannelSocketEvent.Text -> try {
-                ChannelInbound.decode(event.text)
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-
-            is ChannelSocketEvent.Closed -> return@withTimeoutOrNull closedAtHandshake(event)
-
-            is ChannelSocketEvent.Failed -> return@withTimeoutOrNull Handshake.Failed(event.refusal)
-
-            else -> null
-        }
-        when {
-            answer is ChannelInbound.Refused -> Handshake.Rejected(answer.refusal)
-
-            answer is ChannelInbound.Welcome && answer.role == CLIENT_HUB_ROLE -> {
-                report(socket, isRefresh = current.value.jobs.isRefreshing)
-                Handshake.Welcomed(answer)
-            }
-
-            else -> Handshake.Failed(unreachable("the hub's first frame is not a welcome"))
-        }
-    } ?: Handshake.Failed(unreachable("the hub did not answer in ${CLIENT_CONNECT_TIMEOUT_S}s"))
-
-    private fun closedAtHandshake(event: ChannelSocketEvent.Closed): Handshake = when (event.code) {
-        CLIENT_WS_CLOSE_REFUSED -> Handshake.Rejected(ChannelResult.refused("hub_refused"))
-        else -> Handshake.Failed(unreachable("the hub closed the socket (${event.code})"))
-    }
-
-    private suspend fun serve(winner: DialledSocket, welcome: ChannelInbound.Welcome): ChannelResult.Refused? {
-        changes.tryReceive()
-        if (news.tryReceive().isSuccess) changes.trySend(Unit)
+    private fun welcome(welcome: ChannelInbound.Welcome) {
         onWelcomed(bindingId, welcome.id)
-        takeChannel(winner, welcome)
-        var failure: ChannelResult.Refused? = null
-        coroutineScope {
-            val reporter = launch {
-                while (isActive) {
-                    delay(CLIENT_REPORT_INTERVAL_S * 1000)
-                    live?.let { report(it.socket) }
-                }
-            }
-            val pinger = launch {
-                while (isActive) {
-                    live?.let { ping(it) }
-                    delay(CLIENT_PING_INTERVAL_S * 1000)
-                }
-            }
-            val mover = launch {
-                for (change in changes) moveIfBetter()
-            }
-            try {
-                failure = readUntilEnd()
-            } finally {
-                reporter.cancel()
-                pinger.cancel()
-                withContext(NonCancellable) { mover.cancelAndJoin() }
-                generateSequence { moves.tryReceive().getOrNull() }.forEach {
-                    it.socket.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                }
-            }
-        }
-        return failure
-    }
-
-    private fun takeChannel(winner: DialledSocket, welcome: ChannelInbound.Welcome) {
-        live =
-            LiveSocket(winner.socket, ChannelStreamRegistry(winner.socket), winner.url, winner.events, winner.openNanos)
+        isLive = true
         backoffS = CLIENT_BACKOFF_MIN_S
-        note { it.copy(gatewayUrl = winner.url, hubId = welcome.id, hubName = welcome.name) }
+        countdown?.cancel()
+        note {
+            it.copy(gatewayUrl = sessionAddress.ifEmpty { it.gatewayUrl }, hubId = welcome.id, hubName = welcome.name)
+        }
         current.update {
             it.copy(
                 connection = HubConnection.CONNECTED,
-                waitReason = null,
+                waitReason = if (it.waitReason == HubWaitReason.DISABLED) it.waitReason else null,
                 waitRefusal = null,
                 nextRoundAtMillis = 0,
                 software = welcome.software,
-                connectedAddress = winner.url,
+                connectedAddress = sessionAddress,
                 hasConnected = true,
                 droppedAtMillis = 0,
-                rttMs = null,
             )
+        }
+        report(isRefresh = current.value.jobs.isRefreshing)
+        ping()
+        if (liveJobs == null) {
+            liveJobs = scope?.launch {
+                launch {
+                    while (isActive) {
+                        delay(CLIENT_REPORT_INTERVAL_S * 1000)
+                        report()
+                    }
+                }
+                launch {
+                    while (isActive) {
+                        delay(CLIENT_PING_INTERVAL_S * 1000)
+                        ping()
+                    }
+                }
+            }
         }
     }
 
-    private fun moveTo(moved: Moved) {
-        val previous = live
-        movingFrom = null
-        takeChannel(moved.socket, moved.welcome)
-        previous?.streams?.endAll()
-        previous?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
-        log("the channel moved from ${previous?.url.orEmpty()} to ${moved.socket.url}")
-        live?.let { ping(it) }
+    private fun refused(refusal: ChannelResult.Refused) {
+        log("the hub refused the session: ${refusal.code}")
+        when (refusal.code) {
+            CLIENT_REFUSAL_CODE_REPLACED -> held = HubWaitReason.REPLACED
+            CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> held = HubWaitReason.UNKNOWN_DEVICE
+            in CLIENT_PROTOCOL_REFUSAL_CODES -> held = HubWaitReason.TOO_OLD
+            else -> Unit
+        }
     }
 
-    private fun ping(socket: LiveSocket) {
-        val nonce = UUID.randomUUID().toString()
-        socket.pingSentNanos = nanoClock()
-        socket.pingNonce = nonce
-        socket.socket.sendText(ChannelFrames.ping(nonce).toString())
+    private fun roundEnded(event: TransportEvent.RoundEnd) {
+        val refusal = event.refusal ?: ChannelResult.refused("hub_unreachable")
+        endRefresh()
+        when (refusal.code) {
+            "hub_untrusted" -> waitFor(HubWaitReason.UNTRUSTED, refusal, event.nextRoundS)
+            CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> hold(HubWaitReason.UNKNOWN_DEVICE, refusal)
+            CLIENT_REFUSAL_CODE_REPLACED -> hold(HubWaitReason.REPLACED, refusal)
+            in CLIENT_PROTOCOL_REFUSAL_CODES -> hold(HubWaitReason.TOO_OLD, refusal)
+            else -> silent(refusal, event.nextRoundS)
+        }
     }
 
-    private fun takePong(nonce: String, reading: LiveSocket) {
-        if (nonce.isEmpty() || nonce != reading.pingNonce) return
-        reading.pingNonce = ""
-        val rttMs = (nanoClock() - reading.pingSentNanos).nanoseconds.toDouble(DurationUnit.MILLISECONDS).roundToLong()
-        current.update { it.copy(rttMs = rttMs) }
+    private fun sessionEnded(refusal: ChannelResult.Refused?) {
+        endLive()
+        when {
+            refusal?.code == CLIENT_REFUSAL_CODE_REPLACED || held == HubWaitReason.REPLACED ->
+                hold(HubWaitReason.REPLACED, refusal)
+
+            refusal?.code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN || held == HubWaitReason.UNKNOWN_DEVICE ->
+                hold(HubWaitReason.UNKNOWN_DEVICE, refusal)
+
+            refusal != null && (refusal.code in CLIENT_PROTOCOL_REFUSAL_CODES || held == HubWaitReason.TOO_OLD) ->
+                hold(HubWaitReason.TOO_OLD, refusal)
+
+            refusal != null -> waitFor(silentReason(), refusal, CLIENT_BACKOFF_MAX_S)
+
+            else -> current.update { it.dialling() }
+        }
     }
 
-    private suspend fun readUntilEnd(): ChannelResult.Refused? {
-        var failure: ChannelResult.Refused? = null
-        try {
-            while (true) {
-                val reading = live ?: break
-                val step = select {
-                    reading.events.onReceive { Step.Event(it) }
-                    moves.onReceive { Step.Move(it) }
-                }
-                if (step is Step.Move) {
-                    moveTo(step.moved)
-                    continue
-                }
-                when (val event = (step as Step.Event).event) {
-                    is ChannelSocketEvent.Text -> failure = dispatch(event.text, reading)
-
-                    is ChannelSocketEvent.Binary -> if (event.bytes.size >= CHANNEL_STREAM_ID_BYTES) {
-                        reading.streams.takeBinary(event.bytes)
-                    }
-
-                    is ChannelSocketEvent.Opened -> Unit
-
-                    is ChannelSocketEvent.Closed, is ChannelSocketEvent.Failed -> {
-                        if (movingFrom === reading.socket) {
-                            val moved = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { moves.receive() }
-                            if (moved != null) {
-                                moveTo(moved)
-                                continue
-                            }
-                        }
-                        if (event is ChannelSocketEvent.Closed) failure = closedWhileServing(event)
-                        break
-                    }
-                }
-                if (failure != null) break
-            }
-        } finally {
-            val ending = live
-            live = null
-            movingFrom = null
-            ending?.streams?.endAll()
-            ending?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
-            current.update {
-                it.dialling().copy(
+    private fun endLive() {
+        isLive = false
+        liveJobs?.cancel()
+        liveJobs = null
+        pingNonce = ""
+        val gone = requests.values.toList()
+        requests.clear()
+        gone.forEach { it.complete(ChannelResult.refused("hub_unreachable", "detail" to "the session ended")) }
+        current.update {
+            if (it.connectedAddress.isEmpty() && it.connection != HubConnection.CONNECTED) {
+                it
+            } else {
+                it.copy(
+                    connection = HubConnection.CONNECTING,
                     connectedAddress = "",
                     droppedAtMillis = clock(),
                     rttMs = null,
+                    waitReason = if (it.waitReason == HubWaitReason.DISABLED) null else it.waitReason,
                 )
             }
         }
-        return failure
     }
 
-    private fun closedWhileServing(event: ChannelSocketEvent.Closed): ChannelResult.Refused? = when (event.code) {
-        CLIENT_WS_CLOSE_REPLACED -> {
-            held = HubWaitReason.REPLACED
-            null
-        }
-
-        CLIENT_WS_CLOSE_REFUSED -> ChannelResult.refused("hub_refused")
-
-        else -> null
+    private fun ping() {
+        val nonce = UUID.randomUUID().toString()
+        pingSentNanos = nanoClock()
+        pingNonce = nonce
+        transport.frame(bindingId, ChannelFrames.ping(nonce))
     }
 
-    private fun dispatch(text: String, reading: LiveSocket): ChannelResult.Refused? {
-        val frame = try {
-            ChannelInbound.decode(text)
-        } catch (error: IllegalArgumentException) {
-            log("a frame the hub sent does not read: ${error.message.orEmpty()}")
-            return null
-        }
-        when (frame) {
-            is ChannelInbound.State -> {
-                takeState(frame.state)
-                report(reading.socket)
-            }
-
-            is ChannelInbound.Close -> reading.streams.takeClose(frame)
-
-            is ChannelInbound.Credit -> reading.streams.takeCredit(frame)
-
-            is ChannelInbound.Open -> reading.streams.refuse(frame)
-
-            is ChannelInbound.Pong -> takePong(frame.nonce, reading)
-
-            is ChannelInbound.Refused -> return frame.refusal
-
-            is ChannelInbound.Welcome, is ChannelInbound.Unknown -> Unit
-        }
-        return null
+    private fun takePong(nonce: String) {
+        if (nonce.isEmpty() || nonce != pingNonce) return
+        pingNonce = ""
+        val rttMs = (nanoClock() - pingSentNanos).nanoseconds.toDouble(DurationUnit.MILLISECONDS).roundToLong()
+        current.update { it.copy(rttMs = rttMs) }
     }
 
     private fun takeState(state: ChannelClientState) {
@@ -728,10 +622,7 @@ class HubSession(
         serverUrls = state.serverUrls
         val isNewUrls = state.urls.isNotEmpty() && state.urls.toSet() != current.value.binding.gatewayUrls.toSet()
         note { binding ->
-            binding.copy(
-                gatewayUrls = state.urls.ifEmpty { binding.gatewayUrls },
-                overlays = state.overlays,
-            )
+            binding.copy(gatewayUrls = state.urls.ifEmpty { binding.gatewayUrls }, overlays = state.overlays)
         }
         endRefresh()
         current.update {
@@ -740,6 +631,7 @@ class HubSession(
                 waitReason = if (state.isDisabled) HubWaitReason.DISABLED else null,
                 waitRefusal = null,
                 services = state.services,
+                apps = state.apps,
                 terminals = state.terminals,
                 reachedThrough = state.reachedThrough,
                 isPanelAllowed = state.isPanelAllowed,
@@ -748,8 +640,24 @@ class HubSession(
         if (isNewUrls) networkChanged()
     }
 
-    private fun report(socket: ChannelSocket, isRefresh: Boolean = false): Boolean =
-        socket.sendText(ChannelFrames.report(stateHash, machine, isRefresh).toString())
+    private fun report(isRefresh: Boolean = false): Boolean =
+        transport.frame(bindingId, ChannelFrames.report(stateHash, machine, isRefresh))
+
+    private suspend fun candidates(binding: HubBinding): List<ChannelCandidate> {
+        val stored = binding.storedUrls.filter { schemeOf(it) == CLIENT_ADDRESS_SCHEME }
+        val nameUrl = stored.firstOrNull()?.let { first -> resolveHubName()?.let { addressOn(first, it) } }.orEmpty()
+        val route = overlay
+        val networks = localNetworks()
+        return (listOf(route?.url.orEmpty(), nameUrl) + stored)
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .map { ChannelCandidate(it, ChannelPath.of(it, route, serverUrls, networks).wireName) }
+    }
+
+    private fun fields(more: JsonObjectBuilder.() -> Unit = {}): JsonObject = buildJsonObject {
+        put("binding", bindingId)
+        more()
+    }
 
     private fun note(change: (HubBinding) -> HubBinding) {
         val kept = try {
@@ -766,44 +674,54 @@ class HubSession(
         current.update { it.copy(jobs = it.jobs.copy(isRefreshing = false)) }
     }
 
-    private fun afterServing(failure: ChannelResult.Refused?): Long {
-        if (failure != null) return onRejected(failure)
-        if (held == HubWaitReason.REPLACED) return hold(HubWaitReason.REPLACED, null)
-        return 0
-    }
-
-    private fun onUnreachable(refusal: ChannelResult.Refused): Long {
-        if (!hasNetwork()) return hold(HubWaitReason.NO_NETWORK, refusal)
-        val waitS = backoffS
-        backoffS = minOf(backoffS * 2, CLIENT_BACKOFF_MAX_S)
+    /**
+     * Every address of a round failed: `no_network` with no countdown while the phone has none,
+     * else `hub_silent` or `hub_off_overlay` until the next round.
+     *
+     * @param refusal The code the round ended in.
+     * @param nextRoundS The seconds the transport names to its next round; null to count down the
+     *   backoff, which then doubles.
+     * @return The seconds waited.
+     */
+    private fun silent(refusal: ChannelResult.Refused, nextRoundS: Long?): Long {
+        if (!hasNetwork()) {
+            hold(HubWaitReason.NO_NETWORK, refusal)
+            return CLIENT_CONNECT_TIMEOUT_S
+        }
+        val waitS = nextRoundS ?: backoffS.also { backoffS = minOf(backoffS * 2, CLIENT_BACKOFF_MAX_S) }
         return waitFor(silentReason(), refusal, waitS)
-    }
-
-    private fun onRejected(refusal: ChannelResult.Refused): Long = when (refusal.code) {
-        "hub_untrusted" -> waitFor(HubWaitReason.UNTRUSTED, refusal, CLIENT_BACKOFF_MAX_S)
-        CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> hold(HubWaitReason.UNKNOWN_DEVICE, refusal)
-        in CLIENT_PROTOCOL_REFUSAL_CODES -> hold(HubWaitReason.TOO_OLD, refusal)
-        else -> waitFor(silentReason(), refusal, CLIENT_BACKOFF_MAX_S)
     }
 
     private fun silentReason(): HubWaitReason =
         if (overlay != null) HubWaitReason.HUB_OFF_OVERLAY else HubWaitReason.HUB_SILENT
 
-    /** Wait [waitS] seconds on [reason], the next round's moment on the view. */
+    /** Wait [waitS] seconds on [reason], the next round's moment on the view, and show `connecting` at 0. */
     private fun waitFor(reason: HubWaitReason, refusal: ChannelResult.Refused?, waitS: Long): Long {
         endRefresh()
-        log("waiting on ${reason.wireName} for ${waitS}s: ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}")
-        current.update { it.waiting(reason, refusal, clock() + waitS * 1000) }
+        log("waiting on ${reason.wireName} for ${waitS}s: ${refusal?.code.orEmpty()}")
+        val nextAt = if (waitS > 0) clock() + waitS * 1000 else 0
+        current.update { it.waiting(reason, refusal, nextAt) }
+        countdown?.cancel()
+        if (waitS > 0) {
+            countdown = scope?.launch {
+                delay(waitS * 1000)
+                current.update { if (it.nextRoundAtMillis == nextAt && !isLive) it.dialling() else it }
+            }
+        }
         return waitS
     }
 
-    /** Stop the rounds on [reason] until a person, or a network change for `no_network`, starts them. */
-    private fun hold(reason: HubWaitReason, refusal: ChannelResult.Refused?): Long {
+    /** Stop on [reason] until a person, or a network change for `no_network`, starts the rounds again. */
+    private fun hold(reason: HubWaitReason, refusal: ChannelResult.Refused?) {
         held = reason
         endRefresh()
-        log("waiting on ${reason.wireName}: ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}")
+        countdown?.cancel()
+        log("waiting on ${reason.wireName}: ${refusal?.code.orEmpty()}")
         current.update { it.waiting(reason, refusal, 0) }
-        return CLIENT_IDLE_POLL_INTERVAL_S
+    }
+
+    private fun log(text: String) {
+        Log.i(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: $text")
     }
 
     private fun HubView.dialling(): HubView = copy(
@@ -821,64 +739,20 @@ class HubSession(
             nextRoundAtMillis = nextRoundAt,
         )
 
-    private fun unreachable(detail: String) = ChannelResult.refused("hub_unreachable", "detail" to detail)
+    private fun JsonObject.text(name: String): String = (this[name] as? JsonPrimitive)?.content.orEmpty()
 
-    private fun nameUrlOf(gatewayUrl: String, address: String): String = try {
-        val parts = URI(gatewayUrl)
-        val port = if (parts.port > 0) parts.port else CLIENT_HTTPS_DEFAULT_PORT
-        "${parts.scheme}://$address:$port"
-    } catch (_: URISyntaxException) {
-        ""
-    }
+    private companion object {
+        fun schemeOf(url: String): String = try {
+            URI(url).scheme.orEmpty().lowercase()
+        } catch (_: URISyntaxException) {
+            ""
+        }
 
-    private class LiveSocket(
-        val socket: ChannelSocket,
-        val streams: ChannelStreamRegistry,
-        val url: String,
-        val events: Channel<ChannelSocketEvent>,
-        val openNanos: Long,
-    ) {
-        /** The nonce of the last ping sent on this socket, empty once its pong was taken. */
-        @Volatile
-        var pingNonce = ""
-
-        /** When the last ping was sent, in the session's clock. */
-        @Volatile
-        var pingSentNanos = 0L
-    }
-
-    private class DialledSocket(
-        val url: String,
-        val socket: ChannelSocket,
-        val events: Channel<ChannelSocketEvent>,
-        val startedNanos: Long,
-    ) {
-        var openNanos = Long.MAX_VALUE
-    }
-
-    /** A dialled socket's first event. */
-    private class Dialled(val socket: DialledSocket, val event: ChannelSocketEvent)
-
-    /** A winner of a round beside the channel, welcomed and ready to carry it. */
-    private class Moved(val socket: DialledSocket, val welcome: ChannelInbound.Welcome)
-
-    private sealed interface Step {
-        class Event(val event: ChannelSocketEvent) : Step
-
-        class Move(val moved: Moved) : Step
-    }
-
-    private class Round(
-        val winner: DialledSocket?,
-        val refusals: List<Pair<String, ChannelResult.Refused>>,
-        val isInterrupted: Boolean,
-    )
-
-    private sealed interface Handshake {
-        data class Welcomed(val welcome: ChannelInbound.Welcome) : Handshake
-
-        data class Rejected(val refusal: ChannelResult.Refused) : Handshake
-
-        data class Failed(val refusal: ChannelResult.Refused) : Handshake
+        fun addressOn(url: String, address: String): String = try {
+            val parts = URI(url)
+            "${parts.scheme}://$address:${parts.port}"
+        } catch (_: URISyntaxException) {
+            ""
+        }
     }
 }

@@ -12,25 +12,28 @@ import kotlinx.serialization.json.put
 
 /** Sample values the channel tests share. */
 object Samples {
-    /** A fingerprint of the right shape. */
-    val FINGERPRINT = "ab".repeat(32)
+    /** A hub's static public key of the right shape. */
+    val HUB_KEY = "ab".repeat(32)
+
+    /** This phone's static private key for the hub. */
+    val PRIVATE_KEY = "cd".repeat(32)
 
     /** This phone. */
     val machine = ClientMachine(
         machineId = "0f".repeat(16),
         hostname = "pixel",
         arch = "arm64",
-        osVersion = "15",
-        version = "0.5.0",
+        version = "0.6.0",
     )
 
     /** A binding to one hub at two addresses. */
     val binding = HubBinding(
         id = "b1",
         name = "pixel",
-        gatewayUrl = "https://192.168.100.1:8443",
-        gatewayUrls = listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"),
-        fingerprint = FINGERPRINT,
+        gatewayUrl = "tcp://192.168.100.1:8443",
+        gatewayUrls = listOf("tcp://192.168.100.1:8443", "tcp://100.72.4.1:8443"),
+        hubKey = HUB_KEY,
+        privateKey = PRIVATE_KEY,
         token = "secret-token",
     )
 
@@ -71,12 +74,12 @@ object Samples {
         put(
             "urls",
             buildJsonArray {
-                add("https://192.168.100.1:8443/")
-                add("https://100.72.4.1:8443")
+                add("tcp://192.168.100.1:8443/")
+                add("tcp://100.72.4.1:8443")
             },
         )
         put("token", "ticket-1")
-        put("fp", FINGERPRINT.uppercase())
+        put("key", HUB_KEY.uppercase())
         put("role", "client")
         put(
             "overlays",

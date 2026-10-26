@@ -17,6 +17,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * @property summary Who provides it, for the root's second line.
  * @property bindingId The hub's binding, whose channel carries the share's connections.
  * @property entryId The `file` entry a `connect` stream names for each connection.
+ * @property isDeclared Whether a declared app names the share, a NAS's share opened with the
+ *   person's own login; a machine's share opens with the login the hub hands at every connect.
  * @property isReconnecting Whether its hub's channel dropped less than a minute ago and is not back yet.
  */
 data class ShareRoot(
@@ -28,6 +30,7 @@ data class ShareRoot(
     val summary: String,
     val bindingId: String,
     val entryId: String,
+    val isDeclared: Boolean = false,
     val isReconnecting: Boolean = false,
 ) {
     companion object {
@@ -57,6 +60,7 @@ data class ShareRoot(
                 summary = "${hub.binding.title}:$device",
                 bindingId = hub.binding.id,
                 entryId = entry.id,
+                isDeclared = entry.source == "declared",
             )
         }
 

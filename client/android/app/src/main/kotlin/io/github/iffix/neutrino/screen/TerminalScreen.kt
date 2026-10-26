@@ -62,6 +62,7 @@ import io.github.iffix.neutrino.design.LocalArm
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PageAction
+import io.github.iffix.neutrino.design.PickerField
 import io.github.iffix.neutrino.design.ReasonLine
 import io.github.iffix.neutrino.design.RoundButton
 import io.github.iffix.neutrino.design.SelectedMark
@@ -77,7 +78,8 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
 import io.github.iffix.neutrino.terminal.TerminalView
 
 /**
- * The terminals: a card of machine chips with New terminal, then the terminal's card with the tab
+ * The terminals: a card of machine chips, the account picker where the picked machine enables two
+ * or more accounts, and New terminal, then the terminal's card with the tab
  * strip, the terminal, the status line and the key row, in one scrolling column. The status line
  * holds Keyboard and Keys at its left, as the remote desktop viewer's round buttons, and the two
  * switches at its right. The key row starts shown; Keys hides it and the terminal takes its height.
@@ -103,16 +105,19 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val open by tabs.tabs.collectAsStateWithLifecycle()
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
+    val pickedAccount by tabs.pickedAccount.collectAsStateWithLifecycle()
     var modifiers by remember { mutableStateOf(TerminalModifiers()) }
     var isKeyRowShown by rememberSaveable { mutableStateOf(true) }
     val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
     val picked = machines.firstOrNull { (hub, machine) -> pick == hub.binding.id to machine.deviceId }
     val tab = open.firstOrNull { it.sessionId == active }
+    val accounts = picked?.second?.accounts.orEmpty()
+    val account = pickedAccount.takeIf { it in accounts } ?: accounts.firstOrNull().orEmpty()
     val newTerminal = PageAction(
         words.word("ui.terminal_new"),
         AppIcon.TERMINAL,
-        isEnabled = picked != null && picked.second.isOnline,
-    ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name) } }
+        isEnabled = picked != null && picked.second.isOnline && accounts.isNotEmpty(),
+    ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name, account) } }
     BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
         val cardHeight = terminalCardHeight(maxHeight, isImeShown)
         Column(
@@ -129,7 +134,9 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
             MachinesCard(
                 machines,
                 picked,
+                account,
                 onPick = { hub, machine -> tabs.pick(hub.binding.id, machine.deviceId) },
+                onAccount = tabs::pickAccount,
                 newTerminal = newTerminal,
             )
             if (open.isEmpty()) {
@@ -210,7 +217,9 @@ private fun Sentence(text: String) {
 private fun MachinesCard(
     machines: List<Pair<HubView, ChannelTerminal>>,
     picked: Pair<HubView, ChannelTerminal>?,
+    account: String,
     onPick: (HubView, ChannelTerminal) -> Unit,
+    onAccount: (String) -> Unit,
     newTerminal: PageAction,
 ) {
     val words = NeutrinoTheme.words
@@ -229,6 +238,16 @@ private fun MachinesCard(
                     MachineChip(machine, isOn = picked?.first == hub && picked.second == machine) {
                         onPick(hub, machine)
                     }
+                }
+                val accounts = picked?.second?.accounts.orEmpty()
+                if (accounts.size > 1) {
+                    PickerField(
+                        accounts.map { it to it },
+                        account,
+                        onSelect = onAccount,
+                        head = words.word("ui.terminal.account"),
+                        isWide = false,
+                    )
                 }
                 NeutrinoButton(
                     newTerminal.label,
@@ -252,6 +271,7 @@ private fun MachinesCard(
                 when {
                     picked == null -> words.word("ui.reason.no_machine")
                     !picked.second.isOnline -> words.word("ui.reason.offline")
+                    picked.second.accounts.isEmpty() -> words.word("ui.reason.terminal_no_account")
                     else -> null
                 },
             )

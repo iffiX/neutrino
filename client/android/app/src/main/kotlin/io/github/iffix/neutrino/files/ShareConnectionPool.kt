@@ -7,7 +7,7 @@ package io.github.iffix.neutrino.files
  * app was away from the foreground, is probed once before its next request.
  *
  * @param C What one connection is.
- * @param open Connect to a root with a login.
+ * @param open Connect to a root with the login read as it connects.
  * @param probe Whether a held connection still answers.
  * @param close Close a connection.
  * @param isLost Whether a failure means the connection is gone, rather than a refusal.
@@ -15,7 +15,7 @@ package io.github.iffix.neutrino.files
  * @param clock The time in milliseconds.
  */
 class ShareConnectionPool<C>(
-    private val open: (ShareRoot, ShareLogin) -> C,
+    private val open: (ShareRoot, () -> ShareLogin) -> C,
     private val probe: (C) -> Boolean,
     private val close: (C) -> Unit,
     private val isLost: (Exception) -> Boolean,
@@ -28,12 +28,12 @@ class ShareConnectionPool<C>(
      * Run one request on a root's connection.
      *
      * @param root The share.
-     * @param login Its login.
+     * @param login Its login, read when a connection is made.
      * @param action The request.
      * @return What the request returned.
      * @throws Exception Whatever connecting or the request threw, after the one retry.
      */
-    fun <T> call(root: ShareRoot, login: ShareLogin, action: (C) -> T): T {
+    fun <T> call(root: ShareRoot, login: () -> ShareLogin, action: (C) -> T): T {
         val reused = checked(root.key)
         val connection = reused ?: connect(root, login)
         try {
@@ -80,7 +80,7 @@ class ShareConnectionPool<C>(
         return null
     }
 
-    private fun connect(root: ShareRoot, login: ShareLogin): C {
+    private fun connect(root: ShareRoot, login: () -> ShareLogin): C {
         val connection = open(root, login)
         val before = synchronized(held) { held.put(root.key, Held(connection, clock())) }
         if (before != null && before.connection !== connection) close(before.connection)

@@ -16,7 +16,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteDesktopSessionsTest {
     private val material = JsonObject(mapOf("password" to JsonPrimitive("p")))
-    private val held = mutableListOf<Triple<String, String, Int>>()
+    private val held = mutableListOf<Pair<String, String>>()
     private val released = mutableListOf<Pair<String, String>>()
     private var bound: ChannelResult<Int> = ChannelResult.Ok(31118)
 
@@ -26,8 +26,8 @@ class RemoteDesktopSessionsTest {
         choiceOf: (String) -> RemoteDesktopChoice = { RemoteDesktopChoice() },
     ) = RemoteDesktopSessions(
         answer,
-        forward = { bindingId, entryId, port ->
-            held += Triple(bindingId, entryId, port)
+        forward = { bindingId, entryId ->
+            held += bindingId to entryId
             bound
         },
         release = { bindingId, entryId -> released += bindingId to entryId },
@@ -43,15 +43,15 @@ class RemoteDesktopSessionsTest {
             asked += 1
             answer.await()
         })
-        sessions.connect("b1", "r1", "Neutrino:desk", "", 21118)
-        sessions.connect("b1", "r1", "Neutrino:desk", "", 21118)
+        sessions.connect("b1", "r1", "Neutrino:desk", "")
+        sessions.connect("b1", "r1", "Neutrino:desk", "")
         runCurrent()
         assertEquals(setOf("b1/r1"), sessions.connecting.value)
         assertEquals(1, asked)
         answer.complete(ChannelResult.Ok(material))
         runCurrent()
         assertEquals(emptySet<String>(), sessions.connecting.value)
-        assertEquals(listOf(Triple("b1", "r1", 21118)), held)
+        assertEquals(listOf("b1" to "r1"), held)
         val target = sessions.viewing.value?.second
         assertEquals("b1/r1", sessions.viewing.value?.first)
         assertEquals("127.0.0.1", target?.host)
@@ -71,7 +71,7 @@ class RemoteDesktopSessionsTest {
                 RemoteDesktopChoice()
             }
         })
-        sessions.connect("b1", "r1", "x", "linux", 21118)
+        sessions.connect("b1", "r1", "x", "linux")
         runCurrent()
         assertEquals(kept, sessions.viewing.value?.second?.choice)
         assertEquals("linux", sessions.viewing.value?.second?.platformOs)
@@ -80,7 +80,7 @@ class RemoteDesktopSessionsTest {
     @Test
     fun aRefusedConnectWritesItsCodeAndMakesNoForward() = runTest {
         val sessions = sessions(backgroundScope, { _, _ -> ChannelResult.refused("rdp_not_shared") })
-        sessions.connect("b1", "r1", "x", "", 21118)
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         assertEquals("rdp_not_shared", sessions.errors.value["b1/r1"]?.code)
         assertNull(sessions.viewing.value)
@@ -93,7 +93,7 @@ class RemoteDesktopSessionsTest {
     fun aForwardThatFailsWritesItsCode() = runTest {
         bound = ChannelResult.refused("forward_failed", "detail" to "no local port is free")
         val sessions = sessions(backgroundScope)
-        sessions.connect("b1", "r1", "x", "", 21118)
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         assertEquals("forward_failed", sessions.errors.value["b1/r1"]?.code)
         assertNull(sessions.viewing.value)
@@ -102,7 +102,7 @@ class RemoteDesktopSessionsTest {
     @Test
     fun closingTheViewerEndsTheForward() = runTest {
         val sessions = sessions(backgroundScope)
-        sessions.connect("b1", "r1", "x", "", 21118)
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         sessions.close()
         assertNull(sessions.viewing.value)
@@ -114,7 +114,7 @@ class RemoteDesktopSessionsTest {
     @Test
     fun leavingTheHubClosesItsViewer() = runTest {
         val sessions = sessions(backgroundScope)
-        sessions.connect("b1", "r1", "x", "", 21118)
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         sessions.forget("b2")
         assertEquals("b1/r1", sessions.viewing.value?.first)

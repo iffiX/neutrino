@@ -34,7 +34,7 @@ class OverlayControllerTest {
         peer = "tcp://p:1",
         hubAddress = "10.126.126.1",
     )
-    private val overUrl = "https://100.88.0.1:8443"
+    private val overUrl = "tcp://100.88.0.1:8443"
     private val started = mutableListOf<Pair<String, String>>()
     private var stops = 0
     private val routes = mutableListOf<Pair<String, ChannelOverlayRoute?>>()
@@ -278,7 +278,7 @@ class OverlayControllerTest {
         controller.pick("b1", "easytier")
         controller.connect("b1")
         controller.report(OverlayStatus("b1", "easytier", OverlayPhase.ON, "10.126.126.7/24"))
-        assertEquals("https://10.126.126.1:8443", routes.single().second?.url)
+        assertEquals("tcp://10.126.126.1:8443", routes.single().second?.url)
         assertEquals("easytier", routes.single().second?.provider)
     }
 

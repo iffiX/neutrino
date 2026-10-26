@@ -10,15 +10,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** Every frame and body this phone writes on the channel, each with exactly the fields its protocol defines. */
+/**
+ * Every frame this phone writes on a hub's control stream, and the fields of the transport's
+ * `join`, each with exactly the fields its protocol defines; a frame's `type` is its name.
+ */
 object ChannelFrames {
-    /** The `type` of each frame. */
+    /** This phone's identity card, the first frame of a session. */
     const val HELLO = "hello"
 
     /** The hub's identity card. */
     const val WELCOME = "welcome"
 
-    /** A refusal, then close 4000. */
+    /** A refusal; the hub ends the session after it. */
     const val REFUSED = "refused"
 
     /** What is to be true. */
@@ -27,25 +30,28 @@ object ChannelFrames {
     /** What is true. */
     const val REPORT = "report"
 
-    /** A stream begins. */
-    const val OPEN = "open"
-
-    /** A stream ends. */
-    const val CLOSE = "close"
-
-    /** The sender may send more. */
-    const val CREDIT = "credit"
-
     /** This phone's own round trip probe. */
     const val PING = "ping"
 
-    /** The hub's answer to a ping, with its nonce. */
+    /** The answer to a ping, with its nonce. */
     const val PONG = "pong"
 
+    /** A question for one entry's material, or the panel's sign-in. */
+    const val SERVICE = "service"
+
+    /** Whether a kept shell stays and whether others can attach to it. */
+    const val PERSIST = "persist"
+
+    /** Ends a kept shell. */
+    const val STOP_SESSION = "stop_session"
+
+    /** The answer to a `service`, `persist` or `stop_session`. */
+    const val REPLY = "reply"
+
     /**
-     * The first frame up: this phone's identity card with the binding's token.
+     * The first frame of a session: this phone's identity card.
      *
-     * @param binding The binding the socket is for.
+     * @param binding The binding the session is for.
      * @param machine This phone.
      * @return The frame.
      */
@@ -56,7 +62,6 @@ object ChannelFrames {
         put("id", binding.boundId)
         put("name", binding.name.ifEmpty { machine.hostname })
         put("software", machine.software)
-        put("token", binding.token)
     }
 
     /**
@@ -74,55 +79,12 @@ object ChannelFrames {
         putJsonObject("machine") {
             put("hostname", machine.hostname)
             putJsonObject("platform") { machine.platform.forEach { (name, value) -> put(name, value) } }
+            put("os_machine_id", "")
         }
     }
 
     /**
-     * A stream begins: the request, its arguments beside `stream` and `kind`.
-     *
-     * @param stream The stream's id.
-     * @param kind The stream's kind.
-     * @param args The kind's own arguments.
-     * @return The frame.
-     */
-    fun open(stream: Int, kind: String, args: Map<String, JsonElement>): JsonObject = buildJsonObject {
-        put("type", OPEN)
-        put("stream", stream)
-        put("kind", kind)
-        args.forEach { (name, value) -> put(name, value) }
-    }
-
-    /**
-     * A stream ends from this side.
-     *
-     * @param stream The stream's id.
-     * @param code The refusal's code, empty for a result.
-     * @param params The result or the refusal's parameters.
-     * @return The frame.
-     */
-    fun close(stream: Int, code: String = "", params: JsonObject = JsonObject(emptyMap())): JsonObject =
-        buildJsonObject {
-            put("type", CLOSE)
-            put("stream", stream)
-            put("code", code)
-            put("params", params)
-        }
-
-    /**
-     * The hub may send this many more bytes on a stream.
-     *
-     * @param stream The stream's id.
-     * @param bytes The grant.
-     * @return The frame.
-     */
-    fun credit(stream: Int, bytes: Int): JsonObject = buildJsonObject {
-        put("type", CREDIT)
-        put("stream", stream)
-        put("bytes", bytes)
-    }
-
-    /**
-     * A round trip probe; the hub echoes its nonce in a `pong`.
+     * A round trip probe; the hub's transport echoes its nonce in a `pong`.
      *
      * @param nonce The mark of this ping, at most 64 characters.
      * @return The frame.
@@ -133,13 +95,57 @@ object ChannelFrames {
     }
 
     /**
-     * The body of `POST /api/channel/join`.
+     * A question for the material one published entry takes, or for the panel's sign-in.
+     *
+     * @param request This phone's mark of the question, which the reply names.
+     * @param args `{id}` for an entry, `{is_panel: true}` for the panel.
+     * @return The frame.
+     */
+    fun service(request: String, args: Map<String, JsonElement>): JsonObject = buildJsonObject {
+        put("type", SERVICE)
+        put("request", request)
+        args.forEach { (name, value) -> put(name, value) }
+    }
+
+    /**
+     * Whether a kept shell stays when its last stream closes, and whether others can attach to it.
+     *
+     * @param request This phone's mark of the question.
+     * @param sessionId The session.
+     * @param isPersistent Whether it outlives every window.
+     * @param isShared Whether every client with terminal rights on the machine lists it.
+     * @return The frame.
+     */
+    fun persist(request: String, sessionId: String, isPersistent: Boolean, isShared: Boolean): JsonObject =
+        buildJsonObject {
+            put("type", PERSIST)
+            put("request", request)
+            put("session_id", sessionId)
+            put("is_persistent", isPersistent)
+            put("is_shared", isShared)
+        }
+
+    /**
+     * Ends a kept shell and every program in it.
+     *
+     * @param request This phone's mark of the question.
+     * @param sessionId The session.
+     * @return The frame.
+     */
+    fun stopSession(request: String, sessionId: String): JsonObject = buildJsonObject {
+        put("type", STOP_SESSION)
+        put("request", request)
+        put("session_id", sessionId)
+    }
+
+    /**
+     * The `join` frame's body, which the transport sends on the round's winner.
      *
      * @param ticket The link's ticket.
      * @param machine This phone.
-     * @return The body.
+     * @return The body: `{ticket, role, protocol, machine_id, name, software, platform}`.
      */
-    fun joinRequest(ticket: String, machine: ClientMachine): JsonObject = buildJsonObject {
+    fun join(ticket: String, machine: ClientMachine): JsonObject = buildJsonObject {
         put("ticket", ticket)
         put("role", CLIENT_ROLE)
         put("protocol", PROTOCOL)
@@ -150,18 +156,7 @@ object ChannelFrames {
     }
 
     /**
-     * The body of `POST /api/channel/leave`.
-     *
-     * @param binding The binding being ended.
-     * @return The body.
-     */
-    fun leaveRequest(binding: HubBinding): JsonObject = buildJsonObject {
-        put("id", binding.boundId)
-        put("token", binding.token)
-    }
-
-    /**
-     * Text arguments as a stream's arguments.
+     * Values as a stream's or a frame's arguments.
      *
      * @param args The names and values.
      * @return The arguments as JSON values.

@@ -4,159 +4,131 @@ import io.github.iffix.neutrino.CLIENT_SETTINGS_KEY_LOCAL_PORTS
 import io.github.iffix.neutrino.FakeSharedPreferences
 import io.github.iffix.neutrino.LocalPortTakenException
 import io.github.iffix.neutrino.channel.ChannelResult
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
 class LocalPortTableTest {
     private val preferences = FakeSharedPreferences()
-    private val busy = mutableSetOf<Int>()
+    private val busy = mutableSetOf<Pair<Int, String>>()
+    private val probes = mutableListOf<Triple<Int, String, Boolean>>()
 
-    private val probes = mutableListOf<Pair<Int, Boolean>>()
+    private fun table() = LocalPortTable(preferences) { port, protocol, isKept ->
+        probes += Triple(port, protocol, isKept)
+        (port to protocol) !in busy
+    }
 
-    private fun table() = LocalPortTable(preferences) { port, isKept ->
-        probes += port to isKept
-        port !in busy
+    private val hubNumbers = mapOf("b1/gitea_d1_web" to (27311 to "tcp"), "b1/gitea_d1_ssh" to (30418 to "tcp"))
+
+    @Test
+    fun anAppEntryListensOnTheHubsNumber() {
+        assertEquals(27311, table().portForEntry("b1/gitea_d1_web", 27311, "tcp"))
+        assertEquals(Triple(27311, "tcp", true), probes.single())
     }
 
     @Test
-    fun autoTakesTheEntrysOwnPortWhenFree() {
-        assertEquals(8000, table().portFor("b1/w1", 8000))
-    }
-
-    @Test
-    fun autoFallsBackFrom20000Up() {
+    fun thePersonsNumberWins() {
         val table = table()
-        assertEquals(8000, table.portFor("b1/w1", 8000))
-        assertEquals(20000, table.portFor("b2/w1", 8000))
-        busy += 20001
-        assertEquals(20002, table.portFor("b3/w1", 8000))
+        assertEquals(ChannelResult.Ok(Unit), table.configure("b1/gitea_d1_web", 28080, "tcp", hubNumbers))
+        assertEquals(28080, table.portForEntry("b1/gitea_d1_web", 27311, "tcp"))
+        assertEquals(28080, table().numberOf("b1/gitea_d1_web"))
+        assertEquals(ChannelResult.Ok(Unit), table.configure("b1/gitea_d1_web", null, "tcp", hubNumbers))
+        assertNull(table.numberOf("b1/gitea_d1_web"))
+        assertEquals(27311, table.portOf("b1/gitea_d1_web", 27311))
     }
 
     @Test
-    fun autoSkipsABusyOrLowPort() {
-        busy += 8000
+    fun aNumberAnotherEntryHoldsAsItsHubNumberOrInTheTableIsRefused() {
         val table = table()
-        assertEquals(20000, table.portFor("b1/w1", 8000))
-        assertEquals(20001, table.portFor("b1/ssh", 22))
-    }
-
-    @Test
-    fun aPickIsKeptForLaterForwardsAndAfterARestart() {
-        val first = table()
-        busy += 8000
-        assertEquals(20000, first.portFor("b1/w1", 8000))
-        busy.clear()
-        assertEquals(20000, first.portFor("b1/w1", 8000))
-        assertEquals(20000, table().portFor("b1/w1", 8000))
-        assertEquals(LocalPortChoice(port = 20000), table().choiceOf("b1/w1"))
-    }
-
-    @Test
-    fun aFixedNumberIsTheEntrysPort() {
-        val table = table()
-        assertEquals(ChannelResult.Ok(Unit), table.configure("b1/w1", LocalPortChoice(isFixed = true, port = 9000)))
-        assertEquals(9000, table.portFor("b1/w1", 8000))
-        assertEquals(LocalPortChoice(isFixed = true, port = 9000), table().choiceOf("b1/w1"))
-    }
-
-    @Test
-    fun aFixedNumberAnotherEntryHoldsIsRefused() {
-        val table = table()
-        table.portFor("b1/w1", 8000)
-        val answer = table.configure("b2/w1", LocalPortChoice(isFixed = true, port = 8000))
+        val answer = table.configure("b1/gitea_d1_web", 30418, "tcp", hubNumbers)
         assertEquals("port_taken", (answer as ChannelResult.Refused).code)
-        assertEquals("8000", answer.wordParams["port"])
-        assertEquals(LocalPortChoice(), table.choiceOf("b2/w1"))
+        assertEquals("30418", answer.wordParams["port"])
+        table.configure("b2/x_web", 28080, "tcp", hubNumbers)
+        assertEquals(
+            "port_taken",
+            (table.configure("b1/gitea_d1_web", 28080, "tcp", hubNumbers) as ChannelResult.Refused).code,
+        )
     }
 
     @Test
-    fun fixingItsOwnPickIsKept() {
+    fun aTcpEntryAndAUdpEntryCanHoldOneNumber() {
         val table = table()
-        table.portFor("b1/w1", 8000)
-        assertEquals(ChannelResult.Ok(Unit), table.configure("b1/w1", LocalPortChoice(isFixed = true, port = 8000)))
-    }
-
-    @Test
-    fun autoPicksAroundAFixedNumber() {
-        val table = table()
-        table.configure("b1/w1", LocalPortChoice(isFixed = true, port = 8000))
-        assertEquals(20000, table.portFor("b2/w1", 8000))
-    }
-
-    @Test
-    fun backToAutoFromFixedPicksAgain() {
-        val table = table()
-        table.configure("b1/w1", LocalPortChoice(isFixed = true, port = 9000))
-        table.configure("b1/w1", LocalPortChoice())
-        assertEquals(LocalPortChoice(), table.choiceOf("b1/w1"))
-        assertEquals(8000, table.portFor("b1/w1", 8000))
+        table.configure("b1/a_port_5000", 28080, "tcp", hubNumbers)
+        assertEquals(ChannelResult.Ok(Unit), table.configure("b1/a_port_5000_udp", 28080, "udp", hubNumbers))
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun aFixedNumberUnderTheFloorThrows() {
-        table().configure("b1/w1", LocalPortChoice(isFixed = true, port = 80))
+    fun aNumberUnderTheFloorThrows() {
+        table().configure("b1/gitea_d1_web", 80, "tcp", hubNumbers)
+    }
+
+    @Test
+    fun anEntrysNumberAnotherProgramHoldsIsRefusedAndNeverMoves() {
+        busy += 27311 to "tcp"
+        try {
+            table().portForEntry("b1/gitea_d1_web", 27311, "tcp")
+            fail("a held number was handed out")
+        } catch (error: LocalPortTakenException) {
+            assertEquals(27311, error.port)
+        }
+        assertNull(table().numberOf("b1/gitea_d1_web"))
+    }
+
+    @Test
+    fun picksStartAt20000() {
+        val table = table()
+        assertEquals(20000, table.pickFor("b1/#panel", "tcp"))
+        busy += 20001 to "tcp"
+        assertEquals(20002, table.pickFor("b1/rdp_d1", "tcp"))
+        assertEquals(20000, table().pickFor("b1/#panel", "tcp"))
+    }
+
+    @Test
+    fun aKeptPickAnotherProgramHoldsIsPickedAgain() {
+        val table = table()
+        assertEquals(20000, table.pickFor("b1/#panel", "tcp"))
+        busy += 20000 to "tcp"
+        assertEquals(20001, table.pickFor("b1/#panel", "tcp"))
+        assertEquals(20001, table().pickFor("b1/#panel", "tcp"))
     }
 
     @Test
     fun leavingAHubDropsItsEntries() {
         val table = table()
-        table.portFor("b1/w1", 8000)
-        table.portFor("b2/w1", 8000)
+        table.configure("b1/gitea_d1_web", 28080, "tcp", hubNumbers)
+        table.pickFor("b2/#panel", "tcp")
         table.forget("b1")
-        assertTrue("b1/w1" !in table.choices.value)
-        assertEquals(8000, table.portFor("b3/w1", 8000))
+        assertEquals(setOf("b2/#panel"), table.choices.value.keys)
     }
 
     @Test
-    fun aPortIsFreeOnlyWhenNothingListensOnItOnAnyAddress() {
+    fun aStoredEntryWithNoProtocolReadsAsTcp() {
+        preferences.edit().putString(
+            CLIENT_SETTINGS_KEY_LOCAL_PORTS,
+            """{"b1/p1":{"is_fixed":true,"port":28080}}""",
+        ).apply()
+        assertEquals(LocalPortChoice(isFixed = true, port = 28080, protocol = "tcp"), table().choices.value["b1/p1"])
+    }
+
+    @Test
+    fun aPortIsFreeOnlyWhenNothingListensOnItOnAnyAddressForItsProtocol() {
         ServerSocket(0, 50, InetAddress.getByName("0.0.0.0")).use { everywhere ->
-            assertFalse(LocalPortTable.isPortFree(everywhere.localPort))
+            assertFalse(LocalPortTable.isPortFree(everywhere.localPort, "tcp"))
         }
         ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).use { loopback ->
-            assertFalse(LocalPortTable.isPortFree(loopback.localPort))
+            assertFalse(LocalPortTable.isPortFree(loopback.localPort, "tcp"))
         }
-        val free = ServerSocket(0).use { it.localPort }
-        assertTrue(LocalPortTable.isPortFree(free))
-    }
-
-    @Test
-    fun aKeptPortIsProbedAgainBeforeEveryForward() {
-        val table = table()
-        assertEquals(8000, table.portFor("b1/w1", 8000))
-        assertEquals(listOf(8000 to false), probes)
-        assertEquals(8000, table.portFor("b1/w1", 8000))
-        assertEquals(8000 to true, probes.last())
-    }
-
-    @Test
-    fun aTakenAutoPickIsPickedAgainAndTheNewPortKept() {
-        val table = table()
-        assertEquals(8000, table.portFor("b1/w1", 8000))
-        busy += 8000
-        assertEquals(20000, table.portFor("b1/w1", 8000))
-        assertEquals(LocalPortChoice(isFixed = false, port = 20000), table.choiceOf("b1/w1"))
-        busy -= 8000
-        assertEquals(20000, table.portFor("b1/w1", 8000))
-    }
-
-    @Test
-    fun aTakenFixedPortIsRefusedAndKept() {
-        val table = table()
-        table.configure("b1/w1", LocalPortChoice(isFixed = true, port = 28080))
-        busy += 28080
-        try {
-            table.portFor("b1/w1", 8000)
-            fail("a fixed port another program listens on was handed out")
-        } catch (error: LocalPortTakenException) {
-            assertEquals(28080, error.port)
+        DatagramSocket(0, InetAddress.getByName("127.0.0.1")).use { datagrams ->
+            assertFalse(LocalPortTable.isPortFree(datagrams.localPort, "udp"))
+            assertTrue(LocalPortTable.isPortFree(datagrams.localPort, "tcp"))
         }
-        assertEquals(LocalPortChoice(isFixed = true, port = 28080), table.choiceOf("b1/w1"))
     }
 
     @Test
@@ -173,17 +145,5 @@ class LocalPortTableTest {
         ServerSocket(port, 50, InetAddress.getByName("127.0.0.1")).use {
             assertFalse(LocalPortTable.isPortFree(port, isKept = true))
         }
-        ServerSocket(0, 50, InetAddress.getByName("0.0.0.0")).use { everywhere ->
-            assertFalse(LocalPortTable.isPortFree(everywhere.localPort, isKept = true))
-        }
-    }
-
-    @Test
-    fun aStoredEntryOfAnEarlierVersionStillReads() {
-        preferences.edit().putString(
-            CLIENT_SETTINGS_KEY_LOCAL_PORTS,
-            """{"b1/p1":{"is_fixed":true,"port":28080,"protocol":"tcp"}}""",
-        ).apply()
-        assertEquals(LocalPortChoice(isFixed = true, port = 28080), table().choiceOf("b1/p1"))
     }
 }

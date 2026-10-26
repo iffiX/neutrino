@@ -21,17 +21,18 @@ import kotlinx.serialization.json.decodeFromJsonElement
  *
  * @property urls Every address the hub answers on, in the hub's order, without a trailing slash.
  * @property ticket The enrolment ticket, spent by the join.
- * @property fingerprint The SHA-256 of the hub's certificate, lower-case hex.
+ * @property hubKey The hub's static public key, 64 lowercase hex characters.
  * @property overlays What this phone joins the hub's virtual networks with, the usable ones only.
  */
 data class EnrollmentLink(
     val urls: List<String>,
     val ticket: String,
-    val fingerprint: String,
+    val hubKey: String,
     val overlays: List<ChannelOverlay>,
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+        private val KEY = Regex("[0-9a-f]{64}")
 
         /**
          * Read what a person pasted or scanned.
@@ -39,7 +40,7 @@ data class EnrollmentLink(
          * @param text The link, or its bare payload without the scheme.
          * @return The link, or the refusal: `link_missing` for nothing, `link_unreadable` for
          *   something that is not a link, `link_incomplete` for a link without an address, a
-         *   ticket or a fingerprint, `link_not_for_client {role}` for a device's link.
+         *   ticket or the hub's key, `link_not_for_client {role}` for a device's link.
          */
         fun parse(text: String): ChannelResult<EnrollmentLink> {
             val trimmed = text.trim()
@@ -52,13 +53,13 @@ data class EnrollmentLink(
         private fun fromObject(payload: JsonObject): ChannelResult<EnrollmentLink> {
             val urls = cleanUrls(payload["urls"])
             val ticket = (payload["token"] as? JsonPrimitive)?.content.orEmpty()
-            val fingerprint = (payload["fp"] as? JsonPrimitive)?.content.orEmpty().trim().lowercase()
+            val hubKey = (payload["key"] as? JsonPrimitive)?.content.orEmpty().trim().lowercase()
             val role = (payload["role"] as? JsonPrimitive)?.content.orEmpty()
-            if (urls.isEmpty() || ticket.isEmpty() || fingerprint.isEmpty()) {
+            if (urls.isEmpty() || ticket.isEmpty() || !KEY.matches(hubKey)) {
                 return ChannelResult.refused("link_incomplete")
             }
             if (role != CLIENT_ROLE) return ChannelResult.refused("link_not_for_client", "role" to role)
-            return ChannelResult.Ok(EnrollmentLink(urls, ticket, fingerprint, cleanOverlays(payload["overlays"])))
+            return ChannelResult.Ok(EnrollmentLink(urls, ticket, hubKey, cleanOverlays(payload["overlays"])))
         }
 
         /**

@@ -1,54 +1,54 @@
 package io.github.iffix.neutrino.channel
 
 import io.github.iffix.neutrino.ConnectRefusedException
+import io.github.iffix.neutrino.transport.TransportStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 import java.net.SocketAddress
 import java.net.SocketException
-import java.nio.channels.ClosedByInterruptException
-import kotlinx.coroutines.runBlocking
 
 /**
- * A socket whose bytes are one `connect` stream: connecting opens the stream, reading takes what
- * the hub relays and grants it credit as it is consumed, writing waits on the hub's credit, and
- * closing ends the stream. The address a caller connects to is not dialled; the stream's open
- * names its far end. A read waits until bytes come or the stream ends, whatever the read timeout
- * says. There is no half-close: shutting either direction closes the socket. A
- * stream the hub ends with a code ends a read or a write with [ConnectRefusedException]. A thread
- * interrupted while it waits in a read or a write closes the socket and gets
- * [ClosedByInterruptException] with its interrupt flag kept, as an interruptible channel does.
+ * A socket whose bytes are one `connect` stream: connecting opens the stream on the hub's session
+ * through the transport, and after the hub's `accept` the stream carries the connection's raw
+ * bytes both ways. The address a caller connects to is not dialled; the stream's open names its
+ * far end. There is no half-close: shutting either direction closes the socket. A stream the hub
+ * refuses ends the connect with [ConnectRefusedException].
  *
- * @param opener Opens the stream on the hub's socket.
+ * @param opener Opens the stream on the hub's session.
  */
-class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream>) : Socket() {
-    private val input = StreamInput()
-    private val output = StreamOutput()
-
+class ChannelConnectSocket(private val opener: () -> ChannelResult<TransportStream>) : Socket() {
     @Volatile
-    private var stream: ChannelStream? = null
+    private var stream: TransportStream? = null
 
     @Volatile
     private var isShut = false
 
+    @Volatile
+    private var refused: ChannelResult.Refused? = null
+
     private var readTimeoutMillis = 0
 
-    /** The code the stream ended in: the hub's refusal, or `hub_unreachable` once its socket ended; else null. */
+    /** The code the stream's open was refused with, or null. */
     val refusal: ChannelResult.Refused?
-        get() = stream?.refusal
+        get() = refused
 
     /**
      * Open the stream.
      *
-     * @throws ConnectRefusedException When the stream cannot be opened.
+     * @throws ConnectRefusedException When the hub or the transport refuses the stream.
      * @throws SocketException When the socket is closed or already open.
      */
     fun open() {
         if (isShut) throw SocketException("the socket is closed")
         if (stream != null) throw SocketException("the socket is already connected")
         stream = when (val opened = opener()) {
-            is ChannelResult.Refused -> throw ConnectRefusedException(opened.code, opened.params)
+            is ChannelResult.Refused -> {
+                refused = opened
+                throw ConnectRefusedException(opened.code, opened.params)
+            }
+
             is ChannelResult.Ok -> opened.value
         }
     }
@@ -58,13 +58,13 @@ class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream
     override fun connect(endpoint: SocketAddress?, timeout: Int) = open()
 
     override fun getInputStream(): InputStream {
-        if (stream == null) throw SocketException("the socket is not connected")
-        return input
+        val open = stream ?: throw SocketException("the socket is not connected")
+        return Input(open.rawInput)
     }
 
     override fun getOutputStream(): OutputStream {
-        if (stream == null) throw SocketException("the socket is not connected")
-        return output
+        val open = stream ?: throw SocketException("the socket is not connected")
+        return Output(open.rawOutput)
     }
 
     override fun isConnected(): Boolean = stream != null
@@ -92,63 +92,38 @@ class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream
         stream?.close()
     }
 
-    override fun toString(): String = "ChannelConnectSocket(stream=${stream?.id})"
+    override fun toString(): String = "ChannelConnectSocket(open=${stream != null}, closed=$isShut)"
 
-    private fun ended(stream: ChannelStream): IOException {
-        val refusal = stream.refusal ?: return SocketException("the socket is closed")
-        return ConnectRefusedException(refusal.code, refusal.params)
-    }
-
-    private fun <T> blocking(action: suspend () -> T): T = try {
-        runBlocking { action() }
-    } catch (_: InterruptedException) {
-        Thread.currentThread().interrupt()
-        close()
-        throw ClosedByInterruptException()
-    }
-
-    private inner class StreamInput : InputStream() {
-        private var held = ByteArray(0)
-        private var offset = 0
-
+    private inner class Input(private val source: InputStream) : InputStream() {
         override fun read(): Int {
             val one = ByteArray(1)
             return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
         }
 
         override fun read(buffer: ByteArray, at: Int, count: Int): Int {
-            if (count == 0) return 0
-            val current = stream ?: throw SocketException("the socket is not connected")
-            if (offset >= held.size) {
-                val next = blocking { current.read() }
-                if (next == null) {
-                    if (current.refusal != null) throw ended(current)
-                    return -1
-                }
-                held = next
-                offset = 0
+            if (isShut) throw SocketException("the socket is closed")
+            return try {
+                source.read(buffer, at, count)
+            } catch (error: IOException) {
+                if (isShut) throw SocketException("the socket is closed")
+                throw error
             }
-            val size = minOf(count, held.size - offset)
-            System.arraycopy(held, offset, buffer, at, size)
-            offset += size
-            return size
         }
 
-        override fun available(): Int = held.size - offset
+        override fun available(): Int = source.available()
 
         override fun close() = this@ChannelConnectSocket.close()
     }
 
-    private inner class StreamOutput : OutputStream() {
+    private inner class Output(private val sink: OutputStream) : OutputStream() {
         override fun write(byte: Int) = write(byteArrayOf(byte.toByte()), 0, 1)
 
         override fun write(buffer: ByteArray, at: Int, count: Int) {
-            if (count == 0) return
-            val current = stream ?: throw SocketException("the socket is not connected")
             if (isShut) throw SocketException("the socket is closed")
-            val sent = blocking { current.send(buffer.copyOfRange(at, at + count)) }
-            if (sent is ChannelResult.Refused) throw ended(current)
+            sink.write(buffer, at, count)
         }
+
+        override fun flush() = sink.flush()
 
         override fun close() = this@ChannelConnectSocket.close()
     }

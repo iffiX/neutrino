@@ -17,14 +17,14 @@ import kotlinx.serialization.json.JsonObject
  * failed Connect ended in, each by entry key `<binding>/<entry>`. The forward ends with the viewer.
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
- * @param forward Makes an entry's forward, by binding id, entry id and the entry's own port; the loopback number.
+ * @param forward Makes an entry's forward, by binding id and entry id; the loopback number.
  * @param release Ends an entry's forward, by binding id and entry id.
  * @param scope Where the Connect runs.
  * @param choiceOf The codec and quality kept for an entry, by entry key.
  */
 class RemoteDesktopSessions(
     private val material: suspend (String, String) -> ChannelResult<JsonObject>,
-    private val forward: (String, String, Int) -> ChannelResult<Int>,
+    private val forward: suspend (String, String) -> ChannelResult<Int>,
     private val release: (String, String) -> Unit,
     private val scope: CoroutineScope,
     private val choiceOf: (String) -> RemoteDesktopChoice = { RemoteDesktopChoice() },
@@ -51,9 +51,8 @@ class RemoteDesktopSessions(
      * @param entryId The entry.
      * @param name What the viewer's bar shows.
      * @param platformOs The `platform_os` the entry carries, or empty when it names none.
-     * @param port The entry's own port, which its forward tries first on the loopback.
      */
-    fun connect(bindingId: String, entryId: String, name: String, platformOs: String, port: Int) {
+    fun connect(bindingId: String, entryId: String, name: String, platformOs: String) {
         val key = keyOf(bindingId, entryId)
         if (key in connectingKeys.value || open.value != null) {
             Log.i(CLIENT_LOG_TAG, "a viewer runs or opens; the connect of $key is dropped")
@@ -63,7 +62,7 @@ class RemoteDesktopSessions(
         failures.update { it - key }
         scope.launch {
             val answer = material(bindingId, entryId)
-            val bound = if (answer is ChannelResult.Ok) forward(bindingId, entryId, port) else ChannelResult.Ok(0)
+            val bound = if (answer is ChannelResult.Ok) forward(bindingId, entryId) else ChannelResult.Ok(0)
             when (bound) {
                 is ChannelResult.Refused -> failures.update { it + (key to bound) }
 

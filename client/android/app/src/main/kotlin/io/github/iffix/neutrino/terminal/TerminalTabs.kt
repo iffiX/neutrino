@@ -1,18 +1,20 @@
 package io.github.iffix.neutrino.terminal
 
-import io.github.iffix.neutrino.CLIENT_STREAM_KIND_COMMAND
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SHELL
-import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_MAX_MS
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_QUIET_MS
 import io.github.iffix.neutrino.CLIENT_TERMINAL_KEPT_BYTES
-import io.github.iffix.neutrino.channel.ChannelFrames
+import io.github.iffix.neutrino.TRANSPORT_RECORD_CLOSE
+import io.github.iffix.neutrino.TRANSPORT_RECORD_DATA
+import io.github.iffix.neutrino.TRANSPORT_RECORD_RESIZE
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.transport.TransportStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -21,30 +23,35 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Every terminal tab of the app, outliving the screen that draws them: the tabs follow the
  * session lists of the connected hubs, and each tab keeps its shell stream and its last output
  * so a new view can draw it again.
  *
- * A new shell is opened with a session id this phone makes; a listed one is attached with
- * `is_resumed`, its kept output first. `persist` and `stop_session` name only the session.
+ * A new shell is opened with a session id this phone makes, as the account picked on its
+ * machine; a listed one is attached with `is_resumed`, its kept output first. A later size is a
+ * `resize` record on the shell's stream; `persist` and `stop_session` are frames naming only the session.
  *
  * What the person types joins one queue per tab that one coroutine sends in order.
  *
- * @param opener The stream opener of one hub, by binding id, or null while it is not connected.
+ * @param opener One hub's terminal questions, by binding id, or null while it is not connected.
  * @param scope Where the shells' readers, the tabs' senders and the lists' follower run.
  * @param clock The time in milliseconds that Clear's dropping is measured by.
  */
 class TerminalTabs(
-    private val opener: (String) -> StreamOpener?,
+    private val opener: (String) -> TerminalHub?,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val current = MutableStateFlow<List<TerminalTab>>(emptyList())
     private val selected = MutableStateFlow("")
     private val machine = MutableStateFlow<Pair<String, String>?>(null)
-    private val streams = mutableMapOf<String, ChannelStream>()
+    private val account = MutableStateFlow("")
+    private val streams = mutableMapOf<String, TransportStream>()
     private val outputs = mutableMapOf<String, ByteArrayOutputStream>()
     private val sizes = mutableMapOf<String, Pair<Int, Int>>()
     private val dismissed = mutableSetOf<String>()
@@ -61,6 +68,9 @@ class TerminalTabs(
 
     /** The machine a new terminal opens on, as binding id and device id, or null for none picked. */
     val picked: StateFlow<Pair<String, String>?> = machine.asStateFlow()
+
+    /** The account a new terminal runs as on the picked machine, empty for its first enabled one. */
+    val pickedAccount: StateFlow<String> = account.asStateFlow()
 
     /** The tabs whose Clear is still dropping what arrives. */
     val clearing: StateFlow<Set<String>> = dropping.asStateFlow()
@@ -97,7 +107,17 @@ class TerminalTabs(
      * @param deviceId The machine.
      */
     fun pick(bindingId: String, deviceId: String) {
+        if (machine.value != bindingId to deviceId) account.value = ""
         machine.value = bindingId to deviceId
+    }
+
+    /**
+     * Pick the account a new terminal runs as on the picked machine.
+     *
+     * @param name One of the machine's enabled accounts.
+     */
+    fun pickAccount(name: String) {
+        account.value = name
     }
 
     /**
@@ -115,10 +135,18 @@ class TerminalTabs(
      * @param bindingId The hub.
      * @param deviceId The machine.
      * @param name The machine's name.
+     * @param account The account the shell runs as, empty for the machine's first enabled one.
      * @return The tab's session id.
      */
-    fun create(bindingId: String, deviceId: String, name: String): String {
-        val tab = TerminalTab(UUID.randomUUID().toString(), bindingId, deviceId, name, phase = TerminalPhase.CONNECTING)
+    fun create(bindingId: String, deviceId: String, name: String, account: String = ""): String {
+        val tab = TerminalTab(
+            UUID.randomUUID().toString(),
+            bindingId,
+            deviceId,
+            name,
+            account = account,
+            phase = TerminalPhase.CONNECTING,
+        )
         current.update { it + tab }
         selected.value = tab.sessionId
         return tab.sessionId
@@ -136,15 +164,15 @@ class TerminalTabs(
         synchronized(sizes) { sizes[sessionId] = cols to rows }
         val stream = synchronized(streams) { streams[sessionId] }
         when {
-            stream != null && !stream.isDone -> command(
-                tab,
-                "resize",
-                "shell" to stream.id,
-                "cols" to cols,
-                "rows" to rows,
-            )
+            stream != null -> {
+                val size = buildJsonObject {
+                    put("cols", cols)
+                    put("rows", rows)
+                }
+                scope.launch(Dispatchers.IO) { stream.write(TRANSPORT_RECORD_RESIZE, size.toString().toByteArray()) }
+            }
 
-            tab.phase != TerminalPhase.ENDED -> attach(tab, cols, rows)
+            tab.phase != TerminalPhase.ENDED && !tab.isOpening -> attach(tab, cols, rows)
         }
     }
 
@@ -203,13 +231,11 @@ class TerminalTabs(
     fun persist(sessionId: String, isPersistent: Boolean, isShared: Boolean) {
         val tab = tab(sessionId)?.takeIf { it.canPersist } ?: return
         change(sessionId) { it.copy(isPersistent = isPersistent, isShared = isShared, note = null) }
-        command(
-            tab,
-            "persist",
-            "session_id" to sessionId,
-            "is_persistent" to isPersistent,
-            "is_shared" to isShared,
-        )
+        val hub = opener(tab.bindingId) ?: return
+        scope.launch {
+            val result = hub.persist(sessionId, isPersistent, isShared)
+            if (result is ChannelResult.Refused) change(sessionId) { it.copy(note = result) }
+        }
     }
 
     /**
@@ -246,15 +272,10 @@ class TerminalTabs(
             change(tab.sessionId) { it.copy(note = ChannelResult.refused("hub_unreachable")) }
             return
         }
-        val args = ChannelFrames.args("module" to "agent", "verb" to "stop_session", "session_id" to tab.sessionId)
-        when (val opened = hub.open(CLIENT_STREAM_KIND_COMMAND, args, false)) {
-            is ChannelResult.Refused -> change(tab.sessionId) { it.copy(note = opened) }
-
-            is ChannelResult.Ok -> scope.launch {
-                when (val result = opened.value.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)) {
-                    is ChannelResult.Refused -> change(tab.sessionId) { it.copy(note = result) }
-                    is ChannelResult.Ok -> remove(tab.sessionId)
-                }
+        scope.launch {
+            when (val result = hub.stopSession(tab.sessionId)) {
+                is ChannelResult.Refused -> change(tab.sessionId) { it.copy(note = result) }
+                is ChannelResult.Ok -> remove(tab.sessionId)
             }
         }
     }
@@ -289,44 +310,53 @@ class TerminalTabs(
             return
         }
         val isResumed = tab.phase == TerminalPhase.DETACHED
-        val args = ChannelFrames.args(
-            "device_id" to tab.deviceId,
-            "cols" to cols,
-            "rows" to rows,
-            "session_id" to tab.sessionId,
-            "is_resumed" to isResumed,
-        )
-        change(tab.sessionId) { it.copy(phase = TerminalPhase.CONNECTING) }
-        when (val opened = hub.open(CLIENT_STREAM_KIND_SHELL, args, true)) {
-            is ChannelResult.Refused -> change(tab.sessionId) { it.copy(phase = TerminalPhase.DETACHED, note = opened) }
+        val open = buildJsonObject {
+            put("kind", CLIENT_STREAM_KIND_SHELL)
+            put("device_id", tab.deviceId)
+            put("cols", cols)
+            put("rows", rows)
+            put("account", tab.account)
+            put("session_id", tab.sessionId)
+            put("is_resumed", isResumed)
+            put("is_shared", tab.isShared)
+        }
+        change(tab.sessionId) { it.copy(phase = TerminalPhase.CONNECTING, isOpening = true) }
+        scope.launch(Dispatchers.IO) {
+            when (val opened = hub.open(open)) {
+                is ChannelResult.Refused -> change(tab.sessionId) {
+                    it.copy(phase = TerminalPhase.DETACHED, note = opened, isOpening = false)
+                }
 
-            is ChannelResult.Ok -> {
-                if (isResumed) synchronized(outputs) { outputs.remove(tab.sessionId) }
-                synchronized(streams) { streams[tab.sessionId] = opened.value }
-                change(tab.sessionId) { it.copy(phase = TerminalPhase.OPEN, note = null) }
-                scope.launch { read(tab.sessionId, opened.value) }
+                is ChannelResult.Ok -> {
+                    if (isResumed) synchronized(outputs) { outputs.remove(tab.sessionId) }
+                    synchronized(streams) { streams[tab.sessionId] = opened.value }
+                    change(tab.sessionId) { it.copy(phase = TerminalPhase.OPEN, note = null, isOpening = false) }
+                    read(tab.sessionId, opened.value)
+                }
             }
         }
     }
 
-    private suspend fun read(sessionId: String, stream: ChannelStream) {
-        while (true) {
-            val bytes = stream.read() ?: break
-            synchronized(outputs) {
-                if (isDropped(sessionId)) return@synchronized
-                val kept = outputs.getOrPut(sessionId) { ByteArrayOutputStream() }
-                kept.write(bytes)
-                if (kept.size() > CLIENT_TERMINAL_KEPT_BYTES) {
-                    val tail = kept.toByteArray().takeLast(CLIENT_TERMINAL_KEPT_BYTES).toByteArray()
-                    kept.reset()
-                    kept.write(tail)
+    private fun read(sessionId: String, stream: TransportStream) {
+        var result: ChannelResult<JsonObject>? = null
+        try {
+            while (true) {
+                val record = stream.read() ?: break
+                when (record.type) {
+                    TRANSPORT_RECORD_DATA -> keep(sessionId, record.payload)
+
+                    TRANSPORT_RECORD_CLOSE -> {
+                        result = record.refusal ?: ChannelResult.Ok(record.json)
+                        break
+                    }
                 }
-                sink?.invoke(sessionId, bytes)
             }
+        } catch (_: IOException) {
+            result = null
         }
+        stream.close()
         synchronized(streams) { if (streams[sessionId] === stream) streams.remove(sessionId) }
         synchronized(outputs) { if (drops.containsKey(sessionId)) stopDropping(sessionId) }
-        val result = stream.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)
         change(sessionId) { tab ->
             when {
                 result is ChannelResult.Refused && result.code == "session_unknown" -> tab.copy(
@@ -338,11 +368,27 @@ class TerminalTabs(
 
                 result is ChannelResult.Refused -> tab.copy(phase = TerminalPhase.DETACHED, note = result)
 
+                result == null -> tab.copy(phase = TerminalPhase.DETACHED, note = null)
+
                 else -> tab.copy(
                     phase = if (tab.isKept) TerminalPhase.DETACHED else TerminalPhase.ENDED,
                     note = null,
                 )
             }
+        }
+    }
+
+    private fun keep(sessionId: String, bytes: ByteArray) {
+        synchronized(outputs) {
+            if (isDropped(sessionId)) return
+            val kept = outputs.getOrPut(sessionId) { ByteArrayOutputStream() }
+            kept.write(bytes)
+            if (kept.size() > CLIENT_TERMINAL_KEPT_BYTES) {
+                val tail = kept.toByteArray().takeLast(CLIENT_TERMINAL_KEPT_BYTES).toByteArray()
+                kept.reset()
+                kept.write(tail)
+            }
+            sink?.invoke(sessionId, bytes)
         }
     }
 
@@ -374,24 +420,16 @@ class TerminalTabs(
         dropping.update { it - sessionId }
     }
 
-    private fun command(tab: TerminalTab, verb: String, vararg args: Pair<String, Any>) {
-        val hub = opener(tab.bindingId) ?: return
-        val all = ChannelFrames.args("module" to "agent", "verb" to verb, *args)
-        val opened = hub.open(CLIENT_STREAM_KIND_COMMAND, all, false) as? ChannelResult.Ok ?: return
-        scope.launch {
-            val result = opened.value.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)
-            if (result is ChannelResult.Refused && verb != "resize") change(tab.sessionId) { it.copy(note = result) }
-        }
-    }
-
     private fun sender(sessionId: String): Channel<ByteArray> = synchronized(senders) {
         senders.getOrPut(sessionId) {
-            Channel<ByteArray>(Channel.UNLIMITED).also { queue -> scope.launch { send(sessionId, queue) } }
+            Channel<ByteArray>(Channel.UNLIMITED).also { queue ->
+                scope.launch(Dispatchers.IO) { send(sessionId, queue) }
+            }
         }
     }
 
     private suspend fun send(sessionId: String, queue: Channel<ByteArray>) {
-        for (bytes in queue) synchronized(streams) { streams[sessionId] }?.send(bytes)
+        for (bytes in queue) synchronized(streams) { streams[sessionId] }?.write(TRANSPORT_RECORD_DATA, bytes)
     }
 
     private fun tab(sessionId: String): TerminalTab? = current.value.firstOrNull { it.sessionId == sessionId }

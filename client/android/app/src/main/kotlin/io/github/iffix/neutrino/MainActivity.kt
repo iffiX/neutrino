@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
                     application.shareLogins,
                     application.portForwards,
                     application.remoteDesktopChoices,
-                )
+                ) { application.hubs.value }
             }
         NeutrinoTheme(palette, words) {
             CompositionLocalProvider(LocalClientActions provides actions) {

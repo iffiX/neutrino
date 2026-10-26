@@ -17,12 +17,12 @@ import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubConnections
+import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.files.ShareDocumentId
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
-import io.github.iffix.neutrino.forward.LocalPortChoice
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
  * @param logins The shares' logins.
  * @param forwards The loopback forwards.
  * @param desktopChoices Each shared desktop's codec and quality.
+ * @param hubs Every hub as the state document holds it now.
  */
 class ClientController(
     private val context: Context,
@@ -53,6 +54,7 @@ class ClientController(
     private val logins: ShareLoginStore,
     private val forwards: PortForwards,
     private val desktopChoices: RemoteDesktopChoiceStore,
+    private val hubs: () -> List<HubView>,
 ) : ClientActions {
     override fun join(link: String) = connections.startJoin(link)
 
@@ -99,7 +101,7 @@ class ClientController(
         withContext(Dispatchers.IO) {
             shares.drop(root.key)
             try {
-                shares.list(root, login, ShareDocumentId(root.key, ""))
+                shares.list(root, { login }, ShareDocumentId(root.key, ""))
                 logins.put(root.key, login, isKept)
                 ChannelResult.Ok(Unit)
             } catch (error: ShareRefusedException) {
@@ -142,8 +144,8 @@ class ClientController(
         }
     }
 
-    override fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String, port: Int) =
-        desktops.connect(bindingId, entryId, name, platformOs, port)
+    override fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String) =
+        desktops.connect(bindingId, entryId, name, platformOs)
 
     override fun remoteDesktopChoiceOf(bindingId: String, entryId: String): RemoteDesktopChoice =
         desktopChoices.get(RemoteDesktopSessions.keyOf(bindingId, entryId))
@@ -153,16 +155,21 @@ class ClientController(
 
     override fun closeDesktop() = desktops.close()
 
-    override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
+    override fun useApp(bindingId: String, appId: String) {
+        val hub = hubs().firstOrNull { it.binding.id == bindingId } ?: return
+        val app = hub.apps.firstOrNull { it.id == appId } ?: return
+        forwards.use(hub, app, ::openOnMain)
+    }
 
-    override fun localPortOf(bindingId: String, entryId: String): LocalPortChoice =
-        forwards.localPortOf(bindingId, entryId)
+    override fun stopApp(bindingId: String, appId: String) = forwards.stop(bindingId, appId)
 
-    override fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> =
-        forwards.configure(bindingId, entryId, choice)
+    override fun appNumbersOf(bindingId: String, appId: String): Map<String, Int?> {
+        val hub = hubs().firstOrNull { it.binding.id == bindingId } ?: return emptyMap()
+        return forwards.numbersOf(bindingId, hub.services.filter { it.appId == appId })
+    }
 
-    override fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean) =
-        forwards.open(bindingId, entryId, url, isTokenRequired, ::openOnMain)
+    override fun configureApp(bindingId: String, appId: String, numbers: Map<String, Int?>): ChannelResult<Unit> =
+        forwards.configure(hubs(), bindingId, appId, numbers)
 
     override fun openPanel(bindingId: String) {
         val hubId = connections.session(bindingId)?.view?.value?.binding?.hubId.orEmpty()

@@ -6,6 +6,8 @@
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build has no remote desktop.",
     "rdp_login_failed": "The machine refused the access password.",
+    "transport_failed": "The app's transport did not start: {detail}",
+    "transport_missing": "This build carries no transport; install a release of the app.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
