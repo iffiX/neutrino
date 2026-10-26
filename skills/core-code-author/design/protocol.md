@@ -257,7 +257,7 @@ it has none:
 | Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames and records | `hello`/`welcome`; `join`/`joined`; `leave`/`left`; `state`/`report`; `ping`/`pong`; a question frame and its `reply`; the `open` and `close` records, `accept` between them | `refused`; the records `data`, `stderr`, `eof`, `resize`, `datagram` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `control`, `shell`, `exec`, `file`, `command`, `package`, `log`, `connect` |
-| CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
+| CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient hub join`/`leave`, `nclient file mount`/`unmount`, `nclient app open`/`stop`, `nclient ssh config install`/`uninstall` | `status`, `sync`, `run`, `gui`, `quit`, and `list`, `show`, `set`, `attach`, `exec`, `connect`, `proxy` on `nclient` |
 
 ### The page, its members and its writes
 
@@ -1917,7 +1917,7 @@ the reply its code; the panel's are `binding_unknown`, `client_disabled` and
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
 A client opens every `web` entry with `is_token_required` at its forward's
-own address with `?tkn=<token>` added ([client.md](client.md), "The Web
+own address with `?tkn=<token>` added ([client.md](client.md), "The Apps
 page"), and never at the entry's address.
 
 | Rule | Reason |
@@ -2004,7 +2004,7 @@ TCP stream's where a datagram differs from a byte stream:
 
 An `exec` stream runs one command on a managed machine and carries its
 input, its two outputs and its exit code. A client opens one for each
-`nclient terminal exec` ([client.md](client.md), "The desktop terminal"),
+`nclient terminal exec` ([client.md](client.md), "The command line"),
 and the hub opens the agent's own `exec` for it. It names no session:
 it is never kept, never shared, never in a report's `sessions`, and ends
 with its stream.

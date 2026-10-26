@@ -29,7 +29,7 @@ every apply.
 | Key | Made by | Kept | Reaches |
 | --- | --- | --- | --- |
 | the host key, one per machine | the agent, at the module's first apply: Ed25519 in OpenSSH form | `ssh_server/host_key` under the state root, root's alone, and a copy in each instance's run directory | the hub as the public key in the module's `details`, and each client as the `service` frame's `host_key` |
-| the account's key, one per machine and enabled account | the hub, when the account is first enabled: Ed25519 | the private half sealed under the vault's data key in `config/devices/<id>/ssh_server.json`, kept while the account is available | the agent as the public half, the instance's one authorized key; a client as the private half in the `service` frame, which the client writes under `~/.ssh/neutrino/` |
+| the account's key, one per machine and enabled account | the hub, when the account is first enabled: Ed25519 | the private half sealed under the vault's data key in `config/devices/<id>/ssh_server.json`, kept while the account is available | the agent as the public half, the instance's one authorized key; a client as the private half in the `service` frame, which the client writes under `~/.ssh/neutrino/` ([../../client.md](../../client.md), "SSH for other programs") |
 
 | Rule | Reason |
 | --- | --- |

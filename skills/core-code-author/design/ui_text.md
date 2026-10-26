@@ -329,7 +329,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.service_http`, `ui.containers.service_https`, `ui.containers.service_tcp`, `ui.containers.service_udp` | http, https, TCP, UDP | http、https、TCP、UDP |
 | `ui.containers.service_detected` | Auto: {kind} detected | 自动：检测到 {kind} |
 | `ui.containers.service_pending` | Auto: detected after the container starts | 自动：容器运行后检测 |
-| `ui.containers.services_hint` | Web shows on the clients' Web page, Port on their Ports page. | 网页显示在客户端的“网页”页，端口显示在“端口”页。 |
+| `ui.containers.services_hint` | Each port is an entry of the container's app on the clients' Apps page, Web opening in the browser. | 每个端口都是这个容器在客户端“应用”页上的一个入口，网页入口会在浏览器里打开。 |
 | `ui.containers.hub_title` | Hub containers | 中枢的容器 |
 | `ui.containers.hub_hint` | The hub's modules run these. Change them in their module's tab. | 这些由中枢的模块运行，要改就到对应模块的标签页里改。 |
 | `ui.containers.hub_empty` | No module runs a container on this machine. | 这台机器上还没有模块运行容器。 |

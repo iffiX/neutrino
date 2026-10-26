@@ -687,7 +687,7 @@ Remote desktop tab does, under the line `ui.hermes_webui.owner_notice`, or
 | **Port** (`ui.hermes_webui.port`) | a number field from 1024 to 65535, `ui.hermes_webui.port_hint` under it; a value outside the range disables the apply bar and shows `code.port_invalid` in place of the hint |
 | The apply bar, `ui.hermes_webui.apply` | sends `POST /api/agent/module/hermes_webui/set`, and with nothing changed `POST /api/agent/module/hermes_webui/apply`; it stays busy after its press until the machine reports the module where its `want` asks, at most two minutes, as `instances_panel.tsx` waits, and a failure shows as the tab's notice |
 
-The tab holds no link to the page: a client opens it from its **Web** page
+The tab holds no link to the page: a client opens it from its **Apps** page
 with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
 "The page").
 

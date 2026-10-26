@@ -30,13 +30,14 @@ The document has these parts:
 | `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp`, `openfrp`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own `ping` frame to the hub's `pong` with the same `nonce`, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state` (`off` or `on`), `stage` (empty, or `login` while a connect runs), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
-| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
+| `apps[]` | one per app the hub publishes to this client, with the hub's wire fields (`hub_id`, `id`, `title`, `source`, `device_id`, `device_name`, `local_name`), plus `job`, `last_error` and `is_in_use` (its forwards listen) |
+| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `id`, `app_id`, `name`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: the hub's number, a number of the person's, or `auto` for an entry of no app) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
-| `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
-| `language`, `theme`, `terminal_font_size` | the client's own settings, at the top level |
+| `terminals` | `machines[]`, each with its enabled `accounts`, and `sessions[]`, as the hub sends them |
+| `language`, `theme`, `terminal_font_size`, `is_ssh_include_enabled` | the client's own settings, at the top level; the last on a desktop alone ("SSH for other programs") |
 
-`services[].job` and `hubs[].jobs` are the only places a running action is
-recorded. A button reads its own job from there and from nowhere else.
+`apps[].job`, `services[].job` and `hubs[].jobs` are the only places a
+running action is recorded. A button reads its own job from there and from nowhere else.
 
 ## One client per machine
 
@@ -83,7 +84,7 @@ every such task.
 | Rule | Reason |
 | --- | --- |
 | The frame is a sidebar on the left when the window is wider than it is tall, or at least 720 dp wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do, whatever the phone's display size setting makes of its width. |
-| The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. A phone has no **Ports** page and no **AI** page, and lists the others in the same order. | One order on every client is one order to learn. |
+| The bar lists the pages in one order: **Hubs**, **Apps**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. A phone has no **AI** page, and lists the others in the same order. | One order on every client is one order to learn, and an app looks the same on a phone as on a computer. |
 | On a phone's bottom bar each page is its icon with its label under it, the open page's in the accent. The bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title. | An icon alone has to be learnt, and six pages leave room for a short word under each. |
 | With the keyboard shown, a phone's bottom bar stays under the keyboard, and the page ends at the keyboard's top. | A bar above the keyboard takes room from the page, and no page is switched while typing. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
@@ -214,7 +215,7 @@ starts no second loop; it moves the next round to now.
 | Page | While a hub refreshes |
 | --- | --- |
 | Hubs | the row as the table gives it; the overlay line loses its error line and keeps its state word, since the engine decides the state |
-| Web, Ports, AI, Remote desktops | each entry of that hub shows a pulsing dot and disabled actions until the new frame |
+| Apps, AI, Remote desktops | each app and entry of that hub shows a pulsing dot and disabled actions until the new frame |
 | Files | the entries as the row above; the mount records do not change, since a mount is the desktop's own |
 | Terminals | the tabs stay; the session list merges from the new frame as the Terminals section says |
 | Settings, Join | nothing |
@@ -395,65 +396,41 @@ with a spinner:
 | A machine is on one hub's virtual network at a time, on the desktop as on the phone: while any hub's line is not `off`, **Connect** on every other hub's line is disabled with the reason `overlay_other_network`, and the core refuses a connect for another hub with the same code. | Two hubs' networks on one machine would carry the same addresses two ways, and the machine's one NetBird daemon and one EasyTier console serve one network. |
 | A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct, a frp node or the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
 
-## The Web page
+## The Apps page
 
-A row per `web` entry: the title, the URL as the mono line, the provider
-line. Every entry opens through a forward of the local port table. The
-controls:
+A row per app ([protocol.md](protocol.md), "Apps"): the app's title, the
+machine and the app's source word (`ui.app_source.module`,
+`ui.app_source.declared`, `ui.app_source.manual`) as the provider line, and
+one mono line per entry, its kind and its local address: `<scheme>://<local
+name>:<local port><path>` for a `web` entry, `<local name>:<local port>` for
+a `port` entry, with `/udp` after it for a UDP one, and `ssh` and the local
+address for an `ssh` entry. The local addresses are fixed, so the row shows
+them before the app is used. The controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Open** | always | when the entry is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes the entry's forward when it has none, reads `{token}` on the `service` stream when the entry has `is_token_required`, and opens the system browser on the entry's forwarded URL below; a failure writes the code |
-| **Configure** | always | when the entry is not forwarded | the local port dialog ("The local port table") |
-| **Disconnect** | when the entry is forwarded | always | ends the forward, as on the Ports page |
+| **Use** | always | when some entry of the app is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes every entry's forward the app has not got, reads `{token}` with the `service` frame for a `web` entry with `is_token_required`, and opens the system browser at the app's first `http` or `https` entry, in the order the hub lists them; an app with no such entry opens nothing; a failure writes the code, the forwards that started staying up |
+| **Configure** | always | when the app is not in use | the local port dialog ("The local port table") |
+| **Stop** | while the app is in use | always | job `ui.job.disconnecting`: ends every forward of the app |
 
-A forwarded row is a Ports row: the mono line adds `→ 127.0.0.1:<local
-port>`. The browser is opened on
-`<scheme>://<slug>.localhost:<local-port><path>`, with `?tkn=<token>` added
-for an entry with `is_token_required`. `<scheme>` and `<path>` are the
-entry's url's own, and `<slug>` is the entry's id with every character
-outside letters, digits and hyphens turned into a hyphen. A browser
-resolves a `.localhost` name to the loopback by itself, and a cookie
-belongs to its host, so each instance keeps its own cookie and two
-instances never overwrite each other's; the distinct local port keeps their
-storage apart as well. On macOS the host is `127.0.0.1`, since Safari
-resolves no `.localhost` name; every forward there shares that host, and a
-browser keeps one cookie per name for it, so two instances whose cookies
-have the same name sign each other out. A phone does the same through its app core:
-the forward listens on the phone's loopback, and the browser opens there.
-
-VS Code reads its token from a cookie in the page to authenticate its own
-connection, so the token must reach the browser in the URL. The forwarders
-in front of code-server, CloudCLI and Codeg trade a token for a login of
-their own ([agent/module_template.md](agent/module_template.md), "The
-run"). Their token is spent
-once and dies after 60 seconds, so every press of **Open** reads a new one.
-
-## The Ports page
-
-A row per `port` entry: the title, `host:port` as the mono line, where the
-service is on the hub's networks, and the provider line. A UDP entry's mono
-line reads `host:port/udp`; a TCP entry's has no suffix. On a desktop the
-forward is a state of the row:
-
-| State | Event | Next | Control shown |
-| --- | --- | --- | --- |
-| not forwarded | press **Connect** | forwarding (job) | the button shows `ui.job.forwarding` |
-| forwarding | the listener is up, and for a UDP entry its stream is open | forwarded | **Disconnect**; the mono line adds `→ 127.0.0.1:<local-port>`, with `/udp` after it for a UDP entry |
-| forwarding | a code | not forwarded, with the error line | **Connect** |
-| forwarded | press **Disconnect** | disconnecting (job), then not forwarded | the button shows `ui.job.disconnecting` |
-| forwarded | the entry turns unhealthy | forwarded | **Disconnect** stays enabled; the state word is `ui.unhealthy` |
-
-**Connect** is disabled while the entry is unhealthy or the hub is disabled,
-with the reason on the row. A phone has no Ports page.
-
-A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
-from **Connect** until **Disconnect**, and one `connect` stream:
+An app is in use from the first forward **Use** made until **Stop**, the
+hub's leave, or the client's quit. **Use** on an app in use opens the
+browser again with a fresh token.
 
 | Rule | Reason |
 | --- | --- |
-| The forward opens its stream at **Connect**, and again at the first datagram that finds it has none, after the hub's session was replaced or the far end closed the stream. | A UDP program has no connection to start a stream with, and a stream that ended is opened again by the next datagram that needs it. |
-| An open refused at **Connect** ends the forward and writes the code on the row's error line, as a failed bind does. An open refused later writes the code on the error line; the forward goes on listening and tries again at a later datagram, at most once a second. The line goes when a datagram comes back on a stream opened after it. | A refusal at the press is the answer to the press; a refusal later is a state the hub can leave without the person pressing again, and a line left after the far end answers again says a fault that is gone. |
+| The browser opens `<scheme>://<local name>:<local port><path>`, with `?tkn=<token>` added for an entry with `is_token_required`; `<scheme>` and `<path>` are the entry's url's own. On macOS and iOS the host is `127.0.0.1`. | A browser resolves a `.localhost` name to the loopback by itself and keeps cookies per host, so two apps never overwrite each other's login; Safari and WebKit resolve no `.localhost` name, so on macOS and iOS every app shares one host, and two apps whose cookies have the same name sign each other out. |
+| A token is read at every **Use** that opens the browser. | The token of code-server, CloudCLI, Codeg and Hermes WebUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
+| An entry the hub reports unhealthy keeps its forward and shows `ui.unhealthy` on its line. | The forward stays where the person put it; the service behind it can come back. |
+| A phone's Apps page is this page, with the same entries: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other. |
+
+A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
+while the app is in use, and one `connect` stream:
+
+| Rule | Reason |
+| --- | --- |
+| The forward opens its stream at **Use**, and again at the first datagram that finds it has none, after the hub's session was replaced or the far end closed the stream. | A UDP program has no connection to start a stream with, and a stream that ended is opened again by the next datagram that needs it. |
+| An open refused at **Use** ends that forward and writes the code on the row's error line, as a failed bind does. An open refused later writes the code on the error line; the forward goes on listening and tries again at a later datagram, at most once a second. The line goes when a datagram comes back on a stream opened after it. | A refusal at the press is the answer to the press; a refusal later is a state the hub can leave without the person pressing again, and a line left after the far end answers again says a fault that is gone. |
 | Datagrams that arrive while an open waits for its `accept` are held, at most `UdpHeldDatagramsMax`, 16, and sent when it comes; more are dropped. No datagram waits anywhere else. | A program's first datagram is often its only one, and a bounded hold keeps it without a queue. |
 | Each datagram goes into the stream with the port it came from as `source`. The forward remembers, per `source`, the address it last came from, for at most `UdpSourcesMax`, 64, sources, the one idle the longest giving way; a record for a `source` it no longer remembers is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers. |
 
@@ -463,18 +440,19 @@ A forward is a listener on `127.0.0.1:<local-port>` that opens one
 `connect` stream to the hub for every connection it accepts and relays the
 bytes both ways, or, for a UDP `port` entry, one UDP socket with one stream
 for every datagram it carries ([protocol.md](protocol.md), "The connect
-stream"). No page
-of any client dials a service's own address; the hub's agent port is the
-one address a client dials.
+stream"). The client's transport holds every forward, which the client
+starts with `forward_start` ([protocol.md](protocol.md), "The local
+channel"). No page of any client dials a service's own address; the hub's
+agent port is the one address a client dials.
 
 | Entry | The forward listens |
 | --- | --- |
-| `port` | from **Connect** until **Disconnect** |
-| `web` | from **Open** until **Disconnect** |
+| an app's `web`, `port` or `ssh` entry | from the app's **Use** until its **Stop** |
 | `ai` | while the client runs and the hub is the exit of any tool |
 | `rdp` | from **Connect** until the viewer ends |
 | `file`, on Linux and macOS | from **Mount** until the share is unmounted |
 | `file`, on iOS | from **Open** until the share page closes, on a port the system picks ("The share page") |
+| an `ssh` entry for `nclient ssh` | for as long as one `nclient ssh proxy` runs, on no port: the proxy's standard input and output are the stream |
 | the hub's panel | from the first press of **Panel** until the hub is left or the client quits |
 
 A `file` entry on Windows goes through the files adapter instead ("The
@@ -493,12 +471,11 @@ The local port is the client's to manage:
 
 | Rule | Reason |
 | --- | --- |
-| A `port` or `web` entry has a **Configure** button at the left of its action, a small button like the row's others; it opens a dialog with one choice, **Local port**: **Auto** (the default) or **Fixed** with a number from 1024 to 65535, and **Save** and **Cancel**. The button is disabled while the entry is forwarded, with the reason `ui.reason.disconnect_first`. Every other forward is **Auto**. | The port a tool is told to use must not change under it; changing it under a running forward is the change nobody asked for. |
-| **Auto** picks the entry's own port when no other entry holds it and it is free, else the first free port from 20000 up; the client records the pick for the entry and gives it the same port on every later forward and after a restart. The panel has no port of its own and starts at 20000. | Two instances on the same remote port must land on two local ports, and the local port of each must stay put. |
+| An app entry's local port is the hub's `local_port` for it ([protocol.md](protocol.md), "The local name and the local port"), the same on every client. **Configure** opens a dialog of one line per entry: its name, its kind and a number field that starts at the hub's number, with **Save** and **Cancel**; a number of the person's, from 1024 to 65535, replaces the hub's on this client alone, and an empty field goes back to the hub's. **Configure** is disabled while the app is in use, with the reason `ui.reason.disconnect_first`. | The port a tool is told to use must not change under it, and a number every client shares holds a saved address on all of them. |
+| A forward of no app, `ai`, `rdp`, `file` and the panel's, takes the first free port from 20000 up, and the client keeps the pick for it and gives it the same port on every later forward and after a restart. | Those forwards are reached by the client's own programs, which read the port from the client. |
 | A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it; a TCP entry's probe binds TCP sockets and a UDP entry's binds UDP sockets. On Windows a UDP number is not bound at all: it is looked up in the system's own table of UDP endpoints (`GetExtendedUdpTable`, IPv4 and IPv6), and is free only when no endpoint on any address holds it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. A UDP socket bound to a wildcard address makes the Windows firewall ask the person whether to let the client reach their networks. |
-| A kept pick or a **Fixed** number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. A kept **Auto** pick another program now listens on is picked again by the rule above and the new pick is kept; a **Fixed** number another program listens on is not listened on, and the row's error line says `port_taken` with the number. | A machine changes between two forwards; a port free when it was picked can have a server on it now, and the rule holds only if it is asked at every bind. |
-| The client keeps one table of local ports: every entry's pick or fixed number is in it with its protocol, no two entries of one protocol hold one number, and a **Fixed** number another entry of the same protocol holds is refused in the dialog with `ui.reason.port_taken`, the `port_taken` of a bind likewise. A TCP entry and a UDP entry can hold one number, so **Auto** gives 53/tcp and 53/udp the same local number when both are free. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide, and a TCP port and a UDP port of one number are two ports. |
-| A forwarded row always shows `→ 127.0.0.1:<local port>`, on the Web, Ports and AI pages. | A port the person cannot see is a port they cannot type. |
+| A number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. An app entry's number another program listens on, or another entry of the same protocol holds, is not listened on: that forward fails `port_taken {port}` on the app's error line, and the number never moves by itself. A kept pick of no app that another program now holds is picked again from 20000 up. | A port moved silently breaks a saved address, a clone address or a tool's setting; the person moves it, in **Configure**. |
+| The client keeps one table of local ports: every number in it with its protocol, no two entries of one protocol holding one number, and a number another entry of the same protocol holds is refused in the dialog with `ui.reason.port_taken`. A TCP entry and a UDP entry can hold one number. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide, and a TCP port and a UDP port of one number are two ports. |
 
 ## The AI page
 
@@ -526,16 +503,20 @@ resident checks at its start and each time it takes a state from a hub.
 | --- | --- |
 | With the agent installed, the chip and **Configure** are disabled, with the reason `ui.reason.ai_managed` under the controls; the row, its address and its forward line still show. | The agent and the client would both write the provider `neutrino` into the same account's cc-switch store, with different endpoints. |
 | A client whose chip is on when it first sees the agent turns the chip off and runs its deactivation once, as a press of the chip would; the chip stays off and disabled from then on. | The person's tools go back to what they had, and the agent's setting is the one that points them at the hub afterwards. |
-| `nclient service ai apply` exits with `ai_tools_managed`, the code worded as the reason is; `nclient service ai show` still answers. | The command line is the same switch as the chip. |
+| `nclient ai set` exits with `ai_tools_managed`, the code worded as the reason is; `nclient ai show` still answers. | The command line is the same switch as the chip. |
 
 A phone has no AI page.
 
 ## The Files page
 
 A row per `file` entry: the share's name, `//host/share` as the mono line,
-where the share is on the hub's networks, and the provider line. On a
-desktop the mount is a record with its own state, and the row's button is
-the record's:
+where the share is on the hub's networks, and the provider line. A share a
+machine's file share serves comes with its login: the client reads the
+share's `{user, password}` with the `service` frame at every mount and asks
+the person nothing ([protocol.md](protocol.md), "The service frame"). A
+declared share, a NAS the hub does not manage, keeps the person's own login,
+which the form asks for. On a desktop the mount is a record with its own
+state, and the row's button is the record's:
 
 | Record state | Event | Next | The button |
 | --- | --- | --- | --- |
@@ -543,35 +524,39 @@ the record's:
 | `pending` | the core takes it | `queued`, then `mounting` | `ui.job.mounting` |
 | `mounting` | the system mounts it | `mounted` | **Unmount** |
 | `mounting` | a code | `failed`, with the error line; the form keeps its values | **Mount** |
-| `mounted` | press **Unmount** | `unmounting`, then `detached`: the record and its login stay | `ui.job.unmounting` |
-| `detached` | press **Mount** | `pending`, mounting with the kept login, nothing retyped | `ui.job.mounting` |
+| `mounted` | press **Unmount** | `unmounting`, then `detached`: the record stays | `ui.job.unmounting` |
+| `detached` | press **Mount** | `pending`, mounting at the same place with the hub's login read again, or a declared share's kept login | `ui.job.mounting` |
 | `mounted` | the entry turns unhealthy | `mounted` | **Unmount**; the state word is `ui.unhealthy` |
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
-| `failed` with a login refusal | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
-| `failed` or `detached` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed or detached record is dropped with its login and holds no place |
+| `failed` with a login refusal on a declared share | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
+| `failed` or `detached` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed or detached record is dropped, with a declared share's login, and holds no place |
 
-**Configure** opens the row's form in place: a user name (a picker over the
-share's `users`, with typed text accepted), the password, and the place the
-share is mounted, which takes the system's own shape
-(`mount_location_shape` in the state document):
+**Configure** opens the row's form in place. For a machine's share it holds
+the place alone; for a declared share it also holds a user name (a picker
+over the share's `users`, with typed text accepted) and the password. The
+place takes the system's own shape (`mount_location_shape` in the state
+document):
 
 | System | Shape | The form's control | The mounted row |
 | --- | --- | --- | --- |
-| Linux | `path`: a directory under the home | the path with **Browse…**; the default is `~/nas/<share>` | the path |
-| Windows | `drive_letter`: a drive | a picker over the free letters, with the caption that the share appears as that drive in File Explorer | the letter |
-| macOS | `volume`: a network volume the system mounts under `/Volumes` | no control; a caption that the volume appears in the Finder under the server (`ui.mount_volume_caption`, with the server's address) | the mount point the system gave, `/Volumes/<share>` or the next free name, and `ui.mount_finder` under it with the server's address |
+| Linux | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>` | the path |
+| Windows | `drive_letter`: a drive | a picker over the free letters, the first free one by default, with the caption that the share appears as that drive in File Explorer | the letter |
+| macOS | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>` | the path, and `ui.mount_finder` under it with the server's address |
 
-The form is a configurable panel with a dirty frame, **Save** and **Cancel**.
-**Mount** is disabled until the form has a user name and, where the shape
-asks for one, a place, with the reason on the row.
+`<machine>` and `<share>` are the entry's `device_name` and share name, each
+with every character outside letters, digits, `-` and `_` turned into `-`.
+**Mount** needs no form: every field has its default, so a machine's share
+mounts at the first press. The form is a configurable panel with a dirty
+frame, **Save** and **Cancel**, and **Mount** on a declared share is
+disabled until the form has a user name, with the reason on the row.
 
 Every system mounts the share from the hub's channel, never from the
 share's own address:
 
 | System | The mount |
 | --- | --- |
-| Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options; a machine with no `pkexec` refuses the mount `pkexec_missing`, a `failed` the timer does not retry |
-| macOS | the entry's forward, mounted by the system as below |
+| Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options and deletes the credentials file once the mount answered; a machine with no `pkexec` refuses the mount `pkexec_missing`, a `failed` the timer does not retry |
+| macOS | the entry's forward, mounted by the system as below, with the place a symbolic link to the volume |
 | Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
 
 On macOS the client does not mount the share itself: it asks the system to
@@ -583,13 +568,13 @@ mount volume "smb://<user>@127.0.0.1:<local-port>/<share>" as user name "<user>"
 ```
 
 The volume is the one the Finder's **Connect to Server** would make, listed
-under the server in the Finder's sidebar. The record's `path` is empty until
-the system has mounted the volume, is then read back from the mount table
+under the server in the Finder's sidebar. The record's mount point is read
+back from the mount table once the system has mounted it
 (`//<user>@127.0.0.1:<local-port>/<share> on /Volumes/<name> (smbfs, …)`),
-and is empty again after an unmount; **Unmount** ejects that mount point
-with `diskutil unmount`, which needs no administrator. A volume the system
-already has mounted for the same address, port and share is taken as
-mounted, not mounted twice.
+and the client makes the place a symbolic link to it, removed at the
+unmount; **Unmount** ejects that mount point with `diskutil unmount`, which
+needs no administrator. A volume the system already has mounted for the
+same address, port and share is taken as mounted, not mounted twice.
 
 The system's own dialogs belong to the system, and the client waits for
 them rather than answering or killing them: the first connection to a server
@@ -604,16 +589,16 @@ person mounts again. The script's errors map to the refusals: `-5014` and
 dialog, is `mount_not_authorized`; `-5023` and `-5000` are the login
 refusals; `-36` and "Connection failed" are `share_unreachable`; anything
 else is `mount_failed` with the script's words, the password masked; a script that ran out its ten minutes is
-`mount_timed_out`, a `failed` the timer never retries by itself. On a
-Mac the empty form's reason is `ui.reason.mount_form_volume`, which asks for
-a user name only.
+`mount_timed_out`, a `failed` the timer never retries by itself.
 
 A phone has no mount. Its row shows **Open in Files**, which makes the share
-a location in the system's Files app through the client's file provider. The
-password is asked once in a sheet and kept in the keystore; **Forget
-password** on the row arms and removes it. The app's SMB client reaches the
-share through its socket factory, which hands it sockets whose bytes are
-`connect` streams naming the file entry.
+a location in the system's Files app through the client's file provider, and
+the iOS app's row opens its share page ("The share page"). A machine's share
+logs in with the hub's login at every open; a declared share's password is
+asked once in a sheet and kept in the keystore, and **Forget password** on
+its row arms and removes it. The app's SMB client reaches the share through
+its socket factory, which hands it sockets whose bytes are `connect`
+streams naming the file entry.
 
 ## The files adapter on Windows
 
@@ -678,9 +663,9 @@ refuses, the mount record goes `failed` with `files_adapter_unavailable
 
 ## The Terminals page
 
-The page is, from top to bottom: a card with the machine chips and
-**New terminal** after them, the tab strip, the terminal, the status
-line, and on a phone the key row. The status line holds the two switches
+The page is, from top to bottom: a card with the machine chips, the
+account picker and **New terminal** after them, the tab strip, the
+terminal, the status line, and on a phone the key row. The status line holds the two switches
 at the right, and on a phone the **Keyboard** and **Keys** buttons at its
 left end.
 
@@ -688,7 +673,8 @@ left end.
 | --- | --- |
 | Tabs stay mounted while hidden; switching tabs loses no output. | A terminal redrawn from scratch loses its scrollback. |
 | The chips name every machine in the state's `terminals`, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
-| **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
+| The account picker lists the picked machine's enabled accounts, the Terminal module's on that machine, the first one chosen; it is drawn only when the machine enables two or more, and a new terminal runs as the account it shows, with no password asked. | A terminal is one of the machine's accounts the person enabled, and a choice of one is no choice. |
+| **New terminal** is disabled with no chip picked, with the picked machine offline, or with no account enabled on it, with the reason under the chips, `ui.reason.terminal_no_account` for the last. | Nothing opens on a machine that cannot answer, nor as an account nobody enabled. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
 | **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` ("Clearing…", 「清屏中…」) where the output would be, and the word goes when the dropping ends. The desktop and the phone behave the same. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
@@ -772,30 +758,8 @@ attaches receives the kept output first, then the live stream.
 | The font is MesloLGS NF, loaded through the resident, so powerline prompts draw. | A prompt in boxes is unreadable. |
 | A middle click on a tab closes it as **×** does; a double click on the strip's empty space opens a new terminal on the picked machine. | The two gestures every tabbed window has. |
 
-`nclient terminal` is the same terminal on the command line. It reaches the
-hub through the running client, names a machine by its name or id, and
-names a hub with `--hub` when several are joined. It takes one verb:
-
-| Verb | Arguments | Does | Exit status |
-| --- | --- | --- | --- |
-| `list` | `--hub`; `--json` | prints every online machine the state's `terminals` holds and the sessions it keeps: the machine, the session id's first eight characters, the title, the account, the owner's name, whether this client owns it, whether it is persistent, whether it is shared, and how many windows are attached; `--json` prints one JSON object | 0; 1 when the running client does not answer |
-| `open <machine>` | `--persistent`; `--shared`; `--hub` | opens a new shell in this terminal; `--shared` is the `shell` open's `is_shared`, and `--persistent` a `persist` with `is_persistent` sent once the stream is open | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
-| `attach <machine> <session-id>` | `--hub` | attaches this terminal to a session the machine keeps, one this client owns or a shared one, with `is_resumed`, its kept output first | as `open`, and 2 for a session the machine does not list |
-| `exec <machine> -- <command…>` | `--tty`; `--hub` | runs the command through an `exec` stream ([protocol.md](protocol.md), "The exec stream"): this process's stdin goes up as it is and ends with `eof`, the remote stdout comes out on stdout and the remote stderr on stderr, unchanged; with no pseudo-terminal, stdin and stdout may be files or pipes. `--tty` opens it with `is_tty` on a pseudo-terminal of this terminal's size, with raw mode and resizes as `open` has them, for programs such as `top` and `vim` | the remote command's exit code; 125 for a refusal, from the hub, the agent or the client itself; 126 when no hub offers the machine |
-| `persist <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_persistent` alone: the session stays after its last window closes, or stops staying | 0, 1 for a refusal, 2 for a session the machine does not list |
-| `share <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_shared` alone: every other client with terminal rights on the machine can attach, or no longer can, and the hub closes their streams at once | as `persist` |
-| `stop <machine> <session-id>` | `--hub` | `stop_session`: ends the session, as ending it on the panel does | as `persist` |
-
-| Rule | Reason |
-| --- | --- |
-| `nclient terminal <machine>` with no verb is `open <machine>`; a machine whose name is a verb is named after `open`. | Commands and scripts written for the bare form keep working. |
-| `open` takes no `--session`; attaching to a kept session is `attach`. | One verb per action. |
-| A session id is matched by prefix among the sessions the state lists on that machine, as git matches a commit id: one match is the session; none exits 2 with `session_unknown`; several print every candidate and exit 2. `list` prints the first eight characters. | Eight characters are short enough to type, and a prefix that matches two sessions is never guessed at. |
-| `exec` takes no session id and never opens a persistent or shared session. | A script's input reaches no session that another window or another person sees. |
-| `persist` and `share` change a session for its owner only; any other client gets the hub's `session_not_owned` and exits 1. | The person who opened a session decides whether it stays and who sees it. |
-| `exec` exits 125 and 126 for its own outcomes, never 1 or 2. | The remote command's own 1 and 2 stay apart from the client's, as ssh and docker keep them. |
-| `exec` without `--tty` puts neither stdin nor stdout in raw mode, whether each is a terminal or not. | A pipe has no terminal mode, and a script's stdin is usually a pipe. |
-| `exec` runs on the machines the **Terminals** permission gives this client, the kind `terminal`, which are the machines `terminals` lists. | A shell on a machine already runs any command there as the same account, so the shell's permission covers the machine's commands. |
+`nclient terminal` is the same terminal on the command line ("The command
+line").
 
 ### The phone terminal
 
@@ -815,7 +779,7 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer. The command line is `nclient service rdp connect <ref>`, `<ref>` the entry's number in `nclient service list` or its id |
+| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` with the `service` frame and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer. The command line is `nclient rdp connect <machine>` |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is not unhealthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
@@ -861,6 +825,90 @@ clipboard. On a desktop the viewer's **Transfer file** window copies files
 both ways, which the agent's host allows; the viewer window itself takes no
 drop. On a phone the viewer page keeps its session through a rotation.
 
+## SSH for other programs
+
+The desktop client lets every program that speaks SSH reach the machines'
+SSH servers ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)):
+`ssh`, `scp`, `sftp`, `rsync`, `git`, VS Code's Remote-SSH and JetBrains
+Gateway through an SSH configuration of the client's own, and a program that
+takes only a host and a port, such as FileZilla, WinSCP or Termius, through
+an `ssh` entry's fixed local port on the Apps page. A phone has no such
+configuration; its Apps page forwards the `ssh` entries.
+
+The client writes `~/.ssh/neutrino_config` again whenever the machines it
+reaches by `ssh` change: one block for each machine that has an `ssh` entry
+this client is allowed, across every hub it is bound to.
+
+```text
+Host lab-gpu.nt
+    User iffi
+    ProxyCommand nclient ssh proxy %r@%h
+    IdentityFile ~/.ssh/neutrino/lab-gpu_%r
+    IdentitiesOnly yes
+    UserKnownHostsFile ~/.ssh/neutrino/known_hosts
+    HostKeyAlias lab-gpu.nt
+```
+
+| Rule | Reason |
+| --- | --- |
+| A machine's host is the slug of its name, as an app's local name takes it, followed by `.nt`; two hubs that hold a machine of one slug give each `<machine>.<hub>.nt`, the hub's name by the same slug. `User` is the machine's first `ssh` entry's account, the SSH server's first enabled account. | One short name per machine, and the account a person most often means is the one they enabled first. |
+| `ProxyCommand` is `nclient ssh proxy`, which connects the program's standard input and output to the account's `ssh` entry through the running client; `%r` names the account, so `ssh lab@lab-gpu.nt` reaches the instance of `lab`. | The connection goes through the hub as every stream does, and each account has an instance of its own. |
+| The client writes each account's key from the entry's `service` frame to `~/.ssh/neutrino/<machine>_<account>`, mode 0600, and each machine's host key to `~/.ssh/neutrino/known_hosts`, Neutrino's own, as `<host> <key>`. It deletes the key of an entry that leaves its list. | `ssh` refuses a key file others can read, and a known_hosts of the client's own keeps the person's file as it is. |
+| On Windows the files are the same under `%USERPROFILE%\.ssh`, the key's access list granting the person's account alone, and `ProxyCommand` names `nclient.exe`. | Windows' OpenSSH reads the same configuration and checks the key file by its access list. |
+| The client never edits `~/.ssh/config` by itself. `nclient ssh config install`, or the **Settings** page's switch **SSH programs reach the machines** (`ui.settings.ssh_include`), adds `Include ~/.ssh/neutrino_config` as its first line, once; `uninstall` and the switch turned off take that line out and nothing else. | The person's SSH configuration is the person's, and an `Include` at the top is the one line that makes `<machine>.nt` known to every program. |
+| `~/.ssh/neutrino_config`, the keys and the known_hosts go when the client's last hub is left. | Nothing of a hub stays after the client leaves it. |
+
+## The command line
+
+`nclient` is the client's command line, one command for each button of the
+window. Every command but `gui` reaches the hub through the running client
+and exits 1 with `client_not_running` when no client runs. Its groups
+follow the window's pages, with the program itself and `ssh` above them:
+
+| Command | Does | Exit status |
+| --- | --- | --- |
+| `gui` | runs the client and its window, or brings a running client's window to the front | 0 |
+| `quit` | stops the running client: closes the window, and ends every forward and mount | 0 |
+| `ssh list` | prints each machine with an `ssh` entry and its accounts, the default first | 0 |
+| `ssh open [<account>@]<machine> [-- <command>]` | runs the system's `ssh` with `-F ~/.ssh/neutrino_config` against `<account>@<machine>.nt`, the first account when none is named; with `--` it runs the command alone and exits with its code | `ssh`'s own |
+| `ssh config show` | prints the path and the text of `~/.ssh/neutrino_config` | 0 |
+| `ssh config install`, `ssh config uninstall` | adds or takes out the `Include` line ("SSH for other programs") | 0 |
+| `ssh proxy [<account>@]<machine>` | joins its standard input and output to the account's SSH server, for `ProxyCommand` | 0 when the stream ends, 1 for a refusal |
+| `hub list` | prints each hub: its name, its connection, the way it is reached, and the round trip | 0 |
+| `hub join <link>` | joins a hub with a link, as **Join a hub** does | 0, 1 for a refusal |
+| `hub leave <hub> [--yes]` | leaves a hub, as **Leave** does, after a `[y/N]` question that `--yes` answers | 0, 1 for a refusal |
+| `hub open <hub>` | opens the hub's panel in the browser, as **Panel** does | 0, 1 for a refusal |
+| `app list` | prints each machine's apps: the app, its source, each entry's kind and local address, and whether it is in use | 0 |
+| `app open <app>` | uses an app, as **Use** does | 0, 1 for a refusal |
+| `app stop <app>` | ends an app's forwards, as **Stop** does | 0 |
+| `app set <app> --port <entry>=<port>` | sets an entry's local port on this client, as **Configure** does; `--port` repeats; an empty port goes back to the hub's | 0, 1 for a refusal |
+| `ai show` | prints each AI tool's gateway address and whether it is the hub's; a desktop alone | 0 |
+| `ai set` | points the AI tools at the hub's gateway, as the AI page's chip does, and again to refresh them; a desktop alone | 0, 1 for a refusal |
+| `file list` | prints each machine's shares: the share, where it is mounted here, and whether it is mounted | 0 |
+| `file mount <machine>[/<share>] [--path <path> \| --drive <letter>]` | mounts a share, as **Mount** does, at the place given or the default ("The Files page"); the share's name can be left out where the machine has one share | 0, 1 for a refusal |
+| `file unmount <machine>[/<share>]` | unmounts it | 0, 1 for a refusal |
+| `terminal list <machine>` | prints the machine's sessions: the session id's first eight characters, the account, how long it has been open, whether it is persistent, whether it is shared, and who is attached | 0 |
+| `terminal open <machine> [--account <account>]` | opens a new shell in this terminal, as the account named or the first enabled one; the shell ending ends the command | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
+| `terminal attach <machine> <session>` | attaches to a kept session, one this client owns or a shared one, its kept output first; Ctrl+] leaves it running | as `open`, and 2 for a session the machine does not list |
+| `terminal exec <machine> [--account <account>] -- <command>` | runs one command through an `exec` stream ([protocol.md](protocol.md), "The exec stream"): this process's stdin goes up as it is and ends with `eof`, the remote stdout comes out on stdout and the remote stderr on stderr, unchanged | the remote command's exit code; 125 for a refusal, from the hub, the agent or the client itself; 126 when no hub offers the machine |
+| `terminal set <machine> <session> [--persist on\|off] [--share on\|off]` | changes a session: whether it stays after its last window closes, and whether other clients can attach | 0, 1 for a refusal, 2 for a session the machine does not list |
+| `terminal stop <machine> <session>` | ends a session and every program in it | as `set` |
+| `rdp list` | prints each machine sharing its desktop: who is at the screen, and how many viewers it has | 0 |
+| `rdp connect <machine>` | opens the viewer on the machine's desktop, as **Connect** does, the seat password read from the hub | 0, 1 for a refusal |
+| `settings show` | prints each setting of the **Settings** page: its name, its value and the values it takes | 0 |
+| `settings set <name> <value>` | changes one setting: `language`, `theme` or `ssh_include` | 0, 1 for a value it does not take |
+
+| Rule | Reason |
+| --- | --- |
+| Every level prints its help with `-h`: the first line what it does, then one line per argument, then an example. The words are the same in meaning as the window's. | A person finds the next word where they stand. |
+| A machine, a hub, an app and a share are named as `list` prints them; an app two machines hold under one name is named `<machine>/<app>`, and a hub's ordinal from `hub list` names it as well. A name that matches nothing prints the names there are and exits 1. | The name a person reads is the name they type. |
+| `--hub <hub>` names the hub where several hold the same machine. `exec` also takes `--tty`, which opens it with `is_tty` on a pseudo-terminal of this terminal's size, for programs such as `top` and `vim`. | Two hubs can manage machines of one name, and a full-screen program needs a terminal. |
+| A refusal prints one line, the code's words in the client's language, and no stack: `client_not_running`, `permission_denied {kind}` as "the hub gives this client no `<kind>` permission", `agent_offline {device}` as "`<machine>` is offline". | A command line is read by a person or a script, and both want the one line that says why. |
+| A session id is matched by prefix among the sessions the state lists on that machine, as git matches a commit id: one match is the session; none exits 2 with `session_unknown`; several print every candidate and exit 2. | Eight characters are short enough to type, and a prefix that matches two sessions is never guessed at. |
+| `exec` takes no session id, never opens a persistent or shared session, exits 125 and 126 for its own outcomes and never 1 or 2, and without `--tty` puts neither stdin nor stdout in raw mode. | A script's input reaches no session another window sees, the remote command's own 1 and 2 stay apart from the client's, as ssh and docker keep them, and a pipe has no terminal mode. |
+| `terminal set` changes a session for its owner only; any other client gets the hub's `session_not_owned` and exits 1. | The person who opened a session decides whether it stays and who sees it. |
+| The hidden `easytier-daemon` and `files-daemon` are the services the package installs, and no person types them. | They are the client's privileged halves ("One client per machine", "The files adapter on Windows"). |
+
 ## The Settings page
 
 Two cards, in the panel's order. The first is **About**, the panel's About
@@ -883,9 +931,11 @@ and Gitee's `gitee.com/mirrors/rustdesk`; the other cores keep their
 upstream link. A row
 is the label at the left in the muted colour and the value in mono at the
 right, rows parted by the panel's faint rule. The second card holds a
-**Language** picker, a **Theme** picker (System, Dark, Light), **Save**
-enabled while the draft differs from the saved values, and **Cancel** beside
-it. There is no About page. Leaving a hub is on the Hubs page and nowhere
+**Language** picker, a **Theme** picker (System, Dark, Light), on a desktop
+the switch **SSH programs reach the machines** ("SSH for other programs"),
+**Save** enabled while the draft differs from the saved values, and
+**Cancel** beside it. Each control is one setting `nclient settings` names:
+`language`, `theme` and `ssh_include`. There is no About page. Leaving a hub is on the Hubs page and nowhere
 else.
 
 ## Phone differences
@@ -893,9 +943,9 @@ else.
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link; either adds the hub at once |
-| port entry | forward to the loopback | none: no **Ports** page |
-| web entry | open through a forward, with the token for an entry with `is_token_required` | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
-| file entry | mount the forward, or the files adapter's address on Windows | a location in the system's Files app, its sockets `connect` streams |
+| app | **Use** forwards every entry and opens the system browser at the first web entry, with the token for an entry with `is_token_required` | the same: the app forwards in its core and opens the system browser, the in-app browser on iOS |
+| file entry | mount the forward, or the files adapter's address on Windows, with the share's user and password from the hub | a location in the system's Files app on Android and the share page on iOS, their sockets `connect` streams, with the user and password from the hub |
+| SSH for other programs | `~/.ssh/neutrino_config` and `nclient ssh` | none; the `ssh` entries are forwarded on the Apps page |
 | AI entry | point the tools at the forward, configure them | none: no **AI** page |
 | remote desktop | the viewer process, at the forward | the viewer page, at the forward |
 | hub's panel | **Panel** on the hub row | the same |
@@ -925,10 +975,11 @@ the release's unsigned `.ipa` with their own Apple ID
 
 | Feature | Android | iOS |
 | --- | --- | --- |
-| pages in the bar | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order | the same |
+| pages in the bar | **Hubs**, **Apps**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order | the same |
 | join | scan the QR, or paste the link | the same |
 | virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
-| web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
+| an app's web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
+| an app's port and ssh entries | forwarded at their local ports in the foreground service | forwarded at their local ports while the app is in front, and closed with every other forward when it leaves the screen ("In the background") |
 | file entry | a location in the system's Files app | the share page inside the app ("The share page") |
 | remote desktop | the viewer page | the same, with the RustDesk core linked into a device build ("The remote desktop viewer") |
 | terminal | the key row and the long-press menu | the same, drawn by SwiftTerm |
@@ -952,8 +1003,8 @@ entry.
 
 | Rule | Reason |
 | --- | --- |
-| **Open** on a web entry and **Panel** on a hub row make the forward and read the token as on Android, then open the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
-| The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Disconnect**, as on every client. | A page closed by mistake opens again at once, on the same port. |
+| **Use** on an app with a web entry and **Panel** on a hub row make the forward and read the token as on Android, then open the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
+| The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Stop**, as on every client. | A page closed by mistake opens again at once, on the same port. |
 | Every page the in-app browser opens shares one cookie store and the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
 
 ### The share page
@@ -965,8 +1016,8 @@ when the app starts.
 
 | Rule | Reason |
 | --- | --- |
-| The file entry's row shows **Open** and, while a login is held, **Forget password**, which arms and removes it. | The Android row's password rules, on a page of the app's own. |
-| The first **Open** shows a sheet: the user name (a picker over the entry's `users` when it names several, else a field holding the one it names), the password, **Remember** (on at first), **Cancel** and **Connect**. **Connect** logs in to the share, its button showing `ui.job.connecting`. A login the share takes is kept, in the Keychain with **Remember** on and until the app quits with it off, and the share page opens at the share's root. A refusal is worded in the sheet, and nothing is kept. | A login is kept only once the share has taken it, so a mistyped password is never kept. |
+| The file entry's row shows **Open** and, for a declared share while a login is held, **Forget password**, which arms and removes it. A machine's share logs in with the user and the password the `service` frame hands at every **Open** and every later login, shows no sheet and keeps nothing. | The Android row's password rules, on a page of the app's own, and a machine's share needs no password from the person. |
+| The first **Open** of a declared share shows a sheet: the user name (a picker over the entry's `users` when it names several, else a field holding the one it names), the password, **Remember** (on at first), **Cancel** and **Connect**. **Connect** logs in to the share, its button showing `ui.job.connecting`. A login the share takes is kept, in the Keychain with **Remember** on and until the app quits with it off, and the share page opens at the share's root. A refusal is worded in the sheet, and nothing is kept. | A login is kept only once the share has taken it, so a mistyped password is never kept. |
 | **Open** with a login held logs in under `ui.job.opening` and opens the share page; a failure writes its code on the row's error line. `share_login_rejected`, on **Open** or on any later login of the open share, forgets the held login, so the next **Open** shows the sheet. | A password the share rejects has changed, and keeping it would fail every **Open** after it. |
 | While the share page is open, AMSMB2 dials `127.0.0.1:<port>` and the share's name. The port is a forward of the app's own: a listener on `127.0.0.1` at a port the system picks, each accepted connection a `connect` stream naming the file entry, accepting nothing while the hub has no channel ("The local port table"). The port is in no local port table. | The share is reached through the hub, as on every client. Only the app's own SMB client dials the port, so no person needs its number to stay put. |
 | The page lists one folder: folders first, then files, each sorted by name; a file's row shows its size and the time it changed. A tap on a folder opens it. The back arrow goes up one folder, and at the share's root closes the page, its connection and its forward. A pull on the list or the refresh button reads the folder again, after logging in again when the share's connection ended, as when the hub's channel dropped under it. | One folder per screen is how a phone lists files. |

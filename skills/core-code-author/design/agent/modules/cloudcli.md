@@ -151,4 +151,4 @@ nonce || HMAC-SHA256(secret, expiry || nonce))`, minted by the hub on every
 checks the HMAC and the expiry itself and keeps every nonce it accepted until
 that nonce's expiry, so a token works once. No token enters the device's
 state, and minting one leaves the state's hash as it is
-([client.md](../../client.md), "The Web page").
+([client.md](../../client.md), "The Apps page").

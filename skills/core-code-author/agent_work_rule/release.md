@@ -328,7 +328,7 @@ runner and `amd64` on `macos-15-intel`; how long the Intel one lasts is in
 
 ```bash
 sudo apt install ./neutrino-client_<version>_amd64.deb
-nclient join '<client link from the Clients page>'
+nclient hub join '<client link from the Clients page>'
 ```
 
 ### Android app
