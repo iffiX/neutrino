@@ -647,7 +647,6 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `ui.panel_apps`, the page's title and its bar label | Apps | 应用 |
 | `ui.app_source.module`, `ui.app_source.declared`, `ui.app_source.manual` | module, declared, manual | 模块、声明、手动 |
 | `ui.app.use`, `ui.app.configure`, `ui.app.stop`, `ui.app.open` | Use, Configure, Stop, Open | 使用、配置、停止、打开 |
-| `ui.reason.use_first`, under a disabled **Open** | Use the app first. | 先点使用。 |
 | `code.app_not_in_use`, **Open** on an app not in use | Use the app first. | 先点使用。 |
 | `code.app_no_page`, **Open** on an app with no `http` or `https` entry | This app has no web page to open. | 这个应用没有可以打开的网页。 |
 | `code.app_in_use`, **Configure** on an app in use | Stop the app first to change its local ports. | 先停止这个应用，才能改它的本机端口。 |

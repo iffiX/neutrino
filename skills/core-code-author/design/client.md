@@ -412,7 +412,7 @@ them before the app is used. The controls:
 | **Use** | while the app is not in use | when some entry of the app is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes every entry's forward the app has not got, and opens nothing; a failure writes the code, the forwards that started staying up |
 | **Stop** | while the app is in use, in **Use**'s place | always | job `ui.job.disconnecting`: ends every forward of the app |
 | **Configure** | always | when the app is not in use | the local port dialog ("The local port table") |
-| **Open** | for an app with an `http` or `https` entry | while the app is in use, else disabled with the reason `ui.reason.use_first` | job `ui.job.opening`: reads `{token}` with the `service` frame when that entry has `is_token_required`, and opens the system browser at the app's first `http` or `https` entry, in the order the hub lists them; a failure writes the code |
+| **Open** | while the app is in use, for an app with an `http` or `https` entry | always | job `ui.job.opening`: reads `{token}` with the `service` frame when that entry has `is_token_required`, and opens the system browser at the app's first `http` or `https` entry, in the order the hub lists them; a failure writes the code |
 
 An app is in use from the first forward **Use** made until **Stop**, the
 hub's leave, or the client's quit.
