@@ -583,9 +583,12 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 A permission kind is a published service type (`web`, `port`, `ssh`, `ai`,
 `file`, `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS`
 in `modules/clients/constants.py`. `ssh` reaches the machines' SSH servers,
-for `nclient ssh` and for the `ssh` entries of the Apps page; a permission
-stored before it existed does not name it, and the person adds it on the
-**Clients** page. `terminal` opens a `shell` on a managed
+for `nclient ssh` and for the `ssh` entries of the Apps page. The first
+start of a 0.6.0 hub on a `clients.json` without `is_ssh_granted` adds `ssh`
+once to each stored permission that names `terminal`, the default and each
+client's own, with `terminal`'s device list when it has one, and writes
+`is_ssh_granted: true`; `clients.example.json` carries it true, and a
+person who takes `ssh` away later keeps it away. `terminal` opens a `shell` on a managed
 machine and runs one command there through an `exec` stream ("The exec
 stream"). `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
