@@ -32,6 +32,7 @@ SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
 from shared import edition_build  # noqa: E402
+from shared.go_build import GO_PROGRAMS_DIR, target_parts  # noqa: E402
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
@@ -125,6 +126,15 @@ RUSTDESK_BINARY_NAME = "rustdesk"
 # for the host, enabled and started, under RustDesk's own name; an upgrade
 # from one of them stops it, and leaves alone one another package owns.
 RUSTDESK_UNIT_NAME = "rustdesk.service"
+
+# The Go programs every agent package carries, the transport and the SSH
+# server, under ``bin`` in the agent's program directory, taken from where the
+# Go builds leave them, ``dist/go/<target>/``.
+GO_PROGRAM_NAMES = ("neutrino_transport", "neutrino_ssh_server")
+GO_PROGRAMS_ROOT = REPO_ROOT / GO_PROGRAMS_DIR
+GO_BIN_DIR_NAME = "bin"
+# What the Go targets call a machine.
+GO_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 
 # The licences of what the agent packages carry, by the file name they have
 # in the repository's own ``licenses/``.
@@ -340,6 +350,67 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
             )
         staged.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(carried, staged)
+
+
+def go_target(system: str, architecture: str) -> str:
+    """The Go target one package's programs are built for.
+
+    Args:
+        system: ``linux``, ``windows`` or ``darwin``.
+        architecture: The architecture, named however a packaging format
+            names it.
+
+    Returns:
+        The target, ``linux-amd64`` and the like.
+
+    Raises:
+        SystemExit: When the machine is not one the agent is published for,
+            or the release builds no Go programs for the target.
+    """
+    target = f"{system}-{GO_ARCHITECTURES[machine_name(architecture)]}"
+    target_parts(target)
+    return target
+
+
+def go_programs(target: str) -> list:
+    """The Go programs one target's package carries, each checked to be there.
+
+    Args:
+        target: The Go target, ``linux-amd64`` and the like.
+
+    Returns:
+        The paths of ``neutrino_transport`` and ``neutrino_ssh_server``,
+        ``.exe`` on Windows, under :data:`GO_PROGRAMS_ROOT`.
+
+    Raises:
+        SystemExit: Naming every program that is not there.
+    """
+    _, _, extension = target_parts(target)
+    directory = GO_PROGRAMS_ROOT / target
+    paths = [directory / f"{name}{extension}" for name in GO_PROGRAM_NAMES]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        raise SystemExit(
+            f"the agent's package carries the Go programs of {target}, and "
+            f"these are missing: {', '.join(missing)}; build them with "
+            f"packaging/build/build_transport.py and build_ssh_server.py"
+        )
+    return paths
+
+
+def stage_go_programs(destination: Path, programs: list) -> None:
+    """Copy the Go programs into the program directory's ``bin``, executable.
+
+    Args:
+        destination: The ``bin`` directory in the package tree.
+        programs: What :func:`go_programs` returned.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    destination.chmod(0o755)
+    for source in programs:
+        target = destination / source.name
+        shutil.copyfile(source, target)
+        target.chmod(0o755)
 
 
 def stage_licenses(tree: Path) -> None:

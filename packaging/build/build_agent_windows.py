@@ -11,6 +11,11 @@ service, run as LocalSystem at boot with ``service run``, puts its folder on
 PATH so an administrator's terminal answers ``nagent``, and creates the data
 folder under ``%ProgramData%`` open to SYSTEM and the administrators alone.
 
+The Go programs the agent runs, ``neutrino_transport.exe`` and
+``neutrino_ssh_server.exe``, come from ``dist/go/windows-amd64/`` into
+``bin`` in the agent's folder; the build stops, naming them, when they are
+not there.
+
 RustDesk comes as the files upstream's pinned executable packs, unpacked at
 build time and checked file by file, laid down in the agent's own folder
 under ``rustdesk``: the same files upstream's own install copies into
@@ -359,15 +364,18 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     Returns:
         The paths the installer's source names: the payload directory, with
-        RustDesk's files under its ``rustdesk``, and the agent's own binary,
-        kept out of the payload so the service component can claim it.
+        RustDesk's files under its ``rustdesk`` and the Go programs under its
+        ``bin``, and the agent's own binary, kept out of the payload so the
+        service component can claim it.
 
     Raises:
         SystemExit: When this Python is not the pinned minor, when the
-            machine asked for is not this one, when the compile writes no
-            binary, or when RustDesk is not what was pinned.
+            machine asked for is not this one, when a Go program of the
+            target is missing, when the compile writes no binary, or when
+            RustDesk is not what was pinned.
     """
     _check_build_machine(machine)
+    programs = payload.go_programs(payload.go_target("windows", machine))
     tree = root / "tree"
     payload.stage_agent_tree(tree, version)
 
@@ -387,6 +395,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     shutil.copyfile(dist / AGENT_BINARY_NAME, binary)
     _stage_licenses(installed)
     rustdesk_assets.stage_windows_files(installed / RUSTDESK_DIR_NAME)
+    payload.stage_go_programs(installed / payload.GO_BIN_DIR_NAME, programs)
     return {"payload": installed, "binary": binary}
 
 
@@ -498,7 +507,9 @@ def _check_tools(is_stage_only: bool) -> None:
             files need is not installed, or WiX is missing.
     """
     if sys.platform != "win32":
-        raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+        raise SystemExit(
+            f"{Path(__file__).name} runs on Windows; this is {sys.platform}"
+        )
     if importlib.util.find_spec(rustdesk_assets.RUSTDESK_PACKED_DECOMPRESSOR) is None:
         raise SystemExit(
             "unpacking RustDesk's Windows files needs the Python package "

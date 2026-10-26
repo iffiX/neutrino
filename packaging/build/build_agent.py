@@ -8,6 +8,10 @@ bindings compiled against that family's C libraries. ``--architecture
 arm64`` on an x86-64 machine runs the container under emulation and needs
 QEMU registered with binfmt_misc first.
 
+Each package carries the Go programs of its target, built into
+``dist/go/linux-<architecture>/`` first; the build stops, naming them, when
+they are not there.
+
 Not pure: runs container and packaging tools.
 """
 
@@ -17,8 +21,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+sys.path.insert(0, str(REPO_ROOT / "agent" / "packaging"))
 from shared import edition_build  # noqa: E402
 from shared import container_build  # noqa: E402
+from shared.go_build import GO_PROGRAMS_DIR  # noqa: E402
+import payload  # noqa: E402
 
 # What builds the agent for each family, and what that family needs installed
 # first. The window's bindings are compiled here against the family's own C
@@ -42,11 +49,15 @@ AGENT_BUILDS = {
     },
 }
 
+# The Go programs go into the container where the package build takes them
+# from, ``dist/go/`` under its own root.
 AGENT_CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/agent /build/images /build/packaging && "
+    "{install} && mkdir -p /build/agent /build/images /build/packaging "
+    f"/build/{GO_PROGRAMS_DIR.parent} && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
     "/src/agent/pyproject.toml /build/agent/ && "
     "cp -r /src/packaging/shared /build/packaging/ && "
+    f"cp -r /src/{GO_PROGRAMS_DIR} /build/{GO_PROGRAMS_DIR.parent}/ && "
     "cp -r /src/images/icons /build/images/ && cd /build && "
     "python3 agent/packaging/{script} --output-dir /out "
     "--architecture {architecture}"
@@ -77,6 +88,7 @@ def main() -> int:
     if container_build.container_engine() is None:
         raise SystemExit("podman or docker is needed and neither is on the path")
 
+    payload.go_programs(payload.go_target("linux", arguments.architecture))
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     for family in container_build.families(arguments.families):

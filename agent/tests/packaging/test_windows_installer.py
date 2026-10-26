@@ -252,6 +252,9 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
     assert (staged["payload"] / "rustdesk" / "data" / "app.so").is_file()
     assert "rustdesk" not in staged
     assert (staged["payload"] / "licenses" / "rustdesk.txt").is_file()
+    for name in ("neutrino_transport.exe", "neutrino_ssh_server.exe"):
+        carried = staged["payload"] / "bin" / name
+        assert carried.read_bytes() == f"{name[:-4]} for windows-amd64".encode()
     entry, binary_name, options = compiled[0]
     assert entry.parts[-3:] == ("neutrino_agent", "cli", "entry.py")
     assert binary_name == "nagent.exe"
@@ -281,3 +284,20 @@ def test_the_program_folder_is_the_agents_own_in_the_one_neutrino_tree(document)
     assert install.get("Name") == "agent"
     assert parent.get("Name") == "Neutrino"
     assert install in list(parent)
+
+
+def test_a_windows_package_without_its_go_programs_stops_before_compiling(
+    tmp_path, monkeypatch, go_programs
+):
+    (go_programs / "windows-amd64" / "neutrino_transport.exe").unlink()
+    monkeypatch.setattr(
+        build_agent_windows, "_check_build_machine", lambda machine: None
+    )
+    monkeypatch.setattr(
+        build_agent_windows,
+        "_make_build_environment",
+        lambda venv: pytest.fail("compiled with a Go program missing"),
+    )
+
+    with pytest.raises(SystemExit, match="neutrino_transport.exe"):
+        build_agent_windows._lay_out(tmp_path, "9.9.9", "amd64")

@@ -217,12 +217,17 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
         version: The version being packaged.
         architecture: The rpm architecture name.
     """
+    programs = payload.go_programs(payload.go_target("linux", architecture))
     staged_python = staged / str(payload.PYTHON_DIR).lstrip("/")
     payload.stage_linux_interpreter(staged_python, architecture)
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, staged)
     payload.stage_rustdesk(staged, architecture, "rpm")
+    payload.stage_go_programs(
+        staged / str(payload.INSTALL_PREFIX / payload.GO_BIN_DIR_NAME).lstrip("/"),
+        programs,
+    )
     payload.stage_licenses(staged)
     payload.require_glibc_floor(staged)
 

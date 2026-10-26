@@ -205,12 +205,17 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         architecture: The Debian architecture name.
         maintainer: The Maintainer field's value.
     """
+    programs = payload.go_programs(payload.go_target("linux", architecture))
     staged_python = tree / str(payload.PYTHON_DIR).lstrip("/")
     payload.stage_linux_interpreter(staged_python, architecture)
     payload.stage_agent_tree(payload.site_packages_of(staged_python), version)
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, tree)
     payload.stage_rustdesk(tree, architecture, "deb")
+    payload.stage_go_programs(
+        tree / str(payload.INSTALL_PREFIX / payload.GO_BIN_DIR_NAME).lstrip("/"),
+        programs,
+    )
     payload.stage_licenses(tree)
     payload.require_glibc_floor(tree)
 

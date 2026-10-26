@@ -459,3 +459,37 @@ def test_the_deb_names_its_installed_size(tmp_path, carried):
     control = (tmp_path / "DEBIAN/control").read_text()
     size = int(control.split("Installed-Size: ")[1].split("\n")[0])
     assert size > 0
+
+
+@pytest.mark.parametrize(
+    "module, architecture, target",
+    [
+        (build_deb, "amd64", "linux-amd64"),
+        (build_deb, "arm64", "linux-arm64"),
+        (build_rpm, "x86_64", "linux-amd64"),
+        (build_rpm, "aarch64", "linux-arm64"),
+    ],
+)
+def test_the_packages_carry_the_go_programs_under_the_agents_bin(
+    tmp_path, carried, module, architecture, target
+):
+    if module is build_deb:
+        module._lay_out(tmp_path, "9.9.9", architecture, "somebody")
+    else:
+        module._lay_out(tmp_path, "9.9.9", architecture)
+
+    for name in payload.GO_PROGRAM_NAMES:
+        staged = tmp_path / "opt/neutrino/agent/bin" / name
+        assert staged.read_bytes() == f"{name} for {target}".encode()
+        assert os.access(staged, os.X_OK)
+
+
+def test_a_linux_package_without_its_go_programs_stops_before_staging(
+    tmp_path, carried, go_programs
+):
+    (go_programs / "linux-amd64" / "neutrino_transport").unlink()
+
+    with pytest.raises(SystemExit, match="neutrino_transport"):
+        build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    assert not (tmp_path / "opt").exists()

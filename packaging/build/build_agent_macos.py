@@ -26,7 +26,10 @@ configuration and the state.
 The standalone tree is read back with ``otool`` and refused when a file of
 it loads a library from outside the system, then signed ad hoc, file by
 file: Apple silicon refuses native code with no signature at all. RustDesk
-is copied in after that and keeps upstream's own signature.
+is copied in after that and keeps upstream's own signature. The Go programs
+the agent runs, ``neutrino_transport`` and ``neutrino_ssh_server``, come from
+``dist/go/darwin-<architecture>/`` into ``app/bin`` before the read and the
+signing; the build stops, naming them, when they are not there.
 
 Needs the Xcode command line tools for ``codesign``, ``otool``, ``pkgbuild``
 and ``productbuild``, and ``hdiutil``, which every Mac has.
@@ -275,10 +278,12 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     Raises:
         SystemExit: When this is not a Mac of the pinned Python and
-            machine, when the compile writes no binary, or when RustDesk is
-            not what was pinned.
+            machine, when a Go program of the target is missing, when the
+            compile writes no binary, or when RustDesk is not what was
+            pinned.
     """
     _check_build_machine(machine)
+    programs = payload.go_programs(payload.go_target("darwin", machine))
     tree = root / "tree"
     payload.stage_agent_tree(tree, version)
 
@@ -289,6 +294,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     installed = package_root / str(INSTALL_AGENT_DIR).lstrip("/")
     installed.parent.mkdir(parents=True)
     shutil.copytree(dist, installed, symlinks=True)
+    payload.stage_go_programs(installed / payload.GO_BIN_DIR_NAME, programs)
     _stage_licenses(installed / "licenses")
     pkg_build.require_system_links(installed)
     _sign_tree(installed)
@@ -430,7 +436,9 @@ def _check_tools(is_stage_only: bool) -> None:
     """
     if sys.platform != "darwin":
         raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
-    tools = ("codesign", "hdiutil") + (() if is_stage_only else ("pkgbuild", "productbuild"))
+    tools = ("codesign", "hdiutil") + (
+        () if is_stage_only else ("pkgbuild", "productbuild")
+    )
     for tool in tools:
         if shutil.which(tool) is None:
             raise SystemExit(

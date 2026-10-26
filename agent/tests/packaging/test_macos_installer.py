@@ -19,13 +19,17 @@ import pytest
 import build_agent_macos
 from neutrino_agent.constants import AGENT_DARWIN_LOG_PATH
 
+MACH_O = b"\xcf\xfa\xed\xfe" + b"\0" * 12
+
 
 @pytest.fixture
-def laid_out(tmp_path, monkeypatch):
+def laid_out(tmp_path, monkeypatch, go_programs):
     """The package root with the compile, the download, otool and codesign
-    faked."""
+    faked, and the Go programs of the target built as Mach-O files."""
     signed = []
     checked = []
+    for program in (go_programs / "darwin-arm64").iterdir():
+        program.write_bytes(MACH_O)
 
     def compile_standalone(python, entry, output_dir, binary_name, **kwargs):
         dist = output_dir / "entry.dist"
@@ -85,8 +89,37 @@ def test_every_mach_o_file_is_signed_and_nothing_else(laid_out):
     staged, signed, _checked = laid_out
     installed = staged["root"] / "Library/Application Support/Neutrino/agent/app"
 
-    assert sorted(path.name for path in signed) == ["libpython3.13.dylib", "nagent"]
+    assert sorted(path.name for path in signed) == [
+        "libpython3.13.dylib",
+        "nagent",
+        "neutrino_ssh_server",
+        "neutrino_transport",
+    ]
     assert all(str(path).startswith(str(installed)) for path in signed)
+
+
+def test_the_go_programs_lie_in_the_agents_bin_executable(laid_out):
+    staged, _signed, _checked = laid_out
+    bin_dir = staged["root"] / "Library/Application Support/Neutrino/agent/app/bin"
+
+    for name in ("neutrino_transport", "neutrino_ssh_server"):
+        assert (bin_dir / name).read_bytes() == MACH_O
+        assert os.access(bin_dir / name, os.X_OK)
+
+
+def test_a_mac_package_without_its_go_programs_stops_before_compiling(
+    tmp_path, monkeypatch, go_programs
+):
+    (go_programs / "darwin-amd64" / "neutrino_ssh_server").unlink()
+    monkeypatch.setattr(build_agent_macos, "_check_build_machine", lambda machine: None)
+    monkeypatch.setattr(
+        build_agent_macos,
+        "_make_build_environment",
+        lambda venv: pytest.fail("compiled with a Go program missing"),
+    )
+
+    with pytest.raises(SystemExit, match="darwin-amd64/neutrino_ssh_server"):
+        build_agent_macos._lay_out(tmp_path, "9.9.9", "amd64")
 
 
 def test_the_installed_tree_is_read_back_for_its_links_before_signing(laid_out):

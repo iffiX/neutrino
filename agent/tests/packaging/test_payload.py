@@ -381,3 +381,57 @@ def test_a_tree_at_the_floor_is_a_package_the_build_lets_through(tmp_path, monke
     tree = _elf_tree(tmp_path / "tree", ("2.2.5", "2.17", "2.34"))
 
     payload.require_glibc_floor(tree)
+
+
+@pytest.mark.parametrize(
+    "system, architecture, target",
+    [
+        ("linux", "amd64", "linux-amd64"),
+        ("linux", "aarch64", "linux-arm64"),
+        ("windows", "x64", "windows-amd64"),
+        ("darwin", "arm64", "darwin-arm64"),
+        ("darwin", "x86_64", "darwin-amd64"),
+    ],
+)
+def test_a_package_takes_the_go_programs_of_its_own_target(
+    system, architecture, target
+):
+    assert payload.go_target(system, architecture) == target
+
+
+def test_a_target_the_release_builds_no_go_programs_for_is_refused():
+    with pytest.raises(SystemExit, match="windows-arm64"):
+        payload.go_target("windows", "arm64")
+
+
+def test_the_go_programs_are_the_transport_and_the_ssh_server(go_programs):
+    found = payload.go_programs("windows-amd64")
+
+    assert [path.name for path in found] == [
+        "neutrino_transport.exe",
+        "neutrino_ssh_server.exe",
+    ]
+    assert all(path.parent == go_programs / "windows-amd64" for path in found)
+
+
+def test_a_missing_go_program_stops_the_build_by_name(go_programs):
+    (go_programs / "linux-arm64" / "neutrino_ssh_server").unlink()
+
+    with pytest.raises(SystemExit) as stopped:
+        payload.go_programs("linux-arm64")
+
+    message = str(stopped.value)
+    assert str(go_programs / "linux-arm64" / "neutrino_ssh_server") in message
+    assert "neutrino_transport" not in message.split("missing:")[1]
+
+
+def test_the_go_programs_are_staged_executable(tmp_path):
+    destination = tmp_path / "bin"
+
+    payload.stage_go_programs(destination, payload.go_programs("linux-amd64"))
+
+    for name in payload.GO_PROGRAM_NAMES:
+        staged = destination / name
+        assert staged.read_bytes() == f"{name} for linux-amd64".encode()
+        assert staged.stat().st_mode & 0o777 == 0o755
+    assert destination.stat().st_mode & 0o777 == 0o755
