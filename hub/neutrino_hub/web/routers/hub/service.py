@@ -1,11 +1,11 @@
-"""The Services tab: the typed list of what the hub publishes.
+"""The Services page: the apps the hub publishes, and the entries of no app.
 
-Module-declared entries are read-only rows; manual declarations are created
-and deleted here, and every write answers with the whole refreshed list.
-Every payload host is resolved for the scope the asking browser's address
-falls in, the same resolution a client gets; a browser on no served
-network, or one the transport names no address for, is in the ``link``
-scope with the panel host it reached.
+Module apps are read-only rows; declared apps are created and deleted here,
+and every write answers with the whole refreshed list. Every payload host is
+resolved for the scope the asking browser's address falls in, the same
+resolution a client gets; a browser on no served network, or one the
+transport names no address for, is in the ``link`` scope with the panel
+host it reached.
 
 Errors carry ``{code, params}`` and never a sentence; the pages do the
 wording.
@@ -14,25 +14,22 @@ wording.
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from neutrino_hub.exceptions import ServiceFieldInvalidError
-from neutrino_hub.modules.services.config import (
-    DeclaredServiceRegistry,
-    DeclaredShare,
-)
+from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import (
+    SERVICES_APP_SOURCE_ORDER,
     SERVICES_ERROR_INVALID,
     SERVICES_ERROR_SHARE_SCAN,
     SERVICES_ERROR_UNKNOWN,
-    SERVICES_KIND_SAMBA,
-    SERVICES_PORT_KIND_BY_PROTOCOL,
-    SERVICES_TYPE_PORT,
-    SERVICES_TYPE_TO_KIND,
 )
 from neutrino_hub.modules.services.host_scope import scope_of
 from neutrino_hub.modules.services.ops import list_shares
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
-    DeclaredServiceCreate,
-    DeclaredServiceRequest,
+    AppEntryView,
+    AppView,
+    DeclaredAppCreate,
+    DeclaredAppRequest,
     PublishedServiceView,
     ServiceListView,
     ServiceShareListView,
@@ -48,7 +45,7 @@ router = APIRouter(
 def list_services(
     request: Request, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ServiceListView:
-    """Read every published entry.
+    """Read every app and every entry of no app.
 
     Args:
         request: The incoming request, whose peer address settles the scope
@@ -56,7 +53,8 @@ def list_services(
         runtime: The shared runtime.
 
     Returns:
-        The typed list, module entries first.
+        The apps, a module's first, then the declared, then the manual,
+        each group by title; and the entries of no app.
     """
     return _list_view(request, runtime)
 
@@ -93,53 +91,32 @@ def list_host_shares(host: str) -> ServiceShareListView:
     return ServiceShareListView(shares=listing.names)
 
 
-@router.post(
-    "/declaration/add",
-    response_model=ServiceListView,
-)
-def add_declared_service(
+@router.post("/declaration/add", response_model=ServiceListView)
+def add_declared_app(
     request: Request,
-    body: DeclaredServiceCreate,
+    body: DeclaredAppCreate,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ServiceListView:
-    """Declare a new service.
+    """Declare one app with its entries.
 
     Args:
         request: The incoming request.
-        body: The declaration's fields; its ``kind`` is a service type, and
-            a port's ``protocol`` picks ``generic_tcp`` or ``generic_udp``.
+        body: The app's name, host, description and entries.
         runtime: The shared runtime.
 
     Returns:
-        The list with the new entry, not yet probed.
+        The list with the new app, not yet probed.
 
     Raises:
         HTTPException: 400 with ``declared_service_invalid`` naming the field
-            that was refused, ``protocol`` among them.
+            that was refused, ``name``, ``host``, ``entries`` or
+            ``entries.<n>.<field>``.
     """
-    kind = SERVICES_TYPE_TO_KIND.get(body.kind)
-    if kind is None:
-        raise _invalid(
-            ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "kind"})
-        )
-    if body.kind == SERVICES_TYPE_PORT:
-        kind = SERVICES_PORT_KIND_BY_PROTOCOL.get(body.protocol)
-        if kind is None:
-            raise _invalid(
-                ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "protocol"})
-            )
-    shares = []
-    if kind == SERVICES_KIND_SAMBA:
-        shares = [DeclaredShare(name=name) for name in (body.shares or [])]
     try:
-        DeclaredServiceRegistry().add(
+        DeclaredAppRegistry().add(
             name=body.name,
-            kind=kind,
             host=body.host,
-            port=body.port,
-            scheme=body.scheme,
-            path=body.path,
-            shares=shares,
+            entries=[entry.model_dump() for entry in body.entries],
             description=body.description,
         )
     except ServiceFieldInvalidError as error:
@@ -149,16 +126,16 @@ def add_declared_service(
 
 
 @router.post("/declaration/remove", response_model=ServiceListView)
-def delete_declared_service(
+def delete_declared_app(
     request: Request,
-    body: DeclaredServiceRequest,
+    body: DeclaredAppRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ServiceListView:
-    """Remove a declared service, every entry it published with it.
+    """Remove a declared app, every entry it published with it.
 
     Args:
         request: The incoming request.
-        body: The declared record's id.
+        body: The app's id.
         runtime: The shared runtime.
 
     Returns:
@@ -169,7 +146,7 @@ def delete_declared_service(
             id.
     """
     try:
-        DeclaredServiceRegistry().delete(body.service_id)
+        DeclaredAppRegistry().delete(body.app_id)
     except KeyError as error:
         raise _unknown() from error
     runtime.published_services.expire()
@@ -177,29 +154,29 @@ def delete_declared_service(
 
 
 @router.post("/declaration/probe", response_model=ServiceListView)
-def probe_declared_service(
+def probe_declared_app(
     request: Request,
-    body: DeclaredServiceRequest,
+    body: DeclaredAppRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ServiceListView:
-    """Probe one declared service now, bypassing the cache.
+    """Probe each entry of one declared app now, bypassing the cache.
 
     Args:
         request: The incoming request.
-        body: The declared record's id.
+        body: The app's id.
         runtime: The shared runtime.
 
     Returns:
-        The list with the fresh measurement folded in.
+        The list with the fresh measurements folded in.
 
     Raises:
         HTTPException: 404 with ``declared_service_unknown`` for an unknown
             id.
     """
-    record = DeclaredServiceRegistry().get(body.service_id)
-    if record is None:
+    app = DeclaredAppRegistry().get(body.app_id)
+    if app is None:
         raise _unknown()
-    runtime.declared_probe.probe(record)
+    runtime.declared_probe.probe(app)
     runtime.published_services.expire()
     return _list_view(request, runtime)
 
@@ -210,9 +187,63 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
         peer_host, request.url.hostname or "127.0.0.1", runtime.host_scopes()
     )
     entries = runtime.published_services.entries_for(scope)
+    names = runtime.device_names()
+    by_app: dict = {}
+    loose = []
+    for entry in entries:
+        if entry.get("app_id"):
+            by_app.setdefault(entry["app_id"], []).append(entry)
+        else:
+            loose.append(entry)
+    apps = []
+    for app in runtime.published_services.apps():
+        held = by_app.get(app["id"])
+        if not held:
+            continue
+        apps.append(
+            AppView(
+                id=app["id"],
+                title=app["title"],
+                source=app["source"],
+                device_id=app["device_id"],
+                device_name=app["device_name"] or names.get(app["device_id"], ""),
+                local_name=app["local_name"],
+                description=app["description"],
+                entries=[
+                    AppEntryView(
+                        id=entry["id"],
+                        name=entry["name"],
+                        type=entry["type"],
+                        payload=entry["payload"],
+                        is_healthy=entry["is_healthy"],
+                        local_port=int(entry.get("local_port") or 0),
+                        detail_code=entry.get("detail_code"),
+                    )
+                    for entry in held
+                ],
+            )
+        )
+    apps.sort(key=lambda app: (_source_rank(app.source), app.title.lower()))
     return ServiceListView(
-        services=[PublishedServiceView(**entry) for entry in entries]
+        apps=apps,
+        services=[
+            PublishedServiceView(
+                **catalog,
+                detail_code=entry.get("detail_code"),
+                device_id=entry.get("device_id") or "",
+                device_name=names.get(entry.get("device_id") or "", ""),
+            )
+            for entry, catalog in zip(loose, catalog_entries(loose))
+        ],
     )
+
+
+def _source_rank(source: str) -> int:
+    """A module's apps first, then the declared, then the manual."""
+    try:
+        return SERVICES_APP_SOURCE_ORDER.index(source)
+    except ValueError:
+        return len(SERVICES_APP_SOURCE_ORDER)
 
 
 def _invalid(error: ServiceFieldInvalidError) -> HTTPException:

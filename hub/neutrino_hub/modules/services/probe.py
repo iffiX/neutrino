@@ -1,17 +1,17 @@
-"""Measuring whether each declared service answers.
+"""Measuring whether each entry of a declared app answers.
 
-A declared service runs on a machine the hub does not manage, so the only
-thing the hub can say about it is what an exchange with it says: a TCP
-connect for ``generic_tcp``, a GET for ``http`` — where any answer below 500
-is a service that is up, because a 401 comes from something alive enough to
-refuse — and for ``samba`` the server's own list of exports. A share may be
-called missing only off a listing that actually shows shares; a server that
-refuses anonymous listing degrades to the port answering, healthy with the
-share itself marked unverified. A ``generic_udp`` record has no exchange
-to try and is never probed; its health stays empty.
+A declared app runs on a machine the hub does not manage, so the only thing
+the hub can say about an entry is what an exchange with it says: a TCP
+connect for a TCP ``port`` entry, a GET for a ``web`` entry, where any answer
+below 500 is a service that is up, because a 401 comes from something alive
+enough to refuse, and for a ``file`` entry the server's own list of exports.
+A share may be called missing only off a listing that actually shows shares;
+a server that refuses anonymous listing degrades to the port answering,
+healthy with the share itself marked unverified. A UDP ``port`` entry has no
+exchange to try and is never probed; its health stays empty.
 
 Results are cached for a short while and never written to disk: health is
-what the service is doing now, and a stored answer would only ever be stale.
+what the entry is doing now, and a stored answer would only ever be stale.
 """
 
 import socket
@@ -23,11 +23,9 @@ from functools import partial
 
 import httpx
 
-from neutrino_hub.modules.services.config import DeclaredService
+from neutrino_hub.modules.services.apps import entry_id
+from neutrino_hub.modules.services.config import DeclaredApp, DeclaredEntry
 from neutrino_hub.modules.services.constants import (
-    SERVICES_KIND_GENERIC_UDP,
-    SERVICES_KIND_HTTP,
-    SERVICES_KIND_SAMBA,
     SERVICES_PROBE_CACHE_TTL_S,
     SERVICES_PROBE_CONNECT_FAILED,
     SERVICES_PROBE_LIST_REFUSED,
@@ -37,16 +35,20 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_PROBE_TIMEOUT_S,
     SERVICES_PROBE_TOOL_MISSING,
     SERVICES_PROBE_WORKER_LIMIT,
+    SERVICES_PROTOCOL_UDP,
+    SERVICES_TYPE_FILE,
+    SERVICES_TYPE_PORT,
+    SERVICES_TYPE_WEB,
 )
 from neutrino_hub.modules.services.ops import SambaShareListing, list_shares
 
 
 @dataclass
-class DeclaredServiceHealth:
-    """One declared service's measured health.
+class DeclaredEntryHealth:
+    """One declared entry's measured health.
 
     Attributes:
-        service_id: The declared service's id.
+        entry_id: The entry's id, ``<app id>_<name>``.
         is_healthy: Whether it answered as declared; None when it was never
             probed, and when the hub had no way to look.
         checked_at: ISO timestamp of the measurement, None before the first.
@@ -54,19 +56,17 @@ class DeclaredServiceHealth:
             as declared.
     """
 
-    service_id: str
+    entry_id: str
     is_healthy: bool | None
     checked_at: str | None
     detail_code: str | None
 
     @classmethod
-    def measured(
-        cls, service_id: str, detail_code: str | None
-    ) -> "DeclaredServiceHealth":
+    def measured(cls, entry_id: str, detail_code: str | None) -> "DeclaredEntryHealth":
         """Build a result from what one measurement found.
 
         Args:
-            service_id: The declared service's id.
+            entry_id: The entry's id.
             detail_code: What the measurement found, None when it answered
                 as declared.
 
@@ -77,7 +77,7 @@ class DeclaredServiceHealth:
             ``share_unverified`` beside it.
         """
         return cls(
-            service_id=service_id,
+            entry_id=entry_id,
             is_healthy=(
                 None
                 if detail_code == SERVICES_PROBE_TOOL_MISSING
@@ -88,13 +88,20 @@ class DeclaredServiceHealth:
         )
 
 
-def _is_probed(service: DeclaredService) -> bool:
-    """Whether a declared record is probed: every kind but ``generic_udp``."""
-    return service.kind != SERVICES_KIND_GENERIC_UDP
+def is_probed(entry: DeclaredEntry) -> bool:
+    """Whether an entry is probed: every one but a UDP ``port`` entry."""
+    return not (
+        entry.type == SERVICES_TYPE_PORT and entry.protocol == SERVICES_PROTOCOL_UDP
+    )
+
+
+def probed_entries(apps: list) -> list:
+    """Every probed entry of every app, as ``(app, entry)`` pairs."""
+    return [(app, entry) for app in apps for entry in app.entries if is_probed(entry)]
 
 
 class DeclaredServiceProbe:
-    """Probes declared services and caches the results for a short while.
+    """Probes declared apps' entries and caches the results for a short while.
 
     The Services page polls its view every few seconds; the cache keeps that
     from opening a connection to every declared machine each time.
@@ -104,106 +111,105 @@ class DeclaredServiceProbe:
         """
         Args:
             timeout_s: How long to wait for an answer before calling the
-                service unhealthy.
+                entry unhealthy.
         """
         self._timeout_s = timeout_s
-        self._cache: dict[str, DeclaredServiceHealth] = {}
+        self._cache: dict = {}
         # None, not zero: `time.monotonic()` counts from boot on Linux, and a
         # panel started early in one would read the cache as fresh.
         self._probed_at: float | None = None
 
-    def results(self, services: list[DeclaredService]) -> list[DeclaredServiceHealth]:
-        """Read every service's health, probing only when the cache is stale.
+    def results(self, apps: list) -> dict:
+        """Read every entry's health, probing only when the cache is stale.
 
         Args:
-            services: The services to report on.
+            apps: The declared apps.
 
         Returns:
-            One result per service, in the order given. A service declared
-            since the last refresh reads as never probed.
+            Entry id to its result, for every entry of every app; an entry
+            declared since the last refresh reads as never probed.
         """
         if (
             self._probed_at is None
             or time.monotonic() - self._probed_at > SERVICES_PROBE_CACHE_TTL_S
         ):
-            self.refresh(services)
-        return [
-            self._cache.get(
-                service.id, DeclaredServiceHealth(service.id, None, None, None)
+            self.refresh(apps)
+        return {
+            entry_id(app.id, entry.name): self._cache.get(
+                entry_id(app.id, entry.name),
+                DeclaredEntryHealth(entry_id(app.id, entry.name), None, None, None),
             )
-            for service in services
-        ]
+            for app in apps
+            for entry in app.entries
+        }
 
-    def refresh(self, services: list[DeclaredService]) -> list[DeclaredServiceHealth]:
-        """Probe every service now, replacing the cache whole.
+    def refresh(self, apps: list) -> list:
+        """Probe every entry now, replacing the cache whole.
 
         Args:
-            services: The services to probe.
+            apps: The declared apps.
 
         Returns:
-            One fresh result per service.
+            One fresh result per probed entry.
         """
-        services = [service for service in services if _is_probed(service)]
-        if not services:
+        pairs = probed_entries(apps)
+        if not pairs:
             self._cache = {}
             self._probed_at = time.monotonic()
             return []
-        listings = self._listings(services)
-        worker_count = min(SERVICES_PROBE_WORKER_LIMIT, len(services))
+        listings = self._listings(pairs)
+        worker_count = min(SERVICES_PROBE_WORKER_LIMIT, len(pairs))
         with ThreadPoolExecutor(max_workers=worker_count) as pool:
-            results = list(
-                pool.map(partial(self._measure, listings=listings), services)
-            )
-        self._cache = {result.service_id: result for result in results}
+            results = list(pool.map(partial(self._measure, listings=listings), pairs))
+        self._cache = {result.entry_id: result for result in results}
         self._probed_at = time.monotonic()
         return results
 
-    def probe(self, service: DeclaredService) -> DeclaredServiceHealth:
-        """Measure one service now; the result replaces its cached one.
+    def probe(self, app: DeclaredApp) -> list:
+        """Measure one app's entries now; the results replace their cached ones.
 
         Args:
-            service: The service to reach.
+            app: The app to reach.
 
         Returns:
-            The fresh measurement; for a ``generic_udp`` record, which has
-            no connect to try, a result that was never probed.
+            The fresh measurements, one per probed entry; a UDP entry gets
+            none.
         """
-        if not _is_probed(service):
-            return DeclaredServiceHealth(service.id, None, None, None)
-        result = self._measure(service, listings=self._listings([service]))
-        self._cache[service.id] = result
-        return result
+        pairs = probed_entries([app])
+        listings = self._listings(pairs)
+        results = [self._measure(pair, listings=listings) for pair in pairs]
+        for result in results:
+            self._cache[result.entry_id] = result
+        return results
 
-    def cached(self, service_id: str) -> DeclaredServiceHealth | None:
-        """Read one service's cached health without probing.
+    def cached(self, held_entry_id: str) -> "DeclaredEntryHealth | None":
+        """Read one entry's cached health without probing.
 
         Args:
-            service_id: The declared service's id.
+            held_entry_id: The entry's id.
 
         Returns:
-            The cached result, or None when the service was never probed.
+            The cached result, or None when the entry was never probed.
         """
-        return self._cache.get(service_id)
+        return self._cache.get(held_entry_id)
 
-    def _listings(
-        self, services: list[DeclaredService]
-    ) -> dict[str, SambaShareListing]:
-        """List the exports of every server the file services name.
+    def _listings(self, pairs: list) -> dict:
+        """List the exports of every server the file entries name.
 
         One call per host, not per share: a server exporting four declared
         shares is asked once, and every share is read off the one answer.
 
         Args:
-            services: The services about to be measured.
+            pairs: The ``(app, entry)`` pairs about to be measured.
 
         Returns:
-            Host to what it answered; empty when no file service is declared.
+            Host to what it answered; empty when no file entry is declared.
         """
         hosts = sorted(
             {
-                service.host
-                for service in services
-                if service.kind == SERVICES_KIND_SAMBA and service.host
+                app.host
+                for app, entry in pairs
+                if entry.type == SERVICES_TYPE_FILE and app.host
             }
         )
         if not hosts:
@@ -216,46 +222,41 @@ class DeclaredServiceProbe:
     def _list_shares(self, host: str) -> SambaShareListing:
         return list_shares(host, timeout_s=self._timeout_s)
 
-    def _measure(
-        self, service: DeclaredService, *, listings: dict[str, SambaShareListing]
-    ) -> DeclaredServiceHealth:
-        if service.kind == SERVICES_KIND_HTTP:
-            detail_code = self._http_detail(service)
-        elif service.kind == SERVICES_KIND_SAMBA:
-            detail_code = self._samba_detail(service, listings)
+    def _measure(self, pair: tuple, *, listings: dict) -> DeclaredEntryHealth:
+        app, entry = pair
+        if entry.type == SERVICES_TYPE_WEB:
+            detail_code = self._http_detail(app.host, entry)
+        elif entry.type == SERVICES_TYPE_FILE:
+            detail_code = self._samba_detail(app.host, entry, listings)
         else:
-            detail_code = self._tcp_detail(service)
-        return DeclaredServiceHealth.measured(service.id, detail_code)
+            detail_code = self._tcp_detail(app.host, entry.port)
+        return DeclaredEntryHealth.measured(entry_id(app.id, entry.name), detail_code)
 
-    def _samba_detail(
-        self, service: DeclaredService, listings: dict[str, SambaShareListing]
-    ) -> str | None:
-        listing = listings.get(service.host)
+    def _samba_detail(self, host: str, entry: DeclaredEntry, listings: dict):
+        listing = listings.get(host)
         if listing is None:
-            listing = self._list_shares(service.host)
+            listing = self._list_shares(host)
         if listing.error_code == SERVICES_PROBE_LIST_REFUSED:
             # The server hides its exports from an anonymous asker, so the
             # only honest measure left is whether it answers at all.
-            if self._tcp_detail(service) is None:
+            if self._tcp_detail(host, entry.port) is None:
                 return SERVICES_PROBE_SHARE_UNVERIFIED
             return SERVICES_PROBE_CONNECT_FAILED
         if listing.error_code is not None:
             return listing.error_code
-        if any(share.name not in listing.names for share in service.shares):
+        if entry.share not in listing.names:
             return SERVICES_PROBE_SHARE_MISSING
         return None
 
-    def _tcp_detail(self, service: DeclaredService) -> str | None:
+    def _tcp_detail(self, host: str, port: int) -> str | None:
         try:
-            with socket.create_connection(
-                (service.host, service.port), timeout=self._timeout_s
-            ):
+            with socket.create_connection((host, port), timeout=self._timeout_s):
                 return None
         except OSError:
             return SERVICES_PROBE_CONNECT_FAILED
 
-    def _http_detail(self, service: DeclaredService) -> str | None:
-        url = f"{service.scheme}://{service.host}:{service.port}{service.path or '/'}"
+    def _http_detail(self, host: str, entry: DeclaredEntry) -> str | None:
+        url = f"{entry.scheme}://{host}:{entry.port}{entry.path or '/'}"
         try:
             # Unverified: the probe measures reachability, and a declared
             # machine's certificate is usually self-signed.

@@ -1,7 +1,7 @@
-"""Gathering and caching the published service list.
+"""Gathering and caching the published apps and the service list.
 
 The collector is pure; this is the half that reads: the configs, the
-agents' last reports, the gateway's served models, the declared-service
+agents' last reports, the gateway's served models, the declared apps'
 probes. It keeps the composed list for a short while, because the Services
 page polls it and every device catalog reads it. One list feeds both,
 under one fingerprint.
@@ -27,29 +27,37 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_MODULE_NAMES,
+    DEVICE_SAMBA_MODULE,
+    DEVICE_SSH_SERVER_MODULE,
 )
-from neutrino_hub.modules.devices.hermes_webui import stored_port
-from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore, smb_user
 from neutrino_hub.modules.devices.module_table import account_program_names
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.services.apps import machine_slugs, slug
 from neutrino_hub.modules.services.collector import (
     ServiceListCollector,
     hub_self_addresses,
     resolve_entries,
 )
-from neutrino_hub.modules.services.config import DeclaredServiceRegistry
+from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import (
     SERVICES_CONTAINER_AUTO,
     SERVICES_CONTAINER_WEB,
     SERVICES_HTTP_SCHEMES,
+    SERVICES_LIST_TTL_S,
+    SERVICES_MACHINE_SLUG_FALLBACK,
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
-    SERVICES_LIST_TTL_S,
+    SERVICES_SOURCE_DECLARED,
+    SERVICES_SOURCE_MANUAL,
 )
 from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
 from neutrino_hub.utils import constants as utils_constants
 from neutrino_hub.utils import json_file
+
+# The owner a reported container carries when a container module runs it.
+CONTAINER_SOURCE_HUB = "hub"
 
 
 def gitea_url(details: dict) -> str:
@@ -76,7 +84,7 @@ def gitea_url(details: dict) -> str:
 
 
 class PublishedServiceCache:
-    """Composes the published service list and keeps it for a short while."""
+    """Composes the published apps and entries and keeps them for a short while."""
 
     def __init__(
         self,
@@ -89,6 +97,8 @@ class PublishedServiceCache:
         device_addresses=None,
         device_interfaces=None,
         desired_states=None,
+        device_names=None,
+        hub_name=None,
         on_fingerprint_change=None,
         executor=None,
     ):
@@ -103,17 +113,19 @@ class PublishedServiceCache:
             device_shares: The shared
                 :class:`neutrino_hub.modules.services.device_shares.DeviceShareRegistry`;
                 None publishes no desktop shares.
-            agent_sessions: The shared
-                :class:`neutrino_hub.modules.channel.sessions.ChannelSessionRegistry`,
-                whose reports say which device hosts what; None publishes
-                no device-hosted entries.
-            device_addresses: Device id to the address its channel comes
+            agent_sessions: The shared session registry, whose reports say
+                which device hosts what; None publishes no device-hosted
+                entries.
+            device_addresses: Device id to the address its session comes
                 from, the runtime's own mapping.
             device_interfaces: Device id to the interfaces its agent last
                 reported, the runtime's own mapping; a device absent here
-                is at its channel's address in every scope.
-            desired_states: The :class:`DesiredStateStore` the shares are
-                read from; None builds one.
+                is at its session's address in every scope.
+            desired_states: The :class:`DesiredStateStore` the enabled
+                accounts are read from; None builds one.
+            device_names: Returns device id to what the hub calls the
+                machine, for every stored device; None names none.
+            hub_name: Returns the hub's own name; None is the fallback slug.
             on_fingerprint_change: Called with nothing when a refresh
                 composes a different list; None tells nobody.
             executor: The single-thread executor a scheduled recompose runs
@@ -133,6 +145,8 @@ class PublishedServiceCache:
         self._desired_states = (
             desired_states if desired_states is not None else DesiredStateStore()
         )
+        self._device_names = device_names
+        self._hub_name = hub_name
         self._on_fingerprint_change = on_fingerprint_change
         self._executor = (
             executor
@@ -144,28 +158,35 @@ class PublishedServiceCache:
         self._refresh_lock = threading.Lock()
         self._is_refreshing = False
         self._is_refresh_pending = False
-        self._entries: list[dict] = []
+        self._entries: list = []
+        self._apps: list = []
         self._fingerprint = ""
-        self._hub_addresses: set[str] = set()
+        self._hub_addresses: set = set()
         # None, not zero: `time.monotonic()` counts from boot on Linux, and a
         # panel started early in one would read the cache as fresh.
         self._refreshed_at: float | None = None
 
-    def entries(self) -> tuple[list[dict], str]:
+    def entries(self) -> tuple:
         """The published entries and their fingerprint, refreshed when stale.
 
         Returns:
             ``(entries, fingerprint)``; the fingerprint moves whenever the
             composed list changes.
         """
-        if (
-            self._refreshed_at is None
-            or time.monotonic() - self._refreshed_at > SERVICES_LIST_TTL_S
-        ):
-            self.refresh()
+        self._refresh_if_stale()
         return list(self._entries), self._fingerprint
 
-    def entries_for(self, scope: HostScope) -> list[dict]:
+    def apps(self) -> list:
+        """The apps the published entries belong to, refreshed when stale.
+
+        Returns:
+            One ``{id, title, source, device_id, device_name, local_name,
+            description}`` per app.
+        """
+        self._refresh_if_stale()
+        return [dict(app) for app in self._apps]
+
+    def entries_for(self, scope: HostScope) -> list:
         """The entries resolved for one caller's scope.
 
         Every device's entry names the address that device has in the
@@ -213,11 +234,8 @@ class PublishedServiceCache:
 
     def refresh(self) -> None:
         """Compose the list now, replacing the cache whole."""
-        declared = DeclaredServiceRegistry().list_records()
-        healths = {
-            health.service_id: health
-            for health in self._declared_probe.results(declared)
-        }
+        declared = DeclaredAppRegistry().list_apps()
+        healths = self._declared_probe.results(declared)
         lan_addresses = self._lan_addresses()
         own_addresses = self._own_addresses()
         # Composed with the address most devices are on, then rewritten per
@@ -229,28 +247,46 @@ class PublishedServiceCache:
         cliproxyapi = self._unit("cliproxyapi")
         is_ai_served = self._is_ai_served()
         ai_port, ai_models, is_ai_healthy = self._ai_state(cliproxyapi.is_active)
-
-        entries = ServiceListCollector(
+        names = self._device_names() if self._device_names is not None else {}
+        collector = ServiceListCollector(
             hub_host=hub_host,
             is_ai_served=is_ai_served,
             ai_port=ai_port,
             ai_models=ai_models,
             is_ai_healthy=is_ai_healthy,
             device_modules=self._device_modules(),
-            declared_services=declared,
+            declared_apps=declared,
             declared_healths=healths,
             device_shares=(
                 self._device_shares.live() if self._device_shares is not None else []
             ),
-        ).render()
+            machine_slugs=machine_slugs(names),
+            hub_slug=self._hub_slug(),
+            device_ids_by_address={
+                address: device_id
+                for device_id, address in self._device_addresses.items()
+                if address and device_id in names
+            },
+            device_names=names,
+        )
+        entries = collector.render()
+        apps = collector.apps()
 
         previous = self._fingerprint
         self._entries = entries
-        serialized = json.dumps(entries, sort_keys=True).encode("utf-8")
+        self._apps = apps
+        serialized = json.dumps([entries, apps], sort_keys=True).encode("utf-8")
         self._fingerprint = hashlib.sha256(serialized).hexdigest()[:16]
         self._refreshed_at = time.monotonic()
         if self._fingerprint != previous and self._on_fingerprint_change is not None:
             self._on_fingerprint_change()
+
+    def _refresh_if_stale(self) -> None:
+        if (
+            self._refreshed_at is None
+            or time.monotonic() - self._refreshed_at > SERVICES_LIST_TTL_S
+        ):
+            self.refresh()
 
     def _refresh_until_settled(self) -> None:
         """Refresh, then once more for whatever was asked for meanwhile."""
@@ -268,7 +304,16 @@ class PublishedServiceCache:
     def _unit(self, name: str):
         return self._units.status(name)
 
-    def _lan_addresses(self) -> list[str]:
+    def _hub_slug(self) -> str:
+        """The slug of the hub's own name, the fallback when it does not read."""
+        if self._hub_name is None:
+            return SERVICES_MACHINE_SLUG_FALLBACK
+        try:
+            return slug(str(self._hub_name() or ""), SERVICES_MACHINE_SLUG_FALLBACK)
+        except (FileNotFoundError, ValueError):
+            return SERVICES_MACHINE_SLUG_FALLBACK
+
+    def _lan_addresses(self) -> list:
         try:
             network = RouterNetworkConfig.from_dict(
                 json_file.read_config("router/network.json")
@@ -281,7 +326,7 @@ class PublishedServiceCache:
             if interface.lan.address
         ]
 
-    def _own_addresses(self) -> list[str]:
+    def _own_addresses(self) -> list:
         """Every address this box can be reached at, served ones first.
 
         What makes an entry the hub's own rather than some machine's it was
@@ -313,25 +358,30 @@ class PublishedServiceCache:
             modules = report.get("modules") if isinstance(report, dict) else {}
             modules = modules if isinstance(modules, dict) else {}
             host = str(self._device_addresses.get(key, "") or "")
+            platform = _platform_of(report)
             entry = {"device_id": key, "host": host}
             for name in DEVICE_MODULE_NAMES:
-                entry[name] = self._hosted(key, name, modules.get(name))
+                entry[name] = self._hosted(key, name, modules.get(name), platform)
             if any(entry[name] for name in DEVICE_MODULE_NAMES):
                 devices.append(entry)
         return devices
 
-    def _hosted(self, key: str, name: str, status) -> "dict | None":
+    def _hosted(self, key: str, name: str, status, platform: dict) -> "dict | None":
         """One device's module as the list needs it, None while not served.
 
-        An instance of a program run as an account is listed only while the
-        device reports it running, and Hermes WebUI only while the device
-        reports the module running. Gitea listens on the device's loopback
-        alone, so its health is the device's word that the server runs.
+        An instance of an account-layer module is listed only while the
+        device reports it running, at the port the agent took, Hermes WebUI
+        only while the device reports the module running, and an SSH server
+        instance while the module enables its account. Gitea listens on the
+        device's loopback alone, so its health is the device's word that
+        the server runs.
         """
         if not isinstance(status, dict):
             return None
         if status.get("state") not in CHANNEL_MODULE_CONFIGURED_WANTS:
             return None
+        if name == DEVICE_SSH_SERVER_MODULE:
+            return self._hosted_ssh_server(key, status)
         if (
             self._desired_states.want_of(key, name)
             not in CHANNEL_MODULE_CONFIGURED_WANTS
@@ -343,87 +393,111 @@ class PublishedServiceCache:
         if name == DEVICE_HERMES_WEBUI_MODULE:
             if status.get("state") != CHANNEL_MODULE_STATE_RUNNING:
                 return None
-            return {
-                "port": stored_port(self._desired_states.read(key, name)),
-                "is_healthy": True,
-            }
-        if name == "samba":
-            config = self._desired_states.read(key, "samba")
-            shares = [
-                share
-                for share in config.get("shares", [])
-                if isinstance(share, dict) and share.get("name")
-            ]
-            users = [str(user) for user in config.get("users") or []]
+            port = details.get("port")
+            if not isinstance(port, int) or isinstance(port, bool) or port <= 0:
+                return None
+            return {"port": port, "is_healthy": True}
+        if name == DEVICE_SAMBA_MODULE:
             return {
                 "is_healthy": bool(details.get("is_active")),
-                "share_names": [str(share["name"]) for share in shares],
-                "share_users": {
-                    str(share["name"]): [
-                        str(user) for user in share.get("valid_users") or []
-                    ]
-                    or users
-                    for share in shares
-                },
+                "shares": [
+                    {"name": account, "user": smb_user(account, platform)}
+                    for account in self._desired_states.enabled_accounts(key, name)
+                ],
             }
         if name == "gitea":
             return {
                 "is_healthy": bool(details.get("is_running")),
                 "url": gitea_url(details),
+                "ssh_listen_port": _port_of(details.get("ssh_listen_port")),
             }
-        running = {
-            str(instance.get("account", ""))
-            for instance in details.get("instances") or []
-            if isinstance(instance, dict) and instance.get("is_running")
-        }
         if name in account_program_names():
-            return {
-                "instances": [
-                    {
-                        "account": str(instance["account"]),
-                        "port": int(instance["port"]),
-                        "is_healthy": True,
-                    }
-                    for instance in self._desired_states.read(key, name).get(
-                        "instances"
-                    )
-                    or []
-                    if isinstance(instance, dict)
-                    and instance.get("account")
-                    and instance.get("port")
-                    and str(instance["account"]) in running
-                ],
-            }
+            return {"instances": self._running_instances(key, name, details)}
         if name == "podman":
-            services = {
-                str(declared.get("name", "")): declared.get("services") or []
-                for declared in self._desired_states.read(key, "podman").get(
+            declared = {
+                str(container.get("name", "")): container.get("services") or []
+                for container in self._desired_states.read(key, "podman").get(
                     "containers"
                 )
                 or []
-                if isinstance(declared, dict)
+                if isinstance(container, dict)
             }
-            return {
-                "containers": [
+            containers = []
+            for container in details.get("containers") or []:
+                if not isinstance(container, dict) or not container.get("name"):
+                    continue
+                # A container module's page is its own entry, behind its
+                # forwarder; its containers' ports give none.
+                if container.get("module"):
+                    continue
+                container_name = str(container["name"])
+                containers.append(
                     {
-                        "name": str(container.get("name", "")),
+                        "name": container_name,
                         "image": str(container.get("image", "")),
                         "is_running": bool(container.get("is_running")),
-                        # A container module's page is its own entry, behind
-                        # its forwarder; its containers' ports give none.
-                        "bindings": (
-                            []
-                            if container.get("module")
-                            else container_bindings(
-                                container, services.get(str(container["name"]), [])
-                            )
+                        "source": (
+                            SERVICES_SOURCE_DECLARED
+                            if container_name in declared
+                            else SERVICES_SOURCE_MANUAL
+                        ),
+                        "bindings": container_bindings(
+                            container, declared.get(container_name, [])
                         ),
                     }
-                    for container in details.get("containers") or []
-                    if isinstance(container, dict) and container.get("name")
-                ]
-            }
+                )
+            return {"containers": containers}
         return None
+
+    def _hosted_ssh_server(self, key: str, status: dict) -> "dict | None":
+        """The SSH server's instances the module enables, as last reported."""
+        details = (
+            status.get("details") if isinstance(status.get("details"), dict) else {}
+        )
+        instances = self._running_instances(
+            key, DEVICE_SSH_SERVER_MODULE, details, is_running_required=False
+        )
+        if not instances:
+            return None
+        return {
+            "host_key_fingerprint": str(details.get("host_key_fingerprint", "") or ""),
+            "instances": instances,
+        }
+
+    def _running_instances(
+        self, key: str, name: str, details: dict, *, is_running_required: bool = True
+    ) -> list:
+        """The enabled accounts' instances with the ports the agent reports.
+
+        Args:
+            key: The device.
+            name: The module.
+            details: The module's ``details`` as last reported.
+            is_running_required: Whether an instance that does not run is
+                left out.
+
+        Returns:
+            ``[{account, port, is_healthy}]`` in the enabled accounts' order,
+            instances with no reported port left out.
+        """
+        reported = {
+            str(instance.get("account", "")): instance
+            for instance in details.get("instances") or []
+            if isinstance(instance, dict)
+        }
+        instances = []
+        for account in self._desired_states.enabled_accounts(key, name):
+            seen = reported.get(account)
+            if seen is None:
+                continue
+            port = _port_of(seen.get("port"))
+            is_running = bool(seen.get("is_running"))
+            if not port or (is_running_required and not is_running):
+                continue
+            instances.append(
+                {"account": account, "port": port, "is_healthy": is_running}
+            )
+        return instances
 
     def _is_ai_served(self) -> bool:
         """Whether the gateway has anything to serve a device with.
@@ -442,7 +516,7 @@ class PublishedServiceCache:
             return False
         return any(path.suffix == ".json" for path in auth_dir.iterdir())
 
-    def _ai_state(self, is_active: bool) -> tuple[int, list[str], bool]:
+    def _ai_state(self, is_active: bool) -> tuple:
         """The gateway's port, served models and health.
 
         With no key to probe with, which is a box that has never applied the
@@ -463,6 +537,20 @@ class PublishedServiceCache:
 
 
 __all__ = ["PublishedServiceCache"]
+
+
+def _platform_of(report) -> dict:
+    """The platform tuple one report carries, empty when it carries none."""
+    machine = report.get("machine") if isinstance(report, dict) else None
+    platform = machine.get("platform") if isinstance(machine, dict) else None
+    return dict(platform) if isinstance(platform, dict) else {}
+
+
+def _port_of(value) -> int:
+    """A reported port as an int, 0 for anything that is not one."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value if value > 0 else 0
 
 
 def container_bindings(container: dict, services: list) -> list:

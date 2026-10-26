@@ -1,454 +1,346 @@
-"""The typed service list: what each device's module publishes, and how hosts resolve."""
+"""The apps and the typed service list: what each device's module publishes.
 
+What these pin, against protocol.md's "Apps" and "The local name and the
+local port": a program's instance is one app with one ``web`` entry; Gitea
+is one app with ``web`` and ``ssh``, the latter a TCP ``port`` entry; the SSH
+server is one app with one ``ssh`` entry per instance, in the module's
+order; a container module's page is its app; a container the hub does not
+manage is an app of its own, ``declared`` or ``manual``; a declared app's
+entries are named ``web_<port>``, ``port_<port>[_udp]`` and ``file_<slug>``
+and carry the probe's health and detail; every app entry's id is ``<app
+id>_<name>``, its local port follows from that id alone and lies in 24000 to
+31999; a local name is the app's slug, the machine's slug and
+``.localhost``, two machines of one slug told apart by their ids; the ``ai``,
+``rdp`` and a machine's ``file`` entries belong to no app; and a payload's
+host is rewritten for the caller's scope.
+"""
+
+import hashlib
+
+from neutrino_hub.modules.services.apps import (
+    app_slugs,
+    cookie_name,
+    entry_id,
+    local_name,
+    local_port,
+    machine_slugs,
+    slug,
+)
 from neutrino_hub.modules.services.collector import (
     ServiceListCollector,
     catalog_entries,
-    hub_self_addresses,
     resolve_entries,
 )
-from neutrino_hub.modules.services.config import DeclaredService, DeclaredShare
+from neutrino_hub.modules.services.config import DeclaredApp, DeclaredEntry
 from neutrino_hub.modules.services.device_shares import DeviceShare
-from neutrino_hub.modules.services.probe import DeclaredServiceHealth
+from neutrino_hub.modules.services.probe import DeclaredEntryHealth
 
-HUB = "192.168.100.1"
-DEVICE = "device-one"
-DEVICE_HOST = "192.168.100.7"
+DEVICE = "d1d1d1d1d1d1d1d1"
+HOST = "192.168.100.7"
 
 
-def collect(**overrides) -> list[dict]:
-    fields = {
-        "hub_host": HUB,
+def collector(**fields) -> ServiceListCollector:
+    base = {
+        "hub_host": "192.168.100.1",
         "is_ai_served": False,
         "ai_port": 8317,
         "ai_models": [],
         "is_ai_healthy": False,
         "device_modules": [],
-        "declared_services": [],
+        "declared_apps": [],
         "declared_healths": {},
-        "device_shares": [],
+        "device_names": {DEVICE: "Argon Box"},
+        "machine_slugs": machine_slugs({DEVICE: "Argon Box"}),
     }
-    fields.update(overrides)
-    return ServiceListCollector(**fields).render()
+    base.update(fields)
+    return ServiceListCollector(**base)
 
 
-def hosting(
-    *,
-    device_id=DEVICE,
-    host=DEVICE_HOST,
-    samba=None,
-    gitea=None,
-    podman=None,
-    vscode=None,
-):
-    return {
-        "device_id": device_id,
-        "host": host,
-        "samba": samba,
-        "gitea": gitea,
-        "podman": podman,
-        "vscode": vscode,
-    }
+def by_id(entries: list) -> dict:
+    return {entry["id"]: entry for entry in entries}
 
 
-def container(name: str, *, ports: list[int], is_running: bool = True) -> dict:
-    return {
-        "name": name,
-        "image": "docker.io/nginx:1.25",
-        "is_running": is_running,
-        "bindings": [(port, "tcp", "") for port in ports],
-    }
+def test_the_local_port_follows_from_the_entry_id_alone_inside_the_range():
+    digest = hashlib.sha256(b"gitea_abc_ssh").digest()
+    expected = 24000 + int.from_bytes(digest[:4], "big") % 8000
 
-
-def health(record_id: str, is_healthy: bool | None, detail_code: str | None = None):
-    return DeclaredServiceHealth(
-        service_id=record_id,
-        is_healthy=is_healthy,
-        checked_at="2026-01-01T00:00:00+00:00",
-        detail_code=detail_code,
+    assert local_port("gitea_abc_ssh") == expected
+    assert 24000 <= local_port("x") < 32000
+    assert entry_id("gitea_abc", "ssh") == "gitea_abc_ssh"
+    assert (
+        cookie_name("gitea_abc_web")
+        == "neutrino_" + hashlib.sha256(b"gitea_abc_web").hexdigest()[:12]
     )
 
 
-def declared(kind: str, **overrides) -> DeclaredService:
-    fields = {
-        "id": "r1",
-        "name": "forge",
-        "kind": kind,
-        "host": "10.0.0.5",
-        "port": 9000,
-        "description": "the forge box",
-        "created_at": "2026-01-01T00:00:00+00:00",
+def test_a_slug_is_lowercase_runs_of_letters_and_digits_joined_by_one_dash():
+    assert slug("Argon  Box!") == "argon-box"
+    assert slug("---") == "app"
+    assert slug("x" * 80).__len__() == 63
+    assert local_name("codeg-ann", "argon") == "codeg-ann.argon.localhost"
+
+
+def test_two_machines_of_one_slug_are_told_apart_by_their_ids():
+    slugs = machine_slugs(
+        {"a1b2c3d4e5f6": "Box", "f6e5d4c3b2a1": "box", "abc": "Other"}  # scan: allow
+    )
+
+    assert slugs == {
+        "a1b2c3d4e5f6": "box-a1b2c3",
+        "f6e5d4c3b2a1": "box-f6e5d4",
+        "abc": "other",
     }
-    fields.update(overrides)
-    return DeclaredService(**fields)
+    assert app_slugs({"codeg_d_ann": "Codeg (ann)", "codeg_d_bob": "Codeg (bob)"}) == {
+        "codeg_d_ann": "codeg-ann",
+        "codeg_d_bob": "codeg-bob",
+    }
 
 
-def test_nothing_served_and_nothing_declared_is_an_empty_list():
-    assert collect() == []
-
-
-def test_a_devices_gitea_publishes_one_web_entry_only_while_served():
-    entries = collect(
+def test_a_programs_instance_is_one_app_with_one_web_entry():
+    entries = collector(
         device_modules=[
-            hosting(gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"})
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "codeg": {
+                    "instances": [{"account": "ann", "port": 3101, "is_healthy": True}]
+                },
+            }
         ]
-    )
-    assert [e["id"] for e in entries] == ["gitea_device-one"]
-    entry = entries[0]
-    assert entry["type"] == "web"
-    assert entry["payload"] == {"url": f"http://{DEVICE_HOST}:3000/"}
-    assert entry["is_healthy"] is True
-    assert entry["source"] == "module"
-    assert entry["record_id"] is None
-    assert entry["description"] == f"published by the gitea module on {DEVICE_HOST}"
-
-    assert collect(device_modules=[hosting(gitea=None)]) == []
-
-
-def test_gitea_health_is_the_measured_answer_never_painted():
-    entries = collect(
-        device_modules=[hosting(gitea={"is_healthy": False, "url": "http://x:3000/"})]
-    )
-    assert entries[0]["is_healthy"] is False
-
-
-def test_a_devices_samba_publishes_one_file_entry_per_share_at_its_address():
-    entries = collect(
+    ).render()
+    apps = collector(
         device_modules=[
-            hosting(samba={"is_healthy": True, "share_names": ["media", "backup"]})
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "codeg": {
+                    "instances": [{"account": "ann", "port": 3101, "is_healthy": True}]
+                },
+            }
         ]
-    )
-    assert [e["id"] for e in entries] == [
-        "samba_device-one_media",
-        "samba_device-one_backup",
-    ]
-    entry = entries[0]
-    assert entry["type"] == "file"
+    ).apps()
+
+    (entry,) = entries
+    app_id = f"codeg_{DEVICE}_ann"
+    assert entry["id"] == f"{app_id}_web"
+    assert (entry["app_id"], entry["name"], entry["type"]) == (app_id, "web", "web")
     assert entry["payload"] == {
-        "protocol": "smb",
-        "host": DEVICE_HOST,
-        "share": "media",
-        "users": [],
+        "url": f"http://{HOST}:3101/",
+        "is_token_required": True,
     }
-    assert entry["source"] == "module"
+    assert entry["local_port"] == local_port(entry["id"])
+    assert entry["description_code"] == "codeg_module"
+    assert entry["description_params"] == {"host": HOST, "account": "ann"}
+    assert apps == [
+        {
+            "id": app_id,
+            "title": "Codeg (ann)",
+            "source": "module",
+            "device_id": DEVICE,
+            "device_name": "Argon Box",
+            "local_name": "codeg-ann.argon-box.localhost",
+            "description": "",
+        }
+    ]
 
 
-def test_a_file_entry_names_the_accounts_that_can_open_its_share():
-    entries = collect(
-        device_modules=[
-            hosting(
-                samba={
-                    "is_healthy": True,
-                    "share_names": ["media", "backup"],
-                    "share_users": {"media": ["alice"], "backup": ["alice", "bob"]},
+def test_gitea_is_one_app_with_a_web_entry_and_a_tcp_port_entry_for_its_ssh():
+    entries = by_id(
+        collector(
+            device_modules=[
+                {
+                    "device_id": DEVICE,
+                    "host": HOST,
+                    "gitea": {
+                        "is_healthy": True,
+                        "url": f"http://{HOST}:3000/",
+                        "ssh_listen_port": 2222,
+                    },
                 }
-            )
-        ]
+            ]
+        ).render()
     )
 
-    assert [e["payload"]["users"] for e in entries] == [["alice"], ["alice", "bob"]]
-
-
-def test_a_device_with_no_address_publishes_nothing_reachable():
-    entries = collect(
-        device_modules=[
-            hosting(
-                host="",
-                samba={"is_healthy": True, "share_names": ["media"]},
-                podman={"containers": [container("web", ports=[8080])]},
-            )
-        ]
-    )
-    assert entries == []
-
-
-def test_the_ai_entry_carries_the_served_models_and_the_probe_health():
-    entries = collect(
-        is_ai_served=True,
-        ai_models=["claude-sonnet-4-5", "gpt-5"],
-        is_ai_healthy=True,
-    )
-    assert [e["id"] for e in entries] == ["ai"]
-    entry = entries[0]
-    assert entry["type"] == "ai"
-    assert entry["payload"] == {
-        "endpoint": f"http://{HUB}:8317",
-        "protocol": "openai",
-        "models": ["claude-sonnet-4-5", "gpt-5"],
-    }
-    assert entry["is_healthy"] is True
-
-
-def test_a_devices_podman_publishes_one_port_entry_per_published_container_port():
-    entries = collect(
-        device_modules=[
-            hosting(podman={"containers": [container("web", ports=[8080, 8443])]})
-        ]
-    )
-    assert [e["id"] for e in entries] == [
-        "podman_device-one_web_8080",
-        "podman_device-one_web_8443",
-    ]
-    entry = entries[0]
-    assert entry["type"] == "port"
-    assert entry["payload"] == {"host": DEVICE_HOST, "port": 8080, "protocol": "tcp"}
-    assert entry["description"] == (
-        f"published by container web (docker.io/nginx:1.25) on {DEVICE_HOST}"
-    )
-
-
-def test_a_stopped_container_publishes_its_port_as_unhealthy():
-    entries = collect(
-        device_modules=[
-            hosting(
-                podman={
-                    "containers": [container("web", ports=[8080], is_running=False)]
-                }
-            )
-        ]
-    )
-    assert entries[0]["is_healthy"] is False
-
-
-def test_two_devices_publish_their_own_entries_side_by_side():
-    entries = collect(
-        device_modules=[
-            hosting(samba={"is_healthy": True, "share_names": ["media"]}),
-            hosting(
-                device_id="device-two",
-                host="192.168.100.8",
-                samba={"is_healthy": False, "share_names": ["media"]},
-            ),
-        ]
-    )
-    assert [e["id"] for e in entries] == [
-        "samba_device-one_media",
-        "samba_device-two_media",
-    ]
-    assert [e["payload"]["host"] for e in entries] == [DEVICE_HOST, "192.168.100.8"]
-
-
-def test_declared_records_map_onto_the_types_with_their_probe_health():
-    records = [
-        declared("http", id="w1", scheme="https", path="/status"),
-        declared("generic_tcp", id="p1"),
-        declared(
-            "samba",
-            id="f1",
-            port=445,
-            shares=[DeclaredShare(name="media"), DeclaredShare(name="backup")],
-        ),
-    ]
-    entries = collect(
-        declared_services=records,
-        declared_healths={"w1": health("w1", True), "p1": health("p1", False)},
-    )
-
-    by_id = {e["id"]: e for e in entries}
-    assert by_id["w1"]["type"] == "web"
-    assert by_id["w1"]["payload"] == {"url": "https://10.0.0.5:9000/status"}
-    assert by_id["w1"]["is_healthy"] is True
-    assert by_id["w1"]["source"] == "declared"
-    assert by_id["w1"]["description"] == "the forge box"
-    assert by_id["p1"]["payload"] == {
-        "host": "10.0.0.5",
-        "port": 9000,
+    app_id = f"gitea_{DEVICE}"
+    assert set(entries) == {f"{app_id}_web", f"{app_id}_ssh"}
+    assert entries[f"{app_id}_ssh"]["type"] == "port"
+    assert entries[f"{app_id}_ssh"]["payload"] == {
+        "host": HOST,
+        "port": 2222,
         "protocol": "tcp",
     }
-    assert by_id["p1"]["is_healthy"] is False
-    assert by_id["f1_media"]["payload"]["share"] == "media"
-    assert by_id["f1_media"]["payload"]["users"] == []
-    assert by_id["f1_media"]["record_id"] == "f1"
-    assert by_id["f1_backup"]["record_id"] == "f1"
-    assert by_id["w1"]["detail_code"] is None
-    assert by_id["f1_media"]["is_healthy"] is None
-    assert by_id["f1_media"]["detail_code"] is None
+    assert entries[f"{app_id}_web"]["payload"] == {"url": f"http://{HOST}:3000/"}
 
 
-def test_every_row_of_a_record_carries_what_its_probe_measured():
-    record = declared(
-        "samba",
-        id="f1",
-        port=445,
-        shares=[DeclaredShare(name="media"), DeclaredShare(name="backup")],
-    )
-    entries = collect(
-        declared_services=[record],
-        declared_healths={"f1": health("f1", False, "share_missing")},
-    )
+def test_the_ssh_server_is_one_app_with_an_ssh_entry_per_instance_in_order():
+    entries = collector(
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "ssh_server": {
+                    "host_key_fingerprint": "SHA256:abc",
+                    "instances": [
+                        {"account": "bob", "port": 22001, "is_healthy": True},
+                        {"account": "ann", "port": 22002, "is_healthy": False},
+                    ],
+                },
+            }
+        ]
+    ).render()
 
-    assert [entry["detail_code"] for entry in entries] == [
-        "share_missing",
-        "share_missing",
+    assert [entry["id"] for entry in entries] == [
+        f"ssh_server_{DEVICE}_bob",
+        f"ssh_server_{DEVICE}_ann",
     ]
-    assert all(entry["is_healthy"] is False for entry in entries)
-
-
-def test_a_module_entry_never_carries_a_detail_code():
-    entries = collect(
-        device_modules=[hosting(samba={"is_healthy": False, "share_names": ["media"]})]
-    )
-
-    assert entries[0]["source"] == "module"
-    assert entries[0]["detail_code"] is None
-
-
-def test_the_catalog_copy_drops_the_detail_code():
-    record = declared("generic_tcp", id="p1")
-    entries = collect(
-        declared_services=[record],
-        declared_healths={"p1": health("p1", False, "connect_failed")},
-    )
-
-    assert "detail_code" not in catalog_entries(entries)[0]
-
-
-def resolve(entries, *, device_hosts=None, hub_host="192.168.93.1"):
-    return resolve_entries(
-        entries,
-        device_hosts=device_hosts or {},
-        hub_addresses=hub_self_addresses([HUB]),
-        hub_host=hub_host,
-    )
-
-
-def test_resolution_substitutes_every_hub_self_host_for_the_hubs_scope_address():
-    entries = collect(
-        is_ai_served=True,
-        device_modules=[
-            hosting(
-                host=HUB,
-                samba={"is_healthy": True, "share_names": ["media"]},
-                gitea={"is_healthy": True, "url": f"http://{HUB}:3000/"},
-                podman={"containers": [container("web", ports=[8080])]},
-            )
-        ],
-        declared_services=[declared("generic_tcp", id="p1", host="127.0.0.1")],
-        declared_healths={},
-    )
-
-    resolved = {e["id"]: e for e in resolve(entries)}
-
-    # A module hosted on the hub box's own agent sits at a hub address and
-    # resolves like the hub's own.
-    assert resolved["gitea_device-one"]["payload"]["url"] == "http://192.168.93.1:3000/"
-    assert resolved["samba_device-one_media"]["payload"]["host"] == "192.168.93.1"
-    assert resolved["ai"]["payload"]["endpoint"] == "http://192.168.93.1:8317"
-    assert resolved["podman_device-one_web_8080"]["payload"]["host"] == "192.168.93.1"
-    # A loopback host in a declaration is the hub's own by definition.
-    assert resolved["p1"]["payload"]["host"] == "192.168.93.1"
-
-
-def test_an_ipv6_scope_address_is_written_in_brackets_inside_a_url():
-    entries = collect(
-        is_ai_served=True,
-        device_modules=[
-            hosting(
-                host=HUB,
-                samba={"is_healthy": True, "share_names": ["media"]},
-                gitea={"is_healthy": True, "url": f"http://{HUB}:3000/"},
-            )
-        ],
-    )
-
-    resolved = {e["id"]: e for e in resolve(entries, hub_host="2001:db8::a10")}
-
-    assert (
-        resolved["gitea_device-one"]["payload"]["url"] == "http://[2001:db8::a10]:3000/"
-    )
-    assert resolved["ai"]["payload"]["endpoint"] == "http://[2001:db8::a10]:8317"
-    assert resolved["samba_device-one_media"]["payload"]["host"] == "2001:db8::a10"
-
-
-def test_resolution_leaves_a_device_host_alone_when_the_scope_names_none():
-    entries = collect(
-        device_modules=[
-            hosting(
-                samba={"is_healthy": True, "share_names": ["media"]},
-                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
-            )
-        ]
-    )
-
-    resolved = {e["id"]: e for e in resolve(entries)}
-
-    assert resolved["samba_device-one_media"]["payload"]["host"] == DEVICE_HOST
-    assert (
-        resolved["gitea_device-one"]["payload"]["url"] == f"http://{DEVICE_HOST}:3000/"
-    )
-
-
-def test_a_device_entry_is_rehosted_at_the_devices_address_in_the_scope():
-    entries = collect(
-        device_modules=[
-            hosting(
-                samba={"is_healthy": True, "share_names": ["media"]},
-                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
-                podman={"containers": [container("web", ports=[8080])]},
-            ),
-            hosting(
-                device_id="device-two",
-                host="192.168.100.8",
-                samba={"is_healthy": True, "share_names": ["backup"]},
-            ),
-        ],
-        device_shares=[share(host=DEVICE_HOST)],
-    )
-
-    resolved = {
-        e["id"]: e
-        for e in resolve(entries, device_hosts={DEVICE: "100.64.9.2"}, hub_host="")
+    assert entries[0]["type"] == "ssh"
+    assert entries[0]["payload"] == {
+        "host": HOST,
+        "port": 22001,
+        "account": "bob",
+        "host_key_fingerprint": "SHA256:abc",
     }
-
-    assert resolved["samba_device-one_media"]["payload"]["host"] == "100.64.9.2"
-    assert resolved["podman_device-one_web_8080"]["payload"]["host"] == "100.64.9.2"
-    assert resolved["gitea_device-one"]["payload"]["url"] == "http://100.64.9.2:3000/"
-    assert resolved["rdp_s1"]["payload"]["host"] == "100.64.9.2"
-    # A device the scope names no address for keeps its composed host.
-    assert resolved["samba_device-two_backup"]["payload"]["host"] == "192.168.100.8"
+    assert entries[0]["title"] == "SSH (bob)"
+    assert entries[1]["is_healthy"] is False
+    assert entries[0]["description_code"] == "ssh_server_module"
 
 
-def test_the_hub_boxs_own_agent_resolves_to_the_hubs_scope_address():
-    """Its address in the scope is one of the hub's own, so the hub rule wins."""
-    entries = collect(
+def test_a_containers_ports_are_an_app_of_its_own_declared_or_manual():
+    entries = by_id(
+        collector(
+            device_modules=[
+                {
+                    "device_id": DEVICE,
+                    "host": HOST,
+                    "podman": {
+                        "containers": [
+                            {
+                                "name": "kuma",
+                                "image": "louislam/uptime-kuma",
+                                "is_running": True,
+                                "source": "declared",
+                                "bindings": [(3001, "tcp", "http"), (5353, "udp", "")],
+                            },
+                            {
+                                "name": "mine",
+                                "image": "x",
+                                "is_running": False,
+                                "source": "manual",
+                                "bindings": [(25565, "tcp", "")],
+                            },
+                        ]
+                    },
+                }
+            ]
+        ).render()
+    )
+
+    assert set(entries) == {
+        f"podman_{DEVICE}_kuma_3001",
+        f"podman_{DEVICE}_kuma_5353_udp",
+        f"podman_{DEVICE}_mine_25565",
+    }
+    assert entries[f"podman_{DEVICE}_kuma_3001"]["type"] == "web"
+    assert entries[f"podman_{DEVICE}_kuma_3001"]["source"] == "declared"
+    assert entries[f"podman_{DEVICE}_kuma_5353_udp"]["payload"]["protocol"] == "udp"
+    assert entries[f"podman_{DEVICE}_mine_25565"]["source"] == "manual"
+    assert entries[f"podman_{DEVICE}_mine_25565"]["is_healthy"] is False
+
+
+def test_hermes_webui_is_one_app_with_its_page_alone():
+    held = collector(
         device_modules=[
-            hosting(host=HUB, samba={"is_healthy": True, "share_names": ["media"]})
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "hermes_webui": {"port": 8787, "is_healthy": True},
+            }
         ]
     )
 
-    resolved = resolve(entries, device_hosts={DEVICE: HUB}, hub_host="100.64.0.1")
-
-    assert resolved[0]["payload"]["host"] == "100.64.0.1"
-
-
-def test_an_empty_hub_address_leaves_the_hubs_own_hosts_as_composed():
-    entries = collect(is_ai_served=True)
-
-    resolved = resolve(entries, hub_host="")
-
-    assert resolved[0]["payload"]["endpoint"] == f"http://{HUB}:8317"
+    (entry,) = held.render()
+    (app,) = held.apps()
+    assert entry["id"] == f"hermes_webui_{DEVICE}_web"
+    assert entry["payload"] == {
+        "url": f"http://{HOST}:8787/",
+        "is_token_required": True,
+    }
+    assert app["title"] == "Hermes WebUI"
+    assert app["local_name"] == "hermes-webui.argon-box.localhost"
 
 
-def test_resolution_leaves_a_foreign_host_alone():
-    entries = collect(
-        declared_services=[
-            declared("generic_tcp", id="p1"),
-            declared("http", id="w1", host="wiki.lan", scheme="http"),
+def test_a_declared_apps_entries_are_named_by_their_type_and_port():
+    app = DeclaredApp(
+        id="app1",
+        name="NAS",
+        host="192.168.100.50",
+        description="",
+        created_at="",
+        entries=[
+            DeclaredEntry(type="web", port=443, scheme="https", path="/ui"),
+            DeclaredEntry(type="port", port=53, protocol="udp"),
+            DeclaredEntry(type="file", port=445, share="Media Files"),
         ],
-        declared_healths={},
+    )
+    healths = {
+        "app1_web_443": DeclaredEntryHealth("app1_web_443", True, "t", None),
+        "app1_file_media-files": DeclaredEntryHealth(
+            "app1_file_media-files", False, "t", "share_missing"
+        ),
+    }
+    held = collector(declared_apps=[app], declared_healths=healths)
+
+    entries = by_id(held.render())
+    assert set(entries) == {"app1_web_443", "app1_port_53_udp", "app1_file_media-files"}
+    assert entries["app1_web_443"]["payload"] == {
+        "url": "https://192.168.100.50:443/ui"
+    }
+    assert entries["app1_web_443"]["is_healthy"] is True
+    assert entries["app1_port_53_udp"]["is_healthy"] is None
+    assert entries["app1_file_media-files"]["detail_code"] == "share_missing"
+    assert entries["app1_file_media-files"]["payload"]["share"] == "Media Files"
+    assert entries["app1_file_media-files"]["app_id"] == "app1"
+    assert entries["app1_web_443"]["description_code"] == "declared"
+    (declared,) = held.apps()
+    assert declared["source"] == "declared"
+    assert declared["local_name"] == "nas.machine.localhost"
+
+
+def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():
+    held = collector(
+        is_ai_served=True,
+        ai_models=["gpt"],
+        is_ai_healthy=True,
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "samba": {
+                    "is_healthy": True,
+                    "shares": [{"name": "ann", "user": "smb_ann"}],
+                },
+            }
+        ],
+        device_shares=[
+            DeviceShare(
+                share_id="s1",
+                device_id=DEVICE,
+                host=HOST,
+                hostname="argon",
+                port=21118,
+                platform_os="linux",
+                declared_at=0.0,
+            )
+        ],
     )
 
-    resolved = {e["id"]: e for e in resolve(entries)}
-
-    assert resolved["p1"]["payload"]["host"] == "10.0.0.5"
-    assert resolved["w1"]["payload"]["url"] == "http://wiki.lan:9000/"
-
-
-def test_the_catalog_copy_drops_the_panel_only_fields():
-    entries = collect(declared_services=[declared("generic_tcp")], declared_healths={})
-
-    stripped = catalog_entries(entries)
-
-    assert set(stripped[0]) == {
+    entries = by_id(held.render())
+    assert set(entries) == {"ai", f"samba_{DEVICE}_ann", "rdp_s1"}
+    assert all(entry["app_id"] == "" for entry in entries.values())
+    assert entries[f"samba_{DEVICE}_ann"]["payload"]["users"] == ["smb_ann"]
+    assert held.apps() == []
+    catalog = catalog_entries(list(entries.values()))
+    assert set(catalog[0]) == {
         "id",
         "type",
         "title",
@@ -458,333 +350,36 @@ def test_the_catalog_copy_drops_the_panel_only_fields():
         "description",
         "description_code",
         "description_params",
+        "app_id",
+        "name",
+        "local_port",
     }
 
 
-# --- the device source: a machine's own word that it is sharing ---
-
-
-def share(share_id="s1", host="192.168.100.5", hostname="workshop", port=21118):
-    return DeviceShare(
-        share_id=share_id,
-        device_id="device-one",
-        hostname=hostname,
-        host=host,
-        port=port,
-        declared_at=0.0,
-    )
-
-
-def test_a_declaring_machine_publishes_one_rdp_entry():
-    entries = collect(device_shares=[share()])
-
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry["type"] == "rdp"
-    assert entry["id"] == "rdp_s1"
-    assert entry["title"] == "workshop"
-    assert entry["payload"] == {
-        "protocol": "rustdesk",
-        "host": "192.168.100.5",
-        "port": 21118,
-        "attention": "",
-        "platform_os": "",
-    }
-
-
-def test_an_rdp_entry_names_the_sharing_machines_system():
-    """A client shows its Mac hint by this, since no Mac reports a grant."""
-    mac = share()
-    mac.platform_os = "darwin"
-
-    entry = collect(device_shares=[mac])[0]
-
-    assert entry["payload"]["platform_os"] == "darwin"
-
-
-def test_an_rdp_entry_says_it_came_from_a_device():
-    entry = collect(device_shares=[share()])[0]
-
-    assert entry["source"] == "device"
-    assert entry["description"] == "shared from workshop"
-
-
-def test_no_declaration_publishes_no_rdp_entry():
-    assert collect(device_shares=[]) == []
-    assert collect() == []
-
-
-def test_a_device_host_is_never_rewritten_to_the_hubs_own_address():
-    entries = collect(device_shares=[share(host="192.168.100.5")])
-
-    resolved = resolve(entries, hub_host="10.0.0.9")
-
-    assert resolved[0]["payload"]["host"] == "192.168.100.5"
-
-
-def test_the_catalog_carries_an_rdp_entry_whole():
-    entries = catalog_entries(collect(device_shares=[share()]))
-
-    assert entries[0]["source"] == "device"
-    assert entries[0]["type"] == "rdp"
-    assert "record_id" not in entries[0]
-
-
-def test_two_machines_sharing_publish_one_entry_each():
-    entries = collect(
-        device_shares=[
-            share(share_id="s1", hostname="workshop"),
-            share(share_id="s2", hostname="studio", host="192.168.100.6"),
-        ]
-    )
-
-    assert [entry["id"] for entry in entries] == ["rdp_s1", "rdp_s2"]
-
-
-# --- provenance: the English line, and the code a page words itself ---
-
-
-def test_every_composed_entry_names_where_it_came_from_in_a_code():
-    entries = collect(
-        device_modules=[
-            hosting(
-                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
-                samba={"is_healthy": True, "share_names": ["media"]},
-                podman={"containers": [container("web", ports=[8080])]},
-            )
-        ],
+def test_entries_are_resolved_per_scope_and_the_hubs_own_take_the_hubs_address():
+    entries = collector(
         is_ai_served=True,
-        device_shares=[share()],
-    )
-
-    coded = {entry["id"]: entry for entry in entries}
-    assert coded["gitea_device-one"]["description_code"] == "gitea_module"
-    assert coded["gitea_device-one"]["description_params"] == {"host": DEVICE_HOST}
-    assert coded["samba_device-one_media"]["description_code"] == "samba_module"
-    assert coded["samba_device-one_media"]["description_params"] == {
-        "host": DEVICE_HOST
-    }
-    port_id = "podman_device-one_web_8080"
-    assert coded[port_id]["description_code"] == "container"
-    assert coded[port_id]["description_params"] == {"image": "docker.io/nginx:1.25"}
-    assert coded["ai"]["description_code"] == "ai_gateway"
-    assert coded["ai"]["description_params"] == {}
-    assert coded["rdp_s1"]["description_code"] == "device_share"
-    assert coded["rdp_s1"]["description_params"] == {"device": "workshop"}
-
-
-def test_a_declaration_with_its_own_line_keeps_it_and_carries_no_code():
-    entry = collect(declared_services=[declared("generic_tcp")], declared_healths={})[0]
-
-    assert entry["description"] == "the forge box"
-    assert entry["description_code"] == ""
-
-
-def test_a_declaration_with_no_line_of_its_own_says_it_was_declared():
-    entry = collect(
-        declared_services=[declared("generic_tcp", description="")],
-        declared_healths={},
-    )[0]
-
-    assert entry["description"] == ""
-    assert entry["description_code"] == "declared"
-    assert entry["description_params"] == {}
-
-
-def test_the_catalog_carries_the_code_and_its_params():
-    entry = catalog_entries(collect(device_shares=[share()]))[0]
-
-    assert entry["description_code"] == "device_share"
-    assert entry["description_params"] == {"device": "workshop"}
-
-
-def test_each_vscode_instance_is_a_web_entry_opened_with_a_token():
-    entries = collect(
-        device_modules=[
-            hosting(
-                vscode={
-                    "instances": [
-                        {"account": "alice", "port": 8000, "is_healthy": True},
-                        {"account": "bob", "port": 8001, "is_healthy": True},
-                    ],
-                }
-            )
-        ]
-    )
-
-    assert [entry["id"] for entry in entries] == [
-        "vscode_device-one_alice",
-        "vscode_device-one_bob",
-    ]
-    entry = entries[0]
-    assert entry["type"] == "web"
-    assert entry["title"] == "VS Code (alice)"
-    assert entry["payload"] == {
-        "url": f"http://{DEVICE_HOST}:8000/",
-        "is_token_required": True,
-    }
-    assert entry["description_code"] == "vscode_module"
-    assert entry["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
-    assert entry["device_id"] == DEVICE
-    assert collect(device_modules=[hosting(vscode=None)]) == []
-
-
-def test_each_cloudcli_instance_is_a_web_entry_opened_with_a_token():
-    entries = collect(
+        ai_models=[],
         device_modules=[
             {
-                **hosting(),
-                "cloudcli": {
-                    "instances": [
-                        {"account": "alice", "port": 3001, "is_healthy": True},
-                        {"account": "bob", "port": 3002, "is_healthy": False},
-                    ]
-                },
+                "device_id": DEVICE,
+                "host": HOST,
+                "hermes_webui": {"port": 8787, "is_healthy": True},
             }
-        ]
+        ],
+    ).render()
+
+    resolved = by_id(
+        resolve_entries(
+            entries,
+            device_hosts={DEVICE: "100.64.0.7"},
+            hub_addresses={"192.168.100.1"},
+            hub_host="100.64.0.1",
+        )
     )
 
-    assert [entry["id"] for entry in entries] == [
-        "cloudcli_device-one_alice",
-        "cloudcli_device-one_bob",
-    ]
-    alice, bob = entries
-    assert alice["type"] == "web"
-    assert alice["title"] == "CloudCLI (alice)"
-    assert alice["payload"] == {
-        "url": f"http://{DEVICE_HOST}:3001/",
-        "is_token_required": True,
-    }
-    assert (alice["is_healthy"], bob["is_healthy"]) == (True, False)
-    assert alice["description_code"] == "cloudcli_module"
-    assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
-    assert alice["device_id"] == DEVICE
-
-
-def test_each_codeg_instance_is_a_web_entry_opened_with_a_token():
-    entries = collect(
-        device_modules=[
-            {
-                **hosting(),
-                "codeg": {
-                    "instances": [
-                        {"account": "alice", "port": 3101, "is_healthy": True}
-                    ]
-                },
-            }
-        ]
+    assert resolved[f"hermes_webui_{DEVICE}_web"]["payload"]["url"] == (
+        "http://100.64.0.7:8787/"
     )
-
-    (alice,) = entries
-    assert alice["id"] == "codeg_device-one_alice"
-    assert alice["type"] == "web"
-    assert alice["title"] == "Codeg (alice)"
-    assert alice["payload"] == {
-        "url": f"http://{DEVICE_HOST}:3101/",
-        "is_token_required": True,
-    }
-    assert alice["is_healthy"] is True
-    assert alice["description_code"] == "codeg_module"
-    assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
-    assert alice["device_id"] == DEVICE
-
-
-def test_each_code_server_instance_is_a_web_entry_opened_with_a_token():
-    entries = collect(
-        device_modules=[
-            {
-                **hosting(),
-                "code_server": {
-                    "instances": [
-                        {"account": "alice", "port": 8443, "is_healthy": True}
-                    ]
-                },
-            }
-        ]
-    )
-
-    (alice,) = entries
-    assert alice["id"] == "code_server_device-one_alice"
-    assert alice["type"] == "web"
-    assert alice["title"] == "code-server (alice)"
-    assert alice["payload"] == {
-        "url": f"http://{DEVICE_HOST}:8443/",
-        "is_token_required": True,
-    }
-    assert alice["is_healthy"] is True
-    assert alice["description_code"] == "code_server_module"
-    assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
-    assert alice["device_id"] == DEVICE
-
-
-def test_a_containers_udp_port_is_its_own_entry_with_the_udp_id():
-    stopped = {**container("dns", ports=[], is_running=False)}
-    stopped["bindings"] = [(53, "tcp", ""), (53, "udp", "")]
-    entries = collect(device_modules=[hosting(podman={"containers": [stopped]})])
-
-    by_id = {entry["id"]: entry for entry in entries}
-    assert by_id["podman_device-one_dns_53"]["payload"]["protocol"] == "tcp"
-    assert by_id["podman_device-one_dns_53_udp"]["payload"] == {
-        "host": DEVICE_HOST,
-        "port": 53,
-        "protocol": "udp",
-    }
-    assert by_id["podman_device-one_dns_53_udp"]["is_healthy"] is False
-
-
-def test_a_declared_udp_record_is_a_udp_port_entry_with_empty_health():
-    entries = collect(declared_services=[declared("generic_udp", port=53)])
-
-    (entry,) = entries
-    assert entry["type"] == "port"
-    assert entry["payload"] == {"host": "10.0.0.5", "port": 53, "protocol": "udp"}
-    assert entry["is_healthy"] is None
-
-
-def test_a_containers_web_binding_is_a_web_entry_and_no_port_entry():
-    web = {**container("app", ports=[]), "bindings": [(8443, "tcp", "https")]}
-    web["bindings"].append((53, "udp", ""))
-
-    entries = collect(device_modules=[hosting(podman={"containers": [web]})])
-
-    assert [(entry["id"], entry["type"]) for entry in entries] == [
-        ("podman_device-one_app_8443", "web"),
-        ("podman_device-one_app_53_udp", "port"),
-    ]
-    assert entries[0]["payload"] == {"url": f"https://{DEVICE_HOST}:8443/"}
-    assert entries[0]["title"] == "app"
-    assert entries[0]["device_id"] == DEVICE
-
-
-def test_a_containers_web_entry_on_an_ipv6_host_has_the_address_in_brackets():
-    web = {**container("app", ports=[]), "bindings": [(8080, "tcp", "http")]}
-
-    (entry,) = collect(
-        device_modules=[hosting(host="fd00::7", podman={"containers": [web]})]
-    )
-
-    assert entry["payload"] == {"url": "http://[fd00::7]:8080/"}
-
-
-def test_hermes_webui_is_one_web_entry_per_device_opened_with_a_token():
-    entries = collect(
-        device_modules=[
-            {**hosting(), "hermes_webui": {"port": 8787, "is_healthy": True}}
-        ]
-    )
-
-    (page,) = entries
-    assert page["id"] == "hermes_webui_device-one"
-    assert page["type"] == "web"
-    assert page["title"] == "Hermes WebUI"
-    assert page["payload"] == {
-        "url": f"http://{DEVICE_HOST}:8787/",
-        "is_token_required": True,
-    }
-    assert page["is_healthy"] is True
-    assert page["description"] == (
-        f"published by the hermes_webui module on {DEVICE_HOST}"
-    )
-    assert page["description_code"] == "hermes_webui_module"
-    assert page["description_params"] == {"host": DEVICE_HOST}
-    assert page["device_id"] == DEVICE
+    assert resolved["ai"]["payload"]["endpoint"] == "http://100.64.0.1:8317"
+    assert by_id(entries)["ai"]["payload"]["endpoint"] == "http://192.168.100.1:8317"

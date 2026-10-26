@@ -1,455 +1,225 @@
-"""The Services API: the typed list, declarations, and coded errors.
+"""The Services API: the apps, the entries of no app, declarations and codes.
 
-The published-list cache is real here, over a fresh config dir and stubbed
-unit states, so what is exercised is the whole read path — declaration to
-entry, probe health folded in, every host resolved for the scope the asking
-browser's address falls in — and the contract that no English sentence ever
-crosses.
+What these pin: ``GET /api/hub/service`` answers ``apps``, a module's first,
+then the declared, then the manual, each by title, with each entry's
+``local_port`` and ``detail_code``, and ``services``, the entries of no
+app; declaring an app with its entries answers the list with it, a bad
+field ``declared_service_invalid {field}``; removing and probing name the
+app by ``app_id``, an unknown one ``declared_service_unknown``.
 """
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-from neutrino_hub.modules.services.ops import SambaShareListing
-from neutrino_hub.modules.services.config import DeclaredServiceRegistry
+from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.host_scope import HostScope
-from neutrino_hub.modules.services.probe import DeclaredServiceHealth
-from neutrino_hub.modules.services.published import PublishedServiceCache
-from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import service as services
 
-
-class RecordingProbe:
-    """Answers from a dictionary and remembers what was probed."""
-
-    def __init__(self):
-        self.health: dict[str, DeclaredServiceHealth] = {}
-        self.probed: list[str] = []
-
-    def results(self, records):
-        return [
-            self.health.get(r.id, DeclaredServiceHealth(r.id, None, None, None))
-            for r in records
-        ]
-
-    def probe(self, record):
-        fresh = DeclaredServiceHealth(
-            record.id, True, "2026-01-01T00:00:00+00:00", None
-        )
-        self.health[record.id] = fresh
-        self.probed.append(record.id)
-        return fresh
-
-
-class StubServedModels:
-    def served(self, *, port, client_key):
-        return True, []
-
-
-class StubUnits:
-    def __init__(self, active: dict[str, bool] | None = None):
-        self.active = active or {}
-
-    def status(self, name):
-        is_active = self.active.get(name, False)
-        return ServiceStatus(
-            name=name,
-            unit=f"{name}.service",
-            is_installed=name in self.active,
-            is_active=is_active,
-            is_enabled=is_active,
-        )
-
-
-DEVICE = "device-one"
+DEVICE = "d1"
 LAN = HostScope(
     id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
 )
-OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1")
 
 
-class StubSessions:
+class StubPublished:
     def __init__(self):
-        self.report_by_key: dict = {}
+        self.expired = 0
+        self.held_apps = [
+            {
+                "id": "zzz",
+                "title": "Zed",
+                "source": "manual",
+                "device_id": DEVICE,
+                "device_name": "argon",
+                "local_name": "zed.argon.localhost",
+                "description": "",
+            },
+            {
+                "id": "gitea_d1",
+                "title": "Gitea",
+                "source": "module",
+                "device_id": DEVICE,
+                "device_name": "argon",
+                "local_name": "gitea.argon.localhost",
+                "description": "",
+            },
+        ]
+        self.held_entries = [
+            {
+                "id": "gitea_d1_web",
+                "type": "web",
+                "title": "Gitea",
+                "payload": {"url": "http://192.168.100.7:3000/"},
+                "is_healthy": True,
+                "source": "module",
+                "description": "d",
+                "description_code": "gitea_module",
+                "description_params": {},
+                "detail_code": None,
+                "device_id": DEVICE,
+                "app_id": "gitea_d1",
+                "name": "web",
+                "local_port": 25000,
+            },
+            {
+                "id": "zzz_25565",
+                "type": "port",
+                "title": "Zed",
+                "payload": {"host": "192.168.100.7", "port": 25565, "protocol": "tcp"},
+                "is_healthy": False,
+                "source": "manual",
+                "description": "",
+                "description_code": "container",
+                "description_params": {},
+                "detail_code": None,
+                "device_id": DEVICE,
+                "app_id": "zzz",
+                "name": "25565",
+                "local_port": 25001,
+            },
+            {
+                "id": "ai",
+                "type": "ai",
+                "title": "AI",
+                "payload": {
+                    "endpoint": "http://192.168.100.1:8317",
+                    "protocol": "openai",
+                    "models": [],
+                },
+                "is_healthy": True,
+                "source": "module",
+                "description": "",
+                "description_code": "ai_gateway",
+                "description_params": {},
+                "detail_code": None,
+                "device_id": "",
+                "app_id": "",
+                "name": "",
+                "local_port": 0,
+            },
+        ]
 
-    def reports(self):
-        return dict(self.report_by_key)
+    def entries_for(self, scope):
+        return list(self.held_entries)
+
+    def apps(self):
+        return list(self.held_apps)
+
+    def expire(self):
+        self.expired += 1
 
 
-class FakeRuntime:
-    def __init__(self, units: StubUnits):
-        self.declared_probe = RecordingProbe()
-        self.agent_sessions = StubSessions()
-        self.device_address = {DEVICE: "192.168.100.7"}
-        self.device_interfaces = {
-            DEVICE: [
-                {"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]},
-                {"name": "enp1s0", "mac": "", "addresses": ["192.168.100.7"]},
-            ]
-        }
-        self.published_services = PublishedServiceCache(
-            declared_probe=self.declared_probe,
-            served_models=StubServedModels(),
-            units=units,
-            agent_sessions=self.agent_sessions,
-            device_addresses=self.device_address,
-            device_interfaces=self.device_interfaces,
-            desired_states=DesiredStateStore(),
-        )
+class Probe:
+    def __init__(self):
+        self.probed: list = []
+
+    def probe(self, app):
+        self.probed.append(app.id)
+        return []
+
+
+class Runtime:
+    def __init__(self):
+        self.published_services = StubPublished()
+        self.declared_probe = Probe()
 
     def host_scopes(self):
-        return [LAN, OVERLAY]
+        return [LAN]
+
+    def device_names(self):
+        return {DEVICE: "argon"}
 
 
 @pytest.fixture
-def box(monkeypatch, tmp_path):
+def api(tmp_path, monkeypatch):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    state = tmp_path / "state"
-    state.mkdir()
-    monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state)
     app = FastAPI()
     app.include_router(services.router)
     app.dependency_overrides[require_session] = lambda: None
-    runtime = FakeRuntime(StubUnits())
+    runtime = Runtime()
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime
 
 
-def declare(client, **fields) -> list[dict]:
-    body = {
-        "name": "forge",
-        "kind": "port",
-        "host": "10.0.0.5",
-        "port": 9000,
-        "description": "the forge box",
-    }
-    response = client.post("/api/hub/service/declaration/add", json={**body, **fields})
-    assert response.status_code == 200, response.text
-    return response.json()["services"]
-
-
-def test_each_form_kind_lands_as_its_own_type(box):
-    client, _ = box
-
-    declare(client, name="wiki", kind="web", port=8080, scheme="https")
-    declare(
-        client,
-        name="nas",
-        kind="file",
-        host="192.168.100.7",
-        port=None,
-        shares=["media"],
-    )
-    entries = declare(client)
-
-    by_type = {entry["type"]: entry for entry in entries}
-    assert by_type["web"]["payload"]["url"] == "https://10.0.0.5:8080/"
-    assert by_type["port"]["payload"] == {
-        "host": "10.0.0.5",
-        "port": 9000,
-        "protocol": "tcp",
-    }
-    assert by_type["file"]["payload"] == {
-        "protocol": "smb",
-        "host": "192.168.100.7",
-        "share": "media",
-        "users": [],
-    }
-    assert all(entry["source"] == "declared" for entry in entries)
-    assert by_type["port"]["description"] == "the forge box"
-    # Stored, probed and republished under a record id the rows can act on.
-    assert all(entry["record_id"] for entry in entries)
-
-
-def test_the_list_folds_the_probe_health_in(box):
-    client, runtime = box
-    entries = declare(client)
-    record_id = entries[0]["record_id"]
-    runtime.declared_probe.health[record_id] = DeclaredServiceHealth(
-        record_id, False, "2026-01-01T00:00:00+00:00", "connect_failed"
-    )
-    runtime.published_services.expire()
-
-    payload = client.get("/api/hub/service").json()
-
-    assert payload["services"][0]["is_healthy"] is False
-
-
-def test_a_device_hosted_share_is_a_read_only_row_at_the_devices_address(box):
-    client, runtime = box
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.write(
-        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
-    )
-    runtime.agent_sessions.report_by_key[DEVICE] = {
-        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
-    }
-
-    payload = client.get("/api/hub/service").json()
-
-    entry = payload["services"][0]
-    assert entry["id"] == "samba_device-one_media"
-    assert entry["source"] == "module"
-    assert entry["record_id"] is None
-    assert entry["is_healthy"] is True
-    assert entry["payload"]["host"] == "192.168.100.7"
-
-
-def test_a_row_carries_the_code_its_provenance_is_worded_from(box):
-    client, runtime = box
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.write(
-        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
-    )
-    runtime.agent_sessions.report_by_key[DEVICE] = {
-        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
-    }
-    declare(client, description="")
-
-    payload = client.get("/api/hub/service").json()
-
-    coded = {entry["source"]: entry for entry in payload["services"]}
-    assert coded["module"]["description_code"] == "samba_module"
-    assert coded["module"]["description_params"] == {"host": "192.168.100.7"}
-    assert coded["declared"]["description_code"] == "declared"
-    assert coded["declared"]["description_params"] == {}
-
-
-def test_a_declaration_with_its_own_line_carries_no_code(box):
-    client, _ = box
-
-    entry = declare(client)[0]
-
-    assert entry["description"] == "the forge box"
-    assert entry["description_code"] == ""
-
-
-def test_a_hub_self_host_is_shown_as_the_panel_host(box):
-    """The TestClient's peer, "testclient", is on no served network: the
-    scope is the link, whose hub address is the panel host reached."""
-    client, _ = box
-    declare(client, host="127.0.0.1")
-
-    payload = client.get("/api/hub/service").json()
-
-    assert payload["services"][0]["payload"]["host"] == "testserver"
-
-
-def hosting_a_share(runtime) -> None:
-    store = DesiredStateStore()
-    store.set_want(DEVICE, "samba", "running")
-    store.write(
-        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
-    )
-    runtime.agent_sessions.report_by_key[DEVICE] = {
-        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
-    }
-
-
-def test_a_browser_on_the_overlay_sees_the_devices_overlay_address(box):
-    client, runtime = box
-    hosting_a_share(runtime)
-    declare(client, host="127.0.0.1")
-    app = client.app
-
-    on_overlay = TestClient(app, client=("100.64.3.7", 50000))
-    payload = on_overlay.get("/api/hub/service").json()
-
-    by_source = {entry["source"]: entry for entry in payload["services"]}
-    assert by_source["module"]["payload"]["host"] == "100.64.9.2"
-    assert by_source["declared"]["payload"]["host"] == "100.64.0.1"
-
-
-def test_a_browser_on_the_served_lan_sees_the_lan_addresses(box):
-    client, runtime = box
-    hosting_a_share(runtime)
-    declare(client, host="127.0.0.1")
-
-    on_lan = TestClient(client.app, client=("192.168.100.9", 50000))
-    payload = on_lan.get("/api/hub/service").json()
-
-    by_source = {entry["source"]: entry for entry in payload["services"]}
-    assert by_source["module"]["payload"]["host"] == "192.168.100.7"
-    assert by_source["declared"]["payload"]["host"] == "192.168.100.1"
-
-
-def test_delete_removes_every_entry_of_the_record(box):
-    client, _ = box
-    entries = declare(client, name="nas", kind="file", port=None, shares=["media"])
-    record_id = entries[0]["record_id"]
-
-    removed = client.post(
-        "/api/hub/service/declaration/remove", json={"service_id": record_id}
-    )
-
-    assert removed.status_code == 200
-    assert removed.json()["services"] == []
-    second = client.post(
-        "/api/hub/service/declaration/remove", json={"service_id": record_id}
-    )
-    assert second.status_code == 404
-    assert second.json()["detail"] == {"code": "declared_service_unknown", "params": {}}
-
-
-def test_probe_now_answers_the_refreshed_list(box):
-    client, runtime = box
-    record_id = declare(client)[0]["record_id"]
-
-    response = client.post(
-        "/api/hub/service/declaration/probe", json={"service_id": record_id}
-    )
-
-    assert response.status_code == 200
-    assert runtime.declared_probe.probed == [record_id]
-    assert response.json()["services"][0]["is_healthy"] is True
-
-    missing = client.post(
-        "/api/hub/service/declaration/probe", json={"service_id": "missing"}
-    )
-    assert missing.status_code == 404
-    assert missing.json()["detail"] == {
-        "code": "declared_service_unknown",
-        "params": {},
-    }
-
-
-@pytest.mark.parametrize(
-    "fields, refused",
-    [
-        ({"kind": "docker_engine"}, "kind"),
-        ({"kind": "ai"}, "kind"),
-        ({"name": ""}, "name"),
-        ({"host": " "}, "host"),
-        ({"port": None}, "port"),
-        ({"port": 70000}, "port"),
-        ({"kind": "file", "port": None, "shares": []}, "shares"),
-    ],
-)
-def test_a_refused_field_is_named_in_the_error(box, fields, refused):
-    client, _ = box
-    body = {"name": "a", "kind": "port", "host": "h", "port": 1, **fields}
-
-    response = client.post("/api/hub/service/declaration/add", json=body)
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "declared_service_invalid",
-        "params": {"field": refused},
-    }
-
-
-def answer(monkeypatch, listing: SambaShareListing) -> None:
-    """Make every scan answer with one listing."""
-    monkeypatch.setattr(services, "list_shares", lambda host, **options: listing)
-
-
-def test_a_scan_lists_what_the_server_exports(box, monkeypatch):
-    client, _ = box
-    answer(monkeypatch, SambaShareListing(names=["media", "backup"]))
-
-    response = client.get("/api/hub/service/share", params={"host": "192.168.100.7"})
-
-    assert response.status_code == 200
-    assert response.json() == {"shares": ["media", "backup"]}
-
-
-@pytest.mark.parametrize("reason", ["connect_failed", "tool_missing", "list_refused"])
-def test_a_scan_that_lists_nothing_says_which_reason(box, monkeypatch, reason):
-    """A server that did not answer, a hub without the client and a server
-    that refuses anonymous listing all differ — the page words each."""
-    client, _ = box
-    answer(monkeypatch, SambaShareListing(error_code=reason))
-
-    response = client.get("/api/hub/service/share", params={"host": "10.0.0.9"})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "share_scan_failed",
-        "params": {"reason": reason},
-    }
-
-
-def test_a_scan_without_a_host_is_refused_on_the_host_field(box):
-    client, _ = box
-
-    response = client.get("/api/hub/service/share", params={"host": " "})
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "declared_service_invalid",
-        "params": {"field": "host"},
-    }
-
-
-def test_a_file_declaration_publishes_one_row_per_share(box):
-    """Taking every export a scan found declares them in one record."""
-    client, _ = box
-
-    entries = declare(
-        client,
-        name="nas",
-        kind="file",
-        host="192.168.100.7",
-        port=None,
-        shares=["media", "backup"],
-    )
-
-    assert [entry["payload"]["share"] for entry in entries] == ["media", "backup"]
-    assert len({entry["record_id"] for entry in entries}) == 1
-
-
-def test_the_list_carries_what_the_probe_measured(box):
-    """The page words the code; the API never sends a sentence."""
-    client, runtime = box
-    record_id = declare(client)[0]["record_id"]
-    runtime.declared_probe.health[record_id] = DeclaredServiceHealth(
-        record_id, False, "2026-01-01T00:00:00+00:00", "share_missing"
-    )
-    runtime.published_services.expire()
-
-    payload = client.get("/api/hub/service").json()
-
-    assert payload["services"][0]["detail_code"] == "share_missing"
-
-
-def test_a_port_declared_on_udp_is_stored_as_udp_and_listed_so(box):
-    client, _ = box
-
-    entries = declare(client, name="dns", port=53, protocol="udp")
-    tcp_entries = declare(client, name="ssh", port=22)
-
-    by_name = {entry["title"]: entry for entry in tcp_entries}
-    assert by_name["dns"]["payload"]["protocol"] == "udp"
-    assert by_name["ssh"]["payload"]["protocol"] == "tcp"
-    assert [entry["title"] for entry in entries] == ["dns"]
-    kinds = {
-        record.name: record.kind for record in DeclaredServiceRegistry().list_records()
-    }
-    assert kinds == {"dns": "generic_udp", "ssh": "generic_tcp"}
-
-
-def test_a_port_on_a_protocol_that_is_neither_is_refused(box):
-    client, _ = box
-
-    response = client.post(
+def test_the_list_is_the_apps_in_order_and_the_entries_of_no_app(api):
+    client, _ = api
+
+    body = client.get("/api/hub/service").json()
+
+    assert [app["id"] for app in body["apps"]] == ["gitea_d1", "zzz"]
+    assert body["apps"][0]["entries"] == [
+        {
+            "id": "gitea_d1_web",
+            "name": "web",
+            "type": "web",
+            "payload": {"url": "http://192.168.100.7:3000/"},
+            "is_healthy": True,
+            "local_port": 25000,
+            "detail_code": None,
+        }
+    ]
+    assert body["apps"][0]["local_name"] == "gitea.argon.localhost"
+    assert [entry["id"] for entry in body["services"]] == ["ai"]
+    assert body["services"][0]["app_id"] == ""
+
+
+def test_declaring_an_app_stores_it_and_answers_the_list(api):
+    client, runtime = api
+
+    answer = client.post(
         "/api/hub/service/declaration/add",
         json={
-            "name": "x",
-            "kind": "port",
-            "host": "10.0.0.5",
-            "port": 1,
-            "protocol": "sctp",
+            "name": "NAS",
+            "host": "192.168.100.50",
+            "description": "",
+            "entries": [
+                {"type": "web", "port": 443, "scheme": "https"},
+                {"type": "file", "share": "media"},
+            ],
         },
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
+    assert answer.status_code == 200, answer.text
+    (app,) = DeclaredAppRegistry().list_apps()
+    assert [entry.name for entry in app.entries] == ["web_443", "file_media"]
+    assert runtime.published_services.expired == 1
+
+
+def test_a_bad_declaration_is_refused_by_field(api):
+    client, _ = api
+
+    answer = client.post(
+        "/api/hub/service/declaration/add",
+        json={"name": "x", "host": "h", "entries": [{"type": "web"}]},
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
         "code": "declared_service_invalid",
-        "params": {"field": "protocol"},
+        "params": {"field": "entries.0.port"},
     }
+
+
+def test_removing_and_probing_name_the_app(api):
+    client, runtime = api
+    app = DeclaredAppRegistry().add(
+        name="NAS", host="h", entries=[{"type": "port", "port": 22}], description=""
+    )
+
+    probed = client.post("/api/hub/service/declaration/probe", json={"app_id": app.id})
+    removed = client.post(
+        "/api/hub/service/declaration/remove", json={"app_id": app.id}
+    )
+    unknown = client.post(
+        "/api/hub/service/declaration/remove", json={"app_id": app.id}
+    )
+
+    assert probed.status_code == 200
+    assert runtime.declared_probe.probed == [app.id]
+    assert removed.status_code == 200
+    assert DeclaredAppRegistry().list_apps() == []
+    assert unknown.status_code == 404
+    assert unknown.json()["detail"]["code"] == "declared_service_unknown"

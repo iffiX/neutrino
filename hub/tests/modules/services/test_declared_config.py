@@ -1,201 +1,179 @@
-"""The declared-service store: what it keeps, and what it refuses.
+"""The declared apps' store: what it keeps, what it refuses, and the 0.5 records.
 
-The file is the only record of what somebody declared, so every kind must
-round-trip through it unchanged — and a record that would not validate must
-never reach it, because the panel renders whatever is there.
+What these pin: an app is ``{id, name, host, description, created_at,
+entries}`` under ``apps``; a 0.5 record of the kind ``http``, ``generic_tcp``
+or ``generic_udp`` reads as an app of one entry with the record's id, a
+``samba`` record as an app with one ``file`` entry per share, and each is
+written into ``apps`` at the next write; a declaration is refused
+``declared_service_invalid {field}`` naming ``name``, ``host``, ``entries``
+(no entry, or two entries of one name) or ``entries.<n>.<field>``; and a ``file`` entry left without a port gets
+445.
 """
 
 import json
 
 import pytest
 
-import neutrino_hub.utils.json_file
 from neutrino_hub.exceptions import ServiceFieldInvalidError
-from neutrino_hub.modules.services.config import (
-    DeclaredServiceRegistry,
-    DeclaredShare,
-)
+from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import SERVICES_DECLARED_PATH
 from neutrino_hub.utils.json_file import write_config
 
 
-@pytest.fixture()
+@pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     return tmp_path
 
 
-def _stored(config_dir) -> dict:
-    text = (config_dir / SERVICES_DECLARED_PATH).read_text(encoding="utf-8")
-    return json.loads(text)
+def stored(config_dir) -> dict:
+    return json.loads((config_dir / SERVICES_DECLARED_PATH).read_text())
 
 
-def test_a_missing_file_reads_as_no_services(config_dir):
-    assert DeclaredServiceRegistry().list_records() == []
+def test_an_app_is_stored_with_its_entries_and_read_back(config_dir):
+    registry = DeclaredAppRegistry()
 
-
-def test_samba_round_trips_with_its_shares_and_default_port(config_dir):
-    record = DeclaredServiceRegistry().add(
-        name="nas",
-        kind="samba",
-        host="192.168.100.7",
-        shares=[DeclaredShare(name="media"), DeclaredShare(name="backup")],
-        description="the office NAS",
+    app = registry.add(
+        name="NAS",
+        host="192.168.100.50",
+        entries=[
+            {"type": "web", "port": 443, "scheme": "https", "path": "/"},
+            {"type": "port", "port": 53, "protocol": "udp"},
+            {"type": "file", "share": "media"},
+        ],
+        description="the NAS",
     )
-    assert record.port == 445
 
-    stored = DeclaredServiceRegistry().get(record.id)
-    assert stored is not None
-    assert stored.kind == "samba"
-    assert [share.name for share in stored.shares] == ["media", "backup"]
-    assert stored.description == "the office NAS"
-
-
-def test_http_round_trips_with_scheme_and_path(config_dir):
-    record = DeclaredServiceRegistry().add(
-        name="wiki", kind="http", host="wiki.lan", port=8080, scheme="https", path="/w"
-    )
-    stored = DeclaredServiceRegistry().get(record.id)
-    assert stored is not None
-    assert (stored.scheme, stored.path, stored.port) == ("https", "/w", 8080)
-
-
-def test_http_defaults_to_plain_scheme_and_the_root_path(config_dir):
-    record = DeclaredServiceRegistry().add(
-        name="wiki", kind="http", host="wiki.lan", port=8080
-    )
-    assert (record.scheme, record.path) == ("http", "/")
+    assert app.name == "NAS" and app.description == "the NAS"
+    assert [(entry.type, entry.port, entry.name) for entry in app.entries] == [
+        ("web", 443, "web_443"),
+        ("port", 53, "port_53_udp"),
+        ("file", 445, "file_media"),
+    ]
+    assert [held.id for held in DeclaredAppRegistry().list_apps()] == [app.id]
+    assert DeclaredAppRegistry().get(app.id).host == "192.168.100.50"
+    assert set(stored(config_dir)["apps"][0]) == {
+        "id",
+        "name",
+        "host",
+        "description",
+        "created_at",
+        "entries",
+    }
 
 
-def test_the_plain_tcp_kind_round_trips(config_dir):
-    record = DeclaredServiceRegistry().add(
-        name="forge", kind="generic_tcp", host="10.0.0.5", port=9000
-    )
-    stored = DeclaredServiceRegistry().get(record.id)
-    assert stored is not None
-    assert (stored.kind, stored.host, stored.port) == ("generic_tcp", "10.0.0.5", 9000)
-
-
-def test_a_stored_docker_engine_record_is_dropped_on_read(config_dir):
-    """The retired kind: the loader drops it structurally, and the next write
-    heals the file."""
+def test_a_0_5_record_reads_as_an_app_of_one_entry_and_is_rewritten(config_dir):
     write_config(
         SERVICES_DECLARED_PATH,
         {
             "services": [
-                {"id": "d1", "kind": "docker_engine", "host": "10.0.0.5", "port": 2375},
                 {
-                    "id": "t1",
-                    "name": "forge",
-                    "kind": "generic_tcp",
-                    "host": "h",
-                    "port": 1,
+                    "id": "rec1",
+                    "name": "Printer",
+                    "kind": "http",
+                    "host": "192.168.100.9",
+                    "port": 80,
+                    "scheme": "http",
+                    "path": "/",
+                    "description": "",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+                {
+                    "id": "rec2",
+                    "name": "Game",
+                    "kind": "generic_udp",
+                    "host": "192.168.100.9",
+                    "port": 27015,
+                },
+                {
+                    "id": "rec3",
+                    "name": "NAS",
+                    "kind": "samba",
+                    "host": "192.168.100.50",
+                    "port": 445,
+                    "shares": [{"name": "media"}, {"name": "photos"}],
                 },
             ]
         },
     )
 
-    registry = DeclaredServiceRegistry()
-    assert [record.id for record in registry.list_records()] == ["t1"]
+    apps = {app.id: app for app in DeclaredAppRegistry().list_apps()}
 
-    registry.add(name="wiki", kind="http", host="wiki.lan", port=80)
-    kinds = {entry["kind"] for entry in _stored(config_dir)["services"]}
-    assert "docker_engine" not in kinds
-
-
-def test_the_stored_entry_carries_only_the_fields_its_kind_has(config_dir):
-    registry = DeclaredServiceRegistry()
-    registry.add(name="forge", kind="generic_tcp", host="10.0.0.5", port=9000)
-    registry.add(name="wiki", kind="http", host="wiki.lan", port=80)
-
-    entries = {entry["kind"]: entry for entry in _stored(config_dir)["services"]}
-    assert "shares" not in entries["generic_tcp"]
-    assert "scheme" not in entries["generic_tcp"]
-    assert "shares" not in entries["http"]
-    assert entries["http"]["scheme"] == "http"
-
-
-def test_every_id_is_a_fresh_uuid_hex(config_dir):
-    registry = DeclaredServiceRegistry()
-    first = registry.add(name="a", kind="generic_tcp", host="h", port=1)
-    second = registry.add(name="b", kind="generic_tcp", host="h", port=2)
-    assert first.id != second.id
-    assert len(first.id) == 32 and all(c in "0123456789abcdef" for c in first.id)
-
-
-def test_delete_removes_the_record(config_dir):
-    registry = DeclaredServiceRegistry()
-    record = registry.add(name="a", kind="generic_tcp", host="h", port=1)
-    registry.delete(record.id)
-    assert DeclaredServiceRegistry().list_records() == []
-
-
-def test_an_unknown_id_raises_key_error(config_dir):
-    with pytest.raises(KeyError):
-        DeclaredServiceRegistry().delete("missing")
+    assert set(apps) == {"rec1", "rec2", "rec3"}
+    assert [(entry.type, entry.name) for entry in apps["rec1"].entries] == [
+        ("web", "web_80")
+    ]
+    assert [(entry.type, entry.name) for entry in apps["rec2"].entries] == [
+        ("port", "port_27015_udp")
+    ]
+    assert [(entry.type, entry.share) for entry in apps["rec3"].entries] == [
+        ("file", "media"),
+        ("file", "photos"),
+    ]
+    DeclaredAppRegistry().delete("rec2")
+    written = stored(config_dir)
+    assert {app["id"] for app in written["apps"]} == {"rec1", "rec3"}
+    assert "services" not in written or written["services"] == []
 
 
 @pytest.mark.parametrize(
-    "fields, refused",
+    "fields, field",
     [
-        ({"kind": "docker_engine"}, "kind"),
-        ({"kind": "ai_endpoint"}, "kind"),
-        ({"name": "  "}, "name"),
-        ({"host": ""}, "host"),
-        ({"port": None}, "port"),
-        ({"port": 0}, "port"),
-        ({"port": 65536}, "port"),
+        ({"name": " ", "host": "h", "entries": [{"type": "web", "port": 80}]}, "name"),
+        ({"name": "a", "host": "", "entries": [{"type": "web", "port": 80}]}, "host"),
+        ({"name": "a", "host": "h", "entries": []}, "entries"),
+        (
+            {"name": "a", "host": "h", "entries": [{"type": "rdp", "port": 1}]},
+            "entries.0.type",
+        ),
+        ({"name": "a", "host": "h", "entries": [{"type": "web"}]}, "entries.0.port"),
+        (
+            {
+                "name": "a",
+                "host": "h",
+                "entries": [{"type": "web", "port": 80, "scheme": "ftp"}],
+            },
+            "entries.0.scheme",
+        ),
+        (
+            {
+                "name": "a",
+                "host": "h",
+                "entries": [{"type": "port", "port": 1, "protocol": "x"}],
+            },
+            "entries.0.protocol",
+        ),
+        ({"name": "a", "host": "h", "entries": [{"type": "file"}]}, "entries.0.share"),
+        (
+            {
+                "name": "a",
+                "host": "h",
+                "entries": [{"type": "port", "port": 1}, {"type": "port", "port": 1}],
+            },
+            "entries",
+        ),
+        (
+            {
+                "name": "a",
+                "host": "h",
+                "entries": [
+                    {"type": "file", "share": "a b"},
+                    {"type": "file", "share": "A-B"},
+                ],
+            },
+            "entries",
+        ),
     ],
 )
-def test_a_bad_field_is_refused_by_name(config_dir, fields, refused):
-    record = {"name": "a", "kind": "generic_tcp", "host": "h", "port": 1, **fields}
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        DeclaredServiceRegistry().add(**record)
-    assert caught.value.code == "declared_service_invalid"
-    assert caught.value.params == {"field": refused}
+def test_a_declaration_is_refused_by_the_field_that_is_wrong(config_dir, fields, field):
+    with pytest.raises(ServiceFieldInvalidError) as refused:
+        DeclaredAppRegistry().add(description="", **fields)
 
-
-def test_a_bad_scheme_and_a_relative_path_are_refused(config_dir):
-    registry = DeclaredServiceRegistry()
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        registry.add(name="w", kind="http", host="h", port=80, scheme="gopher")
-    assert caught.value.params == {"field": "scheme"}
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        registry.add(name="w", kind="http", host="h", port=80, path="w")
-    assert caught.value.params == {"field": "path"}
-
-
-def test_a_blank_missing_or_duplicate_share_name_is_refused(config_dir):
-    registry = DeclaredServiceRegistry()
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        registry.add(
-            name="nas", kind="samba", host="h", shares=[DeclaredShare(name=" ")]
-        )
-    assert caught.value.params == {"field": "shares"}
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        registry.add(name="nas", kind="samba", host="h", shares=[])
-    assert caught.value.params == {"field": "shares"}
-    with pytest.raises(ServiceFieldInvalidError) as caught:
-        registry.add(
-            name="nas",
-            kind="samba",
-            host="h",
-            shares=[DeclaredShare(name="media"), DeclaredShare(name="media")],
-        )
-    assert caught.value.params == {"field": "shares"}
-
-
-def test_a_refused_record_writes_nothing(config_dir):
-    with pytest.raises(ServiceFieldInvalidError):
-        DeclaredServiceRegistry().add(name="a", kind="nope", host="h", port=1)
+    assert refused.value.code == "declared_service_invalid"
+    assert refused.value.params == {"field": field}
     assert not (config_dir / SERVICES_DECLARED_PATH).exists()
 
 
-def test_a_udp_port_round_trips_as_its_own_kind(config_dir):
-    record = DeclaredServiceRegistry().add(
-        name="dns", kind="generic_udp", host="10.0.0.5", port=53
-    )
-
-    stored = DeclaredServiceRegistry().get(record.id)
-    assert (stored.kind, stored.port) == ("generic_udp", 53)
-    assert _stored(config_dir)["services"][0]["kind"] == "generic_udp"
+def test_deleting_an_unknown_app_is_a_key_error(config_dir):
+    with pytest.raises(KeyError):
+        DeclaredAppRegistry().delete("nothing")

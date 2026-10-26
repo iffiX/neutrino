@@ -79,18 +79,29 @@ SERVICES_SMB_REFUSAL_MARKERS = (
     "NT_STATUS_LOGON_FAILURE",
 )
 
-# The typed service list: five types, closed until a sixth earns its place.
+# The typed service list: six types, closed; a seventh is a row in
+# protocol.md's table in the same change.
 SERVICES_TYPE_WEB = "web"
 SERVICES_TYPE_PORT = "port"
+SERVICES_TYPE_SSH = "ssh"
 SERVICES_TYPE_AI = "ai"
 SERVICES_TYPE_FILE = "file"
 SERVICES_TYPE_RDP = "rdp"
 SERVICES_TYPES = (
     SERVICES_TYPE_WEB,
     SERVICES_TYPE_PORT,
+    SERVICES_TYPE_SSH,
     SERVICES_TYPE_AI,
     SERVICES_TYPE_FILE,
     SERVICES_TYPE_RDP,
+)
+# The types whose entries belong to an app and carry a local port.
+SERVICES_APP_ENTRY_TYPES = (SERVICES_TYPE_WEB, SERVICES_TYPE_PORT, SERVICES_TYPE_SSH)
+# The types a declared app's entries take.
+SERVICES_DECLARED_ENTRY_TYPES = (
+    SERVICES_TYPE_WEB,
+    SERVICES_TYPE_PORT,
+    SERVICES_TYPE_FILE,
 )
 
 # The stored kind each declarable type maps to; the ai type is never declared
@@ -106,11 +117,43 @@ SERVICES_KIND_TO_TYPE = {
     SERVICES_KIND_GENERIC_UDP: SERVICES_TYPE_PORT,
 }
 
-# Where an entry comes from: a hub module, a person's declaration, or a
-# managed machine saying it is sharing its desktop.
+# Where an entry or an app comes from: a hub module, a person's declaration,
+# a container a person started by hand, or a managed machine saying it is
+# sharing its desktop.
 SERVICES_SOURCE_MODULE = "module"
 SERVICES_SOURCE_DECLARED = "declared"
+SERVICES_SOURCE_MANUAL = "manual"
 SERVICES_SOURCE_DEVICE = "device"
+# The order the Services page lists the apps' sources in.
+SERVICES_APP_SOURCE_ORDER = (
+    SERVICES_SOURCE_MODULE,
+    SERVICES_SOURCE_DECLARED,
+    SERVICES_SOURCE_MANUAL,
+)
+
+# An app's local name and an entry's fixed local port (protocol.md, "The
+# local name and the local port"): the slug's length and the suffix two
+# equal slugs take, the name's ending, the port range 24000 to 31999, and
+# the forwarder's login cookie, named per entry.
+SERVICES_SLUG_CHARS_MAX = 63
+SERVICES_SLUG_SUFFIX_CHARS = 6
+SERVICES_APP_SLUG_FALLBACK = "app"
+SERVICES_MACHINE_SLUG_FALLBACK = "machine"
+SERVICES_LOCAL_NAME_SUFFIX = ".localhost"
+SERVICES_LOCAL_PORT_MIN = 24000
+SERVICES_LOCAL_PORT_COUNT = 8000
+SERVICES_COOKIE_NAME_PREFIX = "neutrino_"
+SERVICES_COOKIE_NAME_CHARS = 12
+# The entry names inside an app: a module's one page, Gitea's own SSH
+# server, a declared app's entries by type and port, and a UDP port's ending.
+SERVICES_ENTRY_WEB = "web"
+SERVICES_ENTRY_SSH = "ssh"
+SERVICES_ENTRY_DECLARED_WEB = "web_{port}"
+SERVICES_ENTRY_DECLARED_PORT = "port_{port}"
+SERVICES_ENTRY_DECLARED_FILE = "file_{share}"
+# The SSH server app of a machine: its id's start and its title.
+SERVICES_SSH_SERVER_ID = "ssh_server"
+SERVICES_SSH_SERVER_TITLE = "SSH"
 
 # Hosts that always mean the hub itself, beside the addresses it holds.
 SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
@@ -132,6 +175,8 @@ SERVICES_REACHED_DIRECT = "direct"
 
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"
+# What an ssh entry's host key fingerprint starts with.
+SERVICES_SSH_FINGERPRINT_PREFIX = "SHA256:"
 SERVICES_RDP_PROTOCOL = "rustdesk"
 # The port a shared desktop answers on. RustDesk dials a bare address at
 # this port without a rendezvous server, and the agent writes it into
@@ -149,6 +194,7 @@ SERVICES_PUBLISHED_MODULES = (
     "cloudcli",
     "codeg",
     "hermes_webui",
+    "ssh_server",
 )
 
 SERVICES_LIST_TTL_S = 10.0
@@ -161,6 +207,9 @@ SERVICES_SAMBA_DESCRIPTION = "published by the samba module on {host}"
 SERVICES_AI_DESCRIPTION = "published by the AI gateway"
 SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image}) on {host}"
 SERVICES_RDP_DESCRIPTION = "shared from {hostname}"
+SERVICES_SSH_SERVER_DESCRIPTION = (
+    "published by the ssh_server module on {host} for {account}"
+)
 
 # Where an entry comes from, as the code a page words in its own language.
 # A declared record the person gave a line of their own carries that line and
@@ -176,6 +225,7 @@ SERVICES_DESCRIPTION_CLOUDCLI_MODULE = "cloudcli_module"
 SERVICES_DESCRIPTION_CODE_SERVER_MODULE = "code_server_module"
 SERVICES_DESCRIPTION_CODEG_MODULE = "codeg_module"
 SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE = "hermes_webui_module"
+SERVICES_DESCRIPTION_SSH_SERVER_MODULE = "ssh_server_module"
 SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_AI_GATEWAY,
     SERVICES_DESCRIPTION_CONTAINER,
@@ -188,6 +238,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CODEG_MODULE,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
+    SERVICES_DESCRIPTION_SSH_SERVER_MODULE,
 )
 
 SERVICES_GITEA_TITLE = "Gitea"
