@@ -1,0 +1,14 @@
+{
+  "_comment": "The agent's own SSH server, neutrino_ssh_server under bin/ of the agent's program directory, built for each platform below. Its settings, config/devices/<id>/ssh_server.json, name the enabled accounts, each with the private half of the key the hub made for it; the agent runs one instance per enabled account on 127.0.0.1, admitting that key alone.",
+  "name": "ssh_server",
+  "title": "SSH server",
+  "description": "Lets every program that speaks SSH reach this machine's enabled accounts",
+  "publisher": "Neutrino",
+  "platforms": {
+    "linux-amd64": {"runner": "ssh_server", "install": {"method": "agent", "params": {}}},
+    "linux-arm64": {"runner": "ssh_server", "install": {"method": "agent", "params": {}}},
+    "windows-amd64": {"runner": "ssh_server", "install": {"method": "agent", "params": {}}},
+    "darwin-arm64": {"runner": "ssh_server", "install": {"method": "agent", "params": {}}},
+    "darwin-amd64": {"runner": "ssh_server", "install": {"method": "agent", "params": {}}}
+  }
+}
