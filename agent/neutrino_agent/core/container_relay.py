@@ -38,7 +38,7 @@ from neutrino_agent.constants import (
     AGENT_RELAY_FIREWALL_RECHECK_S,
     AGENT_RELAY_TARGET_HOST,
     AGENT_REPORT_INTERVAL_S,
-    AGENT_WS_CHUNK_BYTES,
+    AGENT_RELAY_CHUNK_BYTES,
 )
 from neutrino_agent.platforms.base import RelayAddress, RelayRule
 
@@ -109,7 +109,7 @@ def _pump(source: socket.socket, target: socket.socket) -> None:
     side, and an error shuts both sockets."""
     while True:
         try:
-            data = source.recv(AGENT_WS_CHUNK_BYTES)
+            data = source.recv(AGENT_RELAY_CHUNK_BYTES)
             if not data:
                 break
             target.sendall(data)

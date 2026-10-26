@@ -38,11 +38,8 @@ AGENT_HUB_SOFTWARE_PREFIX = "neutrino_hub/"
 # The legacy listener's route a binding of 0.5 asks the hub's static key
 # on, over its pinned TLS, once.
 CHANNEL_KEY_SET_PATH = "/api/channel/key/set"
-# The largest piece of bytes a relay or a file stream moves at once.
-AGENT_WS_CHUNK_BYTES = 64 * 1024
-# What a file stream grants the hub before it reads, until the files stream
-# takes records alone.
-AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
+# The largest piece of bytes a container relay moves at once.
+AGENT_RELAY_CHUNK_BYTES = 64 * 1024
 # How long a ``status`` probe waits for the hub's welcome.
 AGENT_PROBE_TIMEOUT_S = 30
 # How long a relay waits for the loopback port it dials on this machine.
