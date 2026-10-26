@@ -117,6 +117,8 @@ DEV_VERSION_SUFFIX = "+dev"
 EVENT_SESSION_OPEN = "session_open"
 EVENT_SESSION_END = "session_end"
 EVENT_ROUND_END = "round_end"
+# The codes a round ends with that the transport gives itself, not the hub.
+ROUND_CODES_OF_THE_TRANSPORT = ("hub_unreachable", "hub_untrusted")
 EVENT_STREAM = "stream"
 QUESTION_PORT = "port"
 # The commands this side sends its transport.
@@ -739,13 +741,19 @@ class Agent:
             session = self._session
         if session is not None and not session.is_ended:
             return
-        if event.get("code"):
+        code = str(event.get("code", "") or "")
+        if code and code not in ROUND_CODES_OF_THE_TRANSPORT:
             self._take_refusal(refusal_of(event))
         else:
+            params = event.get("params")
             with self._lock:
                 self._last_error = {
-                    "code": "hub_unreachable",
-                    "params": {"detail": "no address answered"},
+                    "code": code or "hub_unreachable",
+                    "params": (
+                        dict(params)
+                        if isinstance(params, dict) and code
+                        else {"detail": "no address answered"}
+                    ),
                 }
         self._news.set()
 
