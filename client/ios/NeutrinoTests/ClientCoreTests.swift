@@ -123,11 +123,15 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertEqual(join.text("ticket"), "TICKET")
     }
 
-    func testUseOnAnAppForwardsItsEntriesAtTheHubsPortsAndOpensTheInAppBrowserOnTheLoopback() throws {
+    func testUseForwardsAnAppAtTheHubsPortsAndOpenOpensItsPageOnTheLoopback() throws {
         let core = self.core()
         let id = try joinAndConnect(core)
         let hub = try XCTUnwrap(core.hubs.first)
-        core.useApp(bindingId: id, app: try XCTUnwrap(hub.apps.first))
+        let app = try XCTUnwrap(hub.apps.first)
+        core.useApp(bindingId: id, app: app)
+        XCTAssertTrue(RunLoopWait.until { core.forwardRows[AppForwards.key(id, "gitea")]?.isInUse == true })
+        XCTAssertNil(core.browser)
+        core.openApp(bindingId: id, app: app)
         XCTAssertTrue(RunLoopWait.until { core.browser != nil })
         let starts = transport.sent("forward_start")
         XCTAssertEqual(starts.map { $0.text("listen") }, ["127.0.0.1:24001"])
@@ -147,7 +151,7 @@ final class ClientCoreTests: XCTestCase {
         let id = try joinAndConnect(core)
         let hub = try XCTUnwrap(core.hubs.first)
         core.useApp(bindingId: id, app: try XCTUnwrap(hub.apps.first))
-        XCTAssertTrue(RunLoopWait.until { core.browser != nil })
+        XCTAssertTrue(RunLoopWait.until { core.forwardRows[AppForwards.key(id, "gitea")]?.isInUse == true })
 
         core.suspend()
         XCTAssertTrue(RunLoopWait.until { !self.transport.sent("forward_stop").isEmpty })

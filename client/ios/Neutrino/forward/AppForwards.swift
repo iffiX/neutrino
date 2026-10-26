@@ -1,9 +1,9 @@
 import Foundation
 
 /// The loopback forwards of the app core, held by the transport. An app's Use forwards each of its `web` and
-/// `port` entries at its local port, the person's number or the hub's, and opens the in-app browser at
-/// `127.0.0.1` on the app's first `http` or `https` entry, with a fresh token for an entry that takes one; the app
-/// is in use until Stop, its hub's leave or the app's quit. The hub's panel's forward lives from the first press of
+/// `port` entries at its local port, the person's number or the hub's, and the app is in use until Stop, its hub's
+/// leave or the app's quit; Open opens the in-app browser at `127.0.0.1` on the app's first `http` or `https`
+/// entry, with a fresh token for an entry that takes one. The hub's panel's forward lives from the first press of
 /// Panel until the hub is left, on a number picked from 20000 to 23999 and kept. A forward stops when its hub is
 /// left and when its entry leaves the hub's state; every listener stops when the app is suspended and listens
 /// again on its number when the app comes back. Every call runs on the main queue.
@@ -45,33 +45,52 @@ final class AppForwards {
         self.material = material
     }
 
-    /// Press Use on an app: every entry's forward it has not got, then the in-app browser at its first `http` or
-    /// `https` entry, in the hub's order, with a fresh token where that entry takes one. A failure writes its code
-    /// on the row, and the forwards that started stay up. A press while the row's job runs is dropped.
+    /// Press Use on an app: every entry's forward it has not got, in the hub's order, but an entry with no number,
+    /// the hub having sent none and the person set none; the app is in use once one listens. A failure writes its code on the row, and the forwards that started stay up. A press while the row's
+    /// job runs is dropped.
+    ///
+    /// - Parameters:
+    ///   - hub: The hub that publishes the app.
+    ///   - app: The app.
+    func use(hub: HubView, app: ChannelApp) {
+        let bindingId = hub.binding.id
+        let key = Self.key(bindingId, app.id)
+        guard begin(key, .opening) else { return }
+        let entries = Self.entries(of: hub, app: app).filter { port(bindingId: bindingId, entry: $0) > 0 }
+        forwardEach(bindingId, entries[...], failure: nil) { [weak self] failure in
+            guard let self else { return }
+            let isAny = entries.contains { self.listening[Self.key(bindingId, $0.id)] != nil }
+            var row = self.rows[key] ?? ForwardRow()
+            row.isInUse = row.isInUse || isAny
+            row.job = nil
+            row.error = failure
+            self.rows[key] = row
+        }
+    }
+
+    /// Press Open on an app in use: the in-app browser at `127.0.0.1` on its first `http` or `https` entry, whose
+    /// forward listens again if it does not, with a fresh token where that entry takes one. A press while the app
+    /// is not in use, has no such entry or runs a job is dropped.
     ///
     /// - Parameters:
     ///   - hub: The hub that publishes the app.
     ///   - app: The app.
     ///   - onOpen: What opening the loopback address in the in-app browser does.
-    func use(hub: HubView, app: ChannelApp, onOpen: @escaping (String) -> Void) {
+    func open(hub: HubView, app: ChannelApp, onOpen: @escaping (String) -> Void) {
         let bindingId = hub.binding.id
         let key = Self.key(bindingId, app.id)
-        guard begin(key, .opening) else { return }
-        let entries = Self.entries(of: hub, app: app)
-        forwardEach(bindingId, entries[...], failure: nil) { [weak self] failure in
+        guard rows[key]?.isInUse == true, let page = Self.page(of: hub, app: app), begin(key, .opening) else { return }
+        let settle: (ClientError?) -> Void = { [weak self] error in
             guard let self else { return }
-            let isAny = entries.contains { self.listening[Self.key(bindingId, $0.id)] != nil }
-            let page = entries.first { $0.type == "web" && ForwardWebTarget($0.payload.text("url")) != nil }
-            let settle: (ClientError?) -> Void = { [weak self] error in
-                guard let self else { return }
-                var row = self.rows[key] ?? ForwardRow()
-                row.isInUse = row.isInUse || isAny
-                row.job = nil
-                row.error = error
-                self.rows[key] = row
-            }
-            guard failure == nil, let page else {
-                settle(failure)
+            var row = self.rows[key] ?? ForwardRow()
+            row.job = nil
+            row.error = error
+            self.rows[key] = row
+        }
+        forward(bindingId, entry: page) { [weak self] result in
+            guard let self else { return }
+            if case .failure(let refusal) = result {
+                settle(refusal)
                 return
             }
             self.open(bindingId: bindingId, entry: page, onOpen: onOpen, completion: settle)
@@ -301,11 +320,11 @@ final class AppForwards {
         }
         let port: Int
         do {
-            if entry.localPort <= 0 && table.number(of: entryKey) == nil {
-                port = try table.pick(for: entryKey, protocol: entry.protocol)
-            } else {
-                port = try table.port(forEntry: entryKey, hubPort: entry.localPort, protocol: entry.protocol)
+            guard self.port(bindingId: bindingId, entry: entry) > 0 else {
+                completion(.failure(.refusal("local_port_invalid", ["port": "0"])))
+                return
             }
+            port = try table.port(forEntry: entryKey, hubPort: entry.localPort, protocol: entry.protocol)
         } catch let refusal as ClientError {
             completion(.failure(refusal))
             return
@@ -408,6 +427,16 @@ final class AppForwards {
         row.error = nil
         rows[key] = row
         return true
+    }
+
+    /// The entry an app's Open opens: its first `web` entry with an `http` or `https` address.
+    ///
+    /// - Parameters:
+    ///   - hub: The hub that publishes the app.
+    ///   - app: The app.
+    /// - Returns: The entry, or nil for an app with none.
+    static func page(of hub: HubView, app: ChannelApp) -> ChannelServiceEntry? {
+        entries(of: hub, app: app).first { $0.type == "web" && ForwardWebTarget($0.payload.text("url")) != nil }
     }
 
     /// An app's `web` and `port` entries, in the hub's order; a phone leaves the `ssh` ones out.

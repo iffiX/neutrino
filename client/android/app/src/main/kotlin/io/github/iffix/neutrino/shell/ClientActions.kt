@@ -153,12 +153,20 @@ interface ClientActions {
     fun closeDesktop()
 
     /**
-     * Press Use on an app: its forwards, the token where its page needs one, then the browser.
+     * Press Use on an app: its forwards.
      *
      * @param bindingId The hub.
      * @param appId The app.
      */
     fun useApp(bindingId: String, appId: String)
+
+    /**
+     * Press Open on an app in use: the token where its page needs one, then the browser.
+     *
+     * @param bindingId The hub.
+     * @param appId The app.
+     */
+    fun openApp(bindingId: String, appId: String)
 
     /**
      * Press Stop on an app in use: every forward of the app ends.

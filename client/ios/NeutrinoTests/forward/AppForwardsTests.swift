@@ -68,33 +68,52 @@ final class AppForwardsTests: XCTestCase {
         ]
     }
 
-    func testUseForwardsEveryEntryAndOpensThePage() throws {
+    func testUseForwardsEveryEntryAndOpensNothing() throws {
         let forwards = try XCTUnwrap(self.forwards)
-        forwards.use(hub: hub(gitea), app: app) { self.opened.append($0) }
+        forwards.use(hub: hub(gitea), app: app)
         XCTAssertEqual(forwarder.started.map(\.port), [27311, 30418])
         XCTAssertEqual(forwarder.started.map { $0.open.text("id") }, ["gitea_d1_web", "gitea_d1_ssh"])
         XCTAssertEqual(forwarder.started.map { $0.open.text("kind") }, ["connect", "connect"])
-        XCTAssertEqual(opened, ["http://127.0.0.1:27311/explore?tab=1"])
         XCTAssertEqual(forwards.rows["b1/gitea_d1"]?.isInUse, true)
         XCTAssertTrue(asked.isEmpty)
     }
 
-    func testATokenPageOpensWithAFreshTokenAtEachUse() throws {
+    func testOpenOpensThePageOfAnAppInUseOnTheLoopback() throws {
+        let forwards = try XCTUnwrap(self.forwards)
+        forwards.open(hub: hub(gitea), app: app) { self.opened.append($0) }
+        XCTAssertTrue(opened.isEmpty)
+        forwards.use(hub: hub(gitea), app: app)
+        forwards.open(hub: hub(gitea), app: app) { self.opened.append($0) }
+        XCTAssertEqual(opened, ["http://127.0.0.1:27311/explore?tab=1"])
+        XCTAssertEqual(forwarder.started.count, 2)
+        XCTAssertTrue(asked.isEmpty)
+    }
+
+    func testATokenPageOpensWithAFreshTokenAtEachOpen() throws {
         let forwards = try XCTUnwrap(self.forwards)
         let page = entry(
             "gitea_d1_web", "web", ["url": .string("http://10.0.0.5:8000/"), "is_token_required": .bool(true)],
             port: 27311)
-        forwards.use(hub: hub([page]), app: app) { self.opened.append($0) }
-        forwards.use(hub: hub([page]), app: app) { self.opened.append($0) }
+        forwards.use(hub: hub([page]), app: app)
+        forwards.open(hub: hub([page]), app: app) { self.opened.append($0) }
+        forwards.open(hub: hub([page]), app: app) { self.opened.append($0) }
         XCTAssertEqual(opened, Array(repeating: "http://127.0.0.1:27311/?tkn=one-time", count: 2))
         XCTAssertEqual(forwarder.started.count, 1)
         XCTAssertEqual(asked.count, 2)
     }
 
+    func testAnEntryWithNoNumberGetsNoForwardUntilOneComes() throws {
+        let forwards = try XCTUnwrap(self.forwards)
+        let bare = entry("gitea_d1_ssh", "port", ["port": .int(22)], port: 0)
+        forwards.use(hub: hub([gitea[0], bare]), app: app)
+        XCTAssertEqual(forwarder.started.map(\.port), [27311])
+        XCTAssertNil(forwards.rows["b1/gitea_d1"]?.error)
+    }
+
     func testATakenNumberFailsAndTheRestStayUp() throws {
         busy = [30418]
         let forwards = try XCTUnwrap(self.forwards)
-        forwards.use(hub: hub(gitea), app: app) { self.opened.append($0) }
+        forwards.use(hub: hub(gitea), app: app)
         let row = try XCTUnwrap(forwards.rows["b1/gitea_d1"])
         XCTAssertEqual(row.error?.code, "port_taken")
         XCTAssertEqual(row.error?.wordParams["port"], "30418")
@@ -104,7 +123,7 @@ final class AppForwardsTests: XCTestCase {
 
     func testStopEndsEveryForwardOfTheApp() throws {
         let forwards = try XCTUnwrap(self.forwards)
-        forwards.use(hub: hub(gitea), app: app) { _ in }
+        forwards.use(hub: hub(gitea), app: app)
         forwards.stop(bindingId: "b1", appId: "gitea_d1")
         XCTAssertEqual(Set(forwarder.stopped.map(\.port)), [27311, 30418])
         XCTAssertNil(forwards.rows["b1/gitea_d1"])
@@ -118,7 +137,7 @@ final class AppForwardsTests: XCTestCase {
         XCTAssertThrowsError(
             try forwards.configure(hubs: hubs, bindingId: "b1", appId: "gitea_d1", numbers: ["gitea_d1_web": 30418])
         ) { error in XCTAssertEqual((error as? ClientError)?.code, "port_taken") }
-        forwards.use(hub: hubs[0], app: app) { _ in }
+        forwards.use(hub: hubs[0], app: app)
         XCTAssertEqual(forwarder.started.first?.port, 28080)
         XCTAssertThrowsError(
             try forwards.configure(hubs: hubs, bindingId: "b1", appId: "gitea_d1", numbers: ["gitea_d1_web": nil])
@@ -136,7 +155,7 @@ final class AppForwardsTests: XCTestCase {
 
     func testAWithdrawnEntryOrALeftHubStopsForwards() throws {
         let forwards = try XCTUnwrap(self.forwards)
-        forwards.use(hub: hub(gitea), app: app) { _ in }
+        forwards.use(hub: hub(gitea), app: app)
         forwards.take([hub([gitea[0]])])
         XCTAssertEqual(forwarder.stopped.map(\.port), [30418])
         forwards.take([])
@@ -145,7 +164,7 @@ final class AppForwardsTests: XCTestCase {
 
     func testASuspendStopsEveryListenerAndTheForegroundListensAgainOnItsNumber() throws {
         let forwards = try XCTUnwrap(self.forwards)
-        forwards.use(hub: hub(gitea), app: app) { _ in }
+        forwards.use(hub: hub(gitea), app: app)
         forwards.suspend()
         XCTAssertEqual(Set(forwarder.stopped.map(\.port)), [27311, 30418])
         forwards.foreground()
@@ -155,7 +174,7 @@ final class AppForwardsTests: XCTestCase {
     func testAUdpForwardTheHubEndedIsStartedAgainWhileItsAppIsInUse() throws {
         let forwards = try XCTUnwrap(self.forwards)
         let udp = entry("gitea_d1_7777_udp", "port", ["port": .int(7777), "protocol": .string("udp")], port: 25001)
-        forwards.use(hub: hub([udp]), app: app) { _ in }
+        forwards.use(hub: hub([udp]), app: app)
         XCTAssertEqual(forwarder.started.map(\.protocol), ["udp"])
         forwards.ended(
             TransportForwardEnd(

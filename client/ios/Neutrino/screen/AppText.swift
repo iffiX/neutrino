@@ -17,8 +17,8 @@ enum AppText {
         return entry.protocol == Forward.protocolUdp ? address + "/udp" : address
     }
 
-    /// An entry's mono line under its app: its local address, and the health word while the hub reports it
-    /// unhealthy.
+    /// An entry's mono line under its app: its local address, or its kind alone while it has no number, and the
+    /// health word while the hub reports it unhealthy.
     ///
     /// - Parameters:
     ///   - entry: The entry.
@@ -26,7 +26,7 @@ enum AppText {
     ///   - words: The catalog.
     /// - Returns: The line.
     static func line(_ entry: ChannelServiceEntry, port: Int, words: WordCatalog) -> String {
-        let address = localAddress(entry, port: port)
+        let address = port > 0 ? localAddress(entry, port: port) : words.word("ui.entry_kind.\(entry.type)")
         return entry.isUnhealthy ? "\(address) · \(words.word("ui.unhealthy"))" : address
     }
 
@@ -72,12 +72,17 @@ enum AppText {
     ///   - hub: The hub that publishes the app.
     ///   - entries: The app's entries.
     ///   - row: The app's row.
-    /// - Returns: `ui.reason.disabled` while the hub switched this phone off, `ui.reason.unhealthy` while no entry
-    ///   is reachable, `ui.reason.disconnect_first` for Configure while the app is in use, else nil.
-    static func reasonKey(_ hub: HubView, _ entries: [ChannelServiceEntry], _ row: ForwardRow) -> String? {
+    ///   - hasPage: Whether the app has an `http` or `https` entry, which Open opens.
+    /// - Returns: `ui.reason.disabled` while the hub switched this phone off, `ui.reason.disconnect_first` for
+    ///   Configure while the app is in use, `ui.reason.unhealthy` for Use while no entry is reachable,
+    ///   `ui.reason.use_first` for Open while the app is not in use, else nil.
+    static func reasonKey(_ hub: HubView, _ entries: [ChannelServiceEntry], _ row: ForwardRow, hasPage: Bool)
+        -> String?
+    {
         if hub.isDisabled { return "ui.reason.disabled" }
-        if !entries.contains(where: { !$0.isUnhealthy }) { return "ui.reason.unhealthy" }
         if row.isInUse { return "ui.reason.disconnect_first" }
+        if !entries.contains(where: { !$0.isUnhealthy }) { return "ui.reason.unhealthy" }
+        if hasPage { return "ui.reason.use_first" }
         return nil
     }
 

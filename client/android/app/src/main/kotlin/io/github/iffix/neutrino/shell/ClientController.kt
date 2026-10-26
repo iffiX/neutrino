@@ -158,7 +158,13 @@ class ClientController(
     override fun useApp(bindingId: String, appId: String) {
         val hub = hubs().firstOrNull { it.binding.id == bindingId } ?: return
         val app = hub.apps.firstOrNull { it.id == appId } ?: return
-        forwards.use(hub, app, ::openOnMain)
+        forwards.use(hub, app)
+    }
+
+    override fun openApp(bindingId: String, appId: String) {
+        val hub = hubs().firstOrNull { it.binding.id == bindingId } ?: return
+        val app = hub.apps.firstOrNull { it.id == appId } ?: return
+        forwards.open(hub, app, ::openOnMain)
     }
 
     override fun stopApp(bindingId: String, appId: String) = forwards.stop(bindingId, appId)
