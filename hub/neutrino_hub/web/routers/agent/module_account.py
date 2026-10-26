@@ -65,6 +65,7 @@ CODE_CONFIG_UNWRITABLE = "config_unwritable"
 # The vault kind a Windows account's password is stored as, and its label.
 LOGIN_KIND = "login"
 LOGIN_NAME = "{device} / {account}"
+LOGIN_PASSWORD_FIELD = "password"
 
 
 @router.get("", response_model=AccountListView)
@@ -374,8 +375,8 @@ def _store_login(key: str, account: str, password: str) -> str:
         return SecretVault().add(
             kind=LOGIN_KIND,
             name=LOGIN_NAME.format(device=key[:8], account=account),
-            secret=password,
-        )
+            secret={LOGIN_PASSWORD_FIELD: password},
+        ).id
     except (OSError, ValueError) as error:
         raise VaultLockedError() from error
 
