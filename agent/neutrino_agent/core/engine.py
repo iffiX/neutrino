@@ -85,6 +85,7 @@ from neutrino_agent.modules.shared.package import (
     remove_received,
     verify_passes,
 )
+from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
@@ -115,6 +116,9 @@ CloudcliModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=CloudcliHooks
 )
 CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHooks)
+SshServerModuleRunner = functools.partial(
+    InstancesModuleRunner, hooks_class=SshServerHooks
+)
 # The container modules with hooks of their own, which the container runner
 # reads by module name.
 CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
@@ -285,6 +289,7 @@ class ModuleEngine(ReconcileWorker):
                     kinds.append(PodmanMachineModuleRunner)
         kinds.append(TerminalModuleRunner)
         kinds.append(RemoteDesktopModuleRunner)
+        kinds.append(SshServerModuleRunner)
         self._module_runners = {}
         self._runners_by_name = {}
         for kind in kinds:
