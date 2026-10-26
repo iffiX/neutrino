@@ -68,8 +68,9 @@ HUB_BUILDS = {
 
 # Only what the hub's package build reads is copied in: the package, the
 # packaging, the shared naming tables, the agent tree it bakes native
-# packages from, the shipped icons, and the licences of everything it
-# carries. Taking the whole tree would carry `config/`, whose real files are
+# packages from, the shipped icons, the licences of everything it carries,
+# and the Go programs the release built under dist/go/. Taking the whole
+# tree would carry `config/`, whose real files are
 # root-owned and unreadable, and `hub/frontend/node_modules`, which the
 # package does not contain.
 HUB_CONTAINER_BUILD = (
@@ -81,7 +82,8 @@ HUB_CONTAINER_BUILD = (
     "/src/agent/pyproject.toml "
     "/build/agent/ && "
     "cp -r /src/images/icons /build/images/ && "
-    "cp -r /src/licenses /build/licenses && cd /build && "
+    "cp -r /src/licenses /build/licenses && "
+    "mkdir -p /build/dist && cp -r /src/dist/go /build/dist/ && cd /build && "
     "python3 hub/packaging/{script} --output-dir /out "
     "--architecture {architecture} {extra}"
 )
