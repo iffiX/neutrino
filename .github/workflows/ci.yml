@@ -430,8 +430,10 @@ jobs:
       - name: the five targets build
         run: python3 packaging/build/build_transport.py --all --output-dir dist
 
-  # The same two modules on Windows: the control pipe, the overlapped reads
-  # and writes, and ConPTY have no Linux counterpart to run under.
+  # The transport's tests on Windows too: the control pipe and its overlapped
+  # reads and writes have no Linux counterpart to run under. The SSH server's
+  # tests run a POSIX shell and read POSIX modes, so Windows vets and builds
+  # it and runs its tests on Linux alone.
   go_windows:
     name: go vet and tests on Windows
     runs-on: windows-2025
@@ -456,7 +458,7 @@ jobs:
         working-directory: agent/sshserver
         run: |
           go vet ./...
-          go test -race ./...
+          go build ./...
 
   agent_oldest_python:
     name: agent on Python 3.9
