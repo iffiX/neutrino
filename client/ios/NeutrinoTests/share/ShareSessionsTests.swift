@@ -235,6 +235,15 @@ final class ShareSessionsTests: XCTestCase {
         XCTAssertEqual(client.connected?.login, ShareLogin(user: "smb_iffi", password: "generated"))  // scan: allow
     }
 
+    func testAMachinesShareRefusingTheHubsLoginReadsTheHubLoginCodeAndForgetsNothing() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        client.connectFailure = POSIXError(.ECONNREFUSED)
+        sessions.open(machine)
+        XCTAssertEqual(sessions.rows[machine.id]?.error?.code, "share_hub_login_rejected")
+        XCTAssertTrue(sessions.heldLogins.isEmpty)
+        XCTAssertNil(sessions.session)
+    }
+
     func testAMachinesShareTheHubRefusesShowsTheHubsCode() throws {
         material = .failure(.refusal("permission_denied", ["kind": "file"]))
         let sessions = try XCTUnwrap(self.sessions)

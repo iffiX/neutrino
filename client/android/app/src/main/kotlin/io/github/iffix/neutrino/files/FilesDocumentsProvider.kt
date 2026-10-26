@@ -30,6 +30,9 @@ import java.io.IOException
  * opened with the login given on the Files screen. A server that does not answer lists as the
  * error `share_unreachable` rather than waiting.
  */
+/** The code a machine's share refusing the login the hub gave reads as. */
+internal const val CODE_HUB_LOGIN_REJECTED = "share_hub_login_rejected"
+
 class FilesDocumentsProvider : DocumentsProvider() {
     private val handler by lazy { Handler(HandlerThread("shares").apply { start() }.looper) }
 
@@ -186,7 +189,12 @@ class FilesDocumentsProvider : DocumentsProvider() {
     private fun errorExtras(error: IOException, root: ShareRoot): Bundle {
         val isRejected = error is ShareRefusedException && error.code == "share_login_rejected"
         if (isRejected && root.isDeclared) app.shareLogins.forget(root.key)
-        return Bundle().apply { putString(android.provider.DocumentsContract.EXTRA_ERROR, wordOf(error)) }
+        val shown = if (isRejected && !root.isDeclared) {
+            ShareRefusedException(CODE_HUB_LOGIN_REJECTED, error.message.orEmpty())
+        } else {
+            error
+        }
+        return Bundle().apply { putString(android.provider.DocumentsContract.EXTRA_ERROR, wordOf(shown)) }
     }
 
     private fun wordOf(error: IOException): String = when (error) {

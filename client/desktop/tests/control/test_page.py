@@ -2500,7 +2500,7 @@ def test_an_app_in_use_offers_stop_in_uses_place_open_and_holds_its_ports():
         ["Configure", True, "ghost"],
         ["Open", False, "ghost"],
     ]
-    assert row["reason"] == EN_WORDS["ui.reason.disconnect_first"]
+    assert row["reason"] == ""
 
 
 def test_an_app_job_is_its_buttons_indicator():

@@ -54,14 +54,11 @@ final class AppTextTests: XCTestCase {
         hub.connection = .connected
         let up = entry("web", [:])
         XCTAssertNil(AppText.reasonKey(hub, [up], ForwardRow()))
-        XCTAssertEqual(
-            AppText.reasonKey(hub, [up], ForwardRow(isInUse: true)), "ui.reason.disconnect_first")
+        XCTAssertNil(AppText.reasonKey(hub, [up], ForwardRow(isInUse: true)))
         XCTAssertEqual(
             AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow()),
             "ui.reason.unhealthy")
-        XCTAssertEqual(
-            AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow(isInUse: true)),
-            "ui.reason.disconnect_first")
+        XCTAssertNil(AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow(isInUse: true)))
         hub.waitReason = .disabled
         XCTAssertEqual(AppText.reasonKey(hub, [up], ForwardRow()), "ui.reason.disabled")
     }

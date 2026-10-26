@@ -209,6 +209,10 @@ CLIENT_CODE_WORDS = {
             "the share rejected the user name or password; mount it again and "
             "enter them again"
         ),
+        "share_hub_login_rejected": (
+            "the share refused the login the hub gave; check this machine's "
+            "file share in the panel"
+        ),
         "share_access_denied": (
             "the share refused this login: the password is wrong, or this "
             "account may not use the share"
@@ -367,6 +371,7 @@ CLIENT_CODE_WORDS = {
         ),
         "mountpoint_not_empty": "那个文件夹不是空的",
         "share_login_rejected": "用户名或密码不对，重新挂载并重新填写。",
+        "share_hub_login_rejected": "中枢给的登录被拒了，请在面板检查这台机器的文件共享。",
         "share_access_denied": "登录被拒绝：密码不对，或者这个账号不能用这个共享。",
         "share_not_found": "主机上没有这个共享。",
         "share_unreachable": "连不上主机，稍后会再试挂载。",

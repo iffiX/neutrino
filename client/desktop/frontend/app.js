@@ -1278,12 +1278,12 @@ function stopButton(app) {
   return stop;
 }
 
-// Why Use or Configure cannot act, empty while both can or work runs.
+// Why Use cannot act, empty while it can, while the app is in use or while
+// work runs; Configure is disabled while the app is in use with no line.
 function appReason(hub, app, entries, first) {
   if (appWork(hub, app)) return '';
   if (hub.connection === 'disabled') return t('ui.reason.disabled');
   if (!app.is_in_use && first.disabled && isAppUnhealthy(entries)) return t('ui.reason.unhealthy');
-  if (app.is_in_use) return t('ui.reason.disconnect_first');
   return '';
 }
 

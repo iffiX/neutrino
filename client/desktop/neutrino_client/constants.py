@@ -238,6 +238,7 @@ CLIENT_MOUNT_SETTLED_CODES = (
     "pkexec_missing",
     "mount_timed_out",
     "share_login_rejected",
+    "share_hub_login_rejected",
     "share_access_denied",
     "share_not_found",
     "share_session_conflict",

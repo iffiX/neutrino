@@ -21,7 +21,8 @@ class ShareUnreachableException(message: String, cause: Throwable? = null) : IOE
 /**
  * A share's server answered and refused: the login, the access, or the name.
  *
- * @property code `share_login_rejected`, `share_access_denied` or `share_not_found`.
+ * @property code `share_login_rejected`, `share_hub_login_rejected`, `share_access_denied` or
+ *   `share_not_found`.
  * @param message What was refused.
  */
 class ShareRefusedException(val code: String, message: String) : IOException(message)

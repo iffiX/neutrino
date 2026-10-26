@@ -254,13 +254,13 @@ private fun entryHostOf(entry: ChannelServiceEntry): String {
  * @param hub The hub that publishes the app.
  * @param entries The app's entries.
  * @param row The app's row.
- * @return `ui.reason.disabled` while the hub switched this phone off, `ui.reason.disconnect_first`
- *   for Configure while the app is in use, `ui.reason.unhealthy` for Use while no entry is reachable,
- *   else null.
+ * @return `ui.reason.disabled` while the hub switched this phone off, `ui.reason.unhealthy` for Use
+ *   while no entry is reachable and the app is not in use, else null; Configure is disabled while the
+ *   app is in use with no line under it.
  */
 internal fun appReasonKey(hub: HubView, entries: List<ChannelServiceEntry>, row: PortForwardRow): String? = when {
     hub.isDisabled -> "ui.reason.disabled"
-    row.isInUse -> "ui.reason.disconnect_first"
+    row.isInUse -> null
     entries.none { it.isHealthy != false } -> "ui.reason.unhealthy"
     else -> null
 }

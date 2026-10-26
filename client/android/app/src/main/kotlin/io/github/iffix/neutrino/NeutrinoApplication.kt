@@ -262,7 +262,7 @@ class NeutrinoApplication : Application() {
         }
         val user = (material["user"] as? JsonPrimitive)?.content.orEmpty()
         val password = (material["password"] as? JsonPrimitive)?.content.orEmpty()
-        if (user.isEmpty()) throw ConnectRefusedException("share_login_rejected", JsonObject(emptyMap()))
+        if (user.isEmpty()) throw ConnectRefusedException("share_hub_login_rejected", JsonObject(emptyMap()))
         return ShareLogin(user, password)
     }
 

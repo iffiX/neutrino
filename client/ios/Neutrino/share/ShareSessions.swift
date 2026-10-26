@@ -1,7 +1,8 @@
 import Foundation
 
 /// The file entries' shares of the app core: each row's Open, the logins held, and the one share the share page
-/// shows. A login is held only once the share took it; `share_login_rejected` forgets it. The open share closes
+/// shows. A declared share's login is held only once the share took it; `share_login_rejected` forgets it, while a
+/// machine's share refusing the hub's login reads `share_hub_login_rejected` and forgets nothing. The open share closes
 /// when the page goes back from its root, when its hub is left, and when its hub no longer lists its entry.
 /// Every call runs on the main queue.
 final class ShareSessions {
@@ -140,7 +141,9 @@ final class ShareSessions {
     func pull() {
         guard let session else { return }
         session.refresh { [weak self] refusal in
-            if refusal?.code == SharePage.codeLoginRejected { self?.forgetLogin(session.target.id) }
+            if refusal?.code == SharePage.codeLoginRejected && session.target.isDeclared {
+                self?.forgetLogin(session.target.id)
+            }
         }
     }
 
@@ -159,7 +162,9 @@ final class ShareSessions {
     func foreground() {
         guard let session else { return }
         session.resume { [weak self] refusal in
-            if refusal?.code == SharePage.codeLoginRejected { self?.forgetLogin(session.target.id) }
+            if refusal?.code == SharePage.codeLoginRejected && session.target.isDeclared {
+                self?.forgetLogin(session.target.id)
+            }
         }
     }
 
@@ -183,8 +188,8 @@ final class ShareSessions {
             self.opening = nil
             if let refusal {
                 session.close()
-                if refusal.code == SharePage.codeLoginRejected { self.forgetLogin(key) }
-                self.rows[key] = ShareRow(error: refusal)
+                if refusal.code == SharePage.codeLoginRejected && target.isDeclared { self.forgetLogin(key) }
+                self.rows[key] = ShareRow(error: session.shown(refusal))
                 return
             }
             if let isKept, let login {
@@ -225,7 +230,7 @@ final class ShareSessions {
                 case .success(let answer):
                     let user = answer.text("user")
                     guard !user.isEmpty else {
-                        completion(.failure(.refusal(SharePage.codeLoginRejected)))
+                        completion(.failure(.refusal(SharePage.codeHubLoginRejected)))
                         return
                     }
                     completion(.success(ShareLogin(user: user, password: answer.text("password"))))

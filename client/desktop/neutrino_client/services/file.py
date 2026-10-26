@@ -150,9 +150,18 @@ def _share_url(record: dict) -> str:
     return f"//{record.get('host', '')}/{record.get('share', '')}"
 
 
-def _share_refusal(error: ShareAttachError) -> dict:
+def _share_refusal(error: ShareAttachError, record: dict) -> dict:
+    """The refusal a failed mount or unmount leaves on its record.
+
+    A machine's share mounts with the login the hub gave, so a login it
+    refuses is ``share_hub_login_rejected``; a declared share's login is the
+    person's, and its refusal keeps its own code.
+    """
+    code = error.code
+    if code == "share_login_rejected" and record.get("is_declared") is not True:
+        code = "share_hub_login_rejected"
     params = {"detail": error.detail} if error.detail else {}
-    return {"code": error.code, "params": params}
+    return {"code": code, "params": params}
 
 
 def _nobody() -> None:
@@ -575,7 +584,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 if self._platform.is_share_attached(location=location):
                     self._platform.detach_share(location=location)
             except ShareAttachError as error:
-                return _share_refusal(error)
+                return _share_refusal(error, record)
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
             self._problems.pop(record_id, None)
@@ -712,7 +721,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 credentials_path=once,
             )
         except ShareAttachError as error:
-            self._settle(record_id, record, _share_refusal(error))
+            self._settle(record_id, record, _share_refusal(error, record))
             self._log(f"could not mount {_share_url(record)}: {error.code}")
             return
         except PlatformUnsupportedError:

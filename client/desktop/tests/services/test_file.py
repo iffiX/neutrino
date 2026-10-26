@@ -268,7 +268,7 @@ def test_a_mounts_credentials_file_is_gone_after_a_failed_mount_too(service):
 
     assert attach(subject, path=str(tmp_path / "nas")) == {}
 
-    assert subject.rows()[0]["code"] == "share_login_rejected"
+    assert subject.rows()[0]["code"] == "share_hub_login_rejected"
     assert not os.path.exists(platform.attach_calls[0]["credentials_path"])
     assert left_files(tmp_path) == []
 
@@ -660,7 +660,8 @@ def test_a_share_refusal_the_person_must_act_on_is_not_retried(service, code):
     subject.reconcile()
 
     row = subject.rows()[0]
-    assert row["state"] == "failed" and row["code"] == code
+    shown = "share_hub_login_rejected" if code == "share_login_rejected" else code
+    assert row["state"] == "failed" and row["code"] == shown
     assert len(platform.attach_calls) == 1
 
 
@@ -1038,8 +1039,17 @@ def test_a_refusal_the_person_must_act_on_ends_the_forward(service):
 
     assert attach(subject, path=str(tmp_path / "nas")) == {}
 
-    assert subject.rows()[0]["code"] == "share_login_rejected"
+    assert subject.rows()[0]["code"] == "share_hub_login_rejected"
     assert subject._forwards.running == {}
+
+
+def test_a_declared_shares_refused_login_keeps_its_own_code(service):
+    subject, platform, _store, tmp_path = service
+    platform.attach_error = ShareAttachError("share_login_rejected")
+
+    assert attach_declared(subject, path=str(tmp_path / "photos")) == {}
+
+    assert subject.rows()[0]["code"] == "share_login_rejected"
 
 
 def test_a_forward_that_cannot_listen_fails_the_record(service):

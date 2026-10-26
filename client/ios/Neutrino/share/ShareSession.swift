@@ -149,13 +149,25 @@ final class ShareSession {
             guard let self else { return }
             if let refusal {
                 self.view.isListing = false
-                self.view.error = refusal
+                self.view.error = self.shown(refusal)
             } else {
                 self.view.error = nil
                 self.reload()
             }
             completion(refusal)
         }
+    }
+
+    /// The refusal the page shows for a login's: a machine's share refusing the login the hub gave reads
+    /// `share_hub_login_rejected`, since no login of the person's is to be typed again.
+    ///
+    /// - Parameter refusal: The login's refusal.
+    /// - Returns: The refusal shown.
+    func shown(_ refusal: ClientError) -> ClientError {
+        if refusal.code == SharePage.codeLoginRejected && !target.isDeclared {
+            return .refusal(SharePage.codeHubLoginRejected)
+        }
+        return refusal
     }
 
     /// The hub's channel opened or closed: the forward accepts nothing while it is closed.

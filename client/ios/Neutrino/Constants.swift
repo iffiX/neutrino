@@ -428,6 +428,9 @@ enum SharePage {
     /// The code of a login the share rejected.
     static let codeLoginRejected = "share_login_rejected"
 
+    /// The code a machine's share refusing the login the hub gave reads as.
+    static let codeHubLoginRejected = "share_hub_login_rejected"
+
     /// How often a running transfer's row is drawn again with the bytes the forward has carried.
     static let progressIntervalSeconds = 0.25
 
