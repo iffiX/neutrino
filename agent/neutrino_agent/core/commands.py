@@ -41,24 +41,18 @@ from neutrino_agent.modules.remote_desktop.user_tier import RemoteDesktopReader
 VERB_REBOOT = "reboot"
 VERB_SHUTDOWN = "shutdown"
 VERB_REINSTALL = "reinstall"
-VERB_RESIZE = "resize"
 VERB_KILL = "kill"
 VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
-VERB_PERSIST = "persist"
-VERB_STOP_SESSION = "stop_session"
 
 # The verbs a ``command {module: agent}`` names.
 AGENT_VERBS = (
     VERB_REBOOT,
     VERB_SHUTDOWN,
     VERB_REINSTALL,
-    VERB_RESIZE,
     VERB_KILL,
     VERB_REMOTE_DESKTOP_READ,
     VERB_REMOTE_DESKTOP_PASSWORD_SET,
-    VERB_PERSIST,
-    VERB_STOP_SESSION,
 )
 # The verbs the platform's power action carries out, by its own word.
 POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
@@ -95,11 +89,6 @@ def _refused(code: str, **params) -> CommandOutcome:
     return CommandOutcome(exit_code=1, output="", code=code, params=params)
 
 
-def _given_flag(args: dict, key: str) -> "bool | None":
-    """A flag the verb carries, or None when it names none."""
-    return None if args.get(key) is None else bool(args[key])
-
-
 class DeviceOperator:
     """Runs the commands the hub opens on this device."""
 
@@ -108,12 +97,10 @@ class DeviceOperator:
         *,
         platform,
         reinstall=None,
-        resize=None,
         runner_of=None,
         remote_desktop=None,
         settle=None,
         on_module_changed=None,
-        shells=None,
     ):
         """
         Args:
@@ -122,9 +109,6 @@ class DeviceOperator:
                 when the install was launched, ``{"code", "params"}`` and
                 an optional ``output`` when not. None refuses the verb as
                 unsupported.
-            resize: Called with ``(stream_id, cols, rows)`` for the
-                ``resize`` verb; returns True when a shell stream of that
-                id took the size. None refuses the verb as unsupported.
             runner_of: Called with a module's name when a verb of it
                 comes; returns its runner, or None for a module this agent
                 runs none of. None refuses every module verb.
@@ -135,17 +119,13 @@ class DeviceOperator:
                 waits for nothing.
             on_module_changed: Called with the module name after one of its
                 verbs succeeded, so its details are read again at once.
-            shells: The shell registry the ``persist`` and ``stop_session``
-                verbs act on. None refuses both as unsupported.
         """
         self._platform = platform
         self._reinstall = reinstall
-        self._resize = resize
         self._runner_of = runner_of
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
         self._settle = settle
         self._on_module_changed = on_module_changed
-        self._shells = shells
 
     def run(self, module: str, verb: str, args: dict, on_line=None) -> CommandOutcome:
         """Run one command.
@@ -172,12 +152,8 @@ class DeviceOperator:
             return self._power(POWER_VERBS[verb])
         if verb == VERB_REINSTALL:
             return self._reinstall_agent()
-        if verb == VERB_RESIZE:
-            return self._resize_shell(args)
         if verb == VERB_KILL:
             return self._kill_process(args)
-        if verb in (VERB_PERSIST, VERB_STOP_SESSION):
-            return self._session_verb(verb, args)
         if verb in (VERB_REMOTE_DESKTOP_READ, VERB_REMOTE_DESKTOP_PASSWORD_SET):
             return self._remote_desktop_verb(verb, args)
         return _refused("verb_unknown", module=AGENT_COMMAND_MODULE, verb=verb)
@@ -224,42 +200,6 @@ class DeviceOperator:
             code=code,
             params=params,
         )
-
-    def _resize_shell(self, args: dict) -> CommandOutcome:
-        """Give one shell stream a new window size."""
-        stream_id = args.get("shell")
-        if self._resize is None:
-            return _refused("unsupported_platform")
-        try:
-            cols = int(args.get("cols", 0) or 0)
-            rows = int(args.get("rows", 0) or 0)
-        except (TypeError, ValueError):
-            cols = rows = 0
-        if (
-            not isinstance(stream_id, int)
-            or cols <= 0
-            or rows <= 0
-            or not self._resize(stream_id, cols, rows)
-        ):
-            return _refused("shell_unknown", shell=stream_id)
-        return CommandOutcome(exit_code=0, output="")
-
-    def _session_verb(self, verb: str, args: dict) -> CommandOutcome:
-        """Keep a shell past its stream, or end it."""
-        if self._shells is None:
-            return _refused("unsupported_platform")
-        session_id = str(args.get("session_id", "") or "")
-        if verb == VERB_PERSIST:
-            is_known = self._shells.persist(
-                session_id,
-                is_persistent=_given_flag(args, "is_persistent"),
-                is_shared=_given_flag(args, "is_shared"),
-            )
-        else:
-            is_known = self._shells.stop(session_id)
-        if not is_known:
-            return _refused("session_unknown", session_id=session_id)
-        return CommandOutcome(exit_code=0, output="")
 
     def _kill_process(self, args: dict) -> CommandOutcome:
         """End one process: a term, then a kill once its grace has run.

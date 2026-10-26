@@ -68,17 +68,14 @@ def operator(**runners) -> DeviceOperator:
 # --- the agent's own verbs ---
 
 
-def test_the_agent_verbs_are_the_nine_the_protocol_names():
+def test_the_agent_verbs_are_the_six_the_protocol_names():
     assert AGENT_VERBS == (
         "reboot",
         "shutdown",
         "reinstall",
-        "resize",
         "kill",
         "remote_desktop_read",
         "remote_desktop_password_set",
-        "persist",
-        "stop_session",
     )
 
 
@@ -123,25 +120,6 @@ def test_without_a_reinstall_the_verb_is_unsupported():
     outcome = operator().run("agent", "reinstall", {})
 
     assert outcome.code == "unsupported_platform"
-
-
-def test_resize_reaches_the_shell_stream_it_names():
-    resized: list = []
-    subject = DeviceOperator(
-        platform=PowerPlatform(),
-        resize=lambda stream_id, cols, rows: resized.append((stream_id, cols, rows))
-        or stream_id == 2,
-    )
-
-    good = subject.run("agent", "resize", {"shell": 2, "cols": 120, "rows": 40})
-    gone = subject.run("agent", "resize", {"shell": 8, "cols": 120, "rows": 40})
-    bad = subject.run("agent", "resize", {"shell": 2, "cols": 0, "rows": "x"})
-
-    assert (good.exit_code, good.code) == (0, "")
-    assert (gone.exit_code, gone.code) == (1, "shell_unknown")
-    assert gone.params == {"shell": 8}
-    assert bad.code == "shell_unknown"
-    assert resized == [(2, 120, 40), (8, 120, 40)]
 
 
 def test_an_agent_verb_this_agent_does_not_know_is_verb_unknown():
@@ -340,88 +318,6 @@ def test_kill_on_a_platform_without_terminate_is_unsupported(monkeypatch):
     outcome = windows_kill(monkeypatch, PowerPlatform(), 4242)
 
     assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
-
-
-class FakeShells:
-    """The shell registry, holding one session id."""
-
-    def __init__(self):
-        self.persisted: list = []
-        self.stopped: list = []
-
-    def persist(self, session_id, is_persistent=None, is_shared=None):
-        self.persisted.append((session_id, is_persistent, is_shared))
-        return session_id == "tab-1"
-
-    def stop(self, session_id):
-        self.stopped.append(session_id)
-        return session_id == "tab-1"
-
-
-def shell_operator(shells) -> DeviceOperator:
-    return DeviceOperator(
-        platform=PowerPlatform(), remote_desktop=NoRemoteDesktop(), shells=shells
-    )
-
-
-def test_persist_and_stop_session_reach_the_shell_registry():
-    shells = FakeShells()
-    operator_ = shell_operator(shells)
-
-    persisted = operator_.run(
-        "agent", "persist", {"session_id": "tab-1", "is_persistent": True}
-    )
-    stopped = operator_.run("agent", "stop_session", {"session_id": "tab-1"})
-
-    assert (persisted.exit_code, persisted.code) == (0, "")
-    assert (stopped.exit_code, stopped.code) == (0, "")
-    assert shells.persisted == [("tab-1", True, None)]
-    assert shells.stopped == ["tab-1"]
-
-
-def test_persist_carries_is_shared_and_a_missing_flag_as_none():
-    shells = FakeShells()
-    operator_ = shell_operator(shells)
-
-    operator_.run(
-        "agent",
-        "persist",
-        {"session_id": "tab-1", "is_persistent": False, "is_shared": True},
-    )
-    operator_.run("agent", "persist", {"session_id": "tab-1", "is_shared": False})
-
-    assert shells.persisted == [("tab-1", False, True), ("tab-1", None, False)]
-
-
-def test_an_unknown_session_is_refused_typed():
-    operator_ = shell_operator(FakeShells())
-
-    for verb in ("persist", "stop_session"):
-        outcome = operator_.run("agent", verb, {"session_id": "gone"})
-
-        assert outcome.code == "session_unknown"
-        assert outcome.params == {"session_id": "gone"}
-
-
-def test_windows_answers_the_session_verbs(monkeypatch):
-    monkeypatch.setattr(commands.os, "name", "nt")
-    operator_ = shell_operator(FakeShells())
-
-    assert operator_.run("agent", "stop_session", {"session_id": "tab-1"}).code == ""
-    assert (
-        operator_.run(
-            "agent",
-            "persist",
-            {"session_id": "tab-1", "is_persistent": False, "is_shared": True},
-        ).code
-        == ""
-    )
-
-
-def test_without_a_registry_the_session_verbs_are_unsupported():
-    outcome = operator().run("agent", "persist", {"session_id": "tab-1"})
-
-    assert outcome.code == "unsupported_platform"
 
 
 def test_remote_desktop_read_closes_with_its_result():

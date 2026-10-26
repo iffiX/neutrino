@@ -1,42 +1,22 @@
-"""One TCP connection to a service on this machine, over one stream.
+"""Which ports this machine publishes now, for the transport's ``port`` question.
 
 The hub opens ``connect {port, protocol}`` for a client that asked for a
-service this machine publishes; this module serves ``tcp``, the protocol an
-open that names none asks for, and says what is published on each protocol. The agent dials ``127.0.0.1:<port>``, or the address a
-container port is published on when it names one, and nothing else: a port
-the machine does not publish at that moment is refused
-``port_not_published {port}`` before anything is dialled. Bytes go both
-ways, out no faster than the hub's credit allows and in no faster than this
-side grants. End of file on the socket closes the stream once what was read
-is sent; the hub's close shuts the socket. There is no half-close.
-
-Not pure: dials sockets.
+service this machine publishes. The agent's transport serves the stream
+itself: it asks the agent ``port`` whether the port is published on the
+stream's protocol, dials ``127.0.0.1:<port>``, or the address a container
+port is published on when it names one, and refuses every other port
+``port_not_published {port}`` before anything is dialled. Pure: reads the
+report and the hub's last state.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import contextlib
-import errno
 import ipaddress
-import socket
-import threading
 import urllib.parse
 
-from neutrino_agent.constants import (
-    AGENT_CODE_CONNECT_FAILED,
-    AGENT_CODE_PORT_NOT_PUBLISHED,
-    AGENT_CONNECT_DIAL_TIMEOUT_S,
-    AGENT_CONNECT_LOOPBACK,
-    AGENT_CONNECT_REFUSED,
-    AGENT_CONNECT_TCP,
-    AGENT_CONNECT_TIMEOUT,
-    AGENT_CONNECT_UNREACHABLE,
-    AGENT_WS_CHUNK_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
-)
-from neutrino_agent.exceptions import StreamClosed, StreamRefused
+from neutrino_agent.constants import AGENT_CONNECT_LOOPBACK, AGENT_CONNECT_TCP
 
 # The port the file share answers SMB on, on every system.
 SMB_PORT = 445
@@ -44,13 +24,14 @@ SMB_PORT = 445
 SCHEME_PORTS = {"http": 80, "https": 443}
 # The module states under which the hub has configured a module.
 CONFIGURED_STATES = ("stopped", "running")
-# The modules whose configured instances each answer on their own port.
+# The modules whose configured instances each answer on the port the agent
+# took for them, which their details report.
 INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg")
-# The container modules whose page the agent's forwarder serves at the
-# configured ``port``.
+# The modules whose instances publish their port only while they run.
+RUNNING_INSTANCE_MODULES = ("ssh_server",)
+# The container modules whose page the agent's forwarder serves at the port
+# their details report.
 FORWARDED_MODULES = ("hermes_webui",)
-# How long the hub's side waits for an item before it looks again.
-POLL_S = 0.5
 
 
 def published_ports(
@@ -72,10 +53,12 @@ def published_ports(
 
     Returns:
         Port to address. On TCP: 445 while the file share reports a share,
-        the desktop's direct port while it is shared, the port of the url
-        the Gitea module reports, each configured editor or CloudCLI
-        instance's port, the port of a container module's forwarder, and
-        each port a running container publishes on TCP. On UDP: each port a running container publishes on UDP, and
+        the desktop's direct port while it is shared, the Gitea module's
+        port and its own SSH server's while it reports a url, each
+        configured VS Code, code-server, CloudCLI or Codeg instance's port,
+        each running SSH server instance's port, the port of a container
+        module's forwarder, and each port a running container publishes on
+        TCP. On UDP: each port a running container publishes on UDP, and
         nothing else. The port a hub container's ``page_port`` is published
         at is never one. A container's port goes to the one address it is
         published on when it names one; every other to loopback. A binding
@@ -92,25 +75,27 @@ def published_ports(
         if port:
             ports[port] = AGENT_CONNECT_LOOPBACK
     gitea = _configured(modules.get("gitea"))
-    if gitea is not None:
-        port = url_port(str(gitea.get("url", "") or ""))
-        if port:
-            ports[port] = AGENT_CONNECT_LOOPBACK
-    for name in INSTANCE_MODULES:
-        entry = desired_modules.get(name)
-        if not isinstance(entry, dict) or entry.get("want") not in CONFIGURED_STATES:
-            continue
-        config = entry.get("config") if isinstance(entry.get("config"), dict) else {}
-        for instance in config.get("instances") or []:
-            port = _port(instance.get("port") if isinstance(instance, dict) else 0)
+    if gitea is not None and gitea.get("url"):
+        for port in (
+            url_port(str(gitea.get("url", "") or "")),
+            _port(gitea.get("port")),
+            _port(gitea.get("ssh_listen_port")),
+        ):
+            if port:
+                ports[port] = AGENT_CONNECT_LOOPBACK
+    for name in INSTANCE_MODULES + RUNNING_INSTANCE_MODULES:
+        details = _configured(modules.get(name))
+        for instance in (details or {}).get("instances") or []:
+            if not isinstance(instance, dict):
+                continue
+            if name in RUNNING_INSTANCE_MODULES and not instance.get("is_running"):
+                continue
+            port = _port(instance.get("port"))
             if port:
                 ports[port] = AGENT_CONNECT_LOOPBACK
     for name in FORWARDED_MODULES:
-        entry = desired_modules.get(name)
-        if not isinstance(entry, dict) or entry.get("want") not in CONFIGURED_STATES:
-            continue
-        config = entry.get("config") if isinstance(entry.get("config"), dict) else {}
-        port = _port(config.get("port"))
+        details = _configured(modules.get(name))
+        port = _port((details or {}).get("port"))
         if port:
             ports[port] = AGENT_CONNECT_LOOPBACK
     ports.update(_container_ports(modules, desired_modules, protocol))
@@ -151,129 +136,6 @@ def dial_address(address: str) -> str:
     except ValueError:
         return AGENT_CONNECT_LOOPBACK
     return address
-
-
-def dial_reason(error: OSError) -> str:
-    """The ``connect_failed`` reason one failed dial gives.
-
-    Args:
-        error: What the dial raised.
-
-    Returns:
-        ``refused`` when nothing answers at the port, ``timeout`` when the
-        dial ran out of time, ``unreachable`` for anything else.
-    """
-    if isinstance(error, ConnectionRefusedError) or error.errno == errno.ECONNREFUSED:
-        return AGENT_CONNECT_REFUSED
-    if isinstance(error, (socket.timeout, TimeoutError)) or error.errno in (
-        errno.ETIMEDOUT,
-    ):
-        return AGENT_CONNECT_TIMEOUT
-    return AGENT_CONNECT_UNREACHABLE
-
-
-class ConnectStream:
-    """Serves one ``connect`` stream: a dial, then bytes both ways."""
-
-    def __init__(self, channel, args: dict, *, published, dial=None):
-        """
-        Args:
-            channel: The stream's :class:`StreamChannel`.
-            args: The open's arguments, ``{port, protocol}``, ``protocol``
-                ``tcp`` or absent.
-            published: Called with nothing for :func:`published_ports` now.
-            dial: Called with ``(address, timeout)`` for the connected
-                socket; None takes :func:`socket.create_connection`.
-        """
-        self._channel = channel
-        self._port = args.get("port")
-        self._protocol = args.get("protocol", AGENT_CONNECT_TCP)
-        self._published = published
-        self._dial = dial or socket.create_connection
-        self._socket: "socket.socket | None" = None
-        self._is_done = threading.Event()
-
-    def open(self) -> None:
-        """Dial the port when the machine publishes it.
-
-        Raises:
-            StreamRefused: ``port_not_published {port}`` for a port the
-                machine does not publish now on TCP, or for an open naming
-                another protocol; ``connect_failed {reason}`` when the dial
-                fails.
-        """
-        port = self._port
-        ports = self._published() if self._protocol == AGENT_CONNECT_TCP else {}
-        if isinstance(port, bool) or not isinstance(port, int) or port not in ports:
-            raise StreamRefused(AGENT_CODE_PORT_NOT_PUBLISHED, {"port": port})
-        try:
-            self._socket = self._dial(
-                (ports[port], port), timeout=AGENT_CONNECT_DIAL_TIMEOUT_S
-            )
-        except OSError as error:
-            raise StreamRefused(
-                AGENT_CODE_CONNECT_FAILED, {"reason": dial_reason(error)}
-            )
-        self._socket.settimeout(None)
-
-    def run(self) -> dict:
-        """Carry bytes both ways until either end ends.
-
-        Returns:
-            ``{"code": "", "params": {}}``: the socket's end of file, or the
-            hub's close.
-        """
-        connection = self._socket
-        feeder = threading.Thread(
-            target=self._feed,
-            args=(connection,),
-            name=f"agent_connect_input_{self._channel.id}",
-            daemon=True,
-        )
-        try:
-            self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
-            feeder.start()
-            self._pump(connection)
-        finally:
-            self._is_done.set()
-            with contextlib.suppress(OSError):
-                connection.close()
-            if feeder.is_alive():
-                feeder.join(timeout=POLL_S * 4)
-        return {"code": "", "params": {}}
-
-    def _pump(self, connection: socket.socket) -> None:
-        """Send what the socket reads up the stream, until its end of file."""
-        while not self._is_done.is_set():
-            try:
-                data = connection.recv(AGENT_WS_CHUNK_BYTES)
-            except OSError:
-                return
-            if not data:
-                return
-            try:
-                self._channel.send_bytes(data)
-            except StreamClosed:
-                return
-
-    def _feed(self, connection: socket.socket) -> None:
-        """Write the hub's bytes into the socket, granting credit as they go."""
-        while not self._is_done.is_set():
-            item = self._channel.recv(timeout=POLL_S)
-            if item is None:
-                continue
-            if item[0] == "close":
-                break
-            if item[0] != "data":
-                continue
-            try:
-                connection.sendall(item[1])
-                self._channel.offer_credit(len(item[1]))
-            except OSError:
-                break
-        self._is_done.set()
-        with contextlib.suppress(OSError):
-            connection.shutdown(socket.SHUT_RDWR)
 
 
 def _container_ports(modules: dict, desired_modules: dict, protocol: str) -> dict:

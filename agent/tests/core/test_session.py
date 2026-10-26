@@ -1,38 +1,32 @@
-"""One connection to the hub, driven with a scripted socket client.
+"""One session the transport opened, driven with a control client a test plays.
 
-What these pin: the protocol number this build speaks, the hello card and
-the welcome card, a refusal at the door raised with its code and one on a
-live socket ending it the same way, a report on the interval and at once
-when something changed, a hook run once as soon as the first report has
-gone out, the stream layer as protocol.md draws it: an even
-id from the hub served, odd ids counting up for the streams this side
-opens, a binary frame as a big-endian u32 id and bytes, a short or
-unaddressed frame dropped, no ``opened`` frame ever, the kind table as the
-whole vocabulary with ``order``, ``validate`` and ``resize`` no kinds of it
-and a resize arriving as a command that names the shell stream, ``eof``
-reaching the stream it names, a head on every frame of a headed send, an
-``exec`` stream's output headed with its ``fd`` and its exit code, a close
-whose params are the result and whose code is a refusal, credit holding
-bytes back, and how the socket's end is reported to the loop that owns it.
+What these pin: the protocol number this build speaks, the hello card with
+no token, the welcome taken from a hub and the hub's time it names, a
+``refused`` frame ending the session with its code and params, read
+tolerantly; the ``state`` frame handed on, ``persist`` and
+``stop_session`` answered with a ``reply`` of the same ``request``, ``pong``
+taken quietly and a frame this build cannot read a typed
+``frame_unreadable``, never a dead session; and the streams the hub opens:
+each attached on a connection of its own, ``accept`` written before the
+handler's records and its result the ``close``, a kind outside the table
+closed ``kind_unknown``, a handler's refusal closing with its code and no
+``accept``, a handler that raises closing ``agent_internal``, and a
+command stream's lines and its exit code.
 """
 
 import json
-import queue
+import socket
 import threading
-import time
 
 import pytest
 
-from neutrino_agent.constants import AGENT_WS_STREAM_ID_BYTES, PROTOCOL
+from neutrino_agent.constants import PROTOCOL
 from neutrino_agent.core.session import AgentSession
-from neutrino_agent.exceptions import (
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-    SocketClosed,
-    StreamRefused,
-)
+from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.streams import STREAM_KINDS
-from neutrino_agent.streams.module_command import ModuleCommandStream
+from neutrino_agent.streams.channel import StreamChannel
+from neutrino_agent.transport.connection import LocalSocketConnection
+from neutrino_agent.transport.records import RecordReader, decode_item, encode_json
 
 HELLO = {
     "protocol": 4,
@@ -40,1165 +34,316 @@ HELLO = {
     "id": "dev-1",
     "name": "box",
     "software": "neutrino_agent/0.0.0",
-    "token": "tok",
+}
+WELCOME = {
+    "type": "welcome",
+    "protocol": 4,
+    "role": "hub",
+    "id": "hub-1",
+    "name": "lab-hub",
+    "software": "neutrino_hub/0.6.0",
+    "time": 1_700_000_000.5,
 }
 
 
-def frame(stream_id: int, data: bytes) -> bytes:
-    """One binary frame as the wire carries it."""
-    return stream_id.to_bytes(AGENT_WS_STREAM_ID_BYTES, "big") + data
-
-
-class ScriptedClient:
-    """A socket client whose inbound frames a test feeds one by one.
-
-    Attributes:
-        drop_at_report: The count of the report whose sending makes the
-            reader see the hub hanging up, so a scripted connection ends
-            after the reports it was opened to observe; 0 never.
-    """
+class PairControl:
+    """The control client as a session reaches it: frames recorded, each
+    attached stream one end of a socket pair whose other end the test reads."""
 
     def __init__(self):
-        self.inbound: queue.Queue = queue.Queue()
-        self.sent: list = []
-        self.sent_bytes: list = []
-        self.is_connected = False
-        self.is_closed = False
-        self.connect_error = None
-        self.drop_at_report = 0
-        self.local_address = ""
+        self.frames: list = []
+        self.far_ends: dict = {}
+        self.attached = threading.Event()
 
-    def connect(self) -> None:
-        if self.connect_error is not None:
-            raise self.connect_error
-        self.is_connected = True
+    def send_frame(self, frame, *, is_last=False):
+        self.frames.append(frame)
 
-    def send_text(self, text: str) -> None:
-        if self.is_closed:
-            raise GatewayUnreachable("the socket is closed")
-        message = json.loads(text)
-        self.sent.append(message)
-        if (
-            message.get("type") == "report"
-            and len(self.frames("report")) == self.drop_at_report
-        ):
-            # A hub that hung up fails the next send too, so the loop cannot
-            # slip another report in before the reader sees the drop.
-            self.is_closed = True
-            self.inbound.put(GatewayUnreachable("hung up"))
+    def attach(self, stream_id):
+        near, far = socket.socketpair()
+        self.far_ends[stream_id] = far
+        self.attached.set()
+        return StreamChannel(LocalSocketConnection("", sock=near), stream_id)
 
-    def send_bytes(self, data: bytes) -> None:
-        if self.is_closed:
-            raise GatewayUnreachable("the socket is closed")
-        self.sent_bytes.append(bytes(data))
-
-    def recv(self):
-        item = self.inbound.get()
-        if isinstance(item, Exception):
-            raise item
-        if isinstance(item, bytes):
-            return "binary", item
-        return "text", json.dumps(item)
-
-    def close(self, code: int = 1000, reason: str = "") -> None:
-        self.is_closed = True
-        self.inbound.put(GatewayUnreachable("closed from here"))
-
-    def feed(self, message) -> None:
-        """Deliver one frame, or one exception, to the reader."""
-        self.inbound.put(message)
-
-    def frames(self, kind: str) -> list:
-        return [message for message in self.sent if message["type"] == kind]
-
-    def wait_for(self, kind: str, count: int = 1, timeout_s: float = 3.0) -> list:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            found = self.frames(kind)
-            if len(found) >= count:
-                return found
-            time.sleep(0.005)
-        raise AssertionError(f"no {kind} frame in {timeout_s}s: {self.sent}")
-
-    def wait_for_bytes(self, count: int = 1, timeout_s: float = 3.0) -> list:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if len(self.sent_bytes) >= count:
-                return list(self.sent_bytes)
-            time.sleep(0.005)
-        raise AssertionError(f"no binary frame in {timeout_s}s: {self.sent_bytes}")
-
-
-def make_session(client, **overrides):
-    """A session over one scripted client with recording callbacks."""
-    commands: list = []
-    news = threading.Event()
-
-    def run_command(module, verb, args, on_line=None):
-        commands.append((module, verb, args))
-        if on_line is not None:
-            on_line("running")
-        return {"exit_code": 0, "code": "", "params": {}, "output": "ran"}
-
-    fields = dict(
-        client=client,
-        hello=dict(HELLO),
-        report=lambda: {"metrics": {"cpu_percent": 1}},
-        run_command=run_command,
-        news=news,
-        log=lambda message: None,
-        interval_s=0.05,
-    )
-    fields.update(overrides)
-    session = AgentSession(**fields)
-    return session, commands, news
-
-
-def welcome(**fields) -> dict:
-    return {
-        "type": "welcome",
-        "protocol": 1,
-        "role": "hub",
-        "id": "hub-1",
-        "name": "hub",
-        "software": "neutrino_hub/0.2.0",
-        **fields,
-    }
-
-
-class EchoStream:
-    """A byte-carrying handler: sends back what it was given, records the
-    rest, and returns on ``quit`` or the hub's close."""
-
-    instances: list = []
-
-    def __init__(self, channel, args):
-        self.channel = channel
-        self.args = args
-        self.items: list = []
-        EchoStream.instances.append(self)
-
-    def open(self):
-        if self.args.get("refuse"):
-            raise StreamRefused("container_unknown", {"name": "kuma"})
-        self.channel.offer_credit(1024)
-
-    def run(self):
+    def items(self, stream_id, timeout=5.0) -> list:
+        """Every record the agent wrote on one stream, until it closed."""
+        assert self.attached.wait(timeout)
+        far = self.far_ends[stream_id]
+        far.settimeout(timeout)
+        reader = RecordReader(far)
+        items = []
         while True:
-            item = self.channel.recv(timeout=3)
-            if item is None:
-                return {"code": "", "params": {"exit_code": 9}}
-            self.items.append(item)
-            if item == ("data", b"quit"):
-                return {"code": "", "params": {"exit_code": 0}}
-            if item[0] == "data":
-                self.channel.send_bytes(b"echo:" + item[1])
-            if item[0] == "close":
-                return {"code": "", "params": {"exit_code": 0}}
+            record = reader.read()
+            if record is None:
+                return items
+            items.append(decode_item(*record))
+            if items[-1][0] == "close":
+                return items
+
+    def feed(self, stream_id, data: bytes) -> None:
+        self.far_ends[stream_id].sendall(data)
 
 
-def serving(session, on_first_report=None):
-    """Run serve() on a thread; returns the thread and the outcome holder."""
-    outcome: dict = {}
+class RecordedShells:
+    """The kept shells as ``persist`` and ``stop_session`` reach them."""
 
-    def run():
-        outcome["failure"] = session.serve(on_first_report)
+    def __init__(self, known=("tab-1",)):
+        self.known = set(known)
+        self.calls: list = []
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    return thread, outcome
+    def persist(self, session_id, *, is_persistent=None, is_shared=None):
+        self.calls.append(("persist", session_id, is_persistent, is_shared))
+        return session_id in self.known
 
-
-def connected(client, **overrides):
-    """A welcomed session serving on a thread, with its serve thread."""
-    session, commands, news = make_session(client, **overrides)
-    client.feed(welcome())
-    session.connect()
-    thread, _ = serving(session)
-    return session, thread, commands
+    def stop(self, session_id):
+        self.calls.append(("stop", session_id))
+        return session_id in self.known
 
 
-def wait_until(condition, timeout_s: float = 3.0) -> None:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if condition():
-            return
-        time.sleep(0.005)
-    raise AssertionError("the condition never held")
-
-
-# --- the number at the door ---
+def session_with(control=None, **kwargs) -> AgentSession:
+    return AgentSession(
+        control=control or PairControl(),
+        hello=HELLO,
+        log=lambda line: None,
+        **kwargs,
+    )
 
 
 def test_this_build_speaks_protocol_four():
     assert PROTOCOL == 4
-    assert HELLO["protocol"] == PROTOCOL
 
 
-# --- hello and welcome ---
+def test_hello_is_the_identity_card_and_carries_no_token():
+    control = PairControl()
+
+    session_with(control).say_hello()
+
+    assert control.frames == [{"type": "hello", **HELLO}]
+    assert "token" not in control.frames[0]
 
 
-def test_connect_says_hello_with_the_card_and_takes_the_welcome():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome())
+def test_the_welcome_opens_the_session_with_the_hubs_card_and_time():
+    session = session_with()
 
-    session.connect()
+    session.take(dict(WELCOME))
 
-    (hello,) = client.frames("hello")
-    assert hello == {"type": "hello", **HELLO}
-    assert session.hub_id == "hub-1"
-    assert session.hub_name == "hub"
-    assert session.hub_software == "neutrino_hub/0.2.0"
-    assert session.hub_time is None
     assert session.is_open
-    session.close()
-
-
-def test_the_welcomes_time_is_the_hubs_clock_the_session_keeps():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome(time=1_800_000_000.5))
-
-    session.connect()
-
-    assert session.hub_time == 1_800_000_000.5
-    session.close()
-
-
-def test_a_first_frame_that_is_no_welcome_is_unreachable():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed({"type": "state", "hash": "", "modules": {}})
-
-    with pytest.raises(GatewayUnreachable) as caught:
-        session.connect()
-
-    assert not isinstance(caught.value, GatewayRefusedDetail)
-    assert client.is_closed
-
-
-def test_a_welcome_from_something_other_than_a_hub_is_unreachable():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome(role="agent"))
-
-    with pytest.raises(GatewayUnreachable) as caught:
-        session.connect()
-
-    assert not isinstance(caught.value, GatewayRefusedDetail)
-    assert client.is_closed
-
-
-def test_a_refused_first_frame_raises_its_code_and_params():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(
-        {
-            "type": "refused",
-            "code": "protocol_too_new",
-            "params": {"peer": 2, "hub": 1, "min": 1},
-        }
+    assert session.wait_welcome(0)
+    assert (session.hub_id, session.hub_name, session.hub_software) == (
+        "hub-1",
+        "lab-hub",
+        "neutrino_hub/0.6.0",
     )
+    assert session.hub_time == 1_700_000_000.5
 
-    with pytest.raises(GatewayRefusedDetail) as refused:
-        session.connect()
 
-    assert refused.value.code == "protocol_too_new"
-    assert refused.value.params == {"peer": 2, "hub": 1, "min": 1}
-    assert client.is_closed
+def test_a_welcome_without_time_names_no_hub_time():
+    session = session_with()
+
+    session.take({key: value for key, value in WELCOME.items() if key != "time"})
+
+    assert session.is_open
+    assert session.hub_time is None
+
+
+def test_a_welcome_from_something_other_than_a_hub_is_unreadable():
+    errors: list = []
+    session = session_with(on_unreadable=errors.append)
+
+    session.take(dict(WELCOME, role="client"))
+
     assert not session.is_open
+    assert errors == [{"code": "frame_unreadable", "params": {"type": "welcome"}}]
 
 
 @pytest.mark.parametrize(
-    "frame_sent",
+    "frame, code, params",
     [
-        {"type": "refused"},
-        {"type": "refused", "code": "", "params": {}},
-        {"type": "refused", "code": "binding_unknown", "params": "words"},
+        (
+            {"type": "refused", "code": "protocol_too_old", "params": {"min": 4}},
+            "protocol_too_old",
+            {"min": 4},
+        ),
+        ({"type": "refused", "code": "replaced"}, "replaced", {}),
+        ({"type": "refused", "params": "nonsense"}, "channel_refused", {}),
     ],
 )
-def test_a_refused_frame_is_read_tolerantly(frame_sent):
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(frame_sent)
+def test_a_refused_frame_ends_the_session_with_its_code(frame, code, params):
+    session = session_with()
+    session.take(dict(WELCOME))
 
-    with pytest.raises(GatewayRefusedDetail) as refused:
-        session.connect()
+    session.take(frame)
 
-    assert refused.value.code == (frame_sent.get("code") or "channel_refused")
-    assert refused.value.params == {}
-
-
-def test_a_close_4000_before_any_frame_is_channel_refused():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(SocketClosed(4000, "binding_unknown"))
-
-    with pytest.raises(GatewayRefusedDetail) as refused:
-        session.connect()
-
-    assert refused.value.code == "channel_refused"
+    assert session.is_ended and not session.is_open
+    assert (session.refusal.code, session.refusal.params) == (code, params)
+    assert not session.wait_welcome(0)
 
 
-def test_a_connect_error_passes_straight_through():
-    client = ScriptedClient()
-    client.connect_error = GatewayUnreachable("no route")
-    session, _, _ = make_session(client)
+def test_a_state_frame_hands_the_document_on_without_its_type():
+    documents: list = []
+    session = session_with(on_state=documents.append)
 
-    with pytest.raises(GatewayUnreachable):
-        session.connect()
+    session.take({"type": "state", "hash": "h1", "modules": {}})
 
-
-def test_the_sessions_local_address_is_the_sockets_own():
-    client = ScriptedClient()
-    client.local_address = "192.0.2.10"
-    session, _, _ = make_session(client)
-
-    assert session.local_address == "192.0.2.10"
+    assert documents == [{"hash": "h1", "modules": {}}]
 
 
-# --- reports ---
+@pytest.mark.parametrize(
+    "frame",
+    [{"type": "mystery"}, {"type": 7}, {}, {"hello": "there"}],
+)
+def test_a_frame_this_build_cannot_read_is_a_typed_error_and_nothing_ends(frame):
+    errors: list = []
+    session = session_with(on_unreadable=errors.append)
+    session.take(dict(WELCOME))
+
+    session.take(frame)
+
+    assert session.is_open
+    assert errors and errors[0]["code"] == "frame_unreadable"
 
 
-def test_a_report_goes_up_at_once_then_on_the_interval():
-    client = ScriptedClient()
-    session, _, _ = make_session(client, interval_s=0.05)
-    client.feed(welcome())
-    session.connect()
-    thread, _ = serving(session)
+def test_a_pong_is_taken_quietly():
+    errors: list = []
+    session = session_with(on_unreadable=errors.append)
 
-    reports = client.wait_for("report", count=3)
+    session.take({"type": "pong", "nonce": "n"})
 
-    assert reports[0]["metrics"] == {"cpu_percent": 1}
-    session.close()
-    thread.join(timeout=2)
+    assert errors == []
 
 
-def test_news_cuts_the_wait_short():
-    client = ScriptedClient()
-    session, _, news = make_session(client, interval_s=60)
-    client.feed(welcome())
-    session.connect()
-    thread, _ = serving(session)
-    client.wait_for("report", count=1)
+def test_persist_is_answered_with_a_reply_of_its_request():
+    control = PairControl()
+    shells = RecordedShells()
+    session = session_with(control, shells=shells)
 
-    news.set()
-
-    client.wait_for("report", count=2, timeout_s=2)
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_the_tick_hook_runs_once_per_interval():
-    client = ScriptedClient()
-    ticks: list = []
-    session, _, _ = make_session(
-        client, interval_s=0.02, on_tick=lambda: ticks.append(1)
-    )
-    client.feed(welcome())
-    session.connect()
-    thread, _ = serving(session)
-
-    client.wait_for("report", count=3)
-
-    assert ticks
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_the_first_report_hook_runs_once_after_the_first_report_went_out():
-    client = ScriptedClient()
-    session, _, _ = make_session(client, interval_s=0.02)
-    client.feed(welcome())
-    session.connect()
-    seen: list = []
-
-    def first_report():
-        seen.append(len(client.frames("report")))
-
-    thread, _ = serving(session, on_first_report=first_report)
-
-    client.wait_for("report", count=3)
-
-    assert seen == [1]
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_state_frame_hands_the_document_on():
-    """The frame's sections are the document, ``{hash, modules, desktop}``;
-    the frame's own type is not part of it."""
-    client = ScriptedClient()
-    taken: list = []
-    session, thread, _ = connected(client, on_state=taken.append)
-
-    client.feed(
+    session.take(
         {
-            "type": "state",
-            "hash": "h3",
-            "modules": {"samba": {"want": "running", "config": {}}},
-            "desktop": {"seat_password": ""},
+            "type": "persist",
+            "request": "r1",
+            "session_id": "tab-1",
+            "is_shared": True,
         }
     )
-    client.feed({"type": "state", "hash": "h4"})
-    client.feed({"type": "open", "stream": 2, "kind": "command"})
-    client.feed({"type": "credit", "stream": 2, "bytes": 4096})
+    session.take({"type": "persist", "request": "r2", "session_id": "gone"})
 
-    client.wait_for("close")
-    assert taken == [
+    assert shells.calls[0] == ("persist", "tab-1", None, True)
+    assert control.frames == [
+        {"type": "reply", "request": "r1", "code": "", "params": {}},
         {
-            "hash": "h3",
-            "modules": {"samba": {"want": "running", "config": {}}},
-            "desktop": {"seat_password": ""},
+            "type": "reply",
+            "request": "r2",
+            "code": "session_unknown",
+            "params": {"session_id": "gone"},
         },
-        {"hash": "h4"},
     ]
-    assert session.state_hash == "h4"
-    assert client.frames("state_request") == []
-    session.close()
-    thread.join(timeout=2)
 
 
-def test_state_frames_are_taken_and_nothing_else_is_fatal():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
+def test_stop_session_ends_the_kept_shell_and_replies():
+    control = PairControl()
+    shells = RecordedShells()
+    session = session_with(control, shells=shells)
 
-    client.feed({"type": "state", "hash": "h2", "modules": {}})
-    client.feed({"type": "resize", "stream": "x", "cols": 1, "rows": 1})
-    client.feed({"type": "credit", "stream": "x", "bytes": 1})
-    client.feed({"type": "whatever"})
-    client.feed({"type": "open", "stream": "00000006", "kind": "command"})
-    client.feed({"type": "open", "stream": 2, "kind": "command"})
-    client.feed({"type": "credit", "stream": 2, "bytes": 4096})
+    session.take({"type": "stop_session", "request": "r3", "session_id": "tab-1"})
 
-    (closed,) = client.wait_for("close")
-    assert closed["stream"] == 2
-    assert session.state_hash == "h2"
-    assert session.is_open
-    session.close()
-    thread.join(timeout=2)
+    assert shells.calls == [("stop", "tab-1")]
+    assert control.frames == [
+        {"type": "reply", "request": "r3", "code": "", "params": {}}
+    ]
 
 
-# --- the kind table, and the command kind ---
+def test_a_report_is_one_report_frame():
+    control = PairControl()
+
+    session_with(control).report({"state_hash": "h", "modules": {}})
+
+    assert control.frames == [{"type": "report", "state_hash": "h", "modules": {}}]
 
 
 def test_the_kind_table_is_shell_exec_file_and_command_and_nothing_else():
-    session, _, _ = make_session(ScriptedClient())
-
     assert set(STREAM_KINDS) == {"shell", "exec", "file", "command"}
-    assert set(session._stream_kinds) == {"shell", "exec", "file", "command"}
 
 
-@pytest.mark.parametrize("kind", ["order", "validate", "resize", "tunnel"])
+@pytest.mark.parametrize("kind", ["connect", "order", "", "log"])
 def test_a_kind_outside_the_table_is_closed_kind_unknown(kind):
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
+    control = PairControl()
+    session = session_with(control, stream_kinds={})
 
-    client.feed({"type": "open", "stream": 8, "kind": kind, "module": "samba"})
+    session.serve_stream("s2", {"kind": kind})
 
-    (closed,) = client.wait_for("close")
-    assert closed == {
-        "type": "close",
-        "stream": 8,
-        "code": "kind_unknown",
-        "params": {"kind": kind},
-    }
-    assert client.frames("refused") == []
-    assert client.frames("opened") == []
-    assert session.is_open
-    session.close()
-    thread.join(timeout=2)
+    assert control.items("s2") == [("close", "kind_unknown", {"kind": kind})]
 
 
-def test_a_command_stream_names_a_module_and_a_verb_and_closes_with_its_exit():
-    client = ScriptedClient()
-    session, thread, commands = connected(client)
+class EchoHandler:
+    """A handler that sends back what it was opened with, then closes."""
 
-    client.feed(
-        {
-            "type": "open",
-            "stream": 4,
-            "kind": "command",
-            "module": "agent",
-            "verb": "reboot",
-            "when": "now",
-        }
+    def __init__(self, channel, args):
+        self.channel = channel
+        self.args = args
+
+    def open(self):
+        if self.args.get("is_refused"):
+            raise StreamRefused("account_not_enabled", {"account": "eve"})
+
+    def run(self):
+        if self.args.get("is_broken"):
+            raise LookupError("broken")
+        self.channel.send_bytes(json.dumps(self.args).encode())
+        self.channel.send_stderr(b"warning")
+        item = self.channel.recv(timeout=5)
+        return {"code": "", "params": {"exit_code": 0, "got": list(item[1:2])}}
+
+
+def test_a_stream_is_attached_accepted_served_and_closed_with_its_result():
+    control = PairControl()
+    session = session_with(control, stream_kinds={"echo": EchoHandler})
+
+    session.serve_stream("s4", {"kind": "echo", "cols": 80})
+    assert control.attached.wait(5)
+    control.feed("s4", encode_json(6, {"cols": 100, "rows": 30}))
+    items = control.items("s4")
+
+    assert items[0] == ("accept",)
+    assert items[1] == ("data", b'{"cols": 80}')
+    assert items[2] == ("stderr", b"warning")
+    assert items[3] == ("close", "", {"exit_code": 0, "got": [100]})
+
+
+def test_a_handlers_refusal_closes_with_its_code_and_no_accept():
+    control = PairControl()
+    session = session_with(control, stream_kinds={"echo": EchoHandler})
+
+    session.serve_stream("s6", {"kind": "echo", "is_refused": True})
+
+    assert control.items("s6") == [("close", "account_not_enabled", {"account": "eve"})]
+
+
+def test_a_handler_that_raises_closes_agent_internal():
+    control = PairControl()
+    session = session_with(control, stream_kinds={"echo": EchoHandler})
+
+    session.serve_stream("s8", {"kind": "echo", "is_broken": True})
+
+    items = control.items("s8")
+    assert items[0] == ("accept",)
+    assert items[-1] == ("close", "agent_internal", {"error": "LookupError"})
+
+
+def test_a_command_stream_sends_its_lines_and_closes_with_its_exit():
+    control = PairControl()
+
+    def run(module, verb, args, on_line):
+        on_line("one")
+        return {"exit_code": 0, "output": "done", "params": {}, "code": ""}
+
+    session = session_with(control, run_command=run)
+
+    session.serve_stream("s10", {"kind": "command", "module": "agent", "verb": "x"})
+
+    items = control.items("s10")
+    assert items[0] == ("accept",)
+    assert ("data", b"one\n") in items
+    assert items[-1] == (
+        "close",
+        "",
+        {"exit_code": 0, "output": "done", "result": {}},
     )
-    client.feed({"type": "credit", "stream": 4, "bytes": 4096})
-
-    (closed,) = client.wait_for("close")
-    assert closed == {
-        "type": "close",
-        "stream": 4,
-        "code": "",
-        "params": {"exit_code": 0, "output": "ran", "result": {}},
-    }
-    assert client.sent_bytes == [frame(4, b"running\n")]
-    assert commands == [("agent", "reboot", {"when": "now"})]
-    assert client.frames("opened") == []
-    assert client.frames("event") == []
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_commands_lines_wait_for_the_hubs_credit():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-
-    client.feed(
-        {
-            "type": "open",
-            "stream": 6,
-            "kind": "command",
-            "module": "zfs",
-            "verb": "scan",
-        }
-    )
-    time.sleep(0.1)
-    assert client.sent_bytes == []
-    assert client.frames("close") == []
-
-    client.feed({"type": "credit", "stream": 6, "bytes": 3})
-    assert client.wait_for_bytes(count=1) == [frame(6, b"run")]
-    client.feed({"type": "credit", "stream": 6, "bytes": 1024})
-
-    assert client.wait_for_bytes(count=2) == [frame(6, b"run"), frame(6, b"ning\n")]
-    client.wait_for("close")
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_reading_verb_closes_with_its_result():
-    client = ScriptedClient()
-
-    def run_command(module, verb, args, on_line=None):
-        return {
-            "exit_code": 0,
-            "code": "",
-            "params": {},
-            "output": "",
-            "result": {"is_installed": True},
-        }
-
-    session, thread, _ = connected(client, run_command=run_command)
-
-    client.feed(
-        {
-            "type": "open",
-            "stream": 2,
-            "kind": "command",
-            "module": "agent",
-            "verb": "remote_desktop_read",
-        }
-    )
-
-    (closed,) = client.wait_for("close")
-    assert closed["params"] == {
-        "exit_code": 0,
-        "output": "",
-        "result": {"is_installed": True},
-    }
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_refused_verb_closes_with_its_code():
-    client = ScriptedClient()
-
-    def run_command(module, verb, args, on_line=None):
-        return {
-            "exit_code": 1,
-            "code": "verb_unknown",
-            "params": {"module": module, "verb": verb},
-            "output": "",
-        }
-
-    session, thread, _ = connected(client, run_command=run_command)
-
-    client.feed(
-        {"type": "open", "stream": 2, "kind": "command", "module": "samba", "verb": "x"}
-    )
-
-    (closed,) = client.wait_for("close")
-    assert closed["code"] == "verb_unknown"
-    assert closed["params"]["module"] == "samba"
-    assert closed["params"]["verb"] == "x"
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_handler_that_raises_closes_the_stream_typed():
-    client = ScriptedClient()
-
-    def broken(module, verb, args, on_line=None):
-        raise RuntimeError("boom")
-
-    session, thread, _ = connected(client, run_command=broken)
-
-    client.feed({"type": "open", "stream": 4, "kind": "command"})
-
-    (closed,) = client.wait_for("close")
-    assert closed == {
-        "type": "close",
-        "stream": 4,
-        "code": "agent_internal",
-        "params": {"error": "RuntimeError"},
-    }
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_stream_the_hub_closed_sends_no_more_lines_and_no_close():
-    client = ScriptedClient()
-    gate = threading.Event()
-    done = threading.Event()
-
-    def slow(module, verb, args, on_line=None):
-        gate.wait(timeout=3)
-        on_line("late")
-        done.set()
-        return {"exit_code": 0, "code": "", "params": {}, "output": ""}
-
-    session, thread, _ = connected(client, run_command=slow)
-    client.feed({"type": "open", "stream": 6, "kind": "command"})
-    client.feed({"type": "credit", "stream": 6, "bytes": 4096})
-    time.sleep(0.05)
-
-    client.feed({"type": "close", "stream": 6, "code": "", "params": {}})
-    time.sleep(0.05)
-    gate.set()
-    assert done.wait(timeout=3)
-    time.sleep(0.05)
-
-    assert client.sent_bytes == []
-    assert client.frames("close") == []
-    assert session.is_open
-    session.close()
-    thread.join(timeout=2)
-
-
-# --- the byte-carrying kinds ---
-
-
-def channel_session(client, **overrides):
-    EchoStream.instances = []
-    return connected(client, stream_kinds={"shell": EchoStream}, **overrides)
-
-
-def open_shell(client, stream_id=2, **args):
-    client.feed(
-        {
-            "type": "open",
-            "stream": stream_id,
-            "kind": "shell",
-            "cols": 80,
-            "rows": 24,
-            **args,
-        }
-    )
-
-
-def test_an_even_id_from_the_hub_is_served_and_its_credit_is_the_first_frame_back():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-
-    open_shell(client)
-
-    assert client.wait_for("credit") == [{"type": "credit", "stream": 2, "bytes": 1024}]
-    assert client.frames("opened") == []
-    assert client.sent[-1] == {"type": "credit", "stream": 2, "bytes": 1024}
-    assert EchoStream.instances[0].args == {"cols": 80, "rows": 24}
-    assert EchoStream.instances[0].channel.id == 2
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_the_hubs_bytes_a_resize_command_and_close_reach_the_handler():
-    """A later size is no frame of its own: it is ``command {module: agent,
-    verb: resize, shell, cols, rows}``, closed as soon as it is applied."""
-    client = ScriptedClient()
-    holder: dict = {}
-
-    def run_command(module, verb, args, on_line=None):
-        is_taken = holder["session"].resize_stream(
-            args["shell"], args["cols"], args["rows"]
-        )
-        return {
-            "exit_code": 0 if is_taken else 1,
-            "code": "",
-            "params": {},
-            "output": "",
-        }
-
-    EchoStream.instances = []
-    session, thread, _ = connected(
-        client,
-        stream_kinds={"shell": EchoStream, "command": ModuleCommandStream},
-        run_command=run_command,
-    )
-    holder["session"] = session
-    open_shell(client)
-    client.wait_for("credit")
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-
-    client.feed(frame(2, b"ls\n"))
-    assert client.wait_for_bytes(count=1) == [frame(2, b"echo:ls\n")]
-    client.feed(
-        {
-            "type": "open",
-            "stream": 4,
-            "kind": "command",
-            "module": "agent",
-            "verb": "resize",
-            "shell": 2,
-            "cols": 120,
-            "rows": 40,
-        }
-    )
-    (resized,) = client.wait_for("close")
-    assert (resized["stream"], resized["params"]["exit_code"]) == (4, 0)
-    client.feed({"type": "close", "stream": 2, "code": "", "params": {}})
-
-    wait_until(lambda: len(EchoStream.instances[0].items) == 3)
-    assert EchoStream.instances[0].items == [
-        ("data", b"ls\n"),
-        ("resize", 120, 40),
-        ("close", "", {}),
-    ]
-    time.sleep(0.05)
-    assert client.frames("close") == [resized]
-    assert session.resize_stream(99, 1, 1) is False
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_handlers_result_is_the_closes_params():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-    open_shell(client)
-    client.wait_for("credit")
-
-    client.feed(frame(2, b"bye"))
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-    assert client.wait_for_bytes(count=1) == [frame(2, b"echo:bye")]
-    client.feed(frame(2, b"quit"))
-
-    (closed,) = client.wait_for("close")
-    assert closed == {
-        "type": "close",
-        "stream": 2,
-        "code": "",
-        "params": {"exit_code": 0},
-    }
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_bytes_wait_for_the_hubs_credit():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-    open_shell(client)
-    client.wait_for("credit")
-    client.feed({"type": "credit", "stream": 2, "bytes": 4})
-
-    client.feed(frame(2, b"abcdef"))
-    time.sleep(0.1)
-    assert client.sent_bytes == [frame(2, b"echo")]
-
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-
-    assert client.wait_for_bytes(count=2) == [frame(2, b"echo"), frame(2, b":abcdef")]
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_an_eof_frame_reaches_the_stream_it_names():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-    open_shell(client)
-    client.wait_for("credit")
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-
-    client.feed(frame(2, b"in"))
-    client.wait_for_bytes(count=1)
-    client.feed({"type": "eof", "stream": 2})
-    client.feed({"type": "eof", "stream": 98})
-    client.feed({"type": "close", "stream": 2, "code": "", "params": {}})
-
-    wait_until(lambda: len(EchoStream.instances[0].items) == 3)
-    assert EchoStream.instances[0].items == [
-        ("data", b"in"),
-        ("eof",),
-        ("close", "", {}),
-    ]
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_headed_send_puts_the_head_on_every_frame_within_the_credit():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-    open_shell(client)
-    client.wait_for("credit")
-    channel = EchoStream.instances[0].channel
-    client.feed({"type": "credit", "stream": 2, "bytes": 4})
-    sender = threading.Thread(
-        target=channel.send_bytes, args=(b"abcdef",), kwargs={"head": b"\x02"}
-    )
-
-    sender.start()
-    assert client.wait_for_bytes(count=1) == [frame(2, b"\x02abc")]
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-    sender.join(timeout=2)
-
-    assert client.wait_for_bytes(count=2) == [
-        frame(2, b"\x02abc"),
-        frame(2, b"\x02def"),
-    ]
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_an_exec_stream_carries_fd_headed_output_eof_and_the_exit_code():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-    client.feed(
-        {
-            "type": "open",
-            "stream": 2,
-            "kind": "exec",
-            "argv": ["/bin/sh", "-c", "cat; echo gone >&2; exit 6"],
-            "is_tty": False,
-            "cols": 80,
-            "rows": 24,
-        }
-    )
-    client.wait_for("credit")
-    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
-
-    client.feed(frame(2, b"in"))
-    client.feed({"type": "eof", "stream": 2})
-
-    (closed,) = client.wait_for("close", timeout_s=5)
-    assert closed == {
-        "type": "close",
-        "stream": 2,
-        "code": "",
-        "params": {"exit_code": 6},
-    }
-    assert sorted(client.sent_bytes) == [frame(2, b"\x01in"), frame(2, b"\x02gone\n")]
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_handler_that_refuses_closes_with_the_code_and_grants_nothing():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-
-    open_shell(client, refuse=True)
-
-    (closed,) = client.wait_for("close")
-    assert closed == {
-        "type": "close",
-        "stream": 2,
-        "code": "container_unknown",
-        "params": {"name": "kuma"},
-    }
-    assert client.frames("credit") == []
-    assert client.frames("refused") == []
-    assert client.frames("opened") == []
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_short_binary_frame_is_dropped_with_a_log_line():
-    client = ScriptedClient()
-    logged: list = []
-    session, thread, _ = channel_session(client, log=logged.append)
-
-    client.feed(b"\x00\x02")
-    client.feed(b"")
-    open_shell(client)
-
-    client.wait_for("credit")
-    assert [line for line in logged if "binary frame" in line] == [
-        "dropping a binary frame of 2 bytes",
-        "dropping a binary frame of 0 bytes",
-    ]
-    assert session.is_open
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_a_frame_for_a_stream_nobody_opened_is_dropped():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-
-    client.feed(frame(99, b"stray"))
-    client.feed({"type": "credit", "stream": 99, "bytes": 5})
-    client.feed({"type": "resize", "stream": 99, "cols": 1, "rows": 1})
-    client.feed({"type": "close", "stream": 99, "code": "", "params": {}})
-    client.feed({"type": "open", "stream": "2", "kind": "shell"})
-    client.feed({"type": "open", "stream": -1, "kind": "shell"})
-    client.feed({"type": "open", "stream": 1 << 32, "kind": "shell"})
-    open_shell(client)
-
-    client.wait_for("credit")
-    assert client.sent_bytes == []
-    assert client.frames("close") == []
-    assert len(EchoStream.instances) == 1
-    assert session.is_open
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_the_socket_ending_closes_every_channel():
-    client = ScriptedClient()
-    session, thread, _ = channel_session(client)
-    open_shell(client)
-    client.wait_for("credit")
-
-    client.feed(GatewayUnreachable("hung up"))
-    thread.join(timeout=3)
-
-    wait_until(lambda: EchoStream.instances[0].items)
-    assert EchoStream.instances[0].items == [("close", "", {})]
-
-
-# --- the streams this side opens ---
-
-
-def test_open_stream_allots_odd_ids_counting_up_and_sends_the_open():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-
-    first = session.open_stream("log", module="samba")
-    second = session.open_stream("package")
-
-    assert (first.id, second.id) == (1, 3)
-    assert client.frames("open") == [
-        {"type": "open", "stream": 1, "kind": "log", "module": "samba"},
-        {"type": "open", "stream": 3, "kind": "package"},
-    ]
-    assert client.frames("opened") == []
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_an_own_streams_lines_go_up_on_its_id_and_its_close_is_its_result():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-    log = session.open_stream("log", module="samba")
-    sent = threading.Event()
-
-    def push():
-        log.send_line("installing")
-        sent.set()
-
-    threading.Thread(target=push, daemon=True).start()
-    time.sleep(0.05)
-    assert client.sent_bytes == []
-    client.feed({"type": "credit", "stream": 1, "bytes": 4096})
-    assert sent.wait(timeout=3)
-
-    log.close(params={"state": "done"})
-
-    assert client.sent_bytes == [frame(1, b"installing\n")]
-    assert client.frames("close") == [
-        {"type": "close", "stream": 1, "code": "", "params": {"state": "done"}}
-    ]
-    assert log.is_closed
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_an_own_stream_closed_by_the_hub_hands_over_the_closes_params():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-    package = session.open_stream("package")
-
-    client.feed(frame(1, b"deb bytes"))
-    client.feed({"type": "close", "stream": 1, "code": "", "params": {"sha256": "abc"}})
-
-    assert package.recv(timeout=3) == ("data", b"deb bytes")
-    assert package.recv(timeout=3) == ("close", "", {"sha256": "abc"})
-    assert package.is_closed
-    package.close()
-    assert client.frames("close") == []
-    session.close()
-    thread.join(timeout=2)
-
-
-def test_an_own_stream_refused_by_the_hub_carries_the_code():
-    client = ScriptedClient()
-    session, thread, _ = connected(client)
-    package = session.open_stream("package", module="nothing")
-
-    client.feed(
-        {
-            "type": "close",
-            "stream": 1,
-            "code": "kind_unknown",
-            "params": {"kind": "package"},
-        }
-    )
-
-    assert package.recv(timeout=3) == ("close", "kind_unknown", {"kind": "package"})
-    session.close()
-    thread.join(timeout=2)
-
-
-# --- the socket ending ---
-
-
-@pytest.mark.parametrize(
-    "closed, expected, code",
-    [
-        (
-            SocketClosed(4000, "binding_unknown"),
-            GatewayRefusedDetail,
-            "channel_refused",
-        ),
-        (SocketClosed(4010, "replaced"), GatewayRefusedDetail, "replaced"),
-        (SocketClosed(1001, "going away"), GatewayUnreachable, ""),
-        (GatewayUnreachable("hung up"), GatewayUnreachable, ""),
-    ],
-)
-def test_serve_returns_what_ended_the_socket(closed, expected, code):
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    client.feed(closed)
-    thread.join(timeout=3)
-
-    assert not thread.is_alive()
-    assert isinstance(outcome["failure"], expected)
-    assert getattr(outcome["failure"], "code", "") == code
-    assert not session.is_open
-
-
-@pytest.mark.parametrize(
-    "code, params",
-    [
-        ("binding_unknown", {"id": "dev-1"}),
-        ("protocol_too_new", {"peer": 2, "hub": 1, "min": 1}),
-        ("somebody_new", {}),
-    ],
-)
-def test_a_refused_frame_on_a_live_socket_ends_serve_with_its_code(code, params):
-    """A refusal says the same mid-session as at the door, and the close
-    4000 behind it finds the code already recorded."""
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    client.feed({"type": "refused", "code": code, "params": params})
-    client.feed(SocketClosed(4000, code))
-    thread.join(timeout=3)
-
-    assert not thread.is_alive()
-    assert isinstance(outcome["failure"], GatewayRefusedDetail)
-    assert outcome["failure"].code == code
-    assert outcome["failure"].params == params
-    assert not session.is_open
-
-
-def test_a_refused_frame_on_a_live_socket_is_read_tolerantly():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    client.feed({"type": "refused", "params": "words"})
-    thread.join(timeout=3)
-
-    assert outcome["failure"].code == "channel_refused"
-    assert outcome["failure"].params == {}
-
-
-class _GoneAtSecondReport(ScriptedClient):
-    """A hub that hangs up after the first report, with the second report's
-    send finding the socket dropped before the reader has said why."""
-
-    def __init__(self, send_failure, read_failure):
-        super().__init__()
-        self.reports = 0
-        self.send_failure = send_failure
-        self.read_failure = read_failure
-
-    def send_text(self, text: str) -> None:
-        if json.loads(text).get("type") == "report":
-            self.reports += 1
-            if self.reports == 2:
-                self.is_closed = True
-                # What the reader will hit, queued only now: the send loses
-                # the race every time.
-                self.inbound.put(self.read_failure)
-                raise self.send_failure
-        super().send_text(text)
-
-
-def test_a_hang_up_the_sender_meets_first_is_recorded_as_the_hang_up():
-    """The send's "the socket is closed" is an echo of the reader's cause:
-    nagent status shows what the hub did, whichever thread saw it first."""
-    client = _GoneAtSecondReport(
-        GatewayUnreachable("the socket is closed"), GatewayUnreachable("hung up")
-    )
-    session, _, news = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    news.set()
-    thread.join(timeout=3)
-
-    assert not thread.is_alive()
-    assert str(outcome["failure"]) == "hung up"
-
-
-def test_a_send_that_failed_on_its_own_keeps_its_cause():
-    client = _GoneAtSecondReport(
-        GatewayUnreachable("socket send failed: broken pipe"),
-        GatewayUnreachable("the socket is closed"),
-    )
-    session, _, news = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    news.set()
-    thread.join(timeout=3)
-
-    assert str(outcome["failure"]) == "socket send failed: broken pipe"
-
-
-def test_closing_from_here_ends_serve_with_no_failure():
-    client = ScriptedClient()
-    session, _, _ = make_session(client)
-    client.feed(welcome())
-    session.connect()
-    thread, outcome = serving(session)
-    client.wait_for("report")
-
-    session.close()
-    thread.join(timeout=3)
-
-    assert outcome["failure"] is None
-    assert client.is_closed
-
-
-def test_the_session_asks_the_hub_for_nothing():
-    """The hub pushes the state; there is no word for asking for it."""
-    assert not hasattr(AgentSession, "request_state")

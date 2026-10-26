@@ -71,6 +71,7 @@ FLAG_CAPABILITIES = {"packages"}
 BASE_IMPLEMENTED = {
     "agent_log_path": "",
     "agent_bin_dir": "",
+    "account_details": "accounts",
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
@@ -243,3 +244,30 @@ def test_windows_keeps_the_go_programs_under_program_files(monkeypatch):
     path = WindowsPlatform.__new__(WindowsPlatform).agent_bin_dir()
 
     assert path == "D:\\Programs\\Neutrino\\agent\\bin"
+
+
+class DetailedPlatform(AgentPlatform):
+    capabilities = frozenset({"accounts"})
+
+    def human_accounts(self) -> list:
+        return ["alice", "ghost"]
+
+    def account_home(self, account: str) -> str:
+        if account == "ghost":
+            raise KeyError(account)
+        return f"/home/{account}"
+
+
+def test_account_details_name_each_account_with_its_home_and_shell(monkeypatch):
+    shells = {"alice": "/bin/zsh"}
+    monkeypatch.setattr(base_module, "login_shell_of", lambda a: shells.get(a, ""))
+
+    assert DetailedPlatform().account_details() == [
+        {"account": "alice", "home": "/home/alice", "shell": "/bin/zsh"},
+        {"account": "ghost", "home": "", "shell": ""},
+    ]
+
+
+def test_the_base_platform_reads_no_account_details():
+    with pytest.raises(PlatformUnsupportedError):
+        AgentPlatform().account_details()

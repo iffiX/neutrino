@@ -3,8 +3,8 @@
 A hub whose welcome names a later ``software`` makes the agent open a
 ``package {}`` stream, take the bytes into its package directory, check the
 digest the close named, and install the file in a transient unit that
-outlives the process. Nothing here talks to a network: the socket is
-scripted, and the hub's side of the stream is played by it. The script the
+outlives the process. Nothing here talks to a network: the transport is
+played by a test, and the hub's side of the stream with it. The script the
 transient unit runs is run for real from its file, against package managers
 stubbed onto PATH and an agent program stubbed in place of the installed
 one, since what it writes is what the panel reads back.
@@ -22,20 +22,16 @@ import pytest
 
 import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.self_update as self_update
-from neutrino_agent.constants import (
-    AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
-    AGENT_WS_STREAM_ID_BYTES,
-)
+from neutrino_agent.constants import AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.core.loop import Agent
+from neutrino_agent.transport.records import encode_close, encode_record
 from tests.conftest import bind, discard
-from tests.core.test_loop import DROP_AFTER_SECOND_REPORT, WELCOME, ClientScript
-from tests.core.test_session import ScriptedClient
 from tests.streams.fake_channel import FakeChannel
+from tests.transport.fake_transport import FakeTransport, starter_for
 
 PACKAGE_BYTES = b"!<arch>agent-package"
-PACKAGE_OPEN = {"type": "open", "stream": 1, "kind": "package"}
+PACKAGE_OPEN = {"kind": "package"}
 GOLDEN = Path(__file__).parent / "golden"
 GOLDEN_STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 
@@ -44,12 +40,9 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-class PackageHub(ScriptedClient):
-    """A scripted socket whose hub answers ``package {}`` with its bytes.
-
-    The bytes go down in two binary frames, then the close names the
-    digest; each knob below changes one thing about that answer.
-    """
+class PackageHub:
+    """The hub's answer to ``package {}``: its bytes in two records, then the
+    close naming the digest; each knob changes one thing about it."""
 
     def __init__(
         self,
@@ -59,36 +52,31 @@ class PackageHub(ScriptedClient):
         is_dropped: bool = False,
         refusal: str = "",
     ):
-        super().__init__()
         self.named_digest = named_digest
         self.has_digest = has_digest
         self.is_dropped = is_dropped
         self.refusal = refusal
-        self.opened: list = []
 
-    def send_text(self, text: str) -> None:
-        super().send_text(text)
-        message = json.loads(text)
-        if message.get("type") == "open" and message.get("kind") == "package":
-            self.opened.append(message)
-            self._answer(message["stream"])
-
-    def _answer(self, stream: int) -> None:
+    def __call__(self, connection) -> None:
         if self.refusal:
-            self.feed(
-                {"type": "close", "stream": stream, "code": self.refusal, "params": {}}
-            )
+            connection.write(encode_close(self.refusal, {}))
             return
-        prefix = stream.to_bytes(AGENT_WS_STREAM_ID_BYTES, "big")
-        self.feed(prefix + PACKAGE_BYTES[:7])
+        connection.write(encode_record(2) + encode_record(3, PACKAGE_BYTES[:7]))
         if self.is_dropped:
-            self.feed(GatewayUnreachable("hung up mid-transfer"))
+            connection.close()
             return
-        self.feed(prefix + PACKAGE_BYTES[7:])
+        connection.write(encode_record(3, PACKAGE_BYTES[7:]))
         params = {}
         if self.has_digest:
             params["sha256"] = self.named_digest or sha256(PACKAGE_BYTES)
-        self.feed({"type": "close", "stream": stream, "code": "", "params": params})
+        connection.write(encode_close("", params))
+
+
+@pytest.fixture
+def fake():
+    transport = FakeTransport()
+    yield transport
+    transport.close()
 
 
 @pytest.fixture
@@ -108,33 +96,34 @@ def launched(monkeypatch):
     return commands
 
 
-def welcomed_by(hub_version: str) -> list:
-    """A hub of one version that hangs up after what the agent does between
-    its first two reports."""
-    return [
-        dict(WELCOME, software=f"neutrino_hub/{hub_version}"),
-        DROP_AFTER_SECOND_REPORT,
-    ]
-
-
-def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
-    """An agent whose every connection is welcomed by a hub of one version,
-    and whose package stream that hub answers as the knobs say."""
+def bound_agent(config_path, monkeypatch, fake, *, hub_version, **hub):
+    """An agent whose every session is welcomed by a hub of one version, and
+    whose package stream that hub answers as the knobs say."""
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
-    monkeypatch.setattr("neutrino_agent.core.loop.AGENT_REPORT_INTERVAL_S", 0.01)
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
-    script = ClientScript([], default=welcomed_by(hub_version))
-    script.client_class = functools.partial(PackageHub, **hub)
-    monkeypatch.setattr(loop_module, "WebSocketClient", script)
-    agent = Agent(log=discard)
-    agent._script = script
+    fake.on_open = PackageHub(**hub)
+    agent = Agent(log=discard, transport_starter=starter_for(fake))
+    agent._fake = fake
+    agent._hub_version = hub_version
     return agent
 
 
+def connect(agent) -> None:
+    """One session: opened, welcomed, its first report sent and the update it asks for."""
+    fake = agent._fake
+    if agent.is_online():
+        fake.send_event("session_end", code="", params={})
+        fake.wait_for(lambda: not agent.is_online())
+    agent.run_once()
+    fake.welcome(software=f"neutrino_hub/{agent._hub_version}")
+    fake.wait_for(agent.is_online)
+    agent.run_once()
+
+
 def opened(agent) -> list:
-    """Every package open sent, across every connection."""
-    return [message for client in agent._script.clients for message in client.opened]
+    """Every package open sent, across every session."""
+    return [connection.first["open"] for connection in agent._fake.opened]
 
 
 def landed(tmp_path) -> list:
@@ -143,11 +132,11 @@ def landed(tmp_path) -> list:
 
 
 def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="9.9.9")
 
-    agent.run_once()
+    connect(agent)
 
     assert opened(agent) == [PACKAGE_OPEN]
     assert landed(tmp_path) == ["neutrino_agent.deb"]
@@ -176,41 +165,25 @@ def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
     assert agent._update_error is None
 
 
-def test_credit_is_offered_at_the_open_and_again_as_each_piece_lands(
-    config_path, monkeypatch, launched
-):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
-
-    agent.run_once()
-
-    credits = agent._script.clients[0].frames("credit")
-    assert [credit["stream"] for credit in credits] == [1, 1, 1]
-    assert [credit["bytes"] for credit in credits] == [
-        AGENT_WS_STREAM_CREDIT_BYTES,
-        7,
-        len(PACKAGE_BYTES) - 7,
-    ]
-
-
 def test_the_package_lands_in_the_agents_own_directory_root_only(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="9.9.9")
 
-    agent.run_once()
+    connect(agent)
 
     assert (os.stat(tmp_path / "packages").st_mode & 0o777) == 0o700
     assert len(landed(tmp_path)) == 1
 
 
 def test_a_digest_mismatch_installs_nothing_and_leaves_no_file(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
     agent = bound_agent(
-        config_path, monkeypatch, hub_version="9.9.9", named_digest="0" * 64
+        config_path, monkeypatch, fake, hub_version="9.9.9", named_digest="0" * 64
     )
 
-    agent.run_once()
+    connect(agent)
 
     assert launched == []
     assert agent._update_error == {
@@ -220,24 +193,26 @@ def test_a_digest_mismatch_installs_nothing_and_leaves_no_file(
     assert landed(tmp_path) == []
 
 
-def test_a_failed_target_is_not_retried(config_path, monkeypatch, launched):
+def test_a_failed_target_is_not_retried(config_path, monkeypatch, launched, fake):
     agent = bound_agent(
-        config_path, monkeypatch, hub_version="9.9.9", named_digest="0" * 64
+        config_path, monkeypatch, fake, hub_version="9.9.9", named_digest="0" * 64
     )
 
-    agent.run_once()
-    agent.run_once()
+    connect(agent)
+    connect(agent)
 
     assert len(opened(agent)) == 1
     assert launched == []
 
 
 def test_a_socket_dropped_mid_transfer_leaves_no_file_and_locks_no_target(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9", is_dropped=True)
+    agent = bound_agent(
+        config_path, monkeypatch, fake, hub_version="9.9.9", is_dropped=True
+    )
 
-    agent.run_once()
+    connect(agent)
 
     assert launched == []
     assert landed(tmp_path) == []
@@ -247,18 +222,20 @@ def test_a_socket_dropped_mid_transfer_leaves_no_file_and_locks_no_target(
         "params": {"target": "9.9.9"},
     }
 
-    agent.run_once()
+    connect(agent)
 
     assert len(opened(agent)) == 2
 
 
 def test_a_close_that_names_no_digest_is_a_dropped_transfer(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9", has_digest=False)
+    agent = bound_agent(
+        config_path, monkeypatch, fake, hub_version="9.9.9", has_digest=False
+    )
 
-    agent.run_once()
-    agent.run_once()
+    connect(agent)
+    connect(agent)
 
     assert launched == []
     assert landed(tmp_path) == []
@@ -266,14 +243,18 @@ def test_a_close_that_names_no_digest_is_a_dropped_transfer(
 
 
 def test_a_hub_that_refuses_the_package_is_coded_and_latched(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
     agent = bound_agent(
-        config_path, monkeypatch, hub_version="9.9.9", refusal="agent_package_missing"
+        config_path,
+        monkeypatch,
+        fake,
+        hub_version="9.9.9",
+        refusal="agent_package_missing",
     )
 
-    agent.run_once()
-    agent.run_once()
+    connect(agent)
+    connect(agent)
 
     assert launched == []
     assert landed(tmp_path) == []
@@ -284,43 +265,47 @@ def test_a_hub_that_refuses_the_package_is_coded_and_latched(
     }
 
 
-def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched):
-    agent = bound_agent(config_path, monkeypatch, hub_version="1.0.0")
+def test_a_matching_version_is_left_alone(config_path, monkeypatch, launched, fake):
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="1.0.0")
 
-    agent.run_once()
-
-    assert opened(agent) == []
-    assert launched == []
-    assert agent._update_error is None
-
-
-def test_an_older_hub_is_not_downgraded_to(config_path, monkeypatch, launched):
-    agent = bound_agent(config_path, monkeypatch, hub_version="0.0.1")
-
-    agent.run_once()
-
-    assert opened(agent) == []
-    assert launched == []
-
-
-def test_an_unparseable_hub_version_updates_nothing(config_path, monkeypatch, launched):
-    agent = bound_agent(config_path, monkeypatch, hub_version="wat")
-
-    agent.run_once()
+    connect(agent)
 
     assert opened(agent) == []
     assert launched == []
     assert agent._update_error is None
 
 
-def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch, tmp_path):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+def test_an_older_hub_is_not_downgraded_to(config_path, monkeypatch, launched, fake):
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="0.0.1")
+
+    connect(agent)
+
+    assert opened(agent) == []
+    assert launched == []
+
+
+def test_an_unparseable_hub_version_updates_nothing(
+    config_path, monkeypatch, launched, fake
+):
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="wat")
+
+    connect(agent)
+
+    assert opened(agent) == []
+    assert launched == []
+    assert agent._update_error is None
+
+
+def test_a_launch_failure_is_coded_and_cleaned_up(
+    config_path, monkeypatch, tmp_path, fake
+):
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="9.9.9")
 
     def refuse_to_run(command, **kwargs):
         raise OSError("systemd-run is not here")
 
     monkeypatch.setattr(self_update.subprocess, "run", refuse_to_run)
-    agent.run_once()
+    connect(agent)
 
     assert agent._update_error == {
         "code": "agent_update_launch_failed",
@@ -330,27 +315,29 @@ def test_a_launch_failure_is_coded_and_cleaned_up(config_path, monkeypatch, tmp_
 
 
 def test_a_new_target_version_after_a_failure_is_tried(
-    config_path, monkeypatch, launched
+    config_path, monkeypatch, launched, fake
 ):
     agent = bound_agent(
-        config_path, monkeypatch, hub_version="9.9.9", named_digest="0" * 64
+        config_path, monkeypatch, fake, hub_version="9.9.9", named_digest="0" * 64
     )
 
-    agent.run_once()
-    agent._script.default = welcomed_by("9.9.10")
-    agent._script.client_class = PackageHub
-    agent.run_once()
+    connect(agent)
+    agent._hub_version = "9.9.10"
+    agent._fake.on_open = PackageHub()
+    connect(agent)
 
     assert len(opened(agent)) == 2
     assert len(launched) == 1
     assert agent._update_error is None
 
 
-def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launched):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+def test_a_successful_target_is_not_relaunched(
+    config_path, monkeypatch, launched, fake
+):
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="9.9.9")
 
-    agent.run_once()
-    agent.run_once()
+    connect(agent)
+    connect(agent)
 
     assert len(opened(agent)) == 1
     assert len(launched) == 1
@@ -1085,13 +1072,13 @@ def test_a_result_that_cannot_be_read_is_nothing(tmp_path, written):
 
 
 def test_a_launch_drops_the_result_of_the_reinstall_before_it(
-    config_path, monkeypatch, launched, tmp_path
+    config_path, monkeypatch, launched, fake, tmp_path
 ):
-    agent = bound_agent(config_path, monkeypatch, hub_version="9.9.9")
+    agent = bound_agent(config_path, monkeypatch, fake, hub_version="9.9.9")
     stale = tmp_path / "reinstall.json"
     stale.write_text(json.dumps({"exit_code": 0}))
 
-    agent.run_once()
+    connect(agent)
 
     assert not stale.exists()
     assert len(launched) == 1

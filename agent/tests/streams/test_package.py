@@ -1,7 +1,6 @@
-"""The package stream: bytes down, credit as they land, a digest at the close.
+"""The package stream: bytes down as they land, a digest at the close.
 
-What these pin: credit is granted as each piece is written so a package
-larger than one window proceeds past it, the file is handed over only
+What these pin: a package of many records lands whole, the file is handed over only
 once the hub's close named a ``sha256`` that matches, a mismatch is
 refused and leaves no file, a refusal from the hub passes its code
 through and leaves no file, and a socket that dropped mid-transfer leaves
@@ -12,8 +11,6 @@ purpose, the agent's own package, is removed by the start-up sweep.
 import hashlib
 import os
 
-from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
-from neutrino_agent.exceptions import GatewayUnreachable
 from neutrino_agent.streams.package import PackageStream, remove_stale
 from tests.streams.fake_channel import FakeChannel
 
@@ -28,7 +25,7 @@ def leftovers(directory) -> list:
 
 def received(tmp_path, chunks, close=None) -> tuple:
     """Feed the chunks and the close, then receive; returns (outcome, channel)."""
-    channel = FakeChannel(stream_id=3)
+    channel = FakeChannel(stream_id="3")
     for chunk in chunks:
         channel.feed(("data", chunk))
     if close is not None:
@@ -51,25 +48,22 @@ def test_the_bytes_land_in_a_file_the_close_vouches_for(tmp_path):
     assert outcome["path"].startswith(str(tmp_path / "packages"))
     with open(outcome["path"], "rb") as stream:
         assert stream.read() == b"!<arch>deb bytes"
-    assert channel.credits[0] == AGENT_WS_STREAM_CREDIT_BYTES
-    assert channel.credits[1:] == [len(b"!<arch>"), len(b"deb bytes")]
     assert channel.closed is None
 
 
-def test_a_package_larger_than_one_window_is_credited_as_it_lands(tmp_path):
-    size = 2 * AGENT_WS_STREAM_CREDIT_BYTES + 7
+def test_a_package_of_many_records_lands_whole(tmp_path):
+    record = 64 * 1024
+    size = 2 * 1024 * 1024 + 7
     chunks = [
-        bytes([index % 251]) * min(AGENT_WS_CHUNK_BYTES, size - offset)
-        for index, offset in enumerate(range(0, size, AGENT_WS_CHUNK_BYTES))
+        bytes([index % 251]) * min(record, size - offset)
+        for index, offset in enumerate(range(0, size, record))
     ]
     data = b"".join(chunks)
 
-    outcome, channel = received(tmp_path, chunks, ("", {"sha256": sha256(data)}))
+    outcome, _ = received(tmp_path, chunks, ("", {"sha256": sha256(data)}))
 
     assert "path" in outcome
     assert os.path.getsize(outcome["path"]) == size
-    assert channel.credits[1:] == [len(chunk) for chunk in chunks]
-    assert sum(channel.credits) >= size
 
 
 def test_bytes_that_do_not_match_the_digest_are_refused_and_leave_no_file(tmp_path):
@@ -98,21 +92,15 @@ def test_a_refusal_from_the_hub_passes_its_code_through(tmp_path):
     assert leftovers(tmp_path / "packages") == []
 
 
-def test_a_socket_gone_before_the_first_credit_leaves_no_file(tmp_path):
-    class GoneChannel(FakeChannel):
-        def offer_credit(self, size):
-            raise GatewayUnreachable("gone")
-
-    outcome = PackageStream(
-        GoneChannel(stream_id=3), directory=str(tmp_path / "packages")
-    ).receive()
+def test_a_connection_that_ends_mid_transfer_leaves_no_file(tmp_path):
+    outcome, _ = received(tmp_path, [b"half of it"], ("", {}))
 
     assert outcome == {"code": "hub_unreachable", "params": {}}
     assert leftovers(tmp_path / "packages") == []
 
 
 def test_a_named_package_is_renamed_from_its_temporary_name(tmp_path):
-    channel = FakeChannel(stream_id=3)
+    channel = FakeChannel(stream_id="3")
     channel.feed(("data", b"xar!"))
     channel.feed(("close", "", {"sha256": sha256(b"xar!")}))
 
@@ -126,7 +114,7 @@ def test_a_named_package_is_renamed_from_its_temporary_name(tmp_path):
 
 
 def test_a_named_package_that_does_not_match_leaves_no_file(tmp_path):
-    channel = FakeChannel(stream_id=3)
+    channel = FakeChannel(stream_id="3")
     channel.feed(("data", b"xar!"))
     channel.feed(("close", "", {"sha256": "0" * 64}))
 

@@ -2,14 +2,13 @@
 
 The agent opens ``package {module, artifact, digest}`` for one artifact of
 a module, or of cc-switch, from the hub's cache, and ``package {}`` for its
-own. It grants credit as it writes each
-piece to a temporary file under its data directory, waits for the hub's
-close, and checks the ``sha256`` the close's params carry against what
-landed. Only a file that matches is handed over, renamed from its
+own. It writes each record's bytes to a temporary file under its data
+directory as they land, waits for the hub's close, and checks the ``sha256``
+the close's params carry against what landed. Only a file that matches is handed over, renamed from its
 temporary name to its final one when the caller names one: the ``name``
 the close carries when it is a plain file name with the same extension,
 the caller's name otherwise. A mismatch, a
-refusal from the hub, or a socket that dropped mid-transfer leaves no file
+refusal from the hub, or a connection that ended mid-transfer leaves no file
 behind.
 
 A file is left behind on purpose in one case: the agent's own package
@@ -30,13 +29,12 @@ import os
 import re
 import tempfile
 
-from neutrino_agent.constants import AGENT_WS_STREAM_CREDIT_BYTES
 from neutrino_agent.exceptions import GatewayUnreachable
 
 PACKAGE_PREFIX = ".package."
 PACKAGE_SUFFIX = ".part"
 # What the stream answers when the bytes do not match the close's digest,
-# and when the socket went away under it.
+# and when the connection went away under it.
 CODE_DIGEST_MISMATCH = "package_digest_mismatch"
 CODE_UNREACHABLE = "hub_unreachable"
 # A release file name the close may carry: one plain name, no directory, no
@@ -122,16 +120,15 @@ class PackageStream:
         return {"path": final, "sha256": expected}
 
     def _take(self, handle, digest) -> tuple:
-        """Write the hub's bytes until its close, granting as each lands.
+        """Write the hub's bytes until its close.
 
         Returns:
             The close's ``(code, params)``.
 
         Raises:
             OSError: When the file cannot be written.
-            GatewayUnreachable: When the socket is gone.
+            GatewayUnreachable: When the connection is gone.
         """
-        self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
         while True:
             item = self._channel.recv()
             if item is None:
@@ -142,7 +139,6 @@ class PackageStream:
                 continue
             handle.write(item[1])
             digest.update(item[1])
-            self._channel.offer_credit(len(item[1]))
 
 
 def release_name(name, *, fallback: str) -> str:

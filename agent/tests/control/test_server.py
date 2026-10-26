@@ -119,7 +119,7 @@ def test_the_state_never_carries_the_device_token(control, config_path):
 
     assert status == 200
     assert state["is_connected"] is True
-    assert state["binding"] == {"id": "dev-1", "gateway_url": "http://127.0.0.1:9"}
+    assert state["binding"] == {"id": "dev-1", "gateway_url": "tcp://127.0.0.1:9"}
     assert "tok" not in json.dumps(state)
 
 

@@ -1,29 +1,30 @@
-"""The streams that carry bytes over the hub's socket.
+"""The streams the hub opens to this machine, and the ones this side opens.
 
-Each kind is one handler the session opens on a thread of its own, reading
-the hub's frames off its :class:`~neutrino_agent.streams.channel.StreamChannel`
-and sending through it. A handler has ``open()``, which may raise
+Each stream is one connection to the agent's transport carrying the
+stream's records. Each kind the hub opens is one handler the session runs
+on a thread of its own, reading the hub's records off its
+:class:`~neutrino_agent.streams.channel.StreamChannel` and sending through
+it. A handler has ``open()``, which may raise
 :class:`~neutrino_agent.exceptions.StreamRefused`, and ``run()``, which
-returns ``{"code", "params"}``, what the stream closes with.
+returns ``{"code", "params"}``, what the stream closes with. A ``connect``
+the hub opens is the transport's own: it asks the agent whether the port
+is published, and dials it itself.
 
 Every kind, who opens it, what it takes, and the ``params`` its close
 carries when it did what it was asked:
 
 | Opened by | kind | args | close ``params`` |
 | --- | --- | --- | --- |
-| hub | ``shell`` | ``{cols, rows}``, with ``{session_id, is_resumed}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
-| hub | ``exec`` | ``{argv, is_tty, cols, rows}`` | ``{exit_code}`` |
-| hub | ``file`` | ``{op, path, ...}``; ``op`` is ``list``, ``download``, ``upload``, ``rename``, ``remove``, ``directory_create`` or ``directory_download`` | the operation's own |
+| hub | ``shell`` | ``{cols, rows, account}``, with ``{session_id, is_resumed, owner, is_shared}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
+| hub | ``exec`` | ``{argv, is_tty, cols, rows, account}`` | ``{exit_code}`` |
+| hub | ``file`` | ``{op: list, path}`` | ``{path, separator, entries}`` |
 | hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
-| hub | ``connect`` | ``{port}``, a port this machine publishes now | empty, once either end ended |
 | agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |
-| agent | ``package`` | ``{module}``, or ``{}`` for the agent's own | ``{sha256}``, from the hub |
-| agent | ``connect`` | ``{id}``, the ``ai`` entry's, for each connection the AI gateway forward accepts | empty, once either end ended |
+| agent | ``package`` | ``{module, artifact, digest}``, or ``{}`` for the agent's own | ``{sha256, name}``, from the hub |
 
 A close with a ``code`` is a refusal, and its ``params`` are what the
 code's wording names. An unknown kind is closed ``kind_unknown``; an
-unknown ``op`` or verb inside a kind is closed ``verb_unknown``. Paths are
-absolute; the agent is root.
+unknown ``op`` or verb inside a kind is closed with its own code.
 """
 
 from neutrino_agent.streams.exec import open_exec_stream
@@ -41,9 +42,7 @@ STREAM_KIND_CONNECT = "connect"
 
 # The kinds the hub opens, each to what serves it, called with
 # ``(channel, args)``. The command kind is bound to what runs commands by
-# the session that serves it, and the connect kind,
-# :func:`~neutrino_agent.streams.connect_udp.open_connect_stream`, to what
-# the machine publishes by the agent that opens the session.
+# the session that serves it.
 STREAM_KINDS = {
     STREAM_KIND_SHELL: open_shell_stream,
     STREAM_KIND_EXEC: open_exec_stream,

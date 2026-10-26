@@ -35,58 +35,32 @@ AGENT_HUB_ROLE = "hub"
 AGENT_SOFTWARE_PREFIX = "neutrino_agent/"
 AGENT_HUB_SOFTWARE_PREFIX = "neutrino_hub/"
 
-# The channel's three endpoints, all on the agent TLS port: joining and
-# leaving are HTTP, and everything else rides the one socket.
-CHANNEL_JOIN_PATH = "/api/channel/join"
-CHANNEL_LEAVE_PATH = "/api/channel/leave"
-AGENT_WS_PATH = "/api/channel/socket"
-# How long the socket may stay silent before it is taken for dead. The hub
-# pings well inside this.
-AGENT_WS_SILENCE_TIMEOUT_S = 45
-# What a send or a read says once the socket was already dropped by
-# the other side of the connection's own threads: an echo of a cause
-# recorded elsewhere, never the cause itself.
-AGENT_WS_SOCKET_CLOSED_DETAIL = "the socket is closed"
-# A binary frame starts with the stream id, a big-endian unsigned integer
-# of this many bytes.
-AGENT_WS_STREAM_ID_BYTES = 4
-# The largest binary frame either side sends on one stream.
+# The legacy listener's route a binding of 0.5 asks the hub's static key
+# on, over its pinned TLS, once.
+CHANNEL_KEY_SET_PATH = "/api/channel/key/set"
+# The largest piece of bytes a relay or a file stream moves at once.
 AGENT_WS_CHUNK_BYTES = 64 * 1024
-# What the hub may send on one stream before this side grants more: one
-# window of bytes, offered when a stream that takes bytes opens.
+# What a file stream grants the hub before it reads, until the files stream
+# takes records alone.
 AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
-# How long a stream waits on the hub's credit before it stops trying.
-AGENT_WS_CREDIT_TIMEOUT_S = 60
-# How long a ``connect`` stream waits for the port it dials on this machine.
+# How long a ``status`` probe waits for the hub's welcome.
+AGENT_PROBE_TIMEOUT_S = 30
+# How long a relay waits for the loopback port it dials on this machine.
 AGENT_CONNECT_DIAL_TIMEOUT_S = 10
-# The address a ``connect`` stream dials, unless a container port is
-# published on one address of its own.
+# The address the transport dials for a ``connect`` stream, unless a
+# container port is published on one address of its own.
 AGENT_CONNECT_LOOPBACK = "127.0.0.1"
-# What a ``connect`` stream closes with when it dials nothing: a port this
-# machine does not publish now, and a dial that failed, with its reason.
+# What the ``port`` question is answered with for a port this machine
+# does not publish now.
 AGENT_CODE_PORT_NOT_PUBLISHED = "port_not_published"
-AGENT_CODE_CONNECT_FAILED = "connect_failed"
-AGENT_CONNECT_REFUSED = "refused"
-AGENT_CONNECT_TIMEOUT = "timeout"
-AGENT_CONNECT_UNREACHABLE = "unreachable"
-# The two protocols a ``connect`` stream carries; an open that names none
-# is TCP.
+# The protocol a ``connect`` stream that names none carries.
 AGENT_CONNECT_TCP = "tcp"
-AGENT_CONNECT_UDP = "udp"
-# A UDP stream's far end: how long a source's socket lives with no
-# datagram either way, and how many sources one stream keeps a socket for.
-# The hub's own values, CHANNEL_UDP_IDLE_TIMEOUT_S and
-# CHANNEL_UDP_SOURCES_MAX.
-AGENT_UDP_IDLE_TIMEOUT_S = 60
-AGENT_UDP_SOURCES_MAX = 64
 # The AI gateway forward: where the machine's AI tools reach the hub's
-# gateway while the state's ``ai_tools`` section is on, the ``ai`` entry's id
-# each connection's ``connect`` stream names, and how often a forward with
-# no channel to the hub looks for one again.
+# gateway while the state's ``ai_tools`` section is on, and the ``ai``
+# entry's id each connection's ``connect`` stream names.
 AGENT_AI_FORWARD_HOST = "127.0.0.1"
 AGENT_AI_FORWARD_PORT = 8317
 AGENT_AI_ENTRY_ID = "ai"
-AGENT_AI_FORWARD_POLL_S = 0.5
 # The relays a container reaches the agent's loopback listeners through:
 # one per listener on each Podman bridge on Linux, netavark's ``podmanN``
 # and CNI's ``cni-podmanN``, and on the adapter of WSL's NAT network on
@@ -127,16 +101,15 @@ AGENT_RELAY_FIREWALLD_RULE_WORDS = (
     "accept",
 )
 AGENT_RELAY_COMMAND_LOCALE = "C"
-# Close codes: a refused hello, after the ``refused`` frame that says why,
-# and a socket replaced by a second one for the same binding.
-AGENT_WS_CLOSE_REFUSED = 4000
-AGENT_WS_CLOSE_REPLACED = 4010
-# The codes the channel itself gives a refusal: a 4000 close with no
-# ``refused`` frame before it, a socket replaced by a second one, and the
-# one refusal that unbinds, which only the pinned hub can say.
+# The codes the channel itself gives: a refusal that named no code, a
+# session replaced by a second one for the same binding, the one refusal
+# that unbinds, which only the hub's key can say, a binding of 0.5 whose
+# hub gave no key, and a frame this build cannot read.
 AGENT_CODE_CHANNEL_REFUSED = "channel_refused"
 AGENT_CODE_REPLACED = "replaced"
 AGENT_CODE_BINDING_UNKNOWN = "binding_unknown"
+AGENT_CODE_HUB_KEY_MISSING = "hub_key_missing"
+AGENT_CODE_FRAME_UNREADABLE = "frame_unreadable"
 
 # How much of a failed step's output a code's params carry. Enough to read
 # the package manager's own complaint, bounded so a verbose failure cannot
@@ -218,17 +191,15 @@ AGENT_TRANSPORT_BIN_VARIABLE = "NEUTRINO_TRANSPORT_BIN"
 # the machine's metrics, which the panel draws live, so this is the rate
 # those readings arrive at.
 AGENT_REPORT_INTERVAL_S = 5
+# How long a request to the hub's legacy listener may take.
 AGENT_REQUEST_TIMEOUT_S = 10
-# Backoff bounds used when the gateway is unreachable. Starting at one interval
-# and doubling to a minute keeps a rebooting gateway from being hammered while
-# still reconnecting promptly once it returns.
+# Backoff bounds: how long the agent waits before it starts a transport
+# that would not start, doubling to a minute, and how long a binding of 0.5
+# waits before it asks its hub for the hub's key again.
 AGENT_BACKOFF_MIN_S = 5
 AGENT_BACKOFF_MAX_S = 60
-# How long a connection round waits between an address that did not answer
-# and the next one. A whole round failing is what backs off.
-AGENT_ROTATE_DELAY_S = 1
 # The name every network the hub serves resolves to the hub's address on that
-# network. It is the first address a round connects to.
+# network. It is the first address a round dials.
 AGENT_HUB_NAME = "hub.neutrino.internal"
 
 AGENT_COMMAND_TIMEOUT_S = 900

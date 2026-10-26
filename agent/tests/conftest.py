@@ -234,22 +234,32 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_ai_forward(monkeypatch):
-    """The AI gateway forward an agent builds listens on a port the system
-    picks, never on the machine's own 8317, and looks for a channel often."""
+    """The AI gateway forward an agent builds asks for a port the system
+    picks, never for the machine's own 8317."""
     monkeypatch.setattr(
-        loop_module,
-        "AiGatewayForward",
-        functools.partial(AiGatewayForward, port=0, poll_s=0.02),
+        loop_module, "AiGatewayForward", functools.partial(AiGatewayForward, port=0)
     )
 
 
 @pytest.fixture(autouse=True)
 def _isolated_network(monkeypatch):
     """The hub's name resolves to nothing and no route is looked at, unless a
-    test says otherwise; a round waits nothing between addresses."""
+    test says otherwise."""
     monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
-    monkeypatch.setattr(loop_module, "AGENT_ROTATE_DELAY_S", 0)
+
+
+def _no_transport(*_arguments, **_keywords):
+    raise OSError("no transport is started in tests")
+
+
+@pytest.fixture(autouse=True)
+def _no_transport_started(monkeypatch):
+    """No test starts ``neutrino_transport``: a test that needs one hands the
+    agent a :class:`~tests.transport.fake_transport.FakeTransport`."""
+    monkeypatch.setattr(loop_module, "start_transport", _no_transport)
+    monkeypatch.setattr(loop_module, "one_shot_transport", _no_transport)
+    monkeypatch.setattr(enrollment, "one_shot_transport", _no_transport)
 
 
 @pytest.fixture(autouse=True)
@@ -323,23 +333,24 @@ def discard(message: str) -> None:
 BINDING_ID = "dev-1"
 BINDING_TOKEN = "tok"
 MACHINE_ID = "machine-1"
+HUB_KEY = "ab" * 32
+PRIVATE_KEY = "cd" * 32
 
 
-def bind(path, url="http://127.0.0.1:9", fingerprint="", urls=None) -> None:
+def bind(path, url="tcp://127.0.0.1:9", urls=None) -> None:
     """Write a complete binding file, the way a join leaves it.
 
     Args:
         path: The binding file.
         url: The address that last answered.
-        fingerprint: The pinned fingerprint.
-        urls: Every address the hub answers on; None writes a file of the
-            0.3.0 shape, without the list.
+        urls: Every address the hub answers on; None writes no list.
     """
     binding = {
         "gateway_url": url,
         "id": BINDING_ID,
         "token": BINDING_TOKEN,
-        "fingerprint": fingerprint,
+        "hub_key": HUB_KEY,
+        "private_key": PRIVATE_KEY,
         "machine_id": MACHINE_ID,
     }
     if urls is not None:

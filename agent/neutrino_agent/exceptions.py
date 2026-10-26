@@ -15,8 +15,8 @@ class GatewayUnreachable(ConnectionError):
 class GatewayRefusedDetail(GatewayUnreachable):
     """Raised when the hub refused with ``{code, params}``.
 
-    A ``refused`` frame, a close the hub gave a code to, or an HTTP error
-    whose ``detail`` names one; the loop splits on the code.
+    A ``refused`` frame, a session's end with a code, or an HTTP error whose
+    ``detail`` names one; the loop splits on the code.
 
     Attributes:
         code: The hub's own code.
@@ -42,27 +42,8 @@ class GatewayUntrusted(ConnectionError):
     """
 
 
-class SocketClosed(ConnectionError):
-    """Raised when the hub sent a close frame.
-
-    Attributes:
-        code: The close code, 1005 when the close frame carried none.
-        reason: The reason text.
-    """
-
-    def __init__(self, code: int, reason: str = ""):
-        """
-        Args:
-            code: The close code.
-            reason: The reason text.
-        """
-        super().__init__(f"socket closed ({code}) {reason}".rstrip())
-        self.code = code
-        self.reason = reason
-
-
 class StreamClosed(ConnectionError):
-    """Raised when a stream ended under its handler, by the hub or the socket."""
+    """Raised when a stream ended under its handler, by the hub or its connection."""
 
 
 class StreamRefused(ValueError):

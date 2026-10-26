@@ -1,23 +1,17 @@
-"""One connection to the hub, from its hello to its last frame.
+"""One session the agent's transport holds to the hub, frame by frame.
 
-The socket carries everything: the hello that opens it and the welcome that
-answers, a report every few seconds and at once when something changed, the
-hub's state whenever its copy changes, and every stream either side opens.
-A reader thread takes frames off the socket and dispatches them; the
-caller's thread runs the report loop; each stream the hub opens runs on a
-thread of its own so a long command never blocks the reader.
+The transport makes the knock and the handshake and says ``session_open``;
+this side then writes ``hello`` and takes the ``welcome``, or the
+``refused`` that answers in its place. From then on a report goes up every
+few seconds and at once when something changed, the hub's ``state`` goes to
+the applier whenever its copy changes, and ``persist`` and
+``stop_session`` are answered with a ``reply`` from the kept shells. A
+``refused`` frame says why the hub ends the session wherever it arrives.
 
-A ``refused`` frame ends the socket whenever it arrives, and says the same
-as one that arrives instead of the welcome: the loop that owns the session
-reads its code and decides what becomes of the binding.
-
-A stream exists as soon as its open arrives, and its close is its result:
-``{stream, code, params}``, with a code making it a refusal. The hub's
-streams number even, this side's odd. Every stream sits behind a
-:class:`StreamChannel`: bytes go out no faster than the hub's credit
-allows, and a stream's text output is its binary frames, one line each.
-The kind table of :mod:`neutrino_agent.streams` is the whole vocabulary:
-an open whose kind is not in it is closed ``kind_unknown``.
+Every stream the hub opens comes as a ``stream`` event: the session takes
+it with an ``attach`` connection, and the kind table of
+:mod:`neutrino_agent.streams` decides who serves it. An open whose kind is
+not in the table is closed ``kind_unknown``.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -28,96 +22,116 @@ every surface does its own wording.
 from __future__ import annotations
 
 import functools
-import json
 import threading
 
 from neutrino_agent.constants import (
     AGENT_CODE_CHANNEL_REFUSED,
-    AGENT_REPORT_INTERVAL_S,
+    AGENT_CODE_FRAME_UNREADABLE,
     AGENT_HUB_ROLE,
-    AGENT_WS_SOCKET_CLOSED_DETAIL,
-    AGENT_WS_STREAM_ID_BYTES,
 )
-from neutrino_agent.core.ws_client import close_error
 from neutrino_agent.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
-    SocketClosed,
     StreamClosed,
     StreamRefused,
 )
 from neutrino_agent.modules.shared.hub_clock import welcome_time
 from neutrino_agent.streams import STREAM_KIND_COMMAND, STREAM_KINDS
-from neutrino_agent.streams.channel import StreamChannel
 
+FRAME_HELLO = "hello"
+FRAME_WELCOME = "welcome"
+FRAME_REFUSED = "refused"
+FRAME_STATE = "state"
+FRAME_REPORT = "report"
+FRAME_PERSIST = "persist"
+FRAME_STOP_SESSION = "stop_session"
+FRAME_REPLY = "reply"
+FRAME_PONG = "pong"
 # The fields of an open that are not the kind's own arguments.
-OPEN_ENVELOPE_FIELDS = ("type", "stream", "kind")
-# The first id this side allots; the hub counts from an even one.
-FIRST_OWN_STREAM_ID = 1
-STREAM_ID_LIMIT = 1 << (8 * AGENT_WS_STREAM_ID_BYTES)
+OPEN_ENVELOPE_FIELDS = ("kind",)
+
+
+def refusal_of(frame: dict) -> GatewayRefusedDetail:
+    """What one ``refused`` frame, or a session's end with a code, says.
+
+    Args:
+        frame: ``{code, params}``.
+
+    Returns:
+        The refusal, its code ``channel_refused`` when the frame named none.
+    """
+    params = frame.get("params")
+    return GatewayRefusedDetail(
+        code=str(frame.get("code", "") or "") or AGENT_CODE_CHANNEL_REFUSED,
+        params=dict(params) if isinstance(params, dict) else {},
+    )
+
+
+def given_flag(frame: dict, key: str) -> "bool | None":
+    """A flag a frame carries, or None when it names none."""
+    return None if frame.get(key) is None else bool(frame[key])
 
 
 class AgentSession:
-    """The live socket: hello, reports, and the streams on it.
+    """The hello, the welcome, the frames and the streams of one session.
 
     Attributes:
+        address: The hub's address the session runs to.
+        local_address: This machine's own address on the session's
+            connection, which the report names as the link.
         hub_id: The hub's id, from the welcome; empty until it arrived.
         hub_name: The hub's name, from the welcome.
         hub_software: The hub's ``software``, from the welcome.
         hub_time: The hub's clock the welcome named, in seconds since the
             epoch; None until it arrived, and for a welcome naming none.
-        state_hash: The hash the last state frame named.
+        refusal: The refusal the hub ended the session with, or None.
     """
 
     def __init__(
         self,
         *,
-        client,
+        control,
         hello: dict,
-        report,
-        run_command,
-        news: threading.Event,
-        log=print,
-        interval_s: float = AGENT_REPORT_INTERVAL_S,
-        on_tick=None,
+        address: str = "",
+        local_address: str = "",
+        run_command=None,
+        shells=None,
         on_state=None,
+        on_unreadable=None,
         stream_kinds=None,
+        log=print,
     ):
         """
         Args:
-            client: A connected-or-not ``WebSocketClient``.
-            hello: The identity card the hello carries: ``{protocol, role,
-                id, name, software, token}``.
-            report: Called for each report's body.
+            control: The :class:`TransportControlClient` the frames and the
+                streams go through.
+            hello: The identity card: ``{protocol, role, id, name,
+                software}``.
+            address: The hub's address the session runs to.
+            local_address: This machine's own address on the connection.
             run_command: Called with ``(module, verb, args, on_line)`` for
-                each ``command`` stream; returns ``{"exit_code", "code",
-                "params", "output"}``, with ``result`` beside them for a
-                verb that reads.
-            news: Set whenever a report should go up at once.
-            log: Callable used for progress messages.
-            interval_s: How often a report goes up while nothing changes.
-            on_tick: Called once per report interval, before the report.
-            on_state: Called with the state document, ``{hash, modules,
-                desktop}``, for each state frame the hub sends. None takes
-                the hash and nothing else.
+                each ``command`` stream.
+            shells: The kept shells ``persist`` and ``stop_session`` act on;
+                None answers both ``session_unknown``.
+            on_state: Called with each ``state`` frame's document, ``{hash,
+                ...sections}``.
+            on_unreadable: Called with ``{code, params}`` for a frame this
+                build cannot read.
             stream_kinds: Stream kind to its handler factory, called with
-                ``(channel, args)``. A handler has ``open()``, which may
-                raise :class:`StreamRefused`, and ``run()``, which returns
-                ``{"code", "params"}``, what the stream closes with. The
-                command kind's factory is bound to ``run_command``. None
-                serves the kinds of :mod:`neutrino_agent.streams`.
+                ``(channel, args)``. None serves the kinds of
+                :mod:`neutrino_agent.streams`.
+            log: Callable used for progress messages.
         """
-        self._client = client
+        self._control = control
         self._hello = dict(hello)
-        self._report = report
-        self._run_command = run_command
-        self._news = news
-        self._log = log
-        self._interval_s = interval_s
-        self._on_tick = on_tick
+        self.address = address
+        self.local_address = local_address
+        self._shells = shells
         self._on_state = on_state
+        self._on_unreadable = on_unreadable
+        self._log = log
         kinds = dict(STREAM_KINDS if stream_kinds is None else stream_kinds)
-        if STREAM_KIND_COMMAND in kinds:
+        if STREAM_KIND_COMMAND in kinds and run_command is not None:
             kinds[STREAM_KIND_COMMAND] = functools.partial(
                 kinds[STREAM_KIND_COMMAND], run=run_command
             )
@@ -126,273 +140,163 @@ class AgentSession:
         self.hub_name = ""
         self.hub_software = ""
         self.hub_time: "float | None" = None
-        self.state_hash = ""
-        self._lock = threading.Lock()
-        self._is_closed = threading.Event()
-        self._failure: "Exception | None" = None
-        self._channels: dict = {}
-        self._next_stream_id = FIRST_OWN_STREAM_ID
-        self._reader: "threading.Thread | None" = None
+        self.refusal: "GatewayRefusedDetail | None" = None
+        self._is_welcomed = threading.Event()
+        self._is_ended = threading.Event()
+        self._is_settled = threading.Event()
 
     @property
     def is_open(self) -> bool:
-        """Whether the socket is up and the welcome has arrived."""
-        return self._reader is not None and not self._is_closed.is_set()
+        """Whether the welcome arrived and the session has not ended."""
+        return self._is_welcomed.is_set() and not self._is_ended.is_set()
 
     @property
-    def local_address(self) -> str:
-        """This machine's own address on the socket, empty while it is closed."""
-        return self._client.local_address
+    def is_ended(self) -> bool:
+        """Whether the session ended."""
+        return self._is_ended.is_set()
 
-    def connect(self) -> None:
-        """Connect, say hello, and take the welcome.
-
-        Raises:
-            GatewayUntrusted: When the peer failed the fingerprint check.
-            GatewayRefusedDetail: When the hub answered ``refused``, with
-                its code and params, or closed 4000 without one.
-            GatewayUnreachable: On any network error, or a first frame that
-                is neither a welcome from a hub nor a refusal.
-        """
-        self._client.connect()
-        try:
-            self._send({"type": "hello", **self._hello})
-            welcome = self._take_welcome()
-        except SocketClosed as closed:
-            raise close_error(closed.code, closed.reason) from closed
-        except Exception:
-            self._client.close()
-            raise
-        self.hub_id = str(welcome.get("id", "") or "")
-        self.hub_name = str(welcome.get("name", "") or "")
-        self.hub_software = str(welcome.get("software", "") or "")
-        self.hub_time = welcome_time(welcome)
-        self._reader = threading.Thread(
-            target=self._read_forever, name="agent_session_reader", daemon=True
-        )
-        self._reader.start()
-
-    def serve(self, on_first_report=None) -> "Exception | None":
-        """Report until the socket ends.
-
-        Args:
-            on_first_report: Called once, on this thread, as soon as the
-                first report has gone out; the next report waits for it.
-
-        Returns:
-            What ended it: the refusal a ``refused`` frame carried, the
-            gateway error the close or the wire failure maps to, or None
-            when :meth:`close` ended it from here.
-        """
-        while not self._is_closed.is_set():
-            try:
-                self._send({"type": "report", **self._report()})
-            except GatewayUnreachable as error:
-                self._end(error)
-                break
-            if on_first_report is not None:
-                on_first_report()
-                on_first_report = None
-            self._news.wait(timeout=self._interval_s)
-            self._news.clear()
-            if self._on_tick is not None:
-                self._on_tick()
-        if self._reader is not None:
-            self._reader.join(timeout=self._interval_s)
-        return self._failure
-
-    def close(self) -> None:
-        """End the socket from this side."""
-        self._is_closed.set()
-        self._client.close()
-        self._news.set()
-
-    def resize_stream(self, stream_id, cols: int, rows: int) -> bool:
-        """Give one stream the hub opened a new terminal size.
-
-        Args:
-            stream_id: The stream's id.
-            cols: The new width.
-            rows: The new height.
-
-        Returns:
-            True when a live stream of that id took it.
-        """
-        channel = self._channel(stream_id)
-        if channel is None:
-            return False
-        channel._feed(("resize", int(cols), int(rows)))
-        return True
-
-    def open_stream(self, kind: str, **args) -> StreamChannel:
-        """Open a stream to the hub, on the next odd id.
-
-        Args:
-            kind: The stream kind.
-            **args: The kind's arguments, sent beside it in the open.
-
-        Returns:
-            The stream's channel; closing it ends the stream with its result.
+    def say_hello(self) -> None:
+        """Write ``hello``, the session's first frame.
 
         Raises:
-            GatewayUnreachable: When the socket is gone.
+            GatewayUnreachable: When the transport is gone.
         """
-        with self._lock:
-            stream_id = self._next_stream_id
-            self._next_stream_id += 2
-            channel = StreamChannel(self, stream_id)
-            self._channels[stream_id] = channel
-        try:
-            self._send({"type": "open", "stream": stream_id, "kind": kind, **args})
-        except GatewayUnreachable:
-            with self._lock:
-                self._channels.pop(stream_id, None)
-            raise
-        return channel
+        self._control.send_frame({"type": FRAME_HELLO, **self._hello})
 
-    def _take_welcome(self) -> dict:
-        """The hub's first frame: its identity card, or why it said no."""
-        kind, payload = self._client.recv()
-        message = _decode(kind, payload)
-        if message is None:
-            raise GatewayUnreachable("the hub's first frame is not a welcome")
-        if message.get("type") == "refused":
-            raise _refusal(message)
-        if message.get("type") != "welcome" or message.get("role") != AGENT_HUB_ROLE:
-            raise GatewayUnreachable("the hub's first frame is not a hub's welcome")
-        return message
+    def wait_welcome(self, timeout_s: float) -> bool:
+        """Wait for the welcome, or for the session's end.
 
-    def _send(self, message: dict) -> None:
-        self._client.send_text(json.dumps(message))
+        Args:
+            timeout_s: How long to wait.
 
-    def _send_bytes(self, stream_id: int, data: bytes) -> None:
-        self._client.send_bytes(
-            stream_id.to_bytes(AGENT_WS_STREAM_ID_BYTES, "big") + data
-        )
+        Returns:
+            True once the welcome arrived on a session that runs on; False
+            when the session ended or the wait ran out first.
+        """
+        self._is_settled.wait(timeout_s)
+        return self.is_open
 
-    def _close_stream(self, stream_id: int, code: str, params: dict) -> None:
-        """Send a stream's close and forget it."""
-        with self._lock:
-            self._channels.pop(stream_id, None)
-        self._send(
-            {"type": "close", "stream": stream_id, "code": code, "params": params}
-        )
+    def report(self, body: dict) -> None:
+        """Send one report.
 
-    def _end(self, failure: "Exception | None") -> None:
-        with self._lock:
-            if self._failure is None or _is_cause_of(failure, self._failure):
-                self._failure = failure
-            channels = list(self._channels.values())
-        self._is_closed.set()
-        self._client.close()
-        self._news.set()
-        for channel in channels:
-            channel._end()
+        Args:
+            body: ``{state_hash, ...sections}``.
 
-    def _read_forever(self) -> None:
-        while not self._is_closed.is_set():
-            try:
-                kind, payload = self._client.recv()
-            except SocketClosed as closed:
-                if not self._is_closed.is_set():
-                    self._end(close_error(closed.code, closed.reason))
-                return
-            except GatewayUnreachable as error:
-                if not self._is_closed.is_set():
-                    self._end(error)
-                    return
-                # The sender found the socket gone first and recorded the
-                # echo; the cause is what this read hit.
-                with self._lock:
-                    if _is_cause_of(error, self._failure):
-                        self._failure = error
-                return
-            try:
-                self._dispatch(kind, payload)
-            except Exception as error:  # noqa: BLE001 - the reader must survive
-                self._log(f"could not handle a frame from the hub: {error}")
+        Raises:
+            GatewayUnreachable: When the transport is gone.
+        """
+        self._control.send_frame({"type": FRAME_REPORT, **body})
 
-    def _dispatch(self, kind: str, payload) -> None:
-        if kind == "binary":
-            self._dispatch_bytes(payload)
-            return
-        message = _decode(kind, payload)
-        if message is None:
-            return
-        message_type = message.get("type")
-        stream_id = message.get("stream")
-        if message_type == "open":
-            self._open(message)
-        elif message_type == "close":
-            with self._lock:
-                channel = self._channels.pop(stream_id, None)
-            if channel is not None:
-                params = message.get("params")
-                channel._end(
-                    str(message.get("code", "") or ""),
-                    dict(params) if isinstance(params, dict) else {},
-                )
-        elif message_type == "state":
-            self.state_hash = str(message.get("hash", "") or "")
+    def end(self, refusal: "GatewayRefusedDetail | None" = None) -> None:
+        """Mark the session ended, with the refusal that ended it if any.
+
+        Args:
+            refusal: Why the hub ended it; a refusal already recorded stays.
+        """
+        if refusal is not None and self.refusal is None:
+            self.refusal = refusal
+        self._is_ended.set()
+        self._is_settled.set()
+
+    def take(self, frame: dict) -> None:
+        """Act on one frame the hub sent.
+
+        Args:
+            frame: ``{type, ...body}``.
+        """
+        kind = frame.get("type")
+        if kind == FRAME_WELCOME:
+            self._take_welcome(frame)
+        elif kind == FRAME_REFUSED:
+            self.end(refusal_of(frame))
+        elif kind == FRAME_STATE:
             if self._on_state is not None:
                 self._on_state(
-                    {key: value for key, value in message.items() if key != "type"}
+                    {key: value for key, value in frame.items() if key != "type"}
                 )
-        elif message_type == "credit":
-            channel = self._channel(stream_id)
-            if channel is not None:
-                channel._grant(message.get("bytes", 0))
-        elif message_type == "eof":
-            channel = self._channel(stream_id)
-            if channel is not None:
-                channel._feed(("eof",))
-        elif message_type == "refused":
-            # The close 4000 behind it finds the refusal already recorded.
-            self._end(_refusal(message))
+        elif kind in (FRAME_PERSIST, FRAME_STOP_SESSION):
+            self._answer_session(frame)
+        elif kind == FRAME_PONG:
+            return
         else:
-            self._log(f"ignoring a {message_type!r} frame from the hub")
+            self._unreadable(kind)
 
-    def _dispatch_bytes(self, payload: bytes) -> None:
-        if len(payload) < AGENT_WS_STREAM_ID_BYTES:
-            self._log(f"dropping a binary frame of {len(payload)} bytes")
-            return
-        stream_id = int.from_bytes(payload[:AGENT_WS_STREAM_ID_BYTES], "big")
-        channel = self._channel(stream_id)
-        if channel is not None:
-            channel._feed(("data", bytes(payload[AGENT_WS_STREAM_ID_BYTES:])))
+    def serve_stream(self, stream_id: str, open_record) -> None:
+        """Take one stream the hub opened and serve it on a thread of its own.
 
-    def _channel(self, stream_id) -> "StreamChannel | None":
-        with self._lock:
-            return self._channels.get(stream_id)
-
-    def _open(self, message: dict) -> None:
-        """Serve one stream the hub opened: the kind table decides how."""
-        stream_id = message.get("stream")
-        if not isinstance(stream_id, int) or not 0 <= stream_id < STREAM_ID_LIMIT:
-            self._log(f"dropping an open with stream id {stream_id!r}")
-            return
-        kind = str(message.get("kind", ""))
-        args = {
-            key: value
-            for key, value in message.items()
-            if key not in OPEN_ENVELOPE_FIELDS
-        }
-        factory = self._stream_kinds.get(kind)
-        if factory is None:
-            self._close_stream(stream_id, "kind_unknown", {"kind": kind})
-            return
-        channel = StreamChannel(self, stream_id)
-        with self._lock:
-            self._channels[stream_id] = channel
+        Args:
+            stream_id: The id the ``stream`` event named.
+            open_record: The stream's open, ``{kind, ...args}``.
+        """
+        record = open_record if isinstance(open_record, dict) else {}
         threading.Thread(
-            target=self._serve_channel,
-            args=(factory, channel, args),
+            target=self._serve_stream,
+            args=(str(stream_id), record),
             name=f"agent_stream_{stream_id}",
             daemon=True,
         ).start()
 
-    def _serve_channel(self, factory, channel: StreamChannel, args: dict) -> None:
-        """Open one stream, run it, and close it with its result."""
+    def _take_welcome(self, frame: dict) -> None:
+        if frame.get("role") != AGENT_HUB_ROLE:
+            self._unreadable(FRAME_WELCOME)
+            return
+        self.hub_id = str(frame.get("id", "") or "")
+        self.hub_name = str(frame.get("name", "") or "")
+        self.hub_software = str(frame.get("software", "") or "")
+        self.hub_time = welcome_time(frame)
+        self._is_welcomed.set()
+        self._is_settled.set()
+
+    def _answer_session(self, frame: dict) -> None:
+        """Answer ``persist`` or ``stop_session`` with a ``reply``."""
+        session_id = str(frame.get("session_id", "") or "")
+        if self._shells is None:
+            is_known = False
+        elif frame.get("type") == FRAME_PERSIST:
+            is_known = self._shells.persist(
+                session_id,
+                is_persistent=given_flag(frame, "is_persistent"),
+                is_shared=given_flag(frame, "is_shared"),
+            )
+        else:
+            is_known = self._shells.stop(session_id)
+        reply = {
+            "type": FRAME_REPLY,
+            "request": str(frame.get("request", "") or ""),
+            "code": "" if is_known else "session_unknown",
+            "params": {} if is_known else {"session_id": session_id},
+        }
+        try:
+            self._control.send_frame(reply)
+        except GatewayUnreachable:
+            return
+
+    def _unreadable(self, kind) -> None:
+        """A frame this build cannot read: one log line and a typed error."""
+        name = kind if isinstance(kind, str) else ""
+        self._log(f"ignoring a frame this agent cannot read: {name or kind!r}")
+        if self._on_unreadable is not None:
+            self._on_unreadable(
+                {"code": AGENT_CODE_FRAME_UNREADABLE, "params": {"type": name}}
+            )
+
+    def _serve_stream(self, stream_id: str, open_record: dict) -> None:
+        """Attach one stream, open its handler, run it, and close it with its result."""
+        try:
+            channel = self._control.attach(stream_id)
+        except GatewayUnreachable as error:
+            self._log(f"stream {stream_id} could not be taken: {error}")
+            return
+        kind = str(open_record.get("kind", "") or "")
+        args = {
+            key: value
+            for key, value in open_record.items()
+            if key not in OPEN_ENVELOPE_FIELDS
+        }
+        factory = self._stream_kinds.get(kind)
+        if factory is None:
+            channel.close("kind_unknown", {"kind": kind})
+            return
         try:
             try:
                 stream = factory(channel, args)
@@ -400,71 +304,18 @@ class AgentSession:
             except StreamRefused as refused:
                 channel.close(refused.code, dict(refused.params))
                 return
+            channel.accept()
+            channel.start()
             info = stream.run()
         except GatewayUnreachable:
+            channel.close()
             return
         except StreamClosed:
             info = {"code": "", "params": {}}
         except Exception as error:  # noqa: BLE001 - reported, never fatal
-            self._log(f"stream {channel.id} failed: {error}")
+            self._log(f"stream {stream_id} failed: {error}")
             info = {
                 "code": "agent_internal",
                 "params": {"error": type(error).__name__},
             }
-        try:
-            channel.close(
-                str(info.get("code", "") or ""), dict(info.get("params") or {})
-            )
-        except GatewayUnreachable:
-            return
-
-
-def _is_cause_of(failure, recorded) -> bool:
-    """Whether a failure names the cause behind one already recorded.
-
-    The client says its socket is closed when the other thread dropped it
-    first; that thread holds the cause.
-
-    Args:
-        failure: What ended a send or a read now.
-        recorded: What was recorded before.
-
-    Returns:
-        True when ``recorded`` is only that echo and ``failure`` is not.
-    """
-    return _is_echo(recorded) and failure is not None and not _is_echo(failure)
-
-
-def _is_echo(failure) -> bool:
-    """Whether a failure only says the socket was already dropped."""
-    return (
-        isinstance(failure, GatewayUnreachable)
-        and str(failure) == AGENT_WS_SOCKET_CLOSED_DETAIL
-    )
-
-
-def _refusal(message: dict) -> GatewayRefusedDetail:
-    """What one ``refused`` frame says, wherever on the socket it arrives.
-
-    Args:
-        message: The frame.
-
-    Returns:
-        The refusal, its code ``channel_refused`` when the frame named none.
-    """
-    params = message.get("params")
-    return GatewayRefusedDetail(
-        code=str(message.get("code", "") or "") or AGENT_CODE_CHANNEL_REFUSED,
-        params=dict(params) if isinstance(params, dict) else {},
-    )
-
-
-def _decode(kind: str, payload) -> "dict | None":
-    """One text frame as the object it carries, or None."""
-    if kind != "text":
-        return None
-    try:
-        message = json.loads(payload)
-    except ValueError:
-        return None
-    return message if isinstance(message, dict) else None
+        channel.close(str(info.get("code", "") or ""), dict(info.get("params") or {}))

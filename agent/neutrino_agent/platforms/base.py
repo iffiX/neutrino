@@ -35,8 +35,31 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
 
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
+
 # What ends the word after a name's prefix.
 ADDED_NAME_WORD_END = re.compile(r"[_.@-]")
+
+
+def login_shell_of(account: str) -> str:
+    """An account's login shell from the account database.
+
+    Args:
+        account: The account.
+
+    Returns:
+        The shell's path; empty where there is no account database, as on
+        Windows, or no such account.
+    """
+    if pwd is None:
+        return ""
+    try:
+        return str(pwd.getpwnam(account).pw_shell or "")
+    except KeyError:
+        return ""
 
 
 @dataclass(frozen=True)
@@ -171,6 +194,30 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform cannot enumerate.
         """
         raise PlatformUnsupportedError("cannot enumerate accounts here")
+
+    def account_details(self) -> list:
+        """Each human account with its home and its login shell, as the
+        account form shows their defaults.
+
+        Returns:
+            ``[{account, home, shell}]`` in the order of
+            :meth:`human_accounts`: ``home`` in the machine's own form, empty
+            when it cannot be read, and ``shell`` the login shell, empty on
+            Windows.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot enumerate.
+        """
+        details = []
+        for account in self.human_accounts():
+            try:
+                home = self.account_home(account)
+            except (KeyError, OSError, PlatformUnsupportedError):
+                home = ""
+            details.append(
+                {"account": account, "home": home, "shell": login_shell_of(account)}
+            )
+        return details
 
     def account_home(self, account: str) -> str:
         """One account's home directory, from the account database.
