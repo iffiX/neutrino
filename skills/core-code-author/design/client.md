@@ -148,7 +148,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.hub_silent` | The hub did not answer |
 | `ui.state.hub_off_overlay` | The hub is not on the virtual network |
 | `ui.state.no_network` | No network |
-| `ui.state.untrusted` | Certificate mismatch |
+| `ui.state.untrusted` | Hub key mismatch |
 | `ui.state.admission_paused` | The hub pauses new devices |
 | `ui.state.unknown_device` | The hub does not know this device |
 | `ui.state.too_old` | Version too old |
@@ -204,7 +204,7 @@ What the core does on the press, before it pushes:
 
 | Hub's connection | Action |
 | --- | --- |
-| `connected` | sends a report with `is_refresh: true`; the hub sends the whole state frame back whatever its hash; a report the socket cannot take closes the socket, and the hub goes to `connecting` as the Hubs table says |
+| `connected` | sends a report with `is_refresh: true`; the hub sends the whole state frame back whatever its hash; a report the session cannot take ends the session, and the hub goes to `connecting` as the Hubs table says |
 | `connecting` or waiting | puts the backoff at its floor, ends the current wait and the round in flight, resolves the hub's addresses again and starts a round, which dials them all at once ("The Hubs page") |
 | `replaced` or `disabled` | nothing, and the hub does not enter refreshing; those states change only by a press on **Reconnect** or by the hub |
 
@@ -230,11 +230,11 @@ after the ` · ` is what ends the wait:
 | State line (English catalog) | Chinese | When | What ends it |
 | --- | --- | --- | --- |
 | `ui.state.connecting`, Connecting… | 连接中… | a round is dialling | the round ends |
-| `ui.state.connected_through` · `ui.state.rtt`, Connected · LAN · 1 ms | 已连接 · 局域网 · 1 ms | the round won; the two tags follow each `ping` | the socket closes: `connecting` at once, no wait |
+| `ui.state.connected_through` · `ui.state.rtt`, Connected · LAN · 1 ms | 已连接 · 局域网 · 1 ms | the round won; the two tags follow each `ping` | the session ends: `connecting` at once, no wait |
 | `ui.state.hub_silent` · `ui.action.retry_in`, The hub did not answer · retrying in 5 s | 中枢未响应 · 5 秒后重试 | every address of the round failed, and the hub's virtual network is off or the hub has none | the countdown reaches 0, or a network change, or a refresh |
 | `ui.state.hub_off_overlay` · `ui.action.retry_in`, The hub is not on the virtual network · retrying in 5 s | 中枢未上虚拟网 · 5 秒后重试 | every address of the round failed while this client's virtual network of the hub's is `on` | the same |
 | `ui.state.no_network`, No network | 无网络 | the device has no network at all | the device's connectivity changing |
-| `ui.state.untrusted` · `ui.action.retry_in`, Certificate mismatch · retrying in 60 s | 证书不符 · 60 秒后重试 | `hub_untrusted` | the countdown, at `CLIENT_BACKOFF_MAX_S` each time |
+| `ui.state.untrusted` · `ui.action.retry_in`, Hub key mismatch · retrying in 60 s | 中枢密钥不符 · 60 秒后重试 | `hub_untrusted` | the countdown, at `RedialBackoffMax` each time |
 | `ui.state.admission_paused` · `ui.action.retry_in`, The hub pauses new devices · retrying in 60 s | 中枢暂停接纳 · 60 秒后重试 | `admission_paused {retry_after_s}` on the join | the countdown of `retry_after_s` |
 | `ui.state.unknown_device`, The hub does not know this device | 中枢不认识本机 | `binding_unknown` | nothing; **Leave** is the row's only action |
 | `ui.state.too_old` · `ui.action.update_client`, Version too old · update the client | 版本太旧 · 更新客户端 | `protocol_too_old` | nothing automatic: the person installs the new client, which keeps this state and its bindings, and the next round connects |
@@ -246,19 +246,21 @@ after the ` · ` is what ends the wait:
 A countdown is live: the state carries the moment of the next round, and
 the page redraws the seconds left once a second; at 0 the line reads
 `ui.state.connecting`. The wait between rounds is the backoff,
-`CLIENT_BACKOFF_MIN_S` doubling to `CLIENT_BACKOFF_MAX_S`, put back at the
+`RedialBackoffMin` doubling to `RedialBackoffMax`, put back at the
 floor by a round that wins and by every network change. A row just joined
 runs its rounds like any other and reads the same lines; nothing says
 "pending".
 
-A connect round, a reconnect after the socket closed as much as the
+A connect round, a reconnect after the session ended as much as the
 first, dials every candidate address of the hub at once: the hub's address
 on each of its virtual networks that is up, the hub's name, and the
-binding's `urls`. Each address keeps its own connect time,
-`CLIENT_CONNECT_TIMEOUT_S`. The first socket to complete TLS with the pinned
-fingerprint is the round's socket. At that moment the client closes every
-other socket of the round, before any `hello` on it, and sends `hello` on
-the round's socket alone. The round ends `connected` when the `welcome`
+binding's `urls`. The client's transport runs the round, from the candidates
+the client gives it with `dial` ([protocol.md](protocol.md), "The local
+channel"). Each address keeps its own connect time, `DialTimeout`. The
+first connection whose handshake completes under the binding's `hub_key` is
+the round's. At that moment the transport closes every other connection of
+the round, before any `hello` on it, and sends `hello` on the round's
+connection alone. The round ends `connected` when the `welcome`
 follows, and in a code otherwise ([connection.md](connection.md), "Where
 the port is reached").
 
@@ -266,8 +268,8 @@ the port is reached").
 | --- | --- |
 | No address is preferred for having worked last. A connected hub moves to another address only when a round a network change started wins on a better path ("A network change starts a round"). | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
 | No prober runs between rounds, no round runs on a timer, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
-| One `hello` per round. | The hub keeps one admitted socket per binding and closes the earlier of two with 4010 `replaced`, so a second `hello` in one round closes the round's own winner. |
-| An address refused in a round, a host that is up with the port not open yet, is dialled again every `CLIENT_REDIAL_INTERVAL_S`, 1 s, until `CLIENT_CONNECT_TIMEOUT_S`, 10 s, has passed since the round started. An address that does not answer at all is not dialled again in that round. The desktop and the phone do the same. | A hub that restarts opens its port again within a second or two; without the redial the client waits out the round and the backoff before it dials again. |
+| One `hello` per round. | The hub keeps one admitted session per binding and ends the earlier of two with `refused {code: replaced}`, so a second `hello` in one round ends the round's own winner. |
+| An address refused in a round, a host that is up with the port not open yet, is dialled again every `RedialInterval`, 1 s, until `DialTimeout`, 10 s, has passed since the round started. An address that does not answer at all is not dialled again in that round. The desktop and the phone do the same. | A hub that restarts opens its port again within a second or two; without the redial the client waits out the round and the backoff before it dials again. |
 
 ### A network change starts a round
 
@@ -281,7 +283,7 @@ appearing or going). For a hub that is not `connected`, the change ends
 the wait and the round in flight, if any, and the new round starts at once:
 a dial still waiting out its connect time is closed, not waited for. For a
 `connected` hub, the round runs beside the live channel, and the round trip
-measure follows on whichever socket carries the channel afterwards.
+measure follows on whichever session carries the channel afterwards.
 
 The client knows each candidate's path before its `hello`: the hub's address
 on a virtual network is that engine's, the state's `ssh_relay_url`,
@@ -298,17 +300,17 @@ on a virtual network is that engine's, the state's `ssh_relay_url`,
 
 | Rule | Reason |
 | --- | --- |
-| A round on a `connected` hub takes the channel only when its winner's path ranks higher than the live channel's, or ranks the same and its TLS handshake took less time than the live channel's socket took when it won. | A change of network is the moment a better path can appear, and moving the channel costs every stream on it. |
-| A winner that is no better is closed before its `hello`, and the live channel stays where it is. | One admitted socket per binding: a `hello` on the loser closes the channel that is working. |
-| A better winner sends `hello`. The hub closes the old socket with 4010 `replaced`, which the client expects on the socket it moved off and never shows as the row's `replaced`. | The client replaced its own channel; the row's `replaced` is for another client taking the binding. |
+| A round on a `connected` hub takes the channel only when its winner's path ranks higher than the live channel's, or ranks the same and its handshake took less time than the live channel's took when it won. | A change of network is the moment a better path can appear, and moving the channel costs every stream on it. |
+| A winner that is no better is closed before its `hello`, and the live channel stays where it is. | One admitted session per binding: a `hello` on the loser ends the channel that is working. |
+| A better winner sends `hello`. The hub ends the old session with `refused {code: replaced}`, which the client expects on the session it moved off and never shows as the row's `replaced`. | The client replaced its own channel; the row's `replaced` is for another client taking the binding. |
 | The row shows the new channel's `reached_through` and `rtt_ms` as after any round. | The row reads the channel, whichever round made it. |
 
 A `connected` row shows two tags beside its dot, each one short token: the
 state word `ui.state.connected_through` with the word for `reached_through`,
 and `ui.state.rtt` with `rtt_ms` rounded to a whole number. The client sends
 a `ping` frame of its own every `CLIENT_PING_INTERVAL_S`, 20 seconds, and once
-right after the channel moves to a new socket, and each `pong` whose `nonce`
-is the last `ping` sent on that socket sets `rtt_ms` to the time from that
+right after the channel moves to a new session, and each `pong` whose `nonce`
+is the last `ping` sent on that session sets `rtt_ms` to the time from that
 ping to its pong, so the tag changes at every ping. The client sends no
 WebSocket ping. No sentence goes with either tag.
 
@@ -336,7 +338,7 @@ under its mono line; the AI page sets it.
 The join row is an input for the link and a **Join** button. On a phone the
 row opens the Join page: a camera view that scans the hub's QR, and under it
 the same input. The QR carries the whole link ([protocol.md](protocol.md),
-"The link and the two endpoints"), the same compressed form a person
+"The link and the binding"), the same compressed form a person
 pastes, so a scan and a paste are one path: the app inflates it, stores the
 binding at once with every address and the overlays' material, and the
 channel's rounds do the rest. The button shows `ui.job.joining` while the
@@ -352,7 +354,7 @@ table gives, with its ticket unspent.
 | --- | --- |
 | A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state line reads `ui.state.connecting` as its first round starts, the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. The link carries the network's material at once. |
 | The channel's rounds run as for any hub. The first time an address answers with the pinned certificate, the client spends the ticket there (`POST /api/channel/join`), keeps the token, and only then sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
-| A client holds at most one binding per hub id, and a join to a hub ends the binding held before for that hub as at a leave: its row goes, and what it held (forwards, mounts, viewers, its virtual network) stops. Right after the ticket is spent and before the `hello`, the client ends a binding holding the binding id the hub returned, as the hub returns for a client joining again from the same installation ([protocol.md](protocol.md), "The link and the two endpoints"), and the hub is not told. When a `welcome` names a hub id another binding holds, the client ends that binding before it takes the first `state`. If that binding holds a token, the client tells the hub it leaves as **Leave** does, in the background, and a refusal or an unreachable hub changes nothing. The Hubs page then has one row for the hub. | The hub id reaches the client only in the `welcome`, and before it the binding id the hub returned is the one sign of the same hub. A binding with the same id lost its token to the join, and its open socket would read the new `hello` as `replaced` by another client. A binding with another id names a row the hub forgot, or a row the hub keeps until the client leaves it. |
+| A client holds at most one binding per hub id, and a join to a hub ends the binding held before for that hub as at a leave: its row goes, and what it held (forwards, mounts, viewers, its virtual network) stops. Right after the ticket is spent and before the `hello`, the client ends a binding holding the binding id the hub returned, as the hub returns for a client joining again from the same installation ([protocol.md](protocol.md), "The link and the binding"), and the hub is not told. When a `welcome` names a hub id another binding holds, the client ends that binding before it takes the first `state`. If that binding holds a token, the client tells the hub it leaves as **Leave** does, in the background, and a refusal or an unreachable hub changes nothing. The Hubs page then has one row for the hub. | The hub id reaches the client only in the `welcome`, and before it the binding id the hub returned is the one sign of the same hub. A binding with the same id lost its token to the join, and its open session would read the new `hello` as `replaced` by another client. A binding with another id names a row the hub forgot, or a row the hub keeps until the client leaves it. |
 | A client that starts with two or more bindings holding one hub id, as an older version left them, keeps the one joined last and ends each other one as a `welcome` ends it, telling the hub for each one that holds a token. | One binding per hub id holds from the start, so every lookup by hub id, the Hubs page's among them, finds one binding. |
 | A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row on the `join_refused` line with that code's wording, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
 | `admission_paused {retry_after_s}` is the one transient refusal of the join: the client keeps the ticket, the row reads the `admission_paused` line counting down `retry_after_s`, and the client joins again when it reaches 0. | The hub paused new enrolments after too many failures; the ticket behind the pause is still valid. |
@@ -450,10 +452,10 @@ from **Connect** until **Disconnect**, and one `connect` stream:
 
 | Rule | Reason |
 | --- | --- |
-| The forward opens its stream at **Connect**, and again at the first datagram that finds it has none, after the hub's socket was replaced or the far end closed the stream. | A UDP program has no connection to start a stream with, and a stream that ended is opened again by the next datagram that needs it. |
-| An open refused at **Connect** ends the forward and writes the code on the row's error line, as a failed bind does. An open refused later writes the code on the error line; the forward goes on listening and tries again at a later datagram, at most once a second. The line goes when a frame comes back on a stream opened after it, and not at that stream's first credit, which the hub grants before the agent answers. | A refusal at the press is the answer to the press; a refusal later is a state the hub can leave without the person pressing again, and a line left after the far end answers again says a fault that is gone. |
-| Datagrams that arrive while an open waits for its first credit are held, at most `CLIENT_UDP_HELD_DATAGRAMS_MAX`, 16, and sent when the credit comes; more are dropped. No datagram waits anywhere else. | A program's first datagram is often its only one, and a bounded hold keeps it without a queue. |
-| Each datagram goes into the stream with the port it came from as `source`. The forward remembers, per `source`, the address it last came from, for at most `CLIENT_UDP_SOURCES_MAX`, 64, sources, the one idle the longest giving way; a frame for a `source` it no longer remembers is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers. |
+| The forward opens its stream at **Connect**, and again at the first datagram that finds it has none, after the hub's session was replaced or the far end closed the stream. | A UDP program has no connection to start a stream with, and a stream that ended is opened again by the next datagram that needs it. |
+| An open refused at **Connect** ends the forward and writes the code on the row's error line, as a failed bind does. An open refused later writes the code on the error line; the forward goes on listening and tries again at a later datagram, at most once a second. The line goes when a datagram comes back on a stream opened after it. | A refusal at the press is the answer to the press; a refusal later is a state the hub can leave without the person pressing again, and a line left after the far end answers again says a fault that is gone. |
+| Datagrams that arrive while an open waits for its `accept` are held, at most `UdpHeldDatagramsMax`, 16, and sent when it comes; more are dropped. No datagram waits anywhere else. | A program's first datagram is often its only one, and a bounded hold keeps it without a queue. |
+| Each datagram goes into the stream with the port it came from as `source`. The forward remembers, per `source`, the address it last came from, for at most `UdpSourcesMax`, 64, sources, the one idle the longest giving way; a record for a `source` it no longer remembers is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers. |
 
 ## The local port table
 
@@ -941,8 +943,8 @@ entry.
 
 | Rule | Reason |
 | --- | --- |
-| The app speaks the channel at the same `PROTOCOL` as the other clients: one TLS WebSocket to the hub's agent port, the certificate checked against the binding's fingerprint before the first byte, and every service a stream on it. | One protocol for every client is one protocol to test, and the hub treats a client the same on every system. |
-| A round dials the hub's name, the binding's `urls`, and the hub's address on every virtual network the hub publishes (the `address` of each `overlays` entry), all at once. | The app cannot see whether another app's virtual network is up, so it dials the address, and the round keeps whichever socket completes first. |
+| The app speaks the channel at the same `PROTOCOL` as the other clients, through the transport it embeds: one session to the hub's agent port under the binding's `hub_key`, and every service a stream on it. | One protocol for every client is one protocol to test, and the hub treats a client the same on every system. |
+| A round dials the hub's name, the binding's `urls`, and the hub's address on every virtual network the hub publishes (the `address` of each `overlays` entry), all at once. | The app cannot see whether another app's virtual network is up, so it dials the address, and the round keeps whichever connection completes first. |
 | A VPN that another app connects or disconnects is a change of the device's connectivity, and starts a round ("A network change starts a round"). | The hub's address on that network becomes reachable, or stops being reachable, at that moment. |
 | Away from the hub's LAN, the app reaches the hub at the agent port open to the internet: Direct, with IPv6 or a port forward on the router, SakuraFrp, OpenFrp, or the SSH relay. | Each of these is an address in `urls`, and the app dials it as it dials any other. |
 
@@ -980,8 +982,8 @@ when the app starts.
 
 A File Provider extension, the way an app adds a location to the system's
 Files app, runs in a process of its own while the app is suspended, and so
-needs a socket of its own to the hub. A binding holds one socket: a second
-one replaces the first with 4010 `replaced`
+needs a session of its own to the hub. A binding holds one session: a second
+one replaces the first with `replaced`
 ([connection.md](connection.md), "Where the port is reached"). The app
 therefore has no such extension, and a share is read on the share page
 alone.
@@ -1018,7 +1020,7 @@ alone.
 | Rule | Reason |
 | --- | --- |
 | While the app is on the screen, its channels, its forwards and its share connections run in the app. | iOS runs an app's code while the app is in front. |
-| When the app leaves the screen, it starts a background task (`beginBackgroundTask`) and keeps every connection for the time iOS gives the task, about 30 s on iOS 16. Before that time ends, the app closes every channel and every share connection, stops every forward's listener, and ends the task. | A frozen socket answers no ping, and the hub holds it until the ping times out, up to a minute; a closed one ends its streams at once. iOS takes back the listening sockets of a suspended app. |
+| When the app leaves the screen, it starts a background task (`beginBackgroundTask`) and keeps every connection for the time iOS gives the task, about 30 s on iOS 16. Before that time ends, the app closes every channel and every share connection, stops every forward's listener, and ends the task. | A frozen session answers no keepalive, and the hub holds it until the keepalive times out, up to a minute; a closed one ends its streams at once. iOS takes back the listening sockets of a suspended app. |
 | A channel closed this way has the effect of any dropped channel: a plain terminal session ends, and a persistent or shared one stays, its tab attaching again on return ("The session list"). | The machine keeps the sessions the person asked it to keep. |
 | Returning to the foreground reconnects every hub at once, with no backoff, and every forward that listened before listens again on its port. An in-app browser whose page iOS ended in the background loads it again. | The person is looking; a wait they can see is a fault. |
 | A transfer of the share page that the close cut, the running one and every waiting one, shows `share_interrupted` on its row, with **Retry**. On the return the open share's forward listens again, the app logs in to the share again and reads the folder again. **Retry** on an upload deletes the part the cut write left, then writes the file again under the same name. | A transfer cannot outlive the connection iOS takes back, and the person decides whether it starts again. |

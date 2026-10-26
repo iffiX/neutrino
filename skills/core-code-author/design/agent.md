@@ -1,7 +1,7 @@
 # The device agent
 
 The agent is the hub's presence on a managed Linux, Windows or macOS
-machine: one root service with one socket open to the hub. It hosts the
+machine: one root service with one session open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
 machine's desktop when told. It draws no window. Every port it listens on
 is on `127.0.0.1`: the forwarders in front of the programs run as an
@@ -27,12 +27,12 @@ runs there is an `exec` stream bridged the same way; and every other
 connection it makes to a service on a machine is a `connect` stream
 the hub relays to that machine's agent. This page is
 the agent's own design: who commands it, how state moves, how the machine's
-root reaches it, and where the platform seam runs. The socket itself, its
+root reaches it, and where the platform seam runs. The session itself, its
 frames, sections, kinds and admission, is [protocol.md](protocol.md).
 
 ## Who may tell the agent what
 
-Two authorities, and nothing else: the hub over the pinned socket, and the
+Two authorities, and nothing else: the hub over the pinned session, and the
 machine's own root over the local control socket. There is no third door and
 no per-account scope: an ordinary account on the machine talks to the client,
 never to the agent.
@@ -70,18 +70,29 @@ Root is uid 0. `nagent` refuses any other account, with two exceptions:
 `nagent --version`, and `nagent answer`, which the agent runs as an account
 on Windows ([ai_tools.md](agent/ai_tools.md)).
 
-## One socket, everything on it
+## One session, everything on it
 
-The agent opens one WebSocket to the hub over TLS pinned by the link's
-fingerprint, and reconnects when it drops. The hub never dials a machine; SSH
-exists only to install or reinstall an agent from the Devices page. Text
-frames are JSON; a binary frame is a stream id and its bytes. The frames, the
-sections and the kinds are in [protocol.md](protocol.md), "The channel".
+The agent holds one session to the hub, under the hub's static key the link
+named, and reconnects when it drops. The session is its transport's: the
+agent starts `neutrino_transport` as its child, gives it the binding with
+`dial`, and talks to it over the local channel, a root-only socket of the
+transport's ([protocol.md](protocol.md), "The local channel"). The hub never
+dials a machine; SSH exists only to install or reinstall an agent from the
+Agents page. Frames on the control stream are JSON lines, and every other
+stream carries records. The frames, the sections and the kinds are in
+[protocol.md](protocol.md), "The channel".
 
-Up: a `hello` when the socket opens, then a `report` every few seconds and
+| What the agent's transport does itself | What it hands the agent |
+| --- | --- |
+| the knock, the handshake, the dial order and the backoff | every frame of the control stream, and the frames the agent sends back |
+| a `connect` from the hub, after asking the agent `port` whether the port is published | a `shell`, an `exec`, a `file` and a `command` the hub opens, whole, since the agent holds the pseudo-terminals, the sessions and the modules |
+| the AI gateway forward's listener, opened by `forward_start` | a `log` and a `package` stream the agent opens, through an `open` connection |
+
+Up: a `hello` when the session opens, then a `report` every few seconds and
 at once when something changed. A report has the machine (hostname,
-platform, accounts, metrics) and the network (the link the socket runs on and
-every interface). It also has each module's observed state, the desktop
+platform, accounts, metrics) and the network (the link the session runs on,
+which its transport names as the connection's local address, and every
+interface). It also has each module's observed state, the desktop
 declaration, and the most recent error worth showing. Down: the `state`, once when the first
 report's hash differs and again whenever the hub's copy changes, and the
 streams the hub opens.
@@ -90,12 +101,12 @@ The hub opens `shell`, `exec`, `file`, `command` and `connect` streams to an age
 the agent opens `log`, `package` and, for the AI gateway forward, `connect`
 streams to the hub. A `command` names a
 module and a verb (`{agent, reboot}`, `{samba, reload}`, `{zfs,
-validate}`). Every stream sits behind a credit window, so a long transfer
+validate}`). Every stream sits behind yamux's window, so a long transfer
 never starves the reader, and a stream's result is its close.
 
 **Presence is memory only.** Online, version and last seen are in the hub's
 session registry. A hub restart forgets every machine until it reports again,
-and nothing about a socket reaches `config/`.
+and nothing about a session reaches `config/`.
 
 **The state is one document per device.** The hub composes it from
 `config/devices/<id>/`: `modules.json` with each module's `want`, one file per
@@ -184,7 +195,7 @@ nothing new.
 
 Software somebody installs or removes by hand is displayed, never fought. A
 hand-installed Samba reports `installed`; its shares and users become the
-hub's configuration at the machine's first report on a socket, and the
+hub's configuration at the machine's first report on a session, and the
 first **Configure** imports them when that report found none
 ([protocol.md](protocol.md), "The modules section"). A failure is
 in the machine's report and in the agent's record of it, and a hub restart
@@ -207,7 +218,7 @@ ran, before it removes anything else.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
-wording. The agent's `error` section crosses the socket the same way, so a
+wording. The agent's `error` section crosses the session the same way, so a
 device that is unhappy says why on the panel. Module states are one closed
 table on every surface:
 
@@ -257,7 +268,7 @@ module from it after a restart: a module whose install failed reads
 reads `failed` while its software is there. The module's next attempt
 replaces the record, and deletes it when the attempt took; a state that no
 longer names the module, a join and a leave delete it as well. A failure the
-socket caused, `hub_unreachable`, is kept like any other, and its tried hash
+session caused, `hub_unreachable`, is kept like any other, and its tried hash
 is not, so the next state runs the step again.
 
 A surface that meets a token outside the state table shows "waiting for the
@@ -319,10 +330,12 @@ runner shares, each file one concept.
 A `connect {port, protocol}` stream is one TCP connection the hub relays
 for a client to a service on this machine, or, with `protocol` `udp`, every
 datagram of one UDP entry ([protocol.md](protocol.md), "The connect
-stream"); `protocol` absent means `tcp`. For TCP the agent dials
-`127.0.0.1:<port>`, within `AGENT_CONNECT_DIAL_TIMEOUT_S`, and relays bytes
-both ways under credit until either socket ends. It serves only a port the
-machine publishes at that moment on the stream's protocol:
+stream"); `protocol` absent means `tcp`. The agent's transport asks the
+agent `port` whether the port is published, and for TCP dials
+`127.0.0.1:<port>`, within `ConnectDialTimeout`, and relays bytes both ways
+until either side ends ([protocol.md](protocol.md), "The local channel"). It
+serves only a port the machine publishes at that moment on the stream's
+protocol:
 
 | Published while | The port |
 | --- | --- |
@@ -342,21 +355,21 @@ the stream `connect_failed {reason}`, `reason` being `refused`, `timeout` or
 What the Podman report gives this stream is
 [modules/containers.md](agent/modules/containers.md).
 
-A UDP stream keeps a table from each datagram's `source` to one UDP socket
+The agent's transport keeps, for a UDP stream, a table from each datagram's `source` to one UDP socket
 connected to the target, `127.0.0.1` or the address the binding names, so
 it reads only the target's replies:
 
 | Rule | Value |
 | --- | --- |
 | a datagram whose `source` has no socket | gets one; a reply read from a source's socket goes into the stream with that `source` |
-| a source with no datagram either way | its socket is closed and forgotten after `AGENT_UDP_IDLE_TIMEOUT_S`, 60 seconds; a later datagram gets a new one |
-| sources one stream keeps | at most `AGENT_UDP_SOURCES_MAX`, 64; one more replaces the one idle the longest |
+| a source with no datagram either way | its socket is closed and forgotten after `UdpIdleTimeout`, 60 seconds; a later datagram gets a new one |
+| sources one stream keeps | at most `UdpSourcesMax`, 64; one more replaces the one idle the longest |
 | an error on a source's socket | loses that datagram alone, and the stream stays open |
-| a datagram without the credit its frame needs | dropped, with no wait and no queue; credit taken is granted back once a datagram is passed on or dropped |
-| the stream's end | none while idle; it ends with the hub's close, the hub's socket, or `port_not_published {port}` once the port is no longer published |
+| a datagram its stream cannot take at once | dropped, with no wait and no queue |
+| the stream's end | none while idle; it ends with the hub's close, the session, or `port_not_published {port}` once the port is no longer published |
 
-The two constants have the hub's values ([protocol.md](protocol.md), "The
-timings"); the agent imports nothing from the hub.
+The two constants are the transport's, the same on every machine
+([protocol.md](protocol.md), "The timings").
 
 A machine's own services stay reachable on its LAN at their own ports, under
 each service's own login ([connection.md](connection.md), "One port, one
@@ -395,7 +408,7 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 | The hub sends `is_forwarded` false to the agent on its own machine, which opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, the port a forward there takes. The hub knows which device is its own machine by the machine id; the agent is told, and reads it from nothing else. |
 | On a managed machine `is_forwarded` is true while the machine's AI tools setting is on, or while a container module that uses the gateway is installed. | A container module's key works whatever the AI tools setting says ([modules/containers.md](agent/modules/containers.md), "Reaching the machine"), and the gateway's key check is the one gate on every request. |
 | A port the agent cannot listen on is one line in its log, and the agent tries it again every report interval while the section asks for the forward. | Another program can hold 8317 for a while, and the forward is there once it lets go. |
-| Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
+| Bytes go both ways under yamux's window, and either side's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
 ## The listeners a container reaches
 
@@ -594,8 +607,8 @@ starts, and an account the machine does not have `account_unknown
 
 | `is_tty` | The agent |
 | --- | --- |
-| false | starts the process with stdin, stdout and stderr on three pipes; reads stdout and stderr apart and sends each on its own `fd`, `1` and `2`, under the hub's credit; writes the frames up to stdin in order and closes stdin on the `eof` frame; closes with `params: {exit_code}` once the process ended and both pipes reached end of file |
-| true | runs `argv` on the pseudo-terminal path a shell takes, a pseudo console on Windows, at `cols` by `rows`, every frame down `fd` `1`; ignores `eof`; closes with `params: {exit_code}` once the process ends |
+| false | starts the process with stdin, stdout and stderr on three pipes; reads stdout and stderr apart and sends stdout as `data` records and stderr as `stderr` records; writes the `data` records up to stdin in order and closes stdin on the `eof` record; closes with `params: {exit_code}` once the process ended and both pipes reached end of file |
+| true | runs `argv` on the pseudo-terminal path a shell takes, a pseudo console on Windows, at `cols` by `rows`, every record down `data`; ignores `eof`; closes with `params: {exit_code}` once the process ends |
 
 The exit code is the process's own, or 128 plus the signal's number when a
 signal ended it. A stream the hub closes first ends the process and
@@ -704,13 +717,14 @@ until the host exits. The agent also stops the host after each request that
 changes the system, because PowerShell releases the memory such a request
 leaves slowly.
 
-## Two ports, one process
+## The hub's ports and its transport
 
 The hub's panel answers HTTP on one port and HTTPS under the hub's own
-certificate authority on another, behind a session, and its agent port is
-pinned TLS serving `/api/channel` alone. All three are uvicorn servers in one
-process. The ports, the certificate, the fingerprint and the hub's own
-identity are in [protocol.md](protocol.md), "Three ports, two audiences".
+certificate authority on another, behind a session, and both are uvicorn
+servers in one process. The agent port is the transport's: a process of its
+own, under an account of its own, that holds the hub's static key and every
+session. The ports, the static key and the hub's own identity are in
+[protocol.md](protocol.md), "Three ports, two audiences".
 
 Exposure is the only control plane for the hub's ports. The agent port
 answers a sender inside every exposed segment, an uplink's included, and on
@@ -721,7 +735,7 @@ is enrolled after its segment is exposed
 
 ## Joining: one ticket, thirty minutes, spent in one step
 
-Generation happens on the panel port, behind the session: the Devices page's
+Generation happens on the panel port, behind the session: the Agents page's
 per-device link, the blank link `nhub setup` prints, and the SSH install
 action all call one path. A ticket is `secrets.token_urlsafe(18)`
 (144 bits), dead after **thirty minutes**, `ENROLLMENT_TTL_S`. It is on
@@ -740,16 +754,16 @@ entries past their expiry.
 
 The link is `neutrino://enroll/<base64url payload>`, the payload one JSON
 object written with no spaces, compressed with zlib and encoded base64url
-without padding ([protocol.md](protocol.md), "The link and the two
-endpoints"); `nagent join` inflates it before it reads:
+without padding ([protocol.md](protocol.md), "The link and the binding");
+`nagent join` inflates it before it reads:
 
 ```json
-{"urls": ["https://192.168.93.1:8443", "..."], "token": "...", "fp": "<sha256 hex>", "role": "agent"}
+{"urls": ["tcp://192.168.93.1:8443", "..."], "token": "...", "key": "<public-key-hex>", "role": "agent"}
 ```
 
 `urls` is the hub's address in every exposed segment, because only one of them
 is on the joining machine's network and neither end knows which. The link
-`nhub setup` makes for the hub's own agent names `https://127.0.0.1:<agent-port>`
+`nhub setup` makes for the hub's own agent names `tcp://127.0.0.1:<agent-port>`
 first and the exposed addresses after it, so that agent joins over loopback
 even when nothing is exposed, and every state the hub sends it keeps loopback
 first in `urls`. A client
@@ -758,28 +772,25 @@ page; the client rejects a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the
 link pastes anywhere unquoted.
 
-The agent tries each URL in turn, at enrolment and on every reconnect, from
-the start: the name `hub.neutrino.internal` where the network resolves it,
-then the set in the hub's order, `AGENT_ROTATE_DELAY_S` apart. The address
-that answered last is not preferred, and while the socket is connected
-nothing moves it
-([protocol.md](protocol.md), "The address a caller is given"). For every
-`https` URL it builds a TLS connection with chain and hostname verification
-off. **It checks the peer
-certificate's SHA-256 digest against `fp` immediately after the handshake,
-before any request bytes leave the machine.** An `https` URL with no
-fingerprint to pin is not connected to at all, and the TLS floor is 1.2, set
-explicitly on the client context.
+The agent tries each address in turn, at enrolment and on every reconnect,
+from the start: the name `hub.neutrino.internal` where the network resolves
+it, then the set in the hub's order, `RotateDelay` apart. The address that
+answered last is not preferred, and while the session is up nothing moves it
+([protocol.md](protocol.md), "The address a caller is given"). **Its
+transport knocks under the link's `key`, and no frame leaves the machine
+before message 2 opens**, which only the holder of the hub's private key can
+make ("The session" there). An address whose scheme the agent does not know
+is skipped.
 
-A mismatch closes the socket and aborts the whole enrolment loudly, with no
-move to the next address. Something answering with the wrong certificate is
-being impersonated, and moving on quietly hides that.
+An answer that does not open aborts the whole enrolment loudly, with no move
+to the next address. Something on a link's own address that answers without
+the hub's key is an impersonation, and moving on quietly hides that.
 
-`POST /api/channel/join` is admitted by `protocol` first, so a rejected
-protocol spends no ticket. Then the hub spends the ticket **atomically**:
-the entry with the ticket's hash leaves the file and the memory in the same
-step that fetches it, then it is judged. Expired and unknown read identically as 401 `ticket_spent`, so two
-machines racing one link cannot both join.
+The `join` frame is admitted by `protocol` first, so a rejected protocol
+spends no ticket. Then the hub spends the ticket **atomically**: the entry
+with the ticket's hash leaves the file and the memory in the same step that
+fetches it, then it is judged. Expired and unknown read identically as
+`ticket_spent`, so two machines racing one link cannot both join.
 
 A ticket generated for a device names its row. A blank ticket is matched to
 the row whose `machine_id` the request names, or a new row is created. The
@@ -787,29 +798,29 @@ the row whose `machine_id` the request names, or a new row is created. The
 authenticator, which is why a link is treated like a password and lasts
 thirty minutes.
 
-The reply is `{id, token}`, the token `secrets.token_urlsafe(24)` (192 bits).
-The agent stores `{gateway_url, id, token, fingerprint, machine_id}` in its
-binding file, root-owned mode 0600, and a file missing any field is an
+The answer is `joined {id, token}`, the token `secrets.token_urlsafe(24)`
+(192 bits), and the hub records the agent's static public key on the row. The
+agent stores `{gateway_url, id, token, hub_key, private_key, machine_id}` in
+its binding file, root-owned mode 0600, and a file missing any field is an
 unbound agent. Beside them it stores `gateway_urls`, the link's set at first
 and the `urls` of the last state afterwards; a file with none holds
-`[gateway_url]`. `nagent leave` posts `{id, token}` to `/api/channel/leave` and
+`[gateway_url]`. `nagent leave` sends `leave` on a session of its own and
 deletes the file; the hub keeps the device's row and its
-`config/devices/<id>/`, which only the Devices page's remove deletes.
+`config/devices/<id>/`, which only the Agents page's **Forget** deletes.
 
 `nagent join` and `nagent leave` run in their own process and reach a
 running service through the binding file, not by restarting it: the
 service reads the file's stamp at every report while connected and every two
 seconds while it waits between attempts, a failing hub's backoff included,
-so a new binding is taken within seconds. Taking it drops the old socket and
+so a new binding is taken within seconds. Taking it ends the old session and
 starts a round from the top of the new binding's addresses.
 
 ## Every later connection
 
-The socket and `leave` each open a fresh pinned connection, and the
-fingerprint is checked on **every** connection. The token is in the `hello`
-or in the body. The hub looks the token up with `secrets.compare_digest`,
-constant-time, against every stored token of that role. Nothing about an
-agent is trusted from its network position; the token is the entire identity.
+Every session, the channel's and a `leave`'s, starts with a fresh handshake
+under the binding's `hub_key`, the agent's own static key and its token's
+psk. Nothing about an agent is trusted from its network position; its static
+key and its binding are the entire identity.
 
 **The hub's time.** Each `welcome` names the hub's `time`, and the agent
 keeps the offset between it and its own clock in
@@ -819,27 +830,26 @@ clock is hours off still accepts a fresh token. At each report interval and
 each token check the agent compares how far its clock moved with how far the
 monotonic clock moved since the last reading; a difference of
 `AGENT_HUB_CLOCK_JUMP_S`, 2 seconds, or more is the machine's clock being
-set, and the offset moves by it. A `welcome` with no `time`, from an older
-hub, leaves the offset at zero. A login a forwarder sets is judged by the
+set, and the offset moves by it. A login a forwarder sets is judged by the
 machine's own clock, which also gave its expiry.
 
 ## What a refusal means to the agent
 
 A refusal at the door keeps the binding. The agent records it as
 `last_error`, `nagent status` says which no is being heard, and the agent
-sends `hello` again a minute later. The one refusal that unbinds is
-`binding_unknown`, which only the hub holding the pinned certificate can say.
-The agent then deletes its binding file, switches the AI tools back, turns
-the desktop share off
+knocks again a minute later. The one refusal that unbinds is
+`binding_unknown`, which arrives under the hub's own key and so only the hub
+can say. The agent then deletes its binding file, switches the AI tools back,
+turns the desktop share off
 ([modules/remote_desktop.md](agent/modules/remote_desktop.md), "The desktop
-is the hub's order") and is bound again
-by a fresh link.
+is the hub's order") and is bound again by a fresh link.
 
-Admission by `PROTOCOL`, the two protocol codes, the close codes and the
-upgrade an agent performs when `welcome` names a newer `software` are in
+Admission by `PROTOCOL`, the two protocol codes and the upgrade an agent
+performs when `welcome` names a newer `software` are in
 [protocol.md](protocol.md), "Admission and the binding". An agent of 0.5,
-one number behind, is admitted for that upgrade alone and connects with
-the new number after it ([protocol.md](protocol.md), "An agent of 0.5").
+one number behind, is admitted on the legacy listener for that upgrade alone
+and knocks with the new number after it ([protocol.md](protocol.md), "An
+agent of 0.5").
 
 ## The agent's packages come from the hub
 
@@ -868,36 +878,38 @@ upgrade does to them is in [files.md](files.md).
 ## What an attacker in each position gets
 
 **On the wire, or owning the network** (ARP, DHCP, DNS, a squatted IP): they
-can answer the agent port, and the handshake completes, but they cannot
-present a certificate whose DER digests to the pinned value without the
-private key, so the agent hangs up having sent nothing. Pinning an exact
-identity is stronger here than a CA chain: there is no authority to mis-issue,
-only a second preimage to find. Downgrade is closed the same way: the
-binding's URLs came out of a link the hub generated, are `https` by
-construction, `http.client` follows no redirects, and https-without-a-pin
-is not connected to.
+can accept the agent's TCP connection, but the knock tells them nothing they
+can answer: message 2 opens only under keys derived with the hub's private
+key, so the agent's transport closes the connection having sent no frame.
+Pinning an exact key is stronger here than a CA chain: there is no authority
+to mis-issue. Downgrade is closed the same way: the binding's addresses came
+out of a link the hub generated, and an address of a scheme the transport
+does not know is never dialled.
 
 **Holding a captured link**: an unspent link within its thirty minutes joins
 their machine as the device the link was generated for; the link *is* the
 credential. Everything narrows that window: one outstanding ticket of each
 kind, thirty minutes, single atomic spend, and the SSH install path generating and spending
-in the same action. A spent or replaced link is dead.
+in the same action. A spent or replaced link is dead, and it still knocks:
+its `key` makes a valid `mac1`, which costs the hub one handshake and earns
+`ticket_spent`.
 
-**Impersonating an agent** without a token: enrolment needs the one live
-ticket; a `hello` needs 192 bits through a constant-time compare. Neither is
-guessable, and the transport gives nothing away to help.
+**Impersonating an agent** without its binding: enrolment needs the one live
+ticket; a bound session needs the agent's static private key and its token's
+psk, both in a root-only file. Neither is guessable.
 
 **Replay**: enrolment is replay-proof at the application layer, because the
-ticket dies on first spend. A `hello` has no nonce on purpose: every
-connection is a fresh TLS handshake with fresh keys, so a captured frame can
-neither be read nor re-sent (no 0-RTT early data exists on this stack), and
-the only party able to replay plaintext already holds the token, to whom a
-replay adds nothing. An application nonce defends only against an attacker
-who can already strip TLS, who fails the fingerprint check first.
+ticket dies on first spend. A captured knock replayed fails the replay
+window, and one replayed into a transport that restarted completes nothing,
+since the answer opens only for the holder of the knock's ephemeral key.
+Every session's keys are fresh, so a captured frame can neither be read nor
+sent again.
 
-**A local account on the managed machine**: the control socket is 0600 under
-a 0700 directory, so the kernel rejects their connection before a request is
-read. The agent's only local ports are on `127.0.0.1`, and the same ports
+**A local account on the managed machine**: the control socket and the
+transport's socket are 0600 under 0700 directories, so the kernel rejects
+their connection before a request is read, and the transport's socket wants
+the secret its start was given. The agent's only local ports are on
+`127.0.0.1`, and the same ports
 on the Podman bridges on Linux and on WSL's vEthernet adapter on Windows,
 each relay with a firewall rule scoped to that interface; anything inside
 WSL on the computer reaches the adapter's address as a container does. On
@@ -913,11 +925,13 @@ answers it only with a key it knows: the device's, held in the tool files of
 the accounts the setting names, or a container module's, held in that
 module's containers.
 
-**Rooting the hub box** is outside the model: the key, the vault and the
-panel all live there. The panel port itself is plain HTTP unless its HTTPS is
-turned on, by [architecture.md](architecture.md)'s local-trust decision; the
-agent channel is hardened separately because it crosses networks the panel
-never does.
+**Rooting the hub box** is outside the model: the static key, the vault and
+the panel all live there. Owning the transport's account alone gives the
+sessions' bytes and no decision: every permission, ticket and secret stays
+with the hub's Python ([privilege.md](privilege.md)). The panel port itself
+is plain HTTP unless its HTTPS is turned on, by
+[architecture.md](architecture.md)'s local-trust decision; the agent channel
+is hardened separately because it crosses networks the panel never does.
 
 ## Atomicity is a rule, not a habit
 

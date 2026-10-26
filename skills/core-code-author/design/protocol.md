@@ -1,51 +1,59 @@
 # The protocol
 
 The protocol is everything the hub speaks: the panel's HTTP API and `/ws`
-sockets on the panel port, and the channel on the agent port. One vocabulary
-and one set of rules cover both, and this page is their only record. An
-endpoint, a frame, a kind or a code absent from this page does not exist.
-Adding one is an edit here in the same change.
+sockets on the panel port, the channel on the agent port, and the local
+channel between the transport that holds the agent port and the hub's
+Python. One vocabulary and one set of rules cover all three, and this page
+is their only record. An endpoint, a frame, a kind or a code absent from
+this page does not exist. Adding one is an edit here in the same change.
 
 ## Three ports, two audiences
 
 The hub listens for two audiences, which verify it differently. A browser
 trusts a password on a local network, and reaches the panel on two ports, one
-per scheme; an agent or a client trusts a pinned certificate on any network.
+per scheme; an agent or a client trusts the hub's static key on any network.
 
 | Port | Transport | Serves | Authenticated by |
 | --- | --- | --- | --- |
 | `listen_port`, default 8080 | HTTP | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket; while `is_https_enabled` is on, a 301 to the HTTPS port for every path but the authority's download | the session cookie |
 | `https_listen_port`, default 443 | TLS with the hub's own certificate, whatever `is_https_enabled` says | the same panel | the session cookie |
-| `agent_listen_port`, default 8443 | TLS, pinned by fingerprint | `/api/channel` and nothing else | the ticket at `join`, then the token in `hello` |
+| `agent_listen_port`, default 8443 | TCP: the knock, the Noise handshake, then a go-yamux session ("The channel") | the channel and nothing else | the hub's static key and the peer's own, the ticket in `join`, then the binding's key |
 
-All three are uvicorn servers in the one `nhub run --only-web` process, with
-one shared runtime. That runtime is where a ticket generated on a panel port
-is spent on the agent port. The panel app does not include the channel
-routes, so the channel has no plaintext form. A change of any of the three
-ports through `POST /api/hub/setting/set` restarts the process; a port that
-is one of the other two, or one of the two frp loopback ports, is refused 400
-`port_already_in_use {value}`. A new
+The two panel ports are uvicorn servers in the one `nhub run --only-web`
+process. The agent port is the transport's: `neutrino_transport`, the Go
+program of `transport/`, which the hub runs as a process of its own and an
+account of its own ([privilege.md](privilege.md)). It holds every peer's
+session and relays every stream's bytes, and it asks the hub's Python over
+the local channel whatever needs a decision ("The local channel"). A change
+of any of the three ports through `POST /api/hub/setting/set` restarts the
+process that holds it; a port that is one of the other two, or one of the
+two frp loopback ports, is refused 400 `port_already_in_use {value}`. A new
 port that another program on the box listens on, over IPv4 or IPv6, is
 refused with the same code before any setting changes. The **Network** page
 sets all three.
 
-The same process serves the channel on two more listeners, one per frp
-vendor, on `127.0.0.1` alone: `FRP_SAKURAFRP_LOOPBACK_PORT`, 18443, and
-`FRP_OPENFRP_LOOPBACK_PORT`, 18444, each open while its way in is on
+The transport serves the channel on two more listeners, one per frp vendor,
+on `127.0.0.1` alone: `FRP_SAKURAFRP_LOOPBACK_PORT`, 18443, and
+`FRP_OPENFRP_LOOPBACK_PORT`, 18444, open whether each way in is on or off
 ([network.md](hub_components/network.md), "The loopback listeners"). frpc
 on the hub forwards a vendor's node to its listener, and the listener a
-socket arrived on settles its `reached_through`.
+connection arrived on settles its `reached_through`. The hub's Python
+renders what the transport opens into `generated/transport.json` under the
+state root, `{listen_port, frp_listeners: [{port, listener}],
+legacy_tls_port, control_socket}`, and the transport reads it at its start;
+a change of the file restarts the transport.
 
-An agent port change moves every peer. Before the process restarts, the hub
-pushes every online client and agent its state, whose `urls` name the new
-port, and then restarts on it at once. A peer offline at that moment holds
-only the old addresses, cannot reach the hub, and joins again with a new
-link. Before the save the page says how many clients and how many agents are
-offline: those with a binding row and no live session at that moment, which
-`SettingsView` holds as `offline_client_count` and `offline_agent_count`.
-While Direct is on, the page also says that the router's port forward and
-Direct's public port change with it, and while SakuraFrp or OpenFrp has a
-tunnel picked, that the tunnel's local port at the vendor changes with it.
+An agent port change moves every peer. Before the transport restarts, the
+hub pushes every online client and agent its state, whose `urls` name the
+new port, and then restarts it on that port at once. A peer offline at that
+moment holds only the old addresses, cannot reach the hub, and joins again
+with a new link. Before the save the page says how many clients and how many
+agents are offline: those with a binding row and no live session at that
+moment, which `SettingsView` holds as `offline_client_count` and
+`offline_agent_count`. While Direct is on, the page also says that the
+router's port forward and Direct's public port change with it, and while
+SakuraFrp or OpenFrp has a tunnel picked, that the tunnel's local port at
+the vendor changes with it.
 
 ### The panel ports
 
@@ -143,28 +151,27 @@ a device on a LAN begins with exposing that LAN's segment.
 What the port does with a peer before it is admitted, and every limit on it,
 is in [connection.md](connection.md), "Before a peer is admitted".
 
-### The identity agents and clients pin
+### The hub's static key
 
-`nhub setup` writes a self-signed pair under `config/web/agent_tls/`:
-`certificate.pem` in the clear, and `key.sealed`, the private key sealed under
-the vault's data key. Serving unseals it into
-`/var/lib/neutrino/hub/agent_tls_key.pem`, mode 0600. The key is EC P-256 and the
-certificate is valid for ten years. Verification is the fingerprint alone, so
-the validity window only has to outlast the box.
+The hub's static key is the Curve25519 key pair a peer knows the hub by. The
+transport generates it at its first start and keeps it: the private half is
+`static_key` under the transport's state directory, mode 0600, owned by the
+transport's own account ([files.md](files.md)), and the public half is
+`public_key` beside it, 64 lowercase hex characters, readable by root. The
+hub's Python reads the public half to compose a link and never reads the
+private half.
 
-`nhub apply` and `nhub run --only-web` generate a missing pair, and
-`nhub reset all` deletes the pair with the vault key. An existing pair is kept
-as it is, because every binding pins its fingerprint.
+| Rule | Reason |
+| --- | --- |
+| The public half reaches a peer only inside a link a signed-in person generated, as the link's `key`, and every binding keeps it as `hub_key`. | The key has no other channel, so an address that answers without the private half is an impersonation. |
+| A peer's handshake proves the hub holds the private half before any frame of the peer's is sent ("The session"). A handshake that fails on a link's address ends the whole enrolment; on a bound peer's address the round goes on with the other addresses. | A wrong key on a link's own address is an attack, and another network's hub on a stored address is only the wrong hub. |
+| The transport keeps an existing pair. `nhub reset all` deletes it and sends `keys_reload` ("The local channel"), which makes a new pair. | Every binding pins the public half. |
+| The pair is state under the transport's directory and not in `config/`. A backup of `config/` restored on another box gives that box a new pair, and every agent and client joins it again with a new link. | Only the transport holds the private half; the hub's Python, which writes `config/`, never reads it. |
 
-The fingerprint is the SHA-256 of the certificate's DER encoding, 64 lowercase
-hex characters. It reaches a peer only inside a link a signed-in person
-generated. A peer checks the fingerprint after every TLS handshake and before
-any request bytes leave the machine. A mismatch closes the socket and aborts
-the whole enrolment, because a wrong certificate on a link's address is an
-impersonation.
-
-A peer connects to an `https` URL only with a fingerprint to check it against.
-Chain and hostname verification are off, and TLS 1.2 is the floor.
+The TLS pair under `config/web/agent_tls/`, `certificate.pem` and
+`key.sealed`, serves the legacy listener alone ("An agent of 0.5"), which
+a 0.5 agent reaches with its pinned fingerprint. `nhub reset all` deletes it
+with the vault key.
 
 ### The hub's own identity
 
@@ -200,7 +207,7 @@ segment of a write, which is a verb.
 
 | Rule | Reason |
 | --- | --- |
-| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` a page of a managed device (`file`, `module`, `terminal`, whose shells are a socket and whose sessions are routes). One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. `/api/channel` is on the agent port's own app and is in no group. | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
+| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` a page of a managed device (`file`, `module`, `terminal`, whose shells are a socket and whose sessions are routes). One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. The agent port serves no HTTP route; `/api/channel` is the legacy listener's alone and is in no group ("An agent of 0.5"). | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
 | Every segment is a singular `under_score` noun, with an adjective in front where one is needed: `wifi_network`, `ssh_key`, `seat_password`. The panel shows plurals; a path has none. | One spelling per thing across paths, models and config keys. |
 | An identifier names the member in the body or the query, never in the path: `?device_id=...` on a GET, `{device_id}` in a POST body. A path has no `{id}` in it. | A path is a fixed string a reader can grep, and an id is data. |
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
@@ -247,9 +254,9 @@ it has none:
 | Layer | Paired | Single, and why |
 | --- | --- | --- |
 | HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `online`/`offline`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `expand`, `replace`, `scrub`: none has a reverse operation |
-| Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
-| Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
-| Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `exec`, `file`, `command`, `package`, `log`, `service`, `connect` |
+| Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
+| Channel frames and records | `hello`/`welcome`; `join`/`joined`; `leave`/`left`; `state`/`report`; `ping`/`pong`; a question frame and its `reply`; the `open` and `close` records, `accept` between them | `refused`; the records `data`, `stderr`, `eof`, `resize`, `datagram` |
+| Stream kinds | none; installing and uninstalling follow from `want` | `control`, `shell`, `exec`, `file`, `command`, `package`, `log`, `connect` |
 | CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
@@ -313,8 +320,13 @@ wherever it appears.
 | Where | Shape |
 | --- | --- |
 | an HTTP error | the status, with `detail: {code, params}` |
-| the handshake | `refused {code, params}`, then close 4000 |
-| a stream | `close {stream, code, params}`; a close without a code is the stream's result |
+| a session | `refused {code, params}` on the control stream, then the hub ends the session |
+| a stream | a `close` record, `{code, params}`; a close without a code is the stream's result |
+| a frame that asks | `reply {request, code, params}`; a reply without a code is the answer |
+| a local question | the Python's `{id, code, params}`; the transport's own `control_unavailable` when none comes |
+
+The codes of the channel take no HTTP status: the class a table below gives
+one is its class on the legacy listener alone.
 
 The HTTP status names the class of the refusal:
 
@@ -323,7 +335,7 @@ The HTTP status names the class of the refusal:
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
-| 413 | a body past the agent port's limit | `request_too_large {limit}` |
+| 413 | a body past the legacy listener's limit, `CHANNEL_REQUEST_BYTES_MAX` 64 KiB | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `download_failed {file, sources}`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
@@ -361,7 +373,7 @@ TLS port.
 | `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, `codeg`, each setting what it is to have and all but `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` importing what the machine already has; and `ai_tool`, the machine's AI tools setting, drawn as the page's **Global configuration** |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
-| `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
+| `/api/channel` | The legacy listener's two routes, `/api/channel/socket` for a 0.5 agent updating itself and `/api/channel/key/set` for a binding moving to the transport ("An agent of 0.5"); every other agent and client speaks the channel of the transport, which has no HTTP route |
 
 Terminals opens `/ws/agent/terminal?device_id=...&session_id=...` and reads
 `/api/agent/terminal/session`, Files reads
@@ -758,22 +770,19 @@ module and the same shape in each.
 | `/ws/hub/dashboard/stat` | | the live readings the Dashboard draws |
 | `/ws/hub/dashboard/dns_log` | | the DNS log as it grows |
 | `/ws/hub/task` | `?task_id=` | one task's output |
-| `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=&is_shared=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters, which the hub opens stamped `owner: hub` and with `is_shared`, false when absent; the panel joins any session, whoever owns it, and is not closed when its owner stops sharing it; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session beside any other stream and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent, is_shared}`, each resize and persist a `command` stream to the agent, a persist naming only the flags it carries; a persist on a session the machine reports under another owner opens nothing and is answered `{type: refused, code: session_not_owned, params: {session_id}}` with the socket left open. It receives `{type: output, data}` and `{type: exit, code}`. A refusal sends `{type: closing, code, params}` and then closes the socket 1011 with the code as its reason; a close reason holds 123 bytes and a param such as a path can be longer, so the page fills the code's words from the frame's params. Closing the socket closes the agent's `shell` stream, which ends the session when no other stream is attached and it is neither persistent nor shared |
+| `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=&is_shared=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters, which the hub opens stamped `owner: hub` and with `is_shared`, false when absent; the panel joins any session, whoever owns it, and is not closed when its owner stops sharing it; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session beside any other stream and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent, is_shared}`, each resize a `resize` record on the agent's `shell` stream and each persist a `persist` frame to the agent, naming only the flags it carries; a persist on a session the machine reports under another owner opens nothing and is answered `{type: refused, code: session_not_owned, params: {session_id}}` with the socket left open. It receives `{type: output, data}` and `{type: exit, code}`. A refusal sends `{type: closing, code, params}` and then closes the socket 1011 with the code as its reason; a close reason holds 123 bytes and a param such as a path can be longer, so the page fills the code's words from the frame's params. Closing the socket closes the agent's `shell` stream, which ends the session when no other stream is attached and it is neither persistent nor shared |
 | `/ws/agent/terminal` | `?device_id=&container=` | a shell inside one of its containers; closed `container_hub_owned {name}` for a hub container |
 
-### The channel endpoints
+### The legacy listener
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; 409 `admission_paused {retry_after_s}` while the hub's failed admissions are at their limit, before the ticket is looked up |
-| `POST /api/channel/leave` | `{id, token}` | removes the binding: a device's row and its `config/devices/<id>/` stay, a client's row is deleted |
-| `WS /api/channel/socket` | | the channel; a `hello` past the cap on channel sockets is refused `channel_full {limit}` |
+| `WS /api/channel/socket` | | the PROTOCOL 3 channel of a 0.5 agent, on the legacy listener alone, for that agent's own update ("An agent of 0.5"); a `hello` past the cap on channel sockets is refused `channel_full {limit}` |
+| `POST /api/channel/key/set` | `{id, token, public_key}` | records the peer's static public key on the binding the token names, once, as an updated agent or client moves its binding to the transport; `{key}`, the hub's static public key; 401 `binding_unknown` |
 
-The agent port's caps, timeouts and the count of failed admissions are in
+The agent port's limits, the knock's among them, are in
 [connection.md](connection.md), "What an unadmitted peer can cost the hub".
-None of them is keyed by the peer's address. A `join` or a `leave` whose body
-is past `CHANNEL_REQUEST_BYTES_MAX` is refused 413 `request_too_large {limit}`
-before it is parsed.
+None of them is keyed by the peer's address.
 
 ### The router files
 
@@ -781,7 +790,7 @@ before it is parsed.
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
 | `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_terminal.py`, `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_instances.py` (VS Code, code-server, CloudCLI and Codeg) with `module_vscode_terms.py`, and `module_ai_tool.py`, `terminal.py` |
-| `web/routers/` | `channel.py`, on the agent port's app |
+| `web/routers/` | `channel.py`, on the legacy listener's app |
 | `web/` | `ws.py`, both socket groups |
 
 Each router's test is `hub/tests/web/routers/{hub,agent}/test_<page>.py`
@@ -789,13 +798,16 @@ Each router's test is `hub/tests/web/routers/{hub,agent}/test_<page>.py`
 
 ## The channel
 
-The channel is one socket between the hub and each machine it manages. Under
-the hub there are two roles: `agent`, the resident service on a device, and
-`client`, a person's session. One handshake, one envelope, one stream layer
-and one admission rule serve both roles. The role decides the contents of the
-two documents and which streams each side opens.
+The channel is one session between the hub's transport and each machine it
+manages. Under the hub there are two roles: `agent`, the resident service on
+a device, and `client`, a person's session. One handshake, one control
+stream, one stream layer and one admission rule serve both roles. The role
+decides the contents of the two documents and which streams each side opens.
+Every machine carries the same transport: the hub, the agent and the desktop
+client run `neutrino_transport`, and the Android and iOS apps embed it as a
+library ([../coding_style/go_style.md](../coding_style/go_style.md)).
 
-### The link and the two endpoints
+### The link and the binding
 
 A link is `neutrino://enroll/<base64url>`: one JSON object, written with no
 spaces, compressed with zlib (RFC 1950, level 9), and the compressed bytes in
@@ -803,43 +815,53 @@ base64url without padding. Every link is this form, the one a QR code carries
 and the one a person pastes, and a reader inflates before it parses:
 
 ```json
-{"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "client", "overlays": [{"provider": "netbird", "...": "..."}]}
+{"urls": ["tcp://192.168.100.1:8443", "..."], "token": "...", "key": "<public-key-hex>", "role": "client", "overlays": [{"provider": "netbird", "...": "..."}]}
 ```
 
-A client link has `overlays`, the list of the same name in the client's
-`state`, taken for the default permission when the link is created: empty
-when that permission does not allow `overlay` or there is nothing to join. A
-device link has no `overlays`. A peer that does not know the member ignores
-it.
+`token` is the ticket, and `key` the hub's static public key ("The hub's
+static key"). A client link has `overlays`, the list of the same name in the
+client's `state`, taken for the default permission when the link is created:
+empty when that permission does not allow `overlay` or there is nothing to
+join. A device link has no `overlays`. A peer that does not know a member
+ignores it.
+
+Every address in `urls`, in a link and in a state, is
+`tcp://<host>:<port>`, an IPv6 host in brackets. A peer dials each address
+whose scheme it knows and skips every other one, so a later way of carrying
+the channel is one more scheme beside `tcp`.
 
 `urls` is the hub's address in every exposed segment the agent port answers
 in, because one of them is on the joining machine's network and neither end
-knows which. The link for the
-hub's own agent, and every state the hub sends that agent, names
-`https://127.0.0.1:<agent-port>` first, so it reaches the hub over loopback
-whatever is exposed. While Direct is on, the hub's stable IPv6 addresses
-in the exposed IPv6 segments follow the exposed set, every enabled
-interface's other IPv4 and then stable IPv6 addresses follow those, and the public address
-stated for Direct follows them; an IPv6 address is written in brackets
-([network.md](hub_components/network.md), "Direct"). While Direct is off, every
-address in `urls` is IPv4. Each frp vendor's public address follows while
-it has a tunnel picked, SakuraFrp's first ([network.md](hub_components/network.md), "The frp addresses"). While the relay is on and configured, `https://<host>:<public-port>` is
-its last member ([network.md](hub_components/network.md), "The relay's address"). `role` is `agent`
-or `client`, read on the pasting side before the first request. A client
-rejects a device link with `link_not_for_client` and an agent rejects a client
-link with `link_not_for_agent`, each code's `params` naming the link's `role`.
-The base64url alphabet has no character a shell splits or a URL escapes, so
-the link pastes anywhere unquoted. Compressed, a client link with two
-overlays is about 550 characters and a QR code of 89 modules a side; the QR
-code is that link and nothing less, so a phone that can reach the hub only
-over an overlay it has not joined yet still has what it needs. The panel
-draws the code at four pixels per module at least ([ui_behavior.md](ui_behavior.md)).
+knows which. The link for the hub's own agent, and every state the hub sends
+that agent, names `tcp://127.0.0.1:<agent-port>` first, so it reaches the hub
+over loopback whatever is exposed. While Direct is on, the hub's stable IPv6
+addresses in the exposed IPv6 segments follow the exposed set, every enabled
+interface's other IPv4 and then stable IPv6 addresses follow those, and the
+public address stated for Direct follows them
+([network.md](hub_components/network.md), "Direct"). While Direct is off,
+every address in `urls` is IPv4. Each frp vendor's public address follows
+while it has a tunnel picked, SakuraFrp's first
+([network.md](hub_components/network.md), "The frp addresses"). While the
+relay is on and configured, `tcp://<host>:<public-port>` is its last member
+([network.md](hub_components/network.md), "The relay's address"). `role` is
+`agent` or `client`, read on the pasting side before the first connection. A
+client rejects a device link with `link_not_for_client` and an agent rejects
+a client link with `link_not_for_agent`, each code's `params` naming the
+link's `role`. The base64url alphabet has no character a shell splits or a
+URL escapes, so the link pastes anywhere unquoted. Compressed, a client link
+with two overlays is about 550 characters and a QR code of 89 modules a
+side; the QR code is that link and nothing less, so a phone that can reach
+the hub only over an overlay it has not joined yet still has what it needs.
+The panel draws the code at four pixels per module at least
+([ui_behavior.md](ui_behavior.md)).
 
-| Endpoint | Body | Returns |
-| --- | --- | --- |
-| `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent |
-| `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays with its `config/devices/<id>/` and drops its token, a client's row is deleted with its gateway key |
-| `WS /api/channel/socket` | | everything after |
+A peer joins and leaves on the control stream of a session of its own
+("The control stream"):
+
+| Frame | The first frame of | Body | The hub answers |
+| --- | --- | --- | --- |
+| `join` | a session whose knock says `is_join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `joined {id, token}`, or `refused {code, params}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent; the hub ends the session after its answer |
+| `leave` | a bound peer's session, in place of `hello` | `{}` | `left {}`: a device's row stays with its `config/devices/<id>/` and drops its token, a client's row is deleted with its gateway key; the hub ends the session after its answer |
 
 `machine_id` and `platform` are what the body says about the machine itself,
 and each role reads them somewhere else:
@@ -855,8 +877,7 @@ the operating system's id for the machine, read where an agent reads its
 `IOPlatformUUID` on macOS, `MachineGuid` on Windows), empty where it cannot
 be read. The hub keeps it on the client's row and answers one question with
 it, which entries the client's own machine provides (`is_own_machine` on the
-entry); the installation's id stays the client's key. It is an added field
-and keeps `PROTOCOL`.
+entry); the installation's id stays the client's key.
 
 An agent's id is the operating system's, so a machine joining with a blank
 link is matched to the row it already had. A client's is one installation's,
@@ -866,32 +887,80 @@ fresh row goes, and the old row takes the link's name and keeps its key, its
 switch and everything it last reported. The hub reads `family` to pick a
 package family and `arch` to pick the package itself, and an architecture
 outside the normalized set is the machine's own word and matches no platform
-entry.
-An agent's `version` is an added field and keeps `PROTOCOL` as it is; the hub
-compares a manifest entry's floor with it, and an agent that predates it sends
-none.
+entry. The hub compares a manifest entry's floor with an agent's `version`.
 
-The join request names no network; the link a socket runs on comes from
-`getsockname()` and is in the first report. Joining and leaving have the same
-two words on every surface:
+The join names no network; the agent's first report names the link its
+session runs on, the local address of its connection. Joining and leaving
+have the same two words on every surface:
 
 | Surface | Join | Leave |
 | --- | --- | --- |
-| HTTP | `POST /api/channel/join` | `POST /api/channel/leave` |
+| the control stream | `join` | `leave` |
 | the agent's command line | `nagent join <link>` | `nagent leave` |
-| the client's command line | `nclient join <link>` | `nclient leave [--hub <name>]` |
+| the client's command line | `nclient hub join <link>` | `nclient hub leave <hub>` |
 | the client window | **Join a hub** | **Leave** |
 
-The agent's binding file is `{gateway_url, id, token, fingerprint, machine_id}`
-with `gateway_urls`, the set the last state named, beside them; it is
-root-owned, mode 0600, a file missing any of the five is an unbound agent,
-and one with no `gateway_urls` holds the set `[gateway_url]`. The client keeps
-one binding per hub it joined, in the same shape, with the hub's `id` and
-`name` from `welcome`.
+The agent's binding file is `{gateway_url, id, token, hub_key, private_key,
+machine_id}` with `gateway_urls`, the set the last state named, beside them.
+`hub_key` is the link's `key`, and `private_key` the peer's own static
+private key, 64 lowercase hex characters, which the peer makes when it first
+reads a link and keeps with the ticket until the join. The file is
+root-owned, mode 0600; a file missing any of the six is an unbound agent,
+and one with no `gateway_urls` holds the set `[gateway_url]`. The client
+keeps one binding per hub it joined, in the same shape, with the hub's `id`
+and `name` from `welcome`.
 
-### The handshake
+### The session
 
-The first frame each way is an identity card, and both cards have one shape.
+A session is one TCP connection to the agent port, opened by the peer,
+carrying one Noise handshake and then one go-yamux session. The handshake is
+`Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s` with the 20 ASCII bytes `neutrino
+transport 4` as its prologue: the peer is the initiator, and the hub's static
+public key is the responder's key the peer knows in advance. Its first
+message is the knock.
+
+| Step | On the wire | Rule |
+| --- | --- | --- |
+| Knock | the peer's first bytes: `<u8 4><u16 length><Noise message 1><mac1, 16 bytes><mac2, 16 bytes>`, `length` counting message 1 alone, big-endian | The first byte is the transport's version, 4. `mac1` is BLAKE2s-128 keyed by BLAKE2s-256 of the ASCII `mac1----` followed by the hub's public key, over every byte before `mac1`. `mac2` is BLAKE2s-128 keyed by the cookie the peer holds, over every byte before `mac2`, or 16 zero bytes while it holds none. Message 1's payload is JSON `{protocol, role, is_join, time}`, `time` being the peer's clock in Unix nanoseconds. |
+| Silence | nothing | A knock whose version, length or `mac1` is wrong, whose message 1 does not open, or whose `time` is not later than the last one the transport accepted for the same static key is answered with no byte: the transport closes the connection. |
+| Cookie | under load, the answer to a knock with a valid `mac1` and no valid `mac2`: `<u8 0x84><24-byte nonce><the cookie sealed, 32 bytes>`, after which the transport closes the connection | The cookie is BLAKE2s-128 keyed by the transport's cookie secret, made afresh every `CookieSecretLifetime`, over the peer's address as the connection gives it. It is sealed with XChaCha20-Poly1305 under BLAKE2s-256 of the ASCII `cookie--` followed by the hub's public key, with the knock's `mac1` as associated data. The peer keeps the cookie for `CookieSecretLifetime` and knocks again on a new connection with `mac2` set. |
+| Answer | `<u16 length><Noise message 2>`, its payload empty | The transport mixes in the psk the table below names, after it asked the hub's Python whose the peer's static key is ("The local channel"). |
+| Session | every byte after the answer: Noise transport messages, each `<u16 length><ciphertext>` of at most 65535 bytes, carrying one go-yamux session | The hub is yamux's server and the peer its client, so the hub's streams have even ids and the peer's odd ones. A session is not rekeyed: it keeps its handshake's keys until it ends. |
+
+The psk is the secret the hub handed the peer, by its SHA-256, which is
+what the hub keeps of it:
+
+| The knock | The psk |
+| --- | --- |
+| a join, `is_join: true` | 32 zero bytes; the ticket is in the `join` frame, inside the session |
+| a bound peer's, admitted | the SHA-256 of the binding's token, the `token_sha256` the hub keeps for the binding |
+| a bound peer's that the hub's Python refuses, a static key no binding holds among them | 32 zero bytes, and the control stream carries `refused {code, params}` |
+
+A peer opens message 2 under the psk it expects, and when that fails, under
+32 zero bytes: a message 2 that opens under the zero psk is the hub's own,
+since only the holder of the hub's private key can make one, and the frame
+after it says why the hub refuses. A message 2 that opens under neither is
+`hub_untrusted`.
+
+`neutrino_transport probe --key <public-key-hex> <address>` checks that an
+address reaches the hub that holds a key: it dials, knocks as a join with a
+static key made for the probe, and exits 0 when message 2 opens within
+`HandshakeTimeout`, 1 otherwise, closing before any frame. The hub's Python
+runs it for the relay's and the frp vendors' checks
+([network.md](hub_components/network.md), "The states"), naming its own
+public key; the session it opens on the hub ends at `HelloTimeout` and
+counts as no failed admission.
+
+### The control stream
+
+The peer opens the session's first stream as `open {kind: control}`, and the
+transport accepts it. Its `data` is JSON lines: one frame per line, UTF-8,
+each at most `ControlFrameBytesMax`. The first frame is `hello`, `join` or
+`leave`; any other first frame, or none within `HelloTimeout`, is refused
+`hello_invalid`. The transport passes every frame of an admitted session to
+the hub's Python and back ("The local channel"), and answers `ping` itself.
+
+The `hello` and the `welcome` are identity cards of one shape.
 
 | Field | `hello` (up) | `welcome` (down) |
 | --- | --- | --- |
@@ -899,102 +968,116 @@ The first frame each way is an identity card, and both cards have one shape.
 | `role` | `agent` or `client` | `hub` |
 | `id` | the binding id | the hub id from `identity.json` |
 | `name` | the hostname, or the binding's name | the hub's name from `identity.json` |
-| `software` | `neutrino_agent/0.3.0`, `neutrino_client/0.3.0` | `neutrino_hub/0.3.0` |
-| `token` | the binding token | absent |
+| `software` | `neutrino_agent/0.6.0`, `neutrino_client/0.6.0` | `neutrino_hub/0.6.0` |
 | `time` | absent | the hub's clock as it sends the card, in seconds since the epoch, with a fraction |
 
-`time` is an added field and keeps `PROTOCOL`; a peer that does not read it
-ignores it. An agent takes the offset between it and its own clock and
-checks every token the hub minted against the hub's time
-([agent.md](agent.md), "Every later connection"); a `welcome` with none,
-from an older hub, leaves the agent on its own clock.
-
-A rejected `hello` gets `refused {code, params}` and close 4000: `hello_invalid`
-when the first frame is late, not text, not a `hello`, or one the hub cannot
-read, `channel_full {limit}` when the port already holds
-`CHANNEL_SOCKETS_MAX` admitted sockets, and otherwise the admission codes
-below. The handshake has no state
-hash; the first `report` has it.
-
-### The frames
+An agent takes the offset between `time` and its own clock and checks every
+token the hub minted against the hub's time ([agent.md](agent.md), "Every
+later connection"). A `hello` whose `id` is not the binding the session's
+static key belongs to is refused `hello_invalid`, as is one that cannot be
+read. A `hello` past `SessionsMax` admitted sessions is refused
+`channel_full {limit}`, and otherwise the admission codes below hold. The
+handshake has no state hash; the first `report` has it.
 
 | Frame | Direction | Body |
 | --- | --- | --- |
-| `hello` | up | the identity card, with `token` |
+| `hello` | up | the identity card |
 | `welcome` | down | the hub's identity card |
-| `refused` | down | `{code, params}`, then close 4000 |
+| `join`, `joined` | up, down | "The link and the binding" |
+| `leave`, `left` | up, down | "The link and the binding" |
+| `refused` | down | `{code, params}`; the hub ends the session after it |
 | `state` | down | `{hash, ...sections}`: what is to be true |
 | `report` | up | `{state_hash, ...sections}`: what is true |
-| `open` | both | `{stream, kind, ...args}`: a stream begins |
-| `close` | both | `{stream, code, params}`: it ends, with its result |
-| `credit` | both | `{stream, bytes}`: the sender can send that many more |
-| `eof` | both | `{stream}`: on an `exec` stream only, from a client to the hub and from the hub to an agent: no more input follows, and the stream stays open the other way ("The exec stream") |
 | `ping` | up | `{nonce}`: a peer's round-trip probe; `nonce` is its own opaque string of at most 64 characters |
-| `pong` | down | `{nonce}`: the hub's answer, at once from the handler that read the `ping` and on the same socket, `nonce` echoed as received, an empty string when the `ping` had none, cut to 64 characters |
-| binary | both | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
+| `pong` | down | `{nonce}`: the transport's answer, at once and on the same stream, `nonce` echoed as received, an empty string when the `ping` had none, cut to 64 characters |
+| `service` | up, from a client | `{request, id}` for one published entry, or `{request, is_panel: true}`: the material that entry takes from the hub ("The service frame") |
+| `persist` | up from a client, down to an agent | `{request, session_id, is_persistent, is_shared}`: whether a kept shell stays when its last stream closes and whether every viewer with terminal rights on the machine can attach to it, a flag left out keeping its value |
+| `stop_session` | up from a client, down to an agent | `{request, session_id}`: ends a kept shell |
+| `reply` | down to a client, up from an agent | `{request, code, params}`: the answer to the `service`, `persist` or `stop_session` of the same `request`, `params` the result and a `code` a refusal |
 
-Every action is a stream: its `open` is the request, its `close` is the reply,
-and `kind` is the whole method vocabulary.
+`request` is the asker's own opaque string of at most 64 characters, one
+for each question it has open. Every action that carries bytes is a stream,
+whose `open` is the request and whose `close` is the reply, and `kind` is
+the stream's whole method vocabulary; a question with one answer is a frame
+and its `reply`.
 
-A client sends a `ping` every `CLIENT_PING_INTERVAL_S` on the live socket and
-once right after the channel moves to a new socket, never before `welcome`.
-The `pong` whose `nonce` is the last `ping` sent on that socket sets
-`rtt_ms`; a `pong` with another `nonce` is dropped. The hub answers any
-admitted peer, agent or client, and stores nothing. No client sends a
-WebSocket ping of its own; the hub's keepalive ping is the only one.
+A client sends a `ping` every `CLIENT_PING_INTERVAL_S` on the live session
+and once right after the channel moves to a new session, never before
+`welcome`. The `pong` whose `nonce` is the last `ping` sent on that session
+sets `rtt_ms`; a `pong` with another `nonce` is dropped. The transport
+answers any admitted peer, agent or client, and stores nothing. Keepalive is
+yamux's own ping, which every side sends every `KeepAliveInterval`.
 
 ### The stream layer
 
 | Concern | Rule |
 | --- | --- |
-| Ids | The hub opens its first stream at 0 and a peer its first at 1, each side stepping by 2, so the hub's ids are even, an agent's and a client's are odd, and the two never collide. |
-| Bytes | A binary frame is a big-endian u32 stream id, then the bytes. A stream's text output (an install log, a command's output) is its binary frames, one line each. A binary frame down an `exec` stream has one byte more after the id, `fd`, which parts the process's stdout from its stderr ("The exec stream"). |
-| Credit | `credit {stream, bytes}` grants the sender that many more bytes. A receiver grants as it consumes, so a long transfer starves nothing and a large package does not stall after the first window. |
-| Result | `close {stream, code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. A stream one side closed gets no close back. |
+| Ids | yamux's: the hub's streams are even and a peer's odd, so the two never collide. |
+| Records | Every stream carries records, `<u8 type><u32 length, big-endian><payload>`, a payload being at most `RecordBytesMax`, 64 KiB; a TCP `connect` stream carries records only until its `accept` ("The connect stream"). |
+| Open | The opener's first record is `open`, `{kind, ...args}`. The other side answers with one `accept` record and goes on, or with one `close` record that refuses. |
+| Windows | yamux's window per stream, from `StreamWindowInitialBytes` growing with the round trip to `StreamWindowMaxBytes`. A receiver takes bytes as it consumes them, so a long transfer starves nothing. |
+| Result | `close {code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. The side that receives a close writes nothing more and closes the stream, so a stream one side closed gets no close back. |
+| Order | The records of one stream arrive in the order they were written. |
+
+| `type` | Record | Payload |
+| --- | --- | --- |
+| 1 | `open` | JSON `{kind, ...args}` |
+| 2 | `accept` | empty |
+| 3 | `data` | bytes: a terminal's both ways, a process's stdin up and its stdout down, a file listing, a log's lines, a package's bytes, the control stream's frames |
+| 4 | `stderr` | the bytes a process wrote to stderr, on an `exec` stream opened without `is_tty` |
+| 5 | `eof` | empty: no more input follows from this side, on an `exec` stream alone |
+| 6 | `resize` | JSON `{cols, rows}`, on a `shell` stream and on an `exec` stream opened with `is_tty` |
+| 7 | `datagram` | `<u16 source, big-endian><one datagram>`, on a UDP `connect` stream |
+| 8 | `close` | JSON `{code, params}` |
+
+A record of a type the stream does not take is dropped. A stream's text
+output, an install log or a command's output, is its `data` records, one
+line each.
 
 ### The timings
 
-Every interval and every window the channel runs on is a constant in one of
-the three packages, named here so that changing one is a change to this table.
+Every interval and every window the channel runs on is a constant named
+here, so that changing one is a change to these tables. The transport's
+hold for every role, in the transport's own constants.
+
+| What it bounds | The transport's constant |
+| --- | --- |
+| a connection's first byte, from the accept | `KnockFirstByteTimeout` 3 s |
+| the knock and the hub's answer, from the accept | `HandshakeTimeout` 10 s |
+| a session's first frame, from the answer | `HelloTimeout` 10 s |
+| a connection's admission, from the accept to an admitted `hello` | `AdmissionTimeout` 30 s |
+| a dial and the handshake on it | `DialTimeout` 10 s |
+| keepalive | `KeepAliveInterval` 20 s between yamux pings, `KeepAliveTimeout` 60 s for the answer |
+| redial backoff | `RedialBackoffMin` 5 s, doubled to `RedialBackoffMax` 60 s |
+| address rotation, an agent's: the pause before the next address of the set | `RotateDelay` 1 s; a client's round dials every address at once |
+| a client's redial of an address refused within a round, until `DialTimeout` from the round's start | `RedialInterval` 1 s |
+| a stream's window | `StreamWindowInitialBytes` 256 KiB, growing to `StreamWindowMaxBytes` 16 MiB |
+| one record's payload | `RecordBytesMax` 64 KiB |
+| one control frame | `ControlFrameBytesMax` 2 MiB |
+| dialling the far end of a `connect` stream | `ConnectDialTimeout` 10 s |
+| open `connect` streams on one client session | `ConnectStreamsMax` 256 |
+| a UDP stream's source with no datagram either way, before its far-end socket closes | `UdpIdleTimeout` 60 s |
+| sources one UDP stream's far end keeps a socket for | `UdpSourcesMax` 64 |
+| datagrams held while a UDP stream waits for its `accept`: the client's before the hub's, the hub's before the agent's | `UdpHeldDatagramsMax` 16 |
+| a question to the Python beside it | `ControlQuestionTimeout` 5 s |
+| a cookie's life, and the cookie secret's | `CookieSecretLifetime` 120 s |
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |
-| a socket's first byte on the agent port, from accept | `CHANNEL_FIRST_BYTE_TIMEOUT_S` 3 | | |
-| a TLS handshake on the agent port, from its first byte | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | | |
-| a fresh socket's hello, from its upgrade | `CHANNEL_HELLO_TIMEOUT_S` 10 | | |
-| a connection's admission, from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | | |
-| connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
 | a report while nothing changes | | `AGENT_REPORT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
-| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 60 | | `CLIENT_PING_INTERVAL_S` 20, the client's `ping` frame, whose `pong` sets `rtt_ms` |
-| silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
-| reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
-| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB |
-| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | `CLIENT_WS_CHUNK_BYTES` 64 KiB |
-| a UDP stream's source with no datagram either way, before its far-end socket closes | `CHANNEL_UDP_IDLE_TIMEOUT_S` 60 | `AGENT_UDP_IDLE_TIMEOUT_S` 60 | |
-| sources one UDP stream's far end keeps a socket for | `CHANNEL_UDP_SOURCES_MAX` 64 | `AGENT_UDP_SOURCES_MAX` 64 | `CLIENT_UDP_SOURCES_MAX` 64 |
-| datagrams held while a UDP stream waits for its first credit: the client's before the hub's, the hub's before the agent's | `CHANNEL_UDP_HELD_DATAGRAMS_MAX` 16 | | `CLIENT_UDP_HELD_DATAGRAMS_MAX` 16 |
-| a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | `CLIENT_WS_CREDIT_TIMEOUT_S` 60 |
-| a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
-| dialling the far end of a `connect` stream | `CHANNEL_CONNECT_DIAL_TIMEOUT_S` 10 | `AGENT_CONNECT_DIAL_TIMEOUT_S` 10 | |
-| open `connect` streams on one client socket | `CHANNEL_CONNECT_STREAMS_MAX` 256 | | |
+| the client's round-trip probe | | | `CLIENT_PING_INTERVAL_S` 20, the client's `ping` frame, whose `pong` sets `rtt_ms` |
+| a `reply` to a `service`, `persist` or `stop_session` | `CHANNEL_REPLY_TIMEOUT_S` 15 | | `CLIENT_STREAM_TIMEOUT_S` 15 |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
-| address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | none: a client's round dials every address at once |
-| a client's redial of an address refused within a round, until `CLIENT_CONNECT_TIMEOUT_S` from the round's start | | | `CLIENT_REDIAL_INTERVAL_S` 1 |
 
-Every number is seconds except the two rows in bytes and the counts of
-streams, sources and datagrams. The client's credit and frame size hold on every stream that
-has binary frames, `shell`, `exec` and `connect` alike. The hello timeout and the
-admission timeout both run: a socket closes when either ends first, so the
-handshake, the upgrade and the `hello` together fit in 30 seconds and the
-`hello` alone in 10. The agent port's counts, `CHANNEL_UNADMITTED_MAX`,
-`CHANNEL_SOCKETS_MAX`, `CHANNEL_MESSAGE_BYTES_MAX` and the failed admissions
-per window, are in [connection.md](connection.md), "What an unadmitted peer can
-cost the hub". The hub's ping interval
-is inside both silence windows, so a socket with nothing to say is kept open
-by the pings alone, and a peer that reaches its window closes and reconnects.
-A refused `hello` is retried at the backoff's maximum, the minute named under
-the binding. A round through the whole address set with no answer backs off
-as one address failing does.
+The handshake time and the admission time both run: a connection closes
+when either ends first, so the knock, the answer and the `hello` together
+fit in 30 seconds and the knock and its answer alone in 10. The limits on
+connections and sessions are in [connection.md](connection.md), "What an
+unadmitted peer can cost the hub". A peer whose keepalive gets no answer
+within `KeepAliveTimeout` ends the session and starts a round. A refused
+`hello` is retried at the backoff's maximum, the minute named under the
+binding. A round through the whole address set with no answer backs off as
+one address failing does.
 
 An agent reports six times as often as a client because its `machine` section
 carries the metrics the Dashboard draws live; a client's carries its hostname
@@ -1013,12 +1096,12 @@ and platform, which change between releases.
 | `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
-| `urls` | `["https://<address>:<port>", ...]` | | the same list | |
+| `urls` | `["tcp://<address>:<port>", ...]` | | the same list | |
 | `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
 | `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
-| `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's socket reached the hub | |
+| `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's session reached the hub | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
@@ -1042,7 +1125,7 @@ that, `owner` the stamp the hub put on the `shell` open that started it,
 as it is; an agent that predates it sends none, and one before 0.5.0 sends
 no `owner`, `is_shared` or `attached_count`. The AI gateway is a `services`
 entry whose `type` is `ai`, and a client gets its key through the `service`
-stream.
+frame.
 
 `urls` is every address the hub answers the channel on: the link's set, which
 holds the hub's address on every running overlay it is exposed on, plus
@@ -1050,7 +1133,7 @@ NetBird's name for the hub where its daemon reports one; while Direct is on,
 the stable IPv6 addresses and every enabled interface's addresses, in the
 order the link gives them, and then the public address stated for it;
 then SakuraFrp's and OpenFrp's public addresses while each has a tunnel
-picked; and last the relay's `https://<host>:<public-port>` while the relay
+picked; and last the relay's `tcp://<host>:<public-port>` while the relay
 is on and configured.
 Both states carry it
 under their hash, and the hub pushes the state when the set changes: after a
@@ -1090,13 +1173,13 @@ being turned off is pushed before that engine stops.
 
 `is_panel_allowed` is true while the client is switched on and its
 permission allows `panel`. `reached_through` is settled at `hello` from the
-socket's peer address ("The address a caller is given") and names the word
+connection's peer address and listener ("The address a caller is given") and names the word
 the client's Hubs row shows. Both are in the state's hash, so a client that
 reconnects another way is pushed its state.
 
 `terminals` lists every managed machine the client's `terminal` kind
 allows, narrowed by that kind's device list, the hub's own among them,
-online or not, with `is_online` read from its socket; it is empty when the
+online or not, with `is_online` read from its session; it is empty when the
 permission does not allow `terminal`. A machine in it takes a `shell` and an
 `exec` alike. The hub pushes every client its state when
 an agent's channel opens or ends, when a report's `machine.sessions` differs
@@ -1639,22 +1722,25 @@ mounts as before.
 
 The kind table is the one extension point of the channel. A module or a verb
 is added without a change to the protocol; a kind is added by a row here.
+"Relayed" names a stream whose bytes the hub's transport carries between two
+streams of its own after the hub's Python answered the open ("The local
+channel"), and "handed" one that the transport gives whole to the Python on
+its side.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
-| hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes, every binary frame down carries `fd`, the frames up are its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. "The exec stream" has the rest |
-| hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
-| agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1 |
-| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
-| agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
-| client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
-| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
-| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
-| client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
-| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there; no `connect_limit` holds on an agent's socket; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
-| hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
+| a peer, to the hub | `control` | `{}`: the session's first stream and its only control stream ("The control stream") |
+| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways as `data`, a later size as `resize`; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on. On the agent the transport hands it to the agent's Python, which holds the pseudo-terminal |
+| hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
+| hub, to an agent | `file` | `{op: list, path}`: one directory listing, every path absolute in the machine's own form, for the panel's path window ([ui_behavior.md](ui_behavior.md), "Modals, and where a record's detail lives"). It closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. Any other `op` is closed `op_unknown {op}`. Opened by the hub's Python and handed to the agent's |
+| agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as `data` line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
+| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
+| agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
+| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `connect` | `{id}`, one published entry by the id a `service` frame takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Relayed to an agent's `connect`, or dialled by the hub's transport itself; closed with a refusal's code before its `accept`. "The connect stream" has the checks, the far ends and the codes |
+| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub's transport dials the gateway on `127.0.0.1` at its `listen_port` and relays the bytes; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there; no `connect_limit` holds on an agent's session; `connect_failed {reason}` when the dial fails |
+| hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; the agent's transport asks the agent's Python whether the port is published and dials it itself; refused `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
 
@@ -1662,15 +1748,8 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 
 | `module` | Verbs |
 | --- | --- |
-| `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `persist {session_id, is_persistent, is_shared}`, `stop_session {session_id}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs; `persist` and `stop_session` refuse an id the agent does not hold with `session_unknown {session_id}` |
+| `agent` | `reboot`, `shutdown`, `reinstall`, `kill {pid}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs |
 | `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
-
-`persist` sets whether a session stays when its last stream closes,
-`is_persistent`, and whether every viewer with terminal rights on the
-machine can attach to it, `is_shared`; a flag the verb leaves out keeps its
-value. `stop_session` ends a session, and
-`POST /api/agent/terminal/session/stop` sends it. Both close
-`session_unknown {session_id}` for a session the machine does not hold.
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved, `config`
@@ -1683,11 +1762,24 @@ the tail of the module's log in `output`: the units' journal on Linux, merged
 by time when the module runs as more than one unit, and the module's own
 sources with the agent's lines on Windows and macOS; it answers while an
 apply runs. On `podman`, a `journal` naming a
-container is that container's; one naming none is the module's own. A terminal's first size is in its
-`open`; a later size is `open {kind: command, module: agent, verb: resize,
-shell: <id>, cols, rows}`, closed as soon as it is applied, and so is a
-`persist`. `shell` may name an `exec` stream opened with `is_tty`, and
-`resize` naming one without it is closed empty.
+container is that container's; one naming none is the module's own.
+
+### Kept shells
+
+A terminal's first size is in its `open`, and a later size is a `resize`
+record on the same stream, applied at once; on an `exec` stream opened
+without `is_tty` a `resize` is dropped. `persist` and `stop_session` are
+frames on the control stream ("The control stream"): the hub sends each to
+the machine holding the session, the one this client's open `shell` names for
+the id or else the online machine whose report lists it, and the agent
+answers with `reply`. `persist` sets whether a session stays when its last
+stream closes, `is_persistent`, and whether every viewer with terminal
+rights on the machine can attach to it, `is_shared`; a flag the frame leaves
+out keeps its value. `stop_session` ends a session. Both are answered
+`session_unknown {session_id}` for a session the machine does not hold, and
+a client's `persist` on a session the machine reports under another owner is
+answered `session_not_owned {session_id}`, with the `shell` stream's
+permission refusals for that machine.
 
 A shell the agent keeps is named by a `session_id` the opener generates, a
 uuid, in the `shell` stream's `open`. An id the agent holds attaches the
@@ -1701,30 +1793,33 @@ A stream that attaches to a running shell is sent its last 256 KB of output
 first, then the live output, and the terminal is resized to one row more
 and back so a full-screen program draws itself again. When the last stream
 closes, the shell ends unless it is persistent or shared; `stop_session`
-ends it, and every attached stream closes with the exit code. Every system answers both verbs. The
-sessions are the agent process's own, so an agent restart or upgrade ends
-every one.
+ends it, and every attached stream closes with the exit code. Every system
+answers both frames. The sessions are the agent process's own, so an agent
+restart or upgrade ends every one.
 
-### The service stream's close
+### The service frame
 
-A `service` stream names one published entry by `id`, or the panel by
-`is_panel: true`, and the hub judges it for that client at that moment.
-The checks run in the order below and the first that fails gives the close
-its code; the panel's are `binding_unknown`, `client_disabled` and
+A `service` frame names one published entry by `id`, or the panel by
+`is_panel: true`, and the hub judges it for that client at that moment: the
+hub's transport asks the hub's Python whether the material is given
+("The local channel") and sends the answer as the `reply` of the same
+`request`. The checks run in the order below and the first that fails gives
+the reply its code; the panel's are `binding_unknown`, `client_disabled` and
 `permission_denied {kind: panel}`:
 
 | `code` | Given when |
 | --- | --- |
-| `binding_unknown` | no client row has the id this socket is bound to |
+| `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
 | `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, or a code-server, CloudCLI or Codeg instance or Hermes WebUI whose secret does not open |
+| `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
 `service_id`, `permission_denied` puts the entry's type in `params` as
-`kind`, and the other three send empty params. A close with no code makes
+`kind`, and the other four send empty params. A reply with no code makes
 `params` the material, and what the material is follows from the type:
 
 | `type` | The material |
@@ -1732,7 +1827,7 @@ its code; the panel's are `binding_unknown`, `client_disabled` and
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The handshake") |
+| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
@@ -1747,31 +1842,35 @@ and one service the hub publishes, or the hub's own panel, or every datagram
 of one UDP `port` entry. With it a client reaches every service through the
 hub's agent port and dials nothing else. An agent opens one for each
 connection its AI gateway forward accepts, and the hub joins it to the
-gateway on `127.0.0.1` ([agent.md](agent.md), "The AI gateway forward"). A client opens one stream per
-connection its local listener accepts, and one stream for a UDP entry for as
-long as that entry is forwarded ([client.md](client.md), "The local port
-table").
+gateway on `127.0.0.1` ([agent.md](agent.md), "The AI gateway forward"). A
+client opens one stream per connection its local listener accepts, and one
+stream for a UDP entry for as long as that entry is forwarded
+([client.md](client.md), "The local port table").
 
-The hub judges the `open` before it dials anything. The checks are the
-`service` stream's, in its order, with the stream limit among them;
-`vault_locked` has no place, since a `connect` opens no secret. The first
-check that fails closes the stream with its code:
+The hub judges the `open` before it dials anything: the transport counts
+the session's `connect` streams itself, and asks the hub's Python about the
+entry ("The local channel"). The checks are the `service` frame's, in its
+order, with the stream limit among them; `vault_locked` has no place, since
+a `connect` opens no secret. The first check that fails closes the stream
+with its code:
 
 | `code` | Given when |
 | --- | --- |
-| `binding_unknown` | no client row has the id this socket is bound to |
+| `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
-| `connect_limit {limit}` | the socket already holds `CHANNEL_CONNECT_STREAMS_MAX` open `connect` streams |
+| `connect_limit {limit}` | the session already holds `ConnectStreamsMax` open `connect` streams |
 | `service_unknown {service_id}` | the id names no entry in the list resolved for this client |
 | `permission_denied {kind}` | the entry's type, or `panel` for the panel, is not among this client's kinds, or the device providing the entry is not in that kind's device list |
 | `rdp_not_shared {service_id}` | the entry is an `rdp` one and its machine has stopped reporting the share |
+| `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
-The far end follows from where the entry is, and the hub alone dials it:
+The far end follows from where the entry is, as the hub's Python names it,
+and the hub's transport alone dials it:
 
 | The entry | The hub connects the stream to |
 | --- | --- |
-| provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port, protocol}`; `agent_offline {device}` when the machine has no socket, and the same code when its socket ends under an open stream |
-| a declared record, `source` `declared` | the record's own host and port, dialled by the hub itself, since the hub is on the LAN of the machines it serves |
+| provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port, protocol}` on the agent's session; `agent_offline {device}` when the machine has no session, and the same code when its session ends under an open stream |
+| a declared record, `source` `declared` | the record's own host and port, dialled by the hub's transport, since the hub is on the LAN of the machines it serves |
 | the `ai` entry | the gateway on `127.0.0.1` at its `listen_port` |
 | the panel | the panel's HTTP port on `127.0.0.1`, over plain HTTP; the panel's login guards it as on the LAN ("The panel ports") |
 
@@ -1779,8 +1878,9 @@ The port is the entry's own: a `web` entry's url port, 80 or 443 by its
 scheme when the url names none; a `port` or `rdp` entry's `port`; 445 for a
 `file` entry. A dial that fails closes the stream `connect_failed
 {reason}`, `reason` being `refused`, `timeout` (after
-`CHANNEL_CONNECT_DIAL_TIMEOUT_S`) or `unreachable`. A stream to an agent
-closes with whatever the agent closed it with.
+`ConnectDialTimeout`) or `unreachable`. A stream to an agent closes with
+whatever the agent closed it with, and its `accept` is passed to the client
+as the client's.
 
 The agent's end dials `127.0.0.1:<port>`, or the host address a container
 port is published on when it names one, and only a port the machine
@@ -1793,9 +1893,9 @@ firewall.
 
 | Concern | Rule |
 | --- | --- |
-| Bytes | Binary frames both ways, each at most the sender's chunk size, under the receiver's credit, with the `shell` stream's window and chunk sizes. The hub relays each side under the other's credit, as it does a client's `shell`. |
-| End | End of file on either end's socket closes the stream with empty params once everything read from that socket is sent. The side that receives the close writes what it holds and closes its own socket. There is no half-close. |
-| A dropped socket | A client socket that ends ends every `connect` stream on it, and the hub closes the far ends. |
+| Bytes | After the `accept`, a TCP stream carries its connection's bytes raw, with no records, under yamux's window; the hub's transport copies each side to the other. |
+| End | End of file on either end's socket ends the stream once everything read from that socket is sent. The side whose stream ends writes what it holds and closes its own socket. There is no half-close. |
+| A dropped session | A client session that ends ends every `connect` stream on it, and the hub closes the far ends. |
 | Transport | TCP for every entry, and UDP for a `port` entry whose `protocol` is `udp`. |
 
 A UDP stream is the one stream of a UDP entry, and its rules differ from a
@@ -1803,12 +1903,12 @@ TCP stream's where a datagram differs from a byte stream:
 
 | Concern | Rule |
 | --- | --- |
-| Frame | One datagram is one binary frame: `<u32 stream id><u16 source, big-endian><the datagram>`. `source` is the port the datagram left from on the client's machine, and towards the client it names the local program the reply is for. A frame shorter than the two source bytes is dropped. The largest datagram, 65507 bytes, fits one frame of `CHANNEL_CHUNK_BYTES`, so nothing is split or joined; a datagram of zero bytes is a frame of two bytes and is carried. |
-| Credit | Counted on the bytes after the stream id, as on every stream. A sender holding less credit than a frame needs drops the datagram; it does not wait and keeps no queue. A receiver grants back what it took once it has passed the datagram on or dropped it. The hub relays each frame unchanged, source bytes included, and drops a frame for a side that has granted too little, granting the sending side its bytes back all the same. |
-| The first credit | A datagram waits in two places, and only until the stream's first credit: the client holds what its program sends before the hub's first credit, at most `CLIENT_UDP_HELD_DATAGRAMS_MAX`, 16; the hub holds what the client sends before the agent's first credit on the agent's stream, at most `CHANNEL_UDP_HELD_DATAGRAMS_MAX`, 16, and passes them on in order when it comes. More are dropped. When the agent refuses the open, what the hub held is dropped and the client's stream closes with the agent's code. After the first credit the rule above holds. |
-| The far end | The agent for a machine's port, the hub itself for a declared record, keeps for the stream a table from `source` to one connected UDP socket to the target: `127.0.0.1`, the address a binding names, or the record's host. A datagram from a new `source` gets a socket; a reply goes into the stream with its socket's `source`. A source with no datagram either way for `CHANNEL_UDP_IDLE_TIMEOUT_S` has its socket closed and is forgotten. A table holds at most `CHANNEL_UDP_SOURCES_MAX` sources, and one more replaces the one idle the longest. |
+| Record | One datagram is one `datagram` record: `<u16 source, big-endian><the datagram>`. `source` is the port the datagram left from on the client's machine, and towards the client it names the local program the reply is for. A record shorter than the two source bytes is dropped. The largest datagram, 65507 bytes, fits one record, so nothing is split or joined; a datagram of zero bytes is a record of two bytes and is carried. |
+| No wait | A sender whose stream cannot take a record at once, its window being full, drops the datagram; it does not wait and keeps no queue. The hub's transport relays each record unchanged, source bytes included, and drops a record for a side that cannot take it. |
+| Before the `accept` | A datagram waits in two places, and only until the stream's `accept`: the client holds what its program sends before the hub's `accept`, and the hub's transport holds what the client sends before the agent's `accept` on the agent's stream, at most `UdpHeldDatagramsMax`, 16, in each place, passing them on in order when it comes. More are dropped. When the agent refuses the open, what the hub held is dropped and the client's stream closes with the agent's code. |
+| The far end | The agent's transport for a machine's port, the hub's transport for a declared record, keeps for the stream a table from `source` to one connected UDP socket to the target: `127.0.0.1`, the address a binding names, or the record's host. A datagram from a new `source` gets a socket; a reply goes into the stream with its socket's `source`. A source with no datagram either way for `UdpIdleTimeout` has its socket closed and is forgotten. A table holds at most `UdpSourcesMax` sources, and one more replaces the one idle the longest. |
 | Errors | An error on a source's socket, a port the system reports unreachable or a send that fails, loses that datagram and nothing else, and the stream stays open. A first socket that cannot be opened at all closes the stream `connect_failed {reason}` with the TCP reasons. |
-| End | The stream has no idle close. It ends when the client closes it, when the hub or the agent closes it with a code, `agent_offline`, `permission_denied` after a change on the Clients page or `port_not_published` once the port is no longer published, or with the client's socket. It holds one of the socket's `CHANNEL_CONNECT_STREAMS_MAX` streams while it is open. |
+| End | The stream has no idle close. It ends when the client closes it, when the hub or the agent closes it with a code, `agent_offline`, `permission_denied` after a change on the Clients page or `port_not_published` once the port is no longer published, or with the client's session. It holds one of the session's `ConnectStreamsMax` streams while it is open. |
 
 ### The exec stream
 
@@ -1824,10 +1924,11 @@ order, and the first check that fails closes the stream with its code:
 
 | `code` | Given when |
 | --- | --- |
-| `binding_unknown` | no client row has the id this socket is bound to |
+| `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `permission_denied {kind: terminal}` | the client's kinds lack `terminal`, or the machine is not in the `terminal` kind's device list |
-| `agent_offline {device}` | the machine has no socket, and the same code when its socket ends under an open stream |
+| `agent_offline {device}` | the machine has no session, and the same code when its session ends under an open stream |
+| `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 The agent then judges what it runs, and the hub closes the client's stream
 with the agent's code:
@@ -1839,14 +1940,13 @@ with the agent's code:
 
 | Concern | Rule |
 | --- | --- |
-| Frame down | `<u32 stream id><u8 fd><bytes>`: `fd` is `1` for bytes the process wrote to stdout and `2` for bytes it wrote to stderr. With `is_tty` every frame is `fd` `1`, since a pseudo-terminal has one output. A frame shorter than the `fd` byte is dropped. |
-| Frame up | `<u32 stream id><bytes>`: the process's stdin, written in the order received. |
-| Order | Each `fd`'s bytes arrive in the order the process wrote them; frames of the two interleave in the order the agent read them, and no order between them is kept. |
-| Credit | Counted on the bytes after the stream id, `fd` included, as on every stream. The hub relays each side under the other's credit, as it does a `shell`. |
-| End of input | `eof {stream}`, once, after the last stdin frame: the client sends it when its own stdin ends, the hub passes it on after every frame it relayed before it, and the agent closes the process's stdin once it wrote them. A stdin frame after `eof` is dropped. With `is_tty` the client sends none and the agent ignores one. `eof` goes only on an `exec` stream, so a peer that does not know the kind never receives it. |
-| End | Once the process ended and both outputs reached end of file, the agent sends what it holds and closes `params: {exit_code}`: the process's code, or 128 plus the signal's number for a process a signal ended. The hub closes the client's stream with the same params. |
-| A closed stream | A client that closes its stream, or whose socket ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
-| Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is `resize` naming the stream ("The verbs on a `command` stream"); without `is_tty` they are ignored. |
+| Down | `data` records carry what the process wrote to stdout, and `stderr` records what it wrote to stderr. With `is_tty` every record is `data`, since a pseudo-terminal has one output. |
+| Up | `data` records carry the process's stdin, written in the order received. |
+| Order | Each output's bytes arrive in the order the process wrote them; records of the two interleave in the order the agent read them, and no order between them is kept. |
+| End of input | One `eof` record after the last stdin record: the client sends it when its own stdin ends, the hub's transport relays it after every record before it, and the agent closes the process's stdin once it wrote them. A stdin record after `eof` is dropped. With `is_tty` the client sends none and the agent ignores one. |
+| End | Once the process ended and both outputs reached end of file, the agent sends what it holds and closes `params: {exit_code}`: the process's code, or 128 plus the signal's number for a process a signal ended. The hub's transport relays the close to the client. |
+| A closed stream | A client that closes its stream, or whose session ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
+| Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is a `resize` record ("Kept shells"); without `is_tty` they are ignored. |
 | Account | The Terminal module's account, else the account the agent runs as, root, and SYSTEM on Windows, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); the module's shell program is not read, since `argv` names the program. |
 
 ### The rules the details settle
@@ -1855,32 +1955,171 @@ with the agent's code:
 | --- | --- |
 | When `state` is pushed | To an agent, one push on a connection's first `report` whose `state_hash` differs, and after that only when the hub's own hash changes; to a client, on any report whose `state_hash` differs or that says `is_refresh: true`, and when the hub's own hash changes. An agent whose apply failed keeps reporting the old hash; the hub shows that and pushes nothing, and the agent retries only when the state's hash changes. |
 | `nagent sync` | Sends one `report` now, from which the hub compares hashes. |
-| The `package` stream | The agent opens it and grants credit as it writes to disk. The sha256 in the close's `params` is checked after the close, and only a matching file goes to `systemd-run`. A socket that drops mid-transfer deletes the temporary file and locks no update target; only a failed install locks it. |
+| The `package` stream | The agent opens it and takes the bytes as it writes them to disk. The sha256 in the close's `params` is checked after the close, and only a matching file goes to `systemd-run`. A session that drops mid-transfer deletes the temporary file and locks no update target; only a failed install locks it. |
 | The two hashes | The fingerprint of the published service list is computed on the unresolved list and drives the push; the `state.hash` a client receives is computed on the list resolved for its scope. |
 | Config writes on the report path | `mac_addresses` is written only when the set grows, under `CONFIG_WRITE_LOCK` and through `asyncio.to_thread`. A peer address used as the fallback link address is recorded, so an overlay-only device keeps its row on the Services page. |
-| `PROTOCOL` | The constant has that name in all three packages, with no package prefix, an exception to `naming_style.md` stated there: one number has one name. |
+| `PROTOCOL` | The constant has that name in all three packages and in the transport, with no package prefix, an exception to `naming_style.md` stated there: one number has one name. |
+
+## The local channel
+
+The local channel is how a transport and the Python beside it talk on one
+machine: the hub's transport and the hub's Python, the agent's transport and
+the agent, the client's transport and the client's resident or phone app.
+The transport keeps no record of who can do what, only its live sessions and
+streams; the Python keeps every record and makes every decision. The
+transport asks the Python when a session starts and when a stream opens, and
+asks nothing while bytes flow.
+
+| Rule | Reason |
+| --- | --- |
+| The transport carries the data and the Python makes the decisions: every permission, ticket, token and secret is the Python's, and the transport holds none of them. | One record of who can do what, kept where `config/` is. |
+| A question the Python does not answer within `ControlQuestionTimeout`, 5 seconds, or one asked while no control connection is open, is a refusal, `control_unavailable`. The streams already open are not touched. | A Python that restarts or hangs stops new work and breaks none in flight. |
+| A transport that starts again has nothing to rebuild: its sessions end, every peer dials again, and the Python keeps every record. | The transport's memory is only what is live. |
+
+### The socket and its protection
+
+The transport listens and the Python connects. The listener is a Unix socket
+or a Windows named pipe in the run root of the package ([files.md](files.md)):
+
+| Role | The listener | Who can open it |
+| --- | --- | --- |
+| hub | `/run/neutrino/hub/transport/transport.sock` on Linux, `/var/run/neutrino/hub/transport/transport.sock` on macOS, `\\.\pipe\neutrino_hub_transport` on Windows | mode 0600, owned by the transport's account, under a 0700 directory of that account, which root opens as root opens any file; the pipe's access list grants the transport's account, SYSTEM and the administrators |
+| agent | `/run/neutrino/agent/transport.sock`, `/var/run/neutrino/agent/transport.sock`, `\\.\pipe\neutrino_agent_transport` | mode 0600 under the 0700 run directory, root's; the pipe grants SYSTEM and the administrators, as the agent's control pipe does |
+| client | `$XDG_RUNTIME_DIR/neutrino/transport.sock`, `~/Library/Application Support/Neutrino/client/transport.sock`, `\\.\pipe\neutrino_client_transport_<user>`; on a phone, `transport.sock` in the app's own data directory | mode 0600, the person's own; the pipe grants the person's account alone |
+
+Every connection to the listener opens with one JSON line that holds
+`secret`, 64 hex characters the transport received at its start; a
+connection whose first line holds another secret, or none within one
+second, is closed with nothing written.
+
+| Role | How the transport receives the secret |
+| --- | --- |
+| hub on Linux | `control_secret` under the transport's state directory, 32 random bytes in hex, mode 0640, owned by root with the transport's group; the panel's process writes it when it is missing, and the transport reads it at its start |
+| hub on macOS and Windows, the agent, the desktop client, and a checkout | the first line on the transport's standard input, written by the process that starts the transport as its child, which makes the secret afresh at each start |
+| the Android and iOS apps | the argument of the library's `Start(socket_path, secret)`, the library's whole surface beside `Stop()` |
+
+### Connections and lines
+
+A local connection is one of three by its first line:
+
+| First line | The connection |
+| --- | --- |
+| `{secret, op: control}` | the control connection: questions, commands and events, as JSON lines both ways; a second one replaces the first |
+| `{secret, op: attach, stream}` | takes a stream the transport announced with the event `stream`; the connection then carries that stream's records both ways, unchanged |
+| `{secret, op: open, session, open}` | opens a stream on that session (`binding` in place of `session` on the client), `open` being the open record's JSON; the connection then carries the stream's records, the far side's `accept` or refusing `close` first |
+
+Every line is one JSON object in UTF-8, at most `ControlFrameBytesMax`:
+
+| Line | Shape |
+| --- | --- |
+| a question, from the transport | `{id, question, ...fields}`, answered by the Python's `{id, ...answer}` |
+| a command, from the Python | `{id, command, ...fields}`, answered by the transport's `{id}` or `{id, code, params}` |
+| an event, from the transport | `{event, ...fields}`, with no answer |
+
+`id` is the asker's own string, unique among its open questions or commands.
+
+### The hub's local channel
+
+| Question | Asked | Fields | The Python's answer |
+| --- | --- | --- | --- |
+| `peer` | after a bound peer's knock opened, before the transport answers it | `{public_key, role, protocol, address, listener}`, `listener` being `main`, `sakurafrp` or `openfrp` | `{binding_id, psk}` to admit; `{psk, code, params}` to complete the handshake and refuse, `psk` being the binding's, or 64 zeros for a key no binding holds (`binding_unknown`) |
+| `ticket` | at a `join` frame | `{ticket, role, protocol, public_key, machine_id, name, software, platform, address, listener}` | `{id, token}`, the ticket spent and the binding made with `public_key`; or `{code, params}` |
+| `entry` | when a client opens `connect`, `shell` or `exec`, or an agent opens `connect` | `{session, binding_id, open}` | `{kind, device_id, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under and `device_id` the machine it reaches, kept with the stream for `streams_close`; or `{code, params}` |
+| `token` | at a client's `service` frame | `{session, binding_id, frame}` | `{params}`, the material, or `{code, params}`; the transport sends it as the `reply` |
+
+| Command | Fields | The transport |
+| --- | --- | --- |
+| `session_close` | `{session, code, params}` | sends `refused {code, params}` on the session's control stream and ends the session |
+| `streams_close` | `{binding_id, kind, device_id}`, `device_id` empty for every machine | closes every stream of that binding it holds under `kind`, with `close {code: permission_denied, params: {kind}}` |
+| `keys_reload` | `{}` | reads its static key again, makes a new pair when the file is missing, writes `public_key`, and ends every session |
+
+These three are the commands. Besides them the Python sends each frame of a
+control stream as `send {session, frame}`: `welcome`, `refused`, `state`,
+`joined`, `left`, `reply`, `persist` and `stop_session`.
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `session_open` | `{session, binding_id, role, address, listener}` | a handshake completed for an admitted peer; on a new control connection, once for every live session, each followed by that session's `hello` as a `frame` |
+| `session_end` | `{session, reason}` | the session ended |
+| `frame` | `{session, frame}` | each frame of an admitted session's control stream but `ping` |
+| `stream` | `{stream, session, open}` | an agent opened `log` or `package`, which the Python takes with `attach` |
+
+The hub's Python opens its own streams to an agent, a container's `shell`,
+`file`, `command`, with an `open` connection. Every other stream on the hub
+is relayed: the transport copies its records, or a TCP `connect`'s raw bytes,
+between the two sessions it joins.
+
+### The agent's local channel
+
+The agent starts its transport as its child and drives one session to its
+hub through it.
+
+| Command | Fields | The transport |
+| --- | --- | --- |
+| `dial` | `{hub_key, private_key, psk, addresses}`, `addresses` in the order "The address a caller is given" sets | keeps one session to the hub, dialling the addresses in order and again after each end with the backoff; `{}` with no address stops |
+| `join` | `{hub_key, private_key, addresses, ticket, role, protocol, machine_id, name, software, platform}` | dials, knocks with `is_join`, sends `join`, and answers `{id, token}` or `{code, params}` |
+| `leave` | `{hub_key, private_key, psk, addresses}` | dials, sends `leave`, and answers `{}` or `{code, params}` |
+| `send` | `{frame}` | writes one frame on the live session's control stream |
+| `forward_start` | `{listen, protocol, open}` | listens on `listen`, `127.0.0.1:8317` for the AI gateway forward, and opens a stream with `open` for each connection, relaying its bytes |
+| `forward_stop` | `{listen}` | closes that listener |
+
+| Question | Fields | The agent's answer |
+| --- | --- | --- |
+| `port` | `{port, protocol}`, at the hub's `connect` | `{address}`, the address to dial, `127.0.0.1` or the one a container's binding names; or `{code: port_not_published, params: {port}}` |
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `session_open` | `{address, local_address}` | a session to the hub was admitted; `local_address` is the connection's own, which the report names as the link |
+| `session_end` | `{code, params}` | the session ended, with the refusal that ended it |
+| `frame` | `{frame}` | each frame from the hub but `pong` |
+| `stream` | `{stream, open}` | the hub opened `shell`, `exec`, `file` or `command`, which the agent takes with `attach`; a `connect` the transport serves itself after `port` |
+
+### The client's local channel
+
+The client's resident on a desktop starts its transport as its child; a
+phone app starts the library in its own process. One transport holds a
+session to every hub the client is bound to, each named by `binding`, the
+binding's id.
+
+| Command | Fields | The transport |
+| --- | --- | --- |
+| `dial` | `{binding, hub_key, private_key, psk, candidates}`, each candidate `{address, path}`, `path` being one of the paths [client.md](client.md) ranks | keeps one session to that hub by the round rules of [client.md](client.md), "The Hubs page"; `{binding}` with no candidate stops |
+| `round` | `{binding}` | starts a round at once, as a network change does |
+| `join`, `leave` | the agent's fields, with `binding` | as on the agent |
+| `send` | `{binding, frame}` | writes one frame on that hub's control stream |
+| `forward_start` | `{binding, listen, protocol, open}` | listens on `listen` and opens a stream with `open` on that hub's session for each TCP connection, or one stream for a UDP listener, relaying its bytes; while the hub has no session the listener accepts nothing new |
+| `forward_stop` | `{listen}` | closes that listener and its streams |
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `session_open` | `{binding, address, path, handshake_ms}` | a round's winner was admitted |
+| `round_end` | `{binding, code, params}` | a round ended with no session, with the code the client's Hubs row words |
+| `session_end` | `{binding, code, params}` | a session ended |
+| `frame` | `{binding, frame}` | each frame from the hub |
+| `forward_end` | `{listen, code, params}` | a listener could not start or stopped, `port_taken {port}` among the codes |
 
 ## Admission and the binding
 
-Admission is the check on `protocol` at `join` and in `hello`, and the binding
-is what a successful `join` leaves on both sides.
+Admission is the check on `protocol` in the knock, at `join` and in `hello`,
+and the binding is what a successful `join` leaves on both sides.
 
 ### The numbers
 
-The agent's and the client's `constants.py`, and the hub's
-`modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
-which is 1 in every 0.3 package, 2 in every 0.4 package, 3 in every 0.5
-package and 4 from 0.6.0. The agent and the client send theirs in `hello`,
-and the hub sends its own in `welcome`. The hub alone also has
-`PROTOCOL_MIN`, the oldest number it admits to the channel's whole use: 4
-from 0.6.0, for agents and clients alike. An agent or a client speaks one
-number; the hub meets peers from different releases and needs a range,
-`PROTOCOL_MIN <= protocol <= PROTOCOL`. Below the range the two roles part:
+The agent's and the client's `constants.py`, the hub's
+`modules/channel/constants.py` and the transport's constants have
+`PROTOCOL`, the integer this build speaks, which is 1 in every 0.3 package,
+2 in every 0.4 package, 3 in every 0.5 package and 4 from 0.6.0. The agent
+and the client send theirs in the knock, in `join` and in `hello`, and the
+hub sends its own in `welcome`. The hub alone also has `PROTOCOL_MIN`, the
+oldest number it admits to the channel's whole use: 4 from 0.6.0, for agents
+and clients alike. An agent or a client speaks one number; the hub meets
+peers from different releases and needs a range, `PROTOCOL_MIN <= protocol
+<= PROTOCOL`. Below the range the two roles part:
 
 | Peer | `protocol` | At `join` | At `hello` |
 | --- | --- | --- | --- |
 | an agent or a client | `PROTOCOL_MIN` to `PROTOCOL` | admitted | admitted |
-| an agent | 3, the number of 0.5 | refused `protocol_too_old` | admitted for its own update alone ("An agent of 0.5") |
+| an agent | 3, the number of 0.5 | refused `protocol_too_old` on the legacy listener | admitted on the legacy listener for its own update alone ("An agent of 0.5") |
 | an agent | below 3 | refused `protocol_too_old` | refused `protocol_too_old` |
 | a client | below `PROTOCOL_MIN` | refused `protocol_too_old` | refused `protocol_too_old` |
 | an agent or a client | above `PROTOCOL` | refused `protocol_too_new` | refused `protocol_too_new` |
@@ -1890,11 +2129,13 @@ number; the hub meets peers from different releases and needs a range,
 | `protocol_too_old` | `protocol < PROTOCOL_MIN`, except for an agent's `hello` at 3; and every stream an agent at 3 opens, except its own package | `{peer, hub, min}` |
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
 
-A client refused `protocol_too_old` keeps its binding, and its Hubs row
-reads that the client is too old and says to update it ([client.md](client.md),
-"The Hubs page"). The person installs the new client, since a client does
-not update itself. A new client keeps the old one's state, so the binding
-stays and the next round connects.
+A peer below 3 or a client of 0.5 dials TLS, which only the legacy listener
+answers; while that listener is off the peer meets silence ("An agent of
+0.5"). A client refused `protocol_too_old` keeps its binding, and its Hubs
+row reads that the client is too old and says to update it
+([client.md](client.md), "The Hubs page"). The person installs the new
+client, since a client does not update itself. A new client keeps the old
+one's state, so the binding stays and the next round connects.
 
 Package versions take no part in admission. An agent whose `welcome` names a
 newer `software` than its own upgrades itself with the package the hub keeps.
@@ -1904,38 +2145,60 @@ The agent stays as it is when the hub's version does not parse or ends in
 
 ### An agent of 0.5
 
-An agent of 0.5 speaks 3, one below `PROTOCOL_MIN`. The hub admits its
-`hello` for one purpose, the agent's own update to the hub's version, and
-closes every other stream the agent opens:
+An agent of 0.5 speaks 3, one below `PROTOCOL_MIN`, over TLS pinned by the
+fingerprint of `config/web/agent_tls/`. The hub keeps the 0.5 channel for
+one purpose, that agent's own update to the hub's version, on the legacy
+listener: the hub's Python serves `/api/channel/socket` over that TLS on
+`127.0.0.1:<CHANNEL_LEGACY_TLS_PORT>`, 18445, and the transport hands it
+every connection on the agent port whose first byte is 22, a TLS
+handshake's, while the switch is on. The knock's first byte is 4, so the two
+never meet.
+
+| Rule | Reason |
+| --- | --- |
+| The switch is `is_legacy_channel_enabled` in `config/web/settings.json`, rendered into `transport.json` as `legacy_tls_port`, 0 while it is off. An upgrade from 0.5 finds device rows and turns it on; a new hub has it off. | A 0.5 agent knows only `https` addresses on the agent port, and a hub with no 0.5 agent has nothing to keep it for. |
+| The hub turns the switch off by itself once no device row names an agent version below 0.6.0. | Each 0.5 machine that updates itself takes one row off the list, and the listener closes after the last. |
+| While the switch is off, a TLS first byte is silence like any other wrong knock. | The port then answers nothing but a knock. |
+
+On the legacy listener the hub admits the 0.5 agent's `hello` for its update
+and closes every other stream the agent opens:
 
 | The agent | The hub |
 | --- | --- |
-| sends `hello` | sends `welcome`, whose `software` names the hub's newer version |
+| sends `hello` with its token | sends `welcome`, whose `software` names the hub's newer version |
 | sends a `report` | reads the platform from its `machine` section, which names the package, and records nothing else; it pushes no `state` |
 | opens `package {}`, its own package | streams it, as for any agent's upgrade |
 | opens any other stream | closes it `protocol_too_old {peer, hub, min}` |
 
 The hub opens no stream to it. The agent reads the newer `software` in
-`welcome`, installs the package and restarts, and the updated agent connects
-with 4 and is admitted as any agent. The hub's own agent is updated by the
-hub's own update, from the hub's cache.
+`welcome`, installs the package and restarts. The updated agent holds a
+binding of the 0.5 shape, with a `fingerprint` and no `hub_key`. It makes
+its own static key and sends `POST /api/channel/key/set {id, token,
+public_key}` once, over the same pinned TLS to the legacy listener; the hub
+records `public_key` on the binding the token names and answers `{key}`, its
+own static public key, or 401 `binding_unknown`. The agent writes `hub_key`
+and `private_key` into its binding, drops `fingerprint`, and knocks with 4
+as any agent does. A client binding of the 0.5 shape, kept by a client the
+person upgraded, moves the same way while the legacy listener is on, and
+joins again with a new link while it is off. The hub's own agent is updated
+by the hub's own update, from the hub's cache.
 
 | Case | What follows |
 | --- | --- |
-| the update runs | the Devices page shows the machine updating, `ui.device_tile.agent_updating`, from the admitted `hello` until the agent connects with 4 |
-| the hub has no package for the machine's platform, the install fails and the agent comes back at 3, or the hub's version ends in `+dev` | the session stays update-only, and the Devices page shows the machine's version mismatch (`is_version_mismatched`), which asks for a reinstall |
+| the update runs | the Agents page shows the machine updating, `ui.device_tile.agent_updating`, from the admitted `hello` until the agent knocks with 4 |
+| the hub has no package for the machine's platform, the install fails and the agent comes back at 3, or the hub's version ends in `+dev` | the session stays update-only, and the Agents page shows the machine's version mismatch (`is_version_mismatched`), which asks for a reinstall |
 | an unbound agent of 0.5 joins | the `join` is refused `protocol_too_old`; the person installs a 0.6 agent with the install script and joins with it |
 
 ### What a leave does to the binding
 
-`POST /api/channel/leave` is the peer's own word that it is going, answered
-401 `binding_unknown` when the token belongs to no binding with that id. What
-the hub keeps afterwards follows from the role:
+A `leave` frame is the peer's own word that it is going. A peer whose
+static key or psk names no binding meets `refused binding_unknown` before
+its `leave` is read. What the hub keeps afterwards follows from the role:
 
 | Role | The row | What goes with the leave |
 | --- | --- | --- |
-| `agent` | kept in `devices.json`, with its name, its icon, its `machine_id`, its MACs, its stored credentials and its `config/devices/<id>/` | the token alone, so the machine is still on the Devices page and a new link binds it again |
-| `client` | deleted from the client list | the token and the client's gateway key, revoked in the same step |
+| `agent` | kept in `devices.json`, with its name, its icon, its `machine_id`, its MACs, its stored credentials and its `config/devices/<id>/` | the token and the static key alone, so the machine is still on the Agents page and a new link binds it again |
+| `client` | deleted from the client list | the token, the static key and the client's gateway key, revoked in the same step |
 
 A device row is kept past the binding because the row is the hub's record of
 the machine; a client row is not, because the client is the binding. Only
@@ -1945,9 +2208,10 @@ it was.
 
 ### What a refusal does to the binding
 
-A refusal of `hello` keeps the binding. The agent or the client records it
-as `last_error` and sends `hello` again a minute later. `protocol_too_old`,
-`protocol_too_new`, `channel_full` and every other refusal of `hello` except
+A refusal of a bound peer's knock or `hello` keeps the binding. The agent or
+the client records it as `last_error` and knocks again a minute later.
+`protocol_too_old`, `protocol_too_new`, `channel_full`,
+`control_unavailable` and every other refusal of a bound peer except
 `binding_unknown` behave this way.
 
 A refused `join` leaves no binding to keep. `nagent join` exits with the
@@ -1956,20 +2220,19 @@ code, and a client's row reads the join's refusal ([client.md](client.md),
 `protocol_too_old` end a join this way; after `admission_paused` the client
 tries the join again once `retry_after_s` has passed.
 
-`binding_unknown` is the one refusal that unbinds: the hub says it has no such
-binding, because the row was removed on the panel. Only the hub holding the
-pinned certificate can say it, so the peer deletes its binding and is bound
-again only by a new link.
+`binding_unknown` is the one refusal that unbinds: the hub says it has no
+binding for the peer's static key, because the row was removed on the panel.
+Only the holder of the hub's private key can make the answer it arrives in
+("The session"), so the peer deletes its binding and is bound again only by
+a new link.
 
-A `refused` frame arrives at any point on an open socket, not only in answer
-to `hello`, and means there what it means at the handshake: the peer reads its
-code the same way, and the close 4000 behind it ends a refusal already
-recorded.
-
-| Close code | Meaning |
-| --- | --- |
-| 4000 | `refused`; the `refused` frame before it says why |
-| 4010 | `replaced`: a second socket for the same binding opened, and this one is closed; the peer reconnects only when a person acts, with `nagent join`, a service restart, or the client window's reconnect |
+A `refused` frame arrives at any point on an open session, not only in
+answer to `hello`, and means there what it means at the handshake: the peer
+reads its code the same way, and the end of the session behind it ends a
+refusal already recorded. `replaced` is the refusal of a session whose
+binding opened a second session: the hub admits the second and ends the
+first with it, and the peer reconnects only when a person acts, with `nagent
+join`, a service restart, or the client window's reconnect.
 
 ## Devices on the channel
 
@@ -1984,16 +2247,17 @@ agent has reported on its link.
 | Wake-on-LAN goes to | the most recent link MAC, on the networks of the exposed IPv4 segments |
 | `is_hub` | `machine_id` equals the hub box's own |
 
-The device's address is the report's `network.link.address`; the socket's peer
-address is the fallback when that is empty, and it is recorded.
+The device's address is the report's `network.link.address`; the session's
+peer address, which the transport gives the hub's Python with the session,
+is the fallback when that is empty, and it is recorded.
 
 ### The address a caller is given
 
-The hub chooses the address an entry names by the scope a client's socket
+The hub chooses the address an entry names by the scope a client's session
 arrived from. Each published service still has one `host`, which the client
 shows and never dials, since its bytes go over `connect`:
 
-1. At `hello`, the hub takes the socket's peer address, afresh on every
+1. At `hello`, the hub takes the session's peer address, afresh on every
    connection.
 1. `host_scope.scope_of(peer, reached, served)` classifies it against the
    scopes the box serves: one per served LAN, named by its network CIDR, and
@@ -2020,7 +2284,7 @@ shows and never dials, since its bytes go over `connect`:
 
 A client behind NAT gets the link address, which it only shows.
 
-The same peer address, and the listener the socket arrived on, settle the
+The same peer address, and the listener the connection arrived on, settle the
 client's `reached_through`, an IPv4-mapped IPv6 address read as its IPv4
 address:
 
@@ -2047,10 +2311,12 @@ reconnect as much as the first, tries the name where it resolves, then
 `gateway_urls` in order, then `gateway_url` when the list does not hold it.
 A client's round dials the same addresses and the hub's address on each
 virtual network that is up, all at once ([connection.md](connection.md),
-"Where the port is reached"). On either, the first that answers with the
-pinned fingerprint is written back as `gateway_url`. A fingerprint that does not match on the name is another
-network's hub and is skipped; one that does not match on a stored address is
-recorded as `last_error`, and the round goes on with the other addresses.
+"Where the port is reached"). On either, the first whose handshake completes
+under the binding's `hub_key` is written back as `gateway_url`. Another
+network's hub on the name answers the knock with silence, since the knock's
+`mac1` names a key it does not hold, and the address is skipped; an answer
+that opens under no psk on a stored address is recorded as `last_error`, and
+the round goes on with the other addresses.
 
 `nhub apply` deletes every directory under `config/devices/` whose name is not
 a stored id.
@@ -2063,7 +2329,7 @@ one; a package version changes on every release. One rule ties the two.
 | Rule | Reason |
 | --- | --- |
 | Adding a kind, a field or a code keeps `PROTOCOL`, and a patch release can add them. | A peer that reads tolerantly is unaffected. |
-| Removing anything, or changing its meaning, adds one to `PROTOCOL`; so does a change to the link, the ticket, the pin or the four words `hello`, `state`, `report`, `open`. | An old peer misreads it. |
+| Removing anything, or changing its meaning, adds one to `PROTOCOL`; so does a change to the link, the ticket, the hub's key, the knock, the handshake, the record layout or the four words `hello`, `state`, `report`, `open`. | An old peer misreads it. |
 | The relation to the package version is one-way: a `PROTOCOL` change requires a new minor before 1.0 and a new major after it; a new minor or major can keep the number; a patch never changes `PROTOCOL`. | A person reads compatibility off the version and finds it true. |
 | `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 raises it to its own 3 and 0.6.0 to its own 4. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is updated or reinstalled. |
 
@@ -2071,8 +2337,9 @@ Reading is tolerant and writing is strict. An unknown kind is closed
 `kind_unknown`, an unknown field is ignored, and a peer sends only what its own
 number defines.
 
-The frames and the four section documents are pinned as JSON schemas in
-`hub/tests/web/channel_schema.json`. `hub/tests/web/test_channel_schema.py`
+The frames, the open records of every kind and the four section documents
+are pinned as JSON schemas in `hub/tests/web/channel_schema.json`, which the
+transport's tests read too. `hub/tests/web/test_channel_schema.py`
 asserts that `PROTOCOL` equals the golden's and that every `Channel*` model's
 `model_json_schema()` equals its golden. The model set is closed: one model
 more or one fewer fails. Changing a channel model fails that test until
@@ -2088,12 +2355,18 @@ more or one fewer fails. Changing a channel model fails that test until
 3 renamed the link's and the client state's `overlay`, one object or null,
 to `overlays`, a list. A 0.3 or 0.4 agent or client is refused
 `protocol_too_old` and does not update itself from the hub; such an agent is
-reinstalled from the Devices page or by hand. A bound 0.5 agent updates
+reinstalled from the Agents page or by hand. A bound 0.5 agent updates
 itself from a 0.6 hub ("An agent of 0.5"); an unbound one is refused at
 `join`, and a 0.6 agent is installed in its place and joins.
 
-4 changes what a peer of 3 reads. A `terminals` entry lists a machine with
-no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
+4 changes what a peer of 3 reads. The channel is the transport's: the
+knock, the Noise handshake under the hub's static key, go-yamux streams with
+their records, and the control stream, in place of TLS pinned by a
+certificate's fingerprint and one WebSocket of JSON and binary frames
+("The session"). Every address is `tcp://`, the link carries `key` in place
+of `fp`, `join` and `leave` are frames, and `service`, `persist` and
+`stop_session` are frames answered by `reply`. A `terminals` entry lists a
+machine with no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
 a `shell` is ("The exec stream"). The `ai_tools` section's `base_url` names
 the agent's own AI gateway forward on `127.0.0.1`, and the agent opens a
 `connect` stream to the hub for each connection made to it ("The connect

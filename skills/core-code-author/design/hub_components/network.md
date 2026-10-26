@@ -153,7 +153,7 @@ Each segment is one chip under the **Network** page's **Exposure**
 | The rules are rendered again whenever an exposed interface's addresses change, on every system: on Linux by the router service, which applies on every link, address, route and rule event ("Three engines, uniform everywhere" below); on macOS and Windows by the routing pass the address sampler runs. | A rule that names a prefix the interface no longer holds opens the hub to nobody, or to another network. |
 | The segments are the ones the hub holds addresses in, and nobody types one in. | A network the hub has no address in is not a network its ports answer on. |
 | An interface's two chips start the same, from the interface's default: on Linux an interface the configuration does not name is closed until it is turned on ("An interface the configuration does not name" below); in `router` a served network is exposed and an uplink is closed; in `server` and `side_gateway` every interface `nhub setup` found is exposed; on macOS and Windows every interface is exposed. | A Linux hub opens nothing its person did not choose, a router serves its own networks, and a person's own computer stays reachable on the network it is on. |
-| Opening the agent port to every sender is Direct's alone, on the **Access** page ("Direct" below). | The agent port admits a peer by a token and a pinned certificate; the panel admits a browser by a password. |
+| Opening the agent port to every sender is Direct's alone, on the **Access** page ("Direct" below). | The agent port answers only a knock made with the hub's static key and admits a peer by its own key and binding; the panel admits a browser by a password. |
 
 The ports that open with no switch:
 
@@ -425,7 +425,7 @@ editions; the configuration, the routes and the protocol keep the word
 | Rule | Reason |
 | --- | --- |
 | The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
-| Every way in reaches the one channel: the agent port, or for SakuraFrp and OpenFrp a loopback listener of the same channel ("The loopback listeners" below). The link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one fingerprint, so a way in adds an address and nothing else. |
+| Every way in reaches the one channel: the agent port, or for SakuraFrp and OpenFrp a loopback listener of the same channel ("The loopback listeners" below). The link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one static key, so a way in adds an address and nothing else. |
 | The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
 
 ## Direct
@@ -448,8 +448,8 @@ page turns it on.
 | Direct opens the agent port alone, to every sender on an enabled interface, whatever the sender's address. On Linux the input chain gains `iifname { <enabled> } tcp dport <agent-port> accept`; on Windows a rule of its own takes any remote address on those interfaces, and the pf anchor passes the port from any address on them. Every other rule is left as it is. | The panel and the hub's other ports keep the exposure the **Network** page gives them. |
 | Turning Direct off renders the same rules without that addition. | The converge step takes exactly what Direct added. |
 | Direct exposes no segment. Wake-on-LAN and the LAN scan follow the exposed IPv4 segments, the proxy's scopes follow the roles, and Direct changes none of them. | An exposed segment opens every hub port to the senders inside it; Direct opens one port to every sender. |
-| While Direct is on, `urls` holds, in this order: the hub's IPv4 addresses in the exposed IPv4 segments and on the exposed overlays, then its IPv6 addresses in the exposed IPv6 segments, then every enabled interface's other IPv4 addresses, then its other IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then SakuraFrp's address, OpenFrp's and the SSH relay's ("The frp addresses" below). An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the paths through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
-| A stated host name needs nothing of the certificate. | A peer pins the certificate's fingerprint and does not check its names. |
+| While Direct is on, `urls` holds, in this order: the hub's IPv4 addresses in the exposed IPv4 segments and on the exposed overlays, then its IPv6 addresses in the exposed IPv6 segments, then every enabled interface's other IPv4 addresses, then its other IPv6 addresses, then NetBird's name for the hub, then `tcp://<public-host>:<public-port>`, then SakuraFrp's address, OpenFrp's and the SSH relay's ("The frp addresses" below). An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the paths through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
+| A stated host name needs nothing of the hub's key. | A peer pins the hub's static key, which names no host. |
 | An IPv6 address joins `urls` only when a peer elsewhere can keep using it: global scope, so not loopback, link-local, site-local or multicast; and not temporary, deprecated, tentative or failed in duplicate detection. Linux reads it from `ip -json addr show`, an address's `scope` and its `temporary`, `deprecated`, `tentative` and `dadfailed` flags. macOS reads it from `ifconfig`, an `inet6` line's `temporary`, `deprecated`, `tentative`, `duplicated` and `detached` words. Windows reads it from the unicast address table through iphlpapi: a `DadState` of `IpDadStatePreferred`, and a `SuffixOrigin` other than `IpSuffixOriginRandom`, which is how Windows marks a temporary address. Where the reading fails, no IPv6 address joins. | A temporary address is replaced within a day and a link-local one reaches one link, so a peer that stored either loses the hub. |
 | The agent port listens on IPv4 and IPv6 on Linux, macOS and Windows: one socket for each family, the IPv6 one set to IPv6 alone (`IPV6_V6ONLY`). A machine where the IPv6 socket cannot be made serves IPv4, and the log has one line saying so. | Two sockets keep each peer's address in its own family on every system. Which senders reach the port stays the firewall's matter. |
 | The nft table is `inet`, so one table holds the rules of both families: an exposed IPv4 segment's rule matches IPv4 senders, an exposed IPv6 segment's rule IPv6 senders, and Direct's rule names no family. | An exposed IPv6 segment answers on IPv6 exactly as an exposed IPv4 segment answers on IPv4, and Direct answers on both. |
@@ -463,7 +463,7 @@ The relay is a reverse SSH forward from the hub to a server the person owns,
 called the VPS on this page. The hub logs in to the VPS with an SSH key or a
 password from the Credentials page and has the VPS's sshd listen on a public
 port; every connection to that port reaches the hub's agent port on loopback.
-TLS and the fingerprint pin run end to end, so the VPS forwards ciphertext.
+The Noise handshake and the session run end to end, so the VPS forwards ciphertext.
 
 A person reads the method's name as **SSH relay**, in Chinese **SSH 中继**:
 the card, the section, the clients' hub row and the guide. The value a client
@@ -563,10 +563,11 @@ person to their provider's terms on forwarded traffic.
 
 The hub checks the relay from outside. `OVERLAY_RELAY_CHECK_FIRST_S` 5
 seconds after the process starts, and every `OVERLAY_RELAY_CHECK_INTERVAL_S`
-60 seconds after that, it dials `<host>:<public-port>` itself, completes a
-TLS handshake within `OVERLAY_RELAY_CHECK_TIMEOUT_S` 10 seconds, and compares
-the certificate's SHA-256 with its own agent certificate's fingerprint. The
-check closes after the handshake and sends no request. The three constants
+60 seconds after that, it runs `neutrino_transport probe` against
+`<host>:<public-port>` with its own static public key, which completes a
+handshake within `OVERLAY_RELAY_CHECK_TIMEOUT_S` 10 seconds when the address
+reaches this hub ([../protocol.md](../protocol.md), "The session"). The
+check closes after the handshake and sends no frame. The three constants
 are in `modules/overlay/constants.py`.
 
 | `state` | When |
@@ -575,8 +576,8 @@ are in `modules/overlay/constants.py`.
 | `not_configured` | on, and `host` or `account` is missing, or neither `key_id` nor `login_id` is set, or the key or the login it names is gone from the vault |
 | `vault_locked` | on and configured, and the vault cannot open the key or the login |
 | `connecting` | `ssh` runs and no check has finished since it started |
-| `connected` | `ssh` runs and the last check met the hub's own certificate |
-| `port_closed` | `ssh` runs and the last check got no answer or another certificate: the VPS's sshd binds loopback only, or a firewall closes the port |
+| `connected` | `ssh` runs and the last check met the hub's own key |
+| `port_closed` | `ssh` runs and the last check got no answer or another key: the VPS's sshd binds loopback only, or a firewall closes the port |
 | `auth_failed` | `ssh` exited after writing `Permission denied`: the server refused the key or the password |
 | `host_key_changed` | `ssh` exited after writing `REMOTE HOST IDENTIFICATION HAS CHANGED` or `Host key verification failed` |
 | `forward_refused` | `ssh` exited after writing `remote port forwarding failed`: the sshd refuses the forward, or the port is taken |
@@ -591,10 +592,10 @@ own form, `SHA256:<base64>`, as `host_key_fingerprint`.
 
 ### The relay's address
 
-While the relay is on and configured, `https://<host>:<public-port>` is the
+While the relay is on and configured, `tcp://<host>:<public-port>` is the
 last member of `urls`, in every link and in every agent's and client's state,
 whatever its state; an IPv6 host is written in brackets. A peer dials it like
-any other address and pins the same fingerprint. Turning the relay on or off
+any other address and pins the same key. Turning the relay on or off
 and saving its settings run the converge step, which pushes every peer its
 new `urls`.
 
@@ -611,8 +612,9 @@ listens on a public port, and frpc, the frp client on the hub, holds a
 connection to the node and forwards each connection made to that port to
 the hub. The person keeps an account at the vendor and creates the tunnel
 there; the hub lists the account's tunnels, runs frpc for the one the person
-picks, and adds the node's public address to `urls`. TLS and the fingerprint
-pin run end to end, so the node forwards ciphertext, as the relay's VPS does.
+picks, and adds the node's public address to `urls`. The handshake and the
+session run end to end, so the node forwards ciphertext, as the relay's VPS
+does.
 
 Both vendors run upstream frpc (fatedier/frp, Apache-2.0) at one pinned
 version, `FRP_VERSION` in `modules/frp/constants.py`, with its sha256 for
@@ -679,8 +681,8 @@ to the vendor's console, `FRP_SAKURAFRP_CONSOLE_URL` or
 | Rule | Reason |
 | --- | --- |
 | A tunnel whose local port is not the connection port is not listed. | The local port is how the person marks a tunnel as the hub's at the vendor. frpc dials the hub's own loopback port whatever the vendor's tunnel says. |
-| An OpenFrp tunnel with auto TLS on is not listed. | The node then ends TLS with its own certificate, and a peer's fingerprint pin refuses it. |
-| A SakuraFrp node with forced access authentication is not listed. | Its visitor first authenticates in a browser at the node, which a client's TLS socket cannot do. |
+| An OpenFrp tunnel with auto TLS on is not listed. | The node then wraps the connection in TLS of its own, and a peer's knock never reaches the transport as written. |
+| A SakuraFrp node with forced access authentication is not listed. | Its visitor first authenticates in a browser at the node, which a client's transport cannot do. |
 
 ### Picking a tunnel
 
@@ -732,21 +734,21 @@ stops every unit the hub started, and the state root's clearing takes
 The hub serves the channel on one more listener per vendor, on IPv4 loopback
 alone: `127.0.0.1:18443` for SakuraFrp (`FRP_SAKURAFRP_LOOPBACK_PORT`) and
 `127.0.0.1:18444` for OpenFrp (`FRP_OPENFRP_LOOPBACK_PORT`). Each is a
-uvicorn server of the channel app in the panel's one process, opened while
-its way in is on and closed when it is turned off, without a restart of the
-process. Neither is in the firewall's table, since only the hub itself
+listener of the transport, open whether its way in is on or off
+([../protocol.md](../protocol.md), "Three ports, two audiences"), so turning
+a way in on or off restarts nothing; only frpc on the hub reaches it. Neither is in the firewall's table, since only the hub itself
 reaches loopback. A connection port or a panel port set to either number is
 refused with `port_already_in_use {value}`, open or not. A listener another
-program's socket keeps from opening gives its way in the state
-`loopback_port_taken`.
+program's socket keeps from opening, which `neutrino_transport probe` of
+`127.0.0.1:<port>` finds, gives its way in the state `loopback_port_taken`.
 
 ### The frp states
 
 The hub checks a picked tunnel from outside, on the relay's timing: 5
 seconds after frpc starts and every 60 seconds after that, it dials
-`<public-host>:<public-port>`, completes a TLS handshake within 10 seconds,
-and compares the certificate's SHA-256 with its own agent certificate's
-fingerprint. The three constants are `FRP_CHECK_FIRST_S`,
+`<public-host>:<public-port>` with `neutrino_transport probe` and its own
+static public key, which completes a handshake within 10 seconds when the
+node reaches this hub. The three constants are `FRP_CHECK_FIRST_S`,
 `FRP_CHECK_INTERVAL_S` and `FRP_CHECK_TIMEOUT_S` in `modules/frp/constants.py`.
 
 | `state` | When |
@@ -758,9 +760,9 @@ fingerprint. The three constants are `FRP_CHECK_FIRST_S`,
 | `loopback_port_taken` | on, and the vendor's loopback listener could not open |
 | `config_failed` | a tunnel is picked, the file is missing, and the vendor did not return the tunnel's config: the tunnel is gone, the credential is refused, or the vendor did not answer |
 | `connecting` | frpc runs and no check has finished since it started |
-| `connected` | frpc runs and the last check met the hub's own certificate |
+| `connected` | frpc runs and the last check met the hub's own key |
 | `proxy_refused` | frpc runs and the last line it wrote about the tunnel holds `start error`: the node refused the tunnel, as for a remote port in use or a tunnel turned off at the vendor |
-| `port_closed` | frpc runs, the last check got no answer or another certificate, and no `start error` follows frpc's last start |
+| `port_closed` | frpc runs, the last check got no answer or another key, and no `start error` follows frpc's last start |
 | `login_failed` | frpc exited after writing `login to the server failed`, and the line holds no connection error: the node refused the account's token |
 | `unreachable` | frpc exited for any other reason, a login that failed on `dial tcp`, `i/o timeout` or `connection refused` among them |
 

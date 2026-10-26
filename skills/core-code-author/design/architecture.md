@@ -17,15 +17,19 @@ config/ ──render──▶ /var/lib/neutrino/hub/generated/ ──apply──
   │ every change is a write here                 nftables, the overlays, units
   │
 web/ (FastAPI, root) ◀────── hub/frontend/ (browser, HTTP or HTTPS, password)
+  ▲
+  │ the local channel: questions up, commands and frames down
+  │
+neutrino_transport (its own account) ◀── the agent port: knock, Noise, yamux
   ▲                    ▲
-  │ one socket over    │ one socket over pinned TLS: the published
-  │ pinned TLS:        │ list down, a service stream for its material
-  │ reports up,        │
-  │ the state down,    neutrino_client (a person's session, never root):
-  │ streams both ways  a tray and a window; Open, Connect, Mount, Apply
+  │ one session:       │ one session: the published list down,
+  │ reports up,        │ a service frame for its material, streams
+  │ the state down,    │
+  │ streams both ways  neutrino_client (a person's session, never root):
+  │                    a tray and a window, and its own transport
   │
 neutrino_agent (root, stdlib only) ──── hosts modules, applies the state,
-  ▲                                     shares the desktop
+  ▲  and its own transport              shares the desktop
   │ root-only Unix socket
 nagent (root, on the machine)
 ```
@@ -59,7 +63,7 @@ The agent has no dependencies and listens on `127.0.0.1`, for the programs on
 its own machine. For the containers there it also listens on the gateway of
 each Podman bridge on Linux and on WSL's vEthernet adapter on Windows, with a
 firewall rule for each where the machine's firewall drops it ([agent.md](agent.md),
-"The listeners a container reaches"). It keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
+"The listeners a container reaches"). Through the transport it carries, it keeps one session open to the hub and reconnects when it drops, so it survives restarts, sleep
 and NAT in between. It decides nothing: the hub says in `state` what each
 module is to be, and the agent observes, installs and configures until the
 machine matches ("The hub says what is wanted; the agent observes, installs
@@ -389,7 +393,7 @@ declared by hand (web, port, file)          -> the same shape, probed
 **The service list carries no secrets.** It is composed once, fingerprinted,
 and pushed to every client resolved for the address that client reaches the
 hub on. The two secrets a service takes from the hub travel one at a time:
-a client's gateway key rides its own socket, and a desktop's seat password
+a client's gateway key rides its own session, and a desktop's seat password
 is unsealed for the one answer to a Connect. The panel's Services page shows
 the four kinds it can declare or module-publish; a shared desktop appears
 only in the device drawer and on clients.
@@ -420,7 +424,7 @@ Severing propagates from whichever end acts, over no channel but the ones
 that exist:
 
 - **The hub lets go by saying it holds no such binding** — the row was
-  removed on the panel, so the socket is closed with `binding_unknown`, the
+  removed on the panel, so the session is ended with `binding_unknown`, the
   one refusal that unbinds. The agent deletes its binding, goes back to
   waiting for a link, and says why in `nagent status`. Every other refusal
   keeps the binding: the agent records it and sends `hello` again a minute
@@ -433,8 +437,8 @@ that exist:
   a managed-and-quiet row until somebody forgets it there.
 
 The agent mirrors the three states: unbound and waiting for a link, bound and
-reporting, and bound but rejected, which stays bound until the hub closes the
-socket with `binding_unknown`. Its binding lives in one file, and the
+reporting, and bound but rejected, which stays bound until the hub ends the
+session with `binding_unknown`. Its binding lives in one file, and the
 running service adopts what another process writes there, so the CLI and the
 page need no service restart.
 
@@ -501,7 +505,7 @@ the agent, never from a timer.
 
 Software somebody installs or removes by hand is observed and shown, never
 fought. A hand-installed module reports `installed`; at a machine's first
-report on a socket the hub imports what the machine already has into its
+report on a session the hub imports what the machine already has into its
 own configuration, and **Configure** does the same for a module whose import
 was empty then. The hub keeps no record of a failure beyond the machine's own
 report. A hub restart loses nothing, because `want` is in `config/`
@@ -526,22 +530,29 @@ The wire gets no such trust. A "LAN" can be a campus network with a thousand
 strangers on it, so the hub's ports answer only senders inside a segment
 deliberately exposed, a running overlay's among them
 ([network.md](hub_components/network.md), "What answers, and where"), the
-panel behind a password, and the agent channel carries its secrets under
-pinned TLS. Trusting the machines and distrusting the wire is the whole
-model.
+panel behind a password, and the agent channel carries its secrets inside
+a Noise session under the hub's pinned static key. Trusting the machines and
+distrusting the wire is the whole model.
 
-## The agent channel is pinned TLS; the panel is verified by a chain
+## The agent channel is pinned by a key; the panel is verified by a chain
 
 Desired state carries real secrets, so the wire between hub and agent is
-treated as hostile even where the machines on it are not. The agent API is
-served on its own TLS-only port with a self-signed certificate generated at
-setup. The enrollment link carries the certificate's SHA-256 fingerprint, and
-the agent pins it — verification is the fingerprint, not a chain, so no device
+treated as hostile even where the machines on it are not. The channel is
+served on its own port by the transport, a Go process of its own: a knock,
+then a Noise handshake under the hub's static key, which the transport
+generates and keeps. The enrollment link carries that key's public half, and
+every peer pins it. Verification is the key, never a chain, so no device
 installs a CA and no name has to match.
 
+The transport carries every byte and decides nothing: every permission, and
+every ticket, token and secret, stays with the hub's Python, which the
+transport asks over the local channel at a session's start and at each
+stream's open ([protocol.md](protocol.md), "The local channel"). One record
+of who can do what is kept, and it is in `config/`.
+
 The panel a browser reads speaks plain HTTP on its own port until somebody
-turns its HTTPS on. A browser verifies by chain and by name, not by
-fingerprint, so the panel's certificate is signed by the hub's own
+turns its HTTPS on. A browser verifies by chain and by name, never by a
+pinned key, so the panel's certificate is signed by the hub's own
 certificate authority, which a browser installs once. The authority's name
 constraints permit private and CGNAT addresses and a few private names only,
 so installing it trusts nothing public. Two audiences, two transports,
