@@ -409,18 +409,18 @@ them before the app is used. The controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Use** | always | when some entry of the app is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes every entry's forward the app has not got, reads `{token}` with the `service` frame for a `web` entry with `is_token_required`, and opens the system browser at the app's first `http` or `https` entry, in the order the hub lists them; an app with no such entry opens nothing; a failure writes the code, the forwards that started staying up |
+| **Use** | while the app is not in use | when some entry of the app is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes every entry's forward the app has not got, and opens nothing; a failure writes the code, the forwards that started staying up |
+| **Stop** | while the app is in use, in **Use**'s place | always | job `ui.job.disconnecting`: ends every forward of the app |
 | **Configure** | always | when the app is not in use | the local port dialog ("The local port table") |
-| **Stop** | while the app is in use | always | job `ui.job.disconnecting`: ends every forward of the app |
+| **Open** | for an app with an `http` or `https` entry | while the app is in use, else disabled with the reason `ui.reason.use_first` | job `ui.job.opening`: reads `{token}` with the `service` frame when that entry has `is_token_required`, and opens the system browser at the app's first `http` or `https` entry, in the order the hub lists them; a failure writes the code |
 
 An app is in use from the first forward **Use** made until **Stop**, the
-hub's leave, or the client's quit. **Use** on an app in use opens the
-browser again with a fresh token.
+hub's leave, or the client's quit.
 
 | Rule | Reason |
 | --- | --- |
 | The browser opens `<scheme>://<local name>:<local port><path>`, with `?tkn=<token>` added for an entry with `is_token_required`; `<scheme>` and `<path>` are the entry's url's own. On macOS and iOS the host is `127.0.0.1`. | A browser resolves a `.localhost` name to the loopback by itself and keeps cookies per host, so two apps never overwrite each other's login; Safari and WebKit resolve no `.localhost` name, so on macOS and iOS every app shares one host, and two apps whose cookies have the same name sign each other out. |
-| A token is read at every **Use** that opens the browser. | The token of code-server, CloudCLI, Codeg and Hermes WebUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
+| A token is read at every **Open**. | The token of code-server, CloudCLI, Codeg and Hermes WebUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
 | An entry the hub reports unhealthy keeps its forward and shows `ui.unhealthy` on its line. | The forward stays where the person put it; the service behind it can come back. |
 | A declared app's `file` entries are on the Files page and not here, and an app whose entries are all `file` entries has no row. | A share is mounted, not opened in a browser, and the Files page holds every mount. |
 | A phone's Apps page is this page, with the same entries but the `ssh` ones: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other, and an `ssh` entry needs the key a phone does not write. |
@@ -944,7 +944,7 @@ else.
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link; either adds the hub at once |
-| app | **Use** forwards every entry and opens the system browser at the first web entry, with the token for an entry with `is_token_required` | the same: the app forwards in its core and opens the system browser, the in-app browser on iOS |
+| app | **Use** forwards every entry; **Open** opens the system browser at the first web entry, with the token for an entry with `is_token_required` | the same: the app forwards in its core, and **Open** opens the system browser, the in-app browser on iOS |
 | file entry | mount the forward, or the files adapter's address on Windows, with the share's user and password from the hub | a location in the system's Files app on Android and the share page on iOS, their sockets `connect` streams, with the user and password from the hub |
 | SSH for other programs | `~/.ssh/neutrino_config` and `nclient ssh` | none; the `ssh` entries are forwarded on the Apps page |
 | AI entry | point the tools at the forward, configure them | none: no **AI** page |
@@ -1004,8 +1004,8 @@ entry.
 
 | Rule | Reason |
 | --- | --- |
-| **Use** on an app with a web entry and **Panel** on a hub row make the forward and read the token as on Android, then open the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
-| The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Stop**, as on every client. | A page closed by mistake opens again at once, on the same port. |
+| **Open** on an app in use reads the token as on Android, and **Panel** on a hub row makes the panel's forward and reads its token; each then opens the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
+| The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Stop**, as on every client. | A page closed by mistake opens again with **Open**, on the same port. |
 | Every page the in-app browser opens shares one cookie store and the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
 
 ### The share page

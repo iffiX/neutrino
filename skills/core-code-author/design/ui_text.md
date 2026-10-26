@@ -646,7 +646,8 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.client_not_running` | The client is not running; start it with nclient gui. | 客户端没有运行，先 nclient gui。 |
 | `ui.panel_apps`, the page's title and its bar label | Apps | 应用 |
 | `ui.app_source.module`, `ui.app_source.declared`, `ui.app_source.manual` | module, declared, manual | 模块、声明、手动 |
-| `ui.app.use`, `ui.app.configure`, `ui.app.stop` | Use, Configure, Stop | 使用、配置、停止 |
+| `ui.app.use`, `ui.app.configure`, `ui.app.stop`, `ui.app.open` | Use, Configure, Stop, Open | 使用、配置、停止、打开 |
+| `ui.reason.use_first`, under a disabled **Open** | Use the app first. | 先点使用。 |
 | `ui.app.port_dialog_title` | Local ports of {app} | {app} 的本机端口 |
 | `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这台机器的终端没有启用的账户。 |
 | `ui.terminal.account` | Account | 账户 |
