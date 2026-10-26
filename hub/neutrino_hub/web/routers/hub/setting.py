@@ -34,6 +34,8 @@ from neutrino_hub.exceptions import (
     DownloadFailedError,
     HubUpdateError,
     PasswordRefusedError,
+    StreamRefusedError,
+    VaultLockedError,
     VaultPassphraseError,
 )
 from neutrino_hub.modules.hub_update.constants import (
@@ -136,6 +138,16 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_SOURCE_URLS,
     EASYTIER_VERSION,
 )
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_COMMAND_KEYS_RELOAD,
+    CHANNEL_LEGACY_TLS_PORT,
+)
+from neutrino_hub.modules.transport.constants import (
+    TRANSPORT_KEY_DIR,
+    TRANSPORT_PRIVATE_KEY_NAME,
+    TRANSPORT_SEALED_KEY_NAME,
+)
+from neutrino_hub.modules.transport.ops import restore_private_key, sealed_private_key
 from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_PORTS, FRP_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 
@@ -281,7 +293,7 @@ def update_settings(
                 value=port,
             )
     for port in (request.listen_port, https_port, agent_port):
-        if port in FRP_LOOPBACK_PORTS.values():
+        if port in FRP_LOOPBACK_PORTS.values() or port == CHANNEL_LEGACY_TLS_PORT:
             raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
     if https_port == request.listen_port:
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)
@@ -361,12 +373,12 @@ def update_settings(
 
 
 def _move_agent_port(runtime: PanelRuntime) -> None:
-    """Hand every online peer the new agent port, then restart on it.
+    """Hand every online peer the new agent port, then move the transport to it.
 
     Every online agent and client is handed its state, whose ``urls`` name
     the port the settings now hold; the converge step then makes the
-    firewall and the relay follow the port. The panel restarts on it
-    whatever either step met.
+    firewall and the relay follow the port and restarts the transport on
+    it, whose ``transport.json`` names the new port.
 
     Args:
         runtime: The shared runtime, its settings holding the new port.
@@ -386,8 +398,6 @@ def _move_agent_port(runtime: PanelRuntime) -> None:
         ValueError,
     ) as error:
         LOGGER.warning("agent port: %s", command_failure_text(error))
-    finally:
-        _restart_panel()
 
 
 def _restart_panel() -> None:
@@ -776,13 +786,45 @@ def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
     """
     directories: list[str] = []
     files: list[tuple[str, bytes]] = []
+    private_key = UTILS_CONFIG_DIR / TRANSPORT_KEY_DIR.name / TRANSPORT_PRIVATE_KEY_NAME
     for path in sorted(UTILS_CONFIG_DIR.rglob("*")):
         relative = path.relative_to(UTILS_CONFIG_DIR).as_posix()
         if path.is_dir():
             directories.append(relative)
+        elif path == private_key:
+            files.append((_sealed_key_member(), sealed_private_key()))
         elif path.is_file():
             files.append((relative, path.read_bytes()))
     return directories, files
+
+
+def _sealed_key_member() -> str:
+    """The config-relative path the sealed static key takes in an archive."""
+    return f"{TRANSPORT_KEY_DIR.name}/{TRANSPORT_SEALED_KEY_NAME}"
+
+
+async def _restore_static_key(runtime: PanelRuntime) -> None:
+    """Put a restored archive's sealed static key back as the transport's.
+
+    The sealed member is unsealed under the restored vault's data key into
+    the transport's own file and deleted, and the transport is told
+    ``keys_reload``. A key that cannot be unsealed is logged and left; the
+    transport then makes a new pair at its next start.
+    """
+    sealed = UTILS_CONFIG_DIR / _sealed_key_member()
+    if not sealed.exists():
+        return
+    try:
+        restore_private_key(sealed.read_bytes())
+    except (VaultLockedError, ValueError, OSError) as error:
+        LOGGER.warning("the backup's static key was not restored: %s", error)
+        return
+    finally:
+        sealed.unlink(missing_ok=True)
+    try:
+        await runtime.channel.send_command(CHANNEL_COMMAND_KEYS_RELOAD)
+    except StreamRefusedError as error:
+        LOGGER.warning("the transport did not reload its keys: %s", error.code)
 
 
 def _add_member(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
@@ -860,6 +902,7 @@ async def restore(
         except (tarfile.TarError, EOFError, OSError) as error:
             raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
         write_state_key(data_key)
+        await _restore_static_key(runtime)
     _mark_local_agent_join(contents)
     # The restored decisions are made true without another command: apply
     # runs as a streamed task the modal shows, and the panel restarts itself

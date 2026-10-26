@@ -1001,84 +1001,39 @@ class DeviceClientErrorView(BaseModel):
     params: dict = Field(default_factory=dict)
 
 
-class DeviceCommandResultView(BaseModel):
-    """How one queued command went, as the agent reported it back."""
-
-    id: str
-    exit_code: int
-    output: str = ""
-    # A service ask's typed refusal; the drawer words it, never the wire.
-    code: str = ""
-    params: dict = Field(default_factory=dict)
-    finished_at: str = ""
-
-
-class DeviceRdpView(BaseModel):
-    """What one machine last said about sharing its desktop."""
-
-    # Whether the machine is sharing its desktop right now.
-    is_shared: bool = False
-    # Whose desktop it is, as the machine named it; empty while nothing is
-    # shared.
-    account: str = ""
-    # The port a direct connection lands on; 0 while nothing is shared.
-    port: int = 0
-    # What somebody must do at that machine before a peer is shown its
-    # desktop, as a typed code the panel words; empty when nothing stands in
-    # the way.
-    attention: str = ""
-    # How many viewers the machine has right now.
-    connected_count: int = 0
-    # Whether this machine's agent package carries the remote desktop host.
-    # False on a package built before it did.
-    is_available: bool = True
-    # Whether the machine's Remote desktop switch is on.
-    is_enabled: bool = False
-
-
 class DeviceClientInfoView(BaseModel):
     """Agent state and latest metrics for one device."""
 
     # A device the hub issued an agent token for and has not forgotten.
     is_managed: bool = False
-    # Whether the agent holds a live channel right now.
+    # Whether the agent holds a live session right now.
     is_online: bool = False
     # What the agent's last hello named, from memory: null for a device that
     # has not connected since the panel started.
     version: str | None = None
     # True while an agent of 0.5, admitted for its own update alone, takes
-    # this hub's version, until it says hello with this hub's number.
+    # this hub's version, until it knocks with this hub's number.
     is_updating: bool = False
     # True when the agent's version is not this hub's. The two ship together
     # and are only supported together, so the panel offers an upgrade rather
     # than trying to interoperate.
     is_version_mismatched: bool = False
-    # When the device's last channel ended, from memory: null while it is
+    # When the device's last session ended, from memory: null while it is
     # online and for one that has not connected since the panel started.
     last_seen: str | None = None
     # When its last report arrived, from memory: null while it is offline
     # and before its first report. What the live monitor samples on.
     last_report_at: str | None = None
-    # What the agent said it runs on, held in memory from its heartbeats and
-    # never stored: None until it beats again after a panel restart.
+    # What the agent said it runs on, held in memory from its reports and
+    # never stored: None until it reports again after a panel restart.
     platform_os: str | None = None
     platform_arch: str | None = None
     hostname: str | None = None
-    cpu_percent: float | None = None
-    memory_percent: float | None = None
-    disk_percent: float | None = None
-    temperature_c: float | None = None
-    uptime_s: int | None = None
-    load_average: list[float] = Field(default_factory=list)
-    cpu_core_percents: list[float] = Field(default_factory=list)
-    gpus: list[DeviceGpuView] = Field(default_factory=list)
-    processes: list[DeviceProcessView] = Field(default_factory=list)
+    # The agent's ``machine.metrics`` as last reported: CPU in total and per
+    # core, memory, the system disk, the temperature, the load average, the
+    # uptime, the GPUs and the process table. Empty before the first report.
+    metrics: dict = Field(default_factory=dict)
     last_error: DeviceClientErrorView | None = None
-    # Kept for the drawer, which reads it; nothing fills it since commands
-    # run over the agent's socket and stream their output as a task.
-    command_results: list[DeviceCommandResultView] = Field(default_factory=list)
-    # The machine's own word on its desktop, from its last report.
-    rdp: DeviceRdpView = Field(default_factory=DeviceRdpView)
 
 
 class DeviceOnlineView(BaseModel):
@@ -1140,10 +1095,18 @@ class DeviceView(BaseModel):
     shown_module: list[str] = Field(default_factory=list)
 
 
+class DeviceCountView(BaseModel):
+    """How many managed machines there are, and how many are online."""
+
+    total: int = 0
+    online: int = 0
+
+
 class DeviceListView(BaseModel):
-    """The Devices tab payload."""
+    """The Agents page payload: every managed machine, and the count."""
 
     devices: list[DeviceView]
+    count: DeviceCountView = Field(default_factory=DeviceCountView)
 
 
 class DeviceRequest(BaseModel):
@@ -1153,10 +1116,10 @@ class DeviceRequest(BaseModel):
 
 
 class DeviceAnnotation(BaseModel):
-    """Partial update to one device."""
+    """Partial update to one device: a name given is not empty."""
 
     device_id: str
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1)
     icon: str | None = None
     ssh: DeviceSshConfig | None = None
     shown_module: list[str] | None = None
@@ -1216,21 +1179,6 @@ class DeviceFileListView(BaseModel):
     entries: list[DeviceFileEntryView] = Field(default_factory=list)
 
 
-class DeviceFilePath(BaseModel):
-    """A remote path to act on."""
-
-    device_id: str
-    path: str
-
-
-class DeviceFileRename(BaseModel):
-    """A remote path and where to move it."""
-
-    device_id: str
-    path: str
-    new_path: str
-
-
 class RemoteDesktopStatusView(BaseModel):
     """One remote-desktop product's state on a device.
 
@@ -1286,14 +1234,15 @@ class WolResult(BaseModel):
 class PublishedServiceView(BaseModel):
     """One entry of the typed service list.
 
-    ``payload`` is the type's own — a url for web, host and port for port,
-    endpoint, protocol and models for ai, protocol, host and share for file.
+    ``payload`` is the type's own: a url for web, host and port for port,
+    host, port, account and the host key's fingerprint for ssh, endpoint,
+    protocol and models for ai, protocol, host and share for file.
     ``description`` is the English provenance line and ``description_code``
-    names the same provenance for the page to word itself, empty on a declared
-    entry whose person wrote their own line. ``record_id`` names the declared
-    record behind a declared entry; a module-declared entry carries None and
-    is read-only. ``detail_code`` is what that record's last probe measured,
-    None on one that answered as declared and on every module entry.
+    names the same provenance for the page to word itself, empty on a
+    declared entry whose person wrote their own line. ``detail_code`` is
+    what a declared entry's last probe measured, None on one that answered
+    as declared and on every module entry. ``app_id``, ``name`` and
+    ``local_port`` are set on the entries of an app (protocol.md, "Apps").
     """
 
     id: str
@@ -1305,36 +1254,63 @@ class PublishedServiceView(BaseModel):
     description: str = ""
     description_code: str = ""
     description_params: dict = Field(default_factory=dict)
-    record_id: str | None = None
+    detail_code: str | None = None
+    device_id: str = ""
+    device_name: str = ""
+    app_id: str = ""
+    name: str = ""
+    local_port: int = 0
+
+
+class AppEntryView(BaseModel):
+    """One entry of an app, as the Services page lists it under the app."""
+
+    id: str
+    name: str
+    type: str
+    payload: dict
+    is_healthy: bool | None = None
+    local_port: int = 0
     detail_code: str | None = None
 
 
-class DeclaredServiceCreate(BaseModel):
-    """A declaration as the form submits it.
+class AppView(BaseModel):
+    """One app: one program on one machine, with its entries."""
 
-    ``kind`` is a service type, web, port or file, mapped onto the stored
-    kind, a port by its ``protocol``; the fields a kind does not have are
-    ignored. A ``file``
-    declaration left without a port gets 445, and names every share it
-    declares on that server.
-    """
+    id: str
+    title: str
+    source: str
+    device_id: str = ""
+    device_name: str = ""
+    local_name: str = ""
+    description: str = ""
+    entries: list[AppEntryView] = Field(default_factory=list)
 
-    name: str
-    kind: str
-    host: str
+
+class DeclaredEntryCreate(BaseModel):
+    """One entry of an app being declared: ``web``, ``port`` or ``file``."""
+
+    type: str
     port: int | None = None
     scheme: str | None = None
     path: str | None = None
-    shares: list[str] | None = None
+    protocol: str | None = None
+    share: str | None = None
+
+
+class DeclaredAppCreate(BaseModel):
+    """An app as the Declare a service dialog submits it."""
+
+    name: str
+    host: str
     description: str = ""
-    # ``tcp`` or ``udp``, read for a ``port`` declaration alone.
-    protocol: str = "tcp"
+    entries: list[DeclaredEntryCreate] = Field(default_factory=list)
 
 
-class DeclaredServiceRequest(BaseModel):
-    """A request naming one declared service."""
+class DeclaredAppRequest(BaseModel):
+    """A request naming one declared app."""
 
-    service_id: str
+    app_id: str
 
 
 class ServiceShareListView(BaseModel):
@@ -1344,9 +1320,10 @@ class ServiceShareListView(BaseModel):
 
 
 class ServiceListView(BaseModel):
-    """The Services tab payload: every published entry."""
+    """The Services page payload: the apps, and the entries of no app."""
 
-    services: list[PublishedServiceView]
+    apps: list[AppView] = Field(default_factory=list)
+    services: list[PublishedServiceView] = Field(default_factory=list)
 
 
 class JournalView(BaseModel):
@@ -1677,11 +1654,12 @@ class ClientPermissionRequest(BaseModel):
 # --- the channel ---
 # The frames and the sections of the channel, as protocol.md defines them.
 # Every model here is pinned by tests/web/channel_schema.json; a change fails
-# that test until PROTOCOL moves or the change is shown to be additive.
+# that test until PROTOCOL moves or the change is shown to be additive. A
+# frame travels with its name in ``type`` beside the fields its model names.
 
 
-class ChannelJoinRequest(BaseModel):
-    """What a peer sends to ``POST /api/channel/join``."""
+class ChannelJoin(BaseModel):
+    """The ``join`` frame: a peer joins with the ticket its link carried."""
 
     ticket: str
     role: str
@@ -1692,29 +1670,54 @@ class ChannelJoinRequest(BaseModel):
     platform: dict = Field(default_factory=dict)
 
 
-class ChannelJoinView(BaseModel):
-    """The binding a successful join leaves on the peer."""
+class ChannelJoined(BaseModel):
+    """The ``joined`` frame: the binding a successful join leaves on the peer."""
 
     id: str
     token: str
 
 
-class ChannelLeaveRequest(BaseModel):
-    """What a peer sends to ``POST /api/channel/leave``."""
+class ChannelLeave(BaseModel):
+    """The ``leave`` frame: a bound peer's word that it is going."""
+
+
+class ChannelLeft(BaseModel):
+    """The ``left`` frame: the hub's answer to a ``leave``."""
+
+
+class LegacyHello(BaseModel):
+    """A 0.5 agent's hello on the legacy listener, its token with it."""
+
+    protocol: int
+    role: str
+    id: str
+    token: str
+    name: str = ""
+    software: str = ""
+
+
+class LegacyKeySetRequest(BaseModel):
+    """An updated peer moving its binding to the transport: its new key."""
 
     id: str
     token: str
+    public_key: str = Field(min_length=64, max_length=64, pattern="^[0-9a-fA-F]+$")
+
+
+class LegacyKeySetView(BaseModel):
+    """The hub's static public key, which the peer knocks with from now on."""
+
+    key: str
 
 
 class ChannelHello(BaseModel):
-    """The identity card a peer opens the socket with."""
+    """The identity card a bound peer opens its session with."""
 
     protocol: int = 0
     role: str = ""
     id: str = ""
     name: str = ""
     software: str = ""
-    token: str = ""
 
 
 class ChannelWelcome(BaseModel):
@@ -1725,52 +1728,81 @@ class ChannelWelcome(BaseModel):
     id: str
     name: str
     software: str
-    # The hub's clock as it sends the card, in seconds since the epoch; an
-    # added field.
+    # The hub's clock as it sends the card, in seconds since the epoch.
     time: float = 0.0
 
 
 class ChannelRefused(BaseModel):
-    """Why a hello was turned away; close 4000 follows."""
+    """Why a session is turned away; the hub ends the session after it."""
 
     code: str
     params: dict = Field(default_factory=dict)
 
 
 class ChannelOpen(BaseModel):
-    """A stream begins; the kind's own arguments ride beside these."""
+    """A stream's ``open`` record; the kind's own arguments ride beside ``kind``."""
 
     model_config = ConfigDict(extra="allow")
 
-    stream: int
     kind: str
 
 
 class ChannelClose(BaseModel):
-    """A stream ends with its result; a code makes the close a refusal."""
+    """A stream's ``close`` record: its result, or a refusal when ``code`` is set."""
 
-    stream: int
     code: str = ""
     params: dict = Field(default_factory=dict)
 
 
-class ChannelCredit(BaseModel):
-    """The sender may send this many more bytes on the stream."""
+class ChannelResize(BaseModel):
+    """A ``resize`` record on a ``shell`` stream or a tty ``exec`` stream."""
 
-    stream: int
-    bytes: int
+    cols: int
+    rows: int
 
 
 class ChannelPing(BaseModel):
-    """A peer's round-trip probe; the hub answers a pong with its nonce."""
+    """A peer's round-trip probe; the transport answers a pong with its nonce."""
 
     nonce: str = ""
 
 
 class ChannelPong(BaseModel):
-    """The hub's answer to a ping, at once, with the ping's nonce."""
+    """The answer to a ping, at once, with the ping's nonce."""
 
     nonce: str = ""
+
+
+class ChannelService(BaseModel):
+    """The ``service`` frame: a client asks for one entry's material, or the panel's."""
+
+    request: str
+    id: str = ""
+    is_panel: bool = False
+
+
+class ChannelPersist(BaseModel):
+    """The ``persist`` frame: whether a kept shell stays and whether it is shared."""
+
+    request: str
+    session_id: str
+    is_persistent: bool | None = None
+    is_shared: bool | None = None
+
+
+class ChannelStopSession(BaseModel):
+    """The ``stop_session`` frame: ends a kept shell."""
+
+    request: str
+    session_id: str
+
+
+class ChannelReply(BaseModel):
+    """The ``reply`` frame: the answer to a ``service``, ``persist`` or ``stop_session``."""
+
+    request: str
+    code: str = ""
+    params: dict = Field(default_factory=dict)
 
 
 class ChannelModuleState(BaseModel):
@@ -1781,6 +1813,8 @@ class ChannelModuleState(BaseModel):
     # The recipe resolved for the machine's platform: ``{runner, method,
     # params}``.
     install: dict = Field(default_factory=dict)
+    # The mark a press after a failure left; it changes the entry's hash.
+    retry_mark: str = ""
 
 
 class ChannelDesktopState(BaseModel):
@@ -1790,11 +1824,14 @@ class ChannelDesktopState(BaseModel):
 
 
 class ChannelAiToolsAccount(BaseModel):
-    """One account the machine's AI tools setting acts on."""
+    """One available account whose AI tools use the gateway."""
 
     account: str
     # The login's own password, sent to a Windows machine alone.
     password: str = ""
+    # ``{claude: {default, opus, sonnet, haiku}, codex: {model,
+    # model_reasoning_effort}, gemini: {model}}``, every slot filled.
+    tool_configs: dict = Field(default_factory=dict)
 
 
 class ChannelAiToolsState(BaseModel):
@@ -1802,8 +1839,8 @@ class ChannelAiToolsState(BaseModel):
 
     is_enabled: bool = False
     # Whether the agent opens its AI gateway forward on 127.0.0.1:8317: true
-    # on a managed machine while the setting is on or a container module
-    # that uses the gateway is installed, false on the hub's own.
+    # on a managed machine while an account's switch is on or a container
+    # module that uses the gateway is installed, false on the hub's own.
     is_forwarded: bool = False
     # The gateway's own port, which the hub's own agent relays to its
     # containers while such a module is installed there; 0 otherwise.
@@ -1812,7 +1849,6 @@ class ChannelAiToolsState(BaseModel):
     # the hub's own machine.
     base_url: str = ""
     api_key: str = ""
-    tool_configs: dict = Field(default_factory=dict)
     accounts: list[ChannelAiToolsAccount] = Field(default_factory=list)
     cc_switch_version: str = ""
     # The cc-switch artifact for the machine's platform, ``{name, kind,
@@ -1827,9 +1863,11 @@ class ChannelAgentState(BaseModel):
     hash: str
     modules: dict[str, ChannelModuleState] = Field(default_factory=dict)
     desktop: ChannelDesktopState = Field(default_factory=ChannelDesktopState)
-    # Every address the hub answers the channel on.
+    # Every address the hub answers the channel on, each ``tcp://<host>:<port>``.
     urls: list[str] = Field(default_factory=list)
     ai_tools: ChannelAiToolsState = Field(default_factory=ChannelAiToolsState)
+    # Each source set the modules' recipes name, ``{probe, sources, variables}``.
+    source_sets: dict = Field(default_factory=dict)
 
 
 class ChannelShellSession(BaseModel):
@@ -1861,18 +1899,29 @@ class ChannelTerminalSession(ChannelShellSession):
     is_owned: bool = False
 
 
+class ChannelAccountDetail(BaseModel):
+    """One of the machine's accounts, with the defaults its form shows."""
+
+    account: str
+    # The home directory, in the machine's own form.
+    home: str = ""
+    # The login shell; empty on Windows.
+    shell: str = ""
+
+
 class ChannelMachine(BaseModel):
     """The ``machine`` section of an agent's report."""
 
     hostname: str = ""
     platform: dict = Field(default_factory=dict)
     accounts: list[str] = Field(default_factory=list)
+    account_details: list[ChannelAccountDetail] = Field(default_factory=list)
     metrics: dict = Field(default_factory=dict)
     sessions: list[ChannelShellSession] = Field(default_factory=list)
 
 
 class ChannelLink(BaseModel):
-    """The interface the socket runs on, as the agent sees it."""
+    """The interface the session runs on, as the agent sees it."""
 
     interface: str = ""
     mac: str = ""
@@ -1899,6 +1948,8 @@ class ChannelModuleReport(BaseModel):
 
     state: str = ""
     is_active: bool = False
+    # The version installed, as the machine reports it.
+    version: str = ""
     code: str = ""
     params: dict = Field(default_factory=dict)
     details: dict = Field(default_factory=dict)
@@ -1908,11 +1959,33 @@ class ChannelDesktopReport(BaseModel):
     """What the machine last said about sharing its desktop."""
 
     is_shared: bool = False
+    # ``switch`` for the Remote desktop module's share, ``command`` for one an
+    # old ``nagent rdp start`` record keeps running.
+    origin: str = ""
     account: str = ""
     share_id: str = ""
     port: int = 0
     attention: str = ""
     connected_count: int = 0
+
+
+class ChannelAiToolsAccountReport(BaseModel):
+    """What one account's AI tools came to, as the agent reports it."""
+
+    account: str
+    # ``switched``, ``switched_back`` or ``failed``.
+    state: str = ""
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+    # Whether the agent keeps the account's records, so a tool of it still
+    # points at the hub.
+    has_records: bool = False
+
+
+class ChannelAiToolsReport(BaseModel):
+    """The ``ai_tools`` section of an agent's report."""
+
+    accounts: list[ChannelAiToolsAccountReport] = Field(default_factory=list)
 
 
 class ChannelError(BaseModel):
@@ -1930,6 +2003,7 @@ class ChannelAgentReport(BaseModel):
     network: ChannelNetwork = Field(default_factory=ChannelNetwork)
     modules: dict[str, ChannelModuleReport] = Field(default_factory=dict)
     desktop: ChannelDesktopReport = Field(default_factory=ChannelDesktopReport)
+    ai_tools: ChannelAiToolsReport = Field(default_factory=ChannelAiToolsReport)
     error: ChannelError | None = None
 
 
@@ -1945,7 +2019,7 @@ class ChannelServiceEntry(BaseModel):
     description: str = ""
     description_code: str = ""
     description_params: dict = Field(default_factory=dict)
-    # The id of the managed machine providing it; empty for a declared record
+    # The id of the managed machine providing it; empty for a declared app
     # and for the hub's own gateway.
     device_id: str = ""
     # What the hub calls the machine providing it; empty when no machine it
@@ -1953,6 +2027,23 @@ class ChannelServiceEntry(BaseModel):
     device_name: str = ""
     # Whether the machine providing it is the one the client runs on.
     is_own_machine: bool = False
+    # The app the entry belongs to, its name inside it, and the port a client
+    # forwards it on: on ``web``, ``port`` and ``ssh`` entries alone.
+    app_id: str = ""
+    name: str = ""
+    local_port: int = 0
+
+
+class ChannelApp(BaseModel):
+    """One app the ``web``, ``port`` and ``ssh`` entries belong to."""
+
+    id: str
+    title: str
+    source: str
+    device_id: str = ""
+    device_name: str = ""
+    # ``<slug of the title>.<slug of the machine name>.localhost``.
+    local_name: str = ""
 
 
 class ChannelOverlay(BaseModel):
@@ -1980,6 +2071,8 @@ class ChannelTerminal(BaseModel):
     device_id: str
     name: str
     is_online: bool = False
+    # The Terminal module's enabled accounts there, the first the default.
+    accounts: list[str] = Field(default_factory=list)
     # The sessions this client sees on it: its own and the shared ones,
     # oldest first; empty while it is offline.
     sessions: list[ChannelTerminalSession] = Field(default_factory=list)
@@ -1991,7 +2084,9 @@ class ChannelClientState(BaseModel):
     hash: str
     is_disabled: bool = False
     services: list[ChannelServiceEntry] = Field(default_factory=list)
-    # Every address the hub answers the channel on.
+    # The apps the ``web``, ``port`` and ``ssh`` entries belong to.
+    apps: list[ChannelApp] = Field(default_factory=list)
+    # Every address the hub answers the channel on, each ``tcp://<host>:<port>``.
     urls: list[str] = Field(default_factory=list)
     # The members of ``urls`` that are the SSH relay's address, SakuraFrp's
     # and OpenFrp's, each empty while its way in adds none: what a client
@@ -2004,7 +2099,7 @@ class ChannelClientState(BaseModel):
     terminals: list[ChannelTerminal] = Field(default_factory=list)
     # Whether the client may open the hub's panel through ``connect``.
     is_panel_allowed: bool = False
-    # How the client's socket reached the hub: ``lan``, ``netbird``,
+    # How the client's session reached the hub: ``lan``, ``netbird``,
     # ``easytier``, ``ssh_relay``, ``direct``, ``sakurafrp`` or ``openfrp``.
     reached_through: str = ""
 
@@ -2026,40 +2121,6 @@ class ChannelClientReport(BaseModel):
     # A refresh the person asked for: the hub answers with its whole state,
     # whatever the hash.
     is_refresh: bool = False
-
-
-class TerminalSessionView(BaseModel):
-    """One shell session a machine holds, as the Terminals page lists it."""
-
-    device_id: str
-    device_name: str = ""
-    session_id: str
-    account: str = ""
-    started_at: int = 0
-    title: str = ""
-    # Who opened it: ``hub`` for this panel, ``client:<id>`` for a client.
-    owner: str = ""
-    # What the owner is called: the hub's name, or the client's.
-    owner_name: str = ""
-    # Whether this panel opened it; only the owner sets its two flags.
-    is_owned: bool = False
-    is_attached: bool = False
-    is_persistent: bool = False
-    is_shared: bool = False
-    attached_count: int = 0
-
-
-class TerminalSessionListView(BaseModel):
-    """Every shell session the online machines hold, oldest first."""
-
-    sessions: list[TerminalSessionView] = Field(default_factory=list)
-
-
-class TerminalSessionStopRequest(BaseModel):
-    """One session to end: the machine and the session's id."""
-
-    device_id: str
-    session_id: str
 
 
 class DeviceModuleView(BaseModel):
@@ -2094,13 +2155,20 @@ class DeviceModuleView(BaseModel):
     is_configured: bool = False
     state: str = "unknown"
     is_active: bool = False
+    # The version installed, as the machine reports it; empty before it does.
+    version: str = ""
     # Why the state is what it is, when the agent said; the pages word it.
     code: str = ""
     params: dict = Field(default_factory=dict)
     details: dict = Field(default_factory=dict)
     # The task carrying the module's last install or uninstall lines, for
-    # the drawer to follow; empty when the agent has opened no log for it.
+    # the page to follow; empty when the agent has opened no log for it.
     task_id: str = ""
+    # Whether the agent's own package carries the module: Terminal, Remote
+    # desktop and the SSH server, whose tabs are always on the page.
+    is_carried: bool = False
+    # Whether the machine page shows the module's tab.
+    is_shown: bool = False
 
 
 class DeviceServicesView(BaseModel):
@@ -2147,6 +2215,67 @@ class DeviceModuleRequest(BaseModel):
     module: str
 
 
+class ModuleCatalogEntryView(BaseModel):
+    """One module of the catalog, in the Add module dialog."""
+
+    name: str
+    title: str
+    category: str
+    # False for a module the hub has no manifest of yet.
+    is_available: bool = True
+    # Whether the machine's platform has an entry.
+    is_supported: bool = True
+    # Whether the agent's package carries it, its card locked checked.
+    is_carried: bool = False
+    # Whether its tab is on the machine page.
+    is_shown: bool = False
+    state: str = "unknown"
+
+
+class ModuleCatalogView(BaseModel):
+    """Every module by the activity it serves, in the catalog's order."""
+
+    categories: list[str] = Field(default_factory=list)
+    modules: list[ModuleCatalogEntryView] = Field(default_factory=list)
+
+
+class ModuleVersionEntryView(BaseModel):
+    """One version a machine may choose."""
+
+    version: str
+    is_tested: bool = False
+    # Newer than the tested one, so not what the hub's release ran.
+    is_untested: bool = False
+
+
+class ModuleVersionView(BaseModel):
+    """One module's versions on one machine (module_install.md, "Module versions")."""
+
+    # The version the machine reports installed.
+    installed: str = ""
+    # The machine's choice in modules.json; empty while it follows the tested.
+    chosen: str = ""
+    tested: str = ""
+    newest: str = ""
+    # True for an agent, builtin or system module, and for a container
+    # module whose manifest names no releases.
+    is_locked: bool = False
+    versions: list[ModuleVersionEntryView] = Field(default_factory=list)
+    # Whether the module's data moves forward only, so an older version
+    # cannot read it.
+    is_data_forward_only: bool = False
+    # When the feeds were last read; empty before the first time.
+    read_at: str = ""
+
+
+class ModuleVersionRequest(BaseModel):
+    """A machine's choice of a module's version; empty follows the tested one."""
+
+    device_id: str
+    module: str
+    version: str = ""
+
+
 class DeviceInstallTaskView(BaseModel):
     """One install on a device, as the drawer's install pane shows it."""
 
@@ -2181,52 +2310,113 @@ class ModuleDeviceFields(BaseModel):
     params: dict = Field(default_factory=dict)
 
 
-class SambaShareView(BaseModel):
-    """One exported directory, as configured."""
+class AccountToolsView(BaseModel):
+    """One account's last AI tools result, as the machine reported it."""
 
-    name: str
-    path: str
-    comment: str = ""
-    is_read_only: bool = False
-    valid_users: list[str] = Field(default_factory=list)
-
-
-class SambaUserView(BaseModel):
-    """One share user, with what the box actually holds for it."""
-
-    name: str
-    is_present: bool
-    has_password: bool
+    # ``switched``, ``switched_back`` or ``failed``; empty before the
+    # machine reported the account.
+    state: str = ""
+    code: str = ""
+    params: dict = Field(default_factory=dict)
 
 
-class SambaSettingsView(BaseModel):
-    """The Samba tab: configuration plus each user's live state."""
+class AccountView(BaseModel):
+    """One available account of a machine, as the machine page's form holds it."""
 
-    shares: list[SambaShareView]
-    users: list[SambaUserView]
-
-
-class SambaShareListUpdate(BaseModel):
-    """The Shares group being saved."""
-
-    device_id: str
-    shares: list[SambaShareView]
-
-
-class SambaUserListUpdate(BaseModel):
-    """The Users group being saved: names only, passwords are set apart."""
-
-    device_id: str
-    users: list[str]
+    account: str
+    # Whether a Windows account's password is stored as a vault login.
+    has_login: bool = False
+    # The folder the account's share serves; empty is the account's home.
+    share_path: str = ""
+    # The shell its terminal and SSH server start; empty is its login shell.
+    shell_path: str = ""
+    is_ai_tools_enabled: bool = False
+    tool_configs: dict = Field(default_factory=dict)
+    # The account-layer modules that enable the account.
+    modules: list[str] = Field(default_factory=list)
+    ai_tools: AccountToolsView = Field(default_factory=AccountToolsView)
 
 
-class SambaPasswordUpdate(BaseModel):
-    """A new password for one user, which goes to Samba's store and nowhere
-    else."""
+class SystemAccountView(BaseModel):
+    """One account the machine reports, for the form's picker and defaults."""
+
+    account: str
+    home: str = ""
+    shell: str = ""
+
+
+class AccountListView(BaseModel):
+    """A machine's available accounts, the machine's own, and the gateway."""
 
     device_id: str
-    name: str
-    password: str = Field(min_length=1, max_length=128)
+    is_online: bool = False
+    accounts: list[AccountView] = Field(default_factory=list)
+    system_accounts: list[SystemAccountView] = Field(default_factory=list)
+    platform_os: str = ""
+    # The names the gateway serves, for the model pickers.
+    models: list[str] = Field(default_factory=list)
+    is_gateway_serving: bool = False
+
+
+class AccountCreate(BaseModel):
+    """An available account being added or replaced.
+
+    ``password`` is read on a Windows machine alone and stored as a vault
+    login; empty on a replace keeps the login the account has.
+    """
+
+    device_id: str
+    account: str = Field(min_length=1)
+    password: str = ""
+    share_path: str = ""
+    shell_path: str = ""
+    is_ai_tools_enabled: bool = False
+    tool_configs: dict = Field(default_factory=dict)
+
+
+class AccountRequest(BaseModel):
+    """A request naming one account of one machine."""
+
+    device_id: str
+    account: str
+
+
+class EnabledAccountRowView(BaseModel):
+    """One available account as an account-layer module's tab lists it."""
+
+    account: str
+    is_enabled: bool = False
+    # The port the agent took for the instance, as last reported; 0 before.
+    port: int = 0
+    is_running: bool = False
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+    # The Terminal module's and the SSH server's: the account row's shell.
+    shell_path: str | None = None
+    # The file share's: the account row's share path and its SMB user.
+    share_path: str | None = None
+    user: str | None = None
+
+
+class EnabledAccountsView(ModuleDeviceFields):
+    """One account-layer module on one device: its enabled accounts."""
+
+    accounts: list[EnabledAccountRowView] = Field(default_factory=list)
+    is_active: bool = False
+    # The release the machine reports, where the module has one.
+    version: str = ""
+    # The SSH server's: the machine's host key as ``SHA256:<base64>``.
+    host_key_fingerprint: str | None = None
+    # VS Code's: whether the person accepted the terms, and their address.
+    is_terms_accepted: bool | None = None
+    terms_url: str | None = None
+
+
+class EnabledAccountsUpdate(BaseModel):
+    """The enabled accounts being saved, in the order they were checked."""
+
+    device_id: str
+    accounts: list[str] = Field(default_factory=list)
 
 
 class SambaSessionView(BaseModel):
@@ -2254,14 +2444,6 @@ class SambaStatusView(BaseModel):
     disks: list[SambaDiskView]
 
 
-class SambaDeviceView(ModuleDeviceFields, SambaSettingsView):
-    """One device's file share: the configuration and the live parts."""
-
-    is_active: bool = False
-    sessions: list[SambaSessionView] = Field(default_factory=list)
-    disks: list[SambaDiskView] = Field(default_factory=list)
-
-
 class GiteaSettingsView(BaseModel):
     """The Gitea tab: configuration plus what the box actually has."""
 
@@ -2279,44 +2461,6 @@ class GiteaDeviceView(ModuleDeviceFields, GiteaSettingsView):
     """One device's git server: the configuration and what it actually has."""
 
     url: str = ""
-
-
-class VscodeInstance(BaseModel):
-    """One VS Code instance: the account it runs as, the port it serves, and
-    on Windows the vault login that account signs in with."""
-
-    account: str = Field(min_length=1)
-    port: int = Field(ge=1024, le=65535)
-    login_id: str = ""
-
-
-class VscodeInstanceView(VscodeInstance):
-    """One instance as configured, with what the machine says of it."""
-
-    is_running: bool = False
-    # Why it does not run, typed: ``credential_invalid`` for a Windows login
-    # that no longer signs in.
-    code: str = ""
-
-
-class VscodeDeviceView(ModuleDeviceFields):
-    """One device's VS Code: the instances and the machine's accounts."""
-
-    instances: list[VscodeInstanceView] = Field(default_factory=list)
-    # The human accounts the machine last reported, for the account field.
-    accounts: list[str] = Field(default_factory=list)
-    is_active: bool = False
-    # Whether the person accepted Microsoft's terms for this machine.
-    is_terms_accepted: bool = False
-    # The address of Microsoft's VS Code Server license terms.
-    terms_url: str = ""
-
-
-class VscodeConfigUpdate(BaseModel):
-    """The instances being saved."""
-
-    device_id: str
-    instances: list[VscodeInstance] = Field(default_factory=list)
 
 
 class VscodeTermsUpdate(BaseModel):
@@ -2432,7 +2576,6 @@ class PodmanMachineView(BaseModel):
     machine's resources, each 0 for Podman's default."""
 
     account: str = ""
-    login_id: str = ""
     cpus: int = 0
     memory_gib: int = 0
     disk_gib: int = 0
@@ -2487,12 +2630,10 @@ class PodmanMirrorListUpdate(BaseModel):
 
 
 class PodmanMachineUpdate(BaseModel):
-    """The Run settings being saved."""
+    """The Run settings being saved: an available account and the limits."""
 
     device_id: str
     account: str = ""
-    # The vault login the account signs in with, for a Windows machine.
-    login_id: str = ""
     cpus: int = Field(default=0, ge=0)
     memory_gib: int = Field(default=0, ge=0)
     disk_gib: int = Field(default=0, ge=0)
@@ -3018,167 +3159,36 @@ class ZfsShareRequest(BaseModel):
 # --- CloudCLI: one instance per account on a device ---
 
 
-class CloudcliInstance(BaseModel):
-    """One CloudCLI instance: the account it runs as, the port its forwarder
-    listens on, and on Windows the vault login that account signs in with."""
+class RemoteDesktopShareView(BaseModel):
+    """What the machine last said about sharing its desktop."""
 
-    account: str = Field(min_length=1)
-    port: int = Field(ge=1024, le=65535)
-    login_id: str = ""
-
-
-class CloudcliInstanceView(CloudcliInstance):
-    """One instance as configured, with what the machine says of it."""
-
-    is_running: bool = False
-    # Why it does not run, typed, such as ``credential_invalid``.
-    code: str = ""
-
-
-class CloudcliDeviceView(ModuleDeviceFields):
-    """One device's CloudCLI: the instances and the machine's accounts."""
-
-    instances: list[CloudcliInstanceView] = Field(default_factory=list)
-    # The human accounts the machine last reported, for the account field.
-    accounts: list[str] = Field(default_factory=list)
-    is_active: bool = False
-
-
-class CloudcliConfigUpdate(BaseModel):
-    """The instances being saved."""
-
-    device_id: str
-    instances: list[CloudcliInstance] = Field(default_factory=list)
-
-
-# --- Codeg: one instance per account on a device ---
-
-
-class CodegInstance(BaseModel):
-    """One Codeg instance: the account it runs as, the port its forwarder
-    listens on, and on Windows the vault login that account signs in with."""
-
-    account: str = Field(min_length=1)
-    port: int = Field(ge=1024, le=65535)
-    login_id: str = ""
-
-
-class CodegInstanceView(CodegInstance):
-    """One instance as configured, with what the machine says of it."""
-
-    is_running: bool = False
-    # Why it does not run, typed, such as ``codeg_port_taken``.
-    code: str = ""
-
-
-class CodegDeviceView(ModuleDeviceFields):
-    """One device's Codeg: the instances and the machine's accounts."""
-
-    instances: list[CodegInstanceView] = Field(default_factory=list)
-    # The human accounts the machine last reported, for the account field.
-    accounts: list[str] = Field(default_factory=list)
-    is_active: bool = False
-
-
-class CodegConfigUpdate(BaseModel):
-    """The instances being saved."""
-
-    device_id: str
-    instances: list[CodegInstance] = Field(default_factory=list)
-
-
-# --- A managed machine's AI tools, the Modules page's Global configuration ---
-
-
-class AiToolAccountView(BaseModel):
-    """One account the AI tools setting acts on, and what the machine says."""
-
-    account: str
-    # The modules it has an instance in: ``vscode``, ``cloudcli``,
-    # ``code_server``, ``codeg``.
-    modules: list[str] = Field(default_factory=list)
-    # ``switched``, ``switched_back`` or ``failed`` as last reported; empty
-    # before the machine reported the account.
-    state: str = ""
-    code: str = ""
-    params: dict = Field(default_factory=dict)
-
-
-class AiToolDeviceView(BaseModel):
-    """One machine's AI tools setting, the gateway, and each account's result."""
-
-    device_id: str
-    is_online: bool = False
-    is_enabled: bool = False
-    # Whether any account is still on the gateway: what the chip reads, and
-    # whether its press sends disable rather than enable.
-    is_in_use: bool = False
-    # Whether the gateway serves a model now; the setting turns on only then.
-    is_gateway_serving: bool = False
-    # ``{claude: {default, opus, sonnet, haiku}, codex: {model,
-    # model_reasoning_effort}, gemini: {model}}``, as chosen.
-    tool_configs: dict = Field(default_factory=dict)
-    # The names the gateway serves, for the Configure dialog's pickers.
-    models: list[str] = Field(default_factory=list)
-    accounts: list[AiToolAccountView] = Field(default_factory=list)
-
-
-class AiToolConfigUpdate(BaseModel):
-    """The tool choices being saved for one machine."""
-
-    device_id: str
-    tool_configs: dict = Field(default_factory=dict)
-
-
-# --- code-server: one instance per account on a device ---
-
-
-class CodeServerInstance(BaseModel):
-    """One code-server instance: the account it runs as and the port its
-    forwarder listens on."""
-
-    account: str = Field(min_length=1)
-    port: int = Field(ge=1024, le=65535)
-
-
-class CodeServerInstanceView(CodeServerInstance):
-    """One instance as configured, with what the machine says of it."""
-
-    is_running: bool = False
-    # Why it does not run, typed, such as ``code_server_port_taken``.
-    code: str = ""
-
-
-class TerminalDeviceView(ModuleDeviceFields):
-    """One device's Terminal module: the account and the shell program."""
-
-    # The account a shell runs as; empty for the agent's own.
+    # Whether the machine is sharing its desktop right now.
+    is_shared: bool = False
+    # Whose desktop it is, as the machine named it; empty while nothing is
+    # shared.
     account: str = ""
-    # The shell program's path; empty for the default.
-    shell_path: str = ""
-    # The human accounts the machine last reported, for the account field.
-    accounts: list[str] = Field(default_factory=list)
-    # Whether an account can be set: false for a Windows machine, whose
-    # shells run as SYSTEM.
-    is_account_settable: bool = True
-
-
-class TerminalConfigUpdate(BaseModel):
-    """The Terminal module's settings being saved."""
-
-    device_id: str
-    account: str = ""
-    shell_path: str = ""
+    # The port a direct connection lands on; 0 while nothing is shared.
+    port: int = 0
+    # What somebody must do at that machine before a peer is shown its
+    # desktop, as a typed code the panel words; empty when nothing stands in
+    # the way.
+    attention: str = ""
+    # How many viewers the machine has right now.
+    connected_count: int = 0
+    # Whether this machine's agent package carries the remote desktop host.
+    is_available: bool = True
 
 
 class RemoteDesktopDeviceView(ModuleDeviceFields):
-    """One device's Remote desktop module: the switch and where it stands."""
+    """One device's Remote desktop module: the switch, where it stands, and
+    the share as the machine last declared it."""
 
     # Whether the desktop is to be shared.
     is_enabled: bool = False
     # The machine's ``linux``, ``windows`` or ``darwin``; empty before it
     # reported one.
     platform_os: str = ""
+    rdp: RemoteDesktopShareView = Field(default_factory=RemoteDesktopShareView)
 
 
 class RemoteDesktopConfigUpdate(BaseModel):
@@ -3191,34 +3201,9 @@ class RemoteDesktopConfigUpdate(BaseModel):
 class HermesWebuiDeviceView(ModuleDeviceFields):
     """One device's Hermes WebUI: the forwarder's port and where the module stands."""
 
-    # The forwarder's port as stored, 8787 until the person sets another.
-    port: int = 8787
+    # The forwarder's port as the machine reports it; 0 before it does.
+    port: int = 0
     # The version the machine reports; empty before it reports one.
     version: str = ""
     # What the machine last reported: ``{version, port}``.
     details: dict = Field(default_factory=dict)
-
-
-class HermesWebuiConfigUpdate(BaseModel):
-    """The forwarder's port being saved; checked by the route, ``port_invalid``."""
-
-    device_id: str
-    port: int
-
-
-class CodeServerDeviceView(ModuleDeviceFields):
-    """One device's code-server: the release, the instances and the accounts."""
-
-    # The release the machine reports installed; empty before it reports one.
-    version: str = ""
-    instances: list[CodeServerInstanceView] = Field(default_factory=list)
-    # The human accounts the machine last reported, for the account field.
-    accounts: list[str] = Field(default_factory=list)
-    is_active: bool = False
-
-
-class CodeServerConfigUpdate(BaseModel):
-    """The instances being saved."""
-
-    device_id: str
-    instances: list[CodeServerInstance] = Field(default_factory=list)

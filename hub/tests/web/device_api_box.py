@@ -62,6 +62,9 @@ class BoxRegistry:
             return ManagedDevice(id=device_id, link_mac=device_id[5:])
         return None
 
+    def all_stored(self) -> list:
+        return [BoxRegistry.device]
+
     def adopt(self, device_id: str) -> ManagedDevice:
         if device_id.startswith("scan:"):
             BoxRegistry.adopted = ManagedDevice(id="adopted-id", link_mac=device_id[5:])

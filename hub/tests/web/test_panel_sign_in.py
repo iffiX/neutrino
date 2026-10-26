@@ -26,7 +26,9 @@ from neutrino_hub.web.panel_sign_in import (
     split_token,
 )
 
-COOKIE = "neutrino_session_8080"
+# A loopback sign-in rides the panel cookie named by the hub; this test box
+# has no identity file, so the hub part is empty.
+COOKIE = "neutrino_panel_"
 PASSWORD = "panel-password"  # scan: allow
 
 

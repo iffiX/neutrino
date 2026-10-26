@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.channel.sessions import ChannelSession
+from neutrino_hub.modules.channel.legacy_sessions import LegacyChannelSession
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -44,6 +44,7 @@ from neutrino_hub.web.routers.hub import device as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from tests.conftest import (
     FakeChannelSessions,
+    StubPublishedServices,
     StubDesiredStates,
     lan_entry,
     network_config,
@@ -85,7 +86,7 @@ class ListRegistry:
 
     device: ManagedDevice
 
-    def merged(self, discovered: list) -> list:
+    def all_stored(self) -> list:
         return [ListRegistry.device]
 
     def get(self, device_id: str):
@@ -122,6 +123,7 @@ class ListRuntime:
         self.agent_sessions = FakeChannelSessions()
         self.agent_update_sessions = {}
         self.desired_states = StubDesiredStates()
+        self.published_services = StubPublishedServices()
         self.network_config = _EmptyNetwork()
 
     def network(self):
@@ -144,7 +146,6 @@ def listed(monkeypatch):
         client=DeviceClientInfo(token_sha256="t" * 64),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", ListRegistry)
-    monkeypatch.setattr(devices_router, "LanScanner", FakeScanner)
     app = FastAPI()
     app.include_router(devices_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -164,14 +165,6 @@ def test_a_device_carries_its_id_and_the_facts_its_agent_reported(listed):
     assert device["mac_addresses"] == [LINK_MAC, "11:22:33:44:55:66"]
     assert device["link_mac"] == LINK_MAC
     assert "mac_address" not in device
-
-
-def test_the_scan_covers_what_the_network_exposes_on_the_addresses_held_now(listed):
-    client, runtime = listed
-
-    assert client.post(f"{DEVICE_PATH}/scan").status_code == 200
-    assert FakeScanner.built["network"] is runtime.network()
-    assert FakeScanner.built["read_held"] is device_held_addresses
 
 
 def test_a_managed_device_carries_the_platform_its_agent_reported(listed):
@@ -229,8 +222,9 @@ def test_renaming_a_device_keeps_its_platform(listed):
 
     answer = client.post(SET_PATH, json={"device_id": DEVICE, "name": "renamed"}).json()
 
-    assert answer["name"] == "renamed"
-    assert answer["client"]["platform_os"] == "linux"
+    (row,) = answer["devices"]
+    assert row["name"] == "renamed"
+    assert row["client"]["platform_os"] == "linux"
 
 
 def test_the_version_and_the_stamp_come_from_the_session_registry(listed):
@@ -259,9 +253,9 @@ def test_a_device_not_seen_since_the_panel_started_has_no_version_or_stamp(liste
     assert device["client"]["is_version_mismatched"] is False
 
 
-def update_session() -> ChannelSession:
+def update_session() -> LegacyChannelSession:
     """The channel of an agent of 0.5 admitted for its own update alone."""
-    return ChannelSession(
+    return LegacyChannelSession(
         key=DEVICE,
         role="agent",
         websocket=None,
@@ -358,89 +352,10 @@ def test_the_ssh_block_carries_its_references_and_no_password_field(listed):
 # --- the desktop the machine says it is sharing ---
 
 
-def test_a_device_sharing_its_desktop_carries_the_share_it_declared(listed):
-    client, runtime = listed
-    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "installed"}}
-    runtime.device_shares.declare(
-        device_id=DEVICE,
-        share_id="s1",
-        hostname="xenode",
-        host="192.168.100.2",
-        port=21118,
-        attention="rdp_nobody_seated",
-        account="pat",
-        connected_count=2,
-    )
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["rdp"] == {
-        "is_shared": True,
-        "account": "pat",
-        "port": 21118,
-        "attention": "rdp_nobody_seated",
-        "connected_count": 2,
-        "is_available": True,
-        "is_enabled": False,
-    }
-
-
-def test_a_device_sharing_nothing_says_so_without_a_port_or_an_account(listed):
-    client, runtime = listed
-    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "installed"}}
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["rdp"] == {
-        "is_shared": False,
-        "account": "",
-        "port": 0,
-        "attention": "",
-        "connected_count": 0,
-        "is_available": True,
-        "is_enabled": False,
-    }
-
-
-def test_a_package_built_without_the_host_reads_unavailable(listed):
-    """Only a machine reporting the row absent says so. One nobody has heard
-    from says nothing either way, and the card stands as it always did."""
-    client, runtime = listed
-    runtime.device_modules[DEVICE] = {"rustdesk": {"state": "absent"}}
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["rdp"]["is_available"] is False
-
-    runtime.device_modules[DEVICE] = {}
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["rdp"]["is_available"] is True
-
-
-def test_another_machines_share_is_not_shown_on_this_device(listed):
-    client, runtime = listed
-    runtime.device_shares.declare(
-        device_id="another-device",
-        share_id="s2",
-        hostname="other",
-        host="192.168.100.9",
-        port=21118,
-        account="sam",
-    )
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["rdp"]["is_shared"] is False
-
-
-# --- the ssh block: credential references stored and echoed, never a secret ---
-
-
 class SshRuntime:
     def __init__(self):
         self.events = PanelEventBus()
+        self.published_services = StubPublishedServices()
         self.device_metrics = {}
         self.device_address = {}
         self.device_platform = {}
@@ -489,7 +404,7 @@ def test_valid_references_are_stored_and_echoed(ssh_api):
     saved = annotate(client, device_id, {"auth": "password", "login_id": login_id})
 
     assert saved.status_code == 200
-    view = saved.json()["ssh"]
+    view = saved.json()["devices"][0]["ssh"]
     assert view["login_id"] == login_id
     assert "password" not in view
     assert "sudo_password_id" not in view
@@ -515,7 +430,7 @@ def test_a_key_reference_is_stored_and_named(ssh_api):
     saved = annotate(client, device_id, {"auth": "key", "key_id": key_id})
 
     assert saved.status_code == 200
-    view = saved.json()["ssh"]
+    view = saved.json()["devices"][0]["ssh"]
     assert view["key_id"] == key_id
     assert view["key_name"] == "a key"
     assert view["login_id"] is None
@@ -992,7 +907,7 @@ def hub_carries_a_package(tmp_path, monkeypatch):
         "channel_urls",
         lambda runtime: ["https://192.168.100.1:8443"],
     )
-    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", lambda: "ab" * 32)
+    monkeypatch.setattr(channel_addresses, "read_public_key", lambda: "ab" * 32)
 
 
 def install(client, device_id: str, **fields):
@@ -1539,9 +1454,7 @@ def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypat
 @pytest.fixture
 def box_api(monkeypatch):
     client, runtime = device_box(monkeypatch, devices_router)
-    monkeypatch.setattr(
-        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
-    )
+    monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
     with client:
         yield client, runtime
 
@@ -1617,19 +1530,6 @@ def test_an_id_no_device_has_is_refused(box_api, device_id):
     assert response.status_code == 404
 
 
-def test_renaming_a_scan_row_answers_the_device_it_became(box_api):
-    client, _ = box_api
-
-    answer = client.post(
-        SET_PATH, json={"device_id": "scan:aa:bb:cc:dd:ee:09", "name": "printer"}
-    )
-
-    assert answer.status_code == 200
-    assert answer.json()["id"] == "adopted-id"
-    assert answer.json()["name"] == "printer"
-    assert answer.json()["link_mac"] == "aa:bb:cc:dd:ee:09"
-
-
 def test_an_unknown_remote_desktop_product_is_refused_at_once(box_api):
     """`set_password_stream` is an async generator, so calling it runs none of
     its body: the refusal it documents used to surface minutes later as a
@@ -1657,7 +1557,8 @@ def test_picking_module_tabs_stores_them_on_the_row_and_echoes_them(box_api):
     )
 
     assert answer.status_code == 200
-    assert answer.json()["shown_module"] == ["samba", "zfs"]
+    (row,) = answer.json()["devices"]
+    assert row["shown_module"] == ["samba", "zfs"]
     assert BoxRegistry.device.shown_modules == ["samba", "zfs"]
     assert BoxRegistry.device.name == "testbox"
 
@@ -1668,7 +1569,7 @@ def test_a_set_that_names_no_tabs_leaves_them_as_they_are(box_api):
 
     answer = client.post(SET_PATH, json={"device_id": DEVICE, "name": "renamed"})
 
-    assert answer.json()["shown_module"] == ["gitea"]
+    assert answer.json()["devices"][0]["shown_module"] == ["gitea"]
 
 
 def test_renaming_a_device_keeps_its_monitor_alive(box_api):
@@ -1678,10 +1579,12 @@ def test_renaming_a_device_keeps_its_monitor_alive(box_api):
     runtime.agent_sessions.online.add(DEVICE)
     runtime.device_metrics[DEVICE] = {"cpu_percent": 12.5, "memory_percent": 40.0}
 
-    answer = client.post(SET_PATH, json={"device_id": DEVICE, "name": "renamed"}).json()
+    (row,) = client.post(
+        SET_PATH, json={"device_id": DEVICE, "name": "renamed"}
+    ).json()["devices"]
 
-    assert answer["name"] == "renamed"
-    assert answer["client"]["cpu_percent"] == 12.5
+    assert row["name"] == "renamed"
+    assert row["client"]["metrics"]["cpu_percent"] == 12.5
 
 
 def test_a_link_that_cannot_be_built_generates_no_ticket(box_api, monkeypatch):
@@ -1766,7 +1669,7 @@ def test_the_link_is_one_shell_safe_token(box_api, monkeypatch):
     payload = json.loads(zlib.decompress(base64.urlsafe_b64decode(padded)))
     assert payload["urls"] == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
     assert payload["token"] == answer["token"]
-    assert payload["fp"] == FINGERPRINT
+    assert payload["key"] == FINGERPRINT
     assert payload["role"] == "agent"
     assert "qr_link" not in answer
 

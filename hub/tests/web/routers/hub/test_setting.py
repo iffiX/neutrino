@@ -35,6 +35,7 @@ from neutrino_hub.exceptions import (
     AgentOfflineError,
     DownloadFailedError,
     NetworkApplyError,
+    VaultLockedError,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
@@ -47,6 +48,7 @@ from neutrino_hub.web.auth import SessionStore, hash_password
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.routers.hub import auth as auth_router
+from neutrino_hub.modules.transport import ops as transport_ops
 from neutrino_hub.web.routers.hub import setting as settings_router
 from neutrino_hub.web.routers.hub.setting import _checked_member, _renamed_member
 from tests.conftest import FakeChannelSessions
@@ -259,7 +261,6 @@ def test_an_agent_port_change_pushes_every_online_peer_before_the_restart(
         ("push", "device-one", new_urls),
         ("push", "client-one", new_urls),
         "converge",
-        "restarted",
     ]
 
 
@@ -280,7 +281,6 @@ def test_a_peer_that_cannot_take_its_state_holds_up_no_move(port_client):
     assert happened == [
         ("push", "client-one", ["https://192.168.100.1:9443"]),
         "converge",
-        "restarted",
     ]
 
 
@@ -294,7 +294,7 @@ def test_a_failed_converge_step_still_restarts_on_the_new_agent_port(port_client
 
     assert response.status_code == 200
     assert stored["agent_listen_port"] == 9443
-    assert happened == ["converge", "restarted"]
+    assert happened == ["converge"]
 
 
 def test_the_agent_port_it_is_already_on_moves_nothing(port_client):
@@ -424,7 +424,7 @@ def test_the_panels_own_ports_can_trade_places(port_client):
     assert response.status_code == 200
     assert stored["listen_port"] == 8443
     assert stored["agent_listen_port"] == 8080
-    assert happened == ["converge", "restarted"]
+    assert happened == ["converge"]
 
 
 def test_a_save_that_moves_no_port_reads_no_listening_port(port_client):
@@ -998,9 +998,18 @@ class _FakeTasks:
         return SimpleNamespace(id="restore-task")
 
 
+class _FakeChannel:
+    commands: list = []
+
+    async def send_command(self, command, **fields):
+        _FakeChannel.commands.append(command)
+        return {}
+
+
 class _FakeRuntime:
     def __init__(self):
         self.tasks = _FakeTasks()
+        self.channel = _FakeChannel()
 
 
 def seed_config(config_dir) -> str:
@@ -1096,6 +1105,65 @@ def test_a_backup_carries_the_wrapped_key_and_no_key_file(client):
     store = json.loads(contents["config/credentials/vault.json"])
     assert "wrapped_key" in store
     assert not any(name.endswith("vault.key") for name in contents)
+
+
+def transport_key(monkeypatch, config_dir) -> bytes:
+    """The transport's key pair under this box's config, the private half 32 bytes."""
+    key_dir = config_dir / "transport"
+    key_dir.mkdir(exist_ok=True)
+    private = bytes(range(32))
+    (key_dir / "static_key").write_bytes(private)
+    (key_dir / "public_key").write_text("ab" * 32)
+    monkeypatch.setattr(transport_ops, "TRANSPORT_KEY_DIR", key_dir)
+    monkeypatch.setattr(transport_ops, "has_account", lambda: False)
+    return private
+
+
+def test_a_backup_carries_the_static_key_sealed_and_not_in_the_clear(
+    client, monkeypatch
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    private = transport_key(monkeypatch, config_dir)
+
+    contents = archive_contents(download_backup(opened))
+
+    assert "config/transport/static_key" not in contents
+    assert "config/transport/public_key" in contents
+    sealed = json.loads(contents["config/transport/static_key.sealed"])
+    assert set(sealed) >= {"nonce", "data"}
+    assert private not in contents["config/transport/static_key.sealed"]
+
+
+def test_a_backup_is_refused_while_the_vault_is_locked_and_a_key_exists(
+    client, monkeypatch
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    transport_key(monkeypatch, config_dir)
+    (config_dir.parent / "state" / "vault.key").unlink()
+
+    with pytest.raises(VaultLockedError):
+        opened.post("/api/hub/setting/backup")
+
+
+def test_a_restore_puts_the_static_key_back_and_reloads_the_transports_keys(
+    client, monkeypatch
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    private = transport_key(monkeypatch, config_dir)
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+    _FakeChannel.commands.clear()
+
+    response = upload_restore(opened, archive_bytes, PASSPHRASE)
+
+    assert response.status_code == 200, response.text
+    assert (config_dir / "transport" / "static_key").read_bytes() == private
+    assert not (config_dir / "transport" / "static_key.sealed").exists()
+    assert not (config_dir / "transport" / "public_key").exists()
+    assert _FakeChannel.commands == ["keys_reload"]
 
 
 def test_a_backup_restores_the_vault_it_left_with(client):

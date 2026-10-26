@@ -98,7 +98,7 @@ def create_enrollment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": CLIENT_CODE_NAME_REQUIRED, "params": {}},
         )
-    urls, fingerprint = enrollment_link_parts(runtime)
+    urls, key = enrollment_link_parts(runtime)
     registry = ClientRegistry()
     overlays = []
     if CLIENT_PERMISSION_OVERLAY in registry.default_permission():
@@ -110,7 +110,7 @@ def create_enrollment(
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
         link=enrollment_link(
-            urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlays=overlays
+            urls, token, key, role=CHANNEL_ROLE_CLIENT, overlays=overlays
         ),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         expires_in_s=ENROLLMENT_TTL_S,

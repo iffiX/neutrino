@@ -45,8 +45,14 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.clients.ai_keys import gateway_models
-from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.desired_state import (
+    DesiredStateStore,
+    machine_apps,
+)
+from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+from neutrino_hub.modules.services.apps import app_slugs, machine_slugs
+from neutrino_hub.modules.services.constants import SERVICES_MACHINE_SLUG_FALLBACK
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
@@ -57,7 +63,7 @@ from neutrino_hub.modules.overlay.ops import (
     overlay_parts,
     recorded_engine_devices,
 )
-from neutrino_hub.modules.frp.config import frp_switches, read_frp
+from neutrino_hub.modules.frp.config import read_frp
 from neutrino_hub.modules.frp.constants import FRP_OPENFRP, FRP_VENDORS
 from neutrino_hub.modules.frp.ops import FrpApplier, FrpMonitor, OpenFrpLogin
 from neutrino_hub.modules.overlay.peer_latency import OverlayPeerLatencies
@@ -106,11 +112,20 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.auth import PanelTokenStore, SessionStore, session_secret
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.address_sampler import PanelAddressSampler
-from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.channel_addresses import channel_urls, own_agent_urls
 from neutrino_hub.web.events import PanelEventBus
-from neutrino_hub.web.frp_listeners import FrpLoopbackListeners
 from neutrino_hub.web.link_sampler import PanelLinkSampler
+from neutrino_hub.web.release_sampler import PanelReleaseSampler
+from neutrino_hub.modules.channel.legacy_channel import settle_legacy_switch
+from neutrino_hub.modules.channel.local_channel import LocalChannelClient
+from neutrino_hub.modules.transport.ops import (
+    TransportApplier,
+    control_socket_address,
+    settings_or_empty,
+    transport_secret,
+)
+from neutrino_hub.web.shell_bridge import device_name
+from neutrino_hub.web.identity import hub_name
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.exceptions import (
@@ -123,10 +138,8 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
 )
-from neutrino_hub.modules.channel.sessions import (
-    ChannelSession,
-    ChannelSessionRegistry,
-)
+from neutrino_hub.modules.channel.legacy_sessions import LegacyChannelSession
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 
@@ -181,19 +194,34 @@ class PanelRuntime:
         # Runtime only: a share is the machine's own word, refreshed every
         # beat, and a hub restart simply waits for the next one.
         self.device_shares = DeviceShareRegistry()
-        # Every managed machine's live socket, and the streams on it.
+        # Every managed machine's live session on the transport.
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
         # The channel of each machine whose agent of 0.5 is admitted for its
         # own update alone, by device id, kept after its socket ends until
-        # the agent says hello with this hub's number.
-        self.agent_update_sessions: dict[str, ChannelSession] = {}
+        # the agent knocks with this hub's number.
+        self.agent_update_sessions: dict[str, LegacyChannelSession] = {}
+        # The agents' replies to the persist and stop_session frames the hub
+        # relayed, by the request it sent. Imported here: the handler reads
+        # the routes' helpers, which read this module for the runtime's type.
+        from neutrino_hub.web.channel_serve import ChannelControlHandler
+        from neutrino_hub.web.channel_shell import SessionReplyBook
+
+        self.channel_replies = SessionReplyBook()
         # The owner and the sharing of each terminal session as the hub
         # stamped and relayed them, ahead of the machines' reports.
         self.shell_ledger = ShellSessionLedger()
-        # Every client program's live socket, keyed by client id.
+        # Every client program's live session, keyed by client id.
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_sessions.on_presence_change = self._publish_clients
+        # The local channel to the transport, which holds every session and
+        # asks here before it admits a peer or opens a stream. The serving
+        # loop runs it; a CLI run builds a runtime and never dials.
+        self.channel = LocalChannelClient(
+            address=control_socket_address,
+            secret_of=transport_secret,
+            handler=ChannelControlHandler(self),
+        )
         # The scope each client's socket arrived from, settled at its hello;
         # its list and its gateway URL are resolved for it.
         self.client_scope: dict[str, HostScope] = {}
@@ -209,6 +237,9 @@ class PanelRuntime:
         # What each device should host, one directory per device under
         # config/, composed into the state its agent applies.
         self.desired_states = DesiredStateStore()
+        # The publishers' feeds as last read: the versions a machine may
+        # choose for each module.
+        self.module_releases = ModuleReleaseStore()
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=self.served_models,
@@ -218,6 +249,8 @@ class PanelRuntime:
             device_addresses=self.device_address,
             device_interfaces=self.device_interfaces,
             desired_states=self.desired_states,
+            device_names=self.device_names,
+            hub_name=hub_name,
             on_fingerprint_change=self._services_changed,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
@@ -227,7 +260,9 @@ class PanelRuntime:
         # The bytes a module's ``package`` stream serves, fetched once and
         # kept; the agent installs them by the recipe its state carries.
         self.agent_modules = AgentModuleCache(
-            named_modules=self.desired_states.named_modules
+            named_modules=self.desired_states.named_modules,
+            named_versions=self.desired_states.named_versions,
+            releases=self.module_releases,
         )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by device id. Runtime only: these are
@@ -251,8 +286,10 @@ class PanelRuntime:
         # The hostname each agent last reported, keyed by device id. Runtime
         # only, like the metrics.
         self.device_hostname: dict[str, str] = {}
-        # The human accounts each agent last reported, keyed by device id.
+        # The human accounts each agent last reported, keyed by device id,
+        # and each one's home and login shell.
         self.device_accounts: dict[str, list] = {}
+        self.device_account_details: dict[str, dict] = {}
         # The scope each device's socket arrived from, settled at its hello;
         # the drawer's services view resolves the list for it.
         self.device_scope: dict[str, HostScope] = {}
@@ -261,26 +298,16 @@ class PanelRuntime:
         self.device_last_error: dict[str, dict] = {}
         # The open enrolment tickets, read back from the state root.
         self.enrollments = ChannelTicketRegistry()
-        # The agent port's open handshakes, admitted sockets and failed
-        # admissions, over the whole port.
+        # The legacy listener's open handshakes and admitted sockets, and the
+        # failed admissions of both listeners, which pause join.
         self.channel_port = ChannelPortGuard()
-        # Where the relay stands: its process and the check of its public
+        # Where the relay stands: its process and the probe of its public
         # address. The application starts it; a CLI run never wants it.
-        self.relay_monitor = OverlayRelayMonitor(
-            controller=self.services, fingerprint_of=certificate_fingerprint
-        )
-        # The channel on each frp vendor's loopback listener, opened by the
-        # converge step while its way in is on; the serving loop attaches it.
-        self.frp_listeners = FrpLoopbackListeners()
-        # Where each frp vendor stands: its frpc and the check of its public
+        self.relay_monitor = OverlayRelayMonitor(controller=self.services)
+        # Where each frp vendor stands: its frpc and the probe of its public
         # address. The application starts them; a CLI run never wants them.
         self.frp_monitors = {
-            vendor: FrpMonitor(
-                vendor=vendor,
-                controller=self.services,
-                fingerprint_of=certificate_fingerprint,
-                is_listener_taken=self.frp_listeners.is_taken,
-            )
+            vendor: FrpMonitor(vendor=vendor, controller=self.services)
             for vendor in FRP_VENDORS
         }
         # OpenFrp's browser login, one at a time; a login that stores an
@@ -290,6 +317,7 @@ class PanelRuntime:
         # it is sampled. The application starts it; a CLI run builds a runtime
         # and never wants the thread.
         self.link_sampler = PanelLinkSampler(runtime=self)
+        self.release_sampler = PanelReleaseSampler(store=self.module_releases)
         # The channel's own address set moves the same way, and every peer
         # holds a copy; sampled, and pushed to both roles when it moved.
         self.address_sampler = PanelAddressSampler(runtime=self)
@@ -753,7 +781,18 @@ class PanelRuntime:
                         "params": {"detail": command_failure_text(error)},
                     }
                 )
-            self.frp_listeners.follow(frp_switches())
+            try:
+                transport_change = self.apply_transport()
+                if transport_change:
+                    changes.append({"code": transport_change, "params": {}})
+            except (subprocess.SubprocessError, OSError, ValueError) as error:
+                failures.append(f"transport: {command_failure_text(error)}")
+                failed.append(
+                    {
+                        "code": "transport_apply_failed",
+                        "params": {"detail": command_failure_text(error)},
+                    }
+                )
             for vendor in FRP_VENDORS:
                 try:
                     self.apply_frp(vendor)
@@ -776,6 +815,49 @@ class PanelRuntime:
             raise NetworkApplyError("; ".join(failures), failed)
         self.is_config_dirty = False
         return switcher.changes + changes
+
+    def apply_transport(self, *, is_restarted: bool = False) -> str:
+        """Make the stored transport settings the ones that run.
+
+        Args:
+            is_restarted: Whether a running transport is started again anyway.
+
+        Returns:
+            ``transport_started`` or ``transport_restarted``, empty when
+            nothing changed.
+
+        Raises:
+            OSError: If a file cannot be written.
+            subprocess.SubprocessError: If the system refuses the unit.
+        """
+        note = TransportApplier(controller=self.services).apply(
+            self.settings, is_restarted=is_restarted
+        )
+        if note:
+            LOGGER.info("transport: %s", note)
+        return note
+
+    def settle_legacy_channel(self) -> bool:
+        """Turn the legacy listener off once no device row names a 0.5 agent.
+
+        Returns:
+            True when the switch moved and the transport was told.
+        """
+        if not settle_legacy_switch(DeviceRegistry().all_stored()):
+            return False
+        self.settings = settings_or_empty()
+        try:
+            self.apply_transport()
+        except (subprocess.SubprocessError, OSError, ValueError) as error:
+            LOGGER.warning("legacy listener: %s", command_failure_text(error))
+        return True
+
+    def device_names(self) -> dict:
+        """Device id to what the hub calls the machine, for every stored device."""
+        return {
+            device.id: device_name(self, device)
+            for device in DeviceRegistry().all_stored()
+        }
 
     def apply_relay(self, *, is_restarted: bool = False) -> str:
         """Make the stored relay the one that runs.
@@ -862,8 +944,21 @@ class PanelRuntime:
             is_hub_machine=self.is_hub_machine(key),
             ai_models=ai_models,
             retry_marks=DeviceRetryMarks().marks(key),
+            account_details=self.account_details(key),
+            machine_slug=self.machine_slug(key),
+            releases=self.module_releases,
         )
         return state_hash, desired
+
+    def account_details(self, key: str) -> dict:
+        """Account to ``{home, shell}`` as the device last reported them."""
+        return dict(self.device_account_details.get(key, {}))
+
+    def machine_slug(self, key: str) -> str:
+        """The slug of one device's name, told apart from the other machines'."""
+        return machine_slugs(self.device_names()).get(
+            key, SERVICES_MACHINE_SLUG_FALLBACK
+        )
 
     def module_agent_config(self, key: str, name: str, stored: dict) -> dict:
         """One module's configuration as the device's state would carry it.
@@ -887,6 +982,9 @@ class PanelRuntime:
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
             is_hub_machine=self.is_hub_machine(key),
+            account_details=self.account_details(key),
+            machine_slug=self.machine_slug(key),
+            app_slug_of=app_slugs(machine_apps(self.desired_states, key)),
         )
 
     def _device_urls(self, key: str) -> list:
@@ -954,12 +1052,14 @@ class PanelRuntime:
         self.device_modules.pop(key, None)
         self.device_platform.pop(key, None)
         self.device_accounts.pop(key, None)
+        self.device_account_details.pop(key, None)
         self.device_interfaces.pop(key, None)
         self.device_address.pop(key, None)
         self.device_scope.pop(key, None)
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
+        self.published_services.schedule_refresh()
         update = self.agent_update_sessions.pop(key, None)
         if update is not None and not update.is_closed:
             with contextlib.suppress(StreamRefusedError, RuntimeError):

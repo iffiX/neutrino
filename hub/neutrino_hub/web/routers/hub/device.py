@@ -41,7 +41,6 @@ from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
-from neutrino_hub.modules.devices.lan_scan import LanScanner
 from neutrino_hub.modules.devices.ssh_ops import (
     DeviceSshOperator,
     SshCredentials,
@@ -69,17 +68,15 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
+    DeviceCountView,
     DeviceAddRequest,
     DeviceAgentInstallRequest,
     DeviceAnnotation,
     DeviceClientErrorView,
     DeviceClientInfoView,
-    DeviceGpuView,
     DeviceListView,
     DeviceOnlineListView,
     DeviceOnlineView,
-    DeviceProcessView,
-    DeviceRdpView,
     DeviceEnrollmentRequest,
     DeviceEnrollmentView,
     DeviceInstallOutputView,
@@ -120,34 +117,16 @@ ENROLLMENT_LINK_ZLIB_LEVEL = 9
 
 @router.get("", response_model=DeviceListView)
 def list_devices(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
-    """Read the known devices cheaply, without an active sweep.
-
-    Reads only the kernel neighbour table plus stored annotations and live agent
-    metrics, so the panel can poll this every few seconds for auto-refresh
-    without flooding the LAN with arp-scan broadcasts. The explicit scan is a
-    separate endpoint.
+    """Read every managed machine, one row each, as the Agents page draws it.
 
     Args:
         runtime: The shared runtime.
 
     Returns:
-        Stored devices plus whatever the neighbour table remembers.
+        The stored devices with what each agent last reported, and the
+        count for the title's badge.
     """
-    return _device_list(runtime, is_active=False)
-
-
-@router.post("/scan", response_model=DeviceListView)
-def scan(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
-    """Actively sweep the exposed IPv4 segments with arp-scan and return
-    what answered.
-
-    Args:
-        runtime: The shared runtime.
-
-    Returns:
-        Every device, with the ones that answered the sweep marked online.
-    """
-    return _device_list(runtime, is_active=True)
+    return _device_list(runtime)
 
 
 @router.get("/online", response_model=DeviceOnlineListView)
@@ -186,14 +165,21 @@ def _hub_first(row: DeviceOnlineView) -> tuple:
     return (not row.is_hub, row.name.lower())
 
 
-def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
-    scanner = LanScanner(network=runtime.network(), read_held=device_held_addresses)
-    registry = DeviceRegistry()
+def _device_list(runtime: PanelRuntime) -> DeviceListView:
+    """Every stored device as a row, the hub's own machine first, and the count."""
+    rows = [_device_view(runtime, device) for device in DeviceRegistry().all_stored()]
+    own_machine = machine_id()
+    rows.sort(
+        key=lambda row: (
+            not (bool(own_machine) and row.machine_id == own_machine),
+            (row.name or "").lower(),
+        )
+    )
     return DeviceListView(
-        devices=[
-            _device_view(runtime, device)
-            for device in registry.merged(scanner.scan(is_active=is_active))
-        ]
+        devices=rows,
+        count=DeviceCountView(
+            total=len(rows), online=sum(1 for row in rows if row.is_agent_online)
+        ),
     )
 
 
@@ -243,58 +229,22 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
             view.client.last_error = DeviceClientErrorView(
                 code=error.get("code", ""), params=error.get("params", {})
             )
-        view.client.rdp = _rdp_view(runtime, key)
     return view
 
 
-def _rdp_view(runtime: PanelRuntime, key: str) -> DeviceRdpView:
-    """What one machine last said about sharing its desktop.
-
-    Args:
-        runtime: The shared runtime, which holds every declared share.
-        key: The device.
-
-    Returns:
-        The share as the machine declared it, and whether its agent package
-        carries the host at all. Only a machine reporting the host absent
-        reads unavailable: one nobody has heard from says nothing either way.
-    """
-    reported = (runtime.device_modules.get(key) or {}).get(DEVICE_RDP_MODULE)
-    state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
-    view = DeviceRdpView(
-        is_available=state != DEVICE_MODULE_STATE_ABSENT,
-        is_enabled=runtime.desired_states.remote_desktop(key)["is_enabled"],
-    )
-    for share in runtime.device_shares.live():
-        if share.device_id != key:
-            continue
-        view.is_shared = True
-        view.account = share.account
-        view.port = share.port
-        view.attention = share.attention
-        view.connected_count = share.connected_count
-        break
-    return view
-
-
-@router.post("/set", response_model=DeviceView)
+@router.post("/set", response_model=DeviceListView)
 def annotate(
     annotation: DeviceAnnotation,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> DeviceView:
-    """Name a device, give it SSH credentials, or pick its module tabs.
-
-    A scan row named here becomes a stored device under an id of its own.
+) -> DeviceListView:
+    """Name a device, pick its icon, give it SSH credentials, or pick its module tabs.
 
     Args:
         annotation: The device, and the fields to change.
         runtime: The shared runtime.
 
     Returns:
-        The device after the change, with no secret echoed back. It carries the
-        metrics its agent last reported, like every other view of a device:
-        built without them, the tile the page redraws from this reads as a
-        machine that has gone offline until the next poll.
+        The device list after the change, with no secret echoed back.
 
     Raises:
         HTTPException: 404 when no device has the id, 400 when the SSH
@@ -304,13 +254,16 @@ def annotate(
     registry = DeviceRegistry()
     _require_device(registry, device_id)
     payload = annotation.model_dump(exclude_unset=True, exclude={"device_id"})
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = str(payload["name"]).strip() or None
     if "ssh" in payload:
         payload["ssh"] = _store_ssh_secrets(annotation.ssh)
     if "shown_module" in payload:
         payload["shown_modules"] = payload.pop("shown_module") or []
-    device = registry.annotate(device_id, payload)
+    registry.annotate(device_id, payload)
     runtime.events.publish(WEB_EVENT_DEVICES)
-    return _device_view(runtime, device)
+    runtime.published_services.schedule_refresh()
+    return _device_list(runtime)
 
 
 @router.post("/remove")
@@ -517,21 +470,21 @@ def generate_enrollment_link(
     Raises:
         HTTPException: 400 when no served network has an address, so there is
             nothing for a machine to reach the panel at; 409 with
-            ``{"code": "agent_tls_missing"}`` when the channel has no
-            certificate to pin.
+            ``{"code": "transport_key_missing"}`` while the transport has
+            made no key for the machine to pin.
         OSError: When the ticket file cannot be written.
     """
-    urls, fingerprint = enrollment_link_parts(runtime, is_hub=is_hub)
+    urls, key = enrollment_link_parts(runtime, is_hub=is_hub)
     token, _ = runtime.enrollments.make(
         kind=CHANNEL_ROLE_AGENT, name=name.strip(), device_id=device_id
     )
-    return enrollment_link(urls, token, fingerprint), token
+    return enrollment_link(urls, token, key), token
 
 
 def enrollment_link(
     urls: list,
     token: str,
-    fingerprint: str,
+    key: str,
     *,
     role: str = CHANNEL_ROLE_AGENT,
     overlays: "list | None" = None,
@@ -542,7 +495,7 @@ def enrollment_link(
     Args:
         urls: The agent channel's URLs.
         token: The ticket.
-        fingerprint: The certificate fingerprint the program pins.
+        key: The hub's static public key the program pins.
         role: Who the link is for, ``agent`` or ``client``.
         overlays: The join material of every running overlay a client link
             carries, the preferred first; a client link without it carries an
@@ -551,7 +504,7 @@ def enrollment_link(
     Returns:
         The ``neutrino://enroll/`` link.
     """
-    body = enrollment_body(urls, token, fingerprint, role=role, overlays=overlays)
+    body = enrollment_body(urls, token, key, role=role, overlays=overlays)
     text = json.dumps(body, separators=(",", ":")).encode()
     compressed = zlib.compress(text, ENROLLMENT_LINK_ZLIB_LEVEL)
     payload = base64.urlsafe_b64encode(compressed).decode().rstrip("=")
@@ -561,7 +514,7 @@ def enrollment_link(
 def enrollment_body(
     urls: list,
     token: str,
-    fingerprint: str,
+    key: str,
     *,
     role: str = CHANNEL_ROLE_AGENT,
     overlays: "list | None" = None,
@@ -571,14 +524,14 @@ def enrollment_body(
     Args:
         urls: The agent channel's URLs.
         token: The ticket.
-        fingerprint: The certificate fingerprint the program pins.
+        key: The hub's static public key the program pins.
         role: Who the link is for, ``agent`` or ``client``.
         overlays: The join material a client link carries.
 
     Returns:
-        ``{urls, token, fp, role}``, with ``overlays`` for a client.
+        ``{urls, token, key, role}``, with ``overlays`` for a client.
     """
-    body = {"urls": list(urls), "token": token, "fp": fingerprint, "role": role}
+    body = {"urls": list(urls), "token": token, "key": key, "role": role}
     if role == CHANNEL_ROLE_CLIENT:
         body["overlays"] = list(overlays or [])
     return body
@@ -1491,7 +1444,6 @@ def _to_view(
         )
     client_view = None
     if device.is_managed:
-        latest = metrics or {}
         client_view = DeviceClientInfoView(
             is_managed=True,
             is_online=is_agent_online,
@@ -1500,18 +1452,7 @@ def _to_view(
             is_version_mismatched=_is_version_mismatched(version) and not is_updating,
             last_seen=last_seen,
             last_report_at=last_report_at,
-            cpu_percent=latest.get("cpu_percent"),
-            memory_percent=latest.get("memory_percent"),
-            disk_percent=latest.get("disk_percent"),
-            temperature_c=latest.get("temperature_c"),
-            uptime_s=latest.get("uptime_s"),
-            load_average=latest.get("load_average") or [],
-            cpu_core_percents=latest.get("cpu_core_percents") or [],
-            gpus=[DeviceGpuView(**gpu) for gpu in latest.get("gpus") or []],
-            processes=[
-                DeviceProcessView(**process)
-                for process in latest.get("processes") or []
-            ],
+            metrics=dict(metrics or {}),
         )
     return DeviceView(
         id=device.id,

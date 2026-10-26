@@ -80,9 +80,7 @@ def api(monkeypatch, tmp_path):
         "channel_urls",
         lambda runtime: ["https://192.168.100.1:8443"],
     )
-    monkeypatch.setattr(
-        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
-    )
+    monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
     runtime = FakeRuntime()
     monkeypatch.setattr(
         "neutrino_hub.web.channel_overlay.overlay_materials",
@@ -133,7 +131,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
     assert response.status_code == 200
     body = response.json()
     payload = decoded_link(body["link"])
-    assert payload["role"] == "client" and payload["fp"] == FINGERPRINT
+    assert payload["role"] == "client" and payload["key"] == FINGERPRINT
     assert payload["urls"] == ["https://192.168.100.1:8443"]
     ticket = runtime.enrollments.get(payload["token"])
     rows = client.get("/api/hub/client").json()["clients"]
@@ -284,11 +282,12 @@ def test_the_list_prefers_the_live_session_over_the_record(api):
     )
 
     async def attach():
-        await runtime.client_sessions.attach(
+        runtime.client_sessions.attach(
             ChannelSession(
                 key=client_id,
                 role=CHANNEL_ROLE_CLIENT,
-                websocket=None,
+                session_id="s-1",
+                channel=None,
                 loop=asyncio.get_running_loop(),
                 software="neutrino_client/0.2.0",
             )
@@ -309,6 +308,7 @@ def test_the_list_prefers_the_live_session_over_the_record(api):
 ALL_KINDS = [
     "web",
     "port",
+    "ssh",
     "ai",
     "file",
     "rdp",
@@ -350,14 +350,14 @@ def test_an_unknown_kind_is_a_coded_400(api):
     client_id = ClientRegistry().create("alice")
 
     default = client.post(
-        "/api/hub/client/default_permission/set", json={"kinds": ["web", "ssh"]}
+        "/api/hub/client/default_permission/set", json={"kinds": ["web", "vnc"]}
     )
     own = client.post(
         "/api/hub/client/permission/set",
         json={"client_id": client_id, "kinds": ["telnet"]},
     )
 
-    for reply, kind in ((default, "ssh"), (own, "telnet")):
+    for reply, kind in ((default, "vnc"), (own, "telnet")):
         assert reply.status_code == 400
         assert reply.json()["detail"] == {
             "code": "permission_kind_unknown",

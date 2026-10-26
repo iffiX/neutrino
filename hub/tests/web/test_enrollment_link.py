@@ -76,9 +76,7 @@ def _nameless_parts():
 
 @pytest.fixture
 def fingerprinted(monkeypatch):
-    monkeypatch.setattr(
-        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
-    )
+    monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
 
 
 @pytest.fixture
@@ -113,7 +111,7 @@ def test_the_link_points_at_the_agent_port_over_tls(fingerprinted, live_addresse
     assert answer.status_code == 200
     payload = decoded(answer.json()["link"])
     assert payload["urls"] == ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
-    assert payload["fp"] == FINGERPRINT
+    assert payload["key"] == FINGERPRINT
     assert payload["role"] == "agent"
 
 
@@ -241,7 +239,7 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch, live_addre
     def missing():
         raise FileNotFoundError("no certificate")
 
-    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", missing)
+    monkeypatch.setattr(channel_addresses, "read_public_key", missing)
     runtime = FakeRuntime(
         network_config(lan_entry("enp1s0", address="192.168.8.1"), overlays=[])
     )
@@ -251,7 +249,7 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch, live_addre
     )
 
     assert answer.status_code == 409
-    assert answer.json()["detail"] == {"code": "agent_tls_missing", "params": {}}
+    assert answer.json()["detail"] == {"code": "transport_key_missing", "params": {}}
     assert runtime.enrollments.entries() == []
 
 
@@ -281,7 +279,7 @@ def test_a_link_is_the_compact_json_compressed_at_level_9_in_unpadded_base64url(
     body = {
         "urls": urls,
         "token": "Tk_-9",
-        "fp": FINGERPRINT,
+        "key": FINGERPRINT,
         "role": "client",
         "overlays": overlays,
     }
@@ -302,6 +300,6 @@ def test_a_device_link_round_trips_without_overlays():
     assert decoded(link) == {
         "urls": ["https://192.168.8.1:9443"],
         "token": "Tk_-9",
-        "fp": FINGERPRINT,
+        "key": FINGERPRINT,
         "role": "agent",
     }

@@ -2,9 +2,10 @@
 
 One process, two applications: the panel serves its API, grouped as the
 sidebar is under ``/api/hub`` and ``/api/agent``, and the built frontend on
-its HTTP port and its HTTPS port, and the agent channel serves
-``/api/channel`` alone on its own TLS port. Both share one runtime, which is where a ticket the panel
-generates is spent by the peer that joins with it.
+its HTTP port and its HTTPS port, and the legacy listener serves
+``/api/channel`` alone over the agent TLS pair on loopback, for a 0.5
+agent's own update. Both share one runtime, which the transport's local
+channel also drives.
 
 The frontend is a single-page app: any panel path that is not an API route, a
 websocket, or a real file falls through to ``index.html``.
@@ -23,11 +24,13 @@ from neutrino_hub import edition
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.clients.ai_keys import settle_device_keys
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.legacy_files import move_legacy_device_files
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.hub_update.installer import retire_finished_job
 from neutrino_hub.web import ws
-from neutrino_hub.web.agent_port import ChannelRequestLimitMiddleware
+from neutrino_hub.web.legacy_listener import ChannelRequestLimitMiddleware
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
@@ -38,17 +41,15 @@ from neutrino_hub.web.routers import channel
 from neutrino_hub.web.routers.agent import (
     file,
     module,
+    module_account,
     module_gitea,
     module_hermes_webui,
     module_instances,
     module_podman,
-    module_samba,
-    module_ai_tool,
     module_remote_desktop,
-    module_terminal,
+    module_samba,
     module_vscode_terms,
     module_zfs,
-    terminal,
 )
 from neutrino_hub.web.routers.hub import (
     ai,
@@ -96,8 +97,8 @@ API_ROUTERS = (
     setting.authority_router,
     file.router,
     module.router,
+    module_account.router,
     module_samba.router,
-    module_terminal.router,
     module_remote_desktop.router,
     module_gitea.router,
     module_podman.router,
@@ -105,8 +106,6 @@ API_ROUTERS = (
     module_zfs.router,
     *module_instances.ROUTERS.values(),
     module_vscode_terms.router,
-    module_ai_tool.router,
-    terminal.router,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -127,6 +126,8 @@ def create_app() -> FastAPI:
     app.add_middleware(PanelSignInMiddleware, runtime=app.state.runtime)
     app.add_middleware(OriginGuardMiddleware)
     app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
+    _move_legacy_files()
+    _grant_ssh_once()
     _settle_gateway_key()
     _settle_device_keys()
     _retire_update_job()
@@ -141,14 +142,15 @@ def create_app() -> FastAPI:
 
 
 def create_agent_app() -> FastAPI:
-    """Build the agent channel: the ``/api/channel`` routes and nothing else,
-    no API description among them, with each body held to the port's limit.
+    """Build the legacy listener: the ``/api/channel`` routes and nothing
+    else, no API description among them, with each body held to the
+    listener's limit.
 
     Returns:
         The configured application, sharing the panel's runtime.
     """
     app = FastAPI(
-        title="Neutrino Hub Agent Channel",
+        title="Neutrino Hub Legacy Listener",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -239,6 +241,40 @@ def _settle_gateway_key() -> None:
         LOGGER.warning("gateway key not minted: %s", error)
 
 
+def _move_legacy_files() -> None:
+    """Move every machine's 0.5 files into the account layer, at the panel's start.
+
+    A hub upgraded from 0.5 holds each module's accounts inside the module's
+    file; they go into ``accounts.json`` here, once per machine.
+    """
+    try:
+        moved = move_legacy_device_files(
+            DesiredStateStore(),
+            [device.id for device in DeviceRegistry().all_stored()],
+        )
+    except (ValueError, OSError) as error:
+        LOGGER.warning("the 0.5 device files were not moved: %s", error)
+        return
+    if moved:
+        LOGGER.info("devices: the 0.5 files of %s moved", ", ".join(moved))
+
+
+def _grant_ssh_once() -> None:
+    """Add ``ssh`` beside ``terminal`` in every stored permission, once.
+
+    The grant is written at the hub's first 0.6.0 start and marked in the
+    clients file, so a permission the person narrows afterwards stays
+    narrowed (protocol.md, "The codes 0.6.0 adds and removes").
+    """
+    try:
+        granted = ClientRegistry().grant_ssh_once()
+    except (ValueError, OSError) as error:
+        LOGGER.warning("ssh was not granted to the clients: %s", error)
+        return
+    if granted:
+        LOGGER.info("clients: ssh granted beside terminal, once")
+
+
 def _settle_device_keys() -> None:
     """Revoke the device keys no AI tools setting holds on, at the panel's start.
 
@@ -280,10 +316,10 @@ def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
     Each watches something no write announces: what the gateway metered, what
-    the interfaces are doing, and, with the proxy, what every exit node
-    measures. Each
-    publishes an event when its reading moves, so no page has to ask on a
-    timer. The traffic history counts every interface's bytes beside them.
+    the interfaces are doing, what each module's publisher released, and,
+    with the proxy, what every exit node measures. Each publishes an event
+    when its reading moves, so no page has to ask on a timer. The traffic
+    history counts every interface's bytes beside them.
     """
     global _usage_collector
     runtime = shared_runtime()
@@ -295,6 +331,7 @@ def _start_samplers() -> None:
         _usage_collector.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
+    runtime.release_sampler.start()
     runtime.traffic_history.start()
     if runtime.proxy is not None:
         runtime.proxy.start()

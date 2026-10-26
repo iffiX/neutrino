@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -384,6 +385,7 @@ class ScriptedChannelStream:
         self.args = dict(args)
         self.sent: list = []
         self.eofs: list = []
+        self.resizes: list = []
         self.close_info = None
         self.is_abandoned = False
         self.is_close_asked = False
@@ -439,6 +441,10 @@ class ScriptedChannelStream:
     def _deliver(self, item) -> None:
         self._inbound.put_nowait(item)
 
+    async def send_resize(self, cols: int, rows: int) -> None:
+        """A terminal's later size, as the route writes it on the stream."""
+        self.resizes.append((int(cols), int(rows)))
+
     def feed(self, item) -> None:
         """Deliver one item from any thread."""
         self._loop.call_soon_threadsafe(self._inbound.put_nowait, item)
@@ -490,11 +496,13 @@ class FakeChannelSessions:
         self.versions: dict = {}
         self.ended_at: dict = {}
         self.reported_at: dict = {}
+        self.held_reports: dict = {}
         self.commands: list = []
         self.validations: list = []
         self.pushes: list = []
         self.closed: list = []
         self.refused: list = []
+        self.stream_closes: list = []
         self.verdict = {"is_valid": True, "code": "", "params": {}}
         self.outcome = {"exit_code": 0, "code": "", "params": {}, "output": ""}
         self.outcomes: dict = {}
@@ -540,7 +548,23 @@ class FakeChannelSessions:
         return sorted(self.online)
 
     def reports(self) -> dict:
-        return {}
+        return dict(self.held_reports)
+
+    def by_session_id(self, session_id: str):
+        return None
+
+    def sessions(self) -> list:
+        return [SimpleNamespace(key=key, address="") for key in sorted(self.online)]
+
+    def close_streams_from_thread(
+        self, key, *, kind, code, params=None, device_id="", session_id=""
+    ) -> bool:
+        if key.lower() not in self.online:
+            return False
+        self.stream_closes.append(
+            (key.lower(), kind, device_id, session_id, code, dict(params or {}))
+        )
+        return True
 
     def run_stream_from_thread(
         self, key, kind, args, payload=None, on_chunk=None, timeout=None
@@ -634,10 +658,26 @@ class StubDesiredStates:
 
     def modules(self, key: str) -> dict:
         return {
-            module: {"want": want, "is_settled": (held, module) in self.settled}
+            module: {
+                "want": want,
+                "is_settled": (held, module) in self.settled,
+                "version": "",
+            }
             for (held, module), want in self.wants.items()
             if held == key.lower()
         }
+
+    def version_of(self, key: str, module: str) -> str:
+        return ""
+
+    def available_accounts(self, key: str) -> list:
+        return []
+
+    def enabled_accounts(self, key: str, module: str) -> list:
+        return []
+
+    def account_secret(self, key: str, module: str, account: str, field: str) -> str:
+        return ""
 
     def read(self, key: str, module: str) -> dict:
         return dict(self.files.get((key.lower(), module), {}))
@@ -684,13 +724,24 @@ class StubPublishedServices:
 
     Attributes:
         refreshes: How many recomposes were scheduled.
+        expiries: How many times the cache was told to recompose at once.
     """
 
     def __init__(self):
         self.refreshes = 0
+        self.expiries = 0
 
     def schedule_refresh(self) -> None:
         self.refreshes += 1
+
+    def expire(self) -> None:
+        self.expiries += 1
+
+    def apps(self) -> list:
+        return []
+
+    def entries(self) -> tuple:
+        return [], ""
 
 
 class FakeModuleRuntime:
@@ -712,25 +763,45 @@ class FakeModuleRuntime:
         from neutrino_hub.modules.devices.desired_state import DesiredStateStore
         from neutrino_hub.web.task_stream import TaskStreamRegistry
 
+        from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
+        from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+        from neutrino_hub.web.channel_shell import SessionReplyBook
+
         self.devices = {device.id: device for device in devices}
+        self.device_shares = DeviceShareRegistry()
         self.tasks = TaskStreamRegistry()
         self.agent_sessions = FakeChannelSessions(online)
         self.agent_update_sessions = {}
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
+        self.module_releases = ModuleReleaseStore(path=None)
+        self.channel_replies = SessionReplyBook()
         self.device_modules: dict = {}
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}
         self.device_accounts: dict = {}
+        self.device_account_details: dict = {}
         self.device_scope: dict = {}
         self.lan_addresses = list(lan_addresses)
+        self.served_models = None
 
     def network(self):
         return _Network(self.lan_addresses)
 
     def is_hub_machine(self, key: str) -> bool:
         return False
+
+    def device_names(self) -> dict:
+        return {key: (device.name or key) for key, device in self.devices.items()}
+
+    def account_details(self, key: str) -> dict:
+        return dict(self.device_account_details.get(key, {}))
+
+    def machine_slug(self, key: str) -> str:
+        from neutrino_hub.modules.services.apps import machine_slugs
+
+        return machine_slugs(self.device_names()).get(key, "machine")
 
     def module_agent_config(self, key: str, name: str, stored: dict) -> dict:
         return self.desired_states.agent_config(
@@ -739,6 +810,8 @@ class FakeModuleRuntime:
             stored,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
+            account_details=self.account_details(key),
+            machine_slug=self.machine_slug(key),
         )
 
     def push_desired_state(self, key: str) -> None:

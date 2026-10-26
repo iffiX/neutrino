@@ -59,6 +59,7 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
+        self.release_sampler = StubLinkSampler()
         self.traffic_history = StubTrafficHistory()
         self.proxy = StubExitController()
         self.relay_monitor = StubRelayMonitor()
@@ -114,8 +115,7 @@ def route_set(app) -> set:
 
 
 CHANNEL_ROUTES = {
-    ("POST", "/api/channel/join"),
-    ("POST", "/api/channel/leave"),
+    ("POST", "/api/channel/key/set"),
     ("WS", "/api/channel/socket"),
 }
 
@@ -124,10 +124,7 @@ def test_the_agent_app_serves_the_channel_routes_and_nothing_else(factories):
     app = factories.create_agent_app()
 
     assert route_set(app) == CHANNEL_ROUTES
-    assert api_paths(app) == {
-        "/api/channel/join",
-        "/api/channel/leave",
-    }
+    assert api_paths(app) == {"/api/channel/key/set"}
 
 
 def test_every_other_path_on_the_agent_app_is_404(factories):
@@ -158,7 +155,7 @@ def test_an_oversize_join_body_is_413_on_the_agent_app(factories):
     app = factories.create_agent_app()
     with TestClient(app) as client:
         answer = client.post(
-            "/api/channel/join",
+            "/api/channel/key/set",
             content=b"{" + b" " * CHANNEL_REQUEST_BYTES_MAX + b"}",
             headers={"Content-Type": "application/json"},
         )
@@ -185,12 +182,12 @@ def test_a_body_that_does_not_validate_is_refused_in_the_one_shape(factories):
 
     app = factories.create_agent_app()
     with TestClient(app) as client:
-        answer = client.post("/api/channel/join", json={"ticket": 7})
+        answer = client.post("/api/channel/key/set", json={"token": 7})
 
     assert answer.status_code == 400
     detail = answer.json()["detail"]
     assert detail["code"] == "body_invalid"
-    assert detail["params"]["fields"] == "ticket, role"
+    assert set(detail["params"]["fields"].split(", ")) == {"id", "token", "public_key"}
 
 
 def test_both_apps_share_one_runtime(factories):

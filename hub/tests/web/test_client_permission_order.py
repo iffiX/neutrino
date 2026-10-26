@@ -1,6 +1,6 @@
-"""The Clients page's permission drawers list the kinds in one fixed order.
+"""The Clients page's permission form lists the kinds in one fixed order.
 
-The hub sends the kinds in :data:`CLIENT_PERMISSION_KINDS` order; the drawer
+The hub sends the kinds in :data:`CLIENT_PERMISSION_KINDS` order; the form
 draws its switches in its own display order, the same for the default and
 for one client. Pinned: that order, and that it names every kind the hub has.
 """
@@ -12,7 +12,7 @@ from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_KINDS
 
 DRAWER_PATH = (
     Path(__file__).resolve().parents[2]
-    / "frontend/src/components/client_permission_drawer.tsx"
+    / "frontend/src/components/client_permission_form.tsx"
 )
 
 
@@ -24,7 +24,7 @@ def display_order() -> list[str]:
     return re.findall(r'"(\w+)"', body.group(1))
 
 
-def test_the_drawer_lists_the_overlay_first_and_the_desktops_last():
+def test_the_form_lists_the_overlay_first_and_the_desktops_last():
     assert display_order() == [
         "overlay",
         "panel",
@@ -33,6 +33,7 @@ def test_the_drawer_lists_the_overlay_first_and_the_desktops_last():
         "ai",
         "file",
         "terminal",
+        "ssh",
         "rdp",
     ]
 

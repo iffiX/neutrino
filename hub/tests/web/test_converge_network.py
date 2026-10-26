@@ -243,18 +243,13 @@ def applied(monkeypatch):
         written.append((f"{vendor} applied", is_restarted))
         return ""
 
-    class Listeners:
-        def follow(self, wanted):
-            written.append(("frp listeners followed", dict(wanted)))
+    def apply_transport(self, *, is_restarted=False):
+        written.append(("transport applied", is_restarted))
+        return ""
 
-    panel.frp_listeners = Listeners()
-    monkeypatch.setattr(
-        runtime_module,
-        "frp_switches",
-        lambda: {"sakurafrp": False, "openfrp": False},
-    )
     monkeypatch.setattr(runtime_module.PanelRuntime, "apply_relay", apply_relay)
     monkeypatch.setattr(runtime_module.PanelRuntime, "apply_frp", apply_frp)
+    monkeypatch.setattr(runtime_module.PanelRuntime, "apply_transport", apply_transport)
     return panel, written, results, files
 
 
@@ -280,24 +275,13 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
         "pushed states",
         "stopped",
         "relay applied",
-        "frp listeners followed",
+        "transport applied",
         "sakurafrp applied",
         "openfrp applied",
         "routes checked",
     ]
     assert {"code": "xray_restarted", "params": {}} in changes
     assert {"code": "devices_pushed", "params": {"count": 1}} in changes
-
-
-def test_the_frp_listeners_follow_each_vendors_switch(applied, monkeypatch):
-    panel, written, _, _ = applied
-    xray_applier(monkeypatch, _AcceptingApplier)
-    switches = {"sakurafrp": False, "openfrp": True}
-    monkeypatch.setattr(runtime_module, "frp_switches", lambda: dict(switches))
-
-    panel.converge_network_blocking()
-
-    assert dict(written)["frp listeners followed"] == switches
 
 
 def test_a_frp_vendor_that_will_not_apply_stops_none_of_the_rest(applied, monkeypatch):
@@ -467,7 +451,7 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
         "pushed states",
         "stopped",
         "relay applied",
-        "frp listeners followed",
+        "transport applied",
         "sakurafrp applied",
         "openfrp applied",
         "routes checked",
@@ -772,7 +756,7 @@ def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
         "pushed states",
         "stopped",
         "relay applied",
-        "frp listeners followed",
+        "transport applied",
         "sakurafrp applied",
         "openfrp applied",
         "routes checked",

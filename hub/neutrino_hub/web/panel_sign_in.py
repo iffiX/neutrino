@@ -91,8 +91,8 @@ class PanelSignInMiddleware:
         """The header that hands the browser its session."""
         max_age = int(self._runtime.settings.get("session_ttl_hours", 168)) * 3600
         return (
-            f"{session_cookie(self._runtime)}={session}; Max-Age={max_age}; "
-            "Path=/; HttpOnly; SameSite=lax"
+            f"{session_cookie(self._runtime, is_loopback_peer=True)}={session}; "
+            f"Max-Age={max_age}; Path=/; HttpOnly; SameSite=lax"
         )
 
 

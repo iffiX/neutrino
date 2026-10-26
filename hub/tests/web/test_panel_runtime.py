@@ -246,12 +246,33 @@ class OwnMachineDevices:
 
     def __init__(self):
         self.rows = {
-            "own": type("Row", (), {"machine_id": "hub-machine"})(),
-            "other": type("Row", (), {"machine_id": "laptop"})(),
+            "own": type(
+                "Row",
+                (),
+                {
+                    "machine_id": "hub-machine",
+                    "id": "own",
+                    "name": "own",
+                    "ipv4_address": "",
+                },
+            )(),
+            "other": type(
+                "Row",
+                (),
+                {
+                    "machine_id": "laptop",
+                    "id": "other",
+                    "name": "other",
+                    "ipv4_address": "",
+                },
+            )(),
         }
 
     def get(self, key):
         return self.rows.get(key)
+
+    def all_stored(self):
+        return list(self.rows.values())
 
 
 def test_the_hubs_own_device_is_handed_loopback_first(monkeypatch):
@@ -296,6 +317,9 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     panel.desired_states = ComposingStates()
     panel.device_platform = {}
     panel.device_address = {}
+    panel.device_account_details = {}
+    panel.device_hostname = {}
+    panel.module_releases = None
     devices = OwnMachineDevices()
     monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
     monkeypatch.setattr(runtime_module, "DeviceRetryMarks", NoRetryMarks)
