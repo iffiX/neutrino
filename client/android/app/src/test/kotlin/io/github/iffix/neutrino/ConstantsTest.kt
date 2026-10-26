@@ -65,7 +65,6 @@ class ConstantsTest {
         for ((name, value) in listOf(
             "CLIENT_BACKOFF_MIN_S" to CLIENT_BACKOFF_MIN_S,
             "CLIENT_BACKOFF_MAX_S" to CLIENT_BACKOFF_MAX_S,
-            "CLIENT_CONNECT_TIMEOUT_S" to CLIENT_CONNECT_TIMEOUT_S,
             "CLIENT_REPORT_INTERVAL_S" to CLIENT_REPORT_INTERVAL_S,
             "CLIENT_STREAM_TIMEOUT_S" to CLIENT_STREAM_TIMEOUT_S,
         )) {

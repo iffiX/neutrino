@@ -18,7 +18,7 @@ The targets:
   named as a module names them, and leaves a rule named as the hub names
   its own. Windows.
 - ``client_windows``: the .msi installs, ``nclient --version`` answers,
-  ``nclient status`` exits 1 unbound, the folder is on PATH, ``packet.dll``
+  ``nclient hub list`` exits 1 with no client running, the folder is on PATH, ``packet.dll``
   lies beside EasyTier's core, the EasyTier daemon runs, answers on its
   pipe and makes its state under ``Neutrino\\client\\state``, and removing
   it takes the folder and the daemon away. Windows.
@@ -31,7 +31,7 @@ The targets:
   no ``nagent``, no receipt and no LaunchDaemon named as a module names
   them, and keeps one named as the hub names its own. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
-  ``nclient status`` exits 1 unbound. Where the runner's own account is at
+  ``nclient hub list`` exits 1 with no client running. Where the runner's own account is at
   the screen, the app opened and the .pkg installed again leaves a new app
   running, and an install with the app quit opens none. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
@@ -802,12 +802,12 @@ def _client_windows_installed(msi: Path) -> None:
     version = _answer([str(nclient), "--version"])
     print(f"nclient {version}")
     check_go_programs("neutrino-client", "windows", version)
-    _note("installed: nclient status")
+    _note("installed: nclient hub list")
     status = subprocess.run(
-        [str(nclient), "status"], timeout=CHECK_COMMAND_TIMEOUT_S
+        [str(nclient), "hub", "list"], timeout=CHECK_COMMAND_TIMEOUT_S
     ).returncode
     if status != 1:
-        raise SystemExit(f"nclient status exited {status}, expected 1")
+        raise SystemExit(f"nclient hub list exited {status}, expected 1")
     if "Neutrino\\client" not in _machine_path():
         raise SystemExit("the install is not on PATH")
     if not (CLIENT_WINDOWS_FOLDER / "bin" / "packet.dll").is_file():
@@ -1117,9 +1117,9 @@ def check_client_macos(pkg: Path) -> None:
     version = _answer(["/usr/local/bin/nclient", "--version"])
     print(f"nclient {version}")
     check_go_programs("neutrino-client", "darwin", version)
-    status = subprocess.run(["/usr/local/bin/nclient", "status"]).returncode
+    status = subprocess.run(["/usr/local/bin/nclient", "hub", "list"]).returncode
     if status != 1:
-        raise SystemExit(f"nclient status exited {status}, expected 1")
+        raise SystemExit(f"nclient hub list exited {status}, expected 1")
     _check_client_macos_upgrade(pkg)
 
 

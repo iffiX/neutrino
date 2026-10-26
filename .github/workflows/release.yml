@@ -115,7 +115,11 @@ jobs:
           --agent-packages agent_packages
           ${{ env.RELEASE_SITES }}
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -153,7 +157,11 @@ jobs:
           --architecture ${{ matrix.architecture }}
           --output-dir dist
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -399,7 +407,11 @@ jobs:
           --architecture ${{ matrix.architecture }}
           --output-dir dist
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -900,7 +912,11 @@ jobs:
           --output-dir dist
         working-directory: cn
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
         working-directory: cn
 
       - uses: actions/upload-artifact@v7
@@ -1050,7 +1066,11 @@ jobs:
           ${{ env.RELEASE_SITES }}
         working-directory: cn
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
         working-directory: cn
 
       - uses: actions/upload-artifact@v7
@@ -1239,7 +1259,11 @@ jobs:
           --output-dir dist
         working-directory: cn
 
-      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+      - run: >
+          for package in dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
+          [ -e "$package" ] || continue;
+          python3 packaging/ci/check.py linux "$package";
+          done
         working-directory: cn
 
       - uses: actions/upload-artifact@v7
