@@ -40,10 +40,10 @@ password and is turned on for one client at a time.
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/web/panel_tls/` | none | yes: the panel's certificate authority, `authority.pem` in the clear and `authority_key.sealed` under the vault's data key, generated at setup |
 | `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the transport generates both, and the backup carries the private half sealed ([../design/protocol.md](../design/protocol.md), "The hub's static key") |
-| `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
+| `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds; each row's `client` keeps the token's hash, the agent's static `public_key` and its `agent_version` |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |
-| `config/devices/<id>/samba.json` | none | yes: the file share's enabled accounts and each one's SMB password, sealed under the vault's data key |
+| `config/devices/<id>/samba.json` | none | yes: the file share's enabled accounts and each one's SMB password, sealed under the vault's data key, and `shares`, the shares the file names itself, a ZFS dataset's among them |
 | `config/devices/<id>/code_server.json`, `cloudcli.json`, `codeg.json` | none | yes: each module's enabled accounts and the secrets it generated for each, sealed under the vault's data key ([../design/protocol.md](../design/protocol.md), "The account layer in the state") |
 | `config/devices/<id>/remote_desktop.json` | none | no: the Remote desktop module's `{is_enabled}`; absent is off |
 | `config/devices/<id>/modules.json` | none | no: each module's `want`, `is_settled` and chosen `version`, an empty `version` following the tested one |
