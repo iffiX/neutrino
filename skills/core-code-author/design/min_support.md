@@ -16,13 +16,13 @@ new floor is written down.
 | --- | --- | --- | --- |
 | hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | hub `.msi` | none | the agent `.msi` it carries and installs on its own machine at setup | Windows 10 1809 |
-| hub `.pkg` | none | the agent `.pkg` it carries and installs on its own machine at setup | macOS 12.3, arm64 and amd64 |
+| hub `.pkg` | none | `neutrino_transport`, built by Go 1.27, which names macOS 13 as its least system ("The Go programs") | macOS 13, arm64 and amd64 |
 | agent `.deb`, `.rpm` | 2.34 | the same floor as the hub's (`agent/packaging/constants.py`), chosen so the two packages require one system; the RustDesk host binary needs 2.27 and Codeg's binaries 2.34 | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
-| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
+| agent `.pkg` | none | `neutrino_transport` and `neutrino_ssh_server`, built by Go 1.27 for macOS 13; the RustDesk app asks for 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 13, arm64 and amd64 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build/build_client_desktop.py:40`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build/build_client_desktop.py:50`) | RHEL 9, AlmaLinux 9 |
-| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
+| client `.pkg` | none | `neutrino_transport`, built by Go 1.27 for macOS 13; the RustDesk app asks for 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 13, arm64 and amd64 |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`packaging/build/build_client_windows.py:41`, `packaging/build/build_client_windows.py:90`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
 | client `.ipa` | none | the deployment target 16.0 in `client/ios/project.yml`; iOS 16 is the last system of the iPhone X, the oldest phone the app is tested on | iOS 16 |
@@ -68,6 +68,26 @@ The two phone rows are the floor each app's build declares: `minSdk 26` in
 the Gradle project and a deployment target of 16.0 in `project.yml`. The
 phone's installer rejects the app on an older system, so the floor is
 enforced by the declaration itself.
+
+## The Go programs
+
+`neutrino_transport` and `neutrino_ssh_server` are built with Go 1.27.3,
+the toolchain `packaging/build` pins, and the Android and iOS libraries with
+gomobile from `golang.org/x/mobile` at the version `transport/go.mod` pins
+([../coding_style/go_style.md](../coding_style/go_style.md)).
+
+| Target | What sets the floor | Floor |
+| --- | --- | --- |
+| Linux, amd64, arm64 and armhf | `CGO_ENABLED=0`: the binaries are static and name no glibc; Go's own floor is a 3.2 kernel | below every package's |
+| Windows, amd64 | Go 1.27's own floor | Windows 10, below the packages' 1809 |
+| macOS, arm64 and amd64 | Go 1.27's linker writes macOS 13 as the binary's least system (`macOS = 13.0` in `cmd/link`), the oldest macOS Go 1.27 supports | macOS 13, which raises the hub's, the agent's and the client's `.pkg` from 12.3 |
+| Android | gomobile's `-androidapi`, which the build sets to 26, the app's `minSdk` | Android 8.0, the app's own |
+| iOS | gomobile's `-iosversion`, which the build sets to 16.0, the app's deployment target | iOS 16, the app's own |
+
+The macOS floor follows the toolchain: a later Go that drops macOS 13 moves
+every `.pkg` with it, and the release that moves the toolchain says so.
+Containers on macOS already needs 13, so a machine that runs Containers
+loses nothing.
 
 ## What each package holds and depends on
 

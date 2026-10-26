@@ -239,6 +239,23 @@ person sets, `restrict,port-forwarding,permitlisten=` the public port, so the
 key opens that one listener and nothing else
 ([network.md](hub_components/network.md), "The VPS is the person's").
 
+## The transport holds the agent port, and is not root
+
+The hub's agent port belongs to `neutrino_transport`, the Go process of
+`transport/` ([protocol.md](protocol.md), "Three ports, two audiences"). It
+holds the hub's static key and every session, and decides nothing: every
+permission, ticket, token and secret stays with the hub's Python, which the
+transport asks over the local channel.
+
+| Rule | Reason |
+| --- | --- |
+| On Linux the transport is its own unit, `neutrino_hub_transport.service`, run as the system account `neutrino_transport`, with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `ReadWritePaths=` its state and run directories alone, and no capability but `CAP_NET_BIND_SERVICE`, for an agent port under 1024. | The process every stranger's bytes reach first holds no root, so a fault in its parsing of a knock or a frame gains an account that can write two directories. |
+| The transport generates its static key and keeps it in `/var/lib/neutrino/hub/transport/`, mode 0700, its own; it writes the public half beside it and gives the hub's Python nothing else. | The hub's Python, which is root and serves the panel, never holds the private half, so the panel's faults cannot leak it. |
+| The local channel's socket is the transport's, mode 0600 under a 0700 directory of its account; root reaches it as root reaches any file, and every connection opens with the secret the transport reads at its start ([protocol.md](protocol.md), "The local channel"). | The kernel turns every other account away before a line is read, and the secret turns away a process that reaches the socket by some other path. |
+| On macOS and Windows, where the hub's one service supervises every daemon, the transport is that service's child, and it runs with the service's account, root or SYSTEM, as every other daemon there does ([architecture.md](architecture.md), "One service supervises the daemons on macOS and Windows"). | Those systems have no unit to narrow a child, and the supervisor starts every daemon the same way. |
+| On a managed machine the agent starts its transport as its child, with the agent's own account, root or SYSTEM; its socket is the agent's run directory's, 0600 under 0700. The SSH server's instances run as their accounts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)). | The agent's binding file, which the transport's static key and token are read from, is root's, and a shell or a file of an account is that account's alone. |
+| On a person's computer the client's resident starts its transport as its child, with the person's own account, and a phone app runs it inside the app. | A client is never root. |
+
 ## Where privilege is allowed to live
 
 Root-requiring calls stay in `neutrino_hub/system/` and in each module's `ops` or `apply`

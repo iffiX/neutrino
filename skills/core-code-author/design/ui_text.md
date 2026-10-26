@@ -620,10 +620,43 @@ too ([client.md](client.md), "The layout").
 | --- | --- | --- |
 | `ui.bar_desktops` | Desktops | 桌面 |
 
+## The 0.6.0 channel and the clients' words
+
+The codes 0.6.0 adds ([protocol.md](protocol.md), "The codes 0.6.0 adds and
+removes") and the words of the clients' Apps page, Files page, Terminals
+page and SSH setting ([client.md](client.md)). A code is in the hub's
+`codes.json`, in each client's catalog and in each command line's
+`cli/wording.py`; a `ui.*` key is in the surface that draws it.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `code.control_unavailable` | The hub is busy and did not answer; try again. | 中枢正忙，没有应答，稍后再试。 |
+| `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |
+| `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这台机器的终端没有启用 {account}。 |
+| `code.key_missing` | The SSH server of {account} has no key from the hub; apply the module again. | {account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。 |
+| `code.op_unknown` | This agent cannot do {op} on files. | 这个被控端不能对文件做 {op}。 |
+| `code.hub_untrusted` | The hub's key does not match; if it was reset, join it again. | 中枢的密钥对不上；中枢重置过的话就重新加入。 |
+| `ui.state.untrusted`, on a hub row | Hub key mismatch | 中枢密钥不符 |
+| `code.port_taken` | Local port {port} is in use; give this entry another in Configure. | 本机端口 {port} 已被占用，在“配置”里给这个入口换一个。 |
+| `code.client_not_running` | The client is not running; start it with nclient gui. | 客户端没有运行，先 nclient gui。 |
+| `ui.panel_apps`, the page's title and its bar label | Apps | 应用 |
+| `ui.app_source.module`, `ui.app_source.declared`, `ui.app_source.manual` | module, declared, manual | 模块、声明、手动 |
+| `ui.app.use`, `ui.app.configure`, `ui.app.stop` | Use, Configure, Stop | 使用、配置、停止 |
+| `ui.app.port_dialog_title` | Local ports of {app} | {app} 的本机端口 |
+| `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这台机器的终端没有启用的账户。 |
+| `ui.terminal.account` | Account | 账户 |
+| `ui.settings.ssh_include` | SSH programs reach the machines | 让 SSH 程序直接连被控端 |
+| `ui.settings.ssh_include_hint` | Whether ssh, scp, git and VS Code reach each machine as `<machine>.nt`. | 是否让 ssh、scp、git 和 VS Code 用 `<机器>.nt` 直接连到每台机器。 |
+| `ui.services.apps_title`, the Services page's section | Apps | 应用 |
+| `ui.services.entries`, `ui.services.add_entry`, `ui.services.entry_type`, `ui.services.entry_path`, `ui.services.entry_remove` | Entries, Add entry, Type, Path, Remove | 入口、添加入口、类型、路径、移除 |
+
+`ui.panel_web` and `ui.panel_ports` go with the Web and Ports pages.
+
 ## Localization
 
-The panel and the client page speak English and Simplified Chinese; the
-command lines stay English. Every word a surface shows comes from a catalog,
+The panel, the client page and `nclient` speak English and Simplified
+Chinese, `nclient` in the client's own language, its `-h` help included;
+`nhub` and `nagent` stay English. Every word a surface shows comes from a catalog,
 never from a literal in a component.
 
 **One catalog format on both surfaces.** A flat JSON object per language, keys

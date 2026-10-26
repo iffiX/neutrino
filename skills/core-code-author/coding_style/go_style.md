@@ -60,14 +60,18 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
 
 ## Module and dependencies
 
-- `transport/go.mod` is the one module, named `github.com/iffiX/neutrino/transport`.
-  A dependency is pinned at an exact version in `go.mod` and `go.sum` is
-  committed; `go mod tidy` leaves both unchanged.
+- `transport/go.mod` is the transport's module, named
+  `github.com/iffiX/neutrino/transport`, and `agent/sshserver/go.mod` the
+  agent's SSH server's, `github.com/iffiX/neutrino/agent/sshserver`
+  ([../design/agent/modules/ssh_server.md](../design/agent/modules/ssh_server.md));
+  the two share no code. A dependency is pinned at an exact version in
+  `go.mod` and `go.sum` is committed; `go mod tidy` leaves both unchanged.
 - The dependencies are few and each is named here with what it is for:
   `github.com/flynn/noise` for the Noise handshake,
   `github.com/libp2p/go-yamux/v4` for the sessions, `golang.org/x/crypto`
-  for the primitives, `golang.org/x/mobile` for the Android and iOS
-  bindings. Adding one is a decision for the user
+  for the primitives and, in the SSH server, its `ssh` package,
+  `github.com/pkg/sftp` for the SSH server's sftp subsystem, and
+  `golang.org/x/mobile` for the Android and iOS bindings. Adding one is a decision for the user
   ([../design/min_support.md](../design/min_support.md)).
 - `CGO_ENABLED=0` for every binary, so one static file per platform;
   `packaging/build` cross-compiles them and stamps the version with
@@ -78,7 +82,9 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
 - A directory is one Go package, named in lowercase with no underscore, as
   Go asks: `transport/knock/`, `transport/handshake/`, `transport/session/`,
   `transport/relay/`, `transport/control/`, `transport/cmd/neutrino_transport/`,
-  `transport/mobile/`. This is the one place the repository departs from
+  `transport/mobile/`, and `transport/tests/` for what crosses packages, a
+  hub's and a peer's transports talking over loopback with the Python sides
+  faked on their local channels. This is the one place the repository departs from
   `under_score` directory names ([layout_style.md](layout_style.md)), because
   a Go package name is its directory name.
 - A file is named after its one concept in `under_score`, as Go's own files

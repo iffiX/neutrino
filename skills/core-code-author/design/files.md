@@ -46,6 +46,9 @@ What a user's own account holds, one tree per user with the same three names:
 | what Codeg writes for the account (its database, uploads and logs, and the prefix and cache of the npm packages it installs) | `~/.local/share/neutrino/agent/codeg` | `~/Library/Application Support/Neutrino/agent/codeg` | `%LOCALAPPDATA%\Neutrino\agent\codeg` |
 | the input of one cc-switch call, there only during that call | `~/.local/share/neutrino/agent/ai_tools/payload` | `~/Library/Application Support/Neutrino/agent/ai_tools/payload` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\payload` |
 | cc-switch's store for the agent's runs, mode 700, there while a tool of the account stands on the hub | `~/.local/share/neutrino/agent/ai_tools/cc_switch` | `~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` |
+| the client's transport socket | `$XDG_RUNTIME_DIR/neutrino/transport.sock` | `~/Library/Application Support/Neutrino/client/transport.sock` | the pipe `neutrino_client_transport_<user>` |
+| the client's SSH configuration for other programs, rewritten when the machines change ([client.md](client.md), "SSH for other programs") | `~/.ssh/neutrino_config` | the same | `%USERPROFILE%\.ssh\neutrino_config` |
+| the keys the hub made for the person's accounts on each machine, mode 0600, and Neutrino's own known_hosts | `~/.ssh/neutrino/` | the same | `%USERPROFILE%\.ssh\neutrino\` |
 | build caches of the packaging scripts | `~/.cache/neutrino` | the same | the same |
 
 A few locations are the operating system's rather than this project's, and
@@ -60,8 +63,10 @@ under RustDesk's own names while its switch is on ([agent/modules/remote_desktop
 package's licences are looked for; the polkit rule of the client's mount
 helper under polkit's own directory; the agent's copy of RustDesk on Linux
 under `/usr/lib/neutrino/agent/rustdesk/`, where every Linux agent package
-has put it. The application entry named
-`Neutrino Client` writes everything under `Neutrino/client`.
+has put it; and `~/.ssh/neutrino_config` and `~/.ssh/neutrino/`, because
+`ssh` and every program that reads its configuration look under `~/.ssh`.
+The application entry named `Neutrino Client` writes everything under
+`Neutrino/client`.
 
 ## What each operation leaves behind
 
@@ -92,15 +97,19 @@ and the client with their own three directories.
 /opt/neutrino/
     hub/
         python/     the interpreter and the hub installed into it
-        bin/        xray, cli-proxy-api, netbird, easytier-core, easytier-cli,
-                    frpc, and on macOS and Windows tun2socks
+        bin/        neutrino_transport, xray, cli-proxy-api, netbird,
+                    easytier-core, easytier-cli, frpc, and on macOS and
+                    Windows tun2socks
     agent/
         python/     the interpreter, the agent, and the window's bindings
+        bin/        neutrino_transport and neutrino_ssh_server, the two Go
+                    programs the agent runs
         rustdesk/   macOS and Windows: the agent's copy of RustDesk,
                     RustDesk.app on macOS, rustdesk.exe and its files on
                     Windows, upstream's build unchanged
     client/
-        the compiled client, its libraries and the carried programs
+        the compiled client, its libraries and the carried programs,
+        neutrino_transport among them
         libexec/mount_helper
 ```
 
@@ -206,6 +215,12 @@ overrides both, which is what makes a second instance testable. Details of the f
         hub_update/         the hub's own package at the version running and
                             at the one being installed, the install script,
                             its log, and state.json
+        transport/          the transport's own, mode 0700, owned by its
+                            account on Linux: static_key, the hub's static
+                            private key, mode 0600; public_key, its public
+                            half; control_secret, the local channel's
+                            secret, mode 0640 with root as owner and the
+                            transport's group
     agent/
         configured/         the desired state the hub sent, root only
         failures/           each module's last failed step, its state and
@@ -232,6 +247,9 @@ overrides both, which is what makes a second instance testable. Details of the f
         run_as/             Windows only: per account, the script, input,
                             output and exit code of one one-shot task,
                             removed once the task ends
+        ssh_server/         host_key, the machine's SSH host key, root only;
+                            run/<account>/, what each instance reads, its
+                            account's own
         remote_desktop/     registered.json, what the Remote desktop module
                             registered under RustDesk's names; kept/, what
                             was registered there before and is put back
@@ -380,8 +398,11 @@ start line names and the one `journal("netbird")` reads. The agent writes
         lockout             the panel's login lockout
         wpa_supplicant/     one control socket per radio the hub drives
         netbird.sock        the hub's NetBird daemon, macOS only
+        transport/          the transport's run directory, 0700, its own:
+                            transport.sock, the local channel
     agent/
         agent.sock          the root-only control socket
+        transport.sock      the agent's local channel to its transport
     client/
         easytier.sock       the EasyTier daemon's socket, open to local users
 ```
@@ -392,4 +413,6 @@ sockets have their own directory rather than `/run/wpa_supplicant`, which is
 where the machine's own supplicant puts its sockets; two of them in one
 directory is a collision that shows up as whichever started second failing
 to bind. On Windows the same things are named pipes: `neutrino_agent`,
-`neutrino_client_easytier`, `neutrino_client_<user>`.
+`neutrino_hub_transport`, `neutrino_agent_transport`,
+`neutrino_client_easytier`, `neutrino_client_<user>` and
+`neutrino_client_transport_<user>`.

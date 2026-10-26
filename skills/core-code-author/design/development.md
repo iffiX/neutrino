@@ -24,10 +24,11 @@ hub writes about itself goes there:
 ```text
 hub_dev_root/
     etc/neutrino/hub/       the configuration
-    var/lib/neutrino/       generated, geodata, the AI gateway's state
+    var/lib/neutrino/       generated, geodata, the AI gateway's state, and
+                            the transport's static key
     var/log/neutrino/
-    run/neutrino/           the login lockout
-    opt/neutrino/bin/       xray, frpc and the AI gateway
+    run/neutrino/           the login lockout and the transport's socket
+    opt/neutrino/bin/       neutrino_transport, xray, frpc and the AI gateway
 ```
 
 **What `--dev` changes, and what it does not.** It is not a sandbox. A
@@ -44,6 +45,7 @@ hub as a service:
 | Preparing the Python environment | Included in the package | Builds `.venv` |
 | Installing xray-core and geodata | Included in the package | Fetches the pinned pair into the dev root |
 | Installing frpc | Included in the package | Fetches the pinned frpc into the dev root |
+| The transport | Included in the package, a unit of its own account | Built from `transport/` with the `go` on `PATH` into the dev root, and refused with one sentence when there is none |
 | Preparing config from examples | Copies them | Copies them |
 | **Installing systemd units** | **Writes them** | **Skipped** |
 | Applying the interface roles | Takes the interfaces over | Takes the interfaces over |
@@ -57,7 +59,8 @@ The fetches of xray, the geodata and frpc go through the hub's fetcher, with
 the method every download uses ([agent/module_install.md](agent/module_install.md),
 "Choosing a source").
 
-`nhub --dev run` is what runs in place of the units: the panel, the proxy
+`nhub --dev run` is what runs in place of the units: the panel, the
+transport as its child with the secret on its standard input, the proxy
 core and the AI gateway together in the foreground, and where node is
 installed the frontend's dev server beside them, with Vite proxying the API
 to the same port.
@@ -77,6 +80,23 @@ rule included, which reads the password from that root. What stays is what
 `--dev` did to the machine itself: the interface roles, the firewall, the
 `fail2ban` jail and the `xray` service account. Those are the parts a checkout
 exists to exercise, and undoing them is the machine owner's to do.
+
+## The Go programs in a checkout
+
+The transport and the SSH server are Go, and a checkout builds them with the
+toolchain on `PATH`, the version `transport/go.mod` and
+`agent/sshserver/go.mod` name ([min_support.md](min_support.md), "The Go
+programs"):
+
+```bash
+cd transport && go test -race ./... && go build -o ../hub_dev_root/opt/neutrino/bin/ ./cmd/neutrino_transport
+cd agent/sshserver && go test -race ./... && go build -o ../../agent_dev_root/opt/neutrino/agent/bin/ ./cmd/neutrino_ssh_server
+```
+
+`nhub --dev setup` runs the first build itself. An agent or a client run
+from a checkout finds `neutrino_transport` in its own development root's
+`bin/`, and `NEUTRINO_TRANSPORT_BIN` names another file; the Python
+packages carry no Go and import none.
 
 ## Why a checkout installs nothing either
 

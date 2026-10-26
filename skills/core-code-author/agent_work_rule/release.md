@@ -195,7 +195,9 @@ therefore holds both editions.
 The hub runs on Debian, Fedora and Arch family Linux. Each package carries its
 own Python environment and touches nothing the system installed; everything
 else it needs is named in the package's dependencies, so installing the file
-installs the appliance's prerequisites with it. On macOS and Windows the hub
+installs the appliance's prerequisites with it. Every hub package carries
+`neutrino_transport`, the Go program that holds the agent port, built for its
+system and architecture. On macOS and Windows the hub
 runs in `server` mode, and its package carries the hub compiled by Nuitka
 with every program it drives, `tun2socks` among them in `intl` for the
 proxy scopes that divert the machine's own packets there. Every hub package
@@ -218,8 +220,8 @@ ARM is another project.
 | `neutrino-hub-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-hub-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
 | `neutrino-hub-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
-| `neutrino-hub-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
-| `neutrino-hub-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
+| `neutrino-hub-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
+| `neutrino-hub-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
@@ -268,8 +270,10 @@ headless: it draws no window and listens on `127.0.0.1` alone. Each Linux packag
 carries its own interpreter under `/opt/neutrino/agent` and the RustDesk
 host, and depends on no distribution package named `python`. The Windows
 and macOS installers include the agent compiled with Nuitka and upstream's
-RustDesk in the agent's own folder, and register nothing of RustDesk's: the
-agent does when a machine's Remote desktop switch goes on. No agent package
+RustDesk in the agent's own folder. Every agent package carries the two Go
+programs the agent runs, `neutrino_transport` and `neutrino_ssh_server`,
+under `bin/` in its program directory. The installers register nothing of
+RustDesk's: the agent does when a machine's Remote desktop switch goes on. No agent package
 carries cc-switch: the agent fetches it from the hub when the machine's AI
 tools need it, at the pin the client's packages carry.
 
@@ -280,8 +284,8 @@ tools need it, at the pin the client's packages carry.
 | `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-agent-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
-| `neutrino-agent-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
-| `neutrino-agent-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
+| `neutrino-agent-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
+| `neutrino-agent-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
 
 32-bit ARM is not published, because no interpreter build is. Windows is
 x86-64 only, because RustDesk publishes no Windows ARM64 build.
@@ -302,7 +306,8 @@ administrator on Windows and under `sudo` on macOS.
 
 The client runs in a person's own session, never as root, on Linux, Windows
 and macOS. It is compiled with Nuitka, so the packages carry no interpreter
-of their own; each carries cc-switch and the RustDesk viewer. The Windows
+of their own; each carries cc-switch, the RustDesk viewer and
+`neutrino_transport`. The Windows
 packages of both editions also carry tun2socks for the files adapter. Its
 pin is `PACKAGING_TUN2SOCKS_*` in `packaging/shared/constants.py`, which the
 mainland tree holds, and the hub's macOS and Windows packages of `intl` take
@@ -317,8 +322,8 @@ window and the tray.
 | `neutrino-client-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-client-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-client-<version>-windows-amd64.msi` | Windows 10 or newer, x86-64 |
-| `neutrino-client-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
-| `neutrino-client-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
+| `neutrino-client-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
+| `neutrino-client-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
 
 Windows is x86-64 only: cc-switch publishes no Windows ARM64 build, so there
 is nothing to include for that machine. Every macOS package is published for
@@ -514,6 +519,9 @@ sentence when a tool it needs is missing.
 | `build_core_rustdesk_ios.py` | the RustDesk core of the iOS app, a static library for a device | macOS with Xcode |
 | `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `SHA256SUMS` over a directory | anywhere |
 | `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
+| `build_transport.py` | `neutrino_transport` for one system and architecture, `--target linux-amd64` and the like, cross-compiled from `transport/` with `CGO_ENABLED=0` and the version stamped by `-ldflags "-X"`, into `dist/go/<target>/` | anywhere with the pinned Go |
+| `build_ssh_server.py` | `neutrino_ssh_server` from `agent/sshserver/`, the same way | anywhere with the pinned Go |
+| `build_core_transport.py` | the transport's library for the phones: an `.aar` for Android and an `.xcframework` for iOS, by gomobile `bind` with `-androidapi 26` and `-iosversion 16.0`, cached as every core is | Linux or macOS with the pinned Go and gomobile, and Xcode for iOS |
 
 ```bash
 python3 packaging/build/build_agent.py --architecture amd64 --output-dir dist/
@@ -531,6 +539,13 @@ and the client have no Arch package and say so rather than failing.
 `packaging/ci/check.py <target> <artifact>` installs a built package where it
 runs, checks that it works, and removes it again; the workflow runs it after
 every build.
+
+Every package build takes the Go programs of its own target from
+`dist/go/<target>/`, built by `build_transport.py` and `build_ssh_server.py`
+before it, and refuses to build without them; the Android and iOS builds take
+the transport's library from `build_core_transport.py` as they take every
+core. The Go programs are built once per target and every package of that
+target carries the same file.
 
 The cores the phone apps carry are cached under
 `~/.cache/neutrino/cores/<core>-<commit>-<abi>-<recipe>/`, the recipe being

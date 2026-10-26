@@ -12,9 +12,12 @@ Linux in any mode and on macOS and Windows in `server` mode,
 `agent/` is what runs as root on the Linux, Windows and macOS machines the
 appliance manages, `client/desktop/` is what runs in a person's own session on
 Linux, Windows or macOS, and `client/android/` and `client/ios/` are what
-runs on that person's phone. They share no code. The agent is pure standard library,
-because it installs on a machine somebody else administers and a dependency is
-a thing that can be missing there.
+runs on that person's phone. They share no code. `transport/` is the one Go
+module all five carry: the hub, the agent and the desktop client as the
+binary `neutrino_transport`, the phones as a library built from it. The agent
+is pure standard library, because it installs on a machine somebody else
+administers and a dependency is a thing that can be missing there; the Go
+programs it carries are binaries beside it.
 
 The two apps are licensed AGPL-3.0, each by the `LICENSE` in its own
 directory, and the rest of the repository is MIT. Both apps are AGPL because
@@ -28,6 +31,11 @@ client/
   android/           The Android app, a Gradle project in Kotlin.
   ios/               The iOS app, in Swift, its Xcode project generated
                      by XcodeGen.
+transport/           The Go module of the channel: knock/, handshake/,
+                     session/, relay/, control/ the local channel,
+                     cmd/neutrino_transport/ the binary, mobile/ the
+                     library the phones embed, tests/ what crosses
+                     packages. Style: ../coding_style/go_style.md.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
 docs/                guide/, the VitePress documentation site. Generated site
@@ -105,8 +113,11 @@ agent/
                      window; it listens on 127.0.0.1, and for the machine's
                      containers on the Podman bridges on Linux and on WSL's
                      vEthernet adapter on Windows.
-    core/            The one WebSocket to the hub, enrollment, the desired
-                     state store and engine, metrics, self-update.
+    core/            The session to the hub through the transport,
+                     enrollment, the desired state store and engine,
+                     metrics, self-update.
+    transport/       The agent's side of the local channel to its
+                     transport child.
     control/         The root-only local socket `nagent` talks to, and the
                      named pipe that stands for it on Windows.
     streams/         Shell and file streams multiplexed over the channel;
@@ -136,6 +147,10 @@ agent/
                      are the copy the client keeps too.
     data/            Ships inside the package: systemd/ its unit, windows/
                      powershell_host.ps1 the PowerShell host's functions.
+  sshserver/         The SSH server the agent carries, a Go module of its
+                     own: server/, session/, forward/,
+                     cmd/neutrino_ssh_server/ the binary. It is Go, so the
+                     agent's package stays standard library.
   packaging/         Its .deb and .rpm builders and the payload every
                      package stages, the .msi and .pkg included.
   tests/
@@ -147,14 +162,18 @@ agent/
 client/desktop/
   neutrino_client/   The client: one resident per person with a tray and a
                      window; never root.
-    core/            The one WebSocket to the hub, enrollment, session.
+    core/            The sessions to the hubs through the transport,
+                     enrollment, the state document.
+    transport/       The client's side of the local channel to its
+                     transport child.
     control/         The local socket the window and `nclient` talk to, the
                      page it serves, its routes.
     gui/             The window and the tray, one file per toolkit:
                      WebKitGTK, WebView2, WKWebView; tray_linux, tray_windows,
                      tray_macos.
-    services/        One file per service kind: web, port, file, ai, rdp;
-                     the cc-switch driver and the worker that runs them.
+    services/        One file per service kind: the apps' entries, file,
+                     ai, rdp, ssh and its configuration; the cc-switch
+                     driver and the worker that runs them.
     platforms/       The OS layer: linux.py, windows.py, darwin.py and the
                      Win32 helpers.
     bundled.py       Where the carried tools (cc-switch, the RustDesk
@@ -344,7 +363,8 @@ editing it should not need to know how the code is arranged.
 | An entry point | `hub/neutrino_hub/cli/<name>.py` — libraries never grow a `main()` |
 | Something the wheel must carry (a unit, an example, an icon) | `hub/neutrino_hub/data/<kind>/` |
 | A check that needs root, a real interface or a package installed | `packaging/integration/` |
-| Anything the managed machines run | `agent/neutrino_agent/` |
+| Anything the managed machines run | `agent/neutrino_agent/`, or `agent/sshserver/` for the SSH server's Go |
+| Anything of the channel's wire, the knock, the handshake, the sessions and the relay | `transport/`, in Go |
 | Anything a person's computer runs | `client/desktop/neutrino_client/` |
 | A screen, a service kind or a platform piece of the Android app | `client/android/`, in Kotlin |
 | A page or a platform piece of the iOS app | `client/ios/`, in Swift |

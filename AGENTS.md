@@ -43,7 +43,7 @@ and leave this pointing at it.**
 | [coding_style/typescript_style.md](skills/core-code-author/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
 | [coding_style/kotlin_style.md](skills/core-code-author/coding_style/kotlin_style.md) | Touching `client/android/`: PascalCase files, ktlint, one `Exceptions.kt`, refusals as sealed results, no `!!`. |
 | [coding_style/swift_style.md](skills/core-code-author/coding_style/swift_style.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
-| [coding_style/go_style.md](skills/core-code-author/coding_style/go_style.md) | Touching `transport/`: gofmt and vet, lowercase package directories, one `errors.go` per package, errors wrapped with `%w`, no panic, every goroutine owned by a context. |
+| [coding_style/go_style.md](skills/core-code-author/coding_style/go_style.md) | Touching `transport/` or `agent/sshserver/`: gofmt and vet, lowercase package directories, one `errors.go` per package, errors wrapped with `%w`, no panic, every goroutine owned by a context. |
 | [design/protocol.md](skills/core-code-author/design/protocol.md) | Adding or renaming any endpoint, frame, kind or code: the three ports, path rules and the verb table, refusals as `{code, params}`, every route, the channel, admission, versioning by protocol number. |
 | [design/connection.md](skills/core-code-author/design/connection.md) | Touching the agent port or anything a client reaches through it: what the hub spends on a peer before it is admitted and the limits on it, the ways the port is reached, what an admitted client can open, what a client opens on its own machine, and why the hub relays every stream. |
 | [design/hub_components/network.md](skills/core-code-author/design/hub_components/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, server mode and the system firewall on macOS and Windows, and why it does not build on NetworkManager. |
@@ -53,7 +53,7 @@ and leave this pointing at it.**
 | [design/agent/module_template.md](skills/core-code-author/design/agent/module_template.md) | Touching any device module: the kinds by how a module runs and each `runner`, the run and the publish of a program run as an account, the hub side, what a module owns and what `modules/shared/` holds, icons, the disk layout. |
 | [design/agent/module_install.md](skills/core-code-author/design/agent/module_install.md) | Touching how software reaches a machine: the manifest and its platform entries, the five install methods (`agent`, `builtin`, `system`, `hub`, `container`), artifacts and digests, every download's sources, the source sets and how one source is chosen, the one presence check, module versions, what an uninstall removes. |
 | [design/agent/modules/](skills/core-code-author/design/agent/modules/) | Touching one device module: one page per module (`terminal.md`, `remote_desktop.md`, `file_share.md`, `gitea.md`, `containers.md`, `zfs.md`, `vscode.md`, `code_server.md`, `cloudcli.md`, `codeg.md`, `hermes_webui.md`), and [design/agent/ai_tools.md](skills/core-code-author/design/agent/ai_tools.md) beside them for the machine's AI tools setting. |
-| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the six blocks (agent / client / hub / android / ios / integration), the mirror rule, what each area pins, what a change owes. |
+| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the seven blocks (agent / client / hub / go / android / ios / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](skills/core-code-author/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](skills/core-code-author/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
 | [design/client.md](skills/core-code-author/design/client.md) | Touching any client (`client/desktop`, `client/android`, `client/ios`): the one state document, the layout, the button rule, refresh, and every page's state machines; the three clients change together. |
@@ -78,6 +78,8 @@ nhub scan-secrets                    # REQUIRED before every commit
 cd hub && pytest -q                  # hub tests
 cd agent && pytest -q                # agent tests
 cd client/desktop && pytest -q       # desktop client tests
+cd transport && go vet ./... && go test -race ./...   # the transport
+cd agent/sshserver && go vet ./... && go test -race ./...  # the agent's SSH server
 cd client/android && ./gradlew test lint   # Android app tests and lint
 cd client/ios && xcodegen generate && xcodebuild test -scheme Neutrino \
     -destination 'platform=iOS Simulator,name=iPhone 16'
@@ -129,7 +131,11 @@ agent/
     modules/<name>/   One device module each; modules/shared/ what every
                       module runner shares: the package and unpack
                       machinery, the account service layer, the forwarder.
+  sshserver/          The agent's own SSH server, a Go module of its own.
   tests/
+transport/            The Go module of the channel the hub, the agent and
+                      the clients carry: the knock, the Noise handshake,
+                      the yamux sessions, the relay, the local channel.
 client/
   desktop/
     neutrino_client/  The client: a person's session on Linux, Windows or

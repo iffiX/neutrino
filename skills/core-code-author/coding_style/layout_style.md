@@ -34,6 +34,10 @@ neutrino_hub/cli/apply.py
   `ChannelSocketClient.swift`). Their directories still use `under_score`,
   apart from the target directories Xcode names after each target.
   Details: [kotlin_style.md](kotlin_style.md), [swift_style.md](swift_style.md).
+- Go files are `under_score` and Go package directories are lowercase with
+  no underscore, as Go asks: `transport/knock/`, `agent/sshserver/`. A
+  binary's directory under `cmd/` is the binary's name,
+  `cmd/neutrino_transport/`. Details: [go_style.md](go_style.md).
 - A directory name states a role, not a grab-bag: `modules/xray/`,
   `modules/router/`, `neutrino_hub/system/`. Do not create `utils2/`, `misc/`, `helpers/`, `common/`,
   `stuff/`, `new/`, or `tmp/` as source directories, and never name a directory
@@ -47,7 +51,9 @@ neutrino_hub/cli/apply.py
   `helpers.py`.
 - Code is never shared across the hub, the agent and the client. Each package
   has its own copy of a binding or a decoder (`win32.py`, `windows_net.py`)
-  and changes it alone. What two packages pin equal is data alone, a schema or a
+  and changes it alone. `transport/` is no exception to this: it is a
+  program of its own that every package carries as a binary, and each
+  package reaches it over the local channel, never by importing it. What two packages pin equal is data alone, a schema or a
   recorded answer, never a code file. A change on one side then fails the
   other side's tests only when the data changed.
 
