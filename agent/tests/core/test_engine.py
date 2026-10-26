@@ -120,6 +120,9 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._failures_dir = (
         str(tmp_path / "failures") if tmp_path else "/nowhere/failures"
     )
+    engine._versions_dir = (
+        str(tmp_path / "versions") if tmp_path else "/nowhere/versions"
+    )
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._on_line = None
     engine._operation_lock = threading.Lock()
@@ -2009,3 +2012,218 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
 
     assert kept == running
     assert engine.report()["podman"]["state"] != "running"
+
+
+# --- another version ---
+
+
+def tarball_bytes(members: dict) -> bytes:
+    """A tar.gz with one top directory holding the members."""
+    import io
+    import tarfile
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, payload in members.items():
+            info = tarfile.TarInfo(f"top/{name}")
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+class SwitchPlatform(FakePlatform):
+    """A platform whose state root is the test's."""
+
+    def __init__(self, root):
+        super().__init__()
+        self.root = str(root)
+        self.opened: list = []
+
+    def agent_var_dir(self):
+        return self.root
+
+    def open_to_accounts(self, directory):
+        self.opened.append(directory)
+
+
+class SwitchRunner(HubRunner):
+    """A hub module with a server under a directory and a program beside it."""
+
+    def __init__(self, platform, journal):
+        super().__init__(platform=platform)
+        self.journal = journal
+
+    def stop(self):
+        self.journal.append("stop")
+
+    def apply(self, config):
+        self.journal.append("apply")
+
+    def start(self):
+        self.journal.append("start")
+
+
+def switch_recipe(version, server_digest, cli_digest):
+    return {
+        "runner": "fakedesk",
+        "method": "hub",
+        "params": {
+            "version": version,
+            "artifacts": [
+                {
+                    "name": "server",
+                    "kind": "tar_gz",
+                    "directory": "server",
+                    "digest": "sha256:" + server_digest,
+                },
+                {"name": "cli", "kind": "tar_gz", "digest": "sha256:" + cli_digest},
+            ],
+            "verify": "true",
+        },
+    }
+
+
+@pytest.fixture
+def switched(tmp_path, monkeypatch):
+    """An engine whose fakedesk 1.0 is installed: server/ and a cli program."""
+    import hashlib
+
+    journal: list = []
+    root = tmp_path / "state"
+    module = root / "fakedesk"
+    (module / "server").mkdir(parents=True)
+    (module / "server" / "run").write_bytes(b"server 1.0")
+    (module / "cli").write_bytes(b"cli 1.0")
+    platform = SwitchPlatform(root)
+    runner = SwitchRunner(platform, journal)
+    engine = bare_engine(runner=runner, tmp_path=tmp_path)
+    engine._platform = platform
+    archives = {
+        "server": tarball_bytes({"run": b"server 2.0"}),
+        "cli": tarball_bytes({"cli": b"cli 2.0"}),
+    }
+    digests = {
+        name: hashlib.sha256(data).hexdigest() for name, data in archives.items()
+    }
+    engine.take_state(
+        {
+            "fakedesk": {
+                "want": "running",
+                "config": {},
+                "install": switch_recipe("1.0", "11" * 32, "22" * 32),
+            }
+        }
+    )
+    engine._keep_version("fakedesk", switch_recipe("1.0", "11" * 32, "22" * 32))
+    engine.take_state(
+        {
+            "fakedesk": {
+                "want": "running",
+                "config": {},
+                "install": switch_recipe("2.0", digests["server"], digests["cli"]),
+            }
+        }
+    )
+    asked: list = []
+
+    def receive(name, artifact):
+        asked.append(artifact["name"])
+        path = tmp_path / f"{artifact['name']}.tar.gz"
+        path.write_bytes(archives[artifact["name"]])
+        return {"path": str(path), "sha256": digests[artifact["name"]]}
+
+    detail = {"text": ""}
+    monkeypatch.setattr(engine_module, "verify_detail", lambda command: detail["text"])
+    return engine, module, journal, asked, receive, detail, digests
+
+
+def test_another_version_is_staged_swapped_in_and_the_old_files_dropped(switched):
+    engine, module, journal, asked, receive, _detail, digests = switched
+
+    assert engine.take_version_switch("fakedesk") is True
+    refusal = engine.switch_version("fakedesk", receive=receive)
+
+    assert refusal == {}
+    assert (module / "server" / "run").read_bytes() == b"server 2.0"
+    assert (module / "cli").read_bytes() == b"cli 2.0"
+    assert sorted(os.listdir(module)) == ["cli", "server"]
+    assert journal == ["stop"]
+    assert asked == ["server", "cli"]
+    assert engine.installed_version("fakedesk") == {
+        "version": "2.0",
+        "digests": {
+            "server": "sha256:" + digests["server"],
+            "cli": "sha256:" + digests["cli"],
+        },
+    }
+    assert engine.take_version_switch("fakedesk") is False
+
+
+def test_a_switch_that_does_not_verify_puts_the_old_version_back_and_starts_it(
+    switched,
+):
+    engine, module, journal, _asked, receive, detail, _digests = switched
+    detail["text"] = "code: version 2.0 cannot start"
+
+    refusal = engine.switch_version("fakedesk", receive=receive)
+
+    assert refusal == {
+        "code": "version_switch_failed",
+        "params": {"version": "2.0", "detail": "code: version 2.0 cannot start"},
+    }
+    assert (module / "server" / "run").read_bytes() == b"server 1.0"
+    assert (module / "cli").read_bytes() == b"cli 1.0"
+    assert sorted(os.listdir(module)) == ["cli", "server"]
+    assert journal == ["stop", "apply", "start"]
+    assert engine.installed_version("fakedesk")["version"] == "1.0"
+    assert engine.report()["fakedesk"]["state"] == "failed"
+
+
+def test_a_failure_before_the_swap_leaves_the_old_version_and_no_new_file(
+    switched,
+):
+    engine, module, journal, _asked, receive, _detail, digests = switched
+
+    def short_receive(name, artifact):
+        if artifact["name"] == "cli":
+            return {"code": "download_failed", "params": {"file": "cli"}}
+        return receive(name, artifact)
+
+    refusal = engine.switch_version("fakedesk", receive=short_receive)
+
+    assert refusal == {"code": "download_failed", "params": {"file": "cli"}}
+    assert (module / "server" / "run").read_bytes() == b"server 1.0"
+    assert sorted(os.listdir(module)) == ["cli", "server"]
+    assert journal == []
+    assert engine.installed_version("fakedesk")["version"] == "1.0"
+
+
+def test_an_artifact_whose_digest_is_unchanged_is_not_fetched_again(switched):
+    engine, module, _journal, asked, receive, _detail, digests = switched
+    engine._keep_version("fakedesk", switch_recipe("1.0", "11" * 32, digests["cli"]))
+
+    assert engine.switch_version("fakedesk", receive=receive) == {}
+
+    assert asked == ["server"]
+    assert (module / "cli").read_bytes() == b"cli 1.0"
+
+
+def test_a_module_installed_before_versions_were_kept_takes_the_recipe_s(
+    switched,
+):
+    engine, _module, _journal, _asked, _receive, _detail, _digests = switched
+    engine._forget_version("fakedesk")
+
+    assert engine.take_version_switch("fakedesk") is False
+    assert engine.installed_version("fakedesk")["version"] == "2.0"
+
+
+def test_an_install_keeps_the_version_and_an_uninstall_forgets_it(tmp_path):
+    engine = bare_engine(verified=[True, True, False], tmp_path=tmp_path)
+
+    engine.install("fakedesk", receive=landing_receive([], tmp_path))
+    kept = engine.installed_version("fakedesk")
+    engine.uninstall("fakedesk")
+
+    assert kept == {"version": "1.0", "digests": {"app": "sha256:" + DIGEST}}
+    assert engine.installed_version("fakedesk") == {}

@@ -36,6 +36,8 @@ import threading
 import time
 
 from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KEPT_SUFFIXES,
+    AGENT_ARTIFACT_KIND_BINARY,
     AGENT_CONFIGURED_DIR,
     AGENT_CONTAINER_RUNNER,
     AGENT_CONTAINERS_MODULE,
@@ -57,6 +59,8 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
     AGENT_PRESENT_WANTS,
+    AGENT_VERSIONS_DIR_NAME,
+    AGENT_WANT_RUNNING,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
@@ -80,9 +84,17 @@ from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
 from neutrino_agent.modules.shared.package import (
     check_received,
+    drop_replaced,
+    is_archive_kind,
+    joiner,
     params_of,
     received_artifacts,
     remove_received,
+    remove_staged,
+    stage_artifact,
+    swap_back,
+    swap_in,
+    verify_detail,
     verify_passes,
 )
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
@@ -223,6 +235,7 @@ class ModuleEngine(ReconcileWorker):
         on_change=None,
         configured_dir="",
         failures_dir="",
+        versions_dir="",
     ):
         """
         Args:
@@ -233,6 +246,8 @@ class ModuleEngine(ReconcileWorker):
                 machine's own directory.
             failures_dir: Where each module's last failed step is kept;
                 empty is beside the configured marks.
+            versions_dir: Where each ``hub`` module's installed version is
+                kept; empty is beside the configured marks.
         """
         # The state's modules section as the hub last sent it, by name:
         # ``{"want", "config", "install"}`` each.
@@ -240,6 +255,9 @@ class ModuleEngine(ReconcileWorker):
         self._configured_dir = configured_dir or AGENT_CONFIGURED_DIR
         self._failures_dir = failures_dir or os.path.join(
             os.path.dirname(self._configured_dir), AGENT_FAILURES_DIR_NAME
+        )
+        self._versions_dir = versions_dir or os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_VERSIONS_DIR_NAME
         )
         self._platform_tuple = platform_tuple()
         self._on_line = None
@@ -570,6 +588,82 @@ class ModuleEngine(ReconcileWorker):
             self._uninstall,
         )
 
+    def installed_version(self, name: str) -> dict:
+        """The version of one ``hub`` module the agent installed, as it keeps it.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            ``{"version", "digests"}``, ``digests`` each installed
+            artifact's digest by name; empty when none is kept.
+        """
+        try:
+            with open(self._version_path(name), "r", encoding="utf-8") as stream:
+                held = json.load(stream)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(held, dict) or not isinstance(held.get("version"), str):
+            return {}
+        digests = held.get("digests")
+        return {
+            "version": held["version"],
+            "digests": dict(digests) if isinstance(digests, dict) else {},
+        }
+
+    def take_version_switch(self, name: str) -> bool:
+        """Whether an installed ``hub`` module is to be switched to the version its recipe names.
+
+        A module installed before the agent kept its version takes the
+        recipe's as its own here, and is not switched.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            True when the kept version differs from the recipe's.
+        """
+        recipe = _recipe_of(self._wanted_of(name))
+        if str(recipe.get("method", "") or "") != AGENT_METHOD_HUB:
+            return False
+        if self._runner_for(name, recipe) is None:
+            return False
+        wanted = str(params_of(recipe).get("version", "") or "")
+        held = self.installed_version(name)
+        if not held:
+            self._keep_version(name, recipe)
+            return False
+        return bool(wanted) and held["version"] != wanted
+
+    def switch_version(self, name: str, *, receive, on_line=None) -> dict:
+        """Put the version a module's recipe names in place of the one it runs.
+
+        Each artifact whose digest differs from the installed one is staged
+        beside the files it replaces; the module's services stop, the staged
+        files are swapped in, ``verify`` runs, and the replaced files go. A
+        failure before the swap leaves the old version as it was; one after
+        it puts the old files back and starts the old version again. The
+        row reads ``installing`` meanwhile.
+
+        Args:
+            name: The module name.
+            receive: Fetches one artifact, as :meth:`install` takes it.
+            on_line: Called with each output line.
+
+        Returns:
+            Empty when the new version is in place; ``{"code", "params"}``
+            otherwise, ``version_switch_failed {version, detail}`` for a
+            failure after the swap; the module then reads ``failed``.
+        """
+        return self._operate(
+            name,
+            (AGENT_MODULE_STATE_INSTALLING, AGENT_MODULE_STATE_FAILED),
+            "version_switch_failed",
+            on_line,
+            self._switch,
+            receive,
+        )
+
     def _operate(
         self, name: str, states: tuple, failure: str, on_line, step, *extra
     ) -> dict:
@@ -647,6 +741,8 @@ class ModuleEngine(ReconcileWorker):
         # exits zero and installs nothing is a thing that happens.
         if not self._is_present(runner, recipe):
             return {"code": "install_unconfirmed", "params": {}}
+        if method == AGENT_METHOD_HUB:
+            self._keep_version(name, recipe)
         return {}
 
     def _install_artifact(
@@ -670,6 +766,149 @@ class ModuleEngine(ReconcileWorker):
         finally:
             remove_received(received["path"])
         return {}
+
+    def _switch(self, name: str, wanted: dict, receive) -> dict:
+        """Stage, swap in and verify another version, or put the old one back."""
+        recipe = _recipe_of(wanted)
+        runner = self._runner_for(name, recipe)
+        if runner is None:
+            return {
+                "code": "runner_unknown",
+                "params": {"runner": str(recipe.get("runner", "") or "")},
+            }
+        version = str(params_of(recipe).get("version", "") or "")
+        digests = self.installed_version(name).get("digests") or {}
+        changed = [
+            artifact
+            for artifact in received_artifacts(recipe)
+            if digests.get(str(artifact.get("name", "") or ""))
+            != artifact.get("digest")
+        ]
+        self._collect(f"{name}: switching to {version}")
+        staged: list = []
+        installed_by_kind: list = []
+        try:
+            for artifact in changed:
+                received = receive(name, artifact)
+                if "path" not in received:
+                    remove_staged(staged)
+                    for _artifact, path in installed_by_kind:
+                        remove_received(path)
+                    return dict(received)
+                refusal = check_received(artifact, received)
+                if refusal:
+                    remove_received(received["path"])
+                    remove_staged(staged)
+                    return refusal
+                kind = str(artifact.get("kind", "") or "")
+                if kind in AGENT_ARTIFACT_KEPT_SUFFIXES:
+                    installed_by_kind.append((artifact, received["path"]))
+                    continue
+                try:
+                    staged += stage_artifact(
+                        artifact,
+                        received["path"],
+                        module_dir=runner.module_dir,
+                        join=joiner(self._platform.os_name),
+                        binary_target=(
+                            runner.binary_path(recipe, artifact)
+                            if kind == AGENT_ARTIFACT_KIND_BINARY
+                            else ""
+                        ),
+                    )
+                finally:
+                    remove_received(received["path"])
+        except (ModuleApplyError, OSError) as error:
+            remove_staged(staged)
+            for _artifact, path in installed_by_kind:
+                remove_received(path)
+            if isinstance(error, ModuleApplyError):
+                return {"code": error.code, "params": dict(error.params)}
+            return _switch_failed(version, str(error))
+        with contextlib.suppress(Exception):
+            runner.stop()
+        swapped: list = []
+        try:
+            swapped = swap_in(staged)
+            for artifact, path in installed_by_kind:
+                try:
+                    runner.install_artifact(recipe, dict(artifact), path)
+                finally:
+                    remove_received(path)
+            detail = verify_detail(str(params_of(recipe).get("verify", "") or ""))
+        except Exception as error:  # noqa: BLE001 - every failure puts the old back
+            swapped = getattr(error, "swapped", swapped)
+            detail = str(error) or type(error).__name__
+            if isinstance(error, ModuleApplyError):
+                detail = " ".join(
+                    [error.code]
+                    + [f"{key}={value}" for key, value in error.params.items()]
+                )
+        if detail:
+            swap_back(swapped)
+            remove_staged(staged)
+            self._collect(f"{name}: {version} did not take; the old version runs")
+            self._start_again(name, runner, wanted)
+            return _switch_failed(version, detail)
+        drop_replaced(staged)
+        if any(is_archive_kind(str(a.get("kind", "") or "")) for a in changed):
+            for target, _staged in swapped:
+                if os.path.isdir(target):
+                    self._platform.label_programs(target)
+            self._platform.open_to_accounts(runner.module_dir)
+        self._keep_version(name, recipe)
+        self._collect(f"{name}: {version} is in place")
+        return {}
+
+    def _start_again(self, name: str, runner, wanted: dict) -> None:
+        """Run the old version again after a switch that did not take, as its ``want`` says."""
+        if str(wanted.get("want", "") or "") != AGENT_WANT_RUNNING:
+            return
+        config = wanted.get("config")
+        try:
+            runner.apply(dict(config) if isinstance(config, dict) else {})
+            runner.start()
+        except Exception as error:  # noqa: BLE001 - logged; the failure is reported
+            self._collect(f"{name}: the old version did not start: {error}")
+
+    def _keep_version(self, name: str, recipe: dict) -> None:
+        """Keep the version a recipe names as one module's installed one, with its digests."""
+        if not _is_plain(name):
+            return
+        held = {
+            "version": str(params_of(recipe).get("version", "") or ""),
+            "digests": {
+                str(artifact.get("name", "") or ""): str(
+                    artifact.get("digest", "") or ""
+                )
+                for artifact in received_artifacts(recipe)
+            },
+        }
+        try:
+            os.makedirs(self._versions_dir, mode=0o700, exist_ok=True)
+            handle, temporary = tempfile.mkstemp(
+                dir=self._versions_dir, prefix=".version_"
+            )
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    json.dump(held, stream)
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, self._version_path(name))
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+                raise
+        except OSError as error:
+            self._log(f"{name}: could not keep its version: {error}")
+
+    def _forget_version(self, name: str) -> None:
+        """Delete one module's kept version."""
+        if _is_plain(name):
+            with contextlib.suppress(OSError):
+                os.unlink(self._version_path(name))
+
+    def _version_path(self, name: str) -> str:
+        return os.path.join(self._versions_dir, name + FAILURE_SUFFIX)
 
     def _uninstall(self, name: str, wanted: dict) -> dict:
         """Uninstall by the recipe, drop the hub's configuration and the mark."""
@@ -699,6 +938,7 @@ class ModuleEngine(ReconcileWorker):
         self.clear_configured(name)
         if self._is_present(runner, recipe):
             return {"code": "uninstall_unconfirmed", "params": {}}
+        self._forget_version(name)
         return {}
 
     def _remove(self, name: str, runner, recipe: dict, removal: dict) -> None:
@@ -1021,6 +1261,22 @@ class ModuleEngine(ReconcileWorker):
             log=self._collect,
             publish=self._publish,
         )
+
+
+def _switch_failed(version: str, detail: str) -> dict:
+    """The refusal of a version switch that did not take.
+
+    Args:
+        version: The version it switched to.
+        detail: The failed step's output.
+
+    Returns:
+        ``version_switch_failed {version, detail}``.
+    """
+    return {
+        "code": "version_switch_failed",
+        "params": {"version": version, "detail": detail[-500:]},
+    }
 
 
 def _is_plain(name: str) -> bool:

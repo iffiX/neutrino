@@ -101,6 +101,10 @@ CLI_CODE_WORDS = {
     "module_not_orderable": "the {module} module is the agent's own; nothing installs it",
     "unknown_module": "the agent has no {module} module to configure",
     "apply_failed": "the configuration could not be applied: {detail}",
+    "version_switch_failed": (
+        "version {version} did not take, so the version before it runs again: "
+        "{detail}"
+    ),
     "validate_failed": "the configuration could not be checked: {detail}",
     "command_failed": "the command failed: {detail}",
     "samba_missing": "Samba is not installed on this machine",

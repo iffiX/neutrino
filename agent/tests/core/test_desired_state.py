@@ -76,6 +76,9 @@ class FakeEngine:
         self.install_refusal = install_refusal
         self.queued: list = []
         self.held: list = []
+        self.switching: set = set()
+        self.switches: list = []
+        self.switch_refusal = None
 
     def take_state(self, modules, source_sets=None):
         self.states.append(modules)
@@ -133,6 +136,16 @@ class FakeEngine:
             return dict(self.install_refusal)
         self.installed.add(name)
         return {}
+
+    def take_version_switch(self, name):
+        return name in self.switching
+
+    def switch_version(self, name, *, receive, on_line=None):
+        self.switches.append(name)
+        if on_line is not None:
+            on_line(f"{name}: switching")
+        self.switching.discard(name)
+        return dict(self.switch_refusal) if self.switch_refusal else {}
 
     def uninstall(self, name, *, on_line=None):
         self.uninstalls.append(name)
@@ -332,6 +345,41 @@ def test_running_on_software_that_is_there_installs_nothing(tmp_path):
     assert engine.installs == []
     assert runners["samba"].applied == [{"n": "samba"}]
     assert engine.configured == {"samba"}
+
+
+def test_an_installed_module_of_another_version_is_switched_then_applied(tmp_path):
+    runners = {"vscode": FakeRunner()}
+    engine = FakeEngine(runners)
+    engine.switching = {"vscode"}
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(vscode="running"))
+
+    assert engine.switches == ["vscode"]
+    assert engine.installs == []
+    assert runners["vscode"].applied == [{"n": "vscode"}]
+    assert held.applied_hash == "h1"
+
+
+def test_a_switch_that_did_not_take_fails_the_module_and_applies_nothing(tmp_path):
+    runners = {"vscode": FakeRunner()}
+    engine = FakeEngine(runners)
+    engine.switching = {"vscode"}
+    engine.switch_refusal = {
+        "code": "version_switch_failed",
+        "params": {"version": "2.0", "detail": "code: no such file"},
+    }
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(vscode="running"))
+
+    assert runners["vscode"].applied == []
+    assert held.applied_hash == ""
+    assert engine.failed_states == {"vscode": "failed"}
+    assert engine.results["vscode"] == (
+        "version_switch_failed",
+        {"version": "2.0", "detail": "code: no such file"},
+    )
 
 
 def test_stopped_configures_then_stops_the_unit(tmp_path):

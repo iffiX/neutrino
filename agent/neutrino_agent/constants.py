@@ -360,6 +360,10 @@ AGENT_CONFIGURED_DIR = AGENT_VAR_DIR + "/" + AGENT_CONFIGURED_DIR_NAME
 # Where each module's last failed step is kept, one root-only file per
 # module, so a restart reports it as it was; beside the configured marks.
 AGENT_FAILURES_DIR_NAME = "failures"
+# Where each ``hub`` module's installed version is kept, one root-only file
+# per module with the digest of each artifact it installed; beside the
+# configured marks.
+AGENT_VERSIONS_DIR_NAME = "versions"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put

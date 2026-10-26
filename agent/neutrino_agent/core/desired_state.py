@@ -558,7 +558,8 @@ class DesiredStateApplier:
 
         A module whose last install failed is installed again under a
         present ``want`` and uninstalled under ``absent``, whatever its
-        check finds.
+        check finds. An installed ``hub`` module whose recipe names another
+        version than the one installed is switched to it first.
 
         Args:
             name: The module name.
@@ -590,6 +591,12 @@ class DesiredStateApplier:
             if _method_of(wanted) == AGENT_METHOD_CONTAINER:
                 with self._lock:
                     self._is_containers_marked = True
+        elif self._engine.take_version_switch(name):
+            failure = self._package_operation(
+                name, self._switch_version, AGENT_MODULE_STATE_FAILED
+            )
+            if failure:
+                return failure
         if want not in CONFIGURING_WANTS:
             return None
         failure = self._apply_one(name, runner, want, wanted.get("config"))
@@ -603,6 +610,9 @@ class DesiredStateApplier:
 
     def _uninstall(self, name: str, on_line) -> dict:
         return self._engine.uninstall(name, on_line=on_line)
+
+    def _switch_version(self, name: str, on_line) -> dict:
+        return self._engine.switch_version(name, receive=self._receive, on_line=on_line)
 
     def _package_operation(
         self, name: str, operation, failed_state: str

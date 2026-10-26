@@ -6,9 +6,11 @@ kind lands the one way every module shares: an archive unpacked under its
 directory and sealed, or beside what the module's directory holds when it
 names none, an msi or a pkg kept under its directory and handed to the
 system's installer, a zstd file kept as it came, a program kept where its
-runner says and made executable; an unknown kind is ``install_failed``; and
-a ``hub`` entry's system packages are installed by name before any
-artifact.
+runner says and made executable; an unknown kind is ``install_failed``; a
+``hub`` entry's system packages are installed by name before any artifact;
+and another version is staged beside each file it replaces as ``.new``,
+swapped in with each replaced file kept as ``.old``, the ``.old`` files
+dropped or put back, and a failed ``verify`` named by its own output.
 """
 
 import io
@@ -30,8 +32,14 @@ from neutrino_agent.modules.shared.package import (
     keep_artifact,
     npm_artifact,
     place_binary,
+    drop_replaced,
     received_artifacts,
+    remove_staged,
+    stage_artifact,
+    swap_back,
+    swap_in,
     unpacked_paths,
+    verify_detail,
     verify_passes,
 )
 from neutrino_agent.platforms.base import AgentPlatform
@@ -328,3 +336,87 @@ def _received(tmp_path, data: bytes) -> str:
     path = tmp_path / f"received_{len(os.listdir(tmp_path))}"
     path.write_bytes(data)
     return str(path)
+
+
+# --- another version ---
+
+
+def test_an_archive_with_a_directory_stages_beside_it_and_swaps_in(tmp_path):
+    module = tmp_path / "demo"
+    (module / "server").mkdir(parents=True)
+    (module / "server" / "run").write_text("1.0")
+    archive = tarball(tmp_path / "server.tar.gz", {"top/run": b"2.0"})
+    artifact = {"name": "server", "kind": "tar_gz", "directory": "server"}
+
+    pairs = stage_artifact(artifact, archive, module_dir=str(module), join=os.path.join)
+    swapped = swap_in(pairs)
+
+    target = str(module / "server")
+    assert pairs == [(target, target + ".new")]
+    assert (module / "server" / "run").read_text() == "2.0"
+    assert (module / "server.old" / "run").read_text() == "1.0"
+    drop_replaced(pairs)
+    assert sorted(os.listdir(module)) == ["server"]
+    assert swapped == pairs
+
+
+def test_an_archive_with_no_directory_swaps_each_of_its_files(tmp_path):
+    module = tmp_path / "demo"
+    module.mkdir()
+    (module / "code").write_text("1.0")
+    (module / "tokens").mkdir()
+    archive = tarball(tmp_path / "cli.tar.gz", {"code": b"2.0"})
+
+    pairs = stage_artifact(
+        {"name": "cli", "kind": "tar_gz"},
+        archive,
+        module_dir=str(module),
+        join=os.path.join,
+    )
+    swapped = swap_in(pairs)
+    swap_back(swapped)
+
+    assert (module / "code").read_text() == "1.0"
+    remove_staged(pairs)
+    assert sorted(os.listdir(module)) == ["code", "tokens"]
+
+
+def test_a_program_is_staged_executable_and_put_back_on_a_failed_switch(tmp_path):
+    target = tmp_path / "gitea"
+    target.write_text("1.0")
+    received = tmp_path / "received"
+    received.write_text("2.0")
+
+    pairs = stage_artifact(
+        {"name": "gitea", "kind": "binary"},
+        str(received),
+        module_dir=str(tmp_path / "module"),
+        join=os.path.join,
+        binary_target=str(target),
+    )
+    swapped = swap_in(pairs)
+
+    assert target.read_text() == "2.0"
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o755
+    swap_back(swapped)
+    assert target.read_text() == "1.0"
+    assert sorted(os.listdir(tmp_path)) == ["gitea", "received"]
+
+
+def test_an_artifact_that_cannot_be_staged_is_install_failed(tmp_path):
+    with pytest.raises(ModuleApplyError) as refused:
+        stage_artifact(
+            {"name": "podman", "kind": "msi", "directory": "podman"},
+            str(tmp_path / "x"),
+            module_dir=str(tmp_path),
+            join=os.path.join,
+        )
+
+    assert refused.value.code == "install_failed"
+
+
+def test_a_failed_verify_is_named_by_its_own_output():
+    assert verify_detail("true") == ""
+    assert verify_detail("echo broken >&2; exit 3") == "broken"
+    assert verify_detail("exit 4") == "exit 4"
+    assert verify_detail("") == "no verify command"

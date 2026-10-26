@@ -11,6 +11,11 @@ kept where its runner says and made executable. An npm artifact is installed
 by its module's runner. Whether the module is there is the recipe's
 ``verify`` command, and nothing here decides when to install.
 
+Another version of an installed module is staged beside the files it
+replaces, each under its name with ``.new``; swapped in, each file before it
+kept under its name with ``.old``; and the ``.old`` files dropped once the
+new version runs, or put back when it does not.
+
 Not pure: runs the verify command and writes files.
 """
 
@@ -22,6 +27,7 @@ import contextlib
 import ntpath
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 import zipfile
@@ -29,6 +35,7 @@ import zipfile
 from neutrino_agent.constants import (
     AGENT_ARTIFACT_ARCHIVE_KINDS,
     AGENT_ARTIFACT_KEPT_SUFFIXES,
+    AGENT_ARTIFACT_KIND_BINARY,
     AGENT_ARTIFACT_KIND_NPM,
     AGENT_DIGEST_SHA256_PREFIX,
 )
@@ -41,6 +48,10 @@ from neutrino_agent.modules.shared.unpacked_tree import (
 from neutrino_agent.streams.package import CODE_DIGEST_MISMATCH
 
 VERIFY_TIMEOUT_S = 30
+# What a staged file and a replaced one are named after the file they stand
+# beside during a version switch.
+STAGED_SUFFIX = ".new"
+REPLACED_SUFFIX = ".old"
 
 
 def verify_passes(command: str) -> bool:
@@ -62,6 +73,30 @@ def verify_passes(command: str) -> bool:
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
+
+
+def verify_detail(command: str) -> str:
+    """Why a recipe's verify command fails on this machine, empty when it passes.
+
+    Args:
+        command: The shell command the hub resolved for this platform.
+
+    Returns:
+        Empty when it exits zero; its last output otherwise, or why it could
+        not run.
+    """
+    if not command:
+        return "no verify command"
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, timeout=VERIFY_TIMEOUT_S
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return str(error) or type(error).__name__
+    if result.returncode == 0:
+        return ""
+    said = (result.stderr or result.stdout or b"").decode("utf-8", "replace").strip()
+    return said[-500:] or f"exit {result.returncode}"
 
 
 def params_of(recipe) -> dict:
@@ -345,3 +380,145 @@ def joiner(os_name: str):
 def is_archive_kind(kind: str) -> bool:
     """Whether a kind is one of the archives unpacked under the module."""
     return kind in AGENT_ARTIFACT_ARCHIVE_KINDS
+
+
+def stage_artifact(
+    artifact: dict, path: str, *, module_dir: str, join, binary_target: str = ""
+) -> list:
+    """Put another version's artifact beside the files it replaces.
+
+    An archive with a directory is unpacked under ``<directory>.new``; one
+    with none under ``.<name>.new`` in the module's directory, each of its
+    files to stand in for its namesake there; a program is kept as
+    ``<target>.new``, executable.
+
+    Args:
+        artifact: The recipe's artifact, an archive or a program.
+        path: The received file, whose digest was checked.
+        module_dir: The module's directory under the state root.
+        join: How the system joins a path.
+        binary_target: Where the module keeps a program.
+
+    Returns:
+        ``[(target, staged)]``: each path the switch replaces and the staged
+        path that takes its place.
+
+    Raises:
+        ModuleApplyError: ``install_failed {detail}`` for an artifact that
+            cannot be staged.
+        OSError: When the files cannot be written.
+    """
+    kind = str(artifact.get("kind", "") or "")
+    name = str(artifact.get("name", "") or "")
+    directory = str(artifact.get("directory", "") or "")
+    if kind == AGENT_ARTIFACT_KIND_BINARY and binary_target:
+        staged = binary_target + STAGED_SUFFIX
+        shutil.copyfile(path, staged)
+        os.chmod(staged, 0o755)
+        return [(binary_target, staged)]
+    if not is_archive_kind(kind) or not is_plain_name(name):
+        raise ModuleApplyError(
+            "install_failed", {"detail": f"artifact {name!r} of kind {kind!r}"}
+        )
+    if directory and not is_plain_name(directory):
+        raise ModuleApplyError(
+            "install_failed", {"detail": f"artifact directory {directory!r}"}
+        )
+    try:
+        if directory:
+            target = join(module_dir, directory)
+            unpack_into(path, kind, target + STAGED_SUFFIX)
+            return [(target, target + STAGED_SUFFIX)]
+        staging = join(module_dir, "." + name + STAGED_SUFFIX)
+        unpack_into(path, kind, staging)
+    except (ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
+        raise ModuleApplyError(
+            "install_failed", {"detail": str(error)[:200]}
+        ) from error
+    return [
+        (join(module_dir, entry), join(staging, entry))
+        for entry in sorted(os.listdir(staging))
+    ]
+
+
+def swap_in(pairs: list) -> list:
+    """Put each staged path in its target's place, the target kept as ``.old``.
+
+    Args:
+        pairs: ``[(target, staged)]`` as :func:`stage_artifact` gives them.
+
+    Returns:
+        The pairs swapped, in order, for :func:`swap_back`; when a rename
+        fails the ones before it are in the list the error carries as its
+        ``swapped`` attribute.
+
+    Raises:
+        OSError: When a rename fails, with ``swapped`` on it.
+    """
+    swapped = []
+    try:
+        for target, staged in pairs:
+            parent = os.path.dirname(staged)
+            if os.path.basename(parent).endswith(STAGED_SUFFIX):
+                os.chmod(parent, stat.S_IMODE(os.stat(parent).st_mode) | 0o700)
+            if os.path.lexists(target):
+                remove_path(target + REPLACED_SUFFIX)
+                os.replace(target, target + REPLACED_SUFFIX)
+            os.replace(staged, target)
+            swapped.append((target, staged))
+    except OSError as error:
+        error.swapped = swapped
+        raise
+    return swapped
+
+
+def swap_back(pairs: list) -> None:
+    """Put back what a switch replaced, and drop what it brought.
+
+    Args:
+        pairs: The pairs :func:`swap_in` swapped.
+    """
+    for target, _staged in reversed(pairs):
+        remove_path(target)
+        if os.path.lexists(target + REPLACED_SUFFIX):
+            with contextlib.suppress(OSError):
+                os.replace(target + REPLACED_SUFFIX, target)
+
+
+def drop_replaced(pairs: list) -> None:
+    """Delete what a switch replaced, and what is left of its staging.
+
+    Args:
+        pairs: ``[(target, staged)]`` of the switch.
+    """
+    for target, staged in pairs:
+        remove_path(target + REPLACED_SUFFIX)
+        remove_staged([(target, staged)])
+
+
+def remove_staged(pairs: list) -> None:
+    """Delete staged files a switch did not swap in, and their staging directory.
+
+    Args:
+        pairs: ``[(target, staged)]``.
+    """
+    for _target, staged in pairs:
+        remove_path(staged)
+        parent = os.path.dirname(staged)
+        if os.path.basename(parent).endswith(STAGED_SUFFIX):
+            remove_tree(parent)
+
+
+def remove_path(path: str) -> None:
+    """Delete one file or tree; nothing happens when it is not there.
+
+    Args:
+        path: The file or the tree's root.
+    """
+    if os.path.isdir(path) and not os.path.islink(path):
+        remove_tree(path)
+        return
+    with contextlib.suppress(OSError):
+        os.chmod(path, 0o700)
+    with contextlib.suppress(OSError):
+        os.unlink(path)

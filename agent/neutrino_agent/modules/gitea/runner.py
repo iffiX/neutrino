@@ -207,6 +207,18 @@ class GiteaModuleRunner(ModuleRunner):
         self._applier.install(path)
         self._survey = None
 
+    def binary_path(self, recipe: dict, artifact: dict) -> str:
+        """Where the release binary is kept, which a version switch replaces.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: The ``binary`` artifact.
+
+        Returns:
+            The program's path on this system.
+        """
+        return self._applier.binary_path
+
     def uninstall(self, recipe: dict) -> None:
         """Take the service, the binary and the configuration off; keep the
         data and the account.
