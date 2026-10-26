@@ -49,6 +49,10 @@ conventions explicit so nobody drifts.
    - [coding_style/kotlin_style.md](coding_style/kotlin_style.md) and
      [coding_style/swift_style.md](coding_style/swift_style.md): the Android
      and iOS apps: formatters, PascalCase files, errors, no force unwrap.
+   - [coding_style/go_style.md](coding_style/go_style.md): the transport
+     module shared by the three sides: gofmt and vet, lowercase package
+     directories, one `errors.go` per package, no panic, every goroutine
+     owned by a context.
 
 2. **Documentation style** — how the three kinds of document in this repo are
    written, in English and in Chinese. Grounded in a full-text study of the

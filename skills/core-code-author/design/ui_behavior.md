@@ -35,8 +35,19 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
-something the whole page is about: `Scan LAN`, `New terminal`.
-Those sit in `page_actions`, and a page with none is the normal case.
+something the whole page is about: `Add over SSH`, `New terminal`, `Default
+permission`. Those sit in `page_actions`, and a page with none is the normal
+case.
+
+A header action that adds a record (**Add by link**, **Add over SSH**, **New
+client link**, **Declare a service**) opens a dialog in the style of the install
+dialog (`install_agent_modal.tsx`). The dialog holds the form, the link or the
+QR it produces, and the output of the task it starts; the page itself never
+shows an add form or a produced link inline. A header add wears
+`button--primary`, and `page_actions` gives it the glow ([visual.md](visual.md),
+"Buttons come in three tiers"). The other shape, the add of one
+entry inside a panel, is the inline form below, and which of the two an add
+takes is decided by where its button sits.
 
 ## The panel
 
@@ -81,7 +92,12 @@ tier each one takes is [visual.md](visual.md).
 
 A row of records puts its repeated actions on the row itself as ghost buttons —
 per-row Remove, Test, Edit — and a panel-scope action (`Add node`, `Test all`)
-in the panel's header.
+in the panel's header. Inside a panel one button is `button--primary`: the one
+at its foot that commits, the apply bar's button or the save of its inline
+form. Every other action of a panel, its header's add included (`Add
+provider`, `Sign in`, `Add key`), is the bordered `button`: a page holds many
+panels, and an accent on each of their adds leaves the apply nowhere to be
+found.
 
 ## Status dots and badges
 
@@ -167,10 +183,14 @@ phone width takes two lines: the icon and the name, then the size and the time.
 
 ## Inline forms
 
-A record is added where its list is. `Add node` opens a form in place with a
-Cancel beside its save; nothing navigates away to add one thing, and the same
-form edits an existing record where the record is editable at all — a
-credential is not (see Secrets).
+A record of a panel is added where its list is. The panel's own add (`Add
+node`, `Add key`, `Add login`) opens a form in place, as the Proxy page's node
+form does: the new entry takes the accent frame while it is being written,
+`settings_group--dirty` or `card--dirty` on that entry alone, and every other
+entry keeps its plain frame. A Cancel sits beside its save; nothing navigates
+away to add one thing, and the same form edits an existing record where the
+record is editable at all; a credential is not (see Secrets). An add from the
+page header is not this form but a dialog (The page, above).
 
 Where a list is a configurable panel, the add is part of the draft: the row
 lights the frame and Apply is what makes it real, and a record born that way is
@@ -206,23 +226,24 @@ bar's `warning` is where its cost is stated. Deleting data that cannot be
 re-derived asks for more than a press: the name typed back, in a red-bordered
 box inside the card rather than in this dialog ([visual.md](visual.md)).
 
-## Drawers and modals
+## Modals, and where a record's detail lives
 
-A **drawer** is the detail view of one record from a list. It pins to the right
-edge at full height, portals to `document.body` so no stacking context can put
-it under the top bar, dismisses on Escape or the backdrop, and defers its own
-loading until it opens by passing a null path to `useApiResource`.
-`device_drawer.tsx` is the reference, and a list page therefore never navigates
-away to show one row.
+The panel has no drawer: nothing pins to the right edge over a list, and a
+list page has no second level. A record with sections of its own is a page:
+a managed machine's monitor, its modules and its agent are `/agents/<id>`,
+one entry per machine in the sidebar's agent group. A record edited in one or
+two fields is edited in its row: a device's name and icon on the Devices page,
+a client's name and permission on the Clients page, the row lit as the inline
+form is while the edit is open. A setting that belongs to the whole page, the
+clients' default permission, is a dialog from the page header.
 
-A drawer is one record, so it saves as one record: sections down the body, one
-`button--commit` at the foot, and no apply bars. Actions that are not part of
-that record — reboot, wake, install — act at once from their own row, and their
-output streams into the log at the bottom.
+Actions that are not part of a record, reboot, wake, install, act at once from
+their own row, and the output of a task they start streams into the dialog
+that started it or into the row's own log line.
 
 A **modal** is for one interaction that must finish before anything else: a
-confirmation, a terminal session, a file transfer, an install consent. Anything
-that is merely detail is a drawer. A QR code in a dialog is an image, an
+confirmation, a terminal session, a file transfer, an install consent, an add
+from a page header. A QR code in a dialog is an image, an
 `<img>` from a PNG data URL, so a long press on a phone and a right click on
 a desktop save it; it is drawn at four pixels per module at least and never
 under 240 px, so the whole enrolment link scans from a screen, and in a
@@ -262,8 +283,8 @@ that looks like nothing happened gets pressed again.
 ## Journals and streamed output
 
 Output a person reads goes into the page — a journal panel, or the log at the
-bottom of a drawer. Nothing in this panel is announced in a toast and dismissed;
-an install is a thing you read.
+bottom of the dialog that started the task. Nothing in this panel is announced
+in a toast and dismissed; an install is a thing you read.
 
 A journal is a fixed tail of the last 200 lines, fetched only while it is open —
 a modules page with eight units pulls no journals until somebody asks for one —
@@ -316,7 +337,7 @@ two seconds before the `ErrorPanel` shows; a response with a status is
 shown at once.
 
 The backend returns `{code, params}` and the frontend words it, from a map
-beside the component that shows it: `device_drawer.tsx` (`ACTION_ERROR_KEYS`)
+beside the component that shows it: `devices_page.tsx` (`ACTION_ERROR_KEYS`)
 and `services_page.tsx` (`DECLARED_INVALID_KEYS`) are the shape. An unworded
 code drops an optional detail, but never a consequence somebody is being asked
 to accept: that one still shows, with the code spelled out, because an unworded
@@ -435,22 +456,36 @@ shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
 and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
-## Finding and adding a device
+## The Devices page
 
-The Devices page's header holds **Scan LAN** and **Add by address**
-(按地址添加). A
-scan covers the exposed IPv4 segments in every mode
-([protocol.md](protocol.md), `POST /api/hub/device/scan`): a segment of at
-most 256 addresses whole, and of a larger one only the /24 that holds the
-hub's own address. It scans no IPv6 segment and reads the IPv4 neighbours
-alone, so a row's address is always an IPv4 one. **Add by address** opens a
-dialog in the style of the **Install agent** dialog, with the same fields:
-**Host**, **Port**, **User name**, **Credential**, **SSH key** and **Sudo
-password**, the host typed by the person. The dialog's button installs:
-one press creates the machine's row, named by its host until it reports,
-and starts the install ([protocol.md](protocol.md), `POST
-/api/hub/device/add`). It reaches a machine no scan finds, such as one on a
-network the hub has no address in.
+The page is one table of the managed machines alone, one row each, every row
+the same height. A row holds the icon, a button that opens a small picker of
+the device icons under it and writes the pick at once; the status dot; the
+name, a link to `/agents/<id>`; the address; the MAC; the status cell; the
+agent's version; when the agent was last seen; and the row's actions as ghost
+buttons: **Manage**, **Rename**, **Wake**, **Reboot**, **Shut down**, and
+**Forget** last in the danger tier. **Rename** turns the name into an input
+and the actions cell into **Save** and **Cancel** alone. The actions are
+right-aligned in their cell, as the Clients page's are.
+
+The status cell of a reporting machine is five ring gauges, 30 px each, the
+integer inside and a label under: CPU, memory, disk, GPU and temperature, in
+the tones `device_gauge` uses, the temperature ring warning at 70 and failing
+at 85. The GPU ring shows the busiest card and wears a `×N` badge at its
+corner when the machine has more than one; a machine with none has no GPU
+ring. An offline machine's cell reads `Offline · <ago>`. The rings move on
+the `metrics` event and ask for nothing.
+
+The page has no filter chips, no legend, no search box, no scan and no drawer.
+Its title carries `<n> agents, <m> online`, and its header holds two primary
+buttons, both dialogs: **Add by link** (用链接添加), which shows the enrolment
+link and its QR for a machine that joins on its own, and **Add over SSH** (用
+SSH 添加), the install dialog with **Host**, **Port**, **User name**,
+**Credential**, **SSH key** and **Sudo password**. That dialog's button creates
+the machine's row, named by its host until it reports, and starts the install
+([protocol.md](protocol.md), `POST /api/hub/device/add`). Wake-on-LAN stays
+on this page: it is a packet on the network and needs no agent
+([protocol.md](protocol.md), `POST /api/hub/device/wake`).
 
 ## The Exposure section on the Network page
 
@@ -659,8 +694,10 @@ with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/herm
 The path window is the one Samba's share folders use
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or
 at the machine's root, lists files beside folders, and a press on a file
-hands its path back. The device drawer's desktop section names the switch
-and links to this tab instead of offering a way to share.
+hands its path back. The Devices page holds no desktop section: this tab is
+the one place the share is set, and it shows beside the switch what the
+device drawer once showed, the RustDesk state with **Reset seat password**,
+and the AnyDesk and TeamViewer detection with their unattended passwords.
 
 A tab whose module the machine reports `unsupported`, an agent older than the
 module, keeps its state word `unsupported` and draws its panel with every
@@ -762,7 +799,7 @@ gateway reports the flow `complete` or `failed`.
 Before designing one, establish that it is not generic. **Where an established
 website or app already has this feature, follow its logic** rather than
 inventing another, and name the app you followed in the summary of the change.
-Most interactions somebody reaches for here — a filter row, a detail drawer, a
+Most interactions somebody reaches for here — a filter row, an inline add, a
 masked secret, a confirm-before-delete — already exist above, and a third idiom
 for a thing that has one is worse than a plain copy of it.
 
