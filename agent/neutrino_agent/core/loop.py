@@ -298,6 +298,9 @@ class Agent:
         # the loop starts them.
         self._transport = None
         self._control: "TransportControlClient | None" = None
+        # Moves on each end of a transport, so a line the ended one still
+        # delivers is dropped.
+        self._generation = 0
         # The dial last sent, so a binding is dialled once.
         self._dialed: "dict | None" = None
         # The session the transport opened last, and the one a report went
@@ -384,6 +387,7 @@ class Agent:
         self._engine.take_state({})
         self._undial()
         self._ai_forward.stop()
+        self._stop_transport()
         self._reset_binding_state()
         self._load_connection()
         self._news.set()
@@ -572,6 +576,8 @@ class Agent:
             if transport.is_running():
                 return True
         self._stop_transport()
+        with self._lock:
+            generation = self._generation
         try:
             transport = self._transport_starter(self._platform, self._log)
         except OSError as error:
@@ -585,10 +591,10 @@ class Agent:
         control = TransportControlClient(
             connect=functools.partial(open_local, transport.listen),
             secret=transport.secret,
-            on_event=self._on_event,
-            on_frame=self._on_frame,
+            on_event=functools.partial(self._on_event_of, generation),
+            on_frame=functools.partial(self._on_frame_of, generation),
             on_question=self._on_question,
-            on_closed=self._on_transport_closed,
+            on_closed=functools.partial(self._on_closed_of, generation),
             log=self._log,
         )
         try:
@@ -606,8 +612,10 @@ class Agent:
         return True
 
     def _stop_transport(self) -> None:
-        """End the control connection and the transport child."""
+        """End the control connection and the transport child; what the
+        ended transport still sends afterwards is dropped."""
         with self._lock:
+            self._generation += 1
             control, self._control = self._control, None
             transport, self._transport = self._transport, None
             self._dialed = None
@@ -678,6 +686,26 @@ class Agent:
             return
         with contextlib.suppress(GatewayUnreachable):
             self._command(COMMAND_UNDIAL)
+
+    def _on_event_of(self, generation: int, event: dict) -> None:
+        """One event of the transport started as ``generation``."""
+        if self._is_current(generation):
+            self._on_event(event)
+
+    def _on_frame_of(self, generation: int, frame: dict) -> None:
+        """One frame through the transport started as ``generation``."""
+        if self._is_current(generation):
+            self._on_frame(frame)
+
+    def _on_closed_of(self, generation: int) -> None:
+        """The control connection of the transport started as ``generation`` ended."""
+        if self._is_current(generation):
+            self._on_transport_closed()
+
+    def _is_current(self, generation: int) -> bool:
+        """Whether a transport is the one running now, not one ended since."""
+        with self._lock:
+            return generation == self._generation
 
     def _on_event(self, event: dict) -> None:
         """One event of the transport's: a session opened or ended, a stream."""
@@ -823,6 +851,9 @@ class Agent:
         """
         rejection = channel_error(error)
         code = rejection["code"]
+        if code == AGENT_CODE_BINDING_UNKNOWN and self._is_binding_rewritten():
+            self._log("a refusal of the binding written over since; it is not taken")
+            return IDLE_POLL_INTERVAL_S
         if code == AGENT_CODE_BINDING_UNKNOWN:
             self._undial()
             enrollment.remove_binding()
@@ -1300,6 +1331,7 @@ class Agent:
         self._reset_binding_state()
         self._undial()
         self._ai_forward.stop()
+        self._stop_transport()
         self._engine.take_state({})
         self._log("adopted the binding written on disk")
 

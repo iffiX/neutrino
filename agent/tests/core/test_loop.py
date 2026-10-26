@@ -608,6 +608,42 @@ def test_a_round_ended_by_binding_unknown_unbinds(fake, config_path):
     assert agent.last_error()["code"] == "binding_unknown"
 
 
+def test_a_binding_unknown_about_a_binding_written_over_since_keeps_the_new_one(
+    fake, config_path
+):
+    agent = agent_on(fake, config=config_path)
+    agent.run_once()
+
+    bind(config_path, url=OVERLAY_URL)
+    fake.send_event("round_end", code="binding_unknown", params={}, next_round_s=0)
+    fake.send_event("round_end", code="hub_unreachable", params={}, next_round_s=5)
+    until(lambda: (agent.last_error() or {}).get("code") == "hub_unreachable")
+
+    assert json.loads(config_path.read_text())["gateway_url"] == OVERLAY_URL
+
+
+def test_a_line_from_a_transport_ended_since_is_dropped(fake, config_path):
+    agent = agent_on(fake, config=config_path)
+    agent.run_once()
+    ended = agent._generation
+
+    agent._stop_transport()
+    agent._on_event_of(ended, {"event": "round_end", "code": "binding_unknown"})
+
+    assert enrollment_module.is_bound()
+    assert agent.last_error() is None
+
+
+def test_a_binding_written_over_starts_the_transport_afresh(fake, config_path):
+    agent = live(agent_on(fake, config=config_path), fake)
+
+    bind(config_path, url=OVERLAY_URL)
+    agent.run_once()
+
+    assert fake.starts == 2
+    assert fake.wait_command("dial", count=2)["addresses"][0] == OVERLAY_URL
+
+
 def test_a_session_that_drops_is_hub_unreachable_and_keeps_the_binding(
     fake, config_path
 ):
