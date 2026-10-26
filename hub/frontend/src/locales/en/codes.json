@@ -3,6 +3,7 @@
   "code.access_point_needs_ssid": "An access point needs a network name.",
   "code.access_point_passphrase_length": "An access point passphrase is {minimum} to {maximum} characters.",
   "code.account_duplicate": "{account} is already one of this machine's accounts.",
+  "code.account_home_unknown": "The machine has not reported a home directory for {account}; set its share path.",
   "code.account_invalid": "{account} cannot be an account name for this module on this machine.",
   "code.account_not_enabled": "{account} is not enabled for this machine's terminal.",
   "code.account_unknown": "This machine has no account called {account}.",
@@ -354,8 +355,9 @@
   "code.op_unknown": "This agent cannot do {op} on files.",
   "code.port_taken": "Local port {port} is in use; give this entry another in Configure.",
   "code.terminal_account_missing": "No account is enabled for this machine's terminal; enable one on its machine page.",
+  "code.transport_apply_failed": "The transport could not be started: {detail}",
   "code.transport_key_missing": "The hub's connection port is not ready yet; make the link again in a moment.",
-  "code.version_locked": "{module} has one version on this machine, which cannot be chosen.",
+  "code.version_locked": "The version of {module} follows the system or the agent and cannot be chosen.",
   "code.version_switch_failed": "Version {version} did not start, so the previous version runs again: {detail}",
   "code.version_unknown": "Version {version} is not listed for this machine."
 }

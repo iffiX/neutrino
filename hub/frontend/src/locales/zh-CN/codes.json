@@ -3,6 +3,7 @@
   "code.access_point_needs_ssid": "接入点需要一个网络名称。",
   "code.access_point_passphrase_length": "接入点密码为 {minimum} 到 {maximum} 个字符。",
   "code.account_duplicate": "{account} 已经是这台机器的可用账户了。",
+  "code.account_home_unknown": "这台机器还没有报告 {account} 的家目录，请填写它的共享路径。",
   "code.account_invalid": "非法账户名：这台机器上的这个模块不能用 {account}。",
   "code.account_not_enabled": "这台机器的终端没有启用 {account}。",
   "code.account_unknown": "这台机器上没有叫 {account} 的账户。",
@@ -354,8 +355,9 @@
   "code.op_unknown": "这个被控端不能对文件做 {op}。",
   "code.port_taken": "本机端口 {port} 已被占用，在“配置”里给这个入口换一个。",
   "code.terminal_account_missing": "这台机器的终端没有启用的账户，到它的机器页上启用一个。",
+  "code.transport_apply_failed": "传输层没能启动：{detail}",
   "code.transport_key_missing": "中枢的连接端口还没就绪，稍后再生成链接。",
-  "code.version_locked": "{module} 在这台机器上只有一个版本，不能选择。",
+  "code.version_locked": "{module} 的版本跟随系统或被控端，不能选择。",
   "code.version_switch_failed": "版本 {version} 没能启动，已换回原来的版本：{detail}",
   "code.version_unknown": "这台机器没有版本 {version}。"
 }
