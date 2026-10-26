@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"syscall"
 
 	"github.com/iffiX/neutrino/transport/session"
 )
@@ -41,7 +40,7 @@ func connectReason(err error) string {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return session.ReasonTimeout
 	}
-	if errors.Is(err, syscall.ECONNREFUSED) {
+	if isRefused(err) {
 		return session.ReasonRefused
 	}
 	return session.ReasonUnreachable

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func newHubUnderTest(t *testing.T) *hubUnderTest {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(socket)
-	if err != nil || info.Mode().Perm() != ControlSocketMode {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != ControlSocketMode) {
 		t.Fatalf("socket mode %v %v", info, err)
 	}
 	hubControl := NewHubControl(listener, testSecret, filepath.Join(dir, "keys"), nil)

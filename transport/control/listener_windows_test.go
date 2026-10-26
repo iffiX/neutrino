@@ -4,6 +4,7 @@ package control
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,14 +18,17 @@ func testPipeName(t *testing.T) string {
 	return fmt.Sprintf(`%sneutrino_test_%d_%d`, ControlPipePrefix, os.Getpid(), time.Now().UnixNano())
 }
 
-// acceptOne accepts one connection in the background.
+// acceptOne accepts one connection in the background; a listener closed
+// under it closes the channel with no connection.
 func acceptOne(t *testing.T, listener net.Listener) <-chan net.Conn {
 	t.Helper()
 	accepted := make(chan net.Conn, 1)
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
-			t.Error(err)
+			if !errors.Is(err, ErrListenerClosed) {
+				t.Error(err)
+			}
 			close(accepted)
 			return
 		}

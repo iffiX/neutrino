@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func TestLongDirectoryFallsBack(t *testing.T) {
 		t.Fatalf("path %s", path)
 	}
 	info, err := os.Stat(filepath.Dir(path))
-	if err != nil || info.Mode().Perm() != MobileFallbackDirMode {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != MobileFallbackDirMode) {
 		t.Fatalf("fallback directory %v %v", info, err)
 	}
 	if _, err := Start(long, "short"); err != ErrAlreadyRunning {
