@@ -1,60 +1,84 @@
 import { useState } from "react";
 
+import { DeclareServiceModal } from "../components/declare_service_modal";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
-import { Picker } from "../components/picker";
-import type { PickerOption } from "../components/picker";
 import { StatusDot } from "../components/status_dot";
-import { StringListEditor } from "../components/string_list_editor";
-import { ApiError, apiGet, apiPost, describeError } from "../api_client";
+import type { StatusTone } from "../components/status_dot";
+import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
-import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
+import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import type {
-  DeclaredServiceCreate,
+  AppEntryView,
+  AppSource,
+  AppView,
+  DeclaredAppRequest,
   PublishedService,
+  PublishedServicePayload,
   PublishedServiceType,
-  NetworkView,
-  ServiceSharesResponse,
-  ServicesResponse,
+  ServiceListView,
 } from "../api_types";
 
 import "./services_page.css";
 
 /**
- * What the hub publishes: the typed service list, grouped by type.
+ * What the hub publishes to clients.
  *
- * Module-declared rows are read-only — they exist while their module serves,
- * and their health is the module's own. Declared rows are the manual
- * declarations, created and deleted here and probed for health. The same
- * list, resolved per caller, is what every device's catalog carries.
+ * **Apps** first: one row per app, one program on one machine, its entries
+ * each a chip with its status dot, and at the row's right the chip of where
+ * it comes from. A module the hub manages is one app however many containers
+ * it runs; a container the hub does not manage is one app of its own. An
+ * app declared here carries Test and Delete. The entries of no app follow
+ * in their own sections: the AI gateway, the machines' file shares and the
+ * shared desktops. **Declare service** opens the dialog that declares an
+ * app with its entries.
  */
 
-const GROUP_ORDER: PublishedServiceType[] = [
-  "web",
-  "port",
-  "ai",
-  "file",
-  "rdp",
-];
-const GROUP_TITLE_KEYS: Record<PublishedServiceType, string> = {
-  web: "ui.services.group_web",
-  port: "ui.services.group_port",
+/** The sections of the entries that belong to no app, in order. */
+const SECTION_ORDER: PublishedServiceType[] = ["ai", "file", "rdp"];
+const SECTION_TITLE_KEYS: Record<string, string> = {
   ai: "ui.services.group_ai",
   file: "ui.services.group_file",
   rdp: "ui.services.group_rdp",
 };
 
-// One fixed word set per source: a module row is the module's own state, a
-// declared row is what the last probe measured, a device row is a machine
-// saying it shares its desktop.
+/** The tones an entry's health takes. */
+type HealthTone = Extract<StatusTone, "ok" | "error" | "idle">;
+
+/** Who answers for an app, the hub's own module in the accent. */
+const APP_SOURCE_KEYS: Record<AppSource, string> = {
+  module: "ui.app_source.module",
+  declared: "ui.app_source.declared",
+  manual: "ui.app_source.manual",
+};
+const APP_SOURCE_TONES: Record<AppSource, string> = {
+  module: "badge--accent",
+  declared: "badge--secondary",
+  manual: "badge--secondary",
+};
+
+/** The word of each entry's type on its chip. */
+const ENTRY_TYPE_KEYS: Record<PublishedServiceType, string> = {
+  web: "ui.services.kind_web",
+  port: "ui.services.kind_port",
+  ssh: "ui.services.kind_ssh",
+  ai: "ui.services.group_ai",
+  file: "ui.services.kind_file",
+  rdp: "ui.services.group_rdp",
+};
+
+// One fixed word set per kind of row: a module row is the module's own
+// state, a machine row is a machine saying it shares its desktop.
 const MODULE_STATE_KEYS: Record<"ok" | "error", string> = {
   ok: "ui.services.state_serving",
   error: "state.not_serving",
 };
 const DEVICE_STATE_KEY = "state.shared";
+// A declared entry's word: what its last probe measured, or that the hub
+// has not probed it yet, or never does, as a UDP port.
 const DECLARED_STATE_KEYS: Record<
   "ok" | "error" | "idle" | "unchecked",
   string
@@ -65,7 +89,7 @@ const DECLARED_STATE_KEYS: Record<
   unchecked: "state.not_checked",
 };
 
-// The probe's detail_code, worded. A file service is measured against the
+// The probe's detail_code, worded. A file entry is measured against the
 // server's own list of exports, so a share that is not on it reads
 // differently from a server that never answered, and differently again from
 // a hub that has no client to ask with.
@@ -77,8 +101,7 @@ const DECLARED_DETAIL_KEYS: Record<string, string> = {
   list_refused: "code.list_refused",
   share_unverified: "code.share_unverified",
 };
-// Where an entry comes from, as the hub names it. A declared entry whose
-// person wrote their own line carries no code, and that line stands.
+// Where an entry of no app comes from, as the hub names it.
 const DESCRIPTION_KEYS: Record<string, string> = {
   ai_gateway: "ui.services.description_ai_gateway",
   container: "ui.services.description_container",
@@ -96,60 +119,14 @@ const DESCRIPTION_KEYS: Record<string, string> = {
 const DESCRIPTION_MODULES: Record<string, string> = {
   samba_module: "samba",
 };
-const SOURCE_KEYS: Record<PublishedService["source"], string> = {
-  module: "state.module",
-  declared: "ui.services.source_declared",
-  device: "ui.services.source_device",
-};
-// Who published the row: the hub's own module in the accent, the operator's
-// own entry in the secondary. Health is the dot's and the state word's.
-const SOURCE_TONES: Record<PublishedService["source"], string> = {
-  module: "badge--accent",
-  declared: "badge--secondary",
-  device: "badge--secondary",
-};
 
-/** The example a share field shows, which is a name rather than a word. */
-const SHARES_PLACEHOLDER = "media";
+/** The id every container app starts with, whose declaration is the
+ * Containers module's and not this page's. */
+const CONTAINER_APP_PREFIX = "podman_";
 
-/** The port a file service takes when the field is left blank. */
-const FILE_PORT_PLACEHOLDER = "445";
-
-/** The schemes a web service is opened with. */
-const SCHEME_OPTIONS: PickerOption[] = [
-  { id: "http", name: "http" },
-  { id: "https", name: "https" },
-];
-
-/** The protocols a port service is reached over. */
-const PROTOCOL_OPTIONS: PickerOption[] = [
-  { id: "tcp", name: "TCP" },
-  { id: "udp", name: "UDP" },
-];
-
-/** What the Host field takes, said for each type. */
-const HOST_HINT_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
-  web: "ui.services.host_hint_web",
-  port: "ui.services.host_hint_port",
-  file: "ui.services.host_hint_file",
-};
-
-const KIND_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
-  web: "ui.services.kind_web",
-  port: "ui.services.kind_port",
-  file: "ui.services.kind_file",
-};
-
-// The API's declared_service_invalid params.field, worded.
-const DECLARED_INVALID_KEYS: Record<string, string> = {
-  kind: "ui.services.invalid_kind",
-  name: "ui.services.invalid_name",
-  host: "ui.services.invalid_host",
-  port: "ui.services.invalid_port",
-  scheme: "ui.services.invalid_scheme",
-  protocol: "ui.services.invalid_protocol",
-  path: "ui.services.invalid_path",
-  shares: "ui.services.invalid_shares",
+/** The declared apps' errors the page words itself. */
+const DECLARED_ERROR_KEYS: Record<string, string> = {
+  declared_service_unknown: "code.declared_service_unknown",
 };
 
 // What moves this list: the hub composing it differently, and any write
@@ -159,21 +136,18 @@ const INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG },
 ];
 
+const SERVICE_PATH = "/hub/service";
+
 export function ServicesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<ServicesResponse>("/hub/service", {
+  const resource = useApiResource<ServiceListView>(SERVICE_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
-  const network = useApiResource<NetworkView>("/hub/network");
   const [isDeclaring, setIsDeclaring] = useState(false);
-  const services = resource.data?.services ?? [];
+  const view = resource.data;
 
-  const handleChanged = (next: PublishedService[]) => {
-    resource.setData({ services: next });
-  };
-
-  if (resource.error !== null && resource.data === null) {
+  if (resource.error !== null && view === null) {
     return (
       <div className="page">
         <h1>{t("ui.services.title")}</h1>
@@ -182,7 +156,7 @@ export function ServicesPage() {
     );
   }
 
-  if (resource.data === null) {
+  if (view === null) {
     return (
       <div className="page">
         <h1>{t("ui.services.title")}</h1>
@@ -191,86 +165,235 @@ export function ServicesPage() {
     );
   }
 
-  // A record the hub never probes holds no health, so the badge counts it
+  // An entry the hub never probes holds no health, so the badge counts it
   // neither way.
-  const judged = services.filter((service) => !isNeverProbed(service));
+  const judged = [
+    ...view.apps.flatMap((app) => app.entries),
+    ...view.services,
+  ].filter((entry) => entry.is_healthy !== null);
   const healthyCount = judged.filter(
-    (service) => service.is_healthy === true,
+    (entry) => entry.is_healthy === true,
   ).length;
 
   return (
     <div className="page">
       <div className="page_header">
-        <div className="page_title_row">
-          <h1>{t("ui.services.title")}</h1>
-          <span className="badge">
-            {t("ui.services.badge", {
-              healthy: healthyCount,
-              total: judged.length,
-            })}
-          </span>
-        </div>
-        {!isDeclaring && (
-          <div className="page_actions">
-            <button
-              type="button"
-              className="button"
-              onClick={() => setIsDeclaring(true)}
-            >
-              <Icon name="plus" size={14} />
-              {t("ui.services.declare")}
-            </button>
+        <div className="page_header_text">
+          <div className="page_title_row">
+            <h1>{t("ui.services.title")}</h1>
+            <span className="badge">
+              {t("ui.services.badge", {
+                healthy: healthyCount,
+                total: judged.length,
+              })}
+            </span>
           </div>
-        )}
+        </div>
+        <div className="page_actions">
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => setIsDeclaring(true)}
+          >
+            <Icon name="plus" size={14} />
+            {t("ui.services.declare")}
+          </button>
+        </div>
       </div>
 
-      {isDeclaring && (
-        <DeclareForm
-          hostPlaceholder={hubAddress(network.data)}
-          onSaved={(next) => {
-            handleChanged(next);
-            setIsDeclaring(false);
-          }}
-          onCancel={() => setIsDeclaring(false)}
-        />
-      )}
+      <section className="settings_group">
+        <div className="settings_group_title">
+          <h2>{t("ui.services.apps_title")}</h2>
+        </div>
+        {view.apps.length === 0 ? (
+          <p className="field_hint faint">{t("ui.services.group_empty")}</p>
+        ) : (
+          <div className="published_rows">
+            {view.apps.map((app) => (
+              <AppRow key={app.id} app={app} onChanged={resource.setData} />
+            ))}
+          </div>
+        )}
+      </section>
 
-      {GROUP_ORDER.map((type) => (
-        <ServiceGroup
+      {SECTION_ORDER.map((type) => (
+        <ServiceSection
           key={type}
           type={type}
-          services={services.filter((service) => service.type === type)}
-          onChanged={handleChanged}
+          services={view.services.filter((service) => service.type === type)}
         />
       ))}
+
+      {isDeclaring && (
+        <DeclareServiceModal
+          onDeclared={(next) => {
+            resource.setData(next);
+            setIsDeclaring(false);
+          }}
+          onClose={() => setIsDeclaring(false)}
+        />
+      )}
     </div>
   );
 }
 
-interface ServiceGroupProps {
-  type: PublishedServiceType;
-  services: PublishedService[];
-  onChanged: (services: PublishedService[]) => void;
+interface AppRowProps {
+  app: AppView;
+  onChanged: (view: ServiceListView) => void;
 }
 
-function ServiceGroup({ type, services, onChanged }: ServiceGroupProps) {
+/** One app: its title, its machine, its entries, and where it comes from. */
+function AppRow({ app, onChanged }: AppRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const confirm = useConfirm();
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isDeclared =
+    app.source === "declared" && !app.id.startsWith(CONTAINER_APP_PREFIX);
+  const details = app.entries
+    .map((entry) =>
+      entry.detail_code === null
+        ? undefined
+        : DECLARED_DETAIL_KEYS[entry.detail_code],
+    )
+    .filter((key): key is string => key !== undefined);
+
+  const post = async (verb: "probe" | "remove") => {
+    setIsBusy(true);
+    setError(null);
+    const request: DeclaredAppRequest = { app_id: app.id };
+    try {
+      onChanged(
+        await apiPost<ServiceListView>(
+          `${SERVICE_PATH}/declaration/${verb}`,
+          request,
+        ),
+      );
+    } catch (cause: unknown) {
+      setError(describeDeclaredError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const askDelete = () =>
+    confirm.ask({
+      title: t("ui.services.delete_title", { name: app.title }),
+      body: t("ui.services.delete_body"),
+      confirmLabel: t("ui.services.delete"),
+      onConfirm: () => void post("remove"),
+    });
+
+  return (
+    <div className="published_row app_row">
+      <div className="app_row_head">
+        <span className="published_row_title">{app.title}</span>
+        <span className="app_row_machine mono">
+          {app.device_name || hostOf(app)}
+        </span>
+        <span className="app_row_end">
+          {isDeclared && (
+            <span className="published_row_actions">
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                disabled={isBusy}
+                onClick={() => void post("probe")}
+              >
+                <Icon name="bolt" size={13} />
+                {t("ui.services.test")}
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--small button--danger"
+                disabled={isBusy}
+                onClick={askDelete}
+              >
+                <Icon name="trash" size={13} />
+                {t("ui.services.delete")}
+              </button>
+            </span>
+          )}
+          <span className={`badge ${APP_SOURCE_TONES[app.source]}`}>
+            {t(APP_SOURCE_KEYS[app.source])}
+          </span>
+        </span>
+      </div>
+      {app.description !== "" && (
+        <span className="published_row_description">{app.description}</span>
+      )}
+      <div className="app_row_entries">
+        {app.entries.map((entry) => (
+          <EntryChip
+            key={entry.id}
+            entry={entry}
+            stateWord={isDeclared ? declaredStateWord(entry) : null}
+          />
+        ))}
+      </div>
+      {details.map((key, index) => (
+        <span key={index} className="published_row_detail">
+          {t(key)}
+        </span>
+      ))}
+      {error !== null && <span className="field_error">{error}</span>}
+      {confirm.modal}
+    </div>
+  );
+}
+
+interface EntryChipProps {
+  entry: AppEntryView;
+  /** A declared entry's state word; null where the dot says it alone. */
+  stateWord: string | null;
+}
+
+/** One entry: its type, where it is, and its health as a dot. */
+function EntryChip({ entry, stateWord }: EntryChipProps) {
+  const payload = payloadLine(entry.type, entry.payload);
+  return (
+    <span className="badge app_entry" title={payload}>
+      <StatusDot tone={toneOf(entry.is_healthy)} isPulsing={false} />
+      <span>{t(ENTRY_TYPE_KEYS[entry.type])}</span>
+      <span className="app_entry_payload mono">{payload}</span>
+      {stateWord !== null && <span className="faint">{stateWord}</span>}
+    </span>
+  );
+}
+
+/** A declared entry's word: a probe that answered or did not, one still to
+ * come, or none: a UDP port, and an entry the probe could not judge. */
+function declaredStateWord(entry: AppEntryView): string {
+  const tone = toneOf(entry.is_healthy);
+  const isNeverProbed =
+    entry.type === "port" && entry.payload.protocol === "udp";
+  const state =
+    tone === "idle" && (entry.detail_code !== null || isNeverProbed)
+      ? "unchecked"
+      : tone;
+  return t(DECLARED_STATE_KEYS[state]);
+}
+
+interface ServiceSectionProps {
+  type: PublishedServiceType;
+  services: PublishedService[];
+}
+
+function ServiceSection({ type, services }: ServiceSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{t(GROUP_TITLE_KEYS[type])}</h2>
+        <h2>{t(SECTION_TITLE_KEYS[type] ?? "")}</h2>
       </div>
       {services.length === 0 ? (
         <p className="field_hint faint">{t("ui.services.group_empty")}</p>
       ) : (
         <div className="published_rows">
           {services.map((service) => (
-            <ServiceRow
-              key={service.id}
-              service={service}
-              onChanged={onChanged}
-            />
+            <ServiceRow key={service.id} service={service} />
           ))}
         </div>
       )}
@@ -280,368 +403,47 @@ function ServiceGroup({ type, services, onChanged }: ServiceGroupProps) {
 
 interface ServiceRowProps {
   service: PublishedService;
-  onChanged: (services: PublishedService[]) => void;
 }
 
-function ServiceRow({ service, onChanged }: ServiceRowProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const confirm = useConfirm();
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const tone: "ok" | "error" | "idle" =
-    service.is_healthy === true
-      ? "ok"
-      : service.is_healthy === false
-        ? "error"
-        : "idle";
-  // A declared row with no health but a code was measured and could not be
-  // judged, and a UDP port is never probed; neither is one still waiting for
-  // its first probe.
-  const declaredState =
-    tone === "idle" && (service.detail_code !== null || isNeverProbed(service))
-      ? "unchecked"
-      : tone;
+/** One entry of no app, read only. */
+function ServiceRow({ service }: ServiceRowProps) {
+  const tone = toneOf(service.is_healthy);
   const stateLabel = t(
     service.source === "device"
       ? DEVICE_STATE_KEY
-      : service.source === "module"
-        ? MODULE_STATE_KEYS[tone === "idle" ? "error" : tone]
-        : DECLARED_STATE_KEYS[declaredState],
+      : MODULE_STATE_KEYS[tone === "ok" ? "ok" : "error"],
   );
-  const detailKey =
-    service.detail_code === null
-      ? undefined
-      : DECLARED_DETAIL_KEYS[service.detail_code];
-
-  const handleProbe = async () => {
-    if (service.record_id === null) {
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const answer = await apiPost<ServicesResponse>(
-        "/hub/service/declaration/probe",
-        { service_id: service.record_id },
-      );
-      onChanged(answer.services);
-    } catch (cause: unknown) {
-      setError(describeDeclaredError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const deleteRecord = async () => {
-    if (service.record_id === null) {
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const answer = await apiPost<ServicesResponse>(
-        "/hub/service/declaration/remove",
-        { service_id: service.record_id },
-      );
-      onChanged(answer.services);
-    } catch (cause: unknown) {
-      setError(describeDeclaredError(cause));
-      setIsBusy(false);
-    }
-  };
-
-  const handleDelete = () =>
-    confirm.ask({
-      title: t("ui.services.delete_title", { name: service.title }),
-      body: t("ui.services.delete_body"),
-      confirmLabel: t("ui.services.delete"),
-      onConfirm: () => void deleteRecord(),
-    });
-
+  const description = describeService(service);
   return (
     <div className="published_row">
       <StatusDot tone={tone} />
       <div className="published_row_body">
         <div className="published_row_head">
           <span className="published_row_title">{service.title}</span>
-          <span className="published_row_payload">{payloadLine(service)}</span>
-        </div>
-        {describeService(service) !== "" && (
-          <span className="published_row_description">
-            {describeService(service)}
+          <span className="published_row_payload">
+            {payloadLine(service.type, service.payload)}
           </span>
+        </div>
+        {description !== "" && (
+          <span className="published_row_description">{description}</span>
         )}
-        {detailKey !== undefined && (
-          <span className="published_row_detail">{t(detailKey)}</span>
-        )}
-        {error !== null && <span className="field_error">{error}</span>}
       </div>
       <span className="published_row_state">{stateLabel}</span>
-      <span className={`badge ${SOURCE_TONES[service.source]}`}>
-        {t(SOURCE_KEYS[service.source])}
-      </span>
-      {service.record_id !== null && (
-        <div className="published_row_actions">
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            disabled={isBusy}
-            onClick={() => void handleProbe()}
-          >
-            <Icon name="bolt" size={13} />
-            {t("ui.services.test")}
-          </button>
-          <button
-            type="button"
-            className="button button--ghost button--small button--danger"
-            disabled={isBusy}
-            onClick={handleDelete}
-          >
-            <Icon name="trash" size={13} />
-            {t("ui.services.delete")}
-          </button>
-        </div>
+      {service.source !== "device" && (
+        <span className="badge badge--accent">{t(APP_SOURCE_KEYS.module)}</span>
       )}
-      {confirm.modal}
     </div>
   );
 }
 
-interface DeclareFormProps {
-  /** One of the hub's own addresses, as the example a host field shows. */
-  hostPlaceholder: string;
-  onSaved: (services: PublishedService[]) => void;
-  onCancel: () => void;
+function toneOf(isHealthy: boolean | null): HealthTone {
+  if (isHealthy === true) {
+    return "ok";
+  }
+  return isHealthy === false ? "error" : "idle";
 }
 
-function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<DeclaredServiceCreate["kind"]>("web");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("");
-  const [scheme, setScheme] = useState("http");
-  const [protocol, setProtocol] =
-    useState<DeclaredServiceCreate["protocol"]>("tcp");
-  const [path, setPath] = useState("/");
-  const [shares, setShares] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanNotice, setScanNotice] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const isPortReady =
-    port.trim().length === 0 ? kind === "file" : isValidPort(port.trim());
-  const isReady =
-    name.trim().length > 0 &&
-    host.trim().length > 0 &&
-    isPortReady &&
-    (kind !== "file" || shares.length > 0);
-
-  const handleScan = async () => {
-    setIsScanning(true);
-    setScanNotice(null);
-    setScanError(null);
-    try {
-      const found = await apiGet<ServiceSharesResponse>("/hub/service/share", {
-        host: host.trim(),
-      });
-      setShares((current) => [
-        ...current,
-        ...found.shares.filter((entry) => !current.includes(entry)),
-      ]);
-      if (found.shares.length === 0) {
-        setScanNotice(t("ui.services.scan_empty"));
-      }
-    } catch (cause: unknown) {
-      // A refused anonymous listing is a degradation, not a failure: the
-      // share name is simply typed by hand.
-      if (scanFailureReason(cause) === "list_refused") {
-        setScanNotice(t("code.list_refused"));
-      } else {
-        setScanError(describeDeclaredError(cause));
-      }
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    setIsSaving(true);
-    setError(null);
-    const payload: DeclaredServiceCreate = {
-      name: name.trim(),
-      kind,
-      host: host.trim(),
-      port: port.trim().length > 0 ? Number(port.trim()) : null,
-      scheme: kind === "web" ? scheme : null,
-      path: kind === "web" ? path.trim() : null,
-      shares: kind === "file" ? shares : null,
-      description: description.trim(),
-      protocol,
-    };
-    try {
-      const answer = await apiPost<ServicesResponse>(
-        "/hub/service/declaration/add",
-        payload,
-      );
-      onSaved(answer.services);
-    } catch (cause: unknown) {
-      setError(describeDeclaredError(cause));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div className="declared_form">
-      <div className="section_label">{t("ui.services.form_title")}</div>
-      <div className="declared_form_row">
-        <label className="field">
-          <span className="field_label">{t("ui.services.field_name")}</span>
-          <input
-            className="input"
-            value={name}
-            autoFocus
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <Picker
-          options={(
-            Object.keys(KIND_KEYS) as DeclaredServiceCreate["kind"][]
-          ).map((option) => ({ id: option, name: t(KIND_KEYS[option]) }))}
-          value={kind}
-          onChange={(id) => setKind(id as DeclaredServiceCreate["kind"])}
-          label={t("ui.services.field_kind")}
-        />
-      </div>
-      <div className="declared_form_row">
-        <label className="field">
-          <span className="field_label">{t("ui.services.field_host")}</span>
-          <input
-            className="input"
-            value={host}
-            placeholder={hostPlaceholder}
-            spellCheck={false}
-            onChange={(event) => setHost(event.target.value)}
-          />
-          <span className="field_hint">{t(HOST_HINT_KEYS[kind])}</span>
-        </label>
-        <label className="field">
-          <span className="field_label">{t("ui.services.field_port")}</span>
-          <input
-            className="input"
-            value={port}
-            placeholder={kind === "file" ? FILE_PORT_PLACEHOLDER : ""}
-            inputMode="numeric"
-            onChange={(event) => setPort(event.target.value)}
-          />
-          {kind === "file" && (
-            <span className="field_hint">
-              {t("ui.services.port_hint_file")}
-            </span>
-          )}
-        </label>
-      </div>
-      {kind === "port" && (
-        <div className="declared_form_row">
-          <Picker
-            options={PROTOCOL_OPTIONS}
-            value={protocol}
-            onChange={(id) =>
-              setProtocol(id as DeclaredServiceCreate["protocol"])
-            }
-            label={t("ui.services.field_protocol")}
-          />
-        </div>
-      )}
-      {kind === "web" && (
-        <div className="declared_form_row">
-          <Picker
-            options={SCHEME_OPTIONS}
-            value={scheme}
-            onChange={setScheme}
-            label={t("ui.services.field_scheme")}
-          />
-          <label className="field">
-            <span className="field_label">{t("ui.services.field_path")}</span>
-            <input
-              className="input"
-              value={path}
-              spellCheck={false}
-              onChange={(event) => setPath(event.target.value)}
-            />
-          </label>
-        </div>
-      )}
-      {kind === "file" && (
-        <div className="declared_shares">
-          <StringListEditor
-            label={t("ui.services.field_shares")}
-            values={shares}
-            onChange={setShares}
-            description={t("ui.services.shares_hint")}
-            placeholder={SHARES_PLACEHOLDER}
-            emptyText={t("ui.services.shares_empty")}
-          />
-          <div className="declared_shares_scan">
-            <button
-              type="button"
-              className="button button--ghost button--small"
-              disabled={host.trim().length === 0 || isScanning}
-              onClick={() => void handleScan()}
-            >
-              <Icon name="refresh" size={12} />
-              {isScanning ? t("ui.services.scanning") : t("ui.services.scan")}
-            </button>
-            {scanNotice !== null && (
-              <span className="field_hint">{scanNotice}</span>
-            )}
-            {scanError !== null && (
-              <span className="field_error">{scanError}</span>
-            )}
-          </div>
-        </div>
-      )}
-      <label className="field">
-        <span className="field_label">
-          {t("ui.services.field_description")}
-        </span>
-        <input
-          className="input"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </label>
-      {error !== null && <span className="field_error">{error}</span>}
-      <div className="declared_form_actions">
-        <button
-          type="button"
-          className="button button--ghost"
-          onClick={onCancel}
-        >
-          {t("ui.services.cancel")}
-        </button>
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={!isReady || isSaving}
-          onClick={() => void handleSubmit()}
-        >
-          <Icon name="check" size={14} />
-          {isSaving ? t("ui.services.saving") : t("ui.services.save")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** Where an entry comes from, in this panel's words or the declarer's own. */
+/** Where an entry of no app comes from, in this panel's words. */
 function describeService(service: PublishedService): string {
   const key = DESCRIPTION_KEYS[service.description_code];
   if (key === undefined) {
@@ -656,90 +458,47 @@ function describeService(service: PublishedService): string {
       });
 }
 
-/** Whether the hub never probes this entry: a declared UDP port. */
-function isNeverProbed(service: PublishedService): boolean {
-  return (
-    service.source === "declared" &&
-    service.type === "port" &&
-    service.payload.protocol === "udp"
-  );
-}
-
-/** The payload, spelled the way its type reads. */
-function payloadLine(service: PublishedService): string {
-  if (service.type === "web") {
-    return service.payload.url ?? "";
+/** A payload, spelled the way its type reads. */
+function payloadLine(
+  type: PublishedServiceType,
+  payload: PublishedServicePayload,
+): string {
+  if (type === "web") {
+    return payload.url ?? "";
   }
-  if (service.type === "ai") {
-    return service.payload.endpoint ?? "";
+  if (type === "ai") {
+    return payload.endpoint ?? "";
   }
-  if (service.type === "file") {
-    return `//${service.payload.host ?? ""}/${service.payload.share ?? ""}`;
+  if (type === "file") {
+    return `//${payload.host ?? ""}/${payload.share ?? ""}`;
   }
-  const address = `${service.payload.host ?? ""}:${service.payload.port ?? ""}`;
-  return service.type === "port" && service.payload.protocol === "udp"
+  const address = `${payload.host ?? ""}:${payload.port ?? ""}`;
+  if (type === "ssh") {
+    return `${payload.account ?? ""}@${address}`;
+  }
+  return type === "port" && payload.protocol === "udp"
     ? `${address}/udp`
     : address;
 }
 
-/** The first address one of the hub's own interfaces holds, without its
- * prefix length; empty while none does. */
-function hubAddress(network: NetworkView | null): string {
-  const address =
-    network?.interfaces.find((entry) => entry.link.ipv4_address !== null)?.link
-      .ipv4_address ?? "";
-  return address.split("/")[0] ?? "";
+/** The host an app with no machine the hub knows is at. */
+function hostOf(app: AppView): string {
+  return app.entries[0]?.payload.host ?? "";
 }
 
-/** The reason inside a failed share scan, or null for any other failure. */
-function scanFailureReason(cause: unknown): string | null {
-  if (
-    cause instanceof ApiError &&
-    typeof cause.detail === "object" &&
-    cause.detail !== null
-  ) {
-    const detail = cause.detail as Record<string, unknown>;
-    if (detail.code === "share_scan_failed") {
-      const params = (detail.params ?? {}) as Record<string, unknown>;
-      return String(params.reason ?? "");
-    }
-  }
-  return null;
-}
-
-/** Wording for a failed declared-service call, coded refusals spelled out. */
+/** Wording for a failed call on a declared app, coded refusals spelled out. */
 function describeDeclaredError(cause: unknown): string {
+  const message = describeError(cause);
   if (
-    cause instanceof ApiError &&
-    typeof cause.detail === "object" &&
-    cause.detail !== null
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    typeof cause.code === "string"
   ) {
-    const detail = cause.detail as Record<string, unknown>;
-    if (detail.code === "declared_service_unknown") {
-      return t("code.declared_service_unknown");
-    }
-    if (detail.code === "declared_service_invalid") {
-      const params = (detail.params ?? {}) as Record<string, unknown>;
-      const key = DECLARED_INVALID_KEYS[String(params.field)];
-      if (key !== undefined) {
-        return t(key);
-      }
-    }
-    if (detail.code === "share_scan_failed") {
-      const params = (detail.params ?? {}) as Record<string, unknown>;
-      const key = DECLARED_DETAIL_KEYS[String(params.reason)];
-      if (key !== undefined) {
-        return t(key);
-      }
+    const key = DECLARED_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
+      return t(key);
     }
   }
-  return describeError(cause);
-}
-
-function isValidPort(value: string): boolean {
-  if (!/^\d{1,5}$/.test(value)) {
-    return false;
-  }
-  const port = Number(value);
-  return port >= 1 && port <= 65535;
+  return message;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+
 import { copyText } from "../copy_text";
 
 import { Icon } from "./icon";
@@ -9,10 +9,10 @@ import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useConfirm } from "../use_confirm";
+import { HUB_EVENT_DEVICE_REPORT, useHubEvents } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceRdp,
-  DeviceView,
   RemoteDesktopStatus,
   RemoteDesktopView,
   TaskStarted,
@@ -21,15 +21,15 @@ import type {
 import "./remote_desktop_panel.css";
 
 /**
- * Remote-desktop status and management for one device.
+ * The Remote desktop tab's desktops: RustDesk as the machine reports it,
+ * with Reset seat password, and the AnyDesk and TeamViewer the person runs
+ * there.
  *
- * A device that already runs AnyDesk or TeamViewer shows the id someone
- * connects to, whether or not this hub put it there, and takes an unattended
- * password. Both are user-tier modules the person installs themselves, so
- * this panel only reads and manages what is already on the machine. RustDesk
- * rides in every agent package instead, and its card reads the machine's own
- * report; whether it shares is the machine's Remote desktop switch, on the
- * Modules page.
+ * A machine that already runs AnyDesk or TeamViewer shows the id someone
+ * connects to, whether or not this hub put it there, and takes an
+ * unattended password; this panel reads and manages what is already on the
+ * machine. RustDesk rides in every agent package, and whether it shares is
+ * the tab's switch above. A report from the machine reads the status again.
  */
 
 /** The label shown where a product reports no id. */
@@ -72,20 +72,12 @@ function describeResetError(cause: unknown): string {
 }
 
 interface RemoteDesktopPanelProps {
-  device: DeviceView;
-  /**
-   * Changes whenever a module order on this device moves. Installing the
-   * software happens elsewhere, a path this panel starts nothing on and
-   * would otherwise never hear about — leaving it saying "not installed"
-   * beside software that is there.
-   */
-  moduleRevision: string;
+  deviceId: string;
+  /** RustDesk as the machine last reported it; null before it reported. */
+  rdp: DeviceRdp | null;
 }
 
-export function RemoteDesktopPanel({
-  device,
-  moduleRevision,
-}: RemoteDesktopPanelProps) {
+export function RemoteDesktopPanel({ deviceId, rdp }: RemoteDesktopPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const confirm = useConfirm();
@@ -93,13 +85,19 @@ export function RemoteDesktopPanel({
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const task = useTaskStream(taskId);
+  // Bumped on each report of this machine, so the status reads again after
+  // software lands on it.
+  const [reportRevision, setReportRevision] = useState(0);
+  useHubEvents([{ type: HUB_EVENT_DEVICE_REPORT, key: deviceId }], () =>
+    setReportRevision((current) => current + 1),
+  );
 
   const loadStatus = async () => {
     setError(null);
     try {
       setStatus(
         await apiGet<RemoteDesktopView>("/hub/device/remote_desktop", {
-          device_id: device.id,
+          device_id: deviceId,
         }),
       );
     } catch (cause: unknown) {
@@ -110,7 +108,7 @@ export function RemoteDesktopPanel({
   useEffect(() => {
     void loadStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.id, moduleRevision]);
+  }, [deviceId, reportRevision]);
 
   // When an install or password task finishes, re-read the status so a freshly
   // installed product shows its id without a manual refresh.
@@ -140,34 +138,32 @@ export function RemoteDesktopPanel({
       onConfirm: () => {
         setError(null);
         void apiPost("/hub/device/desktop/seat_password/reset", {
-          device_id: device.id,
+          device_id: deviceId,
         }).catch((cause: unknown) => setError(describeResetError(cause)));
       },
     });
   };
 
   return (
-    <div className="remote_desktop">
-      <div className="section_label">{t("ui.remote_desktop.title")}</div>
+    <section className="settings_group remote_desktop">
+      <div className="settings_group_title">
+        <h2>{t("ui.remote_desktop.title")}</h2>
+      </div>
       {error !== null && <span className="field_error">{error}</span>}
       {status === null ? (
         <span className="field_hint">{t("ui.remote_desktop.reading")}</span>
       ) : (
         <div className="remote_desktop_grid">
-          <RustdeskCard
-            rdp={device.client?.rdp ?? null}
-            deviceId={device.id}
-            onResetSeatPassword={resetSeatPassword}
-          />
+          <RustdeskCard rdp={rdp} onResetSeatPassword={resetSeatPassword} />
           <ProductCard
             status={status.anydesk}
-            deviceId={device.id}
+            deviceId={deviceId}
             isBusy={task.isRunning}
             onRun={runTask}
           />
           <ProductCard
             status={status.teamviewer}
-            deviceId={device.id}
+            deviceId={deviceId}
             isBusy={task.isRunning}
             onRun={runTask}
           />
@@ -180,14 +176,12 @@ export function RemoteDesktopPanel({
         </pre>
       )}
       {confirm.modal}
-    </div>
+    </section>
   );
 }
 
 interface RustdeskCardProps {
   rdp: DeviceRdp | null;
-  /** The machine, whose Modules page holds the switch. */
-  deviceId: string;
   onResetSeatPassword: () => void;
 }
 
@@ -196,16 +190,11 @@ interface RustdeskCardProps {
  * shared right now, by whom and on which port.
  *
  * Every agent package carries the host, so there is nothing to install here
- * and nothing here asks a machine to share: that is the Remote desktop
- * switch on the machine's Modules page, which the card links to. The seat
- * password is the hub's, generated and never shown, and resetting it is the
- * one action this card has.
+ * and nothing here asks a machine to share: that is the tab's switch. The
+ * seat password is the hub's, generated and never shown, and resetting it is
+ * the one action this card has.
  */
-function RustdeskCard({
-  rdp,
-  deviceId,
-  onResetSeatPassword,
-}: RustdeskCardProps) {
+function RustdeskCard({ rdp, onResetSeatPassword }: RustdeskCardProps) {
   const isShared = rdp?.is_shared ?? false;
   const attention = rdp?.attention ?? "";
 
@@ -244,14 +233,6 @@ function RustdeskCard({
           </span>
         </>
       )}
-      <span className="field_hint">
-        <Link
-          to={`/modules?device=${encodeURIComponent(deviceId)}&module=remote_desktop`}
-        >
-          {t("ui.remote_desktop_module.drawer_line")}
-        </Link>
-      </span>
-
       {attention.length > 0 && (
         <span className="field_error">{describeAttention(attention)}</span>
       )}

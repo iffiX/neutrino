@@ -88,42 +88,48 @@
   }
 }
 
-.declared_form {
-  display: flex;
+/* An app: its title, its machine and where it comes from on the first line,
+   its entries as chips under it. */
+.app_row {
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
+  align-items: stretch;
 }
 
-.declared_form_row {
+.app_row_head {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.declared_form_row .field {
-  flex: 1;
-  min-width: 180px;
-}
-
-.declared_shares {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.declared_shares_scan {
-  display: flex;
+  gap: var(--space-2) var(--space-3);
   align-items: center;
+}
+
+.app_row_machine {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.app_row_end {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: auto;
+}
+
+.app_row_entries {
+  display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.declared_form_actions {
-  display: flex;
-  gap: var(--space-2);
-  justify-content: flex-end;
+.app_entry {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+}
+
+.app_entry_payload {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,0 +1,57 @@
+.device_icon_picker_button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.device_icon_picker_button:hover:not(:disabled),
+.device_icon_picker_button[aria-expanded="true"] {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.device_icon_picker_grid {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  gap: var(--space-1);
+  grid-template-columns: repeat(4, 34px);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 16px 40px -16px var(--color-shadow);
+  animation: fade_in_up 120ms ease both;
+}
+
+.device_icon_picker_option {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.device_icon_picker_option:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.device_icon_picker_option--on {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

@@ -49,5 +49,8 @@
   "ui.authority.windows_3": "浏览选择「受信任的根证书颁发机构」，然后完成。",
   "ui.authority.windows_4": "重启浏览器。",
   "ui.brand.hub": "微子·中枢",
+  "ui.copy_button.copied": "已复制",
+  "ui.copy_button.copy": "复制",
+  "ui.dialog.close": "关闭",
   "ui.row_menu.open": "更多操作"
 }

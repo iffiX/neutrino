@@ -1,0 +1,58 @@
+/* The version line under a module's state line, its two buttons beside it. */
+.module_version {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.module_version_line {
+  font-size: 12px;
+}
+
+.module_version_buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.module_version_error {
+  flex: 1 0 100%;
+}
+
+.module_version_rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.module_version_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.module_version_row + .module_version_row {
+  border-top: 1px solid var(--color-border);
+}
+
+.module_version_row:hover:not(:disabled) {
+  background: var(--color-elevated);
+  color: var(--color-accent);
+}
+
+.module_version_row:disabled {
+  cursor: default;
+}
+
+.module_version_row > :last-child:not(:first-child) {
+  margin-left: auto;
+}

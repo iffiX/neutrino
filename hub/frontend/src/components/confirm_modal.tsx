@@ -1,7 +1,6 @@
-import { useEffect } from "react";
-
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
+import { useEscapeLayer } from "../use_escape_layer";
 
 import "./confirm_modal.css";
 
@@ -38,15 +37,7 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useEscapeLayer(onCancel);
 
   return (
     <div

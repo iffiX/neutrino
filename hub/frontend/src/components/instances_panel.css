@@ -1,27 +1,44 @@
-/* A program run as an account on one machine: one row per instance, account
-   then port, with whether it runs and its remove at the end. */
-.instance_row {
+/* A module of the account layer: one check row per available account. */
+.instances_rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.instances_row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  align-items: flex-end;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
 }
 
-.instance_row > .field {
+.instances_row + .instances_row {
+  border-top: 1px solid var(--color-border);
+}
+
+.instances_row_check {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 140px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.instances_row_field {
+  overflow: hidden;
   flex: 1;
-  min-width: 160px;
-}
-
-.instance_row > .instance_row_port {
-  flex: 0 0 120px;
   min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.instance_row > .badge {
-  margin-bottom: var(--space-2);
-}
-
-.instance_row_login,
-.instance_row_error {
+.instances_row_error {
   flex: 1 0 100%;
 }

@@ -13,7 +13,6 @@ import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
 import type { ZfsDataset, ZfsDeviceView, ZfsDisk } from "../api_types";
 
-import "./samba_panels.css";
 import "./zfs_panels.css";
 
 /**

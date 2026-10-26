@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
+import { DialogFrame } from "./dialog_frame";
 import { Icon } from "./icon";
 import { Picker } from "./picker";
 import { Spinner } from "./spinner";
@@ -18,16 +18,17 @@ import type {
   TaskStarted,
 } from "../api_types";
 
-import "./install_agent_modal.css";
-
 /**
- * The SSH login the hub installs a machine's agent with, and the install.
+ * The **Add over SSH** dialog: the SSH login the hub installs a machine's
+ * agent with, and the install.
  *
- * With no device, the person types the host and one press adds the machine
- * and installs. The credential is one the vault holds: a key or a login,
- * picked here and stored here where it is not stored yet. The login whose
- * password sudo is given on the device comes from the same vault; nothing
- * echoes a secret into the output below.
+ * With no device, the person types the host and one press creates the
+ * machine's row and installs. With one, it is the machine page's
+ * **Reinstall**, filled from the login the hub last used. The credential is
+ * one the vault holds: a key or a login, picked here and stored here where
+ * it is not stored yet. The login whose password sudo is given on the
+ * device comes from the same vault; nothing echoes a secret into the output
+ * below.
  */
 
 // The {code, params} an install is refused with, worded.
@@ -43,10 +44,8 @@ const DEFAULT_SSH_PORT = 22;
 type CredentialKind = "key" | "login";
 
 interface InstallAgentModalProps {
-  /** The device to install on, or null to add a machine by its host. */
+  /** The machine to install on again, or null to add one by its host. */
   device: DeviceView | null;
-  /** Whether the machine already had an agent, which only changes wording. */
-  isReinstall: boolean;
   onClose: () => void;
   /** Called once the install ends, so the page behind can read the outcome. */
   onFinished?: () => void;
@@ -54,7 +53,6 @@ interface InstallAgentModalProps {
 
 export function InstallAgentModal({
   device,
-  isReinstall,
   onClose,
   onFinished,
 }: InstallAgentModalProps) {
@@ -77,17 +75,6 @@ export function InstallAgentModal({
   const wasRunning = useRef(false);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onClose]);
-
-  useEffect(() => {
     const element = logRef.current;
     if (element !== null) {
       element.scrollTop = element.scrollHeight;
@@ -108,7 +95,7 @@ export function InstallAgentModal({
   const isPortValid = isValidPort(port);
   const hasCredential =
     credentialKind === "key" ? keyId !== null : loginId !== null;
-  // One press adds the machine; a retry is the install in its row's drawer.
+  // One press adds the machine; a retry is Reinstall on its machine page.
   const isAdded = device === null && taskId !== null;
   const isReady =
     host.trim().length > 0 &&
@@ -141,184 +128,149 @@ export function InstallAgentModal({
     }
   };
 
-  // A portal, so no ancestor's transform or scroll container can capture the
-  // fixed backdrop.
-  return createPortal(
-    <div
-      className="install_modal_backdrop"
-      role="dialog"
-      aria-modal="true"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="install_modal">
-        <div className="install_modal_head">
-          <div className="install_modal_title">
-            <Icon name="download" size={15} />
-            <h2>{toTitle(device, isReinstall)}</h2>
-          </div>
-          <button
-            type="button"
-            className="button button--small"
-            onClick={onClose}
-          >
-            <Icon name="close" size={13} />
-            {t("ui.install_agent.close")}
-          </button>
-        </div>
-
-        <div className="install_modal_body">
-          {error !== null && (
-            <div className="notice notice--error">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">{error}</div>
-            </div>
-          )}
-
-          <div className="field_grid">
-            <label className="field">
-              <span className="field_label">{t("ui.install_agent.host")}</span>
-              <input
-                className="input"
-                value={host}
-                onChange={(event) => setHost(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span className="field_label">{t("ui.install_agent.port")}</span>
-              <input
-                className={`input ${isPortValid ? "" : "input--invalid"}`}
-                value={port}
-                inputMode="numeric"
-                onChange={(event) => setPort(event.target.value)}
-              />
-              {!isPortValid && (
-                <span className="field_error">
-                  {t("ui.install_agent.port_invalid")}
-                </span>
-              )}
-            </label>
-            <label className="field">
-              <span className="field_label">
-                {t("ui.install_agent.username")}
-              </span>
-              <input
-                className="input"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-              />
-            </label>
-            <Picker
-              options={[
-                { id: "key", name: t("ui.install_agent.kind_key") },
-                { id: "login", name: t("ui.install_agent.kind_login") },
-              ]}
-              value={credentialKind}
-              onChange={(id) => setCredentialKind(id as CredentialKind)}
-              label={t("ui.install_agent.credential")}
-              hint={t("ui.install_agent.credential_hint")}
-            />
-          </div>
-
-          {credentialKind === "key" ? (
-            <VaultPicker
-              kind="ssh_key"
-              value={keyId}
-              onChange={setKeyId}
-              label={t("ui.install_agent.key")}
-              hint={t("ui.install_agent.key_hint")}
-            />
+  return (
+    <DialogFrame
+      title={
+        device === null
+          ? t("ui.install_agent.add_title")
+          : t("ui.install_agent.reinstall_title", {
+              device: toDeviceLabel(device),
+            })
+      }
+      icon="download"
+      onClose={onClose}
+      foot={
+        <button
+          type="button"
+          className="button button--primary button--commit"
+          disabled={!isReady}
+          onClick={() => void handleSubmit()}
+        >
+          {task.isRunning ? (
+            <Spinner size={13} />
           ) : (
-            <VaultPicker
-              kind="login"
-              value={loginId}
-              onChange={setLoginId}
-              label={t("ui.install_agent.login")}
-              hint={t("ui.install_agent.login_hint")}
-            />
+            <Icon name="download" size={14} />
           )}
+          {task.isRunning
+            ? t("ui.install_agent.running")
+            : device === null
+              ? t("ui.install_agent.submit")
+              : t("ui.install_agent.submit_reinstall")}
+        </button>
+      }
+    >
+      {error !== null && (
+        <div className="notice notice--error">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">{error}</div>
+        </div>
+      )}
 
-          <VaultPicker
-            kind="login"
-            value={sudoLoginId}
-            onChange={setSudoLoginId}
-            label={t("ui.install_agent.sudo_password")}
-            hint={t("ui.install_agent.sudo_hint")}
+      <div className="field_grid">
+        <label className="field">
+          <span className="field_label">{t("ui.install_agent.host")}</span>
+          <input
+            className="input"
+            value={host}
+            onChange={(event) => setHost(event.target.value)}
           />
+        </label>
+        <label className="field">
+          <span className="field_label">{t("ui.install_agent.port")}</span>
+          <input
+            className={`input ${isPortValid ? "" : "input--invalid"}`}
+            value={port}
+            inputMode="numeric"
+            onChange={(event) => setPort(event.target.value)}
+          />
+          {!isPortValid && (
+            <span className="field_error">
+              {t("ui.install_agent.port_invalid")}
+            </span>
+          )}
+        </label>
+        <label className="field">
+          <span className="field_label">{t("ui.install_agent.username")}</span>
+          <input
+            className="input"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </label>
+        <Picker
+          options={[
+            { id: "key", name: t("ui.install_agent.kind_key") },
+            { id: "login", name: t("ui.install_agent.kind_login") },
+          ]}
+          value={credentialKind}
+          onChange={(id) => setCredentialKind(id as CredentialKind)}
+          label={t("ui.install_agent.credential")}
+          hint={t("ui.install_agent.credential_hint")}
+        />
+      </div>
 
-          {taskId !== null && (
-            <div className="install_modal_log">
-              <div className="install_modal_log_head">
-                <span className="section_label">
-                  {t("ui.install_agent.output")}
-                </span>
-                <StatusDot
-                  tone={
-                    task.isRunning
-                      ? "warn"
-                      : task.exitCode === 0
-                        ? "ok"
-                        : task.exitCode === null
-                          ? "idle"
-                          : "error"
-                  }
-                  isPulsing={task.isRunning}
-                  label={
-                    task.isRunning
-                      ? t("ui.install_agent.running_label")
-                      : t("ui.install_agent.done_label", {
-                          code: task.exitCode ?? "",
-                        })
-                  }
-                />
-              </div>
-              <pre className="install_modal_log_output" ref={logRef}>
-                {stripAnsi(task.lines.join("\n"))}
-              </pre>
-              {task.error !== null && (
-                <span className="field_error">{task.error}</span>
-              )}
-            </div>
+      {credentialKind === "key" ? (
+        <VaultPicker
+          kind="ssh_key"
+          value={keyId}
+          onChange={setKeyId}
+          label={t("ui.install_agent.key")}
+          hint={t("ui.install_agent.key_hint")}
+        />
+      ) : (
+        <VaultPicker
+          kind="login"
+          value={loginId}
+          onChange={setLoginId}
+          label={t("ui.install_agent.login")}
+          hint={t("ui.install_agent.login_hint")}
+        />
+      )}
+
+      <VaultPicker
+        kind="login"
+        value={sudoLoginId}
+        onChange={setSudoLoginId}
+        label={t("ui.install_agent.sudo_password")}
+        hint={t("ui.install_agent.sudo_hint")}
+      />
+
+      {taskId !== null && (
+        <div className="dialog_log">
+          <div className="dialog_log_head">
+            <span className="section_label">
+              {t("ui.install_agent.output")}
+            </span>
+            <StatusDot
+              tone={
+                task.isRunning
+                  ? "warn"
+                  : task.exitCode === 0
+                    ? "ok"
+                    : task.exitCode === null
+                      ? "idle"
+                      : "error"
+              }
+              isPulsing={task.isRunning}
+              label={
+                task.isRunning
+                  ? t("ui.install_agent.running_label")
+                  : t("ui.install_agent.done_label", {
+                      code: task.exitCode ?? "",
+                    })
+              }
+            />
+          </div>
+          <pre className="dialog_log_output" ref={logRef}>
+            {stripAnsi(task.lines.join("\n"))}
+          </pre>
+          {task.error !== null && (
+            <span className="field_error">{task.error}</span>
           )}
         </div>
-
-        <div className="install_modal_foot">
-          <button
-            type="button"
-            className="button button--primary button--commit"
-            disabled={!isReady}
-            onClick={() => void handleSubmit()}
-          >
-            {task.isRunning ? (
-              <Spinner size={13} />
-            ) : (
-              <Icon name="download" size={14} />
-            )}
-            {task.isRunning
-              ? t("ui.install_agent.running")
-              : isReinstall
-                ? t("ui.install_agent.submit_reinstall")
-                : t("ui.install_agent.submit")}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+      )}
+    </DialogFrame>
   );
-}
-
-/** The dialog's title: adding a machine, or installing on one. */
-function toTitle(device: DeviceView | null, isReinstall: boolean): string {
-  if (device === null) {
-    return t("ui.install_agent.add_title");
-  }
-  const name = toDeviceLabel(device);
-  return isReinstall
-    ? t("ui.install_agent.reinstall_title", { device: name })
-    : t("ui.install_agent.install_title", { device: name });
 }
 
 /** Wording for a refused install, from the code the API returned. */

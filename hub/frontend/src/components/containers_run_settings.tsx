@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { Picker } from "./picker";
-import { VaultPicker } from "./vault_picker";
 import { apiPost, describeApplyFailure, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useDraft } from "../use_draft";
@@ -19,10 +18,11 @@ import type {
 import "./containers_run_settings.css";
 
 /**
- * The Run settings of Containers on a Windows or macOS machine: the account
- * whose Podman machine runs the containers, on Windows the login it starts
- * with, and the machine's CPUs, memory and disk limit, each 0 for Podman's
- * default except the disk limit on Windows, which is at least 1.
+ * The Run settings of Containers on a Windows or macOS machine: the
+ * available account whose Podman machine runs the containers, and the
+ * machine's CPUs, memory and disk limit, each 0 for Podman's default except
+ * the disk limit on Windows, which is at least 1. On Windows the machine
+ * starts with the login the account's form holds.
  *
  * The disk limit starts at the disk's size now, as the machine reported it,
  * the way Podman Desktop's edit form for a machine holds its disk size. An
@@ -38,7 +38,6 @@ const WINDOWS_NEW_DISK_GIB = 100;
 /** The Run settings while none are stored: no account, Podman's defaults. */
 const EMPTY_MACHINE: PodmanMachine = {
   account: "",
-  login_id: "",
   cpus: 0,
   memory_gib: 0,
   disk_gib: 0,
@@ -144,21 +143,8 @@ export function ContainersRunSettings({
           onChange={(account) => setDraft({ ...draft, account })}
           label={t("ui.containers.run_account")}
           hint={t("ui.containers.run_account_hint")}
-          isTyped
           isDisabled={isUnsupported}
         />
-        {isWindows && draft.account !== "" && (
-          <VaultPicker
-            kind="login"
-            value={draft.login_id === "" ? null : draft.login_id}
-            onChange={(loginId) =>
-              setDraft({ ...draft, login_id: loginId ?? "" })
-            }
-            label={t("ui.containers.run_login", { account: draft.account })}
-            hint={t("ui.containers.run_login_hint")}
-            isDisabled={isUnsupported}
-          />
-        )}
       </div>
       <div className="containers_run_numbers">
         <label className="field">
@@ -250,7 +236,6 @@ function draftOf(view: PodmanDeviceView, isWindows: boolean): RunDraft {
   const isNewWindowsMachine = isWindows && machine.account === "";
   return {
     account: machine.account,
-    login_id: machine.login_id,
     cpus: machine.cpus,
     memory_gib: machine.memory_gib,
     disk_gib: isNewWindowsMachine ? WINDOWS_NEW_DISK_GIB : machine.disk_gib,

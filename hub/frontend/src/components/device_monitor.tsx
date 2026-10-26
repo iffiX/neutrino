@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 
 import { Icon } from "./icon";
@@ -15,16 +14,15 @@ import type { DeviceGpuInfo, DeviceView } from "../api_types";
 import "./device_monitor.css";
 
 /**
- * Live vitals for the device whose drawer is open, in the space the drawer
- * leaves free.
+ * The machine page's **Monitor**: four numbers, then the CPU and memory
+ * curves, one curve per GPU, and the process table.
  *
- * Everything here comes from the agent's heartbeat, which reaches the panel
- * as an event carrying the machine's vitals — the monitor itself opens no
- * connection and asks for nothing. One heartbeat makes one point, so the
- * readings are drawn as short history curves accumulated while the panel is
- * open, in the same visual language as the dashboard's traffic chart. A
- * device without the agent gets a pointer to the one-click install instead of
- * empty charts.
+ * Everything here comes from the agent's reports, which reach the panel as
+ * an event carrying the machine's readings: the monitor opens no connection
+ * and asks for nothing. One report makes one point, so the curves are short
+ * histories gathered while the page is open. The disk and the temperature
+ * are toned by their thresholds. A machine that is offline, or has not
+ * reported, shows that it waits for a report alone.
  */
 
 const MAX_SAMPLES = 120;
@@ -41,27 +39,32 @@ interface MonitorSample {
   gpu_vram: (number | null)[];
 }
 
+/** The disk tile's thresholds, in percent, as the Agents page's rings. */
+const DISK_WARN_PERCENT = 75;
+const DISK_ERROR_PERCENT = 90;
+
+/** The temperature tile's thresholds, in °C. */
+const TEMPERATURE_WARN_C = 70;
+const TEMPERATURE_ERROR_C = 85;
+
+/** What a tile shows for a reading nobody has reported. */
+const NOTHING = "—";
+
 interface DeviceMonitorProps {
+  /** The machine; the page keeps it the same for the monitor's life. */
   device: DeviceView;
 }
 
 export function DeviceMonitor({ device }: DeviceMonitorProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const client = device.client;
-  const hasSample = client !== null && client.cpu_percent !== null;
+  const metrics = device.client?.metrics ?? null;
+  const hasSample =
+    device.is_agent_online && metrics !== null && metrics.cpu_percent !== null;
   const [samples, setSamples] = useState<MonitorSample[]>([]);
   // Killing takes two clicks on the same cross; the first only arms it.
   const [pendingKillPid, setPendingKillPid] = useState<number | null>(null);
   const [killError, setKillError] = useState<string | null>(null);
-
-  // Selecting another device keeps this component mounted, so its history has
-  // to be dropped by hand rather than by a remount.
-  useEffect(() => {
-    setSamples([]);
-    setPendingKillPid(null);
-    setKillError(null);
-  }, [device.id]);
 
   const handleKill = async (pid: number) => {
     if (pendingKillPid !== pid) {
@@ -80,196 +83,212 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
     }
   };
 
-  // A heartbeat is what makes a new point, not a rerender.
+  // A report is what makes a new point, not a rerender.
   const handleMetrics = (event: HubEvent) => {
-    const metrics = toDeviceMetrics(event);
-    if (metrics === null || metrics.cpu_percent === null) {
+    const reading = toDeviceMetrics(event);
+    if (reading === null || reading.cpu_percent === null) {
       return;
     }
     setSamples((current) =>
       [
         ...current,
         {
-          cpu: metrics.cpu_percent,
-          memory: metrics.memory_percent,
-          gpu_util: metrics.gpus.map((gpu) => gpu.utilization_percent),
-          gpu_vram: metrics.gpus.map((gpu) => vramPercent(gpu)),
+          cpu: reading.cpu_percent,
+          memory: reading.memory_percent,
+          gpu_util: reading.gpus.map((gpu) => gpu.utilization_percent),
+          gpu_vram: reading.gpus.map((gpu) => vramPercent(gpu)),
         },
       ].slice(-MAX_SAMPLES),
     );
   };
   useHubEvents([{ type: HUB_EVENT_METRICS, key: device.id }], handleMetrics);
 
-  // A portal, so the monitor escapes the page's stacking context and can sit
-  // above the drawer's backdrop; the wrap centres it in the free space.
-  return createPortal(
-    <div className="device_monitor_wrap">
-      <div className="device_monitor">
-        <div className="device_monitor_head">
-          <span className="section_label">{t("ui.device_monitor.title")}</span>
-          {hasSample && client !== null && (
-            <span className="device_monitor_meta">
-              {client.uptime_s !== null && (
-                <span>
-                  {t("ui.device_monitor.uptime", {
-                    duration: formatDuration(client.uptime_s),
-                  })}
-                </span>
-              )}
-              {client.load_average.length === 3 && (
-                <span>
-                  {t("ui.device_monitor.load", {
-                    load: client.load_average
-                      .map((value) => value.toFixed(2))
-                      .join(" "),
-                  })}
-                </span>
-              )}
-              {client.disk_percent !== null && (
-                <span>
-                  {t("ui.device_monitor.disk", {
-                    percent: Math.round(client.disk_percent),
-                  })}
-                </span>
-              )}
-              {client.temperature_c !== null && (
-                <span>{Math.round(client.temperature_c)}°C</span>
-              )}
-            </span>
+  if (!hasSample || metrics === null) {
+    return (
+      <div className="device_monitor_empty">
+        <Icon name="devices" size={22} />
+        <span>{t("ui.device_monitor.waiting")}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="device_monitor">
+      <div className="device_monitor_tiles">
+        <MonitorTile
+          label={t("ui.machine.uptime")}
+          value={
+            metrics.uptime_s === null
+              ? NOTHING
+              : formatDuration(metrics.uptime_s)
+          }
+        />
+        <MonitorTile
+          label={t("ui.machine.load")}
+          value={
+            metrics.load_average.length === 3
+              ? metrics.load_average.map((value) => value.toFixed(2)).join(" ")
+              : NOTHING
+          }
+        />
+        <MonitorTile
+          label={t("ui.machine.disk")}
+          value={formatPercent(metrics.disk_percent)}
+          tone={toneOf(
+            metrics.disk_percent,
+            DISK_WARN_PERCENT,
+            DISK_ERROR_PERCENT,
+          )}
+        />
+        <MonitorTile
+          label={t("ui.machine.temperature")}
+          value={
+            metrics.temperature_c === null
+              ? NOTHING
+              : `${Math.round(metrics.temperature_c)}°C`
+          }
+          tone={toneOf(
+            metrics.temperature_c,
+            TEMPERATURE_WARN_C,
+            TEMPERATURE_ERROR_C,
+          )}
+        />
+      </div>
+
+      <div className="device_monitor_grid">
+        <ChartPanel
+          title={t("ui.device_monitor.cpu")}
+          value={formatPercent(metrics.cpu_percent)}
+          gradientPrefix={`mon_cpu_${device.id}`}
+          data={samples.map((sample) => ({ a: sample.cpu }))}
+          series={[{ key: "a", color: "var(--color-chart-down)" }]}
+        />
+        <ChartPanel
+          title={t("ui.device_monitor.memory")}
+          value={formatPercent(metrics.memory_percent)}
+          gradientPrefix={`mon_mem_${device.id}`}
+          data={samples.map((sample) => ({ a: sample.memory }))}
+          series={[{ key: "a", color: "var(--color-chart-up)" }]}
+        />
+        {metrics.gpus.map((gpu, index) => (
+          <ChartPanel
+            key={index}
+            isWide
+            title={gpu.name}
+            value={gpuLegend(gpu)}
+            gradientPrefix={`mon_gpu${index}_${device.id}`}
+            data={samples.map((sample) => ({
+              a: sample.gpu_util[index] ?? null,
+              b: sample.gpu_vram[index] ?? null,
+            }))}
+            series={[
+              { key: "a", color: "var(--color-chart-down)" },
+              { key: "b", color: "var(--color-chart-up)" },
+            ]}
+          />
+        ))}
+      </div>
+
+      {metrics.processes.length > 0 && (
+        <div className="device_monitor_panel device_monitor_panel--table">
+          <table className="device_monitor_processes">
+            <colgroup>
+              <col className="pid" />
+              <col className="user" />
+              <col />
+              <col className="cpu" />
+              <col className="mem" />
+              <col className="kill" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="num">{COLUMN_PID}</th>
+                <th>{t("ui.device_monitor.column_user")}</th>
+                <th>{t("ui.device_monitor.column_command")}</th>
+                <th className="num">{COLUMN_CPU}</th>
+                <th className="num">{COLUMN_MEMORY}</th>
+                <th className="kill" />
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.processes.map((process) => (
+                <tr key={process.pid}>
+                  <td className="num">{process.pid}</td>
+                  <td>{process.user}</td>
+                  <td className="device_monitor_process_name">
+                    {process.name}
+                  </td>
+                  <td className="num accent">
+                    {process.cpu_percent.toFixed(1)}
+                  </td>
+                  <td className="num">{process.memory_percent.toFixed(1)}</td>
+                  <td className="kill">
+                    <RowMenu
+                      items={[
+                        {
+                          key: "kill",
+                          label:
+                            pendingKillPid === process.pid
+                              ? t("ui.device_monitor.kill_again")
+                              : t("ui.device_monitor.kill"),
+                          icon: "close",
+                          isDanger: true,
+                          isArming: true,
+                          isArmed: pendingKillPid === process.pid,
+                          onSelect: () => void handleKill(process.pid),
+                        },
+                      ]}
+                    >
+                      <button
+                        type="button"
+                        className={`device_monitor_kill ${pendingKillPid === process.pid ? "device_monitor_kill--armed" : ""}`}
+                        title={
+                          pendingKillPid === process.pid
+                            ? t("ui.device_monitor.kill_again")
+                            : t("ui.device_monitor.kill")
+                        }
+                        onClick={() => void handleKill(process.pid)}
+                      >
+                        <Icon name="close" size={11} />
+                      </button>
+                    </RowMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {killError !== null && (
+            <span className="device_monitor_kill_error">{killError}</span>
           )}
         </div>
+      )}
 
-        {!hasSample || client === null ? (
-          <div className="device_monitor_empty">
-            <Icon name="devices" size={22} />
-            <span>
-              {client !== null
-                ? t("ui.device_monitor.waiting")
-                : t("ui.device_monitor.no_agent")}
-            </span>
-          </div>
-        ) : (
-          <div className="device_monitor_body">
-            <div className="device_monitor_grid">
-              <ChartPanel
-                title={t("ui.device_monitor.cpu")}
-                value={formatPercent(client.cpu_percent)}
-                gradientPrefix={`mon_cpu_${device.id}`}
-                data={samples.map((sample) => ({ a: sample.cpu }))}
-                series={[{ key: "a", color: "var(--color-chart-down)" }]}
-              />
-              <ChartPanel
-                title={t("ui.device_monitor.memory")}
-                value={formatPercent(client.memory_percent)}
-                gradientPrefix={`mon_mem_${device.id}`}
-                data={samples.map((sample) => ({ a: sample.memory }))}
-                series={[{ key: "a", color: "var(--color-chart-up)" }]}
-              />
-              {client.gpus.map((gpu, index) => (
-                <ChartPanel
-                  key={index}
-                  isWide
-                  title={gpu.name}
-                  value={gpuLegend(gpu)}
-                  gradientPrefix={`mon_gpu${index}_${device.id}`}
-                  data={samples.map((sample) => ({
-                    a: sample.gpu_util[index] ?? null,
-                    b: sample.gpu_vram[index] ?? null,
-                  }))}
-                  series={[
-                    { key: "a", color: "var(--color-chart-down)" },
-                    { key: "b", color: "var(--color-chart-up)" },
-                  ]}
-                />
-              ))}
-            </div>
-
-            {client.processes.length > 0 && (
-              <div className="device_monitor_panel">
-                <table className="device_monitor_processes">
-                  <colgroup>
-                    <col className="pid" />
-                    <col className="user" />
-                    <col />
-                    <col className="cpu" />
-                    <col className="mem" />
-                    <col className="kill" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="num">{COLUMN_PID}</th>
-                      <th>{t("ui.device_monitor.column_user")}</th>
-                      <th>{t("ui.device_monitor.column_command")}</th>
-                      <th className="num">{COLUMN_CPU}</th>
-                      <th className="num">{COLUMN_MEMORY}</th>
-                      <th className="kill" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {client.processes.map((process) => (
-                      <tr key={process.pid}>
-                        <td className="num">{process.pid}</td>
-                        <td>{process.user}</td>
-                        <td className="device_monitor_process_name">
-                          {process.name}
-                        </td>
-                        <td className="num accent">
-                          {process.cpu_percent.toFixed(1)}
-                        </td>
-                        <td className="num">
-                          {process.memory_percent.toFixed(1)}
-                        </td>
-                        <td className="kill">
-                          <RowMenu
-                            items={[
-                              {
-                                key: "kill",
-                                label:
-                                  pendingKillPid === process.pid
-                                    ? t("ui.device_monitor.kill_again")
-                                    : t("ui.device_monitor.kill"),
-                                icon: "close",
-                                isDanger: true,
-                                isArming: true,
-                                isArmed: pendingKillPid === process.pid,
-                                onSelect: () => void handleKill(process.pid),
-                              },
-                            ]}
-                          >
-                            <button
-                              type="button"
-                              className={`device_monitor_kill ${pendingKillPid === process.pid ? "device_monitor_kill--armed" : ""}`}
-                              title={
-                                pendingKillPid === process.pid
-                                  ? t("ui.device_monitor.kill_again")
-                                  : t("ui.device_monitor.kill")
-                              }
-                              onClick={() => void handleKill(process.pid)}
-                            >
-                              <Icon name="close" size={11} />
-                            </button>
-                          </RowMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {killError !== null && (
-                  <span className="device_monitor_kill_error">{killError}</span>
-                )}
-              </div>
-            )}
-
-            <div className="device_monitor_footer">
-              {t("ui.device_monitor.sampled", {
-                when: formatTimeAgo(client.last_report_at),
-              })}
-            </div>
-          </div>
-        )}
+      <div className="device_monitor_footer">
+        {t("ui.device_monitor.sampled", {
+          when: formatTimeAgo(device.client?.last_report_at ?? null),
+        })}
       </div>
-    </div>,
-    document.body,
+    </div>
+  );
+}
+
+interface MonitorTileProps {
+  label: string;
+  value: string;
+  tone?: "ok" | "warn" | "error";
+}
+
+/** One number of the four above the curves. */
+function MonitorTile({ label, value, tone = "ok" }: MonitorTileProps) {
+  return (
+    <div className="device_monitor_tile">
+      <span className="device_monitor_tile_label">{label}</span>
+      <span
+        className={`device_monitor_tile_value device_monitor_tile_value--${tone}`}
+      >
+        {value}
+      </span>
+    </div>
   );
 }
 
@@ -347,7 +366,19 @@ function ChartPanel({
 }
 
 function formatPercent(percent: number | null): string {
-  return percent === null ? "—" : `${Math.round(percent)}%`;
+  return percent === null ? NOTHING : `${Math.round(percent)}%`;
+}
+
+/** A reading's tone by its two thresholds. */
+function toneOf(
+  reading: number | null,
+  warnAt: number,
+  errorAt: number,
+): "ok" | "warn" | "error" {
+  if (reading === null || reading < warnAt) {
+    return "ok";
+  }
+  return reading >= errorAt ? "error" : "warn";
 }
 
 function vramPercent(gpu: DeviceGpuInfo): number | null {

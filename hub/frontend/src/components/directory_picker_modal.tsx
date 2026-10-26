@@ -1,9 +1,9 @@
-import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { FileBrowser } from "./file_browser";
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
+import { useEscapeLayer } from "../use_escape_layer";
 
 import "./directory_picker_modal.css";
 
@@ -39,15 +39,7 @@ export function DirectoryPickerModal({
   );
   // Redrawn when the panel's language changes.
   useLanguage();
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useEscapeLayer(onCancel);
 
   return createPortal(
     <div
@@ -69,8 +61,8 @@ export function DirectoryPickerModal({
         <FileBrowser
           deviceId={deviceId}
           startPath={startPath}
-          onPickDirectory={pick === "directory" ? onPick : undefined}
-          onPickFile={pick === "file" ? onPick : undefined}
+          pick={pick}
+          onPick={onPick}
           onCancel={onCancel}
         />
       </div>

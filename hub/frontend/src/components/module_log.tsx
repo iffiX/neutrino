@@ -10,7 +10,7 @@ import type { StatusTone } from "./status_dot";
 import type { DeviceModuleView, ServiceJournal } from "../api_types";
 
 /**
- * The output box under a module's tab on the Modules page.
+ * A module tab's log box, under its title `Log · last 200 lines`.
  *
  * The lines the agent sends up while the module installs or uninstalls,
  * after such a task fails, over a module whose install failed, and over one
@@ -84,20 +84,13 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
   return (
     <div className="modules_log">
       <div className="modules_log_head">
-        <span className="section_label">
-          {isJournalShown
-            ? t("ui.journal.label", { lines: JOURNAL_LINES })
-            : t("ui.modules.output")}
-        </span>
+        <span className="section_label">{t("ui.modules.log_title")}</span>
         {isTaskShown && (
           <StatusDot
             tone={taskTone(isInstallGoing, task.exitCode, isTaskFailed)}
             isPulsing={isInstallGoing}
             label={t(taskKey(isInstallGoing, task.exitCode, isTaskFailed))}
           />
-        )}
-        {isJournalShown && journalText !== null && (
-          <StatusDot tone="ok" isPulsing label={t("state.live")} />
         )}
       </div>
       {isJournalShown && journalText === null && journal.isLoading ? (
@@ -112,13 +105,7 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
             ) : journalText.trim().length > 0 ? (
               stripAnsi(journalText)
             ) : (
-              <span className="faint">
-                {t(
-                  hasNoInstances(row)
-                    ? "ui.modules.no_instances"
-                    : "ui.journal.empty",
-                )}
-              </span>
+              <span className="faint">{t("ui.journal.empty")}</span>
             )
           ) : (
             <span className="faint">{t("ui.modules.output_empty")}</span>
@@ -129,18 +116,6 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
         <span className="field_error">{task.error}</span>
       )}
     </div>
-  );
-}
-
-/** Whether the module runs one unit per instance and nobody has added one:
- * the machine reports none and the hub holds no configuration for it. */
-function hasNoInstances(row: DeviceModuleView): boolean {
-  const instances = row.details.instances;
-  return (
-    Array.isArray(instances) &&
-    instances.length === 0 &&
-    !row.is_configured &&
-    row.state !== "failed"
   );
 }
 

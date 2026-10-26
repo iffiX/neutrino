@@ -1,53 +1,71 @@
 .device_gauge {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
+  align-items: center;
 }
 
-.device_gauge_head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  color: var(--color-text-faint);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.device_gauge_ring {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 30px;
 }
 
-.device_gauge_value {
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0;
-  text-transform: none;
+.device_gauge_ring svg {
+  display: block;
+  transform: rotate(-90deg);
 }
 
 .device_gauge_track {
-  display: block;
-  overflow: hidden;
-  height: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--color-border);
+  fill: none;
+  stroke: var(--color-border);
 }
 
 .device_gauge_fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  transition: width var(--transition-base);
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--transition-base);
 }
 
 .device_gauge_fill--ok {
-  background: var(--color-ok);
-  box-shadow: 0 0 10px -2px var(--color-ok);
+  stroke: var(--color-signal-ok);
 }
 
 .device_gauge_fill--warn {
-  background: var(--color-warn);
-  box-shadow: 0 0 10px -2px var(--color-warn);
+  stroke: var(--color-signal-warn);
 }
 
 .device_gauge_fill--error {
-  background: var(--color-error);
-  box-shadow: 0 0 10px -2px var(--color-error);
+  stroke: var(--color-signal-error);
+}
+
+.device_gauge_value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.device_gauge_count {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  padding: 1px 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1;
+}
+
+.device_gauge_label {
+  color: var(--color-text-faint);
+  font-size: 9px;
+  line-height: 1.2;
 }

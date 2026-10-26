@@ -937,10 +937,7 @@ function RestoreArchiveModal({
         {phase !== "ask" && (
           <div className="settings_restore_fields">
             {task.lines.length > 0 && (
-              <pre
-                className="device_drawer_log_output settings_restore_log"
-                ref={logRef}
-              >
+              <pre className="log_output settings_restore_log" ref={logRef}>
                 {stripAnsi(task.lines.join("\n"))}
               </pre>
             )}

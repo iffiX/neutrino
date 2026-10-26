@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { AppShell } from "./components/app_shell";
@@ -10,9 +10,8 @@ import { CredentialsPage } from "./pages/credentials_page";
 import { DashboardPage } from "./pages/dashboard_page";
 import { DevicesPage } from "./pages/devices_page";
 import { ProxyPage } from "./edition";
-import { FilesPage } from "./pages/files_page";
 import { LoginPage } from "./pages/login_page";
-import { ModulesPage } from "./pages/modules_page";
+import { MachinePage } from "./pages/machine_page";
 import { NetworkPage } from "./pages/network_page";
 import { NotFoundPage } from "./pages/not_found_page";
 import { OverlayPage } from "./pages/overlay_page";
@@ -71,7 +70,10 @@ function gatedContent(
         <Route path="overlay" element={<OverlayPage />} />
         {ProxyPage !== null && <Route path="proxy" element={<ProxyPage />} />}
         <Route path="ai" element={<AiPage />} />
-        <Route path="devices" element={<DevicesPage />} />
+        <Route path="agents" element={<DevicesPage />} />
+        <Route path="agents/:deviceId" element={<MachinePage />} />
+        {/* The page's address in 0.5. */}
+        <Route path="devices" element={<Navigate to="/agents" replace />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="services" element={<ServicesPage />} />
         <Route path="credentials" element={<CredentialsPage />} />
@@ -79,11 +81,6 @@ function gatedContent(
             Keys still land somewhere sensible. */}
         <Route path="keys" element={<CredentialsPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        {/* Terminals renders nothing here: the shell keeps it mounted beside
-            the outlet so its sessions survive navigation. */}
-        <Route path="terminals" element={null} />
-        <Route path="files" element={<FilesPage />} />
-        <Route path="modules" element={<ModulesPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

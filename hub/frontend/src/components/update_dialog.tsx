@@ -319,10 +319,7 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
         {phase !== "ask" && (
           <div className="update_modal_fields update_dialog_progress">
             {streamLines.length > 0 && (
-              <pre
-                className="device_drawer_log_output update_dialog_log"
-                ref={logRef}
-              >
+              <pre className="log_output update_dialog_log" ref={logRef}>
                 {stripAnsi(joinPercentLines(streamLines).join("\n"))}
               </pre>
             )}

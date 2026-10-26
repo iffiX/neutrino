@@ -1,22 +1,23 @@
-.device_enrollment_notice {
-  flex-wrap: wrap;
+.enrollment_link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.device_enrollment_notice .notice_body {
-  flex: 1;
-  min-width: 240px;
+.enrollment_link .field_hint {
+  margin: 0;
 }
 
-.device_enrollment_link {
+.enrollment_link_row {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  margin-top: var(--space-2);
 }
 
-.device_enrollment_link code {
+.enrollment_link_row code {
   overflow: hidden;
   flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -28,8 +29,7 @@
   white-space: nowrap;
 }
 
-.device_enrollment_qr {
+.enrollment_link_qr {
   display: flex;
   justify-content: center;
-  margin-top: var(--space-3);
 }

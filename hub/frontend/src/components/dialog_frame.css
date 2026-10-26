@@ -1,7 +1,7 @@
-/* The install window: a form that turns into a log once it is running, in
-   the same frame the other modals use. */
+/* The frame every dialog is drawn in: a form that turns into a log once it
+   is running, a link and its QR, a catalog. */
 
-.install_modal_backdrop {
+.dialog_backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -13,7 +13,7 @@
   animation: fade_in_up 160ms ease both;
 }
 
-.install_modal {
+.dialog {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -27,7 +27,12 @@
     0 30px 80px -30px var(--color-shadow);
 }
 
-.install_modal_head {
+.dialog--wide {
+  width: min(1100px, 100%);
+  height: min(760px, 100%);
+}
+
+.dialog_head {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -37,19 +42,20 @@
   background: var(--color-elevated);
 }
 
-.install_modal_title {
+.dialog_title {
   display: flex;
+  flex: 1;
   gap: var(--space-2);
   align-items: center;
   min-width: 0;
 }
 
-.install_modal_title h2 {
+.dialog_title h2 {
   margin: 0;
   font-size: 15px;
 }
 
-.install_modal_body {
+.dialog_body {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -59,20 +65,29 @@
   overflow-y: auto;
 }
 
-.install_modal_log {
+.dialog_foot {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+/* A task's output at the bottom of the dialog that started it. */
+.dialog_log {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.install_modal_log_head {
+.dialog_log_head {
   display: flex;
   gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
 }
 
-.install_modal_log_output {
+.dialog_log_output {
   max-height: 220px;
   margin: 0;
   padding: var(--space-3);
@@ -86,12 +101,4 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-y: auto;
-}
-
-.install_modal_foot {
-  display: flex;
-  gap: var(--space-3);
-  justify-content: flex-end;
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--color-border);
 }

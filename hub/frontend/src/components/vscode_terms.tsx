@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Icon } from "./icon";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
-import type { VscodeDeviceView, VscodeTermsUpdate } from "../api_types";
+import type { EnabledAccountsView, VscodeTermsUpdate } from "../api_types";
 
 import "./vscode_terms.css";
 
@@ -18,9 +18,9 @@ interface VscodeTermsProps {
   /** The machine the acceptance is recorded for. */
   deviceId: string;
   /** The machine's VS Code, as last read. */
-  view: VscodeDeviceView;
+  view: EnabledAccountsView;
   /** Called with the view the hub answered after recording the press. */
-  onRecorded: (view: VscodeDeviceView) => void;
+  onRecorded: (view: EnabledAccountsView) => void;
 }
 
 export function VscodeTerms({ deviceId, view, onRecorded }: VscodeTermsProps) {
@@ -36,7 +36,7 @@ export function VscodeTerms({ deviceId, view, onRecorded }: VscodeTermsProps) {
     };
     try {
       onRecorded(
-        await apiPost<VscodeDeviceView>(
+        await apiPost<EnabledAccountsView>(
           "/agent/module/vscode/terms/set",
           request,
         ),
@@ -51,7 +51,7 @@ export function VscodeTerms({ deviceId, view, onRecorded }: VscodeTermsProps) {
       <Icon name="alert" size={15} />
       <div className="notice_body">
         <span>{t("ui.vscode.terms_notice")}</span>
-        {view.is_terms_accepted ? (
+        {view.is_terms_accepted === true ? (
           <button type="button" className="button button--primary" disabled>
             {t("ui.vscode.terms_accepted")}
           </button>

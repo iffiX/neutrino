@@ -144,12 +144,8 @@ export function NetworkDiagram({
       .filter((entry): entry is InterfaceView => entry !== undefined),
   );
 
-  // Devices worth drawing: everything online, every neighbour the kernel
-  // still holds, STALE included, and the silent ones somebody named. A
-  // neighbour the kernel marked FAILED or INCOMPLETE is gone.
-  const shownDevices = devices.filter(
-    (device) => device.is_online || device.is_neighbour || device.name !== null,
-  );
+  // Every managed machine, online or not.
+  const shownDevices = devices;
   const lanEntries = network.interfaces.filter(
     (entry) =>
       entry.settings.role === "lan" && entry.settings.lan.address.length > 0,
@@ -519,7 +515,7 @@ function buildRightBlocks(
       .slice()
       .sort(
         (a, b) =>
-          Number(b.is_online) - Number(a.is_online) ||
+          Number(b.is_agent_online) - Number(a.is_agent_online) ||
           compareAddresses(a.ipv4_address, b.ipv4_address),
       );
     if (list.length <= MAX_DEVICES_PER_NETWORK) {
@@ -672,14 +668,14 @@ function DeviceNode({ placed }: { placed: PlacedDevice }) {
   return (
     <g
       className={
-        device.is_online
+        device.is_agent_online
           ? "diagram_device diagram_device--on"
           : "diagram_device"
       }
     >
       <path
         className={
-          device.is_online
+          device.is_agent_online
             ? "diagram_edge diagram_edge--device"
             : "diagram_edge diagram_edge--device_off"
         }

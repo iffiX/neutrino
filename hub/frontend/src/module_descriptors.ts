@@ -1,139 +1,73 @@
 /**
- * What the Modules page knows of each program run as a person's account,
- * keyed by module name: the hub's description table as the panel reads it.
+ * The modules of the account layer, as the machine page draws their tabs:
+ * the hub's description table as the panel reads it, keyed by module name.
  *
- * One `instances_panel.tsx` draws every such module. What differs between
- * them is here: the words each speaks with, the port a first instance is
- * offered, whether a Windows machine runs each instance with a login, and
- * whether the machine reports `installing` before any instance can run.
+ * One `instances_panel.tsx` draws each tab's **Enabled accounts**. What
+ * differs between them is here: the apply bar's words, the account's own
+ * field a row shows beside its name, and the line saying the owner installs
+ * the software.
  */
 
-/** The catalog keys one module's instances panel speaks with. */
-export interface InstancesWording {
-  instancesTitle: string;
-  instancesHint: string;
-  add: string;
-  empty: string;
-  account: string;
-  accountPlaceholder: string;
-  port: string;
-  running: string;
-  stopped: string;
-  remove: string;
+/** The account's field a module's row shows beside the account's name. */
+export type AccountField = "shell_path" | "share_path";
+
+export interface ModuleDescriptor {
+  /** The module's manifest name. */
+  name: string;
+  /** The apply bar's label and hint. */
   apply: string;
   applyHint: string;
-  /** The Windows login picker's label, with `{account}`, and the line under
-   * it; absent for a module whose instances name no login. */
-  login?: string;
-  loginHint?: string;
-  /** The line above the instances saying the owner installs the software,
+  /** The account's field each row shows; none for most modules. */
+  field: AccountField | null;
+  /** The line above the accounts saying the owner installs the software,
    * and the same once the machine reports the installed `{version}`. */
   ownerNotice?: string;
   ownerNoticeVersion?: string;
 }
 
-export interface ModuleDescriptor {
-  /** The module's manifest name. */
-  name: string;
-  /** The port a first instance is offered; the next is the one after the
-   * highest in use. */
-  firstPort: number;
-  /** Whether each instance names a vault login, which a Windows machine
-   * runs it as. */
-  isLoginNamed: boolean;
-  /** Whether an instance reads `installing` while the machine reports the
-   * module installing, before any instance can run. */
-  isInstallingShown: boolean;
-  wording: InstancesWording;
-}
-
 export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
+  samba: {
+    name: "samba",
+    apply: "ui.samba.apply",
+    applyHint: "ui.samba.apply_hint",
+    field: "share_path",
+  },
+  terminal: {
+    name: "terminal",
+    apply: "ui.terminal_module.apply",
+    applyHint: "ui.terminal_module.apply_hint",
+    field: "shell_path",
+  },
+  ssh_server: {
+    name: "ssh_server",
+    apply: "ui.ssh_server.apply",
+    applyHint: "ui.ssh_server.apply_hint",
+    field: null,
+  },
   vscode: {
     name: "vscode",
-    firstPort: 8000,
-    isLoginNamed: true,
-    isInstallingShown: false,
-    wording: {
-      instancesTitle: "ui.vscode.instances_title",
-      instancesHint: "ui.vscode.instances_hint",
-      add: "ui.vscode.add",
-      empty: "ui.vscode.empty",
-      account: "ui.vscode.account",
-      accountPlaceholder: "ui.vscode.account_placeholder",
-      port: "ui.vscode.port",
-      running: "ui.vscode.running",
-      stopped: "ui.vscode.stopped",
-      remove: "ui.vscode.remove",
-      apply: "ui.vscode.apply",
-      applyHint: "ui.vscode.apply_hint",
-      login: "ui.vscode.login",
-      loginHint: "ui.vscode.login_hint",
-    },
+    apply: "ui.vscode.apply",
+    applyHint: "ui.vscode.apply_hint",
+    field: null,
   },
   code_server: {
     name: "code_server",
-    firstPort: 8443,
-    isLoginNamed: false,
-    isInstallingShown: false,
-    wording: {
-      instancesTitle: "ui.code_server.instances_title",
-      instancesHint: "ui.code_server.instances_hint",
-      add: "ui.code_server.add",
-      empty: "ui.code_server.empty",
-      account: "ui.code_server.account",
-      accountPlaceholder: "ui.code_server.account_placeholder",
-      port: "ui.code_server.port",
-      running: "ui.code_server.running",
-      stopped: "ui.code_server.stopped",
-      remove: "ui.code_server.remove",
-      apply: "ui.code_server.apply",
-      applyHint: "ui.code_server.apply_hint",
-      ownerNotice: "ui.code_server.owner_notice",
-      ownerNoticeVersion: "ui.code_server.owner_notice_version",
-    },
+    apply: "ui.code_server.apply",
+    applyHint: "ui.code_server.apply_hint",
+    field: null,
+    ownerNotice: "ui.code_server.owner_notice",
+    ownerNoticeVersion: "ui.code_server.owner_notice_version",
   },
   cloudcli: {
     name: "cloudcli",
-    firstPort: 3001,
-    isLoginNamed: true,
-    isInstallingShown: true,
-    wording: {
-      instancesTitle: "ui.cloudcli.instances_title",
-      instancesHint: "ui.cloudcli.instances_hint",
-      add: "ui.cloudcli.add",
-      empty: "ui.cloudcli.empty",
-      account: "ui.cloudcli.account",
-      accountPlaceholder: "ui.cloudcli.account_placeholder",
-      port: "ui.cloudcli.port",
-      running: "ui.cloudcli.running",
-      stopped: "ui.cloudcli.stopped",
-      remove: "ui.cloudcli.remove",
-      apply: "ui.cloudcli.apply",
-      applyHint: "ui.cloudcli.apply_hint",
-      login: "ui.cloudcli.login",
-      loginHint: "ui.cloudcli.login_hint",
-    },
+    apply: "ui.cloudcli.apply",
+    applyHint: "ui.cloudcli.apply_hint",
+    field: null,
   },
   codeg: {
     name: "codeg",
-    firstPort: 3101,
-    isLoginNamed: true,
-    isInstallingShown: false,
-    wording: {
-      instancesTitle: "ui.codeg.instances_title",
-      instancesHint: "ui.codeg.instances_hint",
-      add: "ui.codeg.add",
-      empty: "ui.codeg.empty",
-      account: "ui.codeg.account",
-      accountPlaceholder: "ui.codeg.account_placeholder",
-      port: "ui.codeg.port",
-      running: "ui.codeg.running",
-      stopped: "ui.codeg.stopped",
-      remove: "ui.codeg.remove",
-      apply: "ui.codeg.apply",
-      applyHint: "ui.codeg.apply_hint",
-      login: "ui.codeg.login",
-      loginHint: "ui.codeg.login_hint",
-    },
+    apply: "ui.codeg.apply",
+    applyHint: "ui.codeg.apply_hint",
+    field: null,
   },
 };

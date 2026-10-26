@@ -89,9 +89,7 @@ export function TopBar() {
             : t(currentItem.labelKey)}
         </span>
         <span className="top_bar_page_sub">
-          {currentItem === undefined
-            ? ""
-            : t(describePage(currentItem, mode, network.data?.hub_os ?? null))}
+          {currentItem === undefined ? "" : t(describePage(currentItem, mode))}
         </span>
       </div>
 
@@ -137,14 +135,9 @@ export function TopBar() {
 }
 
 /** The line under the page's name, for what the page holds on this hub. */
-function describePage(
-  item: NavItem,
-  mode: string | null,
-  hubOs: string | null,
-): string {
+function describePage(item: NavItem, mode: string | null): string {
   const byMode = mode === null ? undefined : item.modeDescriptionKeys?.[mode];
-  const byOs = hubOs === null ? undefined : item.osDescriptionKeys?.[hubOs];
-  return byMode ?? byOs ?? item.descriptionKey;
+  return byMode ?? item.descriptionKey;
 }
 
 /** What the network chip says: the mode this machine is in. */

@@ -352,14 +352,12 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
         <div className="notice_body">{t(key, values)}</div>
       </div>
       {record.stage !== "installed" && record.steps.length > 0 && (
-        <pre className="device_drawer_log_output update_steps">
-          {record.steps.join("\n")}
-        </pre>
+        <pre className="log_output update_steps">{record.steps.join("\n")}</pre>
       )}
       {record.output.trim() !== "" && (
         <details className="update_output">
           <summary>{t("ui.settings.update_output")}</summary>
-          <pre className="device_drawer_log_output update_log">
+          <pre className="log_output update_log">
             {stripAnsi(record.output)}
           </pre>
         </details>

@@ -102,20 +102,3 @@
   display: flex;
   gap: var(--space-2);
 }
-
-/* Adding a node is one field, because a share link already carries every part
-   of a node and retyping those parts is only a chance to get one wrong. */
-.nodes_add {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-md);
-  background: var(--color-accent-wash);
-  animation: fade_in_up 160ms ease;
-}
-
-.nodes_add .button_row {
-  justify-content: flex-end;
-}

@@ -60,14 +60,11 @@ export function OverlayTopology({
 }: OverlayTopologyProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  // Everything online, plus the silent devices somebody cared enough to name;
-  // unnamed neighbours that stopped answering are scan residue, not topology.
-  const remembered = devices.filter(
-    (device) => device.is_online || device.name !== null,
-  );
+  // Every managed machine, the online ones first.
+  const remembered = devices;
   const shown = remembered
     .slice()
-    .sort((a, b) => Number(b.is_online) - Number(a.is_online))
+    .sort((a, b) => Number(b.is_agent_online) - Number(a.is_agent_online))
     .slice(0, MAX_DEVICES);
   const hiddenCount = remembered.length - shown.length;
 
@@ -195,7 +192,7 @@ export function OverlayTopology({
           <path
             key={device.id}
             className={
-              device.is_online
+              device.is_agent_online
                 ? "topo_lan_edge topo_lan_edge--on"
                 : "topo_lan_edge"
             }
@@ -283,7 +280,7 @@ export function OverlayTopology({
             height={NODE_HEIGHT}
             rx={9}
             className={
-              device.is_online
+              device.is_agent_online
                 ? "topo_device_box topo_device_box--on"
                 : "topo_device_box"
             }

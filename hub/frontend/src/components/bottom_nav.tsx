@@ -9,9 +9,10 @@ import "./bottom_nav.css";
  * The bottom bar for narrow and portrait viewports, where the rail is hidden.
  *
  * Icons only, one row along the bottom edge, scrolling sideways when the
- * pages outnumber the width. Every page the sidebar would list is here in the
- * same order, with Sign out set apart at the end; each button's title carries
- * the name the missing label would have shown.
+ * pages outnumber the width. The hub group's pages are here in the
+ * sidebar's order, with Sign out set apart at the end; each button's title
+ * carries the name the missing label would have shown. A machine page is
+ * reached from the Agents page, whose button stays lit on it.
  */
 
 interface BottomNavProps {

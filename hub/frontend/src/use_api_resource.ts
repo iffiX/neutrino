@@ -44,7 +44,7 @@ export interface ApiResource<T> {
  *
  * Args:
  *   path: The API path below `/api`, including any query string. Passing null
- *     skips the request, which is how a drawer defers loading until it opens.
+ *     skips the request, which is how a panel defers loading until it opens.
  *   options: `invalidateOn` names the hub events that make this refetch.
  *
  * Returns:

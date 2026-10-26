@@ -1,0 +1,37 @@
+.accounts_title {
+  justify-content: space-between;
+}
+
+.accounts_list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+/* A row's content is centred on its height, its buttons at the right. */
+.accounts_row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+}
+
+.accounts_row + .accounts_row,
+.accounts_list > .inline_form + .accounts_row,
+.accounts_row + .inline_form {
+  border-top: 1px solid var(--color-border);
+}
+
+.accounts_row_name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.accounts_row_actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}

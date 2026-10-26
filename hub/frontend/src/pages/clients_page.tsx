@@ -1,24 +1,24 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
-import { ClientPermissionDrawer } from "../components/client_permission_drawer";
+import { ClientLinkModal } from "../components/client_link_modal";
+import { ClientPermissionForm } from "../components/client_permission_form";
 import type {
   PermissionDeviceChoice,
   PermissionDevices,
-} from "../components/client_permission_drawer";
-import { DeviceEnrollmentNotice } from "../components/device_enrollment_notice";
+} from "../components/client_permission_form";
+import { DialogFrame } from "../components/dialog_frame";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
-import { isDeviceManaged, toDeviceLabel } from "../device_level";
+import { toDeviceLabel } from "../device_level";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CLIENTS } from "../use_hub_events";
 import type {
-  ClientEnrollmentView,
   ClientListView,
   ClientUpdate,
   ClientView,
@@ -31,10 +31,12 @@ import "./clients_page.css";
 /**
  * The people's programs enrolled with this hub.
  *
- * A client is a desktop program a person runs, enrolled once by name: the
- * page mints its link, and the row stands from that moment, connected or
- * not. Presence, hostname and version come from its live channel; the
- * switch and the delete write at once.
+ * A client is a program a person runs, enrolled once by name: the header's
+ * New client link names it in a dialog and shows its link and QR there, and
+ * the row stands from that moment, connected or not. Presence, hostname and
+ * version come from its live session. A client's name and permission are
+ * edited in its row, lit while the edit is open; the default permission is
+ * a dialog from the header. The switch and the delete write at once.
  */
 
 const CLIENTS_PATH = "/hub/client";
@@ -55,15 +57,15 @@ const PRESENCE_KEYS: Record<ClientPresence, string> = {
   never: "state.never_connected",
 };
 
-/** The drawer's key for the default permissions, beside client ids. */
-const DEFAULT_PERMISSION = "default";
-
 /** What a column shows for a client that has not reported one. */
 const NOTHING = "—";
 
 /** The columns the rename form takes: the name, hostname, platform and
  * version, so the name and its buttons fit on one line. */
 const RENAME_COLUMN_SPAN = 4;
+
+/** Every column of the table, which a client's permission row spans. */
+const COLUMN_COUNT = 7;
 
 export function ClientsPage() {
   // Redrawn when the panel's language changes.
@@ -74,43 +76,17 @@ export function ClientsPage() {
   const devicesResource = useApiResource<DevicesResponse>(DEVICES_PATH);
   const confirm = useConfirm();
 
-  const [isNaming, setIsNaming] = useState(false);
-  const [name, setName] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [enrollment, setEnrollment] = useState<{
-    name: string;
-    view: ClientEnrollmentView;
-  } | null>(null);
+  const [isLinkOpen, setIsLinkOpen] = useState(false);
+  const [isDefaultOpen, setIsDefaultOpen] = useState(false);
   // The client whose name is being edited in its row, and the name typed.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  // Whose permissions the drawer edits: a client's id, or the default's.
+  // The client whose permission is open in its row.
   const [permissionOf, setPermissionOf] = useState<string | null>(null);
 
   const clients = resource.data?.clients ?? [];
-
-  const handleCreateLink = async () => {
-    const wanted = name.trim();
-    if (wanted.length === 0) {
-      return;
-    }
-    setIsBusy(true);
-    setError(null);
-    try {
-      const view = await apiPost<ClientEnrollmentView>(
-        `${CLIENTS_PATH}/enrollment/create`,
-        { name: wanted },
-      );
-      setEnrollment({ name: wanted, view });
-      setName("");
-      setIsNaming(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   const handleToggle = async (client: ClientView) => {
     setIsBusy(true);
@@ -170,22 +146,31 @@ export function ClientsPage() {
     }
   };
 
-  const applyPermission = async (
+  const saveDefaultPermission = async (
     kinds: string[] | null,
     devices: PermissionDevices | null,
   ) => {
-    const next =
-      permissionOf === DEFAULT_PERMISSION
-        ? await apiPost<ClientListView>(
-            `${CLIENTS_PATH}/default_permission/set`,
-            { kinds: kinds ?? [], devices },
-          )
-        : await apiPost<ClientListView>(`${CLIENTS_PATH}/permission/set`, {
-            client_id: permissionOf,
-            kinds,
-            devices,
-          });
-    resource.setData(next);
+    resource.setData(
+      await apiPost<ClientListView>(`${CLIENTS_PATH}/default_permission/set`, {
+        kinds: kinds ?? [],
+        devices,
+      }),
+    );
+    setIsDefaultOpen(false);
+  };
+
+  const savePermission = async (
+    clientId: string,
+    kinds: string[] | null,
+    devices: PermissionDevices | null,
+  ) => {
+    resource.setData(
+      await apiPost<ClientListView>(`${CLIENTS_PATH}/permission/set`, {
+        client_id: clientId,
+        kinds,
+        devices,
+      }),
+    );
     setPermissionOf(null);
   };
 
@@ -197,12 +182,11 @@ export function ClientsPage() {
       onConfirm: () => void handleDelete(client),
     });
 
-  const managedDevices = (devicesResource.data?.devices ?? [])
-    .filter(isDeviceManaged)
-    .map(toDeviceChoice);
+  const managedDevices = (devicesResource.data?.devices ?? []).map(
+    toDeviceChoice,
+  );
   const onlineCount = clients.filter((client) => client.is_online).length;
-  const permissionClient =
-    clients.find((client) => client.id === permissionOf) ?? null;
+  const listView = resource.data;
 
   if (resource.error !== null && clients.length === 0) {
     return (
@@ -232,22 +216,19 @@ export function ClientsPage() {
             type="button"
             className="button"
             disabled={resource.data === null}
-            onClick={() => setPermissionOf(DEFAULT_PERMISSION)}
+            onClick={() => setIsDefaultOpen(true)}
           >
             <Icon name="lock" size={14} />
             {t("ui.clients.default_permission")}
           </button>
-          {!isNaming && (
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={isBusy}
-              onClick={() => setIsNaming(true)}
-            >
-              <Icon name="link" size={14} />
-              {t("ui.clients.new_link")}
-            </button>
-          )}
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => setIsLinkOpen(true)}
+          >
+            <Icon name="link" size={14} />
+            {t("ui.clients.new_link")}
+          </button>
         </div>
       </div>
 
@@ -256,55 +237,6 @@ export function ClientsPage() {
           <Icon name="alert" size={15} />
           <div className="notice_body">{error}</div>
         </div>
-      )}
-
-      {isNaming && (
-        <div className="clients_add">
-          <input
-            className="input"
-            placeholder={t("ui.clients.name_placeholder")}
-            value={name}
-            autoFocus
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleCreateLink();
-              }
-            }}
-          />
-          <div className="clients_add_actions">
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() => {
-                setIsNaming(false);
-                setName("");
-              }}
-            >
-              {t("ui.clients.cancel")}
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={isBusy || name.trim().length === 0}
-              onClick={() => void handleCreateLink()}
-            >
-              <Icon name="check" size={14} />
-              {t("ui.clients.create_link")}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {enrollment !== null && (
-        <DeviceEnrollmentNotice
-          link={enrollment.view.link}
-          expiresInS={enrollment.view.expires_in_s}
-          title={t("ui.clients.enrollment_title", { name: enrollment.name })}
-          hint={t("ui.clients.enrollment_hint")}
-          hasQrCode
-          onDismiss={() => setEnrollment(null)}
-        />
       )}
 
       {clients.length === 0 ? (
@@ -341,57 +273,79 @@ export function ClientsPage() {
             </thead>
             <tbody>
               {clients.map((client) => (
-                <ClientRow
-                  key={client.id}
-                  client={client}
-                  isBusy={isBusy}
-                  isRenaming={renamingId === client.id}
-                  newName={newName}
-                  onNewName={setNewName}
-                  onRename={() => startRename(client)}
-                  onRenameSave={() => void handleRename(client)}
-                  onRenameCancel={() => setRenamingId(null)}
-                  onToggle={() => void handleToggle(client)}
-                  onPermission={() => setPermissionOf(client.id)}
-                  onDelete={() => askDelete(client)}
-                />
+                <Fragment key={client.id}>
+                  <ClientRow
+                    client={client}
+                    isBusy={isBusy}
+                    isRenaming={renamingId === client.id}
+                    isPermissionOpen={permissionOf === client.id}
+                    newName={newName}
+                    onNewName={setNewName}
+                    onRename={() => startRename(client)}
+                    onRenameSave={() => void handleRename(client)}
+                    onRenameCancel={() => setRenamingId(null)}
+                    onToggle={() => void handleToggle(client)}
+                    onPermission={() =>
+                      setPermissionOf(
+                        permissionOf === client.id ? null : client.id,
+                      )
+                    }
+                    onDelete={() => askDelete(client)}
+                  />
+                  {listView !== null && permissionOf === client.id && (
+                    <tr className="clients_permission_row">
+                      <td colSpan={COLUMN_COUNT}>
+                        <ClientPermissionForm
+                          hint={t("ui.clients.permission_apply_hint")}
+                          kinds={listView.permission_kinds}
+                          defaultKinds={listView.default_permission}
+                          defaultDevices={listView.default_permission_devices}
+                          applied={client.permission}
+                          appliedDevices={client.permission_devices}
+                          devices={managedDevices}
+                          canFollowDefault
+                          onSave={(kinds, devices) =>
+                            savePermission(client.id, kinds, devices)
+                          }
+                          onCancel={() => setPermissionOf(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {resource.data !== null && permissionOf === DEFAULT_PERMISSION && (
-        <ClientPermissionDrawer
-          title={t("ui.clients.default_permission_title")}
-          hint={t("ui.clients.default_permission_hint")}
-          applyHint={t("ui.clients.default_permission_apply_hint")}
-          kinds={resource.data.permission_kinds}
-          defaultKinds={resource.data.default_permission}
-          defaultDevices={resource.data.default_permission_devices}
-          applied={resource.data.default_permission}
-          appliedDevices={resource.data.default_permission_devices}
-          devices={managedDevices}
-          canFollowDefault={false}
-          onApply={applyPermission}
-          onClose={() => setPermissionOf(null)}
+      {isLinkOpen && (
+        <ClientLinkModal
+          onCreated={resource.reload}
+          onClose={() => setIsLinkOpen(false)}
         />
       )}
-      {resource.data !== null && permissionClient !== null && (
-        <ClientPermissionDrawer
-          title={t("ui.clients.permission_title", {
-            name: permissionClient.name,
-          })}
-          applyHint={t("ui.clients.permission_apply_hint")}
-          kinds={resource.data.permission_kinds}
-          defaultKinds={resource.data.default_permission}
-          defaultDevices={resource.data.default_permission_devices}
-          applied={permissionClient.permission}
-          appliedDevices={permissionClient.permission_devices}
-          devices={managedDevices}
-          canFollowDefault
-          onApply={applyPermission}
-          onClose={() => setPermissionOf(null)}
-        />
+      {listView !== null && isDefaultOpen && (
+        <DialogFrame
+          title={t("ui.clients.default_permission_title")}
+          icon="lock"
+          onClose={() => setIsDefaultOpen(false)}
+        >
+          <p className="field_hint">
+            {t("ui.clients.default_permission_hint")}
+          </p>
+          <ClientPermissionForm
+            hint={t("ui.clients.default_permission_apply_hint")}
+            kinds={listView.permission_kinds}
+            defaultKinds={listView.default_permission}
+            defaultDevices={listView.default_permission_devices}
+            applied={listView.default_permission}
+            appliedDevices={listView.default_permission_devices}
+            devices={managedDevices}
+            canFollowDefault={false}
+            onSave={saveDefaultPermission}
+            onCancel={() => setIsDefaultOpen(false)}
+          />
+        </DialogFrame>
       )}
       {confirm.modal}
     </div>
@@ -403,6 +357,8 @@ interface ClientRowProps {
   isBusy: boolean;
   /** Whether the name cell holds the rename form. */
   isRenaming: boolean;
+  /** Whether the row's permission is open under it. */
+  isPermissionOpen: boolean;
   newName: string;
   onNewName: (name: string) => void;
   onRename: () => void;
@@ -417,6 +373,7 @@ function ClientRow({
   client,
   isBusy,
   isRenaming,
+  isPermissionOpen,
   newName,
   onNewName,
   onRename,
@@ -430,7 +387,14 @@ function ClientRow({
   useLanguage();
   const presence = presenceOf(client);
   return (
-    <tr className={client.is_disabled ? "clients_row--disabled" : ""}>
+    <tr
+      className={[
+        client.is_disabled ? "clients_row--disabled" : "",
+        isRenaming || isPermissionOpen ? "clients_row--editing" : "",
+      ]
+        .filter((name) => name !== "")
+        .join(" ")}
+    >
       <td colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}>
         {isRenaming ? (
           <div className="clients_rename">
@@ -511,6 +475,7 @@ function ClientRow({
             type="button"
             className="button button--small button--ghost"
             disabled={isBusy}
+            aria-expanded={isPermissionOpen}
             onClick={onPermission}
           >
             {t("ui.clients.permission")}

@@ -3,82 +3,73 @@ import { useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
-import { Picker } from "./picker";
-import { VaultPicker } from "./vault_picker";
+import { StatusDot } from "./status_dot";
 import { apiPath, apiPost, describeError } from "../api_client";
+import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { isFailing, useSettledApply } from "../use_settled_apply";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
+import type { ReportedModule } from "../use_settled_apply";
 import type { ModuleDescriptor } from "../module_descriptors";
 import type {
-  CloudcliConfigUpdate,
-  CloudcliDeviceView,
-  CodegConfigUpdate,
-  CodegDeviceView,
-  CodeServerConfigUpdate,
-  CodeServerDeviceView,
-  VscodeConfigUpdate,
-  VscodeDeviceView,
+  EnabledAccountsUpdate,
+  EnabledAccountsView,
+  EnabledAccountView,
 } from "../api_types";
 
 import "./instances_panel.css";
 
 /**
- * A program run as a person's account on one machine: which accounts it
- * runs for.
+ * A module of the account layer on one machine: which of the machine's
+ * available accounts it runs for, **Enabled accounts**.
  *
- * Each instance is one account on one port behind the agent's forwarder. A
- * client opens it with the token the hub hands, so the panel shows no link
- * to it. The module's own words, the port a first instance is offered and
- * whether a Windows machine runs each instance with a login picked from the
- * Credentials page come from its descriptor; the view the hub answers is
- * the module's own model.
+ * One check row per available account; an account checked goes to the end
+ * of the order, and the apply bar writes the whole list. A row shows the
+ * module's own field of the account, whether its instance runs, and its
+ * code's words. The SSH server shows the machine's host key under the rows,
+ * and a Linux file share without a `want` says that applying replaces the
+ * machine's smb.conf. The module's words come from its descriptor.
  */
 
-/** The view of any program run as an account, each the hub's own model. */
-type InstancesDeviceView =
-  | VscodeDeviceView
-  | CodeServerDeviceView
-  | CloudcliDeviceView
-  | CodegDeviceView;
+/** What an agent older than the module reports for it. */
+const STATE_UNSUPPORTED = "unsupported";
 
-/** The body of a set, the module's own: a module whose instances name a
- * login sends it, the other sends the account and the port alone. */
-type InstancesConfigUpdate =
-  | VscodeConfigUpdate
-  | CodeServerConfigUpdate
-  | CloudcliConfigUpdate
-  | CodegConfigUpdate;
+/** The module whose rows end with the machine's host key. */
+const SSH_SERVER_MODULE = "ssh_server";
 
-/** One instance as the form holds it; `login_id` is sent only where the
- * module's instances name one. */
-interface InstanceDraft {
-  account: string;
-  port: number;
-  login_id: string;
-}
+/** The module whose first Linux apply replaces a hand-made smb.conf. */
+const FILE_SHARE_MODULE = "samba";
 
-/** The form's own fields; the machine they are written to is the page's. */
-interface InstancesDraft {
-  instances: InstanceDraft[];
+const LINUX_OS = "linux";
+
+/** What the apply asks of the module. */
+const WANT_RUNNING = "running";
+
+/** The words a row's field shows while it is empty and the default holds. */
+const FIELD_DEFAULT_KEYS: Record<string, string> = {
+  shell_path: "ui.modules.login_shell",
+  share_path: "ui.modules.home_folder",
+};
+
+/** The enabled accounts, in the order they were checked. */
+interface EnabledDraft {
+  accounts: string[];
 }
 
 interface InstancesPanelProps {
   /** The module, as the page's descriptor table describes it. */
   descriptor: ModuleDescriptor;
-  /** The machine whose instances these are. */
+  /** The machine whose module this is. */
   deviceId: string;
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
   isEditable: boolean;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
   want: string;
-  /** Whether the machine is Windows, which starts each instance with a login. */
-  isWindows: boolean;
-  /** Whether the machine reports the module installing, so no instance runs yet. */
-  isInstalling: boolean;
+  /** The system the machine's agent reports. */
+  platformOs: string;
 }
 
 export function InstancesPanel({
@@ -87,13 +78,11 @@ export function InstancesPanel({
   basePath,
   isEditable,
   want,
-  isWindows,
-  isInstalling,
+  platformOs,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const words = descriptor.wording;
-  const resource = useApiResource<InstancesDeviceView>(
+  const resource = useApiResource<EnabledAccountsView>(
     apiPath(basePath, { device_id: deviceId }),
     {
       invalidateOn: [
@@ -106,41 +95,28 @@ export function InstancesPanel({
   const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const settle = useSettledApply(saved, want);
+  const settle = useSettledApply(reportOf(saved), WANT_RUNNING);
 
   if (resource.error !== null && saved === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
   }
   if (saved === null || draft === null) {
-    return <div className="skeleton" style={{ height: 240 }} />;
+    return <div className="skeleton" style={{ height: 160 }} />;
   }
 
-  const reported = new Map(
-    saved.instances.map((instance) => [instance.account, instance]),
-  );
-  const version = "version" in saved ? saved.version : "";
-  const isLoginPicked = descriptor.isLoginNamed && isWindows;
+  const isUnsupported = saved.state === STATE_UNSUPPORTED;
+  const isLocked = !isEditable || isUnsupported;
+  const version = saved.version ?? "";
+  const isReplaceNoticed =
+    descriptor.name === FILE_SHARE_MODULE &&
+    platformOs === LINUX_OS &&
+    want === "";
 
-  const updateInstance = (index: number, patch: Partial<InstanceDraft>) => {
+  const toggle = (account: string, isOn: boolean) => {
     setDraft({
-      ...draft,
-      instances: draft.instances.map((instance, at) =>
-        at === index ? { ...instance, ...patch } : instance,
-      ),
-    });
-  };
-
-  const addInstance = () => {
-    const highest = Math.max(
-      descriptor.firstPort - 1,
-      ...draft.instances.map((instance) => instance.port),
-    );
-    setDraft({
-      ...draft,
-      instances: [
-        ...draft.instances,
-        { account: "", port: highest + 1, login_id: "" },
-      ],
+      accounts: isOn
+        ? [...draft.accounts.filter((name) => name !== account), account]
+        : draft.accounts.filter((name) => name !== account),
     });
   };
 
@@ -148,10 +124,13 @@ export function InstancesPanel({
     setIsBusy(true);
     setError(null);
     settle.clear();
-    const request = requestOf(descriptor, deviceId, draft);
+    const request: EnabledAccountsUpdate = {
+      device_id: deviceId,
+      accounts: draft.accounts,
+    };
     try {
       resource.setData(
-        await apiPost<InstancesDeviceView>(`${basePath}/set`, request),
+        await apiPost<EnabledAccountsView>(`${basePath}/set`, request),
       );
       settle.begin();
     } catch (cause: unknown) {
@@ -161,116 +140,64 @@ export function InstancesPanel({
     }
   };
 
+  const report = reportOf(saved);
   return (
     <>
-      {words.ownerNotice !== undefined && (
+      {descriptor.ownerNotice !== undefined && (
         <p className="field_hint">
-          {version === "" || words.ownerNoticeVersion === undefined
-            ? t(words.ownerNotice)
-            : t(words.ownerNoticeVersion, { version })}
+          {version === "" || descriptor.ownerNoticeVersion === undefined
+            ? t(descriptor.ownerNotice)
+            : t(descriptor.ownerNoticeVersion, { version })}
         </p>
       )}
       <section
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{t(words.instancesTitle)}</h2>
-          <button
-            type="button"
-            className="button button--small"
-            disabled={!isEditable}
-            onClick={addInstance}
-          >
-            <Icon name="plus" size={13} />
-            {t(words.add)}
-          </button>
+          <h2>{t("ui.modules.enabled_accounts")}</h2>
         </div>
-        <p className="field_hint">{t(words.instancesHint)}</p>
-        {draft.instances.length === 0 && (
-          <p className="field_hint">{t(words.empty)}</p>
-        )}
-        {draft.instances.map((instance, index) => {
-          const seen = reported.get(instance.account);
-          const isRunning = seen?.is_running === true;
-          return (
-            <div className="instance_row" key={index}>
-              <Picker
-                options={saved.accounts.map((account) => ({
-                  id: account,
-                  name: account,
-                }))}
-                value={instance.account}
-                onChange={(account) => updateInstance(index, { account })}
-                label={t(words.account)}
-                placeholder={t(words.accountPlaceholder)}
-                isTyped
+        {saved.accounts.length === 0 ? (
+          <p className="field_hint">{t("ui.modules.no_accounts")}</p>
+        ) : (
+          <div className="instances_rows">
+            {saved.accounts.map((row) => (
+              <AccountRow
+                key={row.account}
+                row={row}
+                descriptor={descriptor}
+                isChecked={draft.accounts.includes(row.account)}
+                isDisabled={isLocked}
+                onToggle={(isOn) => toggle(row.account, isOn)}
               />
-              <label className="field instance_row_port">
-                <span className="field_label">{t(words.port)}</span>
-                <input
-                  className="input"
-                  type="number"
-                  min={1024}
-                  max={65535}
-                  value={instance.port}
-                  onChange={(event) =>
-                    updateInstance(index, { port: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <span className={`badge ${isRunning ? "badge--ok" : ""}`}>
-                {isRunning
-                  ? t(words.running)
-                  : descriptor.isInstallingShown && isInstalling
-                    ? t("state.installing")
-                    : t(words.stopped)}
-              </span>
-              <button
-                type="button"
-                className="button button--ghost button--small"
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    instances: draft.instances.filter((_, at) => at !== index),
-                  })
-                }
-              >
-                {t(words.remove)}
-              </button>
-              {isLoginPicked &&
-                words.login !== undefined &&
-                words.loginHint !== undefined && (
-                  <div className="instance_row_login">
-                    <VaultPicker
-                      kind="login"
-                      value={
-                        instance.login_id === "" ? null : instance.login_id
-                      }
-                      onChange={(loginId) =>
-                        updateInstance(index, { login_id: loginId ?? "" })
-                      }
-                      label={t(words.login, { account: instance.account })}
-                      hint={t(words.loginHint)}
-                    />
-                  </div>
-                )}
-              {seen !== undefined && seen.code !== "" && (
-                <span className="field_error instance_row_error">
-                  {describeCode(seen.code, instance)}
-                </span>
-              )}
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        )}
+        {descriptor.name === SSH_SERVER_MODULE &&
+          (saved.host_key_fingerprint ?? "") !== "" && (
+            <p className="field_hint mono">
+              {t("ui.ssh_server.host_key", {
+                fingerprint: saved.host_key_fingerprint ?? "",
+              })}
+            </p>
+          )}
+        {isReplaceNoticed && (
+          <div className="notice notice--warn">
+            <Icon name="alert" size={15} />
+            <div className="notice_body">{t("ui.samba.replace_notice")}</div>
+          </div>
+        )}
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy || settle.isSettling}
-          label={t(words.apply)}
-          hint={t(words.applyHint)}
+          label={t(descriptor.apply)}
+          hint={t(descriptor.applyHint)}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          isApplyDisabled={isUnsupported}
           error={error}
           notice={
-            settle.isApplied && !isFailing(saved) ? t("ui.api.applied") : null
+            settle.isApplied && report !== null && !isFailing(report)
+              ? t("ui.api.applied")
+              : null
           }
           onReset={() => {
             reset();
@@ -284,43 +211,86 @@ export function InstancesPanel({
   );
 }
 
-/** What the form starts from: the instances as saved. */
-function draftOf(view: InstancesDeviceView): InstancesDraft {
+interface AccountRowProps {
+  row: EnabledAccountView;
+  descriptor: ModuleDescriptor;
+  isChecked: boolean;
+  isDisabled: boolean;
+  onToggle: (isOn: boolean) => void;
+}
+
+/** One available account: its check, its field, its instance's state. */
+function AccountRow({
+  row,
+  descriptor,
+  isChecked,
+  isDisabled,
+  onToggle,
+}: AccountRowProps) {
+  const field = descriptor.field;
+  const fieldValue = field === null ? "" : (row[field] ?? "");
+  return (
+    <div className="instances_row">
+      <label className="instances_row_check">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          disabled={isDisabled}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        <span className="mono">{row.account}</span>
+      </label>
+      {field !== null && (
+        <span className="instances_row_field mono">
+          {fieldValue !== "" ? (
+            fieldValue
+          ) : (
+            <span className="faint">{t(FIELD_DEFAULT_KEYS[field] ?? "")}</span>
+          )}
+        </span>
+      )}
+      {row.is_enabled && (
+        <StatusDot
+          tone={row.is_running ? "ok" : "idle"}
+          label={t(row.is_running ? "state.running" : "state.stopped")}
+        />
+      )}
+      {row.code !== "" && (
+        <span className="field_error instances_row_error">
+          {describeCode(row)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** What the form starts from: the enabled accounts in their order. */
+function draftOf(view: EnabledAccountsView): EnabledDraft {
   return {
-    instances: view.instances.map((instance) => ({
-      account: instance.account,
-      port: instance.port,
-      login_id: "login_id" in instance ? instance.login_id : "",
-    })),
+    accounts: view.accounts
+      .filter((row) => row.is_enabled)
+      .map((row) => row.account),
   };
 }
 
-/** The set's body, in the shape the module's own model takes. */
-function requestOf(
-  descriptor: ModuleDescriptor,
-  deviceId: string,
-  draft: InstancesDraft,
-): InstancesConfigUpdate {
-  if (descriptor.isLoginNamed) {
-    return {
-      device_id: deviceId,
-      instances: draft.instances.map(({ account, port, login_id }) => ({
-        account,
-        port,
-        login_id,
-      })),
-    };
+/** The module as an apply waits on it: its state and its enabled rows. */
+function reportOf(view: EnabledAccountsView | null): ReportedModule | null {
+  if (view === null) {
+    return null;
   }
   return {
-    device_id: deviceId,
-    instances: draft.instances.map(({ account, port }) => ({ account, port })),
+    state: view.state,
+    instances: view.accounts
+      .filter((row) => row.is_enabled)
+      .map((row) => ({ is_running: row.is_running, code: row.code })),
   };
 }
 
-/** Why an instance does not run, worded from the code the machine reported. */
-function describeCode(code: string, instance: InstanceDraft): string {
-  const key = `code.${code}`;
+/** Why an account's instance does not run, from the code the machine
+ * reported. */
+function describeCode(row: EnabledAccountView): string {
+  const key = `code.${row.code}`;
   return hasWord(key)
-    ? t(key, { account: instance.account, port: instance.port })
-    : t("ui.modules.failed_code", { code });
+    ? t(key, { account: row.account, ...codeParams(row.params) })
+    : t("ui.modules.failed_code", { code: row.code });
 }

@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { useAnimatedNumber } from "../use_animated_number";
@@ -9,6 +11,7 @@ import "./stat_tile.css";
  * The tile owns the tween: it takes the raw number and a formatter rather than
  * a finished string, so the digits ease into their new value every time the
  * stats socket pushes a frame instead of flickering between two readings.
+ * With `to`, the whole tile is a link to the page it counts.
  */
 
 export type StatTone = "accent" | "secondary" | "ok" | "warn" | "error";
@@ -22,6 +25,8 @@ interface StatTileProps {
   tone?: StatTone;
   detail?: string;
   meterPercent?: number;
+  /** The page the tile opens. */
+  to?: string;
 }
 
 export function StatTile({
@@ -33,6 +38,7 @@ export function StatTile({
   tone = "accent",
   detail,
   meterPercent,
+  to,
 }: StatTileProps) {
   const animatedValue = useAnimatedNumber(value);
   const meterWidth =
@@ -40,8 +46,9 @@ export function StatTile({
       ? null
       : `${Math.min(100, Math.max(0, meterPercent))}%`;
 
-  return (
-    <div className={`stat_tile stat_tile--${tone}`}>
+  const className = `stat_tile stat_tile--${tone}`;
+  const body = (
+    <>
       <div className="stat_tile_head">
         {icon !== undefined && (
           <Icon name={icon} size={14} className="stat_tile_icon" />
@@ -60,6 +67,13 @@ export function StatTile({
       {detail !== undefined && (
         <div className="stat_tile_detail mono">{detail}</div>
       )}
-    </div>
+    </>
+  );
+  return to === undefined ? (
+    <div className={className}>{body}</div>
+  ) : (
+    <Link to={to} className={`${className} stat_tile--link`}>
+      {body}
+    </Link>
   );
 }

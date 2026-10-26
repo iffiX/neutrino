@@ -1,23 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
-import { DeviceDrawer } from "../components/device_drawer";
-import { DeviceEnrollmentNotice } from "../components/device_enrollment_notice";
-import { DeviceMonitor } from "../components/device_monitor";
-import { DeviceTile } from "../components/device_tile";
+import { AgentLinkModal } from "../components/agent_link_modal";
+import { DeviceGauge } from "../components/device_gauge";
+import { DeviceIconPicker } from "../components/device_icon_picker";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { InstallAgentModal } from "../components/install_agent_modal";
-import { apiPost, describeError } from "../api_client";
-import {
-  isDeviceManaged,
-  toDeviceLabel,
-  toDeviceReach,
-  toDevicePresence,
-} from "../device_level";
-import type { DeviceReach } from "../device_level";
+import { StatusDot } from "../components/status_dot";
+import type { IconName } from "../components/icon";
+import { ApiError, apiPost, describeCode, describeError } from "../api_client";
+import { toDeviceIconName } from "../device_icon";
+import { toDeviceLabel } from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
+import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import {
   HUB_EVENT_DEVICE_REPORT,
   HUB_EVENT_DEVICES,
@@ -25,94 +24,96 @@ import {
   useHubEvents,
 } from "../use_hub_events";
 import type { HubEvent } from "../use_hub_events";
+import { useTaskStream } from "../use_task_stream";
 import type {
-  DeviceEnrollmentView,
+  DeviceAnnotation,
+  DeviceMetricsView,
+  DeviceRequest,
   DevicesResponse,
   DeviceView,
-  NetworkView,
+  DeviceWolResult,
+  TaskStarted,
 } from "../api_types";
 
 import "./devices_page.css";
 
 /**
- * Every host the gateway can see on the LAN, split by whether it is managed.
+ * The **Agents** page: one table of the managed machines, one row each.
  *
- * Managed devices run the agent and report themselves; unmanaged ones are
- * whatever else the scanner found, each showing the one step that would make
- * it managed. The filters and the search sit above both sections and narrow
- * each of them. A scan is explicit rather than automatic — ARP sweeping the
- * LAN on every page load would be rude to sleeping devices.
+ * A row's icon is a button that writes a pick at once; its name links to
+ * the machine page. The status cell is five rings that move on the
+ * `metrics` event: CPU, memory, disk, the busiest GPU and the temperature,
+ * or how long ago an offline machine was seen. The row's actions sit at its
+ * right; Rename turns the name into an input and leaves Save and Cancel
+ * alone. The header adds a machine through two dialogs, by link or over
+ * SSH. What a press started reads on the row's own line under it.
  */
 
-type DeviceFilter = "all" | "online" | "offline" | DeviceReach;
-
-interface DeviceLegendRow {
-  labelKey: string;
-  tone: string;
-  hintKey: string;
-}
-
-// What moves this list: a machine's channel opening or ending, a machine
-// named, forgotten or enrolled, and a report saying something new about one.
+// What moves this list: a machine's session opening or ending, a machine
+// named, forgotten or added, and a report saying something new about one.
 const INVALIDATE_ON = [
   { type: HUB_EVENT_DEVICES },
   { type: HUB_EVENT_DEVICE_REPORT },
 ];
 
-const FILTER_KEYS: Record<DeviceFilter, string> = {
-  all: "ui.devices.filter_all",
-  online: "ui.devices.filter_online",
-  offline: "ui.devices.filter_offline",
-  none: "ui.devices.filter_scanned",
-  ssh: "ui.devices.filter_ssh",
-  agent: "ui.devices.filter_agent",
+const DEVICES_PATH = "/hub/device";
+
+// The {code, params} an action is refused with, worded.
+const ACTION_ERROR_KEYS: Record<string, string> = {
+  agent_offline: "ui.devices.agent_offline",
 };
 
-// What each badge on a tile means, listed under the filters.
-const DEVICE_LEGEND: DeviceLegendRow[] = [
-  {
-    labelKey: "state.agent",
-    tone: "badge--ok",
-    hintKey: "ui.devices.legend_agent",
-  },
-  {
-    labelKey: "state.ssh",
-    tone: "badge--accent",
-    hintKey: "ui.devices.legend_ssh",
-  },
-  {
-    labelKey: "state.scanned",
-    tone: "",
-    hintKey: "ui.devices.legend_scanned",
-  },
-  {
-    labelKey: "state.offline",
-    tone: "badge--warn",
-    hintKey: "ui.devices.legend_offline",
-  },
-];
+/** The presses that start a task on the machine, and the route of each. */
+type PowerAction = "reboot" | "shutdown";
+
+const POWER_PATHS: Record<PowerAction, string> = {
+  reboot: "/hub/device/reboot",
+  shutdown: "/hub/device/shutdown",
+};
+
+const POWER_LABEL_KEYS: Record<PowerAction, string> = {
+  reboot: "ui.devices.reboot",
+  shutdown: "ui.devices.shutdown",
+};
+
+/** The temperature ring's thresholds, in °C. */
+const TEMPERATURE_WARN_C = 70;
+const TEMPERATURE_ERROR_C = 85;
+
+/** What a cell shows for a reading nobody has reported. */
+const NOTHING = "—";
+
+/** The columns the rename input takes: the name, the address and the MAC,
+ * so the name fits while it is typed. */
+const RENAME_COLUMN_SPAN = 3;
+
+/** How many skeleton rows stand in for the first load. */
+const SKELETON_ROWS = 3;
+
+/** What a press on one row said: a line under that row. */
+interface RowOutcome {
+  deviceId: string;
+  /** The press's own words, for a task's state line. */
+  label: string;
+  taskId: string | null;
+  notice: string | null;
+  error: string | null;
+}
 
 export function DevicesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<DevicesResponse>("/hub/device", {
+  const resource = useApiResource<DevicesResponse>(DEVICES_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
-  const network = useApiResource<NetworkView>("/hub/network");
-  // The neighbour sweep is a Linux hub's; elsewhere a scan finds nothing.
-  const canScan = network.data?.hub_os === "linux";
-
+  const confirm = useConfirm();
   const [devices, setDevices] = useState<DeviceView[]>([]);
-  const [filter, setFilter] = useState<DeviceFilter>("all");
-  const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanError, setScanError] = useState<string | null>(null);
-  // A link a machine joins with, for the ones the gateway cannot reach first.
-  const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
-    null,
-  );
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<RowOutcome | null>(null);
+  const [isLinkOpen, setIsLinkOpen] = useState(false);
+  const [isSshOpen, setIsSshOpen] = useState(false);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -120,8 +121,8 @@ export function DevicesPage() {
     }
   }, [resource.data]);
 
-  // Vitals ride their own event, so a heartbeat lands on the tiles, the
-  // drawer header and the monitor without the list being asked for again.
+  // Readings ride their own event, so a report lands on the rings without
+  // the list being asked for again.
   const handleMetrics = (event: HubEvent) => {
     const metrics = toDeviceMetrics(event);
     if (metrics === null) {
@@ -133,64 +134,147 @@ export function DevicesPage() {
   };
   useHubEvents([{ type: HUB_EVENT_METRICS }], handleMetrics);
 
-  // The task's own outcome, read at once rather than waiting for the agent
-  // to reconnect and say so itself.
-  const handleTaskFinished = () => {
-    resource.reload();
-  };
-
-  const handleScan = async () => {
-    setIsScanning(true);
-    setScanError(null);
+  const write = async (annotation: DeviceAnnotation): Promise<boolean> => {
+    setBusyId(annotation.device_id);
+    setOutcome(null);
     try {
-      const result = await apiPost<DevicesResponse>("/hub/device/scan");
-      setDevices(result.devices);
-    } catch (cause: unknown) {
-      setScanError(describeError(cause));
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleEnrollmentLink = async () => {
-    setScanError(null);
-    try {
-      setEnrollment(
-        await apiPost<DeviceEnrollmentView>(
-          "/hub/device/enrollment/create",
-          {},
-        ),
+      resource.setData(
+        await apiPost<DevicesResponse>(`${DEVICES_PATH}/set`, annotation),
       );
+      return true;
     } catch (cause: unknown) {
-      setScanError(describeError(cause));
+      setOutcome({
+        deviceId: annotation.device_id,
+        label: "",
+        taskId: null,
+        notice: null,
+        error: describeActionError(cause),
+      });
+      return false;
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleSaved = (saved: DeviceView) => {
-    setDevices((current) =>
-      current.map((device) => (device.id === saved.id ? saved : device)),
-    );
+  const startRename = (device: DeviceView) => {
+    setRenamingId(device.id);
+    setNewName(device.name ?? "");
   };
 
-  const handleForgotten = (deviceId: string) => {
-    setDevices((current) => current.filter((device) => device.id !== deviceId));
-    setSelectedId(null);
+  const saveRename = async (device: DeviceView) => {
+    const wanted = newName.trim();
+    if (wanted.length === 0 || wanted === device.name) {
+      setRenamingId(null);
+      return;
+    }
+    if (await write({ device_id: device.id, name: wanted })) {
+      setRenamingId(null);
+    }
   };
 
-  const visibleDevices = devices.filter(
-    (device) => matchesFilter(device, filter) && matchesSearch(device, search),
-  );
-  const managedDevices = visibleDevices.filter(isDeviceManaged);
-  const unmanagedDevices = visibleDevices.filter(
-    (device) => !isDeviceManaged(device),
-  );
-  const managedCount = devices.filter(isDeviceManaged).length;
-  const hasManaged = managedCount > 0;
-  const hasUnmanaged = managedCount < devices.length;
-  const selectedDevice =
-    devices.find((device) => device.id === selectedId) ?? null;
+  const wake = async (device: DeviceView) => {
+    setBusyId(device.id);
+    setOutcome(null);
+    const request: DeviceRequest = { device_id: device.id };
+    try {
+      const result = await apiPost<DeviceWolResult>(
+        `${DEVICES_PATH}/wake`,
+        request,
+      );
+      setOutcome({
+        deviceId: device.id,
+        label: "",
+        taskId: null,
+        notice: result.is_sent ? describeCode(result) : null,
+        error: result.is_sent ? null : describeCode(result),
+      });
+    } catch (cause: unknown) {
+      setOutcome({
+        deviceId: device.id,
+        label: "",
+        taskId: null,
+        notice: null,
+        error: describeActionError(cause),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-  if (resource.error !== null && devices.length === 0) {
+  const runPower = async (device: DeviceView, action: PowerAction) => {
+    setBusyId(device.id);
+    setOutcome(null);
+    const request: DeviceRequest = { device_id: device.id };
+    const label = t(POWER_LABEL_KEYS[action]);
+    try {
+      const started = await apiPost<TaskStarted>(POWER_PATHS[action], request);
+      setOutcome({
+        deviceId: device.id,
+        label,
+        taskId: started.task_id,
+        notice: null,
+        error: null,
+      });
+    } catch (cause: unknown) {
+      setOutcome({
+        deviceId: device.id,
+        label,
+        taskId: null,
+        notice: null,
+        error: describeActionError(cause),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const askPower = (device: DeviceView, action: PowerAction) =>
+    confirm.ask({
+      title: t(
+        action === "reboot"
+          ? "ui.devices.reboot_title"
+          : "ui.devices.shutdown_title",
+        { name: toDeviceLabel(device) },
+      ),
+      body: t(
+        action === "reboot"
+          ? "ui.devices.reboot_body"
+          : "ui.devices.shutdown_body",
+      ),
+      confirmLabel: t(POWER_LABEL_KEYS[action]),
+      onConfirm: () => void runPower(device, action),
+    });
+
+  const forget = async (device: DeviceView) => {
+    setBusyId(device.id);
+    setOutcome(null);
+    const request: DeviceRequest = { device_id: device.id };
+    try {
+      await apiPost(`${DEVICES_PATH}/remove`, request);
+      setDevices((current) => current.filter((held) => held.id !== device.id));
+      resource.reload();
+    } catch (cause: unknown) {
+      setOutcome({
+        deviceId: device.id,
+        label: "",
+        taskId: null,
+        notice: null,
+        error: describeActionError(cause),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const askForget = (device: DeviceView) =>
+    confirm.ask({
+      title: t("ui.devices.forget_title", { name: toDeviceLabel(device) }),
+      body: t("ui.devices.forget_body"),
+      confirmLabel: t("ui.devices.forget"),
+      onConfirm: () => void forget(device),
+    });
+
+  if (resource.error !== null && resource.data === null) {
     return (
       <div className="page">
         <h1>{t("ui.devices.title")}</h1>
@@ -199,255 +283,432 @@ export function DevicesPage() {
     );
   }
 
+  const count = resource.data?.count ?? null;
+
   return (
     <div className="page">
       <div className="page_header">
         <div className="page_header_text">
           <div className="page_title_row">
             <h1>{t("ui.devices.title")}</h1>
-            <span className="badge">
-              {t("ui.devices.badge", {
-                managed: managedCount,
-                total: devices.length,
-              })}
-            </span>
+            {count !== null && (
+              <span className="badge">
+                {t("ui.devices.badge", {
+                  total: count.total,
+                  online: count.online,
+                })}
+              </span>
+            )}
           </div>
         </div>
         <div className="page_actions">
           <button
             type="button"
-            className="button"
-            onClick={() => void handleEnrollmentLink()}
+            className="button button--primary"
+            onClick={() => setIsLinkOpen(true)}
           >
             <Icon name="link" size={14} />
             {t("ui.devices.add_by_link")}
           </button>
           <button
             type="button"
-            className="button"
-            onClick={() => setIsAddOpen(true)}
+            className="button button--primary"
+            onClick={() => setIsSshOpen(true)}
           >
-            <Icon name="plus" size={14} />
-            {t("ui.devices.add_by_address")}
+            <Icon name="terminal" size={14} />
+            {t("ui.devices.add_by_ssh")}
           </button>
-          {canScan && (
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => void handleScan()}
-              disabled={isScanning}
-            >
-              <Icon name="search" size={14} />
-              {isScanning ? t("ui.devices.scanning") : t("ui.devices.scan")}
-            </button>
-          )}
         </div>
       </div>
 
-      {scanError !== null && (
-        <div className="notice notice--error">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{scanError}</div>
-        </div>
-      )}
-
-      {enrollment !== null && (
-        <DeviceEnrollmentNotice
-          link={enrollment.link}
-          expiresInS={enrollment.expires_in_s}
-          title={t("ui.devices.enrollment_title")}
-          hint={t("ui.devices.enrollment_hint")}
-          onDismiss={() => setEnrollment(null)}
-        />
-      )}
-
-      <div className="devices_filters">
-        {(Object.keys(FILTER_KEYS) as DeviceFilter[]).map((name) => (
-          <button
-            key={name}
-            type="button"
-            className={`devices_filter ${filter === name ? "devices_filter--active" : ""}`}
-            onClick={() => setFilter(name)}
-          >
-            {t(FILTER_KEYS[name])}
-            {name !== "all" && ` · ${countMatching(devices, name)}`}
-          </button>
-        ))}
-        <input
-          className="input devices_search"
-          placeholder={t("ui.devices.search_placeholder")}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-      </div>
-
-      <div className="devices_legend">
-        {DEVICE_LEGEND.map((row) => (
-          <span key={row.labelKey} className="devices_legend_item">
-            <span className={`badge ${row.tone}`}>{t(row.labelKey)}</span>
-            {t(row.hintKey)}
-          </span>
-        ))}
-      </div>
-
-      {resource.isLoading && devices.length === 0 ? (
-        <div className="devices_grid">
-          <div className="skeleton" style={{ height: 170 }} />
-          <div className="skeleton" style={{ height: 170 }} />
-          <div className="skeleton" style={{ height: 170 }} />
-          <div className="skeleton" style={{ height: 170 }} />
+      {resource.data === null ? (
+        <div className="card devices_table_scroll">
+          {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+            <div key={index} className="skeleton devices_skeleton_row" />
+          ))}
         </div>
       ) : devices.length === 0 ? (
         <div className="placeholder">
-          <span>{t("ui.devices.none_title")}</span>
-          <span className="faint">
-            {t(canScan ? "ui.devices.none_hint" : "ui.devices.none_hint_link")}
-          </span>
+          <span>{t("ui.devices.empty")}</span>
+          <span className="faint">{t("ui.devices.empty_hint")}</span>
         </div>
       ) : (
-        <>
-          <DeviceSection
-            title={t("ui.devices.managed_title")}
-            badge={t("ui.devices.managed_badge", {
-              reporting: managedDevices.filter(
-                (device) => device.is_agent_online,
-              ).length,
-              total: managedDevices.length,
-            })}
-            devices={managedDevices}
-            emptyTitle={t(
-              hasManaged
-                ? "ui.devices.filtered_empty_title"
-                : "ui.devices.managed_empty_title",
-            )}
-            emptyHint={t(
-              hasManaged
-                ? "ui.devices.filtered_empty_hint"
-                : "ui.devices.managed_empty_hint",
-            )}
-            onOpen={setSelectedId}
-          />
-          <DeviceSection
-            title={t("ui.devices.unmanaged_title")}
-            hint={t("ui.devices.unmanaged_hint")}
-            badge={t("ui.devices.unmanaged_badge", {
-              ssh: unmanagedDevices.filter((device) => device.has_ssh).length,
-              total: unmanagedDevices.length,
-            })}
-            devices={unmanagedDevices}
-            emptyTitle={t(
-              hasUnmanaged
-                ? "ui.devices.filtered_empty_title"
-                : "ui.devices.unmanaged_empty_title",
-            )}
-            emptyHint={
-              hasUnmanaged ? t("ui.devices.filtered_empty_hint") : undefined
-            }
-            onOpen={setSelectedId}
-          />
-        </>
+        <div className="card devices_table_scroll">
+          <table className="devices_table">
+            <colgroup>
+              <col />
+              <col className="devices_col--address" />
+              <col className="devices_col--mac" />
+              <col className="devices_col--status" />
+              <col className="devices_col--version" />
+              <col className="devices_col--seen" />
+              <col className="devices_col--actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>{t("ui.devices.header_name")}</th>
+                <th>{t("ui.devices.header_address")}</th>
+                <th>{t("ui.devices.header_mac")}</th>
+                <th>{t("ui.devices.header_status")}</th>
+                <th>{t("ui.devices.header_version")}</th>
+                <th>{t("ui.devices.header_last_seen")}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map((device) => (
+                <DeviceRow
+                  key={device.id}
+                  device={device}
+                  isBusy={busyId === device.id}
+                  isRenaming={renamingId === device.id}
+                  newName={newName}
+                  outcome={outcome?.deviceId === device.id ? outcome : null}
+                  onNewName={setNewName}
+                  onRename={() => startRename(device)}
+                  onRenameSave={() => void saveRename(device)}
+                  onRenameCancel={() => setRenamingId(null)}
+                  onIcon={(icon) => void write({ device_id: device.id, icon })}
+                  onWake={() => void wake(device)}
+                  onPower={(action) => askPower(device, action)}
+                  onForget={() => askForget(device)}
+                  onOutcomeEnded={resource.reload}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {isAddOpen && (
+      {isLinkOpen && <AgentLinkModal onClose={() => setIsLinkOpen(false)} />}
+      {isSshOpen && (
         <InstallAgentModal
           device={null}
-          isReinstall={false}
-          onClose={() => setIsAddOpen(false)}
-          onFinished={handleTaskFinished}
+          onClose={() => setIsSshOpen(false)}
+          onFinished={resource.reload}
         />
       )}
-
-      {selectedDevice !== null && (
-        <>
-          <DeviceMonitor device={selectedDevice} />
-          <DeviceDrawer
-            key={selectedDevice.id}
-            device={selectedDevice}
-            onClose={() => setSelectedId(null)}
-            onSaved={handleSaved}
-            onForgotten={handleForgotten}
-            onTaskFinished={handleTaskFinished}
-          />
-        </>
-      )}
+      {confirm.modal}
     </div>
   );
 }
 
-interface DeviceSectionProps {
-  title: string;
-  hint?: string;
-  badge: string;
-  devices: DeviceView[];
-  emptyTitle: string;
-  emptyHint?: string;
-  onOpen: (deviceId: string) => void;
+interface DeviceRowProps {
+  device: DeviceView;
+  isBusy: boolean;
+  /** Whether the name cell holds the rename input. */
+  isRenaming: boolean;
+  newName: string;
+  /** What the last press on this row said, if it was this row's. */
+  outcome: RowOutcome | null;
+  onNewName: (name: string) => void;
+  onRename: () => void;
+  onRenameSave: () => void;
+  onRenameCancel: () => void;
+  onIcon: (icon: IconName) => void;
+  onWake: () => void;
+  onPower: (action: PowerAction) => void;
+  onForget: () => void;
+  /** Called once a task the row started ends. */
+  onOutcomeEnded: () => void;
 }
 
-function DeviceSection({
-  title,
-  hint,
-  badge,
-  devices,
-  emptyTitle,
-  emptyHint,
-  onOpen,
-}: DeviceSectionProps) {
+function DeviceRow({
+  device,
+  isBusy,
+  isRenaming,
+  newName,
+  outcome,
+  onNewName,
+  onRename,
+  onRenameSave,
+  onRenameCancel,
+  onIcon,
+  onWake,
+  onPower,
+  onForget,
+  onOutcomeEnded,
+}: DeviceRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const client = device.client;
+  const isOnline = device.is_agent_online;
+  const icon = toDeviceIconName(device.icon, client?.platform_os ?? null);
   return (
-    <section className="devices_section">
-      <div className="settings_group_title">
-        <h2>{title}</h2>
-        {devices.length > 0 && <span className="badge">{badge}</span>}
-      </div>
-      {hint !== undefined && <p className="field_hint">{hint}</p>}
-      {devices.length === 0 ? (
-        <div className="placeholder">
-          <span>{emptyTitle}</span>
-          {emptyHint !== undefined && (
-            <span className="faint">{emptyHint}</span>
-          )}
-        </div>
-      ) : (
-        <div className="devices_grid">
-          {devices.map((device) => (
-            <DeviceTile
-              key={device.id}
-              device={device}
-              onOpen={() => onOpen(device.id)}
+    <>
+      <tr className={`devices_row ${isRenaming ? "devices_row--editing" : ""}`}>
+        <td colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}>
+          <div className="devices_name">
+            <DeviceIconPicker
+              icon={icon}
+              isDisabled={isBusy || isRenaming}
+              onPick={onIcon}
             />
-          ))}
-        </div>
+            <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
+            {isRenaming ? (
+              <input
+                className="input devices_rename_input"
+                value={newName}
+                aria-label={t("ui.devices.header_name")}
+                autoFocus
+                onChange={(event) => onNewName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    onRenameSave();
+                  } else if (event.key === "Escape") {
+                    onRenameCancel();
+                  }
+                }}
+              />
+            ) : (
+              <Link
+                to={`/agents/${encodeURIComponent(device.id)}`}
+                className="devices_name_link"
+              >
+                {toDeviceLabel(device)}
+              </Link>
+            )}
+          </div>
+        </td>
+        {!isRenaming && (
+          <>
+            <td className="mono">{device.ipv4_address || NOTHING}</td>
+            <td className="mono devices_mac">{device.link_mac || NOTHING}</td>
+          </>
+        )}
+        <td>
+          <StatusCell device={device} />
+        </td>
+        <td className="mono">
+          {client?.version == null ? (
+            NOTHING
+          ) : client.is_version_mismatched ? (
+            <span
+              className="devices_version--old"
+              title={t("ui.devices.version_mismatched")}
+            >
+              {client.version}
+            </span>
+          ) : (
+            client.version
+          )}
+        </td>
+        <td className="mono">
+          {isOnline ? t("state.online") : formatTimeAgo(lastSeen(device))}
+        </td>
+        <td>
+          <div className="devices_actions">
+            {isRenaming ? (
+              <>
+                <button
+                  type="button"
+                  className="button button--small button--primary"
+                  disabled={isBusy || newName.trim().length === 0}
+                  onClick={onRenameSave}
+                >
+                  <Icon name="check" size={13} />
+                  {t("ui.devices.save")}
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  onClick={onRenameCancel}
+                >
+                  {t("ui.devices.cancel")}
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to={`/agents/${encodeURIComponent(device.id)}`}
+                  className="button button--small button--ghost"
+                >
+                  {t("ui.devices.manage")}
+                </Link>
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  disabled={isBusy}
+                  onClick={onRename}
+                >
+                  {t("ui.devices.rename")}
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  disabled={isBusy}
+                  onClick={onWake}
+                >
+                  {t("ui.devices.wake")}
+                </button>
+                {(["reboot", "shutdown"] as PowerAction[]).map((action) => (
+                  <button
+                    key={action}
+                    type="button"
+                    className="button button--small button--ghost"
+                    disabled={isBusy || !isOnline}
+                    onClick={() => onPower(action)}
+                  >
+                    {t(POWER_LABEL_KEYS[action])}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="button button--small button--ghost button--danger"
+                  disabled={isBusy}
+                  onClick={onForget}
+                >
+                  {t("ui.devices.forget")}
+                </button>
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+      {outcome !== null && (
+        <tr className="devices_outcome_row">
+          <td colSpan={7}>
+            <RowOutcomeLine outcome={outcome} onEnded={onOutcomeEnded} />
+          </td>
+        </tr>
       )}
-    </section>
+    </>
   );
 }
 
-function matchesFilter(device: DeviceView, filter: DeviceFilter): boolean {
-  if (filter === "all") {
-    return true;
-  }
-  if (filter === "online") {
-    return toDevicePresence(device) !== "offline";
-  }
-  if (filter === "offline") {
-    return toDevicePresence(device) === "offline";
-  }
-  return toDeviceReach(device) === filter;
+interface StatusCellProps {
+  device: DeviceView;
 }
 
-function matchesSearch(device: DeviceView, search: string): boolean {
-  const needle = search.trim().toLowerCase();
-  if (needle.length === 0) {
-    return true;
+/** Five rings for a machine that reports, or how long ago it was seen. */
+function StatusCell({ device }: StatusCellProps) {
+  if (!device.is_agent_online) {
+    return (
+      <span className="devices_offline">
+        {t("ui.devices.offline_ago", {
+          ago: formatTimeAgo(lastSeen(device)),
+        })}
+      </span>
+    );
   }
-  return [
-    toDeviceLabel(device),
-    device.ipv4_address,
-    device.link_mac,
-    device.vendor,
-  ].some((field) => field.toLowerCase().includes(needle));
+  const metrics = device.client?.metrics ?? null;
+  if (metrics === null) {
+    return (
+      <span className="devices_offline">{t("ui.device_monitor.waiting")}</span>
+    );
+  }
+  const gpu = busiestGpu(metrics);
+  return (
+    <div className="devices_rings">
+      <DeviceGauge
+        label={t("ui.devices.ring_cpu")}
+        reading={metrics.cpu_percent}
+      />
+      <DeviceGauge
+        label={t("ui.devices.ring_memory")}
+        reading={metrics.memory_percent}
+      />
+      <DeviceGauge
+        label={t("ui.devices.ring_disk")}
+        reading={metrics.disk_percent}
+      />
+      {gpu !== null && (
+        <DeviceGauge
+          label={t("ui.devices.ring_gpu")}
+          reading={gpu}
+          count={metrics.gpus.length}
+        />
+      )}
+      <DeviceGauge
+        label={t("ui.devices.ring_temperature")}
+        reading={metrics.temperature_c}
+        warnAt={TEMPERATURE_WARN_C}
+        errorAt={TEMPERATURE_ERROR_C}
+      />
+    </div>
+  );
 }
 
-function countMatching(devices: DeviceView[], filter: DeviceFilter): number {
-  return devices.filter((device) => matchesFilter(device, filter)).length;
+interface RowOutcomeLineProps {
+  outcome: RowOutcome;
+  onEnded: () => void;
+}
+
+/** What a press said: a sent packet, a refusal, or a task's state. */
+function RowOutcomeLine({ outcome, onEnded }: RowOutcomeLineProps) {
+  const task = useTaskStream(outcome.taskId);
+  const wasRunning = useRef(false);
+
+  useEffect(() => {
+    if (task.isRunning) {
+      wasRunning.current = true;
+      return;
+    }
+    if (wasRunning.current) {
+      wasRunning.current = false;
+      onEnded();
+    }
+  }, [task.isRunning, onEnded]);
+
+  if (outcome.error !== null) {
+    return <span className="field_error">{outcome.error}</span>;
+  }
+  if (outcome.notice !== null) {
+    return <span className="field_hint">{outcome.notice}</span>;
+  }
+  const lastLine = task.lines.at(-1) ?? "";
+  return (
+    <span className="devices_outcome">
+      <StatusDot
+        tone={
+          task.isRunning
+            ? "warn"
+            : task.exitCode === 0
+              ? "ok"
+              : task.exitCode === null
+                ? "idle"
+                : "error"
+        }
+        isPulsing={task.isRunning}
+        label={
+          task.isRunning
+            ? t("ui.devices.task_running", { action: outcome.label })
+            : task.exitCode === null
+              ? outcome.label
+              : t("ui.devices.task_finished", {
+                  action: outcome.label,
+                  code: task.exitCode,
+                })
+        }
+      />
+      {lastLine !== "" && <span className="mono faint">{lastLine}</span>}
+    </span>
+  );
+}
+
+/** The busiest card's use, or null on a machine with none. */
+function busiestGpu(metrics: DeviceMetricsView): number | null {
+  const readings = metrics.gpus
+    .map((gpu) => gpu.utilization_percent)
+    .filter((reading): reading is number => reading !== null);
+  if (metrics.gpus.length === 0) {
+    return null;
+  }
+  return readings.length === 0 ? null : Math.max(...readings);
+}
+
+/** When the machine was last seen: its session's end, else its last report. */
+function lastSeen(device: DeviceView): string | null {
+  return device.client?.last_seen ?? device.client?.last_report_at ?? null;
+}
+
+/** Wording for a refused press, with the coded refusals spelled out. */
+function describeActionError(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const key = ACTION_ERROR_KEYS[cause.code];
+    if (key !== undefined) {
+      return t(key);
+    }
+  }
+  return describeError(cause);
 }

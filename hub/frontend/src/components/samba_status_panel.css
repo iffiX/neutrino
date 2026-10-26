@@ -1,0 +1,65 @@
+.samba_sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.samba_session {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.samba_session_user {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.samba_session_from {
+  color: var(--color-text-muted);
+}
+
+.samba_session_shares {
+  margin-left: auto;
+  color: var(--color-text-faint);
+}
+
+.samba_disks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.samba_disk_row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.samba_disk_numbers {
+  color: var(--color-text-muted);
+}
+
+.samba_disk_bar {
+  overflow: hidden;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+}
+
+.samba_disk_fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transition: width var(--transition-base);
+}

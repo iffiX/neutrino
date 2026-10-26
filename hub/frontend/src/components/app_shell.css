@@ -4,10 +4,8 @@
   padding-left: var(--sidebar-width);
 }
 
-/* The window's height, exactly — not at least. A page can then ask to fill what
-   is left of it (the Terminal does), which needs a height to divide up rather
-   than one that grows to fit whatever it is given.
-   The dynamic unit is what a phone browser's retracting address bar leaves
+/* The window's height, exactly, so the body below the top bar is what
+   scrolls. The dynamic unit is what a phone browser's retracting address bar leaves
    visible; 100vh there is the taller measure, and the difference is a window
    scroll that carries the top bar off the screen and puts the end of the page
    under the bottom bar. */
@@ -66,17 +64,6 @@
   flex-direction: column;
   flex-shrink: 0;
   min-height: 100%;
-}
-
-.app_shell_terminal {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.app_shell_terminal--hidden {
-  display: none;
 }
 
 @media (max-width: 1024px) {

@@ -7,7 +7,7 @@
   align-items: start;
 }
 
-/* The list of the machine's modules, one row each, the picker's `+` last. */
+/* The list of the machine's modules, one row each, + Add module last. */
 .modules_list {
   display: flex;
   flex-direction: column;
@@ -58,13 +58,15 @@
   text-overflow: ellipsis;
 }
 
+/* As wide as the list, under its last row. */
 .modules_list_add {
-  display: flex;
-  align-items: center;
-  padding: var(--space-1) 10px;
+  flex: none;
+  justify-content: center;
+  width: 100%;
+  margin-top: var(--space-2);
 }
 
-/* The picked module: its state line, its panels, the output box and the
+/* The picked module: its state line, its log box, its panels and the
    presses in one row at the right edge. */
 .modules_detail {
   display: flex;
@@ -179,6 +181,7 @@
   }
 
   .modules_list_add {
-    padding: 0;
+    width: auto;
+    margin-top: 0;
   }
 }

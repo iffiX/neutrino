@@ -49,12 +49,6 @@
   color: var(--color-text-faint);
 }
 
-.file_browser_tools {
-  display: flex;
-  flex: none;
-  gap: var(--space-2);
-}
-
 .file_browser_notice {
   margin: var(--space-3) var(--space-4) 0;
 }
@@ -68,7 +62,7 @@
 
 .file_browser_row {
   display: grid;
-  grid-template-columns: 22px 1fr 78px 118px 92px;
+  grid-template-columns: 22px 1fr 78px 118px;
   gap: var(--space-2);
   align-items: center;
   padding: 3px var(--space-2);
@@ -77,10 +71,6 @@
 
 .file_browser_row:hover {
   background: var(--color-elevated);
-}
-
-.file_browser_row--edit {
-  grid-template-columns: 22px 1fr auto;
 }
 
 .file_browser_icon {
@@ -124,44 +114,6 @@
   white-space: nowrap;
 }
 
-.file_browser_actions {
-  display: flex;
-  gap: 2px;
-  justify-content: flex-end;
-  visibility: hidden;
-}
-
-.file_browser_row:hover .file_browser_actions,
-.file_browser_row:focus-within .file_browser_actions {
-  visibility: visible;
-}
-
-.file_browser_action {
-  display: inline-flex;
-  padding: 4px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.file_browser_action:hover {
-  background: var(--color-accent-wash);
-  color: var(--color-accent);
-}
-
-.file_browser_action--danger:hover {
-  background: color-mix(in srgb, var(--color-error) 12%, transparent);
-  color: var(--color-error);
-}
-
-.file_browser_inline_input {
-  padding: 3px 8px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
 .file_browser_placeholder {
   padding: var(--space-6);
   color: var(--color-text-faint);
@@ -169,16 +121,8 @@
   text-align: center;
 }
 
-.file_browser_status {
-  padding: var(--space-2) var(--space-4);
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-/* Picking a directory: files are listed but greyed, and the foot carries the
-   directory open and the two buttons. */
+/* Picking a folder: files are listed but greyed, and the foot carries the
+   folder open and the two buttons. */
 .file_browser_row--muted {
   opacity: 0.45;
 }
@@ -205,36 +149,31 @@
 }
 
 /* At phone width a row takes two lines: the icon and the name, then the size
-   and the time, with the ⋯ menu beside both. */
+   and the time. */
 @media (max-width: 720px) {
-  .file_browser_row:not(.file_browser_row--edit) {
-    grid-template-columns: 22px auto minmax(0, 1fr) auto;
+  .file_browser_row {
+    grid-template-columns: 22px auto minmax(0, 1fr);
     grid-template-areas:
-      "icon name name actions"
-      ".    size time actions";
+      "icon name name"
+      ".    size time";
     row-gap: 0;
   }
 
-  .file_browser_row:not(.file_browser_row--edit) > .file_browser_icon {
+  .file_browser_row > .file_browser_icon {
     grid-area: icon;
   }
 
-  .file_browser_row:not(.file_browser_row--edit) > .file_browser_name,
-  .file_browser_row:not(.file_browser_row--edit) > .file_browser_inline_input {
+  .file_browser_row > .file_browser_name {
     grid-area: name;
   }
 
-  .file_browser_row:not(.file_browser_row--edit) > .file_browser_size {
+  .file_browser_row > .file_browser_size {
     grid-area: size;
     text-align: left;
   }
 
-  .file_browser_row:not(.file_browser_row--edit) > .file_browser_time {
+  .file_browser_row > .file_browser_time {
     grid-area: time;
     text-align: left;
-  }
-
-  .file_browser_row:not(.file_browser_row--edit) > .row_menu {
-    grid-area: actions;
   }
 }

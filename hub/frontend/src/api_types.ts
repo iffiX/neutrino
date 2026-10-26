@@ -835,23 +835,6 @@ export interface DeviceProcessInfo {
   memory_percent: number;
 }
 
-/** The most recent error an agent reported; the pages do the wording. */
-export interface DeviceClientError {
-  code: string;
-  params: Record<string, unknown>;
-}
-
-/** How one queued command went, as the agent reported it back. */
-export interface DeviceCommandResult {
-  id: string;
-  exit_code: number;
-  output: string;
-  /** A service ask's typed refusal; this surface words it. */
-  code: string;
-  params: Record<string, unknown>;
-  finished_at: string;
-}
-
 /** What one machine last said about sharing its desktop. */
 export interface DeviceRdp {
   is_shared: boolean;
@@ -867,45 +850,36 @@ export interface DeviceRdp {
   /** Whether this machine's agent package carries the remote desktop host.
    * False only on a package built before it did. */
   is_available: boolean;
-  /** Whether the machine's Remote desktop switch is on. */
-  is_enabled: boolean;
 }
 
-export interface DeviceClientInfo {
-  /** An agent that completed its handshake and still holds a token; a
-   * failed install never reads managed. */
-  is_managed: boolean;
-  /** Whether the agent is answering inside the heartbeat window. */
-  is_online: boolean;
-  version: string | null;
-  /** While an agent of 0.5, admitted for its own update alone, takes the
-   * hub's version. */
-  is_updating: boolean;
-  is_version_mismatched: boolean;
-  /** When its channel last ended; null while it is online. */
-  last_seen: string | null;
-  /** When its last report arrived; null while it is offline and before its
-   * first one. What the live monitor samples on. */
-  last_report_at: string | null;
-  /** What the agent reports it runs on: `linux`, `windows`, `darwin`. Null
-   * until it beats again after a panel restart, since it is never stored. */
-  platform_os: string | null;
-  platform_arch: string | null;
-  hostname: string | null;
+/** The agent's `machine.metrics`: one sample of the machine's health. */
+export interface DeviceMetricsView {
   cpu_percent: number | null;
+  cpu_core_percents: number[];
   memory_percent: number | null;
   disk_percent: number | null;
   temperature_c: number | null;
   uptime_s: number | null;
+  /** The one, five and fifteen minute load averages; empty on Windows. */
   load_average: number[];
-  cpu_core_percents: number[];
   gpus: DeviceGpuInfo[];
   processes: DeviceProcessInfo[];
-  last_error: DeviceClientError | null;
-  /** The last outcome of each queued command, newest first. */
-  command_results: DeviceCommandResult[];
-  /** The machine's own word on its desktop, from its last report. */
-  rdp: DeviceRdp;
+}
+
+/** What a managed machine's agent reports of itself. */
+export interface DeviceClientInfo {
+  version: string | null;
+  /** What the agent reports it runs on: `linux`, `windows`, `darwin`. */
+  platform_os: string | null;
+  platform_arch: string | null;
+  hostname: string | null;
+  /** When its last report arrived. */
+  last_report_at: string | null;
+  /** When its session last ended; null while it is online. */
+  last_seen: string | null;
+  is_version_mismatched: boolean;
+  /** The readings of its last report; null before its first. */
+  metrics: DeviceMetricsView | null;
 }
 
 /** One install on a device, whatever asked for it: the agent's own over
@@ -918,8 +892,7 @@ export interface DeviceInstallTaskView {
   title: string;
   is_finished: boolean;
   exit_code: number | null;
-  /** What the task printed, so a person reads the vendor's own words
-   * rather than only that something went wrong. */
+  /** What the task printed. */
   output: string;
   started_at: string;
   finished_at: string;
@@ -930,7 +903,6 @@ export interface DeviceInstallOutputResponse {
   tasks: DeviceInstallTaskView[];
 }
 
-/** A link a machine can join the gateway with. */
 /** Ask for a link a machine can join with, bound to a device or blank. */
 export interface DeviceEnrollmentRequest {
   name: string;
@@ -1010,99 +982,43 @@ export interface DeviceFileListView {
   entries: DeviceFileEntry[];
 }
 
-/** One machine whose agent is answering right now. */
-export interface DeviceOnlineView {
-  device_id: string;
-  name: string;
-  hostname: string;
-  /** The platform tuple its agent reported: os, family, arch. */
-  platform: Record<string, string>;
-  /** Whether this is the hub box's own agent. */
-  is_hub: boolean;
-  /** The module tabs its Modules page shows; empty means the modules its
-   * reports name. */
-  shown_module: string[];
-}
-
-/** One shell session a machine holds, as the Terminals page lists it. */
-export interface TerminalSessionView {
-  device_id: string;
-  device_name: string;
-  /** The id the page or the client that opened it generated. */
-  session_id: string;
-  account: string;
-  /** When it was opened, in Unix seconds. */
-  started_at: number;
-  title: string;
-  /** Who opened it: `hub` for this panel, `client:<id>` for a client. */
-  owner: string;
-  /** Whether this panel opened it; only the owner sets its two flags. */
-  is_owned: boolean;
-  /** Whether a socket is attached to it now. */
-  is_attached: boolean;
-  /** Whether it stays when its last socket closes. */
-  is_persistent: boolean;
-  /** Whether every viewer with terminal rights on the machine sees it. */
-  is_shared: boolean;
-  /** How many sockets are attached now. */
-  attached_count: number;
-}
-
-/** Every shell session the online machines hold, oldest first. */
-export interface TerminalSessionListView {
-  sessions: TerminalSessionView[];
-}
-
-/** One session to end: the machine and the session's id. */
-export interface TerminalSessionStopRequest {
-  device_id: string;
-  session_id: string;
-}
-
-/** The machines a terminal or a file browser can open on, hub box first. */
-export interface DevicesOnlineResponse {
-  devices: DeviceOnlineView[];
-}
-
+/** One managed machine, as the Agents page draws its row. */
 export interface DeviceView {
-  /** The binding id, or `scan:<mac>` for a scan row no device claims. */
+  /** The binding id. */
   id: string;
-  /** The machine's own id, as its agent reported it; empty until it joins. */
-  machine_id: string;
-  /** Every MAC the agent has reported on its link, and the most recent one. */
-  mac_addresses: string[];
-  link_mac: string;
-  ipv4_address: string;
+  /** Its name; the host it was added by until it reports. */
   name: string | null;
   icon: string | null;
-  vendor: string;
-  /** Reachable by any route: seen on the network, or its agent is beating. */
-  is_online: boolean;
-  /** In the kernel's neighbour table, STALE included, FAILED or INCOMPLETE not. */
-  is_neighbour: boolean;
-  /** Its agent beat within the last half minute. */
+  ipv4_address: string;
+  /** The MAC its agent last used on its link. */
+  link_mac: string;
+  /** Whether its agent holds a session now. */
   is_agent_online: boolean;
-  has_ssh: boolean;
-  /** Whether this box holds anything about the device; a scan-only row has
-   * nothing to forget. */
-  is_stored: boolean;
+  /** The SSH login the hub last installed its agent with. */
   ssh: DeviceSshConfig | null;
+  /** What its agent reports; null before it first reports. */
   client: DeviceClientInfo | null;
-  /** The module tabs its Modules page shows; empty means the modules its
-   * reports name. */
-  shown_module: string[];
 }
 
+/** The Agents page's count: every machine, and those online. */
+export interface DeviceCount {
+  total: number;
+  online: number;
+}
+
+export interface DevicesResponse {
+  devices: DeviceView[];
+  count: DeviceCount;
+}
+
+/** A write to one machine's row: its name, its icon, its SSH login, or the
+ * module tabs its machine page shows. */
 export interface DeviceAnnotation {
   device_id: string;
   name?: string;
   icon?: string;
   ssh?: DeviceSshConfig | null;
   shown_module?: string[];
-}
-
-export interface DevicesResponse {
-  devices: DeviceView[];
 }
 
 export interface DeviceWolResult {
@@ -1144,8 +1060,9 @@ export interface TaskStarted {
 export interface ModuleDeviceState {
   /** Whether the agent on this device is answering. */
   is_online: boolean;
-  /** absent, installed, stopped, running, installing, uninstalling, failed
-   * or unsupported; unknown until the agent has reported. */
+  /** absent, installed, stopped, running, installing, uninstalling, queued,
+   * failed, install_failed or unsupported; unknown until the agent has
+   * reported. */
   state: string;
   /** Why the state is what it is; the panel words it. Empty when there is
    * nothing to say. */
@@ -1157,27 +1074,27 @@ export interface ModuleDeviceState {
  * what the hub asks of it. */
 export interface DeviceModuleView {
   name: string;
+  /** The manifest's title. */
   title: string;
-  description: string;
-  runner: string;
-  /** agent, builtin, system, hub or container: how the module is installed
-   * on the machine, for its platform. */
-  method: string;
-  is_supported: boolean;
-  is_data_kept: boolean;
-  publisher: string;
-  license: string;
-  corresponding_source: string;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */
   want: string;
-  /** Whether the hub holds a configuration for the module on this device;
-   * the first Configure imports one from the machine where it holds none. */
-  is_configured: boolean;
   state: string;
   is_active: boolean;
+  /** The version installed, as the machine reports it. */
+  version: string;
   code: string;
   params: Record<string, unknown>;
   details: Record<string, unknown>;
+  is_supported: boolean;
+  /** Whether the agent's package carries it: Terminal, Remote desktop and
+   * the SSH server. */
+  is_carried: boolean;
+  /** Whether its tab is on the machine page. */
+  is_shown: boolean;
+  is_data_kept: boolean;
+  /** Whether the hub holds a configuration for the module on this device;
+   * the first Configure imports one from the machine where it holds none. */
+  is_configured: boolean;
   /** The task carrying the module's last install or uninstall lines, to
    * follow on `/ws/hub/task`; empty when none has run. */
   task_id: string;
@@ -1185,7 +1102,6 @@ export interface DeviceModuleView {
 
 export interface DeviceModuleListView {
   modules: DeviceModuleView[];
-  is_agent_managed: boolean;
   is_agent_online: boolean;
 }
 
@@ -1200,9 +1116,163 @@ export interface DeviceModuleRequest {
   module: string;
 }
 
+/** One module of the catalog, as the **+ Add module** dialog draws its card. */
+export interface ModuleCatalogEntry {
+  name: string;
+  /** The manifest's title, or the catalog's for a module with no manifest. */
+  title: string;
+  /** The activity filter it sits under. */
+  category: string;
+  /** False for a module the hub has no manifest of yet. */
+  is_available: boolean;
+  /** Whether the machine's platform has an entry. */
+  is_supported: boolean;
+  is_carried: boolean;
+  is_shown: boolean;
+  /** As last reported. */
+  state: string;
+}
+
+export interface ModuleCatalogView {
+  /** The activity filters, in their order. */
+  categories: string[];
+  modules: ModuleCatalogEntry[];
+}
+
+/** One listed version of a module. */
+export interface ModuleVersionEntry {
+  version: string;
+  is_tested: boolean;
+  /** Newer than the tested one. */
+  is_untested: boolean;
+}
+
+/** A module's versions on one machine. */
+export interface ModuleVersionView {
+  /** The version the machine reports installed. */
+  installed: string;
+  /** The machine's choice; empty while it follows the tested one. */
+  chosen: string;
+  tested: string;
+  newest: string;
+  is_locked: boolean;
+  /** Newest first. */
+  versions: ModuleVersionEntry[];
+  is_data_forward_only: boolean;
+  /** When the feeds were last read. */
+  read_at: string;
+}
+
+/** A module's version chosen; empty to follow the tested one. */
+export interface ModuleVersionSetRequest {
+  device_id: string;
+  module: string;
+  version: string;
+}
+
+// --- Available accounts ---
+
+/** A tool's choices: Claude's slots, Codex's model and effort, Gemini's model. */
+export type AiToolConfigs = Record<string, Record<string, string>>;
+
+/** An account's last AI tools result, as the machine reported it. */
+export interface AccountAiToolsView {
+  /** `switched`, `switched_back` or `failed`; empty before it reported. */
+  state: string;
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** One available account of a machine. */
+export interface AvailableAccountView {
+  account: string;
+  /** Whether the vault holds its Windows login. */
+  has_login: boolean;
+  /** Empty for the account's home. */
+  share_path: string;
+  /** Empty for the account's login shell. */
+  shell_path: string;
+  is_ai_tools_enabled: boolean;
+  tool_configs: AiToolConfigs;
+  /** The modules that enable it. */
+  modules: string[];
+  ai_tools: AccountAiToolsView;
+}
+
+/** One account the machine reports, with its defaults. */
+export interface SystemAccountView {
+  account: string;
+  home: string;
+  shell: string;
+}
+
+export interface AccountListView {
+  /** In the order they were added. */
+  accounts: AvailableAccountView[];
+  system_accounts: SystemAccountView[];
+  platform_os: string;
+  /** The names the gateway serves, for the model pickers. */
+  models: string[];
+  is_gateway_serving: boolean;
+}
+
+/** An account added or replaced; `password` on Windows alone, empty to keep
+ * the login on an edit. */
+export interface AccountSetRequest {
+  device_id: string;
+  account: string;
+  password: string;
+  share_path: string;
+  shell_path: string;
+  is_ai_tools_enabled: boolean;
+  tool_configs: AiToolConfigs;
+}
+
+export interface AccountRemoveRequest {
+  device_id: string;
+  account: string;
+}
+
+/** One available account as an account-layer module's tab lists it. */
+export interface EnabledAccountView {
+  account: string;
+  is_enabled: boolean;
+  port: number;
+  is_running: boolean;
+  code: string;
+  params: Record<string, unknown>;
+  /** Terminal's field: the account's shell. */
+  shell_path?: string;
+  /** The file share's fields: the share path and the SMB user. */
+  share_path?: string;
+  user?: string;
+}
+
+/** An account-layer module on one machine: Terminal, the file share, the SSH
+ * server, VS Code, code-server, CloudCLI or Codeg. */
+export interface EnabledAccountsView extends ModuleDeviceState {
+  device_id: string;
+  accounts: EnabledAccountView[];
+  /** The SSH server's host key, `SHA256:<base64>`. */
+  host_key_fingerprint?: string;
+  /** VS Code's: whether the person accepted Microsoft's terms here. */
+  is_terms_accepted?: boolean;
+  /** VS Code's: the address of the terms. */
+  terms_url?: string;
+  /** The version the machine reports; empty before it reports one. */
+  version?: string;
+}
+
+/** The enabled accounts, in the order they were checked. */
+export interface EnabledAccountsUpdate {
+  device_id: string;
+  accounts: string[];
+}
+
 // --- Services ---
 
-export type PublishedServiceType = "web" | "port" | "ai" | "file" | "rdp";
+export type PublishedServiceType =
+  "web" | "port" | "ssh" | "ai" | "file" | "rdp";
 
 /** The type's own payload; each entry fills the fields its type has. */
 export interface PublishedServicePayload {
@@ -1219,13 +1289,17 @@ export interface PublishedServicePayload {
   attention?: string;
   /** rdp: the sharing machine's `linux`, `windows` or `darwin`. */
   platform_os?: string;
+  /** ssh: the account the instance runs as. */
+  account?: string;
+  /** ssh: the machine's host key, `SHA256:<base64>`. */
+  host_key_fingerprint?: string;
+  /** web: whether the page opens with a token the hub hands. */
+  is_token_required?: boolean;
 }
 
 /**
- * One entry of the typed service list. A `record_id` names the declared
- * record behind a declared entry; a module-declared entry carries null and
- * is read-only. `detail_code` is what that record's last probe measured,
- * null on one that answered as declared and on every module entry.
+ * One entry that belongs to no app: the AI gateway, a shared desktop, a
+ * machine's file share.
  */
 export interface PublishedService {
   id: string;
@@ -1238,37 +1312,81 @@ export interface PublishedService {
   source: "module" | "declared" | "device";
   /** The English provenance line, shown where no code words it. */
   description: string;
-  /** Where the entry comes from, worded by the page; `""` on a declared
-   * entry whose person wrote their own line. */
+  /** Where the entry comes from, worded by the page. */
   description_code: string;
   description_params: Record<string, string | number>;
-  /** The device modules this entry cannot work without. */
-  modules: string[];
-  record_id: string | null;
+  device_id: string;
+  device_name: string;
+}
+
+/** Who answers for an app. */
+export type AppSource = "module" | "declared" | "manual";
+
+/** One entry of an app. */
+export interface AppEntryView {
+  /** `<app id>_<name>`. */
+  id: string;
+  /** The entry's name inside its app. */
+  name: string;
+  type: PublishedServiceType;
+  payload: PublishedServicePayload;
+  /** Null on an entry no probe has reached, and on a UDP port. */
+  is_healthy: boolean | null;
+  /** The port a client forwards it on; null on a file entry. */
+  local_port: number | null;
+  /** What a declared entry's last probe measured, null when it answered. */
   detail_code: string | null;
 }
 
-/** A declaration as the form submits it; `kind` is a service type. */
-export interface DeclaredServiceCreate {
-  name: string;
-  kind: "web" | "port" | "file";
-  host: string;
-  port: number | null;
-  scheme: string | null;
-  path: string | null;
-  shares: string[] | null;
+/** One program on one machine, with one or more entries. */
+export interface AppView {
+  id: string;
+  title: string;
+  source: AppSource;
+  device_id: string;
+  /** The machine that provides it; empty when no machine the hub knows is
+   * there. */
+  device_name: string;
+  local_name: string;
   description: string;
-  /** Read for a port alone. */
-  protocol: "tcp" | "udp";
+  entries: AppEntryView[];
 }
 
-export interface ServicesResponse {
+/** The Services page: a module's apps first, then the declared, then the
+ * manual; and the entries of no app. */
+export interface ServiceListView {
+  apps: AppView[];
   services: PublishedService[];
 }
 
-/** What one SMB server exports, administrative shares dropped. */
-export interface ServiceSharesResponse {
-  shares: string[];
+export type DeclaredEntryType = "web" | "port" | "file";
+
+/** One entry of an app declared by hand. */
+export interface DeclaredEntryCreate {
+  type: DeclaredEntryType;
+  /** Empty on a file entry for 445. */
+  port: number | null;
+  /** web: `http` or `https`. */
+  scheme: string | null;
+  /** web: the path the page opens at. */
+  path: string | null;
+  /** port: `tcp` or `udp`. */
+  protocol: "tcp" | "udp" | null;
+  /** file: the SMB share's name. */
+  share: string | null;
+}
+
+/** An app declared on the Services page. */
+export interface DeclaredAppCreate {
+  name: string;
+  host: string;
+  description: string;
+  entries: DeclaredEntryCreate[];
+}
+
+/** A request naming one declared app. */
+export interface DeclaredAppRequest {
+  app_id: string;
 }
 
 export interface ServiceJournal {
@@ -1442,30 +1560,6 @@ export interface HubUpdateRequest {
 
 // --- Samba ---
 
-export interface SambaShare {
-  name: string;
-  path: string;
-  comment: string;
-  is_read_only: boolean;
-  /** Accounts allowed in; empty means every configured user. */
-  valid_users: string[];
-}
-
-export interface SambaUser {
-  name: string;
-  is_present: boolean;
-  /**
-   * False for a user whose password was never set — including every user
-   * after a restore from backup, since passwords are not in config/.
-   */
-  has_password: boolean;
-}
-
-export interface SambaSettings {
-  shares: SambaShare[];
-  users: SambaUser[];
-}
-
 export interface SambaSession {
   username: string;
   hostname: string;
@@ -1484,9 +1578,6 @@ export interface SambaStatus {
   sessions: SambaSession[];
   disks: SambaDisk[];
 }
-
-/** Samba on one device: its settings, and where the module stands there. */
-export interface SambaDeviceView extends SambaSettings, ModuleDeviceState {}
 
 // --- Gitea ---
 
@@ -1509,186 +1600,10 @@ export interface GiteaSettings {
 /** Gitea on one device: its settings, and where the module stands there. */
 export interface GiteaDeviceView extends GiteaSettings, ModuleDeviceState {}
 
-/** One VS Code instance: the account it runs as, the port it serves, and on
- * Windows the vault login that account signs in with. */
-export interface VscodeInstance {
-  account: string;
-  port: number;
-  login_id: string;
-}
-
-/** One instance as configured, with what the machine says of it. */
-export interface VscodeInstanceView extends VscodeInstance {
-  is_running: boolean;
-  /** Why it does not run, typed; empty when nothing is in the way. */
-  code: string;
-}
-
-/** VS Code on one device: its instances and the machine's accounts. */
-export interface VscodeDeviceView extends ModuleDeviceState {
-  device_id: string;
-  host: string;
-  instances: VscodeInstanceView[];
-  /** The human accounts the machine last reported. */
-  accounts: string[];
-  is_active: boolean;
-  /** Whether the person accepted Microsoft's terms for this machine. */
-  is_terms_accepted: boolean;
-  /** The address of Microsoft's VS Code Server license terms. */
-  terms_url: string;
-}
-
-export interface VscodeConfigUpdate {
-  device_id: string;
-  instances: VscodeInstance[];
-}
-
 /** The person's acceptance of Microsoft's terms for one machine. */
 export interface VscodeTermsUpdate {
   device_id: string;
   is_accepted: boolean;
-}
-
-/** One CloudCLI instance: the account it runs as, the port its forwarder
- * listens on, and on Windows the vault login that account signs in with. */
-export interface CloudcliInstance {
-  account: string;
-  port: number;
-  login_id: string;
-}
-
-/** One instance as configured, with what the machine says of it. */
-export interface CloudcliInstanceView extends CloudcliInstance {
-  is_running: boolean;
-  /** Why it does not run, typed; empty when nothing is in the way. */
-  code: string;
-}
-
-/** CloudCLI on one device: its instances and the machine's accounts. */
-export interface CloudcliDeviceView extends ModuleDeviceState {
-  device_id: string;
-  host: string;
-  instances: CloudcliInstanceView[];
-  /** The human accounts the machine last reported. */
-  accounts: string[];
-  is_active: boolean;
-}
-
-export interface CloudcliConfigUpdate {
-  device_id: string;
-  instances: CloudcliInstance[];
-}
-
-/** One Codeg instance: the account it runs as, the port its forwarder
- * listens on, and on Windows the vault login that account signs in with. */
-export interface CodegInstance {
-  account: string;
-  port: number;
-  login_id: string;
-}
-
-/** One instance as configured, with what the machine says of it. */
-export interface CodegInstanceView extends CodegInstance {
-  is_running: boolean;
-  /** Why it does not run, typed; empty when nothing is in the way. */
-  code: string;
-}
-
-/** Codeg on one device: its instances and the machine's accounts. */
-export interface CodegDeviceView extends ModuleDeviceState {
-  device_id: string;
-  host: string;
-  instances: CodegInstanceView[];
-  /** The human accounts the machine last reported. */
-  accounts: string[];
-  is_active: boolean;
-}
-
-export interface CodegConfigUpdate {
-  device_id: string;
-  instances: CodegInstance[];
-}
-
-/** A tool's choices: Claude's slots, Codex's model and effort, Gemini's model. */
-export type AiToolConfigs = Record<string, Record<string, string>>;
-
-/** One account the AI tools setting acts on, and what the machine says. */
-export interface AiToolAccountView {
-  account: string;
-  /** The modules it has an instance in. */
-  modules: string[];
-  /** `switched`, `switched_back` or `failed`; empty before the machine
-   * reported the account. */
-  state: string;
-  code: string;
-  params: Record<string, string | number>;
-}
-
-/** One machine's AI tools setting: the Modules page's Global configuration. */
-export interface AiToolDeviceView {
-  /** Whether any account is still on the gateway: what the chip reads. */
-  is_in_use: boolean;
-  device_id: string;
-  is_online: boolean;
-  is_enabled: boolean;
-  /** Whether the gateway serves a model now; the setting turns on only then. */
-  is_gateway_serving: boolean;
-  tool_configs: AiToolConfigs;
-  /** The names the gateway serves, for the Configure dialog's pickers. */
-  models: string[];
-  accounts: AiToolAccountView[];
-}
-
-export interface AiToolConfigUpdate {
-  device_id: string;
-  tool_configs: AiToolConfigs;
-}
-
-/** One code-server instance: the account it runs as and the port its
- * forwarder listens on. */
-export interface CodeServerInstance {
-  account: string;
-  port: number;
-}
-
-/** One instance as configured, with what the machine says of it. */
-export interface CodeServerInstanceView extends CodeServerInstance {
-  is_running: boolean;
-  /** Why it does not run, typed; empty when nothing is in the way. */
-  code: string;
-}
-
-/** code-server on one device: the release, its instances and the machine's
- * accounts. */
-export interface CodeServerDeviceView extends ModuleDeviceState {
-  device_id: string;
-  host: string;
-  /** The release the machine reports installed; empty before it reports. */
-  version: string;
-  instances: CodeServerInstanceView[];
-  /** The human accounts the machine last reported. */
-  accounts: string[];
-  is_active: boolean;
-}
-
-/** One machine's Terminal module: the account and the shell program. */
-export interface TerminalDeviceView extends ModuleDeviceState {
-  device_id: string;
-  host: string;
-  /** The account a shell runs as; empty for the agent's own. */
-  account: string;
-  /** The shell program's path; empty for the default. */
-  shell_path: string;
-  /** The human accounts the machine last reported. */
-  accounts: string[];
-  /** False on Windows, whose shells run as SYSTEM. */
-  is_account_settable: boolean;
-}
-
-export interface TerminalConfigUpdate {
-  device_id: string;
-  account: string;
-  shell_path: string;
 }
 
 /** One machine's Remote desktop module: the switch and where it stands. */
@@ -1698,6 +1613,9 @@ export interface RemoteDesktopDeviceView extends ModuleDeviceState {
   is_enabled: boolean;
   /** `linux`, `windows` or `darwin`; empty before the machine reported. */
   platform_os: string;
+  /** The machine's own word on its desktop, from its last report; null
+   * before it reported. */
+  rdp: DeviceRdp | null;
 }
 
 export interface RemoteDesktopConfigUpdate {
@@ -1709,22 +1627,12 @@ export interface RemoteDesktopConfigUpdate {
 export interface HermesWebuiDeviceView extends ModuleDeviceState {
   device_id: string;
   host: string;
-  /** The forwarder's port as stored, 8787 until the person sets another. */
+  /** The forwarder's port as the machine reports it. */
   port: number;
   /** The version the machine reports; empty before it reports one. */
   version: string;
   /** What the machine last reported: `{version, port}`. */
   details: Record<string, unknown>;
-}
-
-export interface HermesWebuiConfigUpdate {
-  device_id: string;
-  port: number;
-}
-
-export interface CodeServerConfigUpdate {
-  device_id: string;
-  instances: CodeServerInstance[];
 }
 
 export interface GiteaConfigUpdate {
@@ -2145,7 +2053,6 @@ export interface PodmanHubContainer {
  * resources, each 0 for Podman's default. */
 export interface PodmanMachine {
   account: string;
-  login_id: string;
   cpus: number;
   memory_gib: number;
   disk_gib: number;
@@ -2171,7 +2078,7 @@ export interface PodmanSettings {
   is_installed: boolean;
   is_active: boolean;
   version: string;
-  /** The human accounts the machine last reported, for the Run settings. */
+  /** The machine's available accounts, for the Run settings. */
   accounts: string[];
   /** The Run settings on Windows and macOS; null on Linux. */
   machine: PodmanMachine | null;
@@ -2185,9 +2092,8 @@ export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 /** The Run settings being saved. */
 export interface PodmanMachineUpdate {
   device_id: string;
+  /** An available account; a Windows machine signs in with its login. */
   account: string;
-  /** The vault login the account signs in with, for a Windows machine. */
-  login_id: string;
   cpus: number;
   memory_gib: number;
   disk_gib: number;

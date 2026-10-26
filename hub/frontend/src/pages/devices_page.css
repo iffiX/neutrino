@@ -1,70 +1,164 @@
-.devices_grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+/* The table scrolls here; the page body never scrolls sideways. The card
+   gives the table its whole width, and the outer cells keep the margin. */
+.devices_table_scroll {
+  overflow-x: auto;
+  padding: var(--space-2) 0;
 }
 
-.devices_section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.devices_filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.devices_filter {
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
+/* Fixed column widths, one set for the header and every row; the name
+   takes whatever the other columns leave. */
+.devices_table {
+  width: 100%;
+  min-width: 1140px;
+  border-collapse: collapse;
   font-size: 12px;
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    background var(--transition-fast);
+  table-layout: fixed;
 }
 
-.devices_filter:hover {
-  border-color: var(--color-border-strong);
-  color: var(--color-text);
+.devices_col--address {
+  width: 112px;
 }
 
-.devices_filter--active {
-  border-color: var(--color-accent);
+.devices_col--mac {
+  width: 134px;
+}
+
+.devices_col--status {
+  width: 192px;
+}
+
+.devices_col--version {
+  width: 64px;
+}
+
+.devices_col--seen {
+  width: 88px;
+}
+
+.devices_col--actions {
+  width: 382px;
+}
+
+.devices_table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.devices_table td {
+  overflow: hidden;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.devices_table th:first-child,
+.devices_table td:first-child {
+  padding-left: var(--space-3);
+}
+
+.devices_table th:last-child,
+.devices_table td:last-child {
+  padding-right: var(--space-3);
+}
+
+/* Every row the same height, whatever its status cell holds. */
+.devices_row {
+  height: 64px;
+}
+
+/* A row whose name is being edited is lit, as an inline form is. */
+.devices_row--editing td {
   background: var(--color-accent-wash);
+}
+
+.devices_table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.devices_name {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.devices_name_link {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+}
+
+.devices_name_link:hover {
   color: var(--color-accent);
 }
 
-.devices_legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: 12px;
+.devices_rename_input {
+  flex: 1;
+  min-width: 0;
 }
 
-.devices_legend_item {
-  display: inline-flex;
-  gap: var(--space-2);
+.devices_rings {
+  display: flex;
+  gap: 6px;
   align-items: center;
 }
 
-/* Lives in the filter row: it narrows the same list the chips do. */
-.devices_search {
-  max-width: 240px;
-  margin-left: auto;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  font-size: 12px;
+.devices_mac {
+  font-size: 11px;
+}
+
+.devices_offline {
+  color: var(--color-text-faint);
+}
+
+.devices_version--old {
+  color: var(--color-warn);
+}
+
+.devices_actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+/* Six actions share one cell, so each takes less room than a row action
+   elsewhere. */
+.devices_actions .button {
+  padding: 4px 5px;
+}
+
+/* A press's line under its row: a sent packet, a refusal, a task's state. */
+.devices_outcome_row td {
+  padding: var(--space-2) 10px;
+  background: var(--color-bg);
+  white-space: normal;
+}
+
+.devices_outcome {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+
+.devices_outcome .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devices_skeleton_row {
+  height: 64px;
+  margin: var(--space-2);
 }

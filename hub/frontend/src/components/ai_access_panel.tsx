@@ -123,7 +123,7 @@ export function AiAccessPanel({
         {!isNaming && (
           <button
             type="button"
-            className="button button--primary credentials_section_action"
+            className="button credentials_section_action"
             disabled={isBusy}
             onClick={() => setIsNaming(true)}
           >

@@ -123,7 +123,7 @@ export function AiAccountsPanel() {
         <h2>{t("ui.ai.accounts_title")}</h2>
         <button
           type="button"
-          className="button button--primary credentials_section_action"
+          className="button credentials_section_action"
           disabled={!hasKinds || isBusy}
           title={hasKinds ? undefined : t("ui.ai.no_login_kinds")}
           onClick={() => setIsSigningIn(true)}

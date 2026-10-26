@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
+import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
@@ -15,7 +16,7 @@ import type {
 
 /**
  * The Remote desktop module on one machine: the one switch that shares its
- * desktop.
+ * desktop, and beside it the desktops the machine runs.
  *
  * On, the machine runs the agent's own RustDesk for this hub's clients and
  * every other RustDesk host on it stops; off, the machine's RustDesk is put
@@ -89,31 +90,34 @@ export function RemoteDesktopPanels({
   };
 
   return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
-      <ToggleSwitch
-        isOn={draft.is_enabled}
-        onChange={(isOn) => setDraft({ is_enabled: isOn })}
-        label={t("ui.remote_desktop_module.switch")}
-        description={t("ui.remote_desktop_module.switch_hint")}
-        isDisabled={!isEditable || isUnsupported}
-      />
-      <ApplyBar
-        isDirty={isDirty || isFailed}
-        isBusy={isBusy}
-        label={t("ui.remote_desktop_module.apply")}
-        hint={t("ui.remote_desktop_module.apply_hint")}
-        blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
-        isApplyDisabled={isUnsupported}
-        error={error}
-        onReset={() => {
-          reset();
-          setError(null);
-        }}
-        onApply={() => void apply()}
-      />
-    </section>
+    <>
+      <section
+        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+      >
+        <ToggleSwitch
+          isOn={draft.is_enabled}
+          onChange={(isOn) => setDraft({ is_enabled: isOn })}
+          label={t("ui.remote_desktop_module.switch")}
+          description={t("ui.remote_desktop_module.switch_hint")}
+          isDisabled={!isEditable || isUnsupported}
+        />
+        <ApplyBar
+          isDirty={isDirty || isFailed}
+          isBusy={isBusy}
+          label={t("ui.remote_desktop_module.apply")}
+          hint={t("ui.remote_desktop_module.apply_hint")}
+          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          isApplyDisabled={isUnsupported}
+          error={error}
+          onReset={() => {
+            reset();
+            setError(null);
+          }}
+          onApply={() => void apply()}
+        />
+      </section>
+      <RemoteDesktopPanel deviceId={deviceId} rdp={saved.rdp} />
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 
-import { TerminalsPage } from "../pages/terminals_page";
 import { BottomNav } from "./bottom_nav";
 import { SidebarNav } from "./sidebar_nav";
 import { TopBar } from "./top_bar";
@@ -16,9 +15,7 @@ import "./app_shell.css";
  * viewports — status bar, routed body.
  *
  * The window's height is divided up here rather than grown into: the body is
- * what scrolls, so the bar above it stays put and a page can ask to fill
- * exactly what is left — which the Terminals page does, and which a page
- * cannot do against a container that would just get taller to accommodate it.
+ * what scrolls, so the bar above it stays put.
  *
  * The shell owns the one live stats socket and publishes it, so the top bar
  * and the dashboard read identical frames from a single connection. It opens
@@ -30,11 +27,6 @@ import "./app_shell.css";
 
 export function AppShell() {
   const { logout } = useAuth();
-  // Terminals is not routed like the other pages: it stays mounted here and
-  // is merely hidden while another page shows. Unmounting it would close
-  // every shell's socket, and open shells are exactly what a person expects
-  // to find again after looking something up on another tab.
-  const isTerminalOpen = useLocation().pathname === "/terminals";
   const stats = useStatsSocket();
   useHubEventChannel();
 
@@ -53,13 +45,6 @@ export function AppShell() {
           <main className="app_shell_body">
             <div className="app_shell_content">
               <Outlet />
-              <div
-                className={`app_shell_terminal ${
-                  isTerminalOpen ? "" : "app_shell_terminal--hidden"
-                }`}
-              >
-                <TerminalsPage />
-              </div>
             </div>
           </main>
         </div>

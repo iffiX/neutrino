@@ -1,0 +1,107 @@
+.module_catalog_search {
+  width: 260px;
+  max-width: 45%;
+}
+
+.module_catalog_filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.module_catalog_filter {
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.module_catalog_filter:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.module_catalog_filter--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-accent);
+}
+
+.module_catalog_grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.module_catalog_card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 150px;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.module_catalog_card:hover {
+  border-color: var(--color-border-strong);
+}
+
+.module_catalog_card--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+}
+
+/* A module the hub has no manifest of yet: no check, nothing to press. */
+.module_catalog_card--fixed {
+  cursor: default;
+}
+
+/* A module the machine cannot run. */
+.module_catalog_card--off {
+  opacity: 0.55;
+}
+
+.module_catalog_check {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.module_catalog_state {
+  position: absolute;
+  top: var(--space-3);
+  right: calc(var(--space-3) + 24px);
+}
+
+.module_catalog_icon {
+  display: inline-flex;
+  color: var(--color-accent);
+}
+
+.module_catalog_name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.module_catalog_line {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.module_catalog_tag {
+  align-self: flex-start;
+  margin-top: auto;
+  font-size: 11px;
+}

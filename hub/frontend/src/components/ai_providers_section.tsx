@@ -412,7 +412,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
   };
 
   return (
-    <div className="keys_add">
+    <div className="inline_form">
       <div className="section_label">
         {isEditing
           ? t("ui.ai.edit_provider", { name: initial.name })
@@ -470,7 +470,7 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
         hint={t("ui.ai.token_hint")}
       />
       {error !== null && <span className="field_error">{error}</span>}
-      <div className="keys_add_actions">
+      <div className="inline_form_actions">
         <button
           type="button"
           className="button button--ghost"

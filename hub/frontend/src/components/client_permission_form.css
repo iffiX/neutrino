@@ -1,3 +1,9 @@
+.client_permission_kinds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 /* --- One kind: its switch, the device filter beside it, and the list --- */
 
 .client_permission_kind {

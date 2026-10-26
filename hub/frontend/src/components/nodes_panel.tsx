@@ -408,7 +408,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
         <div className="nodes_toolbar_actions">
           <button
             type="button"
-            className="button button--primary"
+            className="button"
             onClick={() => setIsAddOpen((open) => !open)}
           >
             <Icon name="plus" size={14} />
@@ -428,7 +428,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 
       {isAddOpen && (
         <form
-          className="nodes_add"
+          className="inline_form"
           onSubmit={(event) => void handleAddNode(event)}
         >
           <label className="field">
@@ -442,7 +442,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
             />
             <span className="field_hint">{t(TEXT_KEYS.shareLinkHint)}</span>
           </label>
-          <div className="button_row">
+          <div className="inline_form_actions">
             <button
               type="button"
               className="button button--ghost"

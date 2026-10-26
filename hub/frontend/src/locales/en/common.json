@@ -49,5 +49,8 @@
   "ui.authority.windows_3": "Browse to Trusted Root Certification Authorities, then finish.",
   "ui.authority.windows_4": "Restart the browser.",
   "ui.brand.hub": "Neutrino Hub",
+  "ui.copy_button.copied": "Copied",
+  "ui.copy_button.copy": "Copy",
+  "ui.dialog.close": "Close",
   "ui.row_menu.open": "More actions"
 }

@@ -1,0 +1,32 @@
+.declare_entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* One entry: its type, its port, and the fields its type takes, on one line
+   where the dialog has room. */
+.declare_entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.declare_entry > .field {
+  flex: 1;
+  min-width: 120px;
+}
+
+.declare_entry > .declare_entry_port {
+  flex: 0 0 96px;
+  min-width: 0;
+}
+
+.declare_entry_remove {
+  margin-bottom: 4px;
+}

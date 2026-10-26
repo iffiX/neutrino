@@ -288,7 +288,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
   };
 
   return (
-    <div className="keys_add">
+    <div className="inline_form">
       <div className="section_label">{t("ui.credentials.new_key")}</div>
       <label className="field">
         <span className="field_label">{t("ui.credentials.name")}</span>
@@ -321,7 +321,7 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
         </span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
-      <div className="keys_add_actions">
+      <div className="inline_form_actions">
         <button
           type="button"
           className="button button--ghost"
@@ -468,7 +468,7 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
   };
 
   return (
-    <div className="keys_add">
+    <div className="inline_form">
       <div className="section_label">{t("ui.credentials.new_login")}</div>
       <div className="credentials_form_row">
         <label className="field">
@@ -501,7 +501,7 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
         <span className="field_hint">{t("ui.credentials.sealed_hint")}</span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
-      <div className="keys_add_actions">
+      <div className="inline_form_actions">
         <button
           type="button"
           className="button button--ghost"
@@ -643,7 +643,7 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
   };
 
   return (
-    <div className="keys_add">
+    <div className="inline_form">
       <div className="section_label">{t("ui.credentials.new_token")}</div>
       <label className="field">
         <span className="field_label">{t("ui.credentials.name")}</span>
@@ -661,7 +661,7 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
         <span className="field_hint">{t("ui.credentials.sealed_hint")}</span>
       </label>
       {error !== null && <span className="field_error">{error}</span>}
-      <div className="keys_add_actions">
+      <div className="inline_form_actions">
         <button
           type="button"
           className="button button--ghost"

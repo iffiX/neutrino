@@ -218,6 +218,7 @@ export function DashboardPage() {
           icon="devices"
           tone="secondary"
           detail={t("ui.dashboard.tile_agents_reporting")}
+          to="/agents"
         />
         <StatTile
           label={t("ui.dashboard.tile_cpu")}

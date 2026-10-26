@@ -98,8 +98,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 /**
- * POST a multipart upload, used by the config restore form and the Files
- * page.
+ * POST a multipart upload, used by the config restore form.
  *
  * `fields` carries the text parts that travel beside the file.
  */

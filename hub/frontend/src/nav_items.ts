@@ -2,22 +2,16 @@ import type { IconName } from "./components/icon";
 import { hasFeature } from "./edition";
 
 /**
- * The sidebar's contents, in order.
+ * The sidebar's hub group, in order.
  *
  * The router and the nav read the same list, so a new page cannot appear in
- * one and be missing from the other.
- *
- * Two groups, and the split is who the page acts on. Hub is the box itself:
- * the network it routes, the proxy it runs, the devices and clients it
- * knows. Agent is what the hub drives on a machine running the agent —
- * itself included, since the hub box is one of them: a shell, its files,
- * and the modules it hosts.
+ * one and be missing from the other. The machine group below it is not a
+ * list of pages: it is one entry per managed machine, read from the hub
+ * (`sidebar_nav.tsx`).
  *
  * A row carries catalog keys rather than sentences, so the nav words itself
  * at render and a language change re-words it.
  */
-
-export type NavGroup = "hub" | "agent";
 
 export interface NavItem {
   path: string;
@@ -27,10 +21,6 @@ export interface NavItem {
   /** The description where the page holds something else in one network
    * mode, by mode. */
   modeDescriptionKeys?: Record<string, string>;
-  /** The description where the page holds something else on one system, by
-   * the hub's system. */
-  osDescriptionKeys?: Record<string, string>;
-  group: NavGroup;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -47,7 +37,6 @@ export const NAV_ITEMS: NavItem[] = [
         ? "ui.nav.dashboard_description_server"
         : "ui.nav.dashboard_description_server_no_exits",
     },
-    group: "hub",
   },
   {
     path: "/network",
@@ -58,14 +47,12 @@ export const NAV_ITEMS: NavItem[] = [
       server: "ui.nav.network_description_server",
       side_gateway: "ui.nav.network_description_side_gateway",
     },
-    group: "hub",
   },
   {
     path: "/overlay",
     labelKey: "ui.nav.overlay",
     icon: "mesh",
     descriptionKey: "ui.nav.overlay_description",
-    group: "hub",
   },
   // The proxy's page, where the tree carries it.
   ...(hasFeature("proxy")
@@ -75,7 +62,6 @@ export const NAV_ITEMS: NavItem[] = [
           labelKey: "ui.nav.proxy",
           icon: "globe" as IconName,
           descriptionKey: "ui.nav.proxy_description",
-          group: "hub" as NavGroup,
         },
       ]
     : []),
@@ -84,79 +70,35 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "ui.nav.ai",
     icon: "sparkles",
     descriptionKey: "ui.nav.ai_description",
-    group: "hub",
   },
   {
-    path: "/devices",
+    path: "/agents",
     labelKey: "ui.nav.devices",
     icon: "devices",
     descriptionKey: "ui.nav.devices_description",
-    group: "hub",
   },
   {
     path: "/clients",
     labelKey: "ui.nav.clients",
     icon: "laptop",
     descriptionKey: "ui.nav.clients_description",
-    group: "hub",
   },
   {
     path: "/services",
     labelKey: "ui.nav.services",
     icon: "bolt",
     descriptionKey: "ui.nav.services_description",
-    group: "hub",
   },
   {
     path: "/credentials",
     labelKey: "ui.nav.credentials",
     icon: "key",
     descriptionKey: "ui.nav.credentials_description",
-    group: "hub",
   },
   {
     path: "/settings",
     labelKey: "ui.nav.settings",
     icon: "settings",
     descriptionKey: "ui.nav.settings_description",
-    group: "hub",
-  },
-  {
-    path: "/terminals",
-    labelKey: "ui.nav.terminals",
-    icon: "terminal",
-    descriptionKey: "ui.nav.terminals_description",
-    group: "agent",
-  },
-  {
-    path: "/files",
-    labelKey: "ui.nav.files",
-    icon: "folder",
-    descriptionKey: "ui.nav.files_description",
-    group: "agent",
-  },
-  {
-    path: "/modules",
-    labelKey: "ui.nav.modules",
-    icon: "cube",
-    descriptionKey: "ui.nav.modules_description",
-    osDescriptionKeys: {
-      darwin: "ui.nav.modules_description_other",
-      windows: "ui.nav.modules_description_other",
-    },
-    group: "agent",
   },
 ];
-
-/**
- * The pages of one group, in declared order.
- *
- * Args:
- *   group: Which half of the sidebar to take.
- *
- * Returns:
- *   That group's pages.
- */
-export function navItemsInGroup(group: NavGroup): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.group === group);
-}

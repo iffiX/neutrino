@@ -42,7 +42,8 @@ export const HUB_EVENT_DEVICES = "devices";
  * switched, or deleted. */
 export const HUB_EVENT_CLIENTS = "clients";
 
-/** One machine's report says something new about what it runs. Keyed by MAC. */
+/** One machine's report says something new about what it runs. Keyed by
+ * the device id. */
 export const HUB_EVENT_DEVICE_REPORT = "device_report";
 
 /** The published service list composes differently. */
@@ -54,8 +55,8 @@ export const HUB_EVENT_CONFIG = "config";
 /** A background job started or finished. Keyed by its task id. */
 export const HUB_EVENT_TASK = "task";
 
-/** One machine's vitals, on every heartbeat. Keyed by MAC, and the only type
- * that carries its reading in `data`. */
+/** One machine's readings, on every report. Keyed by the device id, and the
+ * only type that carries its reading in `data`. */
 export const HUB_EVENT_METRICS = "metrics";
 
 /** An interface's carrier, address or radio reading moved. */
