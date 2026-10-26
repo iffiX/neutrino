@@ -230,7 +230,6 @@
   "ui.reason.port_taken": "Another entry holds port {port}.",
   "ui.reason.terminal_no_account": "No account is enabled for this machine's terminal.",
   "ui.reason.unhealthy": "The service is not reachable now.",
-  "ui.reason.use_first": "Use the app first.",
   "ui.reconnect": "Reconnect",
   "ui.refresh": "Refresh",
   "ui.save": "Save",
