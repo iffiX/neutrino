@@ -26,6 +26,9 @@ TRANSPORT_SERVICE_NAME = "transport"
 # the public half beside it (protocol.md, "The hub's static key").
 TRANSPORT_KEY_DIR = UTILS_CONFIG_DIR / "transport"
 TRANSPORT_KEY_DIR_MODE = 0o700
+# The configuration root above it lets the transport's account pass and read
+# nothing else (privilege.md, "The transport holds the agent port").
+TRANSPORT_CONFIG_ROOT_MODE = 0o711
 TRANSPORT_PRIVATE_KEY_NAME = "static_key"
 TRANSPORT_PUBLIC_KEY_NAME = "public_key"
 # The private half as a backup carries it, sealed under the vault's data key.

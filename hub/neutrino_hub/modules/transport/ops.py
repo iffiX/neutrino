@@ -39,6 +39,7 @@ from neutrino_hub.modules.transport.constants import (
     TRANSPORT_GENERATED_NAME,
     TRANSPORT_KEY_AAD,
     TRANSPORT_KEY_DIR,
+    TRANSPORT_CONFIG_ROOT_MODE,
     TRANSPORT_KEY_DIR_MODE,
     TRANSPORT_KEY_HEX_CHARS,
     TRANSPORT_PRIVATE_KEY_MODE,
@@ -157,7 +158,8 @@ def ensure_state_dir() -> None:
 
 
 def ensure_key_dir() -> bool:
-    """Make the key directory the transport's own, mode 0700.
+    """Make the key directory the transport's own, mode 0700, under a
+    configuration root the account passes.
 
     Returns:
         True when the directory was made.
@@ -167,6 +169,8 @@ def ensure_key_dir() -> bool:
     """
     is_made = not TRANSPORT_KEY_DIR.is_dir()
     TRANSPORT_KEY_DIR.mkdir(parents=True, exist_ok=True)
+    if is_linux():
+        os.chmod(TRANSPORT_KEY_DIR.parent, TRANSPORT_CONFIG_ROOT_MODE)
     _own_by_account(TRANSPORT_KEY_DIR, TRANSPORT_KEY_DIR_MODE)
     return is_made
 
