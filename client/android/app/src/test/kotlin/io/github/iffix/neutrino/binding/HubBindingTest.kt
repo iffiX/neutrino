@@ -6,24 +6,26 @@ import org.junit.Test
 
 class HubBindingTest {
     @Test
-    fun candidateUrlsAreTheNameThenTheListFromTheFirstWhicheverWorkedLast() {
-        val binding = Samples.binding.copy(gatewayUrl = "https://100.72.4.1:8443")
-        assertEquals(
-            listOf("https://10.0.0.1:8443", "https://192.168.100.1:8443", "https://100.72.4.1:8443"),
-            binding.candidateUrls("https://10.0.0.1:8443"),
-        )
-        assertEquals(listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"), binding.candidateUrls(""))
+    fun thePskIsTheSha256OfTheTokenInHex() {
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest("secret-token".toByteArray())
+        assertEquals(digest.joinToString("") { "%02x".format(it) }, Samples.binding.psk)
+    }
+
+    @Test
+    fun noHubKeyIsAnOldBinding() {
+        assertEquals(false, Samples.binding.isKeyMissing)
+        assertEquals(true, Samples.binding.copy(hubKey = "").isKeyMissing)
     }
 
     @Test
     fun theLastAddressIsStoredWhenTheListLacksIt() {
-        val binding = Samples.binding.copy(gatewayUrl = "https://10.0.0.1:8443")
-        assertEquals(Samples.binding.gatewayUrls + "https://10.0.0.1:8443", binding.storedUrls)
+        val binding = Samples.binding.copy(gatewayUrl = "tcp://10.0.0.1:8443")
+        assertEquals(Samples.binding.gatewayUrls + "tcp://10.0.0.1:8443", binding.storedUrls)
     }
 
     @Test
     fun theTitleIsTheHubsNameElseItsAddress() {
-        assertEquals("https://192.168.100.1:8443", Samples.binding.title)
+        assertEquals("tcp://192.168.100.1:8443", Samples.binding.title)
         assertEquals("Neutrino", Samples.binding.copy(hubName = "Neutrino").title)
     }
 

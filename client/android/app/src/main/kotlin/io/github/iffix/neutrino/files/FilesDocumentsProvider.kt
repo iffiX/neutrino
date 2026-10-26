@@ -152,10 +152,11 @@ class FilesDocumentsProvider : DocumentsProvider() {
         return parent.rootKey == document.rootKey && isInside
     }
 
-    private fun resolve(document: ShareDocumentId): Pair<ShareRoot, ShareLogin>? {
+    private fun resolve(document: ShareDocumentId): Pair<ShareRoot, () -> ShareLogin>? {
         val root = app.shareRoots.value.firstOrNull { it.key == document.rootKey } ?: return null
+        if (!root.isDeclared) return root to { app.hubShareLogin(root) }
         val login = app.shareLogins.get(root.key) ?: return null
-        return root to login
+        return root to { login }
     }
 
     private fun addRow(cursor: MatrixCursor, document: ShareDocumentId, entry: ShareEntry) {
@@ -183,7 +184,8 @@ class FilesDocumentsProvider : DocumentsProvider() {
     }
 
     private fun errorExtras(error: IOException, root: ShareRoot): Bundle {
-        if (error is ShareRefusedException && error.code == "share_login_rejected") app.shareLogins.forget(root.key)
+        val isRejected = error is ShareRefusedException && error.code == "share_login_rejected"
+        if (isRejected && root.isDeclared) app.shareLogins.forget(root.key)
         return Bundle().apply { putString(android.provider.DocumentsContract.EXTRA_ERROR, wordOf(error)) }
     }
 

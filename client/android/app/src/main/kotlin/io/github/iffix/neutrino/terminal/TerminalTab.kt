@@ -9,6 +9,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property bindingId The hub the machine is managed by.
  * @property deviceId The machine.
  * @property name The machine's name.
+ * @property account The account the shell runs as, empty for the machine's first enabled one.
  * @property title What the shell last set as its title.
  * @property owner Who opened the session, as the hub names it; empty until the hub lists it.
  * @property ownerName The opener's name, as the hub lists it; empty until the hub lists it.
@@ -19,12 +20,14 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property isListed Whether the hub has listed the session since the tab was made.
  * @property phase Where the tab's stream stands.
  * @property note Why the shell ended, the stream dropped or a command was refused.
+ * @property isOpening Whether the shell's stream is being opened.
  */
 data class TerminalTab(
     val sessionId: String,
     val bindingId: String,
     val deviceId: String,
     val name: String,
+    val account: String = "",
     val title: String = "",
     val owner: String = "",
     val ownerName: String = "",
@@ -35,6 +38,7 @@ data class TerminalTab(
     val isListed: Boolean = false,
     val phase: TerminalPhase = TerminalPhase.DETACHED,
     val note: ChannelResult.Refused? = null,
+    val isOpening: Boolean = false,
 ) {
     /** Whether closing the tab ends the session for everyone, which takes two presses. */
     val isKept: Boolean

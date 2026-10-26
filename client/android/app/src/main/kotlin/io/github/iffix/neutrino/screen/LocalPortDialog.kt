@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -18,44 +17,47 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.github.iffix.neutrino.FORWARD_FIXED_PORTS
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ReasonLine
-import io.github.iffix.neutrino.design.SelectedMark
-import io.github.iffix.neutrino.forward.LocalPortChoice
 
 /**
- * The Configure dialog of a forwardable entry: one choice, Local port, Auto or Fixed with a
- * number from 1024 to 65535, then Cancel and Save. A refused Save stays open with its reason, and a
- * disabled Save has its reason under the field.
+ * An app's Configure dialog: one line per entry, its name, its kind and a number field that starts
+ * at the entry's number, the person's or else the hub's, then Cancel and Save. A number of the
+ * person's, from 1024 to 65535, replaces the hub's on this phone alone, and an empty field goes back
+ * to the hub's. A refused Save stays open with its reason, and a disabled Save has its reason under
+ * the fields.
  *
- * @param title The entry's title.
- * @param initial The entry's local port as the table holds it.
- * @param onSave What Save does with the choice: Ok closes the dialog, a refusal is worded as `ui.reason.<code>`.
+ * @param title The app's title.
+ * @param entries The app's entries the dialog lists.
+ * @param numbers Each entry's number the person set, by entry id, null where it takes the hub's.
+ * @param onSave What Save does with each entry's number, null for the hub's: Ok closes the dialog,
+ *   a refusal is worded as `ui.reason.<code>`.
  * @param onClose What closing the dialog does.
  */
 @Composable
 fun LocalPortDialog(
     title: String,
-    initial: LocalPortChoice,
-    onSave: (LocalPortChoice) -> ChannelResult<Unit>,
+    entries: List<ChannelServiceEntry>,
+    numbers: Map<String, Int?>,
+    onSave: (Map<String, Int?>) -> ChannelResult<Unit>,
     onClose: () -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val palette = NeutrinoTheme.palette
-    var isFixed by remember { mutableStateOf(initial.isFixed) }
-    var number by remember { mutableStateOf(if (initial.isFixed) initial.port.toString() else "") }
+    var typed by remember {
+        mutableStateOf(entries.associate { it.id to (numbers[it.id] ?: it.localPort).toString() })
+    }
     var refusal by remember { mutableStateOf<ChannelResult.Refused?>(null) }
-    val fixed = number.toIntOrNull()?.takeIf { it in FORWARD_FIXED_PORTS }
-    val reasonKey = localPortReasonKey(isFixed, number)
+    val reasonKey = localPortReasonKey(typed.values)
     val shape = RoundedCornerShape(10.dp)
     Dialog(onDismissRequest = onClose) {
         Column(
@@ -67,29 +69,25 @@ fun LocalPortDialog(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                BasicText(words.word("ui.local_port"), style = NeutrinoTheme.rowTitle)
-                BasicText(title, style = NeutrinoTheme.note)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Chip(words.word("ui.local_port_auto"), isSelected = !isFixed) {
-                    isFixed = false
-                    refusal = null
-                }
-                Chip(words.word("ui.local_port_fixed"), isSelected = isFixed) {
-                    isFixed = true
-                    refusal = null
-                }
-                if (isFixed) {
+            BasicText(words.word("ui.app.port_dialog_title", mapOf("app" to title)), style = NeutrinoTheme.rowTitle)
+            for (entry in entries) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        BasicText(entry.name.ifEmpty { entry.title }, style = NeutrinoTheme.body)
+                        BasicText(kindOf(entry), style = NeutrinoTheme.mono)
+                    }
                     InputField(
-                        value = number,
-                        onChange = { typed ->
-                            number = typed.filter { it.isDigit() }.take(5)
+                        value = typed[entry.id].orEmpty(),
+                        onChange = { text ->
+                            typed = typed + (entry.id to text.filter { it.isDigit() }.take(5))
                             refusal = null
                         },
                         label = words.word("ui.local_port"),
                         modifier = Modifier.weight(1f),
-                        placeholder = "${FORWARD_FIXED_PORTS.first}–${FORWARD_FIXED_PORTS.last}",
+                        placeholder = entry.localPort.toString(),
                     )
                 }
             }
@@ -109,15 +107,7 @@ fun LocalPortDialog(
                 NeutrinoButton(
                     words.word("ui.save"),
                     {
-                        val choice = if (isFixed) {
-                            LocalPortChoice(
-                                isFixed = true,
-                                port = fixed ?: 0,
-                            )
-                        } else {
-                            LocalPortChoice()
-                        }
-                        when (val answer = onSave(choice)) {
+                        when (val answer = onSave(numbersOf(entries, typed))) {
                             is ChannelResult.Ok -> onClose()
                             is ChannelResult.Refused -> refusal = answer
                         }
@@ -133,34 +123,40 @@ fun LocalPortDialog(
 /**
  * Why Save is disabled in the local port dialog.
  *
- * @param isFixed Whether Fixed is chosen.
- * @param number The number typed.
- * @return `ui.reason.port_range` while Fixed is chosen and the number is not one from 1024 to
- *   65535, else null.
+ * @param typed Each entry's field as typed.
+ * @return `ui.reason.port_range` while a field holds a number outside 1024 to 65535, else null; an
+ *   empty field is the hub's number.
  */
-internal fun localPortReasonKey(isFixed: Boolean, number: String): String? =
-    "ui.reason.port_range".takeIf { isFixed && number.toIntOrNull()?.takeIf { it in FORWARD_FIXED_PORTS } == null }
+internal fun localPortReasonKey(typed: Collection<String>): String? =
+    "ui.reason.port_range".takeIf { typed.any { it.isNotEmpty() && it.toIntOrNull() !in FORWARD_FIXED_PORTS } }
 
-@Composable
-private fun Chip(label: String, isSelected: Boolean, onSelect: () -> Unit) {
-    val mark = SelectedMark.of(NeutrinoTheme.palette, isSelected)
-    val shape = RoundedCornerShape(6.dp)
-    BasicText(
-        label,
-        style = NeutrinoTheme.body.copy(color = mark.text),
-        modifier = Modifier
-            .clip(shape)
-            .background(mark.fill)
-            .border(1.dp, mark.border, shape)
-            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onSelect)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
-}
+/**
+ * The numbers Save keeps: a field holding the hub's number, or nothing, goes back to the hub's.
+ *
+ * @param entries The app's entries.
+ * @param typed Each entry's field as typed.
+ * @return Each entry's number by entry id, null for the hub's.
+ */
+internal fun numbersOf(entries: List<ChannelServiceEntry>, typed: Map<String, String>): Map<String, Int?> =
+    entries.associate { entry ->
+        val number = typed[entry.id]?.toIntOrNull()
+        entry.id to number?.takeIf { it != entry.localPort }
+    }
+
+/**
+ * An entry's kind as the Apps page names it: `web`, `port`, or `port/udp` for a UDP port.
+ *
+ * @param entry The entry.
+ * @return The kind.
+ */
+internal fun kindOf(entry: ChannelServiceEntry): String =
+    if (entry.protocol == "udp") "${entry.type}/udp" else entry.type
 
 @Preview(widthDp = 400, heightDp = 300)
 @Composable
 private fun LocalPortDialogPreview() {
-    PreviewHubs.Frame(mapOf("ui.local_port" to "本地端口", "ui.local_port_auto" to "自动", "ui.local_port_fixed" to "指定")) {
-        LocalPortDialog("VS Code", LocalPortChoice(isFixed = true, port = 8000), { ChannelResult.Ok(Unit) }, {})
+    PreviewHubs.Frame(mapOf("ui.local_port" to "本地端口")) {
+        val entries = PreviewHubs.all.flatMap { it.services }.filter { it.appId.isNotEmpty() }
+        LocalPortDialog("Gitea", entries, emptyMap(), { ChannelResult.Ok(Unit) }, {})
     }
 }

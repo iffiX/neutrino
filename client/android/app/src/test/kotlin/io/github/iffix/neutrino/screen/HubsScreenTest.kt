@@ -52,7 +52,7 @@ class HubsScreenTest {
             waiting(HubWaitReason.HUB_SILENT, 5_000) to "The hub did not answer · retrying in 5 s",
             waiting(HubWaitReason.HUB_OFF_OVERLAY, 5_000) to "The hub is not on the virtual network · retrying in 5 s",
             waiting(HubWaitReason.NO_NETWORK) to "No network",
-            waiting(HubWaitReason.UNTRUSTED, 60_000) to "Certificate mismatch · retrying in 60 s",
+            waiting(HubWaitReason.UNTRUSTED, 60_000) to "Hub key mismatch · retrying in 60 s",
             waiting(HubWaitReason.ADMISSION_PAUSED, 42_000) to "The hub pauses new devices · retrying in 42 s",
             waiting(HubWaitReason.UNKNOWN_DEVICE) to "The hub does not know this device",
             waiting(HubWaitReason.TOO_OLD, refusal = ChannelResult.refused("protocol_too_old")) to

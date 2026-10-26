@@ -2,10 +2,10 @@ package io.github.iffix.neutrino.files
 
 import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.channel.ChannelConnectSocket
-import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.FakeConnectHub
+import io.github.iffix.neutrino.transport.FakeTransport
 import java.net.InetSocketAddress
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -15,8 +15,8 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class ShareSocketFactoryTest {
-    private val hub = FakeConnectHub()
-    private val factory = ShareSocketFactory { hub.open(ChannelFrames.args("id" to "f1")) }
+    private val hub = FakeTransport().apply { serve = { _, end -> FakeTransport.echo(end) } }
+    private val factory = ShareSocketFactory { hub.connect("f1") }
 
     @Test
     fun aSocketForTheSharesHostIsAConnectStreamNamingTheFileEntry() {
@@ -29,10 +29,9 @@ class ShareSocketFactoryTest {
             while (read < 5) read += socket.getInputStream().read(echoed, read, 5 - read)
             assertArrayEquals(byteArrayOf(0, 0, 0, 1, 7), echoed)
         }
-        val open = hub.opens.single()
+        val open = hub.opens.single()["open"] as JsonObject
         assertEquals("connect", open["kind"]?.jsonPrimitive?.content)
         assertEquals("f1", open["id"]?.jsonPrimitive?.content)
-        assertEquals(1, hub.closed.size)
     }
 
     @Test

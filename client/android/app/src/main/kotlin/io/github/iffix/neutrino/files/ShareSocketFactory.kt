@@ -2,7 +2,7 @@ package io.github.iffix.neutrino.files
 
 import io.github.iffix.neutrino.channel.ChannelConnectSocket
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.ChannelStream
+import io.github.iffix.neutrino.transport.TransportStream
 import java.net.InetAddress
 import java.net.Socket
 import javax.net.SocketFactory
@@ -14,10 +14,10 @@ import javax.net.SocketFactory
  *
  * @param opener Opens one `connect` stream for the share.
  */
-class ShareSocketFactory(private val opener: () -> ChannelResult<ChannelStream>) : SocketFactory() {
+class ShareSocketFactory(private val opener: () -> ChannelResult<TransportStream>) : SocketFactory() {
     private val made = mutableListOf<ChannelConnectSocket>()
 
-    /** The code the first of its streams the hub ended ended in, or null while none was. */
+    /** The code the first of its streams the hub refused was refused with, or null while none was. */
     val refusal: ChannelResult.Refused?
         get() = synchronized(made) { made.firstNotNullOfOrNull { it.refusal } }
 

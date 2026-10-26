@@ -16,19 +16,18 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
-import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.ClientMachine
 import io.github.iffix.neutrino.channel.HubConnections
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.channel.OkHttpHubTransport
+import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.forward.LocalPortTable
 import io.github.iffix.neutrino.forward.PortForwardRow
 import io.github.iffix.neutrino.forward.PortForwards
+import io.github.iffix.neutrino.forward.TransportLocalForwarder
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
@@ -38,8 +37,12 @@ import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RustDeskNative
 import io.github.iffix.neutrino.remotedesktop.RustDeskRemoteDesktopCore
 import io.github.iffix.neutrino.settings.ClientSettingsStore
-import io.github.iffix.neutrino.terminal.StreamOpener
+import io.github.iffix.neutrino.terminal.TerminalHub
 import io.github.iffix.neutrino.terminal.TerminalTabs
+import io.github.iffix.neutrino.transport.ClientTransport
+import io.github.iffix.neutrino.transport.GomobileTransportLibrary
+import io.github.iffix.neutrino.transport.LocalSocketTransportDialer
+import io.github.iffix.neutrino.transport.TransportStream
 import java.io.File
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -55,9 +58,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** The app's process: what outlives one screen, made once. */
 class NeutrinoApplication : Application() {
@@ -83,8 +90,17 @@ class NeutrinoApplication : Application() {
             machineId = bindingStore.machineId,
             hostname = deviceName,
             arch = architecture,
-            osVersion = Build.VERSION.RELEASE,
             version = BuildConfig.VERSION_NAME,
+        )
+    }
+
+    /** The transport the app embeds, started once in this process, and its local channel. */
+    val transport: ClientTransport by lazy {
+        ClientTransport(
+            library = GomobileTransportLibrary(),
+            directory = noBackupFilesDir.path,
+            dialerOf = ::LocalSocketTransportDialer,
+            scope = scope,
         )
     }
 
@@ -92,7 +108,7 @@ class NeutrinoApplication : Application() {
     val connections: HubConnections by lazy {
         HubConnections(
             store = bindingStore,
-            transport = OkHttpHubTransport(),
+            transport = transport,
             machine = machine,
             resolveHubName = ::resolveHubName,
             scope = scope,
@@ -150,13 +166,13 @@ class NeutrinoApplication : Application() {
         RemoteDesktopChoiceStore(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE))
     }
 
-    /** The loopback forwards of every forwarded entry and of the hubs' panels, each connection a `connect` stream. */
+    /** The loopback forwards of every app in use, of the shared desktops and of the hubs' panels. */
     val portForwards: PortForwards by lazy {
         PortForwards(
             material = { bindingId, args ->
                 connections.session(bindingId)?.openService(args) ?: ChannelResult.refused("unknown_hub")
             },
-            streams = ::openConnect,
+            forwarder = TransportLocalForwarder(transport),
             scope = scope,
             table = LocalPortTable(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE)),
         )
@@ -189,7 +205,7 @@ class NeutrinoApplication : Application() {
             CLIENT_SHARE_IO_TIMEOUT_S,
             CLIENT_SHARE_IDLE_PROBE_S,
             CLIENT_SHARE_PROBE_TIMEOUT_S,
-        ) { root -> openConnect(root.bindingId, ChannelFrames.args("id" to root.entryId)) }
+        ) { root -> openConnect(root.bindingId, root.entryId) }
     }
 
     /** Every terminal tab. */
@@ -197,7 +213,14 @@ class NeutrinoApplication : Application() {
         TerminalTabs(
             opener = { bindingId ->
                 connections.session(bindingId)?.takeIf { it.view.value.isConnected }?.let { session ->
-                    StreamOpener { kind, args, hasBytes -> session.openStream(kind, args, hasBytes) }
+                    object : TerminalHub {
+                        override fun open(open: JsonObject) = session.openStream(open)
+
+                        override suspend fun persist(sessionId: String, isPersistent: Boolean, isShared: Boolean) =
+                            session.persist(sessionId, isPersistent, isShared)
+
+                        override suspend fun stopSession(sessionId: String) = session.stopSession(sessionId)
+                    }
                 }
             },
             scope = scope,
@@ -221,12 +244,35 @@ class NeutrinoApplication : Application() {
             else -> Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
         }
 
+    /**
+     * The login the hub hands for a machine's share, read with the `service` frame at each connect
+     * and kept nowhere.
+     *
+     * @param root The share.
+     * @return The share's SMB user and password.
+     * @throws ConnectRefusedException When the hub refuses the material or names no user.
+     */
+    fun hubShareLogin(root: ShareRoot): ShareLogin {
+        val answer = runBlocking {
+            connections.session(root.bindingId)?.openService(root.entryId) ?: ChannelResult.refused("unknown_hub")
+        }
+        val material = when (answer) {
+            is ChannelResult.Refused -> throw ConnectRefusedException(answer.code, answer.params)
+            is ChannelResult.Ok -> answer.value
+        }
+        val user = (material["user"] as? JsonPrimitive)?.content.orEmpty()
+        val password = (material["password"] as? JsonPrimitive)?.content.orEmpty()
+        if (user.isEmpty()) throw ConnectRefusedException("share_login_rejected", JsonObject(emptyMap()))
+        return ShareLogin(user, password)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        transport.start()
         connections.start()
         overlays.start()
         terminalTabs.follow(connections.views)
-        portForwards.follow(connections.views)
+        portForwards.follow(connections.views, transport.forwardEnds)
         scope.launch { ClientCoreHold.changes(bindingStore.bindings).collect { if (it) holdCore() } }
         scope.launch {
             shareRoots.collect {
@@ -246,8 +292,13 @@ class NeutrinoApplication : Application() {
         }
     }
 
-    private fun openConnect(bindingId: String, args: Map<String, JsonElement>): ChannelResult<ChannelStream> =
-        connections.session(bindingId)?.openConnect(args) ?: ChannelResult.refused("unknown_hub")
+    private fun openConnect(bindingId: String, entryId: String): ChannelResult<TransportStream> {
+        val open = buildJsonObject {
+            put("kind", "connect")
+            put("id", entryId)
+        }
+        return connections.session(bindingId)?.openStream(open) ?: ChannelResult.refused("unknown_hub")
+    }
 
     private fun hasNetwork(): Boolean = getSystemService(ConnectivityManager::class.java).activeNetwork != null
 

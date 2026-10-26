@@ -13,13 +13,7 @@ enum class AppIcon(val paths: List<String>) {
             "M7 6.5h.01M7 17.5h.01",
         ),
     ),
-    GLOBE(
-        listOf(
-            "M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0",
-            "M3 12h18",
-            "M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z",
-        ),
-    ),
+    APPS(listOf("M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z")),
     FOLDER(listOf("M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")),
     TERMINAL(listOf("m4 17 6-5-6-5", "M12 19h8")),
     DESKTOP(

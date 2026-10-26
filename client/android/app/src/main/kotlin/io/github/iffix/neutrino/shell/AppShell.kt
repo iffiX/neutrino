@@ -56,13 +56,13 @@ import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopViewer
+import io.github.iffix.neutrino.screen.AppsScreen
 import io.github.iffix.neutrino.screen.FilesScreen
 import io.github.iffix.neutrino.screen.HubsScreen
 import io.github.iffix.neutrino.screen.JoinScreen
 import io.github.iffix.neutrino.screen.RemoteDesktopScreen
 import io.github.iffix.neutrino.screen.SettingsScreen
 import io.github.iffix.neutrino.screen.TerminalScreen
-import io.github.iffix.neutrino.screen.WebScreen
 import io.github.iffix.neutrino.settings.ClientSettings
 import io.github.iffix.neutrino.terminal.TerminalTabs
 
@@ -194,13 +194,14 @@ fun AppShell(
                                     onOverlayPick = actions::pickOverlay,
                                 )
                             }
-                            composable(AppScreen.WEB.route) {
-                                WebScreen(
+                            composable(AppScreen.APPS.route) {
+                                AppsScreen(
                                     hubs,
                                     forwards = forwardRows,
-                                    onOpen = { bindingId, entryId, url, isTokenRequired ->
+                                    portOf = forwards::portOf,
+                                    onUse = { bindingId, appId ->
                                         askNotices()
-                                        actions.openWeb(bindingId, entryId, url, isTokenRequired)
+                                        actions.useApp(bindingId, appId)
                                     },
                                 )
                             }

@@ -1,16 +1,20 @@
 package io.github.iffix.neutrino.channel
 
 import android.util.Log
-import io.github.iffix.neutrino.CLIENT_LEAVE_PATH
+import io.github.iffix.neutrino.CLIENT_ADDRESS_SCHEME
 import io.github.iffix.neutrino.CLIENT_LEAVE_TELL_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.CLIENT_PRIVATE_KEY_BYTES
+import io.github.iffix.neutrino.CLIENT_ROLE
+import io.github.iffix.neutrino.PROTOCOL
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
+import io.github.iffix.neutrino.transport.ClientTransport
 import java.io.IOException
+import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,14 +24,16 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * One session per hub this phone joined: joining, leaving, refreshing, and every hub's view.
  *
  * @param store The bindings.
- * @param transport How hubs are reached.
+ * @param transport The transport's local channel.
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param scope Where the sessions and the jobs run.
@@ -36,7 +42,7 @@ import kotlinx.serialization.json.JsonObject
  */
 class HubConnections(
     private val store: BindingStore,
-    private val transport: HubTransport,
+    private val transport: ClientTransport,
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val scope: CoroutineScope,
@@ -83,7 +89,7 @@ class HubConnections(
         for (held in dropped) {
             Log.i(CLIENT_LOG_TAG, "dropped the binding ${held.id}: a later one holds its hub")
             onLeaving(held.id)
-            if (!held.isPending) scope.launch { tellLeft(held) }
+            if (isTold(held)) scope.launch { tellLeft(held) }
         }
         scope.launch { store.bindings.collect { follow(it) } }
     }
@@ -135,8 +141,9 @@ class HubConnections(
     }
 
     /**
-     * Keep the binding a link names, its ticket unspent: the hub's session spends it at the first
-     * address that answers. A link whose ticket a binding already holds is that binding.
+     * Keep the binding a link names, its ticket unspent and a static key made for it: the hub's
+     * session spends the ticket with the transport's `join`. A link whose ticket a binding already
+     * holds is that binding.
      *
      * @param link The link.
      * @return The binding kept, or `client_internal {error}` when the file cannot be written.
@@ -148,7 +155,8 @@ class HubConnections(
             name = machine.hostname,
             gatewayUrl = link.urls.first(),
             gatewayUrls = link.urls,
-            fingerprint = link.fingerprint,
+            hubKey = link.hubKey,
+            privateKey = freshPrivateKey(),
             token = "",
             ticket = link.ticket,
             overlays = link.overlays,
@@ -185,9 +193,8 @@ class HubConnections(
 
     /**
      * Leave one hub: this phone forgets the binding at once, then tells the hub once in the
-     * background, and the hub's answer changes nothing. The address that last answered is tried
-     * first, then the rest in order, each for an equal share of the short timeout. A binding whose
-     * ticket is unspent is only forgotten.
+     * background through the transport's `leave`, within the short timeout, and the hub's answer
+     * changes nothing. A binding whose ticket is unspent, or of 0.5's shape, is only forgotten.
      *
      * @param bindingId The binding's id.
      * @return Ok once forgotten, or `client_internal {error}` when the file cannot be written.
@@ -195,7 +202,7 @@ class HubConnections(
     fun leave(bindingId: String): ChannelResult<Unit> {
         val binding = store.get(bindingId) ?: return ChannelResult.Ok(Unit)
         val forgotten = forget(bindingId)
-        if (forgotten is ChannelResult.Ok && !binding.isPending) scope.launch { tellLeft(binding) }
+        if (forgotten is ChannelResult.Ok && isTold(binding)) scope.launch { tellLeft(binding) }
         return forgotten
     }
 
@@ -217,24 +224,26 @@ class HubConnections(
     }
 
     private suspend fun tellLeft(binding: HubBinding) {
-        val urls = (listOf(binding.gatewayUrl) + binding.storedUrls).filter { it.isNotEmpty() }.distinct()
-        val shareMillis = CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 / urls.size.coerceAtLeast(1)
-        var answer: ChannelResult<JsonObject>? = null
-        for (url in urls) {
-            val attempt = scope.async {
-                transport.post(url, CLIENT_LEAVE_PATH, binding.fingerprint, ChannelFrames.leaveRequest(binding))
-            }
-            answer = withTimeoutOrNull(shareMillis) { attempt.await() }
-            if (answer == null) attempt.cancel()
-            if (answer != null && (answer !is ChannelResult.Refused || answer.code != "hub_unreachable")) break
+        val addresses = (listOf(binding.gatewayUrl) + binding.storedUrls)
+            .filter { it.startsWith("$CLIENT_ADDRESS_SCHEME://") }
+            .distinct()
+        val fields = buildJsonObject {
+            put("binding", binding.id)
+            put("hub_key", binding.hubKey)
+            put("private_key", binding.privateKey)
+            put("psk", binding.psk)
+            put("role", CLIENT_ROLE)
+            put("protocol", PROTOCOL)
+            put("addresses", JsonArray(addresses.map { JsonPrimitive(it) }))
         }
-        val outcome = when (val last = answer) {
-            null -> "no answer in time"
+        val outcome = when (val answer = transport.command("leave", fields, CLIENT_LEAVE_TELL_TIMEOUT_S * 1000)) {
             is ChannelResult.Ok -> "ok"
-            is ChannelResult.Refused -> last.code
+            is ChannelResult.Refused -> answer.code
         }
         Log.i(CLIENT_LOG_TAG, "the hub of ${binding.id} answered the leave: $outcome")
     }
+
+    private fun isTold(binding: HubBinding): Boolean = !binding.isPending && !binding.isKeyMissing
 
     private fun joined(bindingId: String, hubBindingId: String) =
         replace(bindingId, isTold = false) { it.boundId == hubBindingId }
@@ -249,7 +258,7 @@ class HubConnections(
             for (held in store.bindings.value.filter { it.id != bindingId && isSameHub(it) }) {
                 Log.i(CLIENT_LOG_TAG, "the join replaced the binding ${held.id} held here")
                 onLeaving(held.id)
-                if (forget(held.id) is ChannelResult.Ok && isTold && !held.isPending) scope.launch { tellLeft(held) }
+                if (forget(held.id) is ChannelResult.Ok && isTold && isTold(held)) scope.launch { tellLeft(held) }
             }
         }
     }
@@ -272,5 +281,13 @@ class HubConnections(
             ).also { it.start(scope) }
         }
         sessions.value = next
+    }
+
+    private companion object {
+        fun freshPrivateKey(): String {
+            val bytes = ByteArray(CLIENT_PRIVATE_KEY_BYTES)
+            SecureRandom().nextBytes(bytes)
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
     }
 }

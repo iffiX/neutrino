@@ -140,40 +140,55 @@ const val CLIENT_LINK_PREFIX = "neutrino://enroll/"
 /** How many bytes one step of inflating a link's payload writes. */
 const val CLIENT_LINK_INFLATE_CHUNK_BYTES = 1024
 
-/** The path a binding starts at, on the pinned agent port. */
-const val CLIENT_JOIN_PATH = "/api/channel/join"
+/** The one scheme of a hub's address this build dials; an address of any other scheme is skipped. */
+const val CLIENT_ADDRESS_SCHEME = "tcp"
 
-/** The path a binding ends at. */
-const val CLIENT_LEAVE_PATH = "/api/channel/leave"
+/** The bytes of a binding's static private key, kept as 64 lowercase hex characters. */
+const val CLIENT_PRIVATE_KEY_BYTES = 32
 
-/** The path of the one socket. */
-const val CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
+/** The gomobile class the transport's library is bound to, in the one `.aar` it shares with NetBird. */
+const val TRANSPORT_LIBRARY_CLASS = "io.netbird.gomobile.mobile.Mobile"
+
+/** The bytes of the local channel's secret, made afresh at each start and written as hex. */
+const val TRANSPORT_SECRET_BYTES = 32
+
+/** How long a command to the transport waits for its answer. */
+const val TRANSPORT_COMMAND_TIMEOUT_S = 5L
+
+/** How long a `join` may take: a round's dial and handshake, then the hub's answer. */
+const val TRANSPORT_JOIN_TIMEOUT_S = 30L
+
+/** How long the app waits before it opens the transport's local channel again after it dropped. */
+const val TRANSPORT_RECONNECT_MILLIS = 1000L
+
+/** The record that accepts a stream. */
+const val TRANSPORT_RECORD_ACCEPT = 2
+
+/** A record of a stream's bytes. */
+const val TRANSPORT_RECORD_DATA = 3
+
+/** A terminal's new size, `{cols, rows}`. */
+const val TRANSPORT_RECORD_RESIZE = 6
+
+/** The record that ends a stream, `{code, params}`. */
+const val TRANSPORT_RECORD_CLOSE = 8
+
+/** The most one record's payload carries. */
+const val TRANSPORT_RECORD_BYTES_MAX = 64 * 1024
 
 /** The name every network a hub serves resolves to that hub's address on it. */
 const val CLIENT_HUB_NAME = "hub.neutrino.internal"
 
-/** How long a join or a request to the hub may take. */
-const val CLIENT_REQUEST_TIMEOUT_S = 10L
-
 /** How long telling a hub of a leave may take, after this phone has forgotten the binding. */
 const val CLIENT_LEAVE_TELL_TIMEOUT_S = 5L
 
-/** How long connecting and the handshake on top of it may take together. */
+/** How long resolving the hub's name may take, and how long a phone with no network waits before it looks again. */
 const val CLIENT_CONNECT_TIMEOUT_S = 10L
-
-/** How often a round dials again an address that refused, until the round's connect time has passed. */
-const val CLIENT_REDIAL_INTERVAL_S = 1L
-
-/** What the message of a refused connect says, on the phone as on the JVM. */
-const val CLIENT_CONNECT_REFUSED_TEXT = "Connection refused"
 
 /** How often a report goes up while nothing changes. */
 const val CLIENT_REPORT_INTERVAL_S = 30L
 
-/** How long the open socket may stay silent before it counts as dead. */
-const val CLIENT_WS_SILENCE_TIMEOUT_S = 45L
-
-/** How often the open socket sends this phone's `ping` frame, whose `pong` measures the round trip. */
+/** How often the live session sends this phone's `ping` frame, whose `pong` measures the round trip. */
 const val CLIENT_PING_INTERVAL_S = 20L
 
 /** The first wait after a broken wire, doubled on each failure. */
@@ -188,29 +203,8 @@ const val CLIENT_REFRESH_TIMEOUT_S = 10L
 /** How long an armed destructive button waits for its second press. */
 const val CLIENT_ARM_MILLIS = 5000L
 
-/** How often a session whose rounds stopped looks again: replaced, forgotten, refused, too old, or with no network. */
-const val CLIENT_IDLE_POLL_INTERVAL_S = 2L
-
-/** How long a stream this side opened waits for the hub's close. */
+/** How long a `service`, `persist` or `stop_session` frame waits for the hub's `reply`. */
 const val CLIENT_STREAM_TIMEOUT_S = 15L
-
-/** A byte stream's credit window; half of it consumed sends the next grant. */
-const val CLIENT_STREAM_CREDIT_BYTES = 1024 * 1024
-
-/** The most one binary frame carries. */
-const val CLIENT_WS_CHUNK_BYTES = 64 * 1024
-
-/** How long a send waits for the hub's credit. */
-const val CLIENT_WS_CREDIT_TIMEOUT_S = 60L
-
-/** The close code after a `refused` frame. */
-const val CLIENT_WS_CLOSE_REFUSED = 4000
-
-/** The close code of a socket another socket for the same binding replaced. */
-const val CLIENT_WS_CLOSE_REPLACED = 4010
-
-/** The code this side closes a stream the hub opened with: a client serves no kind. */
-const val CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 
 /** The refusal of a binding the hub does not hold: the row waits for Leave. */
 const val CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
@@ -218,26 +212,26 @@ const val CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 /** The refusal of a client older than the hub's floor: the row says to update the client. */
 const val CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
 
+/** The refusal of a session whose binding another client took. */
+const val CLIENT_REFUSAL_CODE_REPLACED = "replaced"
+
+/** The codes of a round, or a join, that no address answered: the next one runs at the backoff. */
+val CLIENT_ROUND_SILENT_CODES: List<String> = listOf("hub_unreachable", "transport_missing", "transport_failed")
+
+/** The hub's refusals a bound session or a join waits [CLIENT_BACKOFF_MAX_S] after and tries again. */
+val CLIENT_ROUND_RETRIED_CODES: List<String> = listOf("control_unavailable", "channel_full")
+
 /** The refusals the hub answers a protocol number it does not speak with. */
 val CLIENT_PROTOCOL_REFUSAL_CODES: List<String> =
     listOf(CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD, "protocol_too_new")
 
-/** A stream for one published entry's material. */
-const val CLIENT_STREAM_KIND_SERVICE = "service"
-
 /** A shell on a managed machine. */
 const val CLIENT_STREAM_KIND_SHELL = "shell"
-
-/** A command on a managed machine, such as a shell's resize. */
-const val CLIENT_STREAM_KIND_COMMAND = "command"
-
-/** One TCP connection to a published entry or to the hub's panel, carried by the hub. */
-const val CLIENT_STREAM_KIND_CONNECT = "connect"
 
 /** The refusal of a join while the hub has paused new enrolments; the ticket stays good. */
 const val CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 
-/** The ways a client's socket reaches its hub, each worded as `ui.through.<way>`. */
+/** The ways a client's session reaches its hub, each worded as `ui.through.<way>`. */
 val CLIENT_REACHED_THROUGH: List<String> =
     listOf("lan", "netbird", "easytier", "ssh_relay", "direct", "sakurafrp", "openfrp")
 
@@ -249,13 +243,19 @@ const val CLIENT_KEYSTORE_ALIAS = "neutrino_client_secrets"
 
 /** Every code the hub may send this app, each worded in both catalogs. */
 val CLIENT_HUB_CODES: List<String> = listOf(
+    "account_not_enabled",
+    "account_unknown",
     "admission_paused",
     "agent_offline",
     "binding_unknown",
     "client_disabled",
     "connect_failed",
     "connect_limit",
+    "control_unavailable",
     "hello_invalid",
+    "hub_key_missing",
+    "hub_unreachable",
+    "hub_untrusted",
     "kind_unknown",
     "permission_denied",
     "port_not_published",
@@ -266,7 +266,8 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "service_unknown",
     "session_not_owned",
     "session_unknown",
-    "shell_unknown",
+    "shell_program_unusable",
+    "terminal_account_missing",
     "ticket_spent",
     "vault_locked",
     "verb_unknown",
@@ -284,23 +285,11 @@ const val OVERLAY_EASYTIER_MODE_MANUAL = "manual"
 /** EasyTier with the network pushed by a console. */
 const val OVERLAY_EASYTIER_MODE_CONSOLE = "console"
 
-/** A socket closed from this side with nothing to say. */
-const val CLIENT_WS_CLOSE_NORMAL = 1000
-
-/** The port of an `https` address that names none. */
-const val CLIENT_HTTPS_DEFAULT_PORT = 443
-
-/** The port of an `http` address that names none. */
-const val CLIENT_HTTP_DEFAULT_PORT = 80
+/** The hub's agent port, for an address that names none. */
+const val CLIENT_AGENT_PORT_DEFAULT = 8443
 
 /** The address every forward listens on. */
 const val FORWARD_BIND_HOST = "127.0.0.1"
-
-/** How long closing a forward waits for its listener to let go of the loopback number. */
-const val FORWARD_CLOSE_WAIT_MILLIS = 1000L
-
-/** The most one read of a forwarded connection copies at once. */
-const val FORWARD_BUFFER_BYTES = 65536
 
 /** The query parameter a web page that needs a token takes it in. */
 const val WEB_TOKEN_PARAMETER = "tkn"
@@ -311,8 +300,14 @@ const val WEB_LOOPBACK_DOMAIN = "localhost"
 /** The numbers a person may fix a local port to. */
 val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 
-/** Where an automatic local port is looked for when the entry's own is taken; the panel starts here. */
-const val FORWARD_AUTO_FIRST_PORT = 20000
+/** The numbers a forward of no app picks from, its pick kept for it: the panel's and a remote desktop's. */
+val FORWARD_PICK_PORTS: IntRange = 20000..23999
+
+/** How long after the hub closed a UDP forward's stream it is started again while its app is in use. */
+const val FORWARD_UDP_RESTART_MILLIS = 1000L
+
+/** A UDP `port` entry's protocol; every other entry is TCP. */
+const val FORWARD_PROTOCOL_UDP = "udp"
 
 /** The IPv4 wildcard address a free-port probe binds. */
 const val FORWARD_PROBE_HOST_V4 = "0.0.0.0"
@@ -331,15 +326,6 @@ const val CLIENT_CORE_NOTIFICATION_CHANNEL = "connections"
 
 /** The id of the app core's notification. */
 const val CLIENT_CORE_NOTIFICATION_ID = 7
-
-/** The first id this side opens a stream at; the hub's are even. */
-const val CHANNEL_FIRST_STREAM_ID = 1
-
-/** The step between two ids one side opens. */
-const val CHANNEL_STREAM_ID_STEP = 2
-
-/** The big-endian stream id at the head of a binary frame. */
-const val CHANNEL_STREAM_ID_BYTES = 4
 
 /** The Keystore the sealing key lives in. */
 const val SEAL_KEYSTORE = "AndroidKeyStore"

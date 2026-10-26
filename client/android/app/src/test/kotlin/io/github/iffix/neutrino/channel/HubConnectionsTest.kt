@@ -1,413 +1,177 @@
 package io.github.iffix.neutrino.channel
 
-import io.github.iffix.neutrino.CLIENT_LEAVE_TELL_TIMEOUT_S
-import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.awaitCancellation
+import io.github.iffix.neutrino.transport.ClientTransport
+import io.github.iffix.neutrino.transport.FakeTransport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class HubConnectionsTest {
     @get:Rule
     val folder = TemporaryFolder()
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val fake = FakeTransport()
+    private val transport = ClientTransport(fake, "/data", { fake }, scope, log = {}).also { it.start() }
     private val link = (EnrollmentLink.parse(Samples.link(Samples.clientPayload)) as ChannelResult.Ok).value
-    private val transport = FakeHubTransport { FakeHubTransport.silent }
-    private val sealer = FakeSecretSealer()
+    private val left = mutableListOf<String>()
+    private val store by lazy { BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer()) }
+    private val connections by lazy {
+        HubConnections(store, transport, Samples.machine, { null }, scope) { left += it }
+    }
 
-    private fun TestScope.connections(): Pair<HubConnections, BindingStore> {
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        return HubConnections(store, transport, Samples.machine, { null }, backgroundScope) to store
+    @After
+    fun end() {
+        scope.cancel()
+    }
+
+    private fun eventually(what: String, check: () -> Boolean) {
+        val until = System.currentTimeMillis() + 5000
+        while (System.currentTimeMillis() < until) {
+            if (check()) return
+            Thread.sleep(10)
+        }
+        throw AssertionError("never: $what")
     }
 
     @Test
-    fun aJoinKeepsThePendingBindingAtOnceAndAsksTheHubNothing() = runTest {
-        val (connections, store) = connections()
+    fun aJoinKeepsTheBindingWithBothKeys() {
         val binding = (connections.join(link) as ChannelResult.Ok).value
-        assertEquals(true, binding.isPending)
+        assertTrue(binding.isPending)
         assertEquals("ticket-1", binding.ticket)
         assertEquals("", binding.token)
-        assertEquals("https://192.168.100.1:8443", binding.gatewayUrl)
-        assertEquals(link.urls, binding.gatewayUrls)
+        assertEquals(Samples.HUB_KEY, binding.hubKey)
+        assertTrue(Regex("[0-9a-f]{64}").matches(binding.privateKey))
+        assertEquals("tcp://192.168.100.1:8443", binding.gatewayUrl)
         assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
         assertEquals(binding, store.get(binding.id))
-        assertEquals(emptyList<Any>(), transport.posts)
+        assertTrue(fake.commands.isEmpty())
     }
 
     @Test
-    fun aSecondJoinWithTheSameTicketIsTheSameBinding() = runTest {
-        val (connections, store) = connections()
+    fun aSecondJoinWithTheSameTicketIsTheSameBinding() {
         val first = (connections.join(link) as ChannelResult.Ok).value
         assertEquals(first, (connections.join(link) as ChannelResult.Ok).value)
         assertEquals(1, store.bindings.value.size)
+        val other = (connections.join(link.copy(ticket = "ticket-2")) as ChannelResult.Ok).value
+        assertTrue(other.privateKey != first.privateKey)
     }
 
     @Test
-    fun theJoinedHubsRowReadsConnectingAsItsFirstRoundStartsWithTheLinksFirstAddressAndItsNetworks() = runTest {
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        val hanging = FakeHubTransport { FakeHubTransport.hanging }
-        val connections = HubConnections(store, hanging, Samples.machine, { null }, backgroundScope)
+    fun theJoinedHubsRowReadsConnectingAndItsTicketGoesToTheTransportsJoin() {
+        fake.answer = {
+            Thread.sleep(1000)
+            JsonObject(emptyMap())
+        }
         connections.start()
         connections.startJoin(Samples.link(Samples.clientPayload))
-        runCurrent()
-        val row = connections.views.first().single()
+        val join = fake.nextCommand("join") ?: error("no join")
+        assertEquals("ticket-1", FakeTransport.text(join, "ticket"))
+        val row = runBlocking { connections.views.first { it.isNotEmpty() } }.single()
         assertEquals(HubConnection.CONNECTING, row.connection)
-        assertEquals(null, row.waitReason)
-        assertEquals(true, hanging.dialled.isNotEmpty())
-        assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
+        assertEquals("tcp://192.168.100.1:8443", row.binding.gatewayUrl)
     }
 
     @Test
-    fun leavingAPendingBindingForgetsItWithoutAskingTheHub() = runTest {
-        val (connections, store) = connections()
+    fun leavingAPendingBindingForgetsItWithoutTellingTheHub() {
         val binding = (connections.join(link) as ChannelResult.Ok).value
         assertEquals(ChannelResult.Ok(Unit), connections.leave(binding.id))
         assertNull(store.get(binding.id))
-        assertEquals(emptyList<Any>(), transport.posts)
+        assertNull(fake.nextCommand("leave", seconds = 1))
     }
 
     @Test
-    fun joiningAgainDropsTheOldBindingAndTellsTheHubNothing() = runTest {
-        val welcoming = FakeHubTransport { FakeHubTransport.welcoming }
-        welcoming.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
-            ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("b1"), "token" to JsonPrimitive("t9"))))
-        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        val left = mutableListOf<String>()
-        val connections = HubConnections(store, welcoming, Samples.machine, { null }, backgroundScope) { left += it }
-        store.put(Samples.binding)
-        val pending = (connections.join(link) as ChannelResult.Ok).value
-        connections.start()
-        runCurrent()
-        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
-        assertEquals("b1", store.get(pending.id)?.boundId)
-        assertEquals(listOf("b1"), left)
-        assertEquals(emptyList<Any>(), welcoming.posts.filter { it.second == "/api/channel/leave" })
-    }
-
-    private val oldUrl = "https://10.0.0.9:8443"
-
-    private fun TestScope.rejoining(
-        oldEvents: List<ChannelSocketEvent>,
-        leaveAnswer: ChannelResult<JsonObject>,
-    ): Triple<HubConnections, BindingStore, FakeHubTransport> {
-        val hub = FakeHubTransport { url -> if (url == oldUrl) oldEvents else FakeHubTransport.welcoming }
-        hub.answers[joinAt] =
-            ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("c9"), "token" to JsonPrimitive("t9"))))
-        hub.answers[oldUrl to "/api/channel/leave"] = leaveAnswer
-        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        store.put(Samples.binding.copy(hubId = "hub-1", gatewayUrl = oldUrl, gatewayUrls = listOf(oldUrl)))
-        return Triple(HubConnections(store, hub, Samples.machine, { null }, backgroundScope) { left += it }, store, hub)
-    }
-
-    private val left = mutableListOf<String>()
-
-    private fun FakeHubTransport.leaves() = posts.filter { it.second == "/api/channel/leave" }
-
-    @Test
-    fun aWelcomeOfANewIdEndsTheOldBindingAndTellsTheHub() = runTest {
-        val ok = ChannelResult.Ok(JsonObject(emptyMap()))
-        val (connections, store, hub) = rejoining(FakeHubTransport.welcoming, ok)
-        connections.start()
-        runCurrent()
-        val pending = (connections.join(link) as ChannelResult.Ok).value
-        runCurrent()
-        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
-        assertEquals("c9" to "hub-1", store.get(pending.id)?.let { it.boundId to it.hubId })
-        assertEquals(listOf("b1"), left)
-        val told = hub.leaves().single()
-        assertEquals(oldUrl, told.first)
-        assertEquals(JsonPrimitive("b1"), told.third["id"])
-        assertEquals(listOf(pending.id), connections.views.first().map { it.binding.id })
-    }
-
-    @Test
-    fun aBindingTheHubForgotEndsAtTheWelcomeWhateverTheLeaveAnswers() = runTest {
-        val (connections, store, hub) =
-            rejoining(FakeHubTransport.refusing("binding_unknown"), ChannelResult.refused("binding_unknown"))
-        connections.start()
-        runCurrent()
-        assertEquals(HubWaitReason.UNKNOWN_DEVICE, connections.views.first().single().waitReason)
-        val pending = (connections.join(link) as ChannelResult.Ok).value
-        runCurrent()
-        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
-        assertEquals(listOf("b1"), left)
-        assertEquals(oldUrl, hub.leaves().single().first)
-        assertEquals(listOf(pending.id), connections.views.first().map { it.binding.id })
-    }
-
-    @Test
-    fun aStartKeepsOneBindingPerHub() = runTest {
-        transport.answers[leaveAt] = ChannelResult.refused("binding_unknown")
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        store.put(Samples.binding.copy(hubId = "hub-1"))
-        store.put(Samples.binding.copy(id = "b2", hubId = "hub-2"))
-        store.put(Samples.binding.copy(id = "b3", hubId = "hub-1", token = "t3"))
-        val connections = HubConnections(store, transport, Samples.machine, { null }, backgroundScope) { left += it }
-        connections.start()
-        runCurrent()
-        assertEquals(listOf("b2", "b3"), store.bindings.value.map { it.id })
-        assertEquals(listOf("b1"), left)
-        assertEquals(JsonPrimitive("b1"), transport.leaves().single().third["id"])
-        assertEquals(listOf("b2", "b3"), connections.views.first().map { it.binding.id })
-    }
-
-    private val leaveAt = "https://192.168.100.1:8443" to "/api/channel/leave"
-
-    private fun gated(gate: CompletableDeferred<Unit>): HubTransport = object : HubTransport by transport {
-        override suspend fun post(
-            baseUrl: String,
-            path: String,
-            fingerprint: String,
-            body: JsonObject,
-        ): ChannelResult<JsonObject> {
-            gate.await()
-            return transport.post(baseUrl, path, fingerprint, body)
-        }
-    }
-
-    @Test
-    fun aLeaveForgetsTheBindingBeforeTheHubAnswersAndTellsItOnce() = runTest {
-        for (answer in listOf(ChannelResult.refused("token_rejected"), ChannelResult.refused("hub_untrusted"))) {
-            transport.posts.clear()
-            transport.answers[leaveAt] = answer
-            val gate = CompletableDeferred<Unit>()
-            val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-            val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope)
-            store.put(Samples.binding)
-            assertEquals(ChannelResult.Ok(Unit), connections.leave("b1"))
-            assertNull(store.get("b1"))
-            runCurrent()
-            assertEquals(emptyList<Any>(), transport.posts)
-            gate.complete(Unit)
-            runCurrent()
-            assertNull(store.get("b1"))
-            val told = transport.posts.single()
-            assertEquals(leaveAt, told.first to told.second)
-            assertEquals(emptyList<String>(), GoldenSchema.problems(told.third, "ChannelLeaveRequest"))
-        }
-    }
-
-    @Test
-    fun anUnreachableHubIsToldAtEachAddressAndTheBindingIsGoneAlready() = runTest {
-        val (connections, store) = connections()
+    fun aLeaveForgetsTheBindingAtOnceAndTellsTheHubThroughTheTransport() {
         store.put(Samples.binding)
         assertEquals(ChannelResult.Ok(Unit), connections.leave("b1"))
         assertNull(store.get("b1"))
-        runCurrent()
-        assertEquals(Samples.binding.storedUrls.size, transport.posts.count { it.second == "/api/channel/leave" })
+        val leave = fake.nextCommand("leave") ?: error("no leave")
+        assertEquals("b1", FakeTransport.text(leave, "binding"))
+        assertEquals(Samples.HUB_KEY, FakeTransport.text(leave, "hub_key"))
+        assertEquals(Samples.binding.psk, FakeTransport.text(leave, "psk"))
+        assertEquals("client", FakeTransport.text(leave, "role"))
     }
 
     @Test
-    fun aLeaveWhoseFirstAddressHangsTellsTheNextWithinTheShortTimeout() = runTest {
-        val first = "https://192.168.100.1:8443"
-        val next = "https://100.72.4.1:8443"
-        transport.answers[next to "/api/channel/leave"] = ChannelResult.Ok(JsonObject(emptyMap()))
-        val hanging = object : HubTransport by transport {
-            override suspend fun post(
-                baseUrl: String,
-                path: String,
-                fingerprint: String,
-                body: JsonObject,
-            ): ChannelResult<JsonObject> {
-                if (baseUrl == first) awaitCancellation()
-                return transport.post(baseUrl, path, fingerprint, body)
+    fun aBindingOf05sShapeIsForgottenWithNothingTold() {
+        store.put(Samples.binding.copy(hubKey = "", privateKey = ""))
+        assertEquals(ChannelResult.Ok(Unit), connections.leave("b1"))
+        assertNull(fake.nextCommand("leave", seconds = 1))
+    }
+
+    @Test
+    fun aStartKeepsOneBindingPerHubAndTellsTheHubForEachOneEnded() {
+        store.put(Samples.binding.copy(id = "old", hubId = "hub-1"))
+        store.put(Samples.binding.copy(id = "new", hubId = "hub-1"))
+        connections.start()
+        assertEquals(listOf("new"), store.bindings.value.map { it.id })
+        assertEquals(listOf("old"), left)
+        assertEquals("old", FakeTransport.text(fake.nextCommand("leave") ?: error("no leave"), "binding"))
+    }
+
+    @Test
+    fun aWelcomeNamingAHubAnotherBindingHoldsEndsThatBindingAndTellsTheHub() {
+        store.put(Samples.binding.copy(id = "old", hubId = "hub-1"))
+        store.put(Samples.binding.copy(id = "fresh"))
+        connections.start()
+        eventually("dialled") { fake.commands.count { FakeTransport.text(it, "command") == "dial" } >= 2 }
+        fake.event(
+            "session_open",
+            "fresh",
+            "address" to "tcp://192.168.100.1:8443",
+            "path" to "lan",
+            "handshake_ms" to 1,
+        )
+        eventually("hello") { fake.frames.any { it.first == "fresh" } }
+        fake.frame(
+            "fresh",
+            buildJsonObject {
+                put("type", "welcome")
+                put("protocol", 4)
+                put("role", "hub")
+                put("id", "hub-1")
+                put("name", "Neutrino")
+                put("software", "neutrino_hub/0.6.0")
+            },
+        )
+        eventually("one binding") { store.bindings.value.map { it.id } == listOf("fresh") }
+        assertEquals(listOf("old"), left)
+        assertTrue(fake.nextCommand("leave") != null)
+    }
+
+    @Test
+    fun aJoinThatLandsOnAnotherBindingsIdEndsItWithNothingTold() {
+        store.put(Samples.binding.copy(id = "c9", hubId = "hub-1"))
+        fake.answer = { line ->
+            if (FakeTransport.text(line, "command") == "join") {
+                buildJsonObject {
+                    put("binding_id", "c9")
+                    put("token", "t9")
+                }
+            } else {
+                JsonObject(emptyMap())
             }
         }
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        val connections = HubConnections(store, hanging, Samples.machine, { null }, backgroundScope)
-        store.put(Samples.binding.copy(gatewayUrl = first))
-        connections.leave("b1")
-        advanceTimeBy(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 - 1)
-        assertEquals(listOf(next), transport.posts.map { it.first })
-    }
-
-    @Test
-    fun theLeaveTriesTheAddressThatLastAnsweredFirst() = runTest {
-        val (connections, store) = connections()
-        store.put(Samples.binding.copy(gatewayUrl = "https://100.72.4.1:8443"))
-        connections.leave("b1")
-        runCurrent()
-        assertEquals(
-            listOf("https://100.72.4.1:8443", "https://192.168.100.1:8443"),
-            transport.posts.map { it.first },
-        )
-    }
-
-    @Test
-    fun aHubThatNeverAnswersTheLeaveIsLetGoAfterTheShortTimeout() = runTest {
-        val gate = CompletableDeferred<Unit>()
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope)
-        store.put(Samples.binding)
-        connections.leave("b1")
-        advanceTimeBy(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 + 1)
-        gate.complete(Unit)
-        runCurrent()
-        assertEquals(emptyList<Any>(), transport.posts)
-        assertNull(store.get("b1"))
-    }
-
-    @Test
-    fun aHubWhoseIdentityChangedIsLeftWithOnePress() = runTest {
-        val untrusted = FakeHubTransport { FakeHubTransport.impostor }
-        untrusted.answers[leaveAt] = ChannelResult.refused("hub_untrusted", "url" to "x")
-        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        val connections = HubConnections(store, untrusted, Samples.machine, { null }, backgroundScope)
-        store.put(Samples.binding)
+        val pending = (connections.join(link) as ChannelResult.Ok).value
         connections.start()
-        advanceTimeBy(1000)
-        assertEquals(HubWaitReason.UNTRUSTED, connections.views.first().single().waitReason)
-        connections.startLeave("b1")
-        runCurrent()
-        assertEquals(emptyList<HubView>(), connections.views.first())
-        advanceTimeBy(120_000)
-        assertEquals(emptyList<HubView>(), connections.views.first())
-        assertNull(store.get("b1"))
-    }
-
-    @Test
-    fun aLeaveIsAJobOnTheRowThatEndsWithTheRowAndNoErrorLine() = runTest {
-        transport.answers[leaveAt] = ChannelResult.refused("token_rejected")
-        val gate = CompletableDeferred<Unit>()
-        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        val left = mutableListOf<String>()
-        val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope) {
-            left += it
-        }
-        store.put(Samples.binding)
-        connections.start()
-        runCurrent()
-        connections.startLeave("b1")
-        connections.startLeave("b1")
-        assertEquals(listOf("b1"), left)
-        runCurrent()
-        assertEquals(emptyList<HubView>(), connections.views.first())
-        gate.complete(Unit)
-        runCurrent()
-        assertEquals(1, transport.posts.count { it.second == "/api/channel/leave" })
-        store.put(Samples.binding)
-        runCurrent()
-        val row = connections.views.first().single()
-        assertEquals(false, row.jobs.isLeaving)
-        assertNull(row.jobError)
-    }
-
-    @Test
-    fun aHubThatNoLongerKnowsThisPhoneKeepsItsRowWithLeaveAsItsOneAction() = runTest {
-        val refusing = FakeHubTransport { FakeHubTransport.refusing("binding_unknown") }
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        val connections = HubConnections(store, refusing, Samples.machine, { null }, backgroundScope)
-        store.put(Samples.binding)
-        connections.start()
-        runCurrent()
-        val row = connections.views.first().single()
-        assertEquals(HubWaitReason.UNKNOWN_DEVICE, row.waitReason)
-        assertEquals("binding_unknown", row.waitRefusal?.code)
-        assertEquals(true, row.isLeaveOnly)
-        assertEquals(Samples.binding, store.get("b1"))
-        val dialled = refusing.dialled.size
-        assertEquals(false, connections.refresh())
-        connections.networkChanged()
-        advanceTimeBy(120_000)
-        assertEquals(dialled, refusing.dialled.size)
-        connections.startLeave("b1")
-        runCurrent()
-        assertEquals(emptyList<HubView>(), connections.views.first())
-    }
-
-    @Test
-    fun aJoinIsAJobThatEndsInTheBindingOrTheCode() = runTest {
-        val (connections, store) = connections()
-        connections.startJoin("not a link")
-        runCurrent()
-        assertEquals("link_unreadable", connections.join.value.refusal?.code)
-        connections.startJoin(Samples.link(Samples.clientPayload))
-        assertEquals(true, connections.join.value.isJoining)
-        runCurrent()
-        assertEquals(store.bindings.value.single().id, connections.join.value.joinedId)
-        connections.clearJoin()
-        assertEquals(HubJoin(), connections.join.value)
-    }
-
-    private val scannedLink = Samples.link(Samples.clientPayload)
-
-    private val joinAt = "https://192.168.100.1:8443" to "/api/channel/join"
-
-    private fun TestScope.reachable(): Triple<HubConnections, BindingStore, FakeHubTransport> {
-        val hub = FakeHubTransport { FakeHubTransport.welcoming }
-        hub.answers[joinAt] =
-            ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("c9"), "token" to JsonPrimitive("t9"))))
-        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
-        return Triple(HubConnections(store, hub, Samples.machine, { null }, backgroundScope), store, hub)
-    }
-
-    @Test
-    fun aScannedLinkIsKeptPendingAtOnceWithEveryAddressAndOverlay() = runTest {
-        val (connections, store) = connections()
-        connections.startJoin(scannedLink)
-        runCurrent()
-        val binding = store.bindings.value.single()
-        assertEquals(binding.id, connections.join.value.joinedId)
-        assertEquals(true, binding.isPending)
-        assertEquals("ticket-1", binding.ticket)
-        assertEquals(Samples.FINGERPRINT, binding.fingerprint)
-        assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
-        assertEquals(emptyList<Any>(), transport.posts)
-    }
-
-    @Test
-    fun aSilentHubKeepsTheScannedRowAndItsTicketWaitingOnTheHub() = runTest {
-        val (connections, store) = connections()
-        connections.start()
-        connections.startJoin(scannedLink)
-        runCurrent()
-        val row = connections.views.first().single()
-        assertEquals(HubConnection.WAITING, row.connection)
-        assertEquals(HubWaitReason.HUB_SILENT, row.waitReason)
-        assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
-        assertEquals("ticket-1", store.bindings.value.single().ticket)
-    }
-
-    @Test
-    fun aRoundThatReachesTheHubJoinsWithNothingFetchedFirst() = runTest {
-        val (connections, store, hub) = reachable()
-        connections.start()
-        connections.startJoin(scannedLink)
-        runCurrent()
-        assertEquals(joinAt, hub.posts.single().let { it.first to it.second })
-        val binding = store.bindings.value.single()
-        assertEquals("c9" to "t9", binding.boundId to binding.token)
-        assertEquals(HubConnection.CONNECTED, connections.views.first().single().connection)
-    }
-
-    @Test
-    fun aKeptScannedLinkIsJoinedByARoundAfterARestart() = runTest {
-        val (scanned, _) = connections()
-        scanned.startJoin(scannedLink)
-        runCurrent()
-        val (connections, store, hub) = reachable()
-        val kept = store.bindings.value.single()
-        assertEquals("ticket-1", kept.ticket)
-        connections.start()
-        runCurrent()
-        assertEquals(joinAt, hub.posts.single().let { it.first to it.second })
-        assertEquals("c9", store.get(kept.id)?.boundId)
+        eventually("one binding") { store.bindings.value.map { it.id } == listOf(pending.id) }
+        assertEquals("c9", store.get(pending.id)?.boundId)
+        assertEquals(listOf("c9"), left)
+        assertNull(fake.nextCommand("leave", seconds = 1))
     }
 }

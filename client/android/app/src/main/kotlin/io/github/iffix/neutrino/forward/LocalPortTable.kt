@@ -3,17 +3,20 @@ package io.github.iffix.neutrino.forward
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.github.iffix.neutrino.CLIENT_SETTINGS_KEY_LOCAL_PORTS
-import io.github.iffix.neutrino.FORWARD_AUTO_FIRST_PORT
 import io.github.iffix.neutrino.FORWARD_FIXED_PORTS
+import io.github.iffix.neutrino.FORWARD_PICK_PORTS
 import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V4
 import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V6
+import io.github.iffix.neutrino.FORWARD_PROTOCOL_UDP
 import io.github.iffix.neutrino.LocalPortTakenException
 import io.github.iffix.neutrino.channel.ChannelResult
 import java.io.IOException
 import java.net.BindException
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.SocketException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,82 +26,107 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /**
- * The one table of local ports, by entry key `<binding>/<entry>`, kept in the app's settings:
- * each entry is automatic or fixed, and no two entries hold one number. An automatic entry takes
- * its own published port when no other entry holds it and nothing listens on it, else the first
- * free number from 20000 up, and keeps that pick from then on. A kept or fixed number is looked at
- * again each time its forward is about to listen: an automatic pick another program now listens
- * on is picked again and the new number kept, and a fixed one is refused.
+ * The one table of local ports, by entry key `<binding>/<entry>`, kept in the app's settings: the
+ * numbers the person set in place of the hub's, and the picks of the forwards of no app, each with
+ * its protocol. An app entry listens on the person's number, else the hub's; a forward of no app
+ * keeps its pick from 20000 to 23999. A number is probed each time its forward is about to listen:
+ * an app entry's number another program holds is refused and never moves by itself, and a kept
+ * pick another program now holds is picked again.
  *
  * @param preferences Where the table is written.
- * @param isFree Whether nothing listens on a number on any address of the phone now, by the number
- *   and whether the table keeps it for an entry already.
+ * @param isFree Whether nothing listens on a number on any address of the phone now, by the
+ *   number, the protocol and whether the table keeps the number already.
  */
 class LocalPortTable(
     private val preferences: SharedPreferences,
-    private val isFree: (Int, Boolean) -> Boolean = ::isPortFree,
+    private val isFree: (Int, String, Boolean) -> Boolean = ::isPortFree,
 ) {
     private val current = MutableStateFlow(read())
 
-    /** Every entry's choice. */
+    /** Every entry's kept number. */
     val choices: StateFlow<Map<String, LocalPortChoice>> = current.asStateFlow()
 
     /**
-     * One entry's choice.
+     * The number the person set for an app entry.
      *
      * @param key The entry's key.
-     * @return The choice; automatic with no pick for an entry the table does not hold.
+     * @return The number, or null when the entry takes the hub's.
      */
-    fun choiceOf(key: String): LocalPortChoice = current.value[key] ?: LocalPortChoice()
+    fun numberOf(key: String): Int? = current.value[key]?.takeIf { it.isFixed }?.port
 
     /**
-     * Keep the person's choice for one entry. Automatic keeps the entry's pick when it was
-     * automatic already.
+     * The number an app entry listens on: the person's, else the hub's.
      *
      * @param key The entry's key.
-     * @param choice Automatic, or fixed with its number.
-     * @return Ok once kept, or `port_taken {port}` when another entry holds the fixed number.
-     * @throws IllegalArgumentException When a fixed number is outside 1024 to 65535.
+     * @param hubPort The hub's `local_port` for it.
+     * @return The number.
      */
-    fun configure(key: String, choice: LocalPortChoice): ChannelResult<Unit> = synchronized(this) {
-        if (choice.isFixed) {
-            require(choice.port in FORWARD_FIXED_PORTS) { "a fixed local port is from 1024 to 65535" }
-            if (isHeld(choice.port, key)) return ChannelResult.refused("port_taken", "port" to choice.port.toString())
-            write(current.value + (key to choice))
-        } else {
-            val before = choiceOf(key)
-            write(current.value + (key to if (before.isFixed) LocalPortChoice() else before))
-        }
-        ChannelResult.Ok(Unit)
+    fun portOf(key: String, hubPort: Int): Int = numberOf(key) ?: hubPort
+
+    /**
+     * The number an app entry's forward is about to listen on, probed first.
+     *
+     * @param key The entry's key.
+     * @param hubPort The hub's `local_port` for it.
+     * @param protocol `tcp` or `udp`.
+     * @return The number.
+     * @throws LocalPortTakenException When another program holds it.
+     */
+    fun portForEntry(key: String, hubPort: Int, protocol: String): Int {
+        val port = portOf(key, hubPort)
+        if (!isFree(port, protocol, true)) throw LocalPortTakenException(port)
+        return port
     }
 
     /**
-     * The number an entry's forward is about to listen on: the kept or fixed number while nothing
-     * else listens on it, else for an automatic entry a new pick, kept from then on.
+     * The number a forward of no app is about to listen on: its kept pick while nothing else holds
+     * it, else the first free number from 20000 to 23999, kept from then on.
      *
-     * @param key The entry's key.
-     * @param publishedPort The entry's own port.
+     * @param key The forward's key.
+     * @param protocol `tcp` or `udp`.
      * @return The number.
-     * @throws LocalPortTakenException When another program listens on the entry's fixed number.
      * @throws IOException When no number is free.
      */
-    fun portFor(key: String, publishedPort: Int): Int = synchronized(this) {
-        val choice = choiceOf(key)
-        if (choice.port != 0) {
-            if (isFree(choice.port, true)) return choice.port
-            if (choice.isFixed) throw LocalPortTakenException(choice.port)
-        }
-        val isOwnFree = publishedPort in FORWARD_FIXED_PORTS && publishedPort != choice.port &&
-            !isHeld(publishedPort, key) && isFree(publishedPort, false)
-        val pick = if (isOwnFree) {
-            publishedPort
-        } else {
-            (FORWARD_AUTO_FIRST_PORT..FORWARD_FIXED_PORTS.last).firstOrNull {
-                it != choice.port && !isHeld(it, key) && isFree(it, false)
-            } ?: throw IOException("no local port is free")
-        }
-        write(current.value + (key to choice.copy(port = pick)))
+    fun pickFor(key: String, protocol: String): Int = synchronized(this) {
+        val kept = current.value[key]?.takeIf { !it.isFixed && it.protocol == protocol }
+        if (kept != null && isFree(kept.port, protocol, true)) return kept.port
+        val pick = FORWARD_PICK_PORTS.firstOrNull {
+            it != kept?.port && !isHeld(it, protocol, key) && isFree(it, protocol, false)
+        } ?: throw IOException("no local port is free")
+        write(current.value + (key to LocalPortChoice(isFixed = false, port = pick, protocol = protocol)))
         pick
+    }
+
+    /**
+     * Keep the person's number for an app entry, or go back to the hub's.
+     *
+     * @param key The entry's key.
+     * @param number The number, or null for the hub's.
+     * @param protocol `tcp` or `udp`.
+     * @param hubNumbers Every app entry's hub number this phone knows, by key, with its protocol.
+     * @return Ok once kept, or `port_taken {port}` when another entry of the protocol holds the
+     *   number in the table or as its hub number.
+     * @throws IllegalArgumentException When the number is outside 1024 to 65535.
+     */
+    fun configure(
+        key: String,
+        number: Int?,
+        protocol: String,
+        hubNumbers: Map<String, Pair<Int, String>>,
+    ): ChannelResult<Unit> = synchronized(this) {
+        if (number == null) {
+            write(current.value - key)
+            return ChannelResult.Ok(Unit)
+        }
+        require(number in FORWARD_FIXED_PORTS) { "a local port is from 1024 to 65535" }
+        val isHubHeld = hubNumbers.any { (other, held) ->
+            other != key && numberOf(other) == null && held.first == number && held.second == protocol
+        }
+        if (isHeld(number, protocol, key) || isHubHeld) {
+            return ChannelResult.refused("port_taken", "port" to number.toString())
+        }
+        write(current.value + (key to LocalPortChoice(isFixed = true, port = number, protocol = protocol)))
+        ChannelResult.Ok(Unit)
     }
 
     /**
@@ -110,8 +138,8 @@ class LocalPortTable(
         write(current.value.filterKeys { !it.startsWith("$bindingId/") })
     }
 
-    private fun isHeld(port: Int, key: String): Boolean = current.value.any { (other, choice) ->
-        other != key && choice.port == port
+    private fun isHeld(port: Int, protocol: String, key: String): Boolean = current.value.any { (other, choice) ->
+        other != key && choice.port == port && choice.protocol == protocol
     }
 
     private fun write(table: Map<String, LocalPortChoice>) {
@@ -136,27 +164,43 @@ class LocalPortTable(
 
         /**
          * Whether nothing listens on a number on any address of the phone now: a probe binds it on
-         * the IPv4 wildcard address, then on the IPv6 one where the phone has IPv6, and closes it.
-         * A new pick is probed with no address reuse. A number the table keeps is probed with
-         * address reuse, so the app's own closed connections still lingering on it do not count,
-         * while another program's listener still does.
+         * the IPv4 wildcard address, then on the IPv6 one where the phone has IPv6, with sockets of
+         * the protocol, and closes them. A number the table keeps is probed with address reuse, so
+         * the app's own closed connections still lingering on it do not count.
          *
          * @param port The number.
-         * @param isKept Whether the table keeps the number for an entry already.
+         * @param protocol `tcp` or `udp`.
+         * @param isKept Whether the table keeps the number already.
          * @return True when both probes could take it.
          */
-        fun isPortFree(port: Int, isKept: Boolean = false): Boolean =
-            canBind(FORWARD_PROBE_HOST_V4, port, isKept, isFamilyRequired = true) &&
-                canBind(FORWARD_PROBE_HOST_V6, port, isKept, isFamilyRequired = false)
+        fun isPortFree(port: Int, protocol: String = "tcp", isKept: Boolean = false): Boolean =
+            canBind(FORWARD_PROBE_HOST_V4, port, protocol, isKept, isFamilyRequired = true) &&
+                canBind(FORWARD_PROBE_HOST_V6, port, protocol, isKept, isFamilyRequired = false)
 
-        private fun canBind(host: String, port: Int, isReused: Boolean, isFamilyRequired: Boolean): Boolean = try {
-            ServerSocket().use {
-                it.reuseAddress = isReused
-                it.bind(InetSocketAddress(InetAddress.getByName(host), port))
+        private fun canBind(
+            host: String,
+            port: Int,
+            protocol: String,
+            isReused: Boolean,
+            isFamilyRequired: Boolean,
+        ): Boolean = try {
+            val address = InetSocketAddress(InetAddress.getByName(host), port)
+            if (protocol == FORWARD_PROTOCOL_UDP) {
+                DatagramSocket(null).use {
+                    it.reuseAddress = isReused
+                    it.bind(address)
+                }
+            } else {
+                ServerSocket().use {
+                    it.reuseAddress = isReused
+                    it.bind(address)
+                }
             }
             true
         } catch (_: BindException) {
             false
+        } catch (_: SocketException) {
+            !isFamilyRequired
         } catch (_: IOException) {
             !isFamilyRequired
         }

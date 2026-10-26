@@ -4,7 +4,6 @@ import android.content.Intent
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
-import io.github.iffix.neutrino.forward.LocalPortChoice
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
 
 /**
@@ -129,9 +128,8 @@ interface ClientActions {
      * @param entryId The entry.
      * @param name What the viewer's bar shows.
      * @param platformOs The `platform_os` the entry carries, or empty when it names none.
-     * @param port The entry's own port, which its forward tries first on the loopback.
      */
-    fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String, port: Int)
+    fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String)
 
     /**
      * The codec and quality kept for a shared desktop, as its Configure dialog opens on them.
@@ -155,41 +153,39 @@ interface ClientActions {
     fun closeDesktop()
 
     /**
-     * Press Disconnect on a forwarded web entry.
+     * Press Use on an app: its forwards, the token where its page needs one, then the browser.
      *
      * @param bindingId The hub.
-     * @param entryId The entry.
+     * @param appId The app.
      */
-    fun disconnectPort(bindingId: String, entryId: String)
+    fun useApp(bindingId: String, appId: String)
 
     /**
-     * One forwardable entry's local port, as the Configure dialog opens on it.
+     * Press Stop on an app in use: every forward of the app ends.
      *
      * @param bindingId The hub.
-     * @param entryId The entry.
-     * @return Automatic or fixed, with the number held.
+     * @param appId The app.
      */
-    fun localPortOf(bindingId: String, entryId: String): LocalPortChoice
+    fun stopApp(bindingId: String, appId: String)
 
     /**
-     * Save the Configure dialog of a forwardable entry.
+     * The numbers the person set for an app's entries, as its Configure dialog opens on them.
      *
      * @param bindingId The hub.
-     * @param entryId The entry.
-     * @param choice Automatic, or fixed with a number from 1024 to 65535.
+     * @param appId The app.
+     * @return Each entry's number by entry id, null where it takes the hub's.
+     */
+    fun appNumbersOf(bindingId: String, appId: String): Map<String, Int?>
+
+    /**
+     * Save an app's Configure dialog.
+     *
+     * @param bindingId The hub.
+     * @param appId The app.
+     * @param numbers Each entry's number by entry id, null to go back to the hub's.
      * @return Ok once kept, or the refusal the dialog words as `ui.reason.<code>`.
      */
-    fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit>
-
-    /**
-     * Press Open on a web entry: its forward, its token when it needs one, then the browser.
-     *
-     * @param bindingId The hub.
-     * @param entryId The entry.
-     * @param url The entry's address.
-     * @param isTokenRequired Whether the page opens with a token.
-     */
-    fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean)
+    fun configureApp(bindingId: String, appId: String, numbers: Map<String, Int?>): ChannelResult<Unit>
 
     /**
      * Press Panel on a hub's row: the panel's forward, then the browser.

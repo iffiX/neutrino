@@ -42,7 +42,7 @@ enum class ChannelPath(val wireName: String, val rank: Int) {
         /**
          * The path of one candidate address.
          *
-         * @param url The address, `https://host:port`.
+         * @param url The address, `tcp://host:port`.
          * @param overlay The virtual network that is on, or null.
          * @param serverUrls The address of each path through a server, from the hub's last state,
          *   empty when it names none.

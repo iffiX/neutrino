@@ -22,6 +22,9 @@ import kotlinx.serialization.json.intOrNull
  * @property deviceName The machine that provides it, empty when the hub knows none.
  * @property deviceId That machine's id, empty when no managed machine provides it.
  * @property isOwnMachine Whether the machine that provides it is the one the client runs on.
+ * @property appId The app a `web`, `port` or `ssh` entry, or a declared app's `file` entry, belongs to.
+ * @property name The entry's name inside its app.
+ * @property localPort The hub's local port for a `web`, `port` or `ssh` entry, the same on every client; 0 for none.
  */
 @Serializable
 data class ChannelServiceEntry(
@@ -37,7 +40,14 @@ data class ChannelServiceEntry(
     @SerialName("device_name") val deviceName: String = "",
     @SerialName("device_id") val deviceId: String = "",
     @SerialName("is_own_machine") val isOwnMachine: Boolean = false,
+    @SerialName("app_id") val appId: String = "",
+    val name: String = "",
+    @SerialName("local_port") val localPort: Int = 0,
 ) {
+    /** The protocol of a `port` entry, `tcp` or `udp`; `tcp` for every other entry. */
+    val protocol: String
+        get() = if (type == "port" && text("protocol") == "udp") "udp" else "tcp"
+
     /**
      * One text field of the payload.
      *

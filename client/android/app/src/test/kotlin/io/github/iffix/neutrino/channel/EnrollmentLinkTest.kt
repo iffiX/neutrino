@@ -15,9 +15,9 @@ class EnrollmentLinkTest {
     @Test
     fun aClientLinkIsRead() {
         val link = (EnrollmentLink.parse(Samples.link(Samples.clientPayload)) as ChannelResult.Ok).value
-        assertEquals(listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"), link.urls)
+        assertEquals(listOf("tcp://192.168.100.1:8443", "tcp://100.72.4.1:8443"), link.urls)
         assertEquals("ticket-1", link.ticket)
-        assertEquals(Samples.FINGERPRINT, link.fingerprint)
+        assertEquals(Samples.HUB_KEY, link.hubKey)
         assertEquals(listOf("netbird", "easytier"), link.overlays.map { it.provider })
         assertEquals("console", link.overlays.last().easyTierMode)
     }
@@ -56,14 +56,22 @@ class EnrollmentLinkTest {
 
     @Test
     fun theOldShortFormIsLinkUnreadable() {
-        assertEquals("link_unreadable", refusalOf("neutrino://enroll/t@192.168.100.1:8443/${Samples.FINGERPRINT}"))
+        assertEquals("link_unreadable", refusalOf("neutrino://enroll/t@192.168.100.1:8443/${Samples.HUB_KEY}"))
     }
 
     @Test
-    fun aLinkWithoutAddressTicketOrFingerprintIsIncomplete() {
-        for (missing in listOf("urls", "token", "fp")) {
+    fun aLinkWithoutAddressTicketOrKeyIsIncomplete() {
+        for (missing in listOf("urls", "token", "key")) {
             assertEquals("link_incomplete", refusalOf(Samples.link(JsonObject(Samples.clientPayload - missing))))
         }
+    }
+
+    @Test
+    fun aLinkOf05WithACertificateFingerprintIsIncomplete() {
+        val old = JsonObject(Samples.clientPayload - "key" + ("fp" to JsonPrimitive(Samples.HUB_KEY)))
+        assertEquals("link_incomplete", refusalOf(Samples.link(old)))
+        val short = JsonObject(Samples.clientPayload + ("key" to JsonPrimitive("abcd")))
+        assertEquals("link_incomplete", refusalOf(Samples.link(short)))
     }
 
     @Test
@@ -77,9 +85,9 @@ class EnrollmentLinkTest {
     @Test
     fun aLinkWithoutOverlaysHasNone() {
         val payload = buildJsonObject {
-            put("urls", buildJsonArray { add(JsonPrimitive("https://h:8443")) })
+            put("urls", buildJsonArray { add(JsonPrimitive("tcp://h:8443")) })
             put("token", "t")
-            put("fp", Samples.FINGERPRINT)
+            put("key", Samples.HUB_KEY)
             put("role", "client")
         }
         assertEquals(

@@ -23,22 +23,24 @@ class ChannelFramesTest {
     }
 
     @Test
-    fun helloIsTheGoldensHelloWithEveryField() {
+    fun helloIsTheGoldensHelloWithEveryFieldAndNoToken() {
         val hello = ChannelFrames.hello(Samples.binding, Samples.machine)
         assertConforms(hello, "ChannelHello")
         assertEquals(GoldenSchema.properties("ChannelHello"), hello.keys - "type")
         assertEquals("hello", hello["type"]!!.jsonPrimitive.content)
         assertEquals(PROTOCOL, hello["protocol"]!!.jsonPrimitive.int)
         assertEquals("client", hello["role"]!!.jsonPrimitive.content)
-        assertEquals("neutrino_client/0.5.0", hello["software"]!!.jsonPrimitive.content)
-        assertEquals("secret-token", hello["token"]!!.jsonPrimitive.content)
+        assertEquals("neutrino_client/0.6.0", hello["software"]!!.jsonPrimitive.content)
+        assertEquals(null, hello["token"])
     }
 
     @Test
-    fun reportIsTheGoldensClientReport() {
+    fun reportIsTheGoldensClientReportWithEveryField() {
         val report = ChannelFrames.report("h1", Samples.machine)
         assertConforms(report, "ChannelClientReport")
         assertEquals(GoldenSchema.properties("ChannelClientReport"), report.keys - "type")
+        val machine = report["machine"] as JsonObject
+        assertEquals(GoldenSchema.properties("ChannelClientMachine"), machine.keys)
     }
 
     @Test
@@ -51,28 +53,10 @@ class ChannelFramesTest {
     }
 
     @Test
-    fun reportCarriesThePlatformTuple() {
+    fun reportCarriesThePlatformsThreeKeys() {
         val platform = (ChannelFrames.report("", Samples.machine)["machine"] as JsonObject)["platform"] as JsonObject
-        assertEquals(setOf("os", "family", "arch", "version"), platform.keys)
+        assertEquals(setOf("os", "family", "arch"), platform.keys)
         assertEquals("android", platform["os"]!!.jsonPrimitive.content)
-    }
-
-    @Test
-    fun openIsTheGoldensOpenWithItsArgumentsBeside() {
-        val open = ChannelFrames.open(3, "service", ChannelFrames.args("id" to "svc"))
-        assertConforms(open, "ChannelOpen")
-        assertEquals("svc", open["id"]!!.jsonPrimitive.content)
-    }
-
-    @Test
-    fun closeIsTheGoldensClose() {
-        assertConforms(ChannelFrames.close(2, "kind_unknown"), "ChannelClose")
-        assertConforms(ChannelFrames.close(5), "ChannelClose")
-    }
-
-    @Test
-    fun creditIsTheGoldensCredit() {
-        assertConforms(ChannelFrames.credit(1, 1024), "ChannelCredit")
     }
 
     @Test
@@ -85,22 +69,34 @@ class ChannelFramesTest {
     }
 
     @Test
-    fun theJoinBodyIsTheGoldensJoinRequestWithEveryField() {
-        val body = ChannelFrames.joinRequest("ticket", Samples.machine)
-        assertConforms(body, "ChannelJoinRequest", hasType = false)
-        assertEquals(GoldenSchema.properties("ChannelJoinRequest"), body.keys)
+    fun serviceIsTheGoldensServiceForAnEntryAndForThePanel() {
+        val entry = ChannelFrames.service("r1", ChannelFrames.args("id" to "rdp_d1"))
+        assertConforms(entry, "ChannelService")
+        assertEquals("service", entry["type"]!!.jsonPrimitive.content)
+        val panel = ChannelFrames.service("r2", ChannelFrames.args("is_panel" to true))
+        assertConforms(panel, "ChannelService")
     }
 
     @Test
-    fun theLeaveBodyIsTheGoldensLeaveRequest() {
-        val body = ChannelFrames.leaveRequest(Samples.binding)
-        assertConforms(body, "ChannelLeaveRequest", hasType = false)
-        assertEquals(GoldenSchema.properties("ChannelLeaveRequest"), body.keys)
+    fun persistAndStopSessionAreTheGoldensWithEveryField() {
+        val persist = ChannelFrames.persist("r1", "s1", isPersistent = true, isShared = false)
+        assertConforms(persist, "ChannelPersist")
+        assertEquals(GoldenSchema.properties("ChannelPersist"), persist.keys - "type")
+        val stop = ChannelFrames.stopSession("r2", "s1")
+        assertConforms(stop, "ChannelStopSession")
+        assertEquals(GoldenSchema.properties("ChannelStopSession"), stop.keys - "type")
+    }
+
+    @Test
+    fun theJoinBodyIsTheGoldensJoinWithEveryField() {
+        val body = ChannelFrames.join("ticket", Samples.machine)
+        assertConforms(body, "ChannelJoin", hasType = false)
+        assertEquals(GoldenSchema.properties("ChannelJoin"), body.keys)
     }
 
     @Test
     fun aValueTheGoldenRefusesIsCaught() {
-        val broken = JsonObject(ChannelFrames.credit(1, 1) + ("bytes" to JsonPrimitive("many")))
-        assertEquals(1, GoldenSchema.problems(JsonObject(broken - "type"), "ChannelCredit").size)
+        val broken = JsonObject(ChannelFrames.ping("n") + ("nonce" to JsonPrimitive(7)))
+        assertEquals(1, GoldenSchema.problems(JsonObject(broken - "type"), "ChannelPing").size)
     }
 }

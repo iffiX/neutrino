@@ -7,7 +7,7 @@ class AppScreenTest {
     @Test
     fun theBarsDrawTheSixTabsInTheDemosOrder() {
         assertEquals(
-            listOf("hubs", "web", "files", "terminals", "remote_desktop", "settings"),
+            listOf("hubs", "apps", "files", "terminals", "remote_desktop", "settings"),
             AppScreen.tabs.map { it.route },
         )
     }
@@ -17,7 +17,7 @@ class AppScreenTest {
         assertEquals(
             listOf(
                 "ui.section_hubs",
-                "ui.panel_web",
+                "ui.panel_apps",
                 "ui.panel_files",
                 "ui.panel_terminals",
                 "ui.bar_desktops",
