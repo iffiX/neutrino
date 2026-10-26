@@ -68,21 +68,36 @@ def test_nothing_of_the_stock_configuration_survives():
     assert "unix password sync" not in rendered
 
 
-def test_each_share_admits_its_own_user_and_writes_as_that_user():
+def test_each_share_admits_its_own_smb_user_and_writes_as_the_account():
     data = {
         "shares": [
-            {"name": "ann", "path": "/home/ann", "valid_users": ["ann"]},
-            {"name": "bob", "path": "/home/bob", "valid_users": ["bob"]},
+            {
+                "name": "ann",
+                "path": "/home/ann",
+                "valid_users": ["neutrino-ann"],
+                "force_user": "ann",
+            },
+            {
+                "name": "bob",
+                "path": "/home/bob",
+                "valid_users": ["neutrino-bob"],
+                "force_user": "bob",
+            },
+            {"name": "pool", "path": "/pool", "valid_users": ["neutrino-ann"]},
         ],
-        "users": ["ann", "bob"],
+        "users": ["neutrino-ann", "neutrino-bob"],
     }
 
     rendered = without_comments(render(data))
 
     ann_block = rendered.split("[ann]")[1].split("[bob]")[0]
-    bob_block = rendered.split("[bob]")[1]
-    assert "valid users = ann" in ann_block
-    assert "valid users = bob" in bob_block
+    bob_block = rendered.split("[bob]")[1].split("[pool]")[0]
+    pool_block = rendered.split("[pool]")[1]
+    assert "valid users = neutrino-ann" in ann_block
+    assert "force user = ann" in ann_block
+    assert "valid users = neutrino-bob" in bob_block
+    assert "force user = bob" in bob_block
+    assert "force user" not in pool_block
     assert "force group" not in rendered
     assert "create mask" not in rendered
     assert "directory mask" not in rendered

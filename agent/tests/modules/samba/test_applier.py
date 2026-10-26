@@ -6,8 +6,10 @@ backup once, before the first write, and a file the module wrote, or a
 second apply, copies nothing; each user's Samba password is set from the
 hub's map when it differs from the digest held or Samba holds no
 credential, never otherwise, and a user the module set a password for and
-the configuration dropped loses its credential; a user that is no account
-of the machine's is ``account_unknown``.
+the configuration dropped loses its credential, and the account too when the module made it; a configured
+user the machine lacks is made as a system account with no home and no
+login shell; an account a share writes as that is no account of the
+machine's is ``account_unknown``.
 """
 
 import os
@@ -245,7 +247,65 @@ def test_a_dropped_user_the_module_set_loses_its_credential_and_no_other(box):
     assert changes == ["retired old"]
 
 
-def test_a_user_that_is_no_account_is_unknown(box):
+def test_a_dropped_user_the_module_made_is_deleted_and_a_persons_is_not(box):
+    commands, _ = box
+    commands.answers[("pdbedit", "-L")] = (0, "ann:1000:\nold:1001:\nown:1002:\n")
+    commands.answers[("getent", "passwd")] = (
+        lambda command: (
+            (0, f"{command[2]}:x:999:999:neutrino file share:/:/usr/sbin/nologin\n")
+            if command[2] == "old"
+            else (0, f"{command[2]}:x:1002:1002:A Person:/home/own:/bin/bash\n")
+        ),
+        "",
+    )
+
+    SambaUserManager().converge(
+        users_config({"ann": "pw"}),
+        {
+            "ann": password_digest("pw"),
+            "old": password_digest("x"),
+            "own": password_digest("y"),
+        },
+    )
+
+    assert commands.ran("userdel") == [(["userdel", "old"], None)]
+
+
+def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(
+    box, monkeypatch
+):
+    commands, _ = box
+    commands.answers[("id", "-u")] = (
+        lambda command: (0, "") if command[2] == "neutrino-ann" else (1, ""),
+        "",
+    )
+    monkeypatch.setattr(
+        applier_module.os.path, "exists", lambda path: path == "/sbin/nologin"
+    )
+
+    changes = SambaUserManager().converge_accounts(
+        users_config({"neutrino-ann": "pw", "neutrino-bob": "pw"})
+    )
+
+    assert commands.ran("useradd") == [
+        (
+            [
+                "useradd",
+                "--system",
+                "--no-create-home",
+                "--shell",
+                "/sbin/nologin",
+                "--comment",
+                "neutrino file share",
+                "neutrino-bob",
+            ],
+            None,
+        )
+    ]
+    assert changes == ["made the user neutrino-bob"]
+
+
+def test_an_account_a_share_writes_as_that_is_no_account_is_unknown(box):
     commands, _ = box
     commands.answers[("id", "-u")] = (
         lambda command: (0, "") if command[2] == "ann" else (1, ""),

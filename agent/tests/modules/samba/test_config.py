@@ -2,8 +2,8 @@
 
 What these pin beside the shapes: the passwords map reads and round-trips;
 share names are the machine's account names, dots and up to 80 characters
-allowed; a user name is the machine's own account on Linux and the module's
-``smb_`` account elsewhere, a space allowed on Windows and macOS; two users
+allowed; a user name is the module's ``neutrino-`` account, a space allowed
+on Windows and macOS; a share's forced user is a unix name; two users
 of one name are ``user_name_duplicate`` on Linux and ``user_name_taken`` on
 Windows and macOS.
 """
@@ -86,6 +86,33 @@ def test_a_user_name_that_is_not_a_unix_name_is_refused(name):
     assert refused.value.code == "user_name_invalid"
 
 
+def test_the_forced_users_are_the_shares_accounts_once_each():
+    config = config_with(
+        shares=[
+            {"name": "ann", "path": "/home/ann", "force_user": "ann"},
+            {"name": "pool", "path": "/pool"},
+            {"name": "ann2", "path": "/srv/ann", "force_user": "ann"},
+        ]
+    )
+
+    assert config.forced_users() == ["ann"]
+    assert SambaConfig.from_dict(config.to_dict()).shares[0].force_user == "ann"
+
+
+def test_a_forced_user_that_is_not_a_unix_name_is_refused():
+    config = config_with(
+        shares=[{"name": "share", "path": "/srv/share", "force_user": "a b"}]
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate()
+
+    assert (refused.value.code, refused.value.params) == (
+        "user_name_invalid",
+        {"user": "a b"},
+    )
+
+
 def test_a_share_cannot_admit_a_user_that_does_not_exist():
     config = config_with(
         shares=[{"name": "share", "path": "/srv/share", "valid_users": ["ghost"]}]
@@ -142,7 +169,9 @@ def test_an_account_with_a_dot_is_a_share_and_a_user():
 def test_a_native_account_may_hold_a_space():
     shares = [{"name": "John Smith", "path": "C:\\Users\\John Smith"}]
 
-    config_with(shares=shares, users=["smb_John Smith"]).validate(os_name="windows")
+    config_with(shares=shares, users=["neutrino-John Smith"]).validate(
+        os_name="windows"
+    )
 
 
 @pytest.mark.parametrize(

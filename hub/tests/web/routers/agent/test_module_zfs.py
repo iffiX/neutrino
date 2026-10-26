@@ -108,7 +108,7 @@ def test_the_view_nests_datasets_under_their_pool_with_their_share(box):
     assert pool["datasets"][1]["share"] == "media"
     assert pool["vdevs"][0]["members"][0]["name"] == "a"
     assert payload["disks"][0]["by_id"] == "/dev/disk/by-id/ata-c"
-    assert payload["samba"] == {"is_ready": True, "users": ["ann"]}
+    assert payload["samba"] == {"is_ready": True, "users": ["neutrino-ann"]}
     assert (payload["device_id"], payload["host"]) == (DEVICE, HOST)
 
 
@@ -249,7 +249,7 @@ def test_sharing_a_dataset_writes_the_devices_samba_through_the_checked_door(box
 
     response = client.post(
         f"{BASE}/dataset/share",
-        json={"device_id": DEVICE, "dataset": "tank/media", "users": ["ann"]},
+        json={"device_id": DEVICE, "dataset": "tank/media", "users": ["neutrino-ann"]},
     )
 
     assert response.status_code == 200, response.text
@@ -258,7 +258,7 @@ def test_sharing_a_dataset_writes_the_devices_samba_through_the_checked_door(box
     added = checked["shares"][-1]
     assert added["name"] == "media"
     assert added["path"] == "/srv/media"
-    assert added["valid_users"] == ["ann"]
+    assert added["valid_users"] == ["neutrino-ann"]
     stored = runtime.desired_states.read(DEVICE, "samba")
     assert [share["name"] for share in stored["shares"]] == ["old", "media"]
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]

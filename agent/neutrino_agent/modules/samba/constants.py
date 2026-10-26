@@ -13,6 +13,17 @@ SAMBA_CONF_BACKUP_PATH = "/etc/samba/smb.conf.before_neutrino"
 # root-only under the agent's work root.
 SAMBA_RECORD_NAME = "samba.json"
 
+# Linux: the SMB user of an enabled account is a system account the module
+# makes, with no home, no login shell and this comment, by which the module
+# tells its own accounts from the machine's when one is dropped.
+SAMBA_LINUX_USER_COMMENT = "neutrino file share"
+SAMBA_LINUX_NOLOGIN_SHELLS = (
+    "/usr/sbin/nologin",
+    "/sbin/nologin",
+    "/usr/bin/nologin",
+    "/bin/false",
+)
+
 # Debian names the unit after the binary; the RHEL family ships one
 # smb.service.
 SAMBA_SERVICES = {"debian": "smbd", "rhel": "smb", "arch": "smb"}

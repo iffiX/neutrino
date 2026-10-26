@@ -4,11 +4,13 @@ Three effects, kept apart from the pure renderer: setting each SMB user's
 Samba password, installing a rendered ``smb.conf``, and reading what the
 server is doing right now.
 
-Each SMB user is one of the machine's own accounts, and its Samba password
-is set apart from its login, from the password the hub generated, whenever
-it differs from the one the module set last. A user the module set a
-password for and that the configuration no longer names loses that
-credential; the account itself is the person's and stays as it is.
+Each SMB user is a system account of the module's own, ``neutrino-`` and
+the person's account, made with no home and no login shell; its share writes
+every file as the person's account. Its Samba password is set from the one
+the hub generated whenever it differs from the one the module set last. A
+user the module set a password for and that the configuration no longer
+names loses that credential and, when the module made it, the account too;
+the person's own account is never touched.
 
 Not pure: writes ``/etc/samba``, runs Samba's tools and drives the unit.
 """
@@ -32,6 +34,8 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_BACKUP_PATH,
     SAMBA_CONF_MARKER,
     SAMBA_CONF_PATH,
+    SAMBA_LINUX_NOLOGIN_SHELLS,
+    SAMBA_LINUX_USER_COMMENT,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult, run, unit_state
 
@@ -231,8 +235,17 @@ def _strip_port(machine: str) -> str:
     return machine.rsplit(":", 1)[0] if ":" in machine else machine
 
 
+def nologin_shell() -> str:
+    """The shell of an account that never signs in: the first of
+    :data:`SAMBA_LINUX_NOLOGIN_SHELLS` this system has, else the last."""
+    for shell in SAMBA_LINUX_NOLOGIN_SHELLS:
+        if os.path.exists(shell):
+            return shell
+    return SAMBA_LINUX_NOLOGIN_SHELLS[-1]
+
+
 class SambaUserManager:
-    """Keeps each configured user's Samba password the one the hub generated."""
+    """Makes each configured SMB user and keeps its Samba password the one the hub generated."""
 
     def survey(self, users: list) -> list:
         """Read each configured user's actual state.
@@ -253,19 +266,50 @@ class SambaUserManager:
             for name in users
         ]
 
-    def check_accounts(self, users: list) -> None:
-        """Refuse a user that is not one of the machine's accounts.
+    def check_accounts(self, accounts: list) -> None:
+        """Refuse an account the shares write as that the machine does not have.
 
         Args:
-            users: The configured user names.
+            accounts: The shares' forced users, the machine's own accounts.
 
         Raises:
             ModuleApplyError: ``account_unknown {account}`` for the first
                 name the machine has no account of.
         """
-        for name in users:
+        for name in accounts:
             if not self._account_exists(name):
                 raise ModuleApplyError("account_unknown", {"account": name})
+
+    def converge_accounts(self, config: SambaConfig) -> list:
+        """Make every configured SMB user the machine does not have.
+
+        Args:
+            config: The configuration, with ``users``.
+
+        Returns:
+            One note per user made.
+
+        Raises:
+            subprocess.CalledProcessError: If ``useradd`` refuses.
+        """
+        changes = []
+        for name in config.users:
+            if self._account_exists(name):
+                continue
+            run(
+                [
+                    "useradd",
+                    "--system",
+                    "--no-create-home",
+                    "--shell",
+                    nologin_shell(),
+                    "--comment",
+                    SAMBA_LINUX_USER_COMMENT,
+                    name,
+                ]
+            )
+            changes.append(f"made the user {name}")
+        return changes
 
     def converge(self, config: SambaConfig, held: dict) -> tuple:
         """Set every configured user's password that differs from the one set last.
@@ -278,11 +322,11 @@ class SambaUserManager:
             ``(changes, held)``: notes on what was changed, and the digests
             the module holds now. A user the module set a password for and
             the configuration no longer names has its Samba credential
-            removed.
+            removed, and the account too when the module made it.
 
         Raises:
             subprocess.CalledProcessError: If Samba refuses a password or a
-                removal.
+                removal, or ``userdel`` refuses.
         """
         changes = []
         kept = {name: digest for name, digest in held.items() if name in config.users}
@@ -302,6 +346,8 @@ class SambaUserManager:
                 continue
             if name in credentialed:
                 run(["smbpasswd", "-x", name])
+            if self._is_module_account(name):
+                run(["userdel", name])
             changes.append(f"retired {name}")
         return changes, kept
 
@@ -337,6 +383,14 @@ class SambaUserManager:
 
     def _account_exists(self, name: str) -> bool:
         return run(["id", "-u", name], is_checked=False).is_success
+
+    def _is_module_account(self, name: str) -> bool:
+        """Whether the module made the account: its comment is the module's."""
+        result = run(["getent", "passwd", name], is_checked=False)
+        if not result.is_success:
+            return False
+        fields = result.stdout.strip().split(":")
+        return len(fields) > 4 and fields[4] == SAMBA_LINUX_USER_COMMENT
 
     def _credentialed_users(self) -> set:
         return set(self.credentialed_users())

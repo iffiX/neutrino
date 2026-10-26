@@ -86,33 +86,36 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         Raises:
             ModuleApplyError: Naming the first problem found;
-                ``account_unknown {account}`` for a user the machine has no
-                account of.
+                ``account_unknown {account}`` for an account a share writes
+                as that the machine does not have.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
-        SambaUserManager().check_accounts(parsed.users)
+        SambaUserManager().check_accounts(parsed.forced_users())
         testparm(SambaConfigRenderer(config=parsed).render())
 
     def apply(self, config: dict) -> None:
-        """Render the configuration, load it, and set each user's password.
+        """Make each SMB user, render the configuration, load it, and set each user's password.
 
         Args:
             config: The desired configuration.
 
         Raises:
-            ModuleApplyError: When the configuration is refused, a user is
-                no account of the machine's, or Samba will not take it.
+            ModuleApplyError: When the configuration is refused, an account
+                a share writes as is not the machine's, or Samba will not
+                take it.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         users = SambaUserManager()
-        users.check_accounts(parsed.users)
+        users.check_accounts(parsed.forced_users())
         rendered = SambaConfigRenderer(config=parsed).render()
         held = read_digests(self._record_path)
         try:
+            changes = users.converge_accounts(parsed)
             note = SambaConfigApplier(unit=self._unit).apply(rendered, config=parsed)
-            changes, kept = users.converge(parsed, held)
+            passwords, kept = users.converge(parsed, held)
+            changes += passwords
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}

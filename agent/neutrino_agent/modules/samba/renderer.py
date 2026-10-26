@@ -66,8 +66,9 @@ class SambaConfigRenderer:
 
     def _render_share(self, share: SambaShare) -> list:
         # A share limited to named users stays limited to them; one with no
-        # list is open to every configured user. Each user writes as itself,
-        # with its own file modes.
+        # list is open to every configured user. An account's share writes
+        # every file as the account, its primary group with it; a share with
+        # no forced user writes as the user that connected.
         valid = " ".join(share.valid_users or self._config.users)
         lines = [
             f"[{share.name}]",
@@ -75,6 +76,8 @@ class SambaConfigRenderer:
             f"   valid users = {valid}",
             f"   read only = {'yes' if share.is_read_only else 'no'}",
         ]
+        if share.force_user:
+            lines.append(f"   force user = {share.force_user}")
         if share.comment:
             lines.append(f"   comment = {share.comment}")
         lines.append("")

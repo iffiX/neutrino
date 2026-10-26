@@ -213,25 +213,27 @@ def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unloc
             "path": "/home/ann",
             "comment": "",
             "is_read_only": False,
-            "valid_users": ["ann"],
+            "valid_users": ["neutrino-ann"],
+            "force_user": "ann",
         },
         {
             "name": "bob",
             "path": "/srv/b",
             "comment": "",
             "is_read_only": False,
-            "valid_users": ["bob"],
+            "valid_users": ["neutrino-bob"],
+            "force_user": "bob",
         },
     ]
-    assert config["users"] == ["ann", "bob"]
-    assert set(config["passwords"]) == {"ann", "bob"}
-    assert config["passwords"]["ann"] == store.account_secret(
+    assert config["users"] == ["neutrino-ann", "neutrino-bob"]
+    assert set(config["passwords"]) == {"neutrino-ann", "neutrino-bob"}
+    assert config["passwords"]["neutrino-ann"] == store.account_secret(
         DEVICE, "samba", "ann", "password_sealed"
     )
     assert config["allowed_subnets"] == ["192.168.1.0/24"]
 
 
-def test_a_windows_or_mac_share_user_is_smb_and_the_account_cut_to_twenty(unlocked):
+def test_a_windows_share_user_is_neutrino_and_the_account_cut_to_twenty(unlocked):
     store = DesiredStateStore()
     with_accounts(store, "averyveryverylongaccountname", share_path="C:\\Share")
     store.set_enabled_accounts(DEVICE, "samba", ["averyveryverylongaccountname"])
@@ -239,8 +241,11 @@ def test_a_windows_or_mac_share_user_is_smb_and_the_account_cut_to_twenty(unlock
 
     desired, _ = store.compose(DEVICE, WINDOWS)
 
-    assert smb_user("averyveryverylongaccountname", WINDOWS) == "smb_averyveryverylon"
-    assert desired["modules"]["samba"]["config"]["users"] == ["smb_averyveryverylon"]
+    assert smb_user("averyveryverylongaccountname", WINDOWS) == "neutrino-averyveryve"
+    assert desired["modules"]["samba"]["config"]["users"] == ["neutrino-averyveryve"]
+    assert smb_user("averyveryverylongaccountname", PLATFORM) == (
+        "neutrino-averyveryverylongaccountname"
+    )
 
 
 def test_an_enabled_account_with_no_share_path_and_no_reported_home_is_left_out(
@@ -264,9 +269,9 @@ def test_an_enabled_account_with_no_share_path_and_no_reported_home_is_left_out(
     config = desired["modules"]["samba"]["config"]
     assert [share["name"] for share in config["shares"]] == ["bob"]
     assert config["shares"][0]["path"] == "C:\\Users\\bob"
-    assert config["users"] == ["smb_bob"]
-    assert list(config["passwords"]) == ["smb_bob"]
-    assert smb_user("ann", PLATFORM) == "ann"
+    assert config["users"] == ["neutrino-bob"]
+    assert list(config["passwords"]) == ["neutrino-bob"]
+    assert smb_user("ann", PLATFORM) == "neutrino-ann"
 
 
 def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocked):
@@ -275,7 +280,11 @@ def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocke
     store.set_enabled_accounts(DEVICE, "samba", ["ann"])
     stored = store.read(DEVICE, "samba")
     stored["shares"] = [
-        {"name": "media", "path": "/tank/media", "valid_users": ["ann", "gone"]}
+        {
+            "name": "media",
+            "path": "/tank/media",
+            "valid_users": ["neutrino-ann", "neutrino-gone"],
+        }
     ]
     store.write(DEVICE, "samba", stored)
     store.set_want(DEVICE, "samba", "running")
@@ -287,7 +296,7 @@ def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocke
         "path": "/tank/media",
         "comment": "",
         "is_read_only": False,
-        "valid_users": ["ann"],
+        "valid_users": ["neutrino-ann"],
     }
 
 

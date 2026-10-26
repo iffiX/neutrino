@@ -6,7 +6,9 @@ are what Samba itself says, ``testparm -s`` parsed into the global section
 and each share and ``pdbedit -L`` into the accounts. Each apply sets the
 passwords of the hub's map whose digest differs from the root-only record,
 which keeps digests and never a password; a user that is no account of the
-machine's is refused ``account_unknown``; the ``set_password`` verb is gone.
+machine's lacks, the account a share writes as, is refused ``account_unknown``;
+the SMB users are made before the file is written; the ``set_password`` verb
+is gone.
 On Windows and macOS the apply sets each account's password the same way,
 after the server has made the account, and a removal forgets the digests.
 """
@@ -107,11 +109,16 @@ class FakeApplier:
 
 class FakeUsers:
     converged: list = []
+    made: list = []
 
-    def check_accounts(self, users):
-        for name in users:
+    def check_accounts(self, accounts):
+        for name in accounts:
             if name == "ghost":
                 raise ModuleApplyError("account_unknown", {"account": name})
+
+    def converge_accounts(self, config):
+        FakeUsers.made.append(list(config.users))
+        return []
 
     def converge(self, config, held):
         FakeUsers.converged.append(dict(held))
@@ -130,6 +137,7 @@ def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.stops = 0
     FakeUsers.converged = []
+    FakeUsers.made = []
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
     monkeypatch.setattr(runner_module, "testparm", lambda rendered: None)
@@ -183,14 +191,24 @@ def test_install_puts_the_package_alone(runner):
     assert runner._platform.installed == [["samba"]]
 
 
-def test_a_user_that_is_no_account_of_the_machine_is_refused(runner):
-    bad = {**CONFIG, "users": ["ghost"], "passwords": {"ghost": "x"}}
+def test_an_account_a_share_writes_as_that_the_machine_lacks_is_refused(runner):
+    bad = {
+        **CONFIG,
+        "shares": [{"name": "ghost", "path": "/home/ghost", "force_user": "ghost"}],
+    }
 
     for step in (runner.validate, runner.apply):
         with pytest.raises(ModuleApplyError) as refused:
             step(bad)
         assert refused.value.params == {"account": "ghost"}
     assert FakeApplier.applied == []
+    assert FakeUsers.made == []
+
+
+def test_apply_makes_the_smb_users_before_the_file_is_written(runner):
+    runner.apply(CONFIG)
+
+    assert FakeUsers.made == [["ann"]]
 
 
 def test_apply_keeps_the_digest_of_each_password_root_only(runner):

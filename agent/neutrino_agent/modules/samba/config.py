@@ -1,9 +1,10 @@
 """The file share's configuration: one share per enabled account, and its SMB user.
 
 The hub composes it from the machine's enabled accounts: each share is
-named after its account and lists that account's SMB user, ``users`` names
-every SMB user, and ``passwords`` holds each user's password, which the
-hub generated and the agent sets on the machine.
+named after its account, lists that account's SMB user and names the account
+as its forced user, ``users`` names every SMB user, and ``passwords`` holds
+each user's password, which the hub generated and the agent sets on the
+machine.
 
 Pure: this module parses and shapes configuration. Rendering it into
 ``smb.conf`` is :mod:`neutrino_agent.modules.samba.renderer`; making it
@@ -21,12 +22,12 @@ from neutrino_agent.exceptions import ModuleApplyError
 
 # Share names appear as section headers in smb.conf and on every client's
 # network browser, and are the names of the machine's accounts; user names
-# are those accounts on Linux and the module's own accounts elsewhere. Both
-# are kept to charsets that cannot smuggle syntax into either place. \\Z
-# rather than $, which would also match just before a trailing newline.
+# are the module's own accounts, ``neutrino-`` and the person's account.
+# Both are kept to charsets that cannot smuggle syntax into either place.
+# \\Z rather than $, which would also match just before a trailing newline.
 SHARE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._ -]{0,79}\Z")
 USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}\$?\Z")
-# A Windows or macOS account the module makes: ``smb_`` and the person's
+# A Windows or macOS account the module makes: ``neutrino-`` and the person's
 # account, whose name may hold a space on Windows.
 NATIVE_USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_. -]{0,31}\Z")
 
@@ -55,6 +56,8 @@ class SambaShare:
         comment: One line shown beside the name in a client's browser.
         is_read_only: Whether writing is refused for everyone.
         valid_users: Accounts allowed in. Empty means every configured user.
+        force_user: The machine's account every file is written as, on
+            Linux; empty writes each file as the user that connected.
     """
 
     name: str
@@ -62,6 +65,7 @@ class SambaShare:
     comment: str = ""
     is_read_only: bool = False
     valid_users: list = field(default_factory=list)
+    force_user: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "SambaShare":
@@ -71,6 +75,7 @@ class SambaShare:
             comment=str(data.get("comment", "")),
             is_read_only=bool(data.get("is_read_only", False)),
             valid_users=[str(user) for user in data.get("valid_users", [])],
+            force_user=str(data.get("force_user", "") or ""),
         )
 
     def to_dict(self) -> dict:
@@ -80,6 +85,7 @@ class SambaShare:
             "comment": self.comment,
             "is_read_only": self.is_read_only,
             "valid_users": list(self.valid_users),
+            "force_user": self.force_user,
         }
 
 
@@ -122,6 +128,19 @@ class SambaConfig:
             "allowed_subnets": list(self.allowed_subnets),
         }
 
+    def forced_users(self) -> list:
+        """The machine's accounts the shares write their files as.
+
+        Returns:
+            Each share's ``force_user``, once, in the shares' order, the
+            empty ones left out.
+        """
+        accounts: list = []
+        for share in self.shares:
+            if share.force_user and share.force_user not in accounts:
+                accounts.append(share.force_user)
+        return accounts
+
     def validate(self, *, os_name: str = "linux") -> None:
         """Check the configuration holds together.
 
@@ -154,6 +173,8 @@ class SambaConfig:
                     raise ModuleApplyError(
                         "share_user_unknown", {"name": share.name, "user": user}
                     )
+            if share.force_user and not USER_NAME_PATTERN.match(share.force_user):
+                raise ModuleApplyError("user_name_invalid", {"user": share.force_user})
         is_native = os_name in ("windows", "darwin")
         pattern = NATIVE_USER_NAME_PATTERN if is_native else USER_NAME_PATTERN
         seen_users: set = set()

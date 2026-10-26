@@ -317,7 +317,7 @@ def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():
                 "host": HOST,
                 "samba": {
                     "is_healthy": True,
-                    "shares": [{"name": "ann", "user": "smb_ann"}],
+                    "shares": [{"name": "ann", "user": "neutrino-ann"}],
                 },
             }
         ],
@@ -337,7 +337,7 @@ def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():
     entries = by_id(held.render())
     assert set(entries) == {"ai", f"samba_{DEVICE}_ann", "rdp_s1"}
     assert all(entry["app_id"] == "" for entry in entries.values())
-    assert entries[f"samba_{DEVICE}_ann"]["payload"]["users"] == ["smb_ann"]
+    assert entries[f"samba_{DEVICE}_ann"]["payload"]["users"] == ["neutrino-ann"]
     assert held.apps() == []
     catalog = catalog_entries(list(entries.values()))
     assert set(catalog[0]) == {

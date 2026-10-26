@@ -281,13 +281,13 @@ DEVICE_AGENT_MODULES = (
 # every feature of an account there is sent the account's login.
 DEVICE_PASSWORD_OS = "windows"
 # The file share's SMB user of an enabled account (agent.md, "The file
-# share's accounts"): the account itself on Linux, ``smb_<account>`` cut to
-# 20 characters on Windows and macOS; its generated password, 24 random bytes
-# in base64url, sealed in samba.json under this key.
+# share's accounts"): ``neutrino-<account>`` on every system, cut to 20
+# characters on Windows; its generated password, 24 random bytes in
+# base64url, sealed in samba.json under this key.
 DEVICE_SAMBA_MODULE = "samba"
-DEVICE_SAMBA_USER_PREFIX = "smb_"
+DEVICE_SAMBA_USER_PREFIX = "neutrino-"
 DEVICE_SAMBA_USER_CHARS_MAX = 20
-DEVICE_SAMBA_USER_PREFIX_OS = ("windows", "darwin")
+DEVICE_SAMBA_USER_CUT_OS = ("windows",)
 # The shares the file names beside the accounts': a ZFS dataset's, each with
 # its valid_users among the enabled accounts' SMB users.
 DEVICE_SAMBA_SHARES_KEY = "shares"

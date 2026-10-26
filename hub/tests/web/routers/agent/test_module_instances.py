@@ -121,8 +121,8 @@ def test_the_file_shares_rows_carry_the_share_path_and_the_smb_user(api):
     assert [
         (row["account"], row["share_path"], row["user"]) for row in body["accounts"]
     ] == [
-        ("alice", "", "smb_alice"),
-        ("bob", "/srv/bob", "smb_bob"),
+        ("alice", "", "neutrino-alice"),
+        ("bob", "/srv/bob", "neutrino-bob"),
     ]
 
 

@@ -73,7 +73,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SAMBA_MODULE,
     DEVICE_SAMBA_USER_CHARS_MAX,
     DEVICE_SAMBA_USER_PREFIX,
-    DEVICE_SAMBA_USER_PREFIX_OS,
+    DEVICE_SAMBA_USER_CUT_OS,
     DEVICE_SSH_SERVER_MODULE,
     DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
@@ -163,12 +163,12 @@ def smb_user(account: str, platform: dict) -> str:
         platform: The tuple the agent reported.
 
     Returns:
-        The account itself on Linux; ``smb_<account>`` cut to 20 characters
-        on Windows and macOS.
+        ``neutrino-<account>``, cut to 20 characters on Windows.
     """
-    if platform.get("os") in DEVICE_SAMBA_USER_PREFIX_OS:
-        return f"{DEVICE_SAMBA_USER_PREFIX}{account}"[:DEVICE_SAMBA_USER_CHARS_MAX]
-    return account
+    user = f"{DEVICE_SAMBA_USER_PREFIX}{account}"
+    if platform.get("os") in DEVICE_SAMBA_USER_CUT_OS:
+        return user[:DEVICE_SAMBA_USER_CHARS_MAX]
+    return user
 
 
 def instance_app_id(module: str, device_id: str, account: str) -> str:
@@ -303,9 +303,10 @@ def _samba_config(
     stored: "dict | None" = None,
 ) -> dict:
     """The file share's section: one share and one user per enabled account,
-    then the shares the file names itself, a ZFS dataset's among them, each
-    open to the enabled accounts' users it names. An enabled account with no
-    share path whose home the machine has not reported is left out."""
+    the share's files written as the account, then the shares the file names
+    itself, a ZFS dataset's among them, each open to the enabled accounts'
+    users it names. An enabled account with no share path whose home the
+    machine has not reported is left out."""
     sealed = row.sealed_fields[0]
     shares = []
     users = []
@@ -325,6 +326,7 @@ def _samba_config(
                 "comment": "",
                 "is_read_only": False,
                 "valid_users": [user],
+                "force_user": account,
             }
         )
         users.append(user)
