@@ -268,6 +268,29 @@ func TestSFTPServesTheHome(t *testing.T) {
 	}
 }
 
+func TestSFTPEndsWithExitStatusZero(t *testing.T) {
+	channel, requests, err := startSessions(t).client.OpenChannel("session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer channel.Close()
+	isAccepted, err := channel.SendRequest(SessionRequestSubsystem, true, ssh.Marshal(struct{ Name string }{SessionSubsystemSFTP}))
+	if err != nil || !isAccepted {
+		t.Fatalf("subsystem accepted %v, %v", isAccepted, err)
+	}
+	channel.CloseWrite()
+	for request := range requests {
+		if request.Type == "exit-status" {
+			var status struct{ Status uint32 }
+			if err := ssh.Unmarshal(request.Payload, &status); err != nil || status.Status != 0 {
+				t.Fatalf("exit status %d, %v", status.Status, err)
+			}
+			return
+		}
+	}
+	t.Fatal("the channel closed with no exit status")
+}
+
 func TestEveryOtherSessionRequestIsRefused(t *testing.T) {
 	pair := startSessions(t)
 	for _, request := range []struct {

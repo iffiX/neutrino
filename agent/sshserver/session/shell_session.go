@@ -189,7 +189,6 @@ func (s *ShellSession) serveSFTP() {
 	if err := server.Serve(); err != nil {
 		code = 1
 	}
-	server.Close()
 	s.finish(exitStatus{code: code})
 }
 
