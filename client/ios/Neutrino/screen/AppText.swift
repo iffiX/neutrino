@@ -72,17 +72,12 @@ enum AppText {
     ///   - hub: The hub that publishes the app.
     ///   - entries: The app's entries.
     ///   - row: The app's row.
-    ///   - hasPage: Whether the app has an `http` or `https` entry, which Open opens.
     /// - Returns: `ui.reason.disabled` while the hub switched this phone off, `ui.reason.disconnect_first` for
-    ///   Configure while the app is in use, `ui.reason.unhealthy` for Use while no entry is reachable,
-    ///   `ui.reason.use_first` for Open while the app is not in use, else nil.
-    static func reasonKey(_ hub: HubView, _ entries: [ChannelServiceEntry], _ row: ForwardRow, hasPage: Bool)
-        -> String?
-    {
+    ///   Configure while the app is in use, `ui.reason.unhealthy` for Use while no entry is reachable, else nil.
+    static func reasonKey(_ hub: HubView, _ entries: [ChannelServiceEntry], _ row: ForwardRow) -> String? {
         if hub.isDisabled { return "ui.reason.disabled" }
         if row.isInUse { return "ui.reason.disconnect_first" }
         if !entries.contains(where: { !$0.isUnhealthy }) { return "ui.reason.unhealthy" }
-        if hasPage { return "ui.reason.use_first" }
         return nil
     }
 
