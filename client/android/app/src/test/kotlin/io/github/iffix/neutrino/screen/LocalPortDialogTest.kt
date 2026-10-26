@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.screen
 
 import io.github.iffix.neutrino.RepositoryFiles
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
+import io.github.iffix.neutrino.words.WordCatalog
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -47,8 +48,9 @@ class LocalPortDialogTest {
 
     @Test
     fun aUdpEntryIsNamedSo() {
-        assertEquals("web", kindOf(web))
-        assertEquals("port/udp", kindOf(udp))
+        val words = WordCatalog(mapOf("ui.entry_kind.web" to "Web", "ui.entry_kind.port" to "Port"))
+        assertEquals("Web", kindOf(web, words))
+        assertEquals("Port/udp", kindOf(udp, words))
     }
 
     @Test

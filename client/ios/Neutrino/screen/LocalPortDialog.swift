@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// An app's Configure dialog: one line per entry, its name, its kind and a number field that starts at the
+/// An app's Configure dialog: one line per entry, its name and its kind, and a number field that starts at the
 /// entry's number, the person's or else the hub's, then Cancel and Save. A number of the person's, from 1024 to
 /// 65535, replaces the hub's on this phone alone, and an empty field goes back to the hub's; a refused number is
 /// worded under the fields.
@@ -22,10 +22,9 @@ struct LocalPortDialog: View {
             RowText(text: words.word("ui.app.port_dialog_title", ["app": target.title]), style: .title)
             ForEach(target.entries) { entry in
                 HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        RowText(text: entry.name.isEmpty ? entry.title : entry.name, style: .body)
-                        RowText(text: AppText.kind(entry), style: .mono)
-                    }
+                    RowText(
+                        text: "\(entry.name.isEmpty ? entry.title : entry.name) · \(AppText.kind(entry, words: words))",
+                        style: .body)
                     Spacer()
                     TextField(
                         "\(entry.localPort)",

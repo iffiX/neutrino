@@ -1,14 +1,11 @@
 package io.github.iffix.neutrino.screen
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
@@ -16,7 +13,6 @@ import io.github.iffix.neutrino.channel.ChannelApp
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.ErrorLine
@@ -31,11 +27,14 @@ import io.github.iffix.neutrino.forward.PortForwardJob
 import io.github.iffix.neutrino.forward.PortForwardRow
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.shell.LocalClientActions
+import io.github.iffix.neutrino.words.WordCatalog
+import java.net.URI
+import java.net.URISyntaxException
 
 /**
- * The apps the joined hubs publish, one row each: the title with its source, the machine, and one
- * mono line per `web` and `port` entry with its kind and its fixed local address, the `ssh` entries
- * left out on a phone. Use forwards every entry and opens the browser at the first `http` or
+ * The apps the joined hubs publish, one row each: the title, the hub, the machine and the source,
+ * and one mono line per `web` and `port` entry with its fixed local address, the `ssh` entries left
+ * out on a phone. Use forwards every entry and opens the browser at the first `http` or
  * `https` entry, Configure opens the local port dialog while the app is not in use, and Stop ends
  * the app's forwards while it is.
  *
@@ -145,21 +144,11 @@ private fun AppRow(
             }
         },
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText(app.title, style = NeutrinoTheme.rowTitle)
-            Badge(words.word("ui.app_source.${app.source.ifEmpty { "module" }}"))
-        }
+        BasicText(app.title, style = NeutrinoTheme.rowTitle)
+        BasicText(appProviderLine(hub, app, entries, words), style = NeutrinoTheme.note)
         for (entry in entries) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                val address = localAddressOf(app, entry, portOf(hub.binding.id, entry))
-                BasicText("${kindOf(entry)}  $address", style = NeutrinoTheme.mono)
-                if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
-            }
+            BasicText(entryLineOf(app, entry, portOf(hub.binding.id, entry), words), style = NeutrinoTheme.mono)
         }
-        BasicText(
-            words.word("ui.machine_provided_by", mapOf("hub" to hub.binding.title, "device" to app.deviceName)),
-            style = NeutrinoTheme.note,
-        )
         ErrorLine(row.error)
         if (isFree) ReasonLine(appReasonKey(hub, entries, row)?.let { words.word(it) })
     }
@@ -192,6 +181,56 @@ internal fun localAddressOf(app: ChannelApp, entry: ChannelServiceEntry, port: I
         if (target != null) return "${target.first}://$name:$port${target.second}"
     }
     return if (entry.protocol == "udp") "$name:$port/udp" else "$name:$port"
+}
+
+/**
+ * An entry's mono line under its app: its local address, and the health word while the hub reports
+ * it unhealthy.
+ *
+ * @param app The app, whose local name the address carries.
+ * @param entry The entry.
+ * @param port The local port it listens on.
+ * @param words The catalog.
+ * @return The line.
+ */
+internal fun entryLineOf(app: ChannelApp, entry: ChannelServiceEntry, port: Int, words: WordCatalog): String {
+    val address = localAddressOf(app, entry, port)
+    return if (entry.isHealthy == false) "$address · ${words.word("ui.unhealthy")}" else address
+}
+
+/** The sources an app's provider line words, as the hub names them. */
+internal val APP_SOURCES = listOf("module", "declared", "manual")
+
+/**
+ * Which hub and which machine an app is on, and who answers for it: `ui.app_provided_by`, the
+ * machine being the host its first entry points at when the hub names none.
+ *
+ * @param hub The hub that publishes the app.
+ * @param app The app.
+ * @param entries The app's entries.
+ * @param words The catalog.
+ * @return The line.
+ */
+internal fun appProviderLine(
+    hub: HubView,
+    app: ChannelApp,
+    entries: List<ChannelServiceEntry>,
+    words: WordCatalog,
+): String {
+    val source = if (app.source in APP_SOURCES) words.word("ui.app_source.${app.source}") else ""
+    val machine = app.deviceName.ifEmpty { entries.firstOrNull()?.let(::entryHostOf).orEmpty() }
+    return words.word("ui.app_provided_by", mapOf("hub" to hub.binding.title, "machine" to machine, "source" to source))
+}
+
+private fun entryHostOf(entry: ChannelServiceEntry): String {
+    val url = entry.text("url")
+    if (url.isEmpty()) return entry.text("host")
+    val host = try {
+        URI(url).host
+    } catch (_: URISyntaxException) {
+        null
+    }
+    return host?.trim('[', ']').orEmpty()
 }
 
 /**
