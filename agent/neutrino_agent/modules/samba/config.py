@@ -1,7 +1,9 @@
-"""The file share's configuration: which shares exist and who may use them.
+"""The file share's configuration: one share per enabled account, and its SMB user.
 
-Users here are names only. Passwords live in Samba's own credential store
-and are set through a command, never written into the configuration.
+The hub composes it from the machine's enabled accounts: each share is
+named after its account and lists that account's SMB user, ``users`` names
+every SMB user, and ``passwords`` holds each user's password, which the
+hub generated and the agent sets on the machine.
 
 Pure: this module parses and shapes configuration. Rendering it into
 ``smb.conf`` is :mod:`neutrino_agent.modules.samba.renderer`; making it
@@ -18,11 +20,15 @@ from dataclasses import dataclass, field
 from neutrino_agent.exceptions import ModuleApplyError
 
 # Share names appear as section headers in smb.conf and on every client's
-# network browser; user names become unix accounts. Both are kept to
-# charsets that cannot smuggle syntax into either place. \\Z rather than $,
-# which would also match just before a trailing newline.
-SHARE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_ -]{0,31}\Z")
-USER_NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\Z")
+# network browser, and are the names of the machine's accounts; user names
+# are those accounts on Linux and the module's own accounts elsewhere. Both
+# are kept to charsets that cannot smuggle syntax into either place. \\Z
+# rather than $, which would also match just before a trailing newline.
+SHARE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._ -]{0,79}\Z")
+USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}\$?\Z")
+# A Windows or macOS account the module makes: ``smb_`` and the person's
+# account, whose name may hold a space on Windows.
+NATIVE_USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_. -]{0,31}\Z")
 
 # Section names smb.conf gives a meaning of its own.
 RESERVED_SHARE_NAMES = ("global", "homes", "printers")
@@ -84,19 +90,27 @@ class SambaConfig:
     Attributes:
         shares: The exported directories.
         users: Accounts that may connect, by name.
+        passwords: Each user's password, as the hub generated it.
         allowed_subnets: The networks the shares answer, as the hub composed
             them from where this machine sits.
     """
 
     shares: list = field(default_factory=list)
     users: list = field(default_factory=list)
+    passwords: dict = field(default_factory=dict)
     allowed_subnets: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "SambaConfig":
+        passwords = data.get("passwords")
         return cls(
             shares=[SambaShare.from_dict(entry) for entry in data.get("shares", [])],
             users=[str(user) for user in data.get("users", [])],
+            passwords=(
+                {str(user): str(word) for user, word in passwords.items()}
+                if isinstance(passwords, dict)
+                else {}
+            ),
             allowed_subnets=[str(net) for net in data.get("allowed_subnets", [])],
         )
 
@@ -104,6 +118,7 @@ class SambaConfig:
         return {
             "shares": [share.to_dict() for share in self.shares],
             "users": list(self.users),
+            "passwords": dict(self.passwords),
             "allowed_subnets": list(self.allowed_subnets),
         }
 
@@ -116,7 +131,9 @@ class SambaConfig:
                 other, and a Windows account name is at most 20 characters.
 
         Raises:
-            ModuleApplyError: Naming the first problem found.
+            ModuleApplyError: Naming the first problem found; on Windows
+                and macOS two users of one name are ``user_name_taken``,
+                since the hub cut two accounts to the same name.
         """
         seen_shares: set = set()
         for share in self.shares:
@@ -137,11 +154,15 @@ class SambaConfig:
                     raise ModuleApplyError(
                         "share_user_unknown", {"name": share.name, "user": user}
                     )
+        is_native = os_name in ("windows", "darwin")
+        pattern = NATIVE_USER_NAME_PATTERN if is_native else USER_NAME_PATTERN
         seen_users: set = set()
         for user in self.users:
             is_too_long = os_name == "windows" and len(user) > WINDOWS_USER_NAME_MAX
-            if not USER_NAME_PATTERN.match(user) or is_too_long:
+            if not pattern.match(user) or is_too_long:
                 raise ModuleApplyError("user_name_invalid", {"user": user})
-            if user in seen_users:
-                raise ModuleApplyError("user_name_duplicate", {"user": user})
-            seen_users.add(user)
+            key = user.lower() if is_native else user
+            if key in seen_users:
+                code = "user_name_taken" if is_native else "user_name_duplicate"
+                raise ModuleApplyError(code, {"user": user})
+            seen_users.add(key)

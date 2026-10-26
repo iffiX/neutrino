@@ -1,13 +1,14 @@
 """Making the share configuration true on the machine.
 
-Three effects, kept apart from the pure renderer: converging system
-accounts with the configured user list, installing a rendered ``smb.conf``,
-and reading what the server is doing right now.
+Three effects, kept apart from the pure renderer: setting each SMB user's
+Samba password, installing a rendered ``smb.conf``, and reading what the
+server is doing right now.
 
-Accounts are converged, not scripted: apply looks at what exists and closes
-the gap. A user removed from the configuration loses share access, the
-credential and the group membership, but the unix account stands, because
-deleting accounts is how files end up owned by a recycled uid.
+Each SMB user is one of the machine's own accounts, and its Samba password
+is set apart from its login, from the password the hub generated, whenever
+it differs from the one the module set last. A user the module set a
+password for and that the configuration no longer names loses that
+credential; the account itself is the person's and stays as it is.
 
 Not pure: writes ``/etc/samba``, runs Samba's tools and drives the unit.
 """
@@ -16,6 +17,7 @@ Not pure: writes ``/etc/samba``, runs Samba's tools and drives the unit.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -26,8 +28,17 @@ from dataclasses import dataclass
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
-from neutrino_agent.modules.samba.constants import SAMBA_CONF_PATH, SAMBA_GROUP
+from neutrino_agent.modules.samba.constants import (
+    SAMBA_CONF_BACKUP_PATH,
+    SAMBA_CONF_MARKER,
+    SAMBA_CONF_PATH,
+)
 from neutrino_agent.modules.shared.subprocess_run import CommandResult, run, unit_state
+
+try:
+    import pwd
+except ImportError:  # Windows carries no pwd.
+    pwd = None
 
 # One row of ``smbstatus -p``: pid, user, group, then the client's name with
 # its address in parentheses.
@@ -54,11 +65,45 @@ class SambaUserState:
     has_password: bool
 
 
-def ensure_share_group() -> None:
-    """Make sure the group every share account joins exists."""
-    if run(["getent", "group", SAMBA_GROUP], is_checked=False).is_success:
-        return
-    run(["groupadd", "--system", SAMBA_GROUP], is_checked=False)
+def password_digest(password: str) -> str:
+    """What the module keeps of a password it set: its SHA-256 in hex.
+
+    Args:
+        password: The password.
+
+    Returns:
+        The digest.
+    """
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def keep_backup(path: str = "", backup: str = "") -> bool:
+    """Copy a hand-made ``smb.conf`` aside, once, before the module replaces it.
+
+    Args:
+        path: The live file; empty is ``smb.conf``'s place.
+        backup: Where its copy goes; empty is the backup's place.
+
+    Returns:
+        True when a copy was made: the file is there, its first line is not
+        the module's marker, and no copy was made before.
+
+    Raises:
+        OSError: When the copy cannot be written.
+    """
+    path = path or SAMBA_CONF_PATH
+    backup = backup or SAMBA_CONF_BACKUP_PATH
+    if os.path.exists(backup) or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as stream:
+            first = stream.readline().rstrip("\n")
+    except OSError:
+        return False
+    if first == SAMBA_CONF_MARKER:
+        return False
+    shutil.copy2(path, backup)
+    return True
 
 
 def testparm(rendered: str) -> None:
@@ -187,7 +232,7 @@ def _strip_port(machine: str) -> str:
 
 
 class SambaUserManager:
-    """Converges accounts with the configured user list."""
+    """Keeps each configured user's Samba password the one the hub generated."""
 
     def survey(self, users: list) -> list:
         """Read each configured user's actual state.
@@ -208,41 +253,57 @@ class SambaUserManager:
             for name in users
         ]
 
-    def converge(self, users: list) -> list:
-        """Make the system match the configured user list.
+    def check_accounts(self, users: list) -> None:
+        """Refuse a user that is not one of the machine's accounts.
 
         Args:
             users: The configured user names.
 
-        Returns:
-            Notes on what was changed, empty when nothing was.
-
         Raises:
-            subprocess.CalledProcessError: If an account cannot be created or retired.
+            ModuleApplyError: ``account_unknown {account}`` for the first
+                name the machine has no account of.
         """
-        changes = []
         for name in users:
             if not self._account_exists(name):
-                run(
-                    [
-                        "useradd",
-                        "--no-create-home",
-                        "--shell",
-                        "/usr/sbin/nologin",
-                        name,
-                    ]
-                )
-                changes.append(f"created account {name}")
-            result = run(["id", "-nG", name])
-            if SAMBA_GROUP not in result.stdout.split():
-                run(["usermod", "-aG", SAMBA_GROUP, name])
-                changes.append(f"added {name} to {SAMBA_GROUP}")
-        for name in self._credentialed_users():
-            if name not in users:
+                raise ModuleApplyError("account_unknown", {"account": name})
+
+    def converge(self, config: SambaConfig, held: dict) -> tuple:
+        """Set every configured user's password that differs from the one set last.
+
+        Args:
+            config: The configuration, with ``passwords``.
+            held: The digest of the password the module set last, by user.
+
+        Returns:
+            ``(changes, held)``: notes on what was changed, and the digests
+            the module holds now. A user the module set a password for and
+            the configuration no longer names has its Samba credential
+            removed.
+
+        Raises:
+            subprocess.CalledProcessError: If Samba refuses a password or a
+                removal.
+        """
+        changes = []
+        kept = {name: digest for name, digest in held.items() if name in config.users}
+        credentialed = self._credentialed_users()
+        for name in config.users:
+            password = config.passwords.get(name, "")
+            if not password:
+                continue
+            digest = password_digest(password)
+            if kept.get(name) == digest and name in credentialed:
+                continue
+            self.set_password(name, password)
+            kept[name] = digest
+            changes.append(f"set the password of {name}")
+        for name in held:
+            if name in config.users:
+                continue
+            if name in credentialed:
                 run(["smbpasswd", "-x", name])
-                run(["gpasswd", "-d", name, SAMBA_GROUP], is_checked=False)
-                changes.append(f"retired {name}")
-        return changes
+            changes.append(f"retired {name}")
+        return changes, kept
 
     def set_password(self, name: str, password: str) -> None:
         """Set one user's share password.
@@ -311,6 +372,7 @@ class SambaConfigApplier:
         """
         testparm(rendered)
         self._ensure_share_directories(config)
+        keep_backup()
         self._write(rendered)
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
@@ -323,12 +385,14 @@ class SambaConfigApplier:
         run(["systemctl", "stop", self._unit], is_checked=False)
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
+        """Make a share's folder that is missing, owned by its one user."""
         for share in config.shares:
+            if os.path.isdir(share.path):
+                continue
             os.makedirs(share.path, exist_ok=True)
-            shutil.chown(share.path, group=SAMBA_GROUP)
-            # Setgid, so files created over the share inherit the shared
-            # group rather than each creator's own.
-            os.chmod(share.path, 0o2775)
+            if len(share.valid_users) == 1 and pwd is not None:
+                entry = pwd.getpwnam(share.valid_users[0])
+                os.chown(share.path, entry.pw_uid, entry.pw_gid)
 
     def _write(self, rendered: str) -> None:
         directory = os.path.dirname(SAMBA_CONF_PATH)

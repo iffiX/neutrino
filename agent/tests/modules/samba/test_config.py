@@ -1,4 +1,12 @@
-"""The share configuration and the checks that keep it servable."""
+"""The share configuration and the checks that keep it servable.
+
+What these pin beside the shapes: the passwords map reads and round-trips;
+share names are the machine's account names, dots and up to 80 characters
+allowed; a user name is the machine's own account on Linux and the module's
+``smb_`` account elsewhere, a space allowed on Windows and macOS; two users
+of one name are ``user_name_duplicate`` on Linux and ``user_name_taken`` on
+Windows and macOS.
+"""
 
 import pytest
 
@@ -34,7 +42,7 @@ def test_the_parse_survives_a_round_trip():
         ("global", "share_name_reserved"),
         ("Printers", "share_name_reserved"),
         ("a\nb", "share_name_invalid"),
-        ("x" * 33, "share_name_invalid"),
+        ("x" * 81, "share_name_invalid"),
         ("[injected]", "share_name_invalid"),
     ],
 )
@@ -70,7 +78,7 @@ def test_a_relative_share_path_is_refused():
     assert refused.value.code == "share_path_relative"
 
 
-@pytest.mark.parametrize("name", ["Ann", "0start", "a b", "root\n", "x" * 33])
+@pytest.mark.parametrize("name", ["-dash", "a b", "root\n", "x" * 33, "a:b"])
 def test_a_user_name_that_is_not_a_unix_name_is_refused(name):
     with pytest.raises(ModuleApplyError) as refused:
         config_with(users=[name]).validate()
@@ -114,3 +122,38 @@ def test_a_windows_account_name_is_at_most_twenty_characters():
         config_with(shares=shares, users=["a" * 21]).validate(os_name="windows")
 
     assert refused.value.code == "user_name_invalid"
+
+
+def test_the_passwords_read_and_round_trip():
+    config = config_with(passwords={"ann": "generated"})
+
+    assert config.passwords == {"ann": "generated"}
+    assert SambaConfig.from_dict(config.to_dict()).passwords == {"ann": "generated"}
+    assert config_with(passwords="nothing").passwords == {}
+
+
+def test_an_account_with_a_dot_is_a_share_and_a_user():
+    config_with(
+        shares=[{"name": "first.last", "path": "/home/first.last"}],
+        users=["first.last"],
+    ).validate()
+
+
+def test_a_native_account_may_hold_a_space():
+    shares = [{"name": "John Smith", "path": "C:\\Users\\John Smith"}]
+
+    config_with(shares=shares, users=["smb_John Smith"]).validate(os_name="windows")
+
+
+@pytest.mark.parametrize(
+    "os_name, code",
+    [("linux", "user_name_duplicate"), ("windows", "user_name_taken")],
+)
+def test_two_users_of_one_name_are_refused(os_name, code):
+    shares = [{"name": "share", "path": "D:\\s" if os_name == "windows" else "/s"}]
+    users = ["smb_ann", "smb_ann"]
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config_with(shares=shares, users=users).validate(os_name=os_name)
+
+    assert (refused.value.code, refused.value.params) == (code, {"user": "smb_ann"})

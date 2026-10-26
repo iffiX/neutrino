@@ -2,12 +2,18 @@
 
 What these pin beside the verbs: the runner's own check is the binary, and
 read with the unit and the details as the engine reads them, the details
-are what Samba itself says,
-``testparm -s`` parsed into the global section and each share and
-``pdbedit -L`` into the accounts, so a share somebody set up by hand is
-reported the way the hub imports it.
+are what Samba itself says, ``testparm -s`` parsed into the global section
+and each share and ``pdbedit -L`` into the accounts. Each apply sets the
+passwords of the hub's map whose digest differs from the root-only record,
+which keeps digests and never a password; a user that is no account of the
+machine's is refused ``account_unknown``; the ``set_password`` verb is gone.
+On Windows and macOS the apply sets each account's password the same way,
+after the server has made the account, and a removal forgets the digests.
 """
 
+import json
+import os
+import stat
 import subprocess
 
 import pytest
@@ -16,7 +22,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared import system_package as system_package_module
 from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
-from neutrino_agent.modules.samba.applier import SambaUserState
+from neutrino_agent.modules.samba.applier import SambaUserState, password_digest
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
@@ -64,6 +70,7 @@ PDBEDIT_OUTPUT = "ann:1001:Ann Example\nbob:1002:\n"
 CONFIG = {
     "shares": [{"name": "share", "path": "/srv/share"}],
     "users": ["ann"],
+    "passwords": {"ann": "generated"},
     "allowed_subnets": ["192.168.100.0/24"],
 }
 
@@ -71,8 +78,12 @@ CONFIG = {
 class RecordingPlatform(AgentPlatform):
     os_name = "linux"
 
-    def __init__(self):
+    def __init__(self, var_dir="/nonexistent/neutrino-test"):
         self.installed: list = []
+        self.var_dir = str(var_dir)
+
+    def agent_var_dir(self):
+        return self.var_dir
 
     def install_system_packages(self, names):
         self.installed.append(list(names))
@@ -95,11 +106,17 @@ class FakeApplier:
 
 
 class FakeUsers:
-    passwords: list = []
-    error = None
+    converged: list = []
 
-    def converge(self, users):
-        return []
+    def check_accounts(self, users):
+        for name in users:
+            if name == "ghost":
+                raise ModuleApplyError("account_unknown", {"account": name})
+
+    def converge(self, config, held):
+        FakeUsers.converged.append(dict(held))
+        kept = {name: password_digest(config.passwords[name]) for name in config.users}
+        return [f"set the password of {name}" for name in config.users], kept
 
     def survey(self, users):
         return [SambaUserState(name, True, False) for name in users]
@@ -107,22 +124,14 @@ class FakeUsers:
     def credentialed_users(self):
         return []
 
-    def set_password(self, name, password):
-        if FakeUsers.error is not None:
-            raise FakeUsers.error
-        FakeUsers.passwords.append((name, password))
-
 
 @pytest.fixture
-def runner(monkeypatch):
+def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.stops = 0
-    FakeUsers.passwords = []
-    FakeUsers.error = None
-    groups: list = []
+    FakeUsers.converged = []
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
-    monkeypatch.setattr(runner_module, "ensure_share_group", lambda: groups.append(1))
     monkeypatch.setattr(runner_module, "testparm", lambda rendered: None)
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(
@@ -131,9 +140,9 @@ def runner(monkeypatch):
         lambda: type("Reader", (), {"read": lambda self: ({}, [])})(),
     )
     held = SambaModuleRunner(
-        platform=RecordingPlatform(), log=lambda m: None, family="rhel"
+        platform=RecordingPlatform(tmp_path), log=lambda m: None, family="rhel"
     )
-    held.groups = groups
+    held.record_path = tmp_path / "samba.json"
     return held
 
 
@@ -168,11 +177,40 @@ def test_the_own_check_is_the_server_binary(monkeypatch):
     assert held.verify({}) is False
 
 
-def test_install_puts_the_package_and_the_share_group(runner):
+def test_install_puts_the_package_alone(runner):
     runner.install({"params": {"packages": ["samba"]}})
 
     assert runner._platform.installed == [["samba"]]
-    assert runner.groups == [1]
+
+
+def test_a_user_that_is_no_account_of_the_machine_is_refused(runner):
+    bad = {**CONFIG, "users": ["ghost"], "passwords": {"ghost": "x"}}
+
+    for step in (runner.validate, runner.apply):
+        with pytest.raises(ModuleApplyError) as refused:
+            step(bad)
+        assert refused.value.params == {"account": "ghost"}
+    assert FakeApplier.applied == []
+
+
+def test_apply_keeps_the_digest_of_each_password_root_only(runner):
+    runner.apply(CONFIG)
+    runner.apply(CONFIG)
+
+    record = json.loads(runner.record_path.read_text())
+    assert record == {"passwords": {"ann": password_digest("generated")}}
+    assert "generated" not in runner.record_path.read_text()
+    assert stat.S_IMODE(os.stat(runner.record_path).st_mode) == 0o600
+    assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
+
+
+def test_removing_the_configuration_forgets_the_digests(runner, monkeypatch, tmp_path):
+    monkeypatch.setattr(runner_module, "SAMBA_CONF_PATH", str(tmp_path / "smb.conf"))
+    runner.apply(CONFIG)
+
+    runner.remove_configuration()
+
+    assert not runner.record_path.exists()
 
 
 def test_validate_refuses_a_bad_configuration_typed(runner):
@@ -241,27 +279,10 @@ def test_details_carry_the_live_reads(runner, monkeypatch):
     assert details["disk_usage"] == [{"share": "share"}]
 
 
-def test_the_password_command_lands_only_on_a_configured_user(runner):
-    runner.apply(CONFIG)
-
-    good = runner.command("set_password", {"name": "ann", "password": "x"})
-    bad = runner.command("set_password", {"name": "ghost", "password": "x"})
-
-    assert good["exit_code"] == 0
-    assert FakeUsers.passwords == [("ann", "x")]
-    assert (bad["exit_code"], bad["code"]) == (1, "user_unknown")
-
-
-def test_a_refused_password_is_typed(runner):
-    runner.apply(CONFIG)
-    FakeUsers.error = subprocess.CalledProcessError(
-        1, ["smbpasswd"], stderr="no such user"
-    )
-
+def test_the_password_verb_is_gone(runner):
     outcome = runner.command("set_password", {"name": "ann", "password": "x"})
 
-    assert outcome["code"] == "command_failed"
-    assert "no such user" in outcome["params"]["detail"]
+    assert outcome["code"] == "verb_unknown"
 
 
 def test_a_verb_the_module_does_not_have_is_refused(runner):
@@ -379,7 +400,9 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
 
 
 def test_observe_lists_the_configured_users_first_then_the_rest(runner, monkeypatch):
-    runner.apply({**CONFIG, "users": ["carol", "ann"]})
+    runner.apply(
+        {**CONFIG, "users": ["carol", "ann"], "passwords": {"carol": "c", "ann": "a"}}
+    )
     samba_commands(monkeypatch, accounts=("ann", "carol"))
 
     users = observed(runner)["details"]["users"]
@@ -436,8 +459,8 @@ class NativeServerPlatform(RecordingPlatform):
     os_name = "windows"
     capabilities = frozenset({"smb_server"})
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, var_dir):
+        super().__init__(var_dir)
         self.applier = FakeNativeApplier()
         self.log_path = ""
 
@@ -451,6 +474,7 @@ class NativeServerPlatform(RecordingPlatform):
 WINDOWS_CONFIG = {
     "shares": [{"name": "share", "path": "D:\\share"}],
     "users": ["ann"],
+    "passwords": {"ann": "pw"},
     "allowed_subnets": ["192.168.100.0/24"],
 }
 
@@ -464,8 +488,8 @@ class Clock:
 
 
 @pytest.fixture
-def native():
-    platform = NativeServerPlatform()
+def native(tmp_path):
+    platform = NativeServerPlatform(tmp_path)
     clock = Clock()
     held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
     held.applier = platform.applier
@@ -493,14 +517,15 @@ def test_the_native_server_installs_nothing_and_is_there_when_it_answers(native)
 def test_an_apply_keeps_what_it_made_in_the_record(native):
     native.apply(WINDOWS_CONFIG)
 
-    ((verb, config, record),) = native.applier.calls
+    (verb, config, record), password = native.applier.calls
     assert verb == "apply"
+    assert password == ("set_password", "ann", "pw")
     assert config == SambaConfig.from_dict(WINDOWS_CONFIG).to_dict()
     assert record["shares"] == {"share": "D:\\share"}
     assert record_of(native) == {
         "shares": {"share": "D:\\share"},
         "accounts": ["ann"],
-        "passworded": [],
+        "passwords": {"ann": password_digest("pw")},
         "is_served": True,
     }
     assert native.is_active() is True
@@ -545,7 +570,7 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
         {
             "shares": {"share": "D:\\share"},
             "accounts": ["ann"],
-            "passworded": [],
+            "passwords": {"ann": password_digest("pw")},
             "is_served": True,
         },
         False,
@@ -553,7 +578,7 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
     assert record_of(native) == {
         "shares": {},
         "accounts": ["ann"],
-        "passworded": [],
+        "passwords": {"ann": password_digest("pw")},
         "is_served": False,
     }
     assert native.is_active() is False
@@ -569,68 +594,70 @@ def test_removing_the_configuration_is_a_removal(native):
     assert record_of(native)["accounts"] == ["ann"]
 
 
-def test_a_password_is_set_only_for_an_account_the_module_made(native):
-    assert native.command("set_password", {"name": "ann", "password": "pw"})[
-        "code"
-    ] == ("user_unknown")
+def password_calls(native) -> list:
+    return [call for call in native.applier.calls if call[0] == "set_password"]
+
+
+def test_a_password_is_set_again_only_when_the_hubs_differs(native):
+    native.apply(WINDOWS_CONFIG)
+    native.apply(WINDOWS_CONFIG)
+    native.apply({**WINDOWS_CONFIG, "passwords": {"ann": "pw2"}})
+
+    assert password_calls(native) == [
+        ("set_password", "ann", "pw"),
+        ("set_password", "ann", "pw2"),
+    ]
+    assert "pw2" not in open(native._record_path).read()
+
+
+def test_a_dropped_user_leaves_the_digests_and_comes_back_with_its_password(native):
+    native.apply(WINDOWS_CONFIG)
+    native.apply({**WINDOWS_CONFIG, "users": [], "passwords": {}})
+
+    assert record_of(native)["passwords"] == {}
 
     native.apply(WINDOWS_CONFIG)
-    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
-
-    assert outcome["exit_code"] == 0
-    assert native.applier.calls[-1] == ("set_password", "ann", "pw")
-
-
-def test_a_password_set_is_recorded_until_its_user_is_removed(native):
-    native.apply(WINDOWS_CONFIG)
-    native.command("set_password", {"name": "ann", "password": "pw"})
-    native.command("set_password", {"name": "ann", "password": "pw2"})
-
-    assert record_of(native)["passworded"] == ["ann"]
-
-    native.apply({**WINDOWS_CONFIG, "users": []})
-    assert record_of(native)["passworded"] == []
-
-    native.apply(WINDOWS_CONFIG)
-    assert record_of(native)["passworded"] == []
+    assert len(password_calls(native)) == 2
 
 
 def test_a_password_the_server_refused_is_not_recorded(native):
-    native.apply(WINDOWS_CONFIG)
-
     def refuse(name, password):
         raise OSError("eDSAuthAccountDisabled")
 
     native.applier.set_password = refuse
-    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
 
-    assert outcome["code"] == "command_failed"
-    assert record_of(native)["passworded"] == []
+    with pytest.raises(ModuleApplyError) as refused:
+        native.apply(WINDOWS_CONFIG)
+
+    assert refused.value.code == "apply_failed"
+    assert record_of(native)["passwords"] == {}
 
 
-def test_an_account_the_system_would_not_make_keeps_its_code_and_words(native):
-    native.apply(WINDOWS_CONFIG)
+def test_an_account_the_system_would_not_make_is_passed_over(native):
+    native.applier.error = ModuleApplyError(
+        "user_create_failed", {"user": "ann", "detail": "full name exists"}
+    )
 
-    def refuse(name, password):
-        raise ModuleApplyError(
-            "user_create_failed", {"user": name, "detail": "full name exists"}
-        )
+    with pytest.raises(ModuleApplyError) as refused:
+        native.apply(WINDOWS_CONFIG)
 
-    native.applier.set_password = refuse
-    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
-
-    assert outcome["code"] == "user_create_failed"
-    assert outcome["params"] == {"user": "ann", "detail": "full name exists"}
-    assert record_of(native)["passworded"] == []
+    assert refused.value.code == "user_create_failed"
+    assert password_calls(native) == []
+    assert record_of(native)["passwords"] == {}
 
 
 def test_a_removal_forgets_every_password(native):
     native.apply(WINDOWS_CONFIG)
-    native.command("set_password", {"name": "ann", "password": "pw"})
 
     native.remove_configuration()
 
-    assert record_of(native)["passworded"] == []
+    assert record_of(native)["passwords"] == {}
+
+
+def test_the_password_verb_is_gone_on_the_native_server(native):
+    assert native.command("set_password", {"name": "ann", "password": "pw"})[
+        "code"
+    ] == ("verb_unknown")
 
 
 def test_the_server_is_read_once_per_half_minute_and_after_each_change(native):

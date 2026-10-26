@@ -1,11 +1,13 @@
-"""The file share as a module: package, configuration, verbs, details.
+"""The file share as a module: package, configuration, details.
 
 The package comes from the distribution, so the install rides the
 system-package runner. What makes the package this hub's file share, the
-rendered ``smb.conf``, the accounts and the share directories, is applied
-here from the hub's desired configuration; what the machine actually
-serves, read back from Samba itself, is what the hub imports the first
-time it configures a share somebody set up by hand.
+rendered ``smb.conf`` with one share per enabled account and each account's
+Samba password, is applied here from the hub's desired configuration; what
+the machine actually serves, read back from Samba itself, is reported and
+never imported. A root-only record under the agent's work root keeps the
+digest of each password the module set, so a password is set again only
+when the hub's differs.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -26,23 +28,23 @@ import threading
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
     SambaStatusReader,
     SambaUserManager,
-    ensure_share_group,
+    password_digest,
     testparm,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
-    SAMBA_COMMAND_SET_PASSWORD,
     SAMBA_CONF_PATH,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
+    SAMBA_RECORD_NAME,
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
@@ -68,25 +70,13 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._unit = samba_unit(family or platform_tuple().get("family", ""))
+        self._record_path = os.path.join(platform.agent_var_dir(), SAMBA_RECORD_NAME)
         self._config: "SambaConfig | None" = None
 
     @property
     def unit(self) -> str:
         """The unit this machine's Samba runs as."""
         return self._unit
-
-    def install(self, recipe: dict) -> None:
-        """Install the package and the group every share account joins.
-
-        Args:
-            recipe: The module's recipe.
-
-        Raises:
-            InstallError: If the package manager refuses.
-            PlatformUnsupportedError: If this platform installs nothing.
-        """
-        super().install(recipe)
-        ensure_share_group()
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration, then have Samba check it.
@@ -95,33 +85,40 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             config: The desired configuration.
 
         Raises:
-            ModuleApplyError: Naming the first problem found.
+            ModuleApplyError: Naming the first problem found;
+                ``account_unknown {account}`` for a user the machine has no
+                account of.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
+        SambaUserManager().check_accounts(parsed.users)
         testparm(SambaConfigRenderer(config=parsed).render())
 
     def apply(self, config: dict) -> None:
-        """Render the configuration, converge accounts, and load it.
+        """Render the configuration, load it, and set each user's password.
 
         Args:
             config: The desired configuration.
 
         Raises:
-            ModuleApplyError: When the configuration is refused or Samba
-                will not take it.
+            ModuleApplyError: When the configuration is refused, a user is
+                no account of the machine's, or Samba will not take it.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
-        ensure_share_group()
+        users = SambaUserManager()
+        users.check_accounts(parsed.users)
         rendered = SambaConfigRenderer(config=parsed).render()
+        held = read_digests(self._record_path)
         try:
             note = SambaConfigApplier(unit=self._unit).apply(rendered, config=parsed)
-            changes = SambaUserManager().converge(parsed.users)
+            changes, kept = users.converge(parsed, held)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
+        if kept != held:
+            write_record(self._record_path, {"passwords": kept})
         self._config = parsed
         self._log("samba: " + "; ".join([note] + changes))
 
@@ -130,10 +127,12 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).stop()
 
     def remove_configuration(self) -> None:
-        """Delete the rendered ``smb.conf``; the share directories stay."""
+        """Delete the rendered ``smb.conf`` and the record; the share directories stay."""
         self._config = None
         with contextlib.suppress(OSError):
             os.unlink(SAMBA_CONF_PATH)
+        with contextlib.suppress(OSError):
+            os.unlink(self._record_path)
 
     def is_active(self) -> bool:
         """Whether this machine's Samba unit is active."""
@@ -177,30 +176,50 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             "disk_usage": reader.disk_usage(config),
         }
 
-    def command(self, verb: str, args: dict, on_line=None) -> dict:
-        """Run one of the file share's verbs.
 
-        Args:
-            verb: ``set_password``, or ``validate``.
-            args: ``{"name", "password"}``.
-            on_line: Called with each output line.
+def read_digests(path: str) -> dict:
+    """The digest of each password the module set, by user.
 
-        Returns:
-            ``{"exit_code", "code", "params", "output"}``.
-        """
-        if verb != SAMBA_COMMAND_SET_PASSWORD:
-            return super().command(verb, args, on_line)
-        name = str(args.get("name", ""))
-        config = self._config or SambaConfig()
-        if name not in config.users:
-            return command_outcome(1, "user_unknown", {"user": name})
-        try:
-            SambaUserManager().set_password(name, str(args.get("password", "")))
-        except (OSError, subprocess.SubprocessError) as error:
-            return command_outcome(
-                1, "command_failed", {"detail": command_detail(error)[:500]}
-            )
-        return command_outcome(0, output=f"password set for {name}\n")
+    Args:
+        path: The record's file.
+
+    Returns:
+        ``{user: digest}``; empty when there is no record or it does not
+        read.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            held = json.load(stream)
+    except (OSError, ValueError):
+        return {}
+    passwords = held.get("passwords") if isinstance(held, dict) else None
+    if not isinstance(passwords, dict):
+        return {}
+    return {str(name): str(digest) for name, digest in passwords.items()}
+
+
+def write_record(path: str, record: dict) -> None:
+    """Keep a record, root-only, whole or not at all.
+
+    Args:
+        path: The record's file.
+        record: What it holds.
+
+    Raises:
+        OSError: When it cannot be written.
+    """
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=directory, prefix=".samba_")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(record, stream)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
 
 
 class SambaNativeServerRunner(ModuleRunner):
@@ -208,10 +227,12 @@ class SambaNativeServerRunner(ModuleRunner):
 
     Windows and macOS carry the server, so there is nothing to install or
     uninstall; the platform's applier converges the shares, the accounts
-    and the fence, and loads the fence again when the runner is built. A
-    root-only record under the agent's work root lists what the module
-    made and which accounts were given a password. The server's state is
-    read at most every 30 seconds and again after every change.
+    and the fence, and loads the fence again when the runner is built. Each
+    account's password is set from the configuration's ``passwords``
+    whenever it differs from the one the module set last. A root-only
+    record under the agent's work root lists what the module made and the
+    digest of each password it set. The server's state is read at most
+    every 30 seconds and again after every change.
     """
 
     runner = "samba_native"
@@ -316,15 +337,20 @@ class SambaNativeServerRunner(ModuleRunner):
             self._forget_status()
         accounts = list(record["accounts"])
         accounts += [name for name in parsed.users if name not in accounts]
+        refused = refusal.params.get("user", "") if refusal is not None else ""
+        try:
+            passwords = self._set_passwords(parsed, record["passwords"], refused)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
+        finally:
+            self._forget_status()
         self._write_record(
             {
                 "shares": {share.name: share.path for share in parsed.shares},
                 "accounts": accounts,
-                "passworded": [
-                    name
-                    for name in self._read_record()["passworded"]
-                    if name in parsed.users
-                ],
+                "passwords": passwords,
                 "is_served": True,
             }
         )
@@ -332,6 +358,35 @@ class SambaNativeServerRunner(ModuleRunner):
         self._log("samba: " + "; ".join(notes or ["unchanged"]))
         if refusal is not None:
             raise refusal
+
+    def _set_passwords(self, config: SambaConfig, held: dict, refused: str) -> dict:
+        """Set each account's password that differs from the one set last.
+
+        Args:
+            config: The configuration, with ``passwords``.
+            held: The digest of each password the module set last.
+            refused: An account the system would not make, passed over.
+
+        Returns:
+            The digests the module holds now, for the configured users.
+
+        Raises:
+            ModuleApplyError: When the system will not take an account's
+                password.
+            OSError: When the host or a command fails.
+        """
+        kept = {name: digest for name, digest in held.items() if name in config.users}
+        for name in config.users:
+            password = config.passwords.get(name, "")
+            if not password or name == refused:
+                continue
+            digest = password_digest(password)
+            if kept.get(name) == digest:
+                continue
+            self._applier.set_password(name, password)
+            kept[name] = digest
+            self._log(f"samba: set the password of {name}")
+        return kept
 
     def stop(self) -> None:
         """Take the module's shares off the server; accounts and fence stay.
@@ -358,7 +413,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._applier.withdraw(record, is_removed=True)
         finally:
             self._forget_status()
-        self._write_record(dict(record, shares={}, passworded=[], is_served=False))
+        self._write_record(dict(record, shares={}, passwords={}, is_served=False))
 
     def is_active(self) -> bool:
         """Whether the server runs and serves the module's shares."""
@@ -403,39 +458,6 @@ class SambaNativeServerRunner(ModuleRunner):
         )
         return self._with_agent_lines(own, lines)
 
-    def command(self, verb: str, args: dict, on_line=None) -> dict:
-        """Run one of the file share's verbs.
-
-        Args:
-            verb: ``set_password``, or ``validate``.
-            args: ``{"name", "password"}``.
-            on_line: Called with each output line.
-
-        Returns:
-            ``{"exit_code", "code", "params", "output"}``.
-        """
-        if verb != SAMBA_COMMAND_SET_PASSWORD:
-            return super().command(verb, args, on_line)
-        name = str(args.get("name", ""))
-        config = self._config or SambaConfig()
-        record = self._read_record()
-        if name not in config.users or name not in record["accounts"]:
-            return command_outcome(1, "user_unknown", {"user": name})
-        try:
-            self._applier.set_password(name, str(args.get("password", "")))
-        except ModuleApplyError as error:
-            return command_outcome(1, error.code, dict(error.params))
-        except (OSError, subprocess.SubprocessError) as error:
-            return command_outcome(
-                1, "command_failed", {"detail": command_detail(error)[:500]}
-            )
-        finally:
-            self._forget_status()
-        record = self._read_record()
-        if name not in record["passworded"]:
-            self._write_record(dict(record, passworded=record["passworded"] + [name]))
-        return command_outcome(0, output=f"password set for {name}\n")
-
     def _read_status(self) -> dict:
         """The server's state, read again once the last reading is stale."""
         with self._lock:
@@ -455,7 +477,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "passworded", "is_served"}``.
+        """The record, ``{"shares", "accounts", "passwords", "is_served"}``.
 
         Empty when none.
         """
@@ -469,21 +491,10 @@ class SambaNativeServerRunner(ModuleRunner):
         return {
             "shares": dict(shares) if isinstance(shares, dict) else {},
             "accounts": [str(name) for name in held.get("accounts") or []],
-            "passworded": [str(name) for name in held.get("passworded") or []],
+            "passwords": read_digests(self._record_path),
             "is_served": bool(held.get("is_served", False)),
         }
 
     def _write_record(self, record: dict) -> None:
         """Keep the record, root-only, whole or not at all."""
-        directory = os.path.dirname(self._record_path)
-        os.makedirs(directory, mode=0o700, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=directory, prefix=".samba_")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                json.dump(record, stream)
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, self._record_path)
-        except BaseException:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-            raise
+        write_record(self._record_path, record)
