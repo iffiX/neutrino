@@ -369,6 +369,38 @@ HUB_FRPC_PATHS = {
     "windows": str(HUB_WINDOWS_FOLDER / "bin" / "frpc.exe"),
 }
 HUB_FRPC_LINE = "frpc: "
+# The Go programs each package carries under its ``bin``, by system: every
+# one answers ``--version`` with the package's version. The prefix is what
+# the Linux container lists each one's answer under.
+GO_PROGRAM_PATHS = {
+    "neutrino-hub": {
+        "linux": ("/opt/neutrino/hub/bin/neutrino_transport",),
+        "darwin": (
+            "/Library/Application Support/Neutrino/hub/app/bin/neutrino_transport",
+        ),
+        "windows": (str(HUB_WINDOWS_FOLDER / "bin" / "neutrino_transport.exe"),),
+    },
+    "neutrino-agent": {
+        "linux": (
+            "/opt/neutrino/agent/bin/neutrino_transport",
+            "/opt/neutrino/agent/bin/neutrino_ssh_server",
+        ),
+        "darwin": (
+            "/Library/Application Support/Neutrino/agent/app/bin/neutrino_transport",
+            "/Library/Application Support/Neutrino/agent/app/bin/neutrino_ssh_server",
+        ),
+        "windows": (
+            str(AGENT_WINDOWS_FOLDER / "bin" / "neutrino_transport.exe"),
+            str(AGENT_WINDOWS_FOLDER / "bin" / "neutrino_ssh_server.exe"),
+        ),
+    },
+    "neutrino-client": {
+        "linux": ("/opt/neutrino/client/bin/neutrino_transport",),
+        "darwin": (CLIENT_MACOS_APP + "/Contents/Resources/bin/neutrino_transport",),
+        "windows": (str(CLIENT_WINDOWS_FOLDER / "bin" / "neutrino_transport.exe"),),
+    },
+}
+GO_PROGRAM_LINE = "go program: "
 
 # --- Android ---
 ANDROID_ACTIVITY = "io.github.iffix.neutrino/.MainActivity"
@@ -510,7 +542,9 @@ def check_agent_windows(msi: Path) -> None:
         print(f"{service} {state}")
         if "RUNNING" not in state:
             raise SystemExit(f"{service} is not running")
-    print(f"nagent {_answer([str(AGENT_WINDOWS_FOLDER / 'nagent.exe'), '--version'])}")
+    version = _answer([str(AGENT_WINDOWS_FOLDER / "nagent.exe"), "--version"])
+    print(f"nagent {version}")
+    check_go_programs("neutrino-agent", "windows", version)
     names = {
         "task": AGENT_WINDOWS_ADDED_TASK,
         "rule": AGENT_WINDOWS_ADDED_RULE,
@@ -765,7 +799,9 @@ def _client_windows_install(msi: Path) -> None:
 def _client_windows_installed(msi: Path) -> None:
     """What the install left: the command, PATH, the daemon, the data tree."""
     nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
-    print(f"nclient {_answer([str(nclient), '--version'])}")
+    version = _answer([str(nclient), "--version"])
+    print(f"nclient {version}")
+    check_go_programs("neutrino-client", "windows", version)
     _note("installed: nclient status")
     status = subprocess.run(
         [str(nclient), "status"], timeout=CHECK_COMMAND_TIMEOUT_S
@@ -998,7 +1034,9 @@ def check_agent_macos(pkg: Path) -> None:
     job = _answer(["sudo", "launchctl", "print", AGENT_MACOS_JOB])
     if "state = running" not in job:
         raise SystemExit(f"{AGENT_MACOS_JOB} is not running")
-    print(f"nagent {_answer(['/usr/local/bin/nagent', '--version'])}")
+    version = _answer(["/usr/local/bin/nagent", "--version"])
+    print(f"nagent {version}")
+    check_go_programs("neutrino-agent", "darwin", version)
     problem = _macos_rustdesk_problem()
     if problem:
         raise SystemExit(problem)
@@ -1076,7 +1114,9 @@ def check_client_macos(pkg: Path) -> None:
     """
     _require_host("darwin", "macOS")
     _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
-    print(f"nclient {_answer(['/usr/local/bin/nclient', '--version'])}")
+    version = _answer(["/usr/local/bin/nclient", "--version"])
+    print(f"nclient {version}")
+    check_go_programs("neutrino-client", "darwin", version)
     status = subprocess.run(["/usr/local/bin/nclient", "status"]).returncode
     if status != 1:
         raise SystemExit(f"nclient status exited {status}, expected 1")
@@ -1183,8 +1223,10 @@ def check_hub_windows(msi: Path) -> None:
         _print_log(log, ("return value 3", "Error 19"), 25)
         raise SystemExit("the hub did not install")
     _check_no_pending_rename()
-    print(f"nhub {_answer([str(nhub), '--version'])}")
+    version = _answer([str(nhub), "--version"])
+    print(f"nhub {version}")
     check_frpc(_answer([HUB_FRPC_PATHS["windows"], "--version"]))
+    check_go_programs("neutrino-hub", "windows", version)
     if not _service_exists(HUB_WINDOWS_SERVICE):
         raise SystemExit("the hub's service is not registered")
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
@@ -1255,8 +1297,10 @@ def check_hub_macos(pkg: Path) -> None:
     """
     _require_host("darwin", "macOS")
     _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
-    print(f"nhub {_answer([HUB_MACOS_COMMAND, '--version'])}")
+    version = _answer([HUB_MACOS_COMMAND, "--version"])
+    print(f"nhub {version}")
     check_frpc(_answer([HUB_FRPC_PATHS["darwin"], "--version"]))
+    check_go_programs("neutrino-hub", "darwin", version)
     if not HUB_MACOS_PLIST.is_file():
         raise SystemExit("the hub's service is not registered")
     if not _is_job_loaded(HUB_MACOS_JOB):
@@ -1352,6 +1396,8 @@ def check_linux(package: Path) -> None:
         )
     if command == LINUX_COMMANDS["neutrino-agent"]:
         script += f" && {AGENT_LINUX_RUSTDESK_CHECK}"
+    for program in GO_PROGRAM_PATHS[match.group(1)]["linux"]:
+        script += f' && echo "{GO_PROGRAM_LINE}{program} $({program} --version)"'
     script += f" && {command} --version"
     if command == LINUX_COMMANDS["neutrino-hub"]:
         script += f" && {command} open --print"
@@ -1408,8 +1454,70 @@ def check_linux(package: Path) -> None:
             if line.startswith(HUB_FRPC_LINE)
         ]
         check_frpc(frpc[0] if frpc else "")
+        version = result.stdout.strip().splitlines()[-2]
     else:
-        print(f"{command} {result.stdout.strip().splitlines()[-1]}")
+        version = result.stdout.strip().splitlines()[-1]
+        print(f"{command} {version}")
+    check_go_program_lines(match.group(1), result.stdout, version)
+
+
+def check_go_programs(package: str, os_name: str, version: str) -> None:
+    """Every Go program a package carries answers ``--version`` with its version.
+
+    Args:
+        package: ``neutrino-hub``, ``neutrino-agent`` or ``neutrino-client``.
+        os_name: ``darwin`` or ``windows``, where the check runs the programs.
+        version: What the package's own command answered ``--version``.
+
+    Raises:
+        SystemExit: When a program is missing or answers another version.
+    """
+    for program in GO_PROGRAM_PATHS[package][os_name]:
+        if not Path(program).is_file():
+            raise SystemExit(f"the package laid down no {program}")
+        check_go_program(program, _answer([program, "--version"]), version)
+
+
+def check_go_program_lines(package: str, output: str, version: str) -> None:
+    """The Go programs' answers a Linux container printed, each checked.
+
+    Args:
+        package: ``neutrino-hub``, ``neutrino-agent`` or ``neutrino-client``.
+        output: What the container printed, with one ``GO_PROGRAM_LINE`` per
+            program followed by its path and its answer.
+        version: What the package's own command answered ``--version``.
+
+    Raises:
+        SystemExit: When a program's line is missing or names another version.
+    """
+    answers = {}
+    for line in output.splitlines():
+        if line.startswith(GO_PROGRAM_LINE):
+            program, _, answer = line[len(GO_PROGRAM_LINE) :].partition(" ")
+            answers[program] = answer
+    for program in GO_PROGRAM_PATHS[package]["linux"]:
+        check_go_program(program, answers.get(program, ""), version)
+
+
+def check_go_program(program: str, answer: str, version: str) -> None:
+    """One carried Go program answers ``--version`` with the package's version.
+
+    Args:
+        program: The program's path.
+        answer: What it printed.
+        version: What the package's own command answered ``--version``,
+            whose last word is the version.
+
+    Raises:
+        SystemExit: When the answer is empty or another version.
+    """
+    answer = answer.strip()
+    expected = version.split()[-1] if version.split() else ""
+    if not answer or answer != expected:
+        raise SystemExit(
+            f"{program} answers {answer or 'nothing'}, not the package's {version}"
+        )
+    print(f"{os.path.basename(program)} {answer}")
 
 
 def check_frpc(answer: str) -> None:

@@ -186,6 +186,7 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
             "\n  Neutrino Hub installed. Set it up in a browser at:\n\n"
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
             f"frpc: {FRP_VERSION}\n"
+            "go program: /opt/neutrino/hub/bin/neutrino_transport 0.5.0\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
         ),
@@ -198,7 +199,9 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
     assert check.HUB_AGENT_CACHE_DIR in script
     assert (
         ' && frpc_version=$(/opt/neutrino/hub/bin/frpc --version) && echo "frpc: '
-        '$frpc_version" && nhub --version && nhub open --print'
+        '$frpc_version" && echo "go program: /opt/neutrino/hub/bin/neutrino_transport '
+        '$(/opt/neutrino/hub/bin/neutrino_transport --version)" && nhub --version'
+        " && nhub open --print"
     ) in script
 
 
@@ -236,6 +239,60 @@ def test_the_carried_frpc_is_where_each_system_s_package_puts_it(check):
         root = PLATFORM_ROOTS[system][PLATFORM_ROOT_STATIC].replace("\\", "/")
         name = "frpc.exe" if system == "windows" else "frpc"
         assert path.replace("\\", "/").endswith(f"{root.split(':')[-1]}/bin/{name}")
+
+
+def test_the_carried_go_programs_are_where_each_system_s_package_puts_them(check):
+    """Each package's Go programs under its ``bin``, the hub's under its static root."""
+    from neutrino_hub.platforms.constants import PLATFORM_ROOT_STATIC, PLATFORM_ROOTS
+
+    for system, paths in check.GO_PROGRAM_PATHS["neutrino-hub"].items():
+        root = PLATFORM_ROOTS[system][PLATFORM_ROOT_STATIC].replace("\\", "/")
+        name = "neutrino_transport.exe" if system == "windows" else "neutrino_transport"
+        assert [path.replace("\\", "/") for path in paths] == [
+            (
+                f"{root.split(':')[-1]}/bin/{name}"
+                if system != "windows"
+                else paths[0].replace("\\", "/")
+            )
+        ]
+        assert paths[0].replace("\\", "/").endswith(f"/bin/{name}")
+    for package, programs in (
+        ("neutrino-agent", ("neutrino_transport", "neutrino_ssh_server")),
+        ("neutrino-client", ("neutrino_transport",)),
+    ):
+        for system, paths in check.GO_PROGRAM_PATHS[package].items():
+            suffix = ".exe" if system == "windows" else ""
+            assert [
+                path.replace("\\", "/").rsplit("/bin/", 1)[-1] for path in paths
+            ] == [f"{program}{suffix}" for program in programs]
+
+
+@pytest.mark.parametrize("answer", ["", "0.5.2", "dev"])
+def test_a_go_program_that_answers_another_version_fails_the_check(check, answer):
+    with pytest.raises(SystemExit, match="not the package's 0.6.0"):
+        check.check_go_program(
+            "/opt/neutrino/hub/bin/neutrino_transport", answer, "0.6.0"
+        )
+
+
+def test_a_go_program_answering_the_package_s_version_passes(check, capsys):
+    check.check_go_program(
+        "/opt/neutrino/hub/bin/neutrino_transport", "0.6.0\n", "0.6.0"
+    )
+
+    assert capsys.readouterr().out == "neutrino_transport 0.6.0\n"
+
+
+def test_the_container_s_lines_name_every_go_program_of_the_package(check):
+    output = (
+        "go program: /opt/neutrino/agent/bin/neutrino_transport 0.6.0\n"
+        "go program: /opt/neutrino/agent/bin/neutrino_ssh_server 0.6.0\n"
+        "0.6.0\n"
+    )
+
+    check.check_go_program_lines("neutrino-agent", output, "0.6.0")
+    with pytest.raises(SystemExit, match="neutrino_ssh_server answers nothing"):
+        check.check_go_program_lines("neutrino-agent", output.splitlines()[0], "0.6.0")
 
 
 @pytest.mark.parametrize("answer", ["", "0.52.0", "frpc version 0.71.1"])
@@ -298,6 +355,7 @@ def test_the_linux_hub_check_fails_when_the_cache_holds_another_platform(
             "agent cache: neutrino-agent_0.5.0_amd64.deb\n"
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
             f"frpc: {FRP_VERSION}\n"
+            "go program: /opt/neutrino/hub/bin/neutrino_transport 0.5.0\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
         ),
@@ -343,6 +401,7 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
         _fake_container_run(
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
             f"frpc: {FRP_VERSION}\n"
+            "go program: /opt/neutrino/hub/bin/neutrino_transport 0.5.0\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
             stderr=">>> Scriptlet output:\n>>>   Neutrino Hub installed. Set it up in a browser at:\n",
@@ -384,6 +443,11 @@ def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
     monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
     monkeypatch.setattr(check, "_sudo", sudo)
     monkeypatch.setattr(check, "_answer", lambda command: "state = running")
+    monkeypatch.setattr(
+        check,
+        "check_go_programs",
+        lambda package, os_name, version: ran.append(["go", package, os_name]),
+    )
     monkeypatch.setattr(check, "_wait_for_job_gone", lambda job: True)
     monkeypatch.setattr(
         check.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=1)
@@ -396,6 +460,7 @@ def test_the_macos_agent_is_removed_by_its_own_command(check, monkeypatch, tmp_p
     ran = _macos_agent_check(check, monkeypatch, tmp_path, is_foreign_taken=False)
 
     assert [str(tmp_path / "nagent"), "service", "uninstall", "--yes"] in ran
+    assert ["go", "neutrino-agent", "darwin"] in ran
     assert not any(arguments[:2] == ["launchctl", "bootout"] for arguments in ran)
 
 
@@ -972,7 +1037,14 @@ def test_the_linux_agent_check_looks_for_the_copy_and_no_registration(
         lambda name: "/usr/bin/docker" if name == "docker" else None,
     )
     monkeypatch.setattr(
-        check.subprocess, "run", _fake_container_run("nagent 0.5.0\n", calls)
+        check.subprocess,
+        "run",
+        _fake_container_run(
+            "go program: /opt/neutrino/agent/bin/neutrino_transport 0.5.0\n"
+            "go program: /opt/neutrino/agent/bin/neutrino_ssh_server 0.5.0\n"
+            "nagent 0.5.0\n",
+            calls,
+        ),
     )
     package = tmp_path / "neutrino-agent_0.5.0_amd64.deb"
     package.write_bytes(b"deb")
@@ -984,6 +1056,10 @@ def test_the_linux_agent_check_looks_for_the_copy_and_no_registration(
     assert script.index(check.AGENT_LINUX_RUSTDESK_CHECK) < script.index(
         "nagent --version"
     )
+    assert (
+        ' && echo "go program: /opt/neutrino/agent/bin/neutrino_ssh_server '
+        '$(/opt/neutrino/agent/bin/neutrino_ssh_server --version)"'
+    ) in script
 
 
 @pytest.mark.parametrize(
