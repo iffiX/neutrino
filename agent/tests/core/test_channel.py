@@ -1,12 +1,13 @@
-"""The channel's judgments: the certificate pin, and every status mapping.
+"""A binding of 0.5 taking the hub's key over the pinned TLS, and every status.
 
 The pin runs against a real TLS socket whose certificate is generated at
 test runtime with the ``openssl`` binary, so no key material lives in the
-repository: the right fingerprint talks, the wrong one is refused before a
-single request byte is sent, and a bound agent beating against the wrong
-certificate keeps its binding and says so. The status mappings replace
-``_request`` with a canned answer, so each status and body shape is judged
-in-process.
+repository: the right fingerprint asks for the key, the wrong one is refused
+before a single request byte is sent. The move of the binding is pinned
+end to end against that server: the agent's own public key sent, the hub's
+key and the agent's written, the fingerprint dropped and every address
+rewritten as ``tcp``. The status mappings replace ``_request`` with a
+canned answer, so each status and body shape is judged in-process.
 """
 
 import hashlib
@@ -21,32 +22,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_agent.core.enrollment as enrollment
-from neutrino_agent.constants import (
-    AGENT_BACKOFF_MAX_S,
-    AGENT_WS_PATH,
-    CHANNEL_JOIN_PATH,
-    CHANNEL_LEAVE_PATH,
-)
-from neutrino_agent.core.channel import BindingHttpClient
-from neutrino_agent.core.loop import Agent
+from neutrino_agent.constants import CHANNEL_KEY_SET_PATH
+from neutrino_agent.core.channel import HubKeyHttpClient
+from neutrino_agent.core.static_key import public_key_of
 from neutrino_agent.exceptions import (
-    EnrollmentError,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
 )
-from tests.conftest import bind, discard, link_for
 
 WRONG_FINGERPRINT = "0" * 64
-JOIN_PAYLOAD = {
-    "ticket": "ticket",
-    "role": "agent",
-    "protocol": 1,
-    "machine_id": "m",
-    "name": "box",
-    "software": "neutrino_agent/0.0.0",
-    "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-}
+HUB_KEY = "ab" * 32
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
@@ -54,7 +40,8 @@ class RecordingHandler(BaseHTTPRequestHandler):
 
     requests: list = []
     hosts: list = []
-    answer = b'{"id": "d1", "token": "t1"}'
+    status = 200
+    answer = b'{"key": "' + HUB_KEY.encode() + b'"}'
 
     def do_GET(self):
         RecordingHandler.requests.append((self.path, b""))
@@ -68,7 +55,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         RecordingHandler.requests.append((self.path, body))
         RecordingHandler.hosts.append(self.headers.get("Host"))
         answer = RecordingHandler.answer
-        self.send_response(200)
+        self.send_response(RecordingHandler.status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(answer)))
         self.end_headers()
@@ -131,6 +118,8 @@ def serving_tls(tmp_path, server_class, host):
 
     RecordingHandler.requests = []
     RecordingHandler.hosts = []
+    RecordingHandler.status = 200
+    RecordingHandler.answer = b'{"key": "' + HUB_KEY.encode() + b'"}'
     server = server_class((host, 0), RecordingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(certificate_path), str(key_path))
@@ -145,200 +134,165 @@ def serving_tls(tmp_path, server_class, host):
         server.server_close()
 
 
-def test_the_pinned_fingerprint_joins(tls_server):
+def legacy(config_path, url, fingerprint, urls=None) -> None:
+    """A binding of 0.5, pinned by a fingerprint, with no hub key."""
+    binding = {
+        "gateway_url": url,
+        "id": "d1",
+        "token": "t1",
+        "fingerprint": fingerprint,
+        "machine_id": "m1",
+    }
+    if urls is not None:
+        binding["gateway_urls"] = urls
+    config_path.write_text(json.dumps(binding))
+
+
+def test_the_pinned_fingerprint_asks_for_the_key(tls_server):
     url, fingerprint = tls_server
-    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
 
-    reply = client.join(JOIN_PAYLOAD)
+    key = HubKeyHttpClient(gateway_url=url, fingerprint=fingerprint).set_key(
+        "d1", "t1", "cd" * 32
+    )
 
-    assert reply == {"id": "d1", "token": "t1"}
+    assert key == HUB_KEY
     ((path, body),) = RecordingHandler.requests
-    assert path == CHANNEL_JOIN_PATH
-    assert json.loads(body) == JOIN_PAYLOAD
-
-
-def test_the_pinned_fingerprint_leaves(tls_server):
-    url, fingerprint = tls_server
-    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
-
-    client.leave("d1", "t1")
-
-    ((path, body),) = RecordingHandler.requests
-    assert path == CHANNEL_LEAVE_PATH
-    assert json.loads(body) == {"id": "d1", "token": "t1"}
+    assert path == CHANNEL_KEY_SET_PATH
+    assert json.loads(body) == {"id": "d1", "token": "t1", "public_key": "cd" * 32}
 
 
 def test_the_pinned_connection_floors_at_tls_1_2():
-    from neutrino_agent.core.channel import _PinnedHttpsConnection
+    from neutrino_agent.core.channel import _pinned_context
 
-    connection = _PinnedHttpsConnection(
-        "127.0.0.1", 1, fingerprint="0" * 64, timeout=1.0
-    )
-    assert connection._context.minimum_version == ssl.TLSVersion.TLSv1_2
+    assert _pinned_context().minimum_version == ssl.TLSVersion.TLSv1_2
 
 
 def test_a_wrong_fingerprint_is_refused_before_anything_is_sent(tls_server):
     url, _ = tls_server
-    client = BindingHttpClient(gateway_url=url, fingerprint=WRONG_FINGERPRINT)
+    client = HubKeyHttpClient(gateway_url=url, fingerprint=WRONG_FINGERPRINT)
 
     with pytest.raises(GatewayUntrusted):
-        client.join(JOIN_PAYLOAD)
-
+        client.set_key("d1", "t1", "cd" * 32)
     assert RecordingHandler.requests == []
 
 
 def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     url, _ = tls_server
-    client = BindingHttpClient(gateway_url=url)
 
     with pytest.raises(GatewayUntrusted):
-        client.leave("d1", "t1")
-
+        HubKeyHttpClient(gateway_url=url).set_key("d1", "t1", "cd" * 32)
     assert RecordingHandler.requests == []
 
 
-def test_a_wrong_pin_keeps_the_binding_and_names_the_changed_identity(
-    tls_server, config_path
-):
-    """A hub reset or reinstalled answers with a new certificate for good;
-    the binding stays, nothing is ever sent, and status says what answers."""
-    url, _ = tls_server
-    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
-    agent = Agent(log=discard)
-
-    delays = [agent.run_once() for _ in range(3)]
-
-    assert delays == [AGENT_BACKOFF_MAX_S] * 3
-    assert enrollment.is_bound()
-    assert agent.last_error() == {"code": "hub_untrusted", "params": {}}
-    assert RecordingHandler.requests == []
-
-
-def test_the_pinned_agent_reaches_the_hub(tls_server, config_path):
-    """With the right pin the upgrade request leaves the machine; this server
-    speaks no websocket, so the answer is a refusal to upgrade rather than a
-    changed identity."""
+def test_a_binding_of_0_5_moves_to_the_hubs_key(tls_server, config_path):
     url, fingerprint = tls_server
-    bind(config_path, url=url, fingerprint=fingerprint)
-    agent = Agent(log=discard)
+    port = url.rsplit(":", 1)[1]
+    legacy(config_path, url, fingerprint, urls=["https://192.0.2.1:8443", url])
 
-    agent.probe()
+    assert enrollment.take_hub_key() == {}
 
-    assert agent.last_error()["code"] == "hub_unreachable"
-    (request,) = RecordingHandler.requests
-    assert request[0] == AGENT_WS_PATH
+    binding = enrollment.load_binding()
+    sent = json.loads(RecordingHandler.requests[-1][1])
+    assert sent["public_key"] == public_key_of(binding["private_key"])
+    assert binding["hub_key"] == HUB_KEY
+    assert binding["gateway_url"] == f"tcp://127.0.0.1:{port}"
+    assert binding["gateway_urls"] == [
+        "tcp://192.0.2.1:8443",
+        f"tcp://127.0.0.1:{port}",
+    ]
+    assert "fingerprint" not in json.loads(config_path.read_text())
+    assert (config_path.stat().st_mode & 0o777) == 0o600
 
 
-def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_path):
+def test_binding_unknown_from_the_legacy_listener_unbinds(tls_server, config_path):
+    url, fingerprint = tls_server
+    RecordingHandler.status = 401
+    RecordingHandler.answer = b'{"detail": {"code": "binding_unknown"}}'
+    legacy(config_path, url, fingerprint)
+
+    assert enrollment.take_hub_key() == {"code": "binding_unknown", "params": {}}
+    assert not config_path.exists()
+
+
+def test_no_address_giving_a_key_is_hub_key_missing(tls_server, config_path):
     url, _ = tls_server
-    link = link_for(
-        {"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT, "role": "agent"}
-    )
+    legacy(config_path, url, WRONG_FINGERPRINT, urls=["tcp://192.0.2.1:8443"])
 
-    with pytest.raises(EnrollmentError) as refusal:
-        enrollment.enroll(link)
-
-    assert "certificate" in str(refusal.value)
-    assert RecordingHandler.requests == []
-    assert not enrollment.is_bound()
+    assert enrollment.take_hub_key() == {"code": "hub_key_missing", "params": {}}
+    assert enrollment.load_legacy_binding()["fingerprint"] == WRONG_FINGERPRINT
 
 
-def canned_client(status, data=b"", headers=None):
-    """A client whose one answer is canned at the ``_request`` seam.
+def test_a_binding_with_a_key_takes_none(config_path):
+    from tests.conftest import bind
 
-    Header names are lower-cased the way ``_request`` hands them up.
-    """
-    made = BindingHttpClient(gateway_url="http://hub")
-    named = {name.lower(): value for name, value in (headers or {}).items()}
+    bind(config_path)
 
-    def request(method, url, *, body=None, headers=None):
-        return status, data, named
-
-    made._request = request
-    return made
-
-
-def refusal(code: str, params=None) -> bytes:
-    return json.dumps({"detail": {"code": code, "params": params or {}}}).encode()
-
-
-@pytest.mark.parametrize("status", [401, 403, 404, 409, 422, 500])
-def test_an_error_status_with_a_code_raises_the_detail(status):
-    with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_client(status, refusal("ticket_spent")).join(JOIN_PAYLOAD)
-
-    assert caught.value.code == "ticket_spent"
-    assert caught.value.params == {}
-
-
-def test_a_protocol_refusal_carries_its_numbers():
-    body = refusal("protocol_too_new", {"peer": 2, "hub": 1, "min": 1})
-
-    with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_client(409, body).join(JOIN_PAYLOAD)
-
-    assert caught.value.code == "protocol_too_new"
-    assert caught.value.params == {"peer": 2, "hub": 1, "min": 1}
-
-
-def test_a_detail_without_params_reads_as_empty_params():
-    body = json.dumps({"detail": {"code": "ticket_spent", "params": "words"}}).encode()
-
-    with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_client(401, body).join(JOIN_PAYLOAD)
-
-    assert caught.value.params == {}
+    assert enrollment.take_hub_key() == {}
+    assert enrollment.load_legacy_binding() == {}
 
 
 @pytest.mark.parametrize(
-    "body",
-    [b"", b"not json", b'{"detail": "words"}', b'{"detail": {}}', b'{"detail": [1]}'],
+    "url, expected",
+    [
+        ("https://192.0.2.1:8443", "tcp://192.0.2.1:8443"),
+        ("https://hub.lan", "tcp://hub.lan:443"),
+        ("https://[fd00::1]:8443", "tcp://[fd00::1]:8443"),
+        ("tcp://192.0.2.1:8443", "tcp://192.0.2.1:8443"),
+    ],
 )
+def test_a_0_5_address_is_rewritten_with_the_same_host_and_port(url, expected):
+    assert enrollment.transport_url(url) == expected
+
+
+def canned_client(status, data=b"", headers=None):
+    """A client whose one request answers with the given status and body."""
+    made = HubKeyHttpClient(gateway_url="http://hub")
+    made._request = lambda method, url, body=None, headers=None: (
+        status,
+        data,
+        headers or {},
+    )
+    return made
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 409])
+def test_an_error_status_with_a_code_raises_the_detail(status):
+    body = json.dumps({"detail": {"code": "binding_unknown", "params": {"a": 1}}})
+
+    with pytest.raises(GatewayRefusedDetail) as caught:
+        canned_client(status, body.encode()).set_key("d", "t", "k")
+
+    assert (caught.value.code, caught.value.params) == ("binding_unknown", {"a": 1})
+
+
+@pytest.mark.parametrize("body", [b"", b"not json", b'{"detail": "words"}'])
 def test_an_error_status_without_a_code_raises_unreachable(body):
-    with pytest.raises(GatewayUnreachable) as caught:
-        canned_client(409, body).join(JOIN_PAYLOAD)
-
-    assert not isinstance(caught.value, GatewayRefusedDetail)
-
-
-@pytest.mark.parametrize("status", [400, 401, 404, 418, 500, 503])
-def test_other_error_statuses_raise_unreachable(status):
-    with pytest.raises(GatewayUnreachable) as caught:
-        canned_client(status).leave("d1", "t1")
-
-    assert not isinstance(caught.value, GatewayRefusedDetail)
-
-
-def test_invalid_json_in_a_success_raises_unreachable():
     with pytest.raises(GatewayUnreachable):
-        canned_client(200, b"not json").join(JOIN_PAYLOAD)
+        canned_client(500, body).set_key("d", "t", "k")
 
 
-def test_an_empty_success_body_reads_as_an_empty_object():
-    assert canned_client(200, b"  ").join(JOIN_PAYLOAD) == {}
-
-
-def test_a_leave_ignores_the_reply_body():
-    assert canned_client(200, b'{"anything": 1}').leave("d1", "t1") is None
+@pytest.mark.parametrize("data", [b"not json", b"", b'{"key": ""}', b"[]"])
+def test_a_success_naming_no_key_raises_unreachable(data):
+    with pytest.raises(GatewayUnreachable):
+        canned_client(200, data).set_key("d", "t", "k")
 
 
 def test_a_dead_port_raises_unreachable():
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
-    probe.close()
-    made = BindingHttpClient(gateway_url=f"http://127.0.0.1:{port}")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    client = HubKeyHttpClient(gateway_url=f"http://127.0.0.1:{port}")
 
     with pytest.raises(GatewayUnreachable):
-        made.join(JOIN_PAYLOAD)
+        client.set_key("d", "t", "k")
 
 
 def test_an_ipv6_hub_is_reached_at_its_bracketed_address(tls_server_ipv6):
     url, fingerprint = tls_server_ipv6
-    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
 
-    reply = client.join(JOIN_PAYLOAD)
+    key = HubKeyHttpClient(gateway_url=url, fingerprint=fingerprint).set_key(
+        "d1", "t1", "cd" * 32
+    )
 
-    assert url.startswith("https://[::1]:")
-    assert reply == {"id": "d1", "token": "t1"}
-    assert RecordingHandler.hosts == [url.removeprefix("https://")]
+    assert key == HUB_KEY
+    assert RecordingHandler.hosts[0].startswith("[::1]")

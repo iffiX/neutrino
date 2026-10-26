@@ -1,48 +1,61 @@
 """``nagent leave``: leaving a hub, asked about first, refused plainly
 without root.
 
-Leaving posts the binding back, but a hub that cannot be reached does not
-hold the machine: the binding goes either way, and the words say so. The
-question comes before anything is posted; ``--yes`` skips it, and with no
-terminal and no ``--yes`` nothing is asked and nothing changes.
+Leaving sends ``leave`` through a transport of the command's own, but a hub
+that cannot be reached does not hold the machine: the binding goes either
+way, and the words say so. The question comes before anything is sent;
+``--yes`` skips it, and with no terminal and no ``--yes`` nothing is asked
+and nothing changes.
 """
 
 import io
 
+import pytest
+
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.leave as leave_cli
-import neutrino_agent.core.channel as channel
 import neutrino_agent.core.enrollment as enrollment
-from neutrino_agent.exceptions import GatewayUnreachable
-from tests.conftest import BINDING_ID, BINDING_TOKEN, bind
+import neutrino_agent.core.loop as loop_module
+from tests.conftest import HUB_KEY, bind
+from tests.transport.fake_transport import FakeTransport, one_shot_for
 
 LEAVE_WORDS = "left the hub; this machine keeps the agent and can join again"
 
 
-def test_a_bound_machine_leaves_and_says_so(monkeypatch, config_path, capsys):
-    bind(config_path, url="https://hub.lan:8443")
-    posted = []
+@pytest.fixture
+def fake(monkeypatch):
+    """The transport ``nagent leave`` starts in its own process, played here."""
+    transport = FakeTransport()
+    opener = one_shot_for(transport)
+    monkeypatch.setattr(
+        loop_module,
+        "one_shot_transport",
+        lambda platform, log=None, **keywords: opener(**keywords),
+    )
+    yield transport
+    transport.close()
 
-    def leave(self, binding_id, token):
-        posted.append((self._gateway_url, binding_id, token))
 
-    monkeypatch.setattr(channel.BindingHttpClient, "leave", leave)
+def leaves(fake) -> list:
+    return [line for line in fake.commands if line["command"] == "leave"]
+
+
+def test_a_bound_machine_leaves_and_says_so(fake, config_path, capsys):
+    bind(config_path, url="tcp://192.0.2.5:8443")
 
     assert leave_cli.main(is_forced=True) == 0
 
-    assert posted == [("https://hub.lan:8443", BINDING_ID, BINDING_TOKEN)]
+    (leave,) = leaves(fake)
+    assert leave["hub_key"] == HUB_KEY
+    assert leave["addresses"] == ["tcp://192.0.2.5:8443"]
     assert LEAVE_WORDS in capsys.readouterr().out
     assert not config_path.exists()
     assert not enrollment.is_bound()
 
 
-def test_an_unreachable_hub_does_not_hold_the_machine(monkeypatch, config_path, capsys):
-    bind(config_path, url="https://hub.lan:8443")
-
-    def refuse(self, binding_id, token):
-        raise GatewayUnreachable("cannot reach hub")
-
-    monkeypatch.setattr(channel.BindingHttpClient, "leave", refuse)
+def test_an_unreachable_hub_does_not_hold_the_machine(fake, config_path, capsys):
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    fake.answers["leave"] = {"code": "hub_unreachable", "params": {"detail": "x"}}
 
     assert leave_cli.main(is_forced=True) == 0
 
@@ -77,19 +90,15 @@ def refuse_to_ask(prompt):
     raise AssertionError("asked")
 
 
-def posted_leaves(monkeypatch) -> list:
-    posted: list = []
-    monkeypatch.setattr(
-        channel.BindingHttpClient,
-        "leave",
-        lambda self, binding_id, token: posted.append(binding_id),
-    )
-    return posted
+def posted_leaves(fake) -> list:
+    return fake.commands
 
 
-def test_it_asks_first_and_a_yes_leaves(terminal, monkeypatch, config_path, capsys):
-    bind(config_path, url="https://hub.lan:8443")
-    posted = posted_leaves(monkeypatch)
+def test_it_asks_first_and_a_yes_leaves(
+    terminal, monkeypatch, config_path, capsys, fake
+):
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    posted = posted_leaves(fake)
     asked = []
     monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "y")
 
@@ -97,13 +106,13 @@ def test_it_asks_first_and_a_yes_leaves(terminal, monkeypatch, config_path, caps
 
     assert asked == [leave_cli.LEAVE_QUESTION]
     assert "the agent and its service stay [y/N] " in asked[0]
-    assert posted == [BINDING_ID]
+    assert [line["command"] for line in posted] == ["leave"]
     assert not enrollment.is_bound()
 
 
-def test_a_no_changes_nothing(terminal, monkeypatch, config_path, capsys):
-    bind(config_path, url="https://hub.lan:8443")
-    posted = posted_leaves(monkeypatch)
+def test_a_no_changes_nothing(terminal, monkeypatch, config_path, capsys, fake):
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    posted = posted_leaves(fake)
     monkeypatch.setattr("builtins.input", lambda prompt: "")
 
     assert leave_cli.main(is_forced=False) == 1
@@ -114,10 +123,10 @@ def test_a_no_changes_nothing(terminal, monkeypatch, config_path, capsys):
 
 
 def test_with_no_terminal_it_names_yes_and_changes_nothing(
-    monkeypatch, config_path, capsys
+    monkeypatch, config_path, capsys, fake
 ):
-    bind(config_path, url="https://hub.lan:8443")
-    posted = posted_leaves(monkeypatch)
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    posted = posted_leaves(fake)
     monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
     monkeypatch.setattr("builtins.input", refuse_to_ask)
 
@@ -131,29 +140,26 @@ def test_with_no_terminal_it_names_yes_and_changes_nothing(
 
 
 def test_yes_on_the_command_line_leaves_without_asking(
-    monkeypatch, config_path, capsys
+    monkeypatch, config_path, capsys, fake
 ):
-    bind(config_path, url="https://hub.lan:8443")
-    posted = posted_leaves(monkeypatch)
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    posted = posted_leaves(fake)
     monkeypatch.setattr("builtins.input", refuse_to_ask)
     monkeypatch.setattr(entry, "_is_privileged", lambda: True, raising=False)
     monkeypatch.setattr(entry.sys, "argv", ["nagent", "leave", "--yes"])
 
     assert entry.main() == 0
 
-    assert posted == [BINDING_ID]
+    assert [line["command"] for line in posted] == ["leave"]
     assert not enrollment.is_bound()
 
 
-def test_a_leave_says_each_account_it_switched_back(monkeypatch, config_path, capsys):
-    import neutrino_agent.core.loop as loop
-
-    bind(config_path, url="https://hub.lan:8443")
+def test_a_leave_says_each_account_it_switched_back(
+    monkeypatch, config_path, capsys, fake
+):
+    bind(config_path, url="tcp://192.0.2.5:8443")
     monkeypatch.setattr(
-        channel.BindingHttpClient, "leave", lambda self, binding_id, token: None
-    )
-    monkeypatch.setattr(
-        loop.AiToolsApplier,
+        loop_module.AiToolsApplier,
         "switch_back_all",
         lambda self: [
             {"account": "alice", "state": "switched_back", "code": "", "params": {}},

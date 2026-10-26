@@ -52,15 +52,27 @@ CLI_CODE_WORDS = {
     "channel_refused": "the hub turned this machine's hello away without a reason",
     "hello_invalid": "the hub could not read this agent's hello; update the agent",
     "binding_unknown": "the hub no longer knows this machine",
-    "replaced": "another socket holds this machine's binding; this one stopped",
+    "replaced": "another session holds this machine's binding; this one stopped",
+    "frame_unreadable": "the hub sent a {type} frame this agent cannot read",
+    "hub_untrusted": (
+        "what answers is not the hub this link names; generate a fresh link on "
+        "the hub's Agents page"
+    ),
+    "hub_key_missing": (
+        "the hub gave this machine no key; join again with a fresh link from "
+        "the hub's Agents page"
+    ),
+    "transport_unavailable": "the agent's transport did not start: {detail}",
+    "control_unavailable": "the agent did not answer its transport in time",
+    "port_not_published": "this machine publishes nothing on port {port}",
     "ticket_spent": (
         "the hub refused this link; it may have expired, so generate a fresh "
-        "one on the Devices page"
+        "one on the Agents page"
     ),
     "role_mismatch": "the hub says this binding is not a device's",
     "link_not_for_agent": (
         "that link is for a client, not for a device; generate one on the "
-        "hub's Devices page"
+        "hub's Agents page"
     ),
     "kind_unknown": "the hub opened a stream this agent does not know",
     "verb_unknown": "the hub asked for a verb this agent does not know",

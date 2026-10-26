@@ -44,7 +44,7 @@ SERVICE_SETTLE_POLL_S = 0.5
 # What the channel's own failures say on this surface; every other code is
 # worded by the shared table. The advice lines name the next step.
 ERROR_WORDS = {
-    "hub_untrusted": "what answers is not the hub this machine pinned",
+    "hub_untrusted": "what answers is not the hub this machine's binding names",
     "hub_unreachable": "the hub cannot be reached",
     "hub_reply_unreadable": "the hub sent a reply this agent could not read",
     "agent_package_missing": (
@@ -57,12 +57,14 @@ ERROR_WORDS = {
 ERROR_ADVICE = {
     "hub_untrusted": (
         "the hub was reset or reinstalled; join again with a fresh link "
-        "from its Devices page"
+        "from its Agents page"
     ),
-    "binding_unknown": "join again with a fresh link from the hub's Devices page",
+    "binding_unknown": "join again with a fresh link from the hub's Agents page",
     "replaced": "restart the service, or join again with a fresh link",
-    "protocol_too_old": "update this agent from the hub's Devices page",
+    "protocol_too_old": "update this agent from the hub's Agents page",
     "protocol_too_new": "update the hub, then this machine reports again",
+    "hub_key_missing": "join again with a fresh link from the hub's Agents page",
+    "transport_unavailable": "reinstall the agent; its transport is missing or broken",
 }
 
 
@@ -88,7 +90,7 @@ def main() -> int:
     current = service_state()
     if current == "running":
         # A hello from here would take the binding from the service: the hub
-        # keeps one socket per binding and replaces the one it holds. A
+        # keeps one session per binding and replaces the one it holds. A
         # service that runs and did not answer on its socket is asked again,
         # never gone around.
         print(f"service    {current}")
@@ -255,7 +257,7 @@ def _status_from_service(state: dict) -> int:
     if not state.get("is_online", True):
         print("heartbeat  connecting. The service is reaching the hub")
         return 1
-    print("heartbeat  ok. The service holds its socket to the hub")
+    print("heartbeat  ok. The service holds its session to the hub")
     return 0
 
 

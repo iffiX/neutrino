@@ -103,7 +103,7 @@ def test_status_reads_the_running_service_for_a_privileged_caller(
     assert f"hub        {GATEWAY_URL}" in out
     assert f"binding    {BINDING_ID}" in out
     assert "service    running" in out
-    assert "heartbeat  ok. The service holds its socket to the hub" in out
+    assert "heartbeat  ok. The service holds its session to the hub" in out
 
 
 def test_status_says_when_the_running_service_is_still_connecting(
@@ -213,7 +213,7 @@ def test_status_says_why_a_running_service_was_unbound(running_service, capsys):
     out = capsys.readouterr().out
     assert "hub        this machine has joined no gateway" in out
     assert "heartbeat  the hub no longer knows this machine" in out
-    assert "join again with a fresh link from the hub's Devices page" in out
+    assert "join again with a fresh link from the hub's Agents page" in out
     assert "service    running" in out
 
 
@@ -228,7 +228,7 @@ def test_status_says_a_replaced_service_waits_for_a_person(
 
     out = capsys.readouterr().out
     assert f"binding    {BINDING_ID}" in out
-    assert "heartbeat  another socket holds this machine's binding" in out
+    assert "heartbeat  another session holds this machine's binding" in out
     assert "restart the service, or join again with a fresh link" in out
 
 
@@ -237,7 +237,7 @@ def test_status_says_a_replaced_service_waits_for_a_person(
     [
         (
             {"code": "hub_untrusted", "params": {}},
-            "what answers is not the hub this machine pinned",
+            "what answers is not the hub this machine's binding names",
         ),
         (
             {"code": "protocol_too_new", "params": {"peer": 2, "hub": 1, "min": 1}},

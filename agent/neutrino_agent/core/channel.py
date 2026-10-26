@@ -1,10 +1,12 @@
-"""Talking to the hub with the standard library, pinned over TLS.
+"""Asking a hub for its static key over the pinned TLS of a 0.5 binding.
 
-The HTTP client serves joining and leaving; the one live socket in
-``ws_client`` connects the same way. An ``https`` hub is verified by
-fingerprint alone: the handshake runs with chain and hostname checks off,
-and the peer certificate's SHA-256 digest must match the pinned value before
-any request bytes leave this machine.
+An agent of 0.5 that updated itself holds a binding pinned by its hub's
+certificate fingerprint and no hub key. It asks the hub's legacy listener
+for the key once, with ``POST /api/channel/key/set``, and from then on knocks
+as any agent does. The hub is verified by fingerprint alone: the handshake
+runs with chain and hostname checks off, and the peer certificate's SHA-256
+digest must match the pinned value before any request bytes leave this
+machine.
 """
 
 import hashlib
@@ -14,11 +16,7 @@ import socket
 import ssl
 import urllib.parse
 
-from neutrino_agent.constants import (
-    AGENT_REQUEST_TIMEOUT_S,
-    CHANNEL_JOIN_PATH,
-    CHANNEL_LEAVE_PATH,
-)
+from neutrino_agent.constants import AGENT_REQUEST_TIMEOUT_S, CHANNEL_KEY_SET_PATH
 from neutrino_agent.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -94,55 +92,46 @@ def _pinned_context() -> ssl.SSLContext:
     return context
 
 
-class BindingHttpClient:
-    """Joins and leaves over HTTP; everything else rides the socket."""
+class HubKeyHttpClient:
+    """Asks a hub of the 0.5 binding's address for its static key, over the pinned TLS."""
 
     def __init__(self, *, gateway_url: str, fingerprint: str = ""):
         """
         Args:
-            gateway_url: Base URL of the hub's agent port, without a trailing
-                slash.
+            gateway_url: Base URL of the hub's legacy listener, ``https://``
+                and the agent port, without a trailing slash.
             fingerprint: SHA-256 hex of the hub certificate's DER form.
-                Required for an ``https`` URL; ignored for plain ``http``.
         """
         self._gateway_url = gateway_url.rstrip("/")
         self._fingerprint = fingerprint.strip().lower()
 
-    def join(self, payload: dict) -> dict:
-        """Spend a ticket for a binding.
+    def set_key(self, binding_id: str, token: str, public_key: str) -> str:
+        """Record this agent's static public key on its binding, once.
 
         Args:
-            payload: ``{ticket, role, protocol, machine_id, name, software,
-                platform}``.
+            binding_id: The binding's id.
+            token: Its token.
+            public_key: This agent's static public key, 64 hex characters.
 
         Returns:
-            The hub's ``{id, token}``.
+            The hub's static public key, 64 hex characters.
 
         Raises:
             GatewayUntrusted: When the hub's certificate is not the pinned
                 one; nothing was sent.
             GatewayRefusedDetail: When the hub refused with a code, such as
-                ``ticket_spent`` or ``protocol_too_new``.
+                ``binding_unknown``.
             GatewayUnreachable: On any network error, timeout, an error
-                status with no code, or an unreadable reply.
+                status with no code, or a reply that names no key.
         """
-        return self._post_json(CHANNEL_JOIN_PATH, payload)
-
-    def leave(self, binding_id: str, token: str) -> None:
-        """Give a binding back.
-
-        Args:
-            binding_id: The binding's id.
-            token: Its token.
-
-        Raises:
-            GatewayUntrusted: When the hub's certificate is not the pinned
-                one; nothing was sent.
-            GatewayRefusedDetail: When the hub refused with a code.
-            GatewayUnreachable: On any network error, timeout, an error
-                status with no code, or an unreadable reply.
-        """
-        self._post_json(CHANNEL_LEAVE_PATH, {"id": binding_id, "token": token})
+        reply = self._post_json(
+            CHANNEL_KEY_SET_PATH,
+            {"id": binding_id, "token": token, "public_key": public_key},
+        )
+        key = str(reply.get("key", "") or "").strip().lower()
+        if not key:
+            raise GatewayUnreachable("the hub named no key")
+        return key
 
     def _post_json(self, path: str, payload: dict) -> dict:
         """One POST whose reply is a JSON object, or empty."""
@@ -151,9 +140,10 @@ class BindingHttpClient:
         if not text.strip():
             return {}
         try:
-            return json.loads(text)
+            reply = json.loads(text)
         except json.JSONDecodeError as error:
             raise GatewayUnreachable(f"hub sent invalid JSON: {error}") from error
+        return reply if isinstance(reply, dict) else {}
 
     def _post(self, path: str, payload: dict):
         """One POST, its status already judged.
