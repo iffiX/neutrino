@@ -1,47 +1,37 @@
-"""The local forwards: a loopback listener per forwarded entry, a ``connect``
-stream per connection it accepts.
+"""The local forwards: a loopback listener per forwarded entry, held by the transport.
 
 Every entry the client forwards, and the hub's own panel, listens on
-``127.0.0.1`` at the port the one local port table gives it, and every
-connection the listener accepts is carried to the hub as one ``connect``
-stream: the hub alone dials the service. No forward dials a device address.
+``127.0.0.1`` at the port the one local port table gives it; the transport
+holds the listener, started with ``forward_start``, and carries every
+connection it accepts as one ``connect`` stream, or a UDP entry's datagrams
+on one stream. The hub alone dials the service. While a hub has no session
+the transport's listener accepts nothing new and stays bound.
 
-The table is the client's to manage: an entry is ``auto`` or a fixed number,
-auto takes the entry's own port when no other entry holds it and nothing
-listens on it on any address of the machine, else the first free port from
-``FORWARD_AUTO_FIRST_PORT`` up, and the pick is kept for every later forward.
-No number is held by two entries. The listeners are runtime state and end
-with the resident; they are held by service key, so two hubs publishing the
-same entry id never collide. While its hub has no channel, a TCP forward
-accepts nothing and stays bound; the connections waiting in its listen queue
-are served once the channel is back.
+An app entry, ``web``, ``port`` or ``ssh``, forwards at its fixed number:
+the person's own from the table, else the hub's ``local_port``. Another
+program listening on it, or another entry of the same protocol holding it,
+refuses the forward ``port_taken`` and the number never moves by itself.
+A forward of no app, ``ai``, ``rdp``, a ``file`` and the panel, takes the
+first free port from ``FORWARD_AUTO_FIRST_PORT`` to ``FORWARD_AUTO_LAST_PORT``
+and keeps the pick, picked again when another program holds it. The
+listeners are the transport's and end with it; they are held here by
+service key, so two hubs publishing the same entry id never collide, and
+started again when a transport that ended is back.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import collections
 import errno
 import os
 import socket
 import threading
-import time
 
-from neutrino_client.constants import (
-    CLIENT_STREAM_TIMEOUT_S,
-    CLIENT_UDP_HELD_DATAGRAMS_MAX,
-    CLIENT_UDP_REOPEN_INTERVAL_S,
-    CLIENT_UDP_SOURCES_MAX,
-    CLIENT_WS_CHUNK_BYTES,
-)
-from neutrino_client.exceptions import (
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-    LocalPortTakenError,
-)
+from neutrino_client.constants import CLIENT_STREAM_KIND_CONNECT
+from neutrino_client.exceptions import GatewayUnreachable, LocalPortTakenError
 from neutrino_client.platforms import win32
-from neutrino_client.services.base import StateLines, hub_of_key, service_key
+from neutrino_client.services.base import hub_of_key, service_key
 from neutrino_client.services.store import STORE_LOCAL_PORT_AUTO
 
 FORWARD_BIND_HOST = "127.0.0.1"
@@ -50,16 +40,18 @@ FORWARD_PORT_AUTO = STORE_LOCAL_PORT_AUTO
 # The protocols a port entry is forwarded on; an entry that names none is TCP.
 FORWARD_PROTOCOL_TCP = "tcp"
 FORWARD_PROTOCOL_UDP = "udp"
-# Where an auto pick looks when the entry's own number is not to be had.
+# Where a forward of no app picks its port.
 FORWARD_AUTO_FIRST_PORT = 20000
+FORWARD_AUTO_LAST_PORT = 23999
 FORWARD_PORT_MAX = 65535
-# The numbers a fixed setting may name.
+# The numbers a person's own setting may name.
 FORWARD_FIXED_PORT_MIN = 1024
 # The entry id the hub's panel is forwarded under; no published entry has it.
 FORWARD_PANEL_ID = ":panel"
-# The kinds of forward that end when their entry leaves the hub's list; the
-# others end with the job that made them.
-FORWARD_LISTED_KINDS = ("port", "web")
+FORWARD_KIND_PANEL = "panel"
+# The kinds an app's entry has: each forwards at its fixed number, and ends
+# when its entry leaves the hub's list.
+FORWARD_APP_KINDS = ("web", "port", "ssh")
 # How long one wait for the hub's bytes lasts before the stream is looked at
 # again.
 FORWARD_STREAM_WAIT_S = 0.5
@@ -84,14 +76,14 @@ def is_port_free(
     The port is bound on the IPv4 wildcard address, and on the IPv6 one
     where the machine has IPv6, with no address-reuse option, then let go:
     with TCP sockets for a TCP entry, UDP sockets for a UDP one. A TCP port
-    the table already keeps for an entry is bound with the reuse option off
-    Windows, so the client's own closed connections still lingering on it
-    do not count while another program's listener does. On Windows a UDP
-    port is not bound: the system's table of UDP endpoints is read instead.
+    the client forwards already is bound with the reuse option off Windows,
+    so the client's own closed connections still lingering on it do not
+    count while another program's listener does. On Windows a UDP port is
+    not bound: the system's table of UDP endpoints is read instead.
 
     Args:
         port: The port number.
-        is_kept: Whether the table keeps the port for an entry already.
+        is_kept: Whether the client held the port before.
         protocol: ``tcp`` or ``udp``.
 
     Returns:
@@ -151,30 +143,6 @@ def is_udp_port_held(port: int) -> bool:
     return False
 
 
-def is_udp_port_free(port: int) -> bool:
-    """Whether nothing is bound to a UDP port on any address of the machine.
-
-    Args:
-        port: The port number.
-
-    Returns:
-        True when every probe binds it.
-    """
-    return is_port_free(port, protocol=FORWARD_PROTOCOL_UDP)
-
-
-def is_kept_port_free(port: int) -> bool:
-    """Whether a port the table keeps is still free on every address.
-
-    Args:
-        port: The port number.
-
-    Returns:
-        True when no other program listens on it.
-    """
-    return is_port_free(port, is_kept=True)
-
-
 def forward_refusal(error: OSError) -> dict:
     """The typed refusal a forward that cannot listen answers with.
 
@@ -182,49 +150,27 @@ def forward_refusal(error: OSError) -> dict:
         error: What making the forward raised.
 
     Returns:
-        ``port_taken`` with the port for a fixed port another program
-        listens on, ``forward_failed`` with the detail otherwise.
+        ``port_taken`` with the port for a number another program or entry
+        holds, ``hub_unreachable`` while the transport cannot be asked,
+        ``forward_failed`` with the detail otherwise.
     """
     if isinstance(error, LocalPortTakenError):
         return {"code": "port_taken", "params": {"port": error.port}}
+    if isinstance(error, GatewayUnreachable):
+        return {"code": "hub_unreachable", "params": {"detail": str(error)[:200]}}
     return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
 
 
-def relay_socket(connection, stream, log=print) -> bool:
-    """Carry one TCP connection over one open ``connect`` stream until either ends.
-
-    End of file on the connection closes the stream once everything read
-    from it is sent; the hub closing the stream writes what it sent and
-    closes the connection. There is no half-close. Blocks until both
-    directions are done; any thread may call it.
+def is_app_kind(kind: str) -> bool:
+    """Whether a forward of this kind is an app's entry, at its fixed number.
 
     Args:
-        connection: The connected socket.
-        stream: The open ``connect`` stream, credit granted.
-        log: Callable used for progress messages.
+        kind: The entry's type, or ``panel``.
 
     Returns:
-        Whether the hub refused the stream.
+        True for ``web``, ``port`` and ``ssh``.
     """
-    upward = threading.Thread(
-        target=_socket_to_stream,
-        args=(connection, stream),
-        name="client_forward_up",
-        daemon=True,
-    )
-    upward.start()
-    _stream_to_socket(stream, connection)
-    stream.close()
-    _close_socket(connection)
-    upward.join()
-    try:
-        stream.wait_close(0)
-    except GatewayRefusedDetail as refused:
-        log(f"the hub refused a connect stream: {refused.code} {refused.params}")
-        return True
-    except GatewayUnreachable:
-        pass
-    return False
+    return kind in FORWARD_APP_KINDS
 
 
 class ConnectStreamSocket:
@@ -236,7 +182,7 @@ class ConnectStreamSocket:
     def __init__(self, stream):
         """
         Args:
-            stream: The open ``connect`` stream, credit granted.
+            stream: The open ``connect`` stream.
         """
         self._stream = stream
         self._held = b""
@@ -261,11 +207,10 @@ class ConnectStreamSocket:
         return data
 
     def sendall(self, data: bytes) -> None:
-        """Send every byte, under the hub's credit.
+        """Send every byte once the far side accepted the stream.
 
         Raises:
-            GatewayUnreachable: When the stream or the socket has ended.
-            TimeoutError: When the hub grants no credit in time.
+            GatewayUnreachable: When the stream was refused or has ended.
         """
         self._stream.send(data)
 
@@ -274,194 +219,183 @@ class ConnectStreamSocket:
         self._stream.close()
 
 
-def _socket_to_stream(connection, stream) -> None:
-    """Send what the connection reads until its end, then close the stream."""
-    while True:
-        try:
-            data = connection.recv(CLIENT_WS_CHUNK_BYTES)
-        except OSError:
-            break
-        if not data:
-            break
-        try:
-            stream.send(data)
-        except (GatewayUnreachable, TimeoutError):
-            break
-    stream.close()
+def _nobody(*_args) -> None:
+    """Nobody listening."""
 
 
-def _stream_to_socket(stream, connection) -> None:
-    """Write what the hub sends until the stream ends or the connection fails."""
-    while True:
-        data = stream.read(FORWARD_STREAM_WAIT_S)
-        if data is None:
-            continue
-        if not data:
-            return
-        try:
-            connection.sendall(data)
-        except OSError:
-            return
-
-
-def _close_socket(connection) -> None:
-    """Close a socket at once, waking any thread blocked on it."""
-    try:
-        connection.shutdown(socket.SHUT_RDWR)
-    except OSError:
-        pass
-    try:
-        connection.close()
-    except OSError:
-        pass
-
-
-def _nobody() -> None:
-    """Nobody listening for changes."""
-
-
-def _channel_always_open(*_args) -> bool:
-    """A channel that is always open."""
-    return True
+def _no_binding(_hub_id: str) -> str:
+    """No hub joined."""
+    return ""
 
 
 class PortLocalTable:
     """The one table of the loopback ports this client's forwards take.
 
-    Every forwarded entry is ``auto`` or a fixed number. Auto takes the
-    entry's own port when no other entry holds it and it is free on every
-    address, else the first free one from ``FORWARD_AUTO_FIRST_PORT`` up,
-    and the pick is kept for every later forward. A number is held per
-    protocol: no two entries of one protocol hold one number, and a TCP
-    entry and a UDP entry may hold the same one. A kept or fixed port is
-    looked at again each time its forward is about to listen: an auto pick
-    another program now listens on is picked again and kept, and a fixed
-    one is refused.
+    It keeps the numbers the person set for app entries, and the picks of
+    the forwards of no app, each with its protocol. An app entry with no
+    number of the person's forwards at the hub's. A number is held per
+    protocol: a TCP entry and a UDP entry may hold the same one.
     """
 
-    def __init__(
-        self, *, store=None, is_free=None, is_kept_free=None, is_udp_free=None
-    ):
+    def __init__(self, *, store=None, is_free=None):
         """
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`
                 the table is kept in; None keeps it in memory.
-            is_free: ``is_free(port)`` says whether nothing listens on the
-                TCP port on any address; None asks the system.
-            is_kept_free: The same for a TCP port the table keeps already;
-                None is ``is_free`` when that is given, else asks the system.
-            is_udp_free: The same for a UDP port, kept or not; None is
-                ``is_free`` when that is given, else asks the system.
+            is_free: ``is_free(port, is_kept, protocol)`` says whether
+                nothing listens on the port on any address; None asks the
+                system.
         """
         self._store = store
         self._is_free = is_free if is_free is not None else is_port_free
-        if is_kept_free is None:
-            is_kept_free = is_free if is_free is not None else is_kept_port_free
-        self._is_kept_free = is_kept_free
-        if is_udp_free is None:
-            is_udp_free = is_free if is_free is not None else is_udp_port_free
-        self._is_udp_free = is_udp_free
         self._lock = threading.Lock()
         self._memory: dict = {}
 
     def setting(self, key: str):
-        """One entry's setting.
+        """One entry's own setting.
 
         Args:
             key: The entry's service key.
 
         Returns:
-            ``"auto"`` or the fixed number.
+            The person's number, ``"auto"`` for a forward of no app that
+            picked one, or None while the table holds nothing for it.
         """
         with self._lock:
             record = self._records().get(key)
-        return record["setting"] if record else FORWARD_PORT_AUTO
+        return record["setting"] if record else None
 
-    def configure(
-        self, key: str, setting, protocol: str = FORWARD_PROTOCOL_TCP
-    ) -> dict:
-        """Set one entry's local port.
+    def app_port(self, key: str, hub_port: int) -> int:
+        """The number an app entry forwards on.
 
         Args:
             key: The entry's service key.
-            setting: ``"auto"``, or a fixed number from
-                ``FORWARD_FIXED_PORT_MIN`` to ``FORWARD_PORT_MAX``.
-            protocol: The entry's protocol, ``tcp`` or ``udp``.
+            hub_port: The hub's ``local_port`` for it.
 
         Returns:
-            Empty when kept; ``unknown_request`` for a setting of another
-            shape, ``port_taken`` with the port for a number another entry
-            of the same protocol holds.
+            The person's number, else the hub's.
         """
-        if setting != FORWARD_PORT_AUTO:
-            if isinstance(setting, bool) or not isinstance(setting, int):
-                return {"code": "unknown_request", "params": {}}
-            if not FORWARD_FIXED_PORT_MIN <= setting <= FORWARD_PORT_MAX:
-                return {"code": "unknown_request", "params": {}}
-        with self._lock:
-            records = self._records()
-            record = records.get(key) or {"setting": FORWARD_PORT_AUTO, "port": 0}
-            if record["setting"] == setting:
-                return {}
-            if setting == FORWARD_PORT_AUTO:
-                self._keep(key, FORWARD_PORT_AUTO, 0, protocol)
-                return {}
-            if setting in self._held(records, key, protocol):
-                return {"code": "port_taken", "params": {"port": setting}}
-            self._keep(key, setting, setting, protocol)
-        return {}
+        setting = self.setting(key)
+        return setting if isinstance(setting, int) else int(hub_port or 0)
 
-    def take(
-        self, key: str, own_port: int, protocol: str = FORWARD_PROTOCOL_TCP
-    ) -> int:
-        """The port one entry's forward listens on, an auto pick kept.
+    def is_held(self, port: int, protocol: str, key: str) -> bool:
+        """Whether another entry of a protocol holds a number in the table.
+
+        Args:
+            port: The number.
+            protocol: ``tcp`` or ``udp``.
+            key: The entry asking, which holds nothing against itself.
+
+        Returns:
+            True when another record of that protocol holds it.
+        """
+        with self._lock:
+            return port in self._held(self._records(), key, protocol)
+
+    def check_own(
+        self,
+        key: str,
+        port: int,
+        protocol: str,
+        hub_numbers: dict,
+        ignored: tuple = (),
+    ) -> dict:
+        """Judge a number the person sets for one app entry, writing nothing.
 
         Args:
             key: The entry's service key.
-            own_port: The entry's published port, which auto takes first;
-                0 for an entry with none.
+            port: The number.
             protocol: The entry's protocol, ``tcp`` or ``udp``.
+            hub_numbers: ``{service key: (hub port, protocol)}`` of the other
+                entries, whose hub numbers count as held while they have no
+                number of the person's.
+            ignored: Keys whose records do not count, the entries changed
+                in the same Save.
+
+        Returns:
+            Empty when it can be kept; ``local_port_invalid {port}`` for a
+            number out of range, ``port_taken {port}`` for one another entry
+            of the same protocol holds in the table or as its hub number.
+        """
+        if isinstance(port, bool) or not isinstance(port, int):
+            return {"code": "local_port_invalid", "params": {"port": port}}
+        if not FORWARD_FIXED_PORT_MIN <= port <= FORWARD_PORT_MAX:
+            return {"code": "local_port_invalid", "params": {"port": port}}
+        with self._lock:
+            records = self._records()
+        held = self._held(
+            {
+                other: record
+                for other, record in records.items()
+                if other not in ignored
+            },
+            key,
+            protocol,
+        )
+        for other, (number, other_protocol) in hub_numbers.items():
+            if other == key or other_protocol != protocol:
+                continue
+            if not isinstance(records.get(other, {}).get("setting"), int):
+                held.add(number)
+        if port in held:
+            return {"code": "port_taken", "params": {"port": port}}
+        return {}
+
+    def set_own(self, key: str, port: "int | None", protocol: str) -> None:
+        """Keep the person's number for one app entry, or go back to the hub's.
+
+        Args:
+            key: The entry's service key.
+            port: The number, judged by :meth:`check_own` first; None goes
+                back to the hub's.
+            protocol: The entry's protocol, ``tcp`` or ``udp``.
+        """
+        with self._lock:
+            if port is None:
+                self._forget(key)
+            else:
+                self._keep(key, port, port, protocol)
+
+    def take_auto(self, key: str, protocol: str = FORWARD_PROTOCOL_TCP) -> int:
+        """The port a forward of no app listens on, the pick kept.
+
+        A kept pick another program holds now is picked again.
+
+        Args:
+            key: The forward's service key.
+            protocol: ``tcp`` or ``udp``.
 
         Returns:
             The port number.
 
         Raises:
-            LocalPortTakenError: When a fixed port is listened on by
-                another program.
-            OSError: When auto finds no free port.
+            OSError: When no port of the range is free.
         """
         with self._lock:
             records = self._records()
             record = records.get(key)
-            is_kept_free = (
-                self._is_udp_free
-                if protocol == FORWARD_PROTOCOL_UDP
-                else self._is_kept_free
-            )
-            if record and record["port"]:
-                if is_kept_free(record["port"]):
-                    if record.get("protocol", FORWARD_PROTOCOL_TCP) != protocol:
-                        self._keep(key, record["setting"], record["port"], protocol)
+            if record and record["port"] and record.get("protocol") == protocol:
+                if self._is_free(record["port"], True, protocol):
                     return record["port"]
-                if record["setting"] != FORWARD_PORT_AUTO:
-                    raise LocalPortTakenError(record["port"])
             held = self._held(records, key, protocol)
-            port = self._pick(own_port, held, protocol)
-            self._keep(key, FORWARD_PORT_AUTO, port, protocol)
-            return port
+            for port in range(FORWARD_AUTO_FIRST_PORT, FORWARD_AUTO_LAST_PORT + 1):
+                if port not in held and self._is_free(port, False, protocol):
+                    self._keep(key, FORWARD_PORT_AUTO, port, protocol)
+                    return port
+        raise OSError("no free loopback port from 20000 to 23999")
 
-    def _pick(self, own_port: int, held: set, protocol: str) -> int:
-        """The entry's own port, else the first free one from the floor up."""
-        is_free = (
-            self._is_udp_free if protocol == FORWARD_PROTOCOL_UDP else self._is_free
-        )
-        if 0 < own_port <= FORWARD_PORT_MAX and own_port not in held:
-            if is_free(own_port):
-                return own_port
-        for port in range(FORWARD_AUTO_FIRST_PORT, FORWARD_PORT_MAX + 1):
-            if port not in held and is_free(port):
-                return port
-        raise OSError("no free loopback port")
+    def probe(self, port: int, protocol: str, is_kept: bool) -> bool:
+        """Whether a number is free on every address of the machine now.
+
+        Args:
+            port: The number.
+            protocol: ``tcp`` or ``udp``.
+            is_kept: Whether the client held it before.
+
+        Returns:
+            True when nothing listens on it.
+        """
+        return self._is_free(port, is_kept, protocol)
 
     def _records(self) -> dict:
         """Every entry's record; the lock is held."""
@@ -476,6 +410,13 @@ class PortLocalTable:
         else:
             self._store.set_local_port(key, setting, port, protocol)
 
+    def _forget(self, key: str) -> None:
+        """Drop one entry's record; the lock is held."""
+        if self._store is None:
+            self._memory.pop(key, None)
+        else:
+            self._store.remove_local_port(key)
+
     @staticmethod
     def _held(records: dict, key: str, protocol: str) -> set:
         """The ports every other entry of one protocol holds."""
@@ -488,486 +429,53 @@ class PortLocalTable:
         }
 
 
-class ForwardListener:
-    """One loopback listener whose every connection is one ``connect`` stream.
-
-    It accepts only while its hub's channel is open.
-    """
-
-    def __init__(
-        self, *, open_stream, local_port: int, kind: str, log=print, wait_channel=None
-    ):
-        """
-        Args:
-            open_stream: ``open_stream()`` opens one ``connect`` stream to
-                the far end and returns it; raises
-                :class:`~neutrino_client.exceptions.GatewayUnreachable` when
-                the hub cannot be asked.
-            local_port: The loopback number to listen on.
-            kind: What is forwarded: an entry's type, or ``panel``.
-            log: Callable used for progress messages.
-            wait_channel: ``wait_channel(timeout_s)`` waits until the hub's
-                channel is open and says whether it is; None for a channel
-                that is always open.
-        """
-        self.kind = kind
-        self.local_port = 0
-        self._open_stream = open_stream
-        self._wait_channel = (
-            wait_channel if wait_channel is not None else _channel_always_open
-        )
-        self._bind_port = local_port
-        self._log = log
-        # A failure that repeats at every connection is one line a state.
-        self._lines = StateLines(log)
-        self._listener = None
-        self._is_closed = False
-        self._lock = threading.Lock()
-        self._connections: set = set()
-
-    @property
-    def is_active(self) -> bool:
-        """Whether the listener is still listening."""
-        return self._listener is not None and not self._is_closed
-
-    def start(self) -> int:
-        """Listen on the loopback and start accepting.
-
-        Returns:
-            The local port bound.
-
-        Raises:
-            OSError: When the port cannot be listened on.
-        """
-        listener = socket.create_server((FORWARD_BIND_HOST, self._bind_port))
-        self._listener = listener
-        self.local_port = listener.getsockname()[1]
-        threading.Thread(
-            target=self._accept, name="client_forward_accept", daemon=True
-        ).start()
-        return self.local_port
-
-    def close(self) -> None:
-        """Stop listening and close every connection, which ends its stream."""
-        self._is_closed = True
-        if self._listener is not None:
-            _close_socket(self._listener)
-        with self._lock:
-            connections = list(self._connections)
-            self._connections.clear()
-        for connection in connections:
-            _close_socket(connection)
-        self._lines.clear_all()
-
-    def _accept(self) -> None:
-        while self._is_channel_open():
-            try:
-                connection, _address = self._listener.accept()
-            except OSError:
-                break
-            if self._is_closed:
-                _close_socket(connection)
-                break
-            threading.Thread(
-                target=self._serve,
-                args=(connection,),
-                name="client_forward_connection",
-                daemon=True,
-            ).start()
-
-    def _is_channel_open(self) -> bool:
-        """Wait until the hub's channel is open; False once the forward is closed."""
-        while not self._is_closed:
-            if self._wait_channel(FORWARD_STREAM_WAIT_S):
-                return not self._is_closed
-        return False
-
-    def _serve(self, connection) -> None:
-        if not self._is_channel_open():
-            _close_socket(connection)
-            return
-        try:
-            stream = self._open_stream()
-        except GatewayUnreachable as error:
-            self._lines.note(
-                "open", f"no connect stream for 127.0.0.1:{self.local_port}: {error}"
-            )
-            _close_socket(connection)
-            return
-        self._lines.clear("open")
-        with self._lock:
-            if self._is_closed:
-                stream.close()
-                _close_socket(connection)
-                return
-            self._connections.add(connection)
-        is_refused = relay_socket(
-            connection, stream, lambda line: self._lines.note("refused", line)
-        )
-        if not is_refused:
-            self._lines.clear("refused")
-        with self._lock:
-            self._connections.discard(connection)
-
-
-# A UDP datagram's source port, in front of it in its frame.
-UDP_SOURCE_BYTES = 2
-# The largest datagram one UDP socket reads.
-UDP_DATAGRAM_MAX_BYTES = 65535
-
-
-class UdpForwardListener:
-    """One loopback UDP socket whose datagrams ride one ``connect`` stream.
-
-    Each datagram goes into the stream as ``<u16 source><datagram>``,
-    ``source`` being the port it came from; a frame from the stream goes
-    back to the address its ``source`` last came from. The stream is opened
-    at the start, and again by the first datagram that finds none, at most
-    once every ``CLIENT_UDP_REOPEN_INTERVAL_S``. A datagram is held only
-    while an open waits for its first credit, at most
-    ``CLIENT_UDP_HELD_DATAGRAMS_MAX`` of them; anywhere else a datagram the
-    credit does not cover is dropped.
-
-    The hub grants a stream's first credit before it judges the open, so a
-    close with a code says the open was refused. The stream opened at the
-    start that closes with a code before any datagram went into it, held
-    ones included, is refused at Connect: the forward ends. A close with a
-    code after a datagram went in leaves the forward listening. A stream
-    that ends with the hub's socket, or with no code, is opened again by the
-    next datagram and is told to nobody.
-    """
-
-    def __init__(
-        self,
-        *,
-        open_stream,
-        local_port: int,
-        kind: str,
-        log=print,
-        on_refused=None,
-        on_answered=None,
-        clock=time.monotonic,
-    ):
-        """
-        Args:
-            open_stream: ``open_stream()`` opens one ``connect`` stream to
-                the far end and returns it; raises
-                :class:`~neutrino_client.exceptions.GatewayUnreachable` when
-                the hub cannot be asked.
-            local_port: The loopback number to bind.
-            kind: What is forwarded, an entry's type.
-            log: Callable used for progress messages.
-            on_refused: ``on_refused(refusal, is_ended)`` is told when the
-                hub closes a stream with a code: ``refusal`` is ``{"code",
-                "params"}``, and ``is_ended`` says the forward ended for it,
-                the stream of the start having carried no datagram; None for
-                nobody listening.
-            on_answered: ``on_answered()`` is told when the first frame comes
-                back on a stream opened after a refusal the forward outlived;
-                None for nobody listening.
-            clock: The monotonic clock the reopen interval is measured on.
-        """
-        self.kind = kind
-        self.local_port = 0
-        self._open_stream = open_stream
-        self._bind_port = local_port
-        self._log = log
-        self._on_refused = on_refused if on_refused is not None else _nobody_told
-        self._on_answered = on_answered if on_answered is not None else _nobody_told
-        # A failure that repeats at every reopen is one line a state.
-        self._lines = StateLines(log)
-        self._clock = clock
-        # Whether a refusal the forward outlived still stands: the first
-        # frame back on a later stream ends it, its first credit does not.
-        self._is_refused = False
-        self._socket = None
-        self._is_closed = False
-        self._lock = threading.Lock()
-        self._stream = None
-        self._is_waiting_credit = False
-        self._held: list = []
-        self._last_open_at = None
-        # The stream opened at the start, while no datagram went into it.
-        self._first_stream = None
-        # The address each source last came from, the idlest first.
-        self._sources: collections.OrderedDict = collections.OrderedDict()
-
-    @property
-    def is_active(self) -> bool:
-        """Whether the socket is still bound."""
-        return self._socket is not None and not self._is_closed
-
-    def start(self) -> int:
-        """Bind the loopback, open the stream and start carrying datagrams.
-
-        Returns:
-            The local port bound.
-
-        Raises:
-            GatewayUnreachable: When the hub cannot be asked for the stream.
-            OSError: When the port cannot be bound.
-        """
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            udp.bind((FORWARD_BIND_HOST, self._bind_port))
-        except OSError:
-            udp.close()
-            raise
-        self._socket = udp
-        self.local_port = udp.getsockname()[1]
-        try:
-            self._first_stream = self._open_now()
-        except GatewayUnreachable:
-            self.close()
-            raise
-        threading.Thread(
-            target=self._receive_forever, name="client_udp_forward", daemon=True
-        ).start()
-        return self.local_port
-
-    def close(self) -> None:
-        """Unbind the socket and end the stream."""
-        self._is_closed = True
-        udp = self._socket
-        if udp is not None:
-            try:
-                udp.close()
-            except OSError:
-                pass
-        with self._lock:
-            stream, self._stream = self._stream, None
-            self._held = []
-        if stream is not None:
-            stream.close()
-        self._lines.clear_all()
-
-    def take_datagram(self, data: bytes, address) -> None:
-        """Carry one datagram a local program sent to the forward.
-
-        Args:
-            data: The datagram.
-            address: ``(host, port)`` it came from.
-        """
-        source = int(address[1])
-        frame = source.to_bytes(UDP_SOURCE_BYTES, "big") + bytes(data)
-        with self._lock:
-            self._sources.pop(source, None)
-            self._sources[source] = address
-            while len(self._sources) > CLIENT_UDP_SOURCES_MAX:
-                self._sources.popitem(last=False)
-            stream = self._stream
-            if stream is None or stream.is_done:
-                stream = self._reopen()
-                if stream is None:
-                    return
-            self._first_stream = None
-            if self._is_waiting_credit:
-                if len(self._held) < CLIENT_UDP_HELD_DATAGRAMS_MAX:
-                    self._held.append(frame)
-                return
-        stream.try_send(frame)
-
-    def take_frame(self, frame: bytes) -> None:
-        """Send one frame from the stream to the local program it is for.
-
-        Args:
-            frame: ``<u16 source><datagram>``.
-        """
-        if len(frame) < UDP_SOURCE_BYTES:
-            return
-        source = int.from_bytes(frame[:UDP_SOURCE_BYTES], "big")
-        with self._lock:
-            address = self._sources.get(source)
-            if address is not None:
-                self._sources.move_to_end(source)
-        udp = self._socket
-        if address is None or udp is None:
-            return
-        try:
-            udp.sendto(frame[UDP_SOURCE_BYTES:], address)
-        except OSError:
-            pass
-
-    def _open_now(self):
-        """Open a stream and start its reader; the caller holds no lock.
-
-        Raises:
-            GatewayUnreachable: When the hub cannot be asked.
-        """
-        with self._lock:
-            self._last_open_at = self._clock()
-            self._is_waiting_credit = True
-        stream = self._open_stream()
-        with self._lock:
-            self._stream = stream
-        self._watch(stream)
-        return stream
-
-    def _reopen(self):
-        """Open the stream again for a datagram that found none; the lock is held.
-
-        Returns:
-            The new stream, or None while the last open is too recent or the
-            hub cannot be asked.
-        """
-        now = self._clock()
-        if (
-            self._last_open_at is not None
-            and now - self._last_open_at < CLIENT_UDP_REOPEN_INTERVAL_S
-        ):
-            return None
-        self._last_open_at = now
-        try:
-            stream = self._open_stream()
-        except GatewayUnreachable as error:
-            self._lines.note(
-                "open", f"no stream for udp 127.0.0.1:{self.local_port}: {error}"
-            )
-            return None
-        self._lines.clear("open")
-        self._stream = stream
-        self._is_waiting_credit = True
-        self._held = []
-        self._watch(stream)
-        return stream
-
-    def _watch(self, stream) -> None:
-        """Start the threads that wait for a stream's credit and read it."""
-        threading.Thread(
-            target=self._flush_on_credit,
-            args=(stream,),
-            name="client_udp_credit",
-            daemon=True,
-        ).start()
-        threading.Thread(
-            target=self._read_forever,
-            args=(stream,),
-            name="client_udp_stream",
-            daemon=True,
-        ).start()
-
-    def _flush_on_credit(self, stream) -> None:
-        """Send what was held once the stream's first credit comes."""
-        is_credited = stream.wait_credit(CLIENT_STREAM_TIMEOUT_S)
-        with self._lock:
-            if self._stream is not stream:
-                return
-            held, self._held = self._held, []
-            self._is_waiting_credit = False
-        if not is_credited:
-            return
-        for frame in held:
-            stream.try_send(frame)
-
-    def _read_forever(self, stream) -> None:
-        """Pass the stream's frames to their programs until it ends."""
-        while True:
-            frame = stream.read_frame(FORWARD_STREAM_WAIT_S)
-            if frame is None:
-                continue
-            if not frame:
-                break
-            with self._lock:
-                is_answer = self._is_refused and self._stream is stream
-                if is_answer:
-                    self._is_refused = False
-            if is_answer:
-                self._lines.clear("refused")
-                self._on_answered()
-            self.take_frame(frame)
-        refusal = stream.refusal()
-        with self._lock:
-            is_current = self._stream is stream
-            if is_current:
-                self._stream = None
-            is_ended = self._first_stream is stream and refusal is not None
-            self._first_stream = None
-        if refusal is None or not is_current or self._is_closed:
-            return
-        self._lines.note(
-            "refused", f"the hub refused udp 127.0.0.1:{self.local_port}: {refusal}"
-        )
-        if is_ended:
-            self.close()
-        else:
-            with self._lock:
-                self._is_refused = True
-        self._on_refused(refusal, is_ended)
-
-    def _receive_forever(self) -> None:
-        udp = self._socket
-        while not self._is_closed:
-            try:
-                data, address = udp.recvfrom(UDP_DATAGRAM_MAX_BYTES)
-            except OSError:
-                if self._is_closed:
-                    return
-                continue
-            self.take_datagram(data, address)
-
-
-def _nobody_told(*_args) -> None:
-    """Nobody listening."""
-
-
 class ForwardListenerRegistry:
-    """Every forward this client runs, by service key, over every hub."""
+    """Every forward this client runs, by service key, each a listener of the transport's."""
 
     def __init__(
         self,
         *,
-        open_connect,
+        command=None,
+        binding_of=None,
         ports=None,
         log=print,
         on_change=None,
         on_refused=None,
-        on_answered=None,
-        wait_channel=None,
     ):
         """
         Args:
-            open_connect: ``open_connect(hub_id, args)`` opens one
-                ``connect`` stream on that hub with the open's arguments
-                (``{"id"}`` or ``{"is_panel": true}``) and returns it;
-                raises :class:`~neutrino_client.exceptions.GatewayUnreachable`
-                when the hub cannot be asked.
+            command: ``command(name, fields)`` sends one command to the
+                transport and returns its answer, raising
+                :class:`~neutrino_client.exceptions.GatewayUnreachable` when
+                it cannot; None has no transport.
+            binding_of: ``binding_of(hub_id)`` names the binding the hub's
+                session is dialled under, empty for a hub not joined; None
+                knows no hub.
             ports: The :class:`PortLocalTable` the forwards take their port
                 from; None keeps one in memory.
             log: Callable used for progress messages.
             on_change: Called after a forward starts or stops; None for
                 nobody listening.
             on_refused: ``on_refused(hub_id, entry_id, refusal)`` is told
-                when the hub closes a UDP forward's stream with a code; the
-                forward is gone by then when the stream of its start had
-                carried no datagram. None for nobody listening.
-            on_answered: ``on_answered(hub_id, entry_id)`` is told when a UDP
-                forward that outlived a refusal gets its first frame back on
-                a later stream; None for nobody listening.
-            wait_channel: ``wait_channel(hub_id, timeout_s)`` waits until
-                that hub's channel is open and says whether it is; a TCP
-                forward accepts only while it is. None for channels that are
-                always open.
+                when a forward ended with a code; None for nobody listening.
         """
-        self._open_connect = open_connect
-        self._wait_channel = (
-            wait_channel if wait_channel is not None else _channel_always_open
-        )
-        self._on_refused = on_refused if on_refused is not None else _nobody_told
-        self._on_answered = on_answered if on_answered is not None else _nobody_told
+        self._command = command
+        self._binding_of = binding_of if binding_of is not None else _no_binding
         self.ports = ports if ports is not None else PortLocalTable()
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
+        self._on_refused = on_refused if on_refused is not None else _nobody
         self._lock = threading.Lock()
-        self._listeners: dict = {}
+        # Every forward the transport listens for: key to its record.
+        self._forwards: dict = {}
 
     def ensure(
         self,
         *,
         hub_id: str,
         entry_id: str,
-        own_port: int,
         kind: str,
-        local_port: int = 0,
+        own_port: int = 0,
         protocol: str = FORWARD_PROTOCOL_TCP,
     ) -> int:
         """Make one entry's forward when it has none, and say where it listens.
@@ -975,11 +483,9 @@ class ForwardListenerRegistry:
         Args:
             hub_id: The hub the entry came from.
             entry_id: The entry's id, or ``FORWARD_PANEL_ID`` for the panel.
-            own_port: The entry's own port, which an auto pick takes first;
-                0 for none.
             kind: The entry's type, or ``panel``.
-            local_port: A loopback number asked for this once, outside the
-                table; 0 takes the entry's from the table.
+            own_port: For an app entry, the hub's ``local_port``; ignored
+                for a forward of no app.
             protocol: ``tcp`` for a listener whose every connection is a
                 stream, ``udp`` for one UDP socket on one stream.
 
@@ -987,64 +493,33 @@ class ForwardListenerRegistry:
             The loopback port the forward listens on.
 
         Raises:
-            GatewayUnreachable: When the hub cannot be asked for a UDP
-                forward's stream.
-            OSError: When no port is to be had or it cannot be listened on.
+            LocalPortTakenError: When an app entry's number is held by
+                another program or another entry of the same protocol.
+            GatewayUnreachable: When the transport cannot be asked, or the
+                hub is not joined.
+            OSError: When no port is to be had, or the transport cannot
+                listen on it.
         """
         key = service_key(hub_id, entry_id)
-        args = {"is_panel": True} if entry_id == FORWARD_PANEL_ID else {"id": entry_id}
-
-        def open_stream():
-            return self._open_connect(hub_id, args)
-
-        def wait_channel(timeout_s: float) -> bool:
-            return self._wait_channel(hub_id, timeout_s)
-
         with self._lock:
-            listener = self._listeners.get(key)
-            if listener is not None and listener.is_active:
-                return listener.local_port
-            port = local_port or self.ports.take(key, own_port, protocol)
-            if protocol == FORWARD_PROTOCOL_UDP:
-
-                def refused(refusal: dict, is_ended: bool) -> None:
-                    if is_ended:
-                        self._forget(key, listener)
-                    self._on_refused(hub_id, entry_id, refusal)
-
-                def answered() -> None:
-                    self._on_answered(hub_id, entry_id)
-
-                listener = UdpForwardListener(
-                    open_stream=open_stream,
-                    local_port=port,
-                    kind=kind,
-                    log=self._log,
-                    on_refused=refused,
-                    on_answered=answered,
-                )
-            else:
-                listener = ForwardListener(
-                    open_stream=open_stream,
-                    local_port=port,
-                    kind=kind,
-                    log=self._log,
-                    wait_channel=wait_channel,
-                )
-            bound = listener.start()
-            self._listeners[key] = listener
+            held = self._forwards.get(key)
+            if held is not None:
+                return held["port"]
+            port = self._port_for(key, kind, own_port, protocol)
+            record = {
+                "hub_id": hub_id,
+                "entry_id": entry_id,
+                "kind": kind,
+                "protocol": protocol,
+                "port": port,
+            }
+            self._start(record)
+            self._forwards[key] = record
         self._log(
-            f"forwarding {FORWARD_BIND_HOST}:{bound}/{protocol} to {key} through the hub"
+            f"forwarding {FORWARD_BIND_HOST}:{port}/{protocol} to {key} through the hub"
         )
         self._on_change()
-        return bound
-
-    def _forget(self, key: str, listener) -> None:
-        """Drop a forward that ended by itself, when it is still the key's."""
-        with self._lock:
-            if self._listeners.get(key) is listener:
-                self._listeners.pop(key, None)
-        self._on_change()
+        return port
 
     def port_of(self, hub_id: str, entry_id: str) -> int:
         """Where one entry's forward listens.
@@ -1057,10 +532,8 @@ class ForwardListenerRegistry:
             The loopback port; 0 when the entry is not forwarded.
         """
         with self._lock:
-            listener = self._listeners.get(service_key(hub_id, entry_id))
-        if listener is None or not listener.is_active:
-            return 0
-        return listener.local_port
+            record = self._forwards.get(service_key(hub_id, entry_id))
+        return record["port"] if record else 0
 
     def forwards(self) -> dict:
         """Every forward listening now.
@@ -1069,11 +542,7 @@ class ForwardListenerRegistry:
             ``{service_key: local_port}``.
         """
         with self._lock:
-            return {
-                key: listener.local_port
-                for key, listener in self._listeners.items()
-                if listener.is_active
-            }
+            return {key: record["port"] for key, record in self._forwards.items()}
 
     def stop(self, hub_id: str, entry_id: str) -> bool:
         """End one entry's forward, its connections and their streams.
@@ -1087,13 +556,65 @@ class ForwardListenerRegistry:
         """
         key = service_key(hub_id, entry_id)
         with self._lock:
-            listener = self._listeners.pop(key, None)
-        if listener is None:
+            record = self._forwards.pop(key, None)
+        if record is None:
             return False
-        listener.close()
-        self._log(f"stopped forwarding {FORWARD_BIND_HOST}:{listener.local_port}")
+        self._stop(record)
+        self._log(f"stopped forwarding {FORWARD_BIND_HOST}:{record['port']}")
         self._on_change()
         return True
+
+    def take_end(self, line: dict) -> None:
+        """Take the transport's ``forward_end``: that listener stopped.
+
+        Args:
+            line: ``{listen, protocol, code, params}``.
+        """
+        listen = str(line.get("listen", "") or "")
+        protocol = str(line.get("protocol", "") or "") or FORWARD_PROTOCOL_TCP
+        with self._lock:
+            found = [
+                (key, record)
+                for key, record in self._forwards.items()
+                if _listen(record["port"]) == listen and record["protocol"] == protocol
+            ]
+            for key, _record in found:
+                self._forwards.pop(key, None)
+        if not found:
+            return
+        code = str(line.get("code", "") or "")
+        params = line.get("params")
+        for _key, record in found:
+            self._log(f"the forward at {listen}/{protocol} ended: {code or 'no code'}")
+            if code:
+                self._on_refused(
+                    record["hub_id"],
+                    record["entry_id"],
+                    {
+                        "code": code,
+                        "params": params if isinstance(params, dict) else {},
+                    },
+                )
+        self._on_change()
+
+    def restart(self) -> None:
+        """Start every forward again, as a transport that came back has none.
+
+        A forward that cannot start again ends, told with its refusal.
+        """
+        with self._lock:
+            records = list(self._forwards.items())
+        for key, record in records:
+            try:
+                self._start(record)
+            except OSError as error:
+                with self._lock:
+                    if self._forwards.get(key) is record:
+                        self._forwards.pop(key, None)
+                self._on_refused(
+                    record["hub_id"], record["entry_id"], forward_refusal(error)
+                )
+        self._on_change()
 
     def release(self) -> int:
         """End every forward.
@@ -1101,7 +622,7 @@ class ForwardListenerRegistry:
         Returns:
             How many forwards were ended.
         """
-        return self._end(lambda key, listener: True)
+        return self._end(lambda key, record: True)
 
     def release_hub(self, hub_id: str) -> int:
         """End every forward of one hub, the panel's among them.
@@ -1112,7 +633,7 @@ class ForwardListenerRegistry:
         Returns:
             How many forwards were ended.
         """
-        return self._end(lambda key, listener: hub_of_key(key) == hub_id)
+        return self._end(lambda key, record: hub_of_key(key) == hub_id)
 
     def release_kind(self, kind: str, hub_id: str = "") -> int:
         """End every forward of one kind, of one hub or of all.
@@ -1125,12 +646,12 @@ class ForwardListenerRegistry:
             How many forwards were ended.
         """
         return self._end(
-            lambda key, listener: listener.kind == kind
+            lambda key, record: record["kind"] == kind
             and (not hub_id or hub_of_key(key) == hub_id)
         )
 
     def drop_withdrawn(self, *, hub_id: str, entries: list) -> int:
-        """End the port and web forwards of one hub whose entry its list no longer has.
+        """End the app entries' forwards of one hub whose entry its list no longer has.
 
         Args:
             hub_id: The hub whose list arrived.
@@ -1141,23 +662,95 @@ class ForwardListenerRegistry:
         """
         listed = {service_key(hub_id, str(entry.get("id", ""))) for entry in entries}
         return self._end(
-            lambda key, listener: hub_of_key(key) == hub_id
-            and listener.kind in FORWARD_LISTED_KINDS
+            lambda key, record: hub_of_key(key) == hub_id
+            and is_app_kind(record["kind"])
             and key not in listed
         )
 
+    def _port_for(self, key: str, kind: str, own_port: int, protocol: str) -> int:
+        """The number a new forward listens on; the lock is held.
+
+        Raises:
+            LocalPortTakenError: When an app entry's number is held.
+            OSError: When no pick of the range is free.
+        """
+        if not is_app_kind(kind):
+            return self.ports.take_auto(key, protocol)
+        port = self.ports.app_port(key, own_port)
+        if not 0 < port <= FORWARD_PORT_MAX:
+            raise OSError(f"the hub names no local port for {key}")
+        is_live = any(
+            record["port"] == port and record["protocol"] == protocol
+            for record in self._forwards.values()
+        )
+        if is_live or self.ports.is_held(port, protocol, key):
+            raise LocalPortTakenError(port)
+        if not self.ports.probe(port, protocol, True):
+            raise LocalPortTakenError(port)
+        return port
+
+    def _start(self, record: dict) -> None:
+        """Have the transport listen for one forward.
+
+        Raises:
+            LocalPortTakenError: When the transport cannot bind the number.
+            GatewayUnreachable: When the transport cannot be asked, or the
+                hub is not joined.
+            OSError: When the transport refuses with any other code.
+        """
+        if self._command is None:
+            raise GatewayUnreachable("the client's transport is not running")
+        binding = self._binding_of(record["hub_id"])
+        if not binding:
+            raise GatewayUnreachable("this person has not joined that hub")
+        if record["entry_id"] == FORWARD_PANEL_ID:
+            open_record = {"kind": CLIENT_STREAM_KIND_CONNECT, "is_panel": True}
+        else:
+            open_record = {"kind": CLIENT_STREAM_KIND_CONNECT, "id": record["entry_id"]}
+        answer = self._command(
+            "forward_start",
+            {
+                "binding": binding,
+                "listen": _listen(record["port"]),
+                "protocol": record["protocol"],
+                "open": open_record,
+            },
+        )
+        code = str(answer.get("code", "") or "")
+        if code == "port_taken":
+            raise LocalPortTakenError(record["port"])
+        if code:
+            raise OSError(f"the transport refused the forward: {code}")
+
+    def _stop(self, record: dict) -> None:
+        """Have the transport close one forward's listener; a refusal is logged."""
+        if self._command is None:
+            return
+        try:
+            self._command(
+                "forward_stop",
+                {"listen": _listen(record["port"]), "protocol": record["protocol"]},
+            )
+        except GatewayUnreachable as error:
+            self._log(f"could not stop the forward at {record['port']}: {error}")
+
     def _end(self, is_ended) -> int:
-        """End the forwards ``is_ended(key, listener)`` picks."""
+        """End the forwards ``is_ended(key, record)`` picks."""
         with self._lock:
             ended = {
-                key: listener
-                for key, listener in self._listeners.items()
-                if is_ended(key, listener)
+                key: record
+                for key, record in self._forwards.items()
+                if is_ended(key, record)
             }
             for key in ended:
-                self._listeners.pop(key, None)
-        for listener in ended.values():
-            listener.close()
+                self._forwards.pop(key, None)
+        for record in ended.values():
+            self._stop(record)
         if ended:
             self._on_change()
         return len(ended)
+
+
+def _listen(port: int) -> str:
+    """The address a forward's listener binds."""
+    return f"{FORWARD_BIND_HOST}:{port}"

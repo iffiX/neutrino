@@ -1,512 +1,389 @@
-"""The streams this side opens on the channel, their bytes and their closes.
+"""The streams this side opens through its transport, their bytes and their closes.
 
-A client opens a stream with ``open {stream, kind, ...args}`` and waits for
-the hub's ``close {stream, code, params}``: the ``params`` are the result,
-and a ``code`` makes the close a refusal. The client opens odd ids counting
-upward; the hub's are even, so the two never collide.
+Each stream is one local connection to the transport, opened with an
+``open`` line naming the hub's binding and the stream's ``open`` record. The
+far side answers first: ``accept``, or a ``close`` that refuses. A ``shell``
+and an ``exec`` then carry records both ways until a ``close``, whose
+``params`` are the result and whose ``code`` makes it a refusal; a TCP
+``connect`` carries its connection's raw bytes after the ``accept``, and
+its end is the end of those bytes.
 
-A byte stream, a ``shell`` or an ``exec``, carries binary frames both ways
-under credit: this side sends no more than the hub has granted, in frames of
-at most ``CLIENT_WS_CHUNK_BYTES``, and grants the hub more as its reader
-consumes. An ``exec`` stream's input ends with ``eof``.
+One thread reads the connection into a short queue; a reader that does not
+consume holds that thread, and so the transport, the hub and the far end
+behind it. Nothing is sent before the far side's ``accept``.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import collections
-import json
+import queue
+import socket
 import threading
-import time
 
-from neutrino_client.constants import (
-    CLIENT_STREAM_CREDIT_BYTES,
-    CLIENT_WS_CHUNK_BYTES,
-    CLIENT_WS_CREDIT_TIMEOUT_S,
-)
+from neutrino_client.constants import CLIENT_RECORD_BYTES_MAX, CLIENT_STREAM_TIMEOUT_S
 from neutrino_client.core.protocol import (
-    FRAME_CLOSE,
-    FRAME_CREDIT,
-    FRAME_EOF,
-    FRAME_OPEN,
-    encode_binary,
+    RECORD_ACCEPT,
+    RECORD_CLOSE,
+    RECORD_DATA,
+    RECORD_DATAGRAM,
+    RECORD_EOF,
+    RECORD_RESIZE,
+    RECORD_STDERR,
+    encode_json_record,
+    encode_record,
+    json_payload,
+    read_record,
 )
 from neutrino_client.exceptions import GatewayRefusedDetail, GatewayUnreachable
 
-FIRST_STREAM_ID = 1
-STREAM_ID_STEP = 2
-
-
-def _nobody(*_args) -> None:
-    """Nobody listening."""
+# How many pieces the reader holds for a consumer before it stops reading.
+STREAM_QUEUE_PIECES = 16
+# The bytes one read of a raw connection takes.
+STREAM_RAW_READ_BYTES = 64 * 1024
+# What an ``exec`` stream's piece starts with, by the output it came from.
+STREAM_FD_STDOUT = b"\x01"
+STREAM_FD_STDERR = b"\x02"
+# The piece that marks the end of the stream in the reader's queue.
+STREAM_END = None
+# How long one wait for room in the queue lasts before the stream is looked
+# at again.
+STREAM_HAND_WAIT_S = 0.5
 
 
 class ClientStream:
-    """One stream this side opened: its close, and on a byte stream its bytes.
+    """One stream this side opened: its answer, its bytes and its close.
 
     Attributes:
-        stream_id: The id the open named.
         kind: The kind the open named.
     """
 
     def __init__(
         self,
         *,
-        stream_id: int,
+        connection,
         kind: str,
-        send_bytes=None,
-        grant=None,
-        close=None,
-        eof=None,
+        is_raw_after_accept: bool = False,
+        is_fd_tagged: bool = False,
+        accept_timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
     ):
         """
         Args:
-            stream_id: The id the open named.
+            connection: The local connection, its ``open`` line sent:
+                ``recv(size)``, ``sendall(data)``, ``shutdown(how)`` and
+                ``close()``.
             kind: The kind the open named.
-            send_bytes: Sends one binary frame on the socket; raises
-                :class:`GatewayUnreachable` when the socket is gone. None
-                for a stream that sends no bytes.
-            grant: ``grant(nbytes)`` sends the hub a credit frame for this
-                stream; None for a stream that takes no bytes.
-            close: Sends this side's close for this stream; None for nobody.
-            eof: Sends ``eof`` for this stream; None for nobody.
+            is_raw_after_accept: Whether the connection carries raw bytes
+                after the ``accept``, as a TCP ``connect`` does.
+            is_fd_tagged: Whether each piece read starts with the output it
+                came from, ``1`` for ``data`` and ``2`` for ``stderr``, as an
+                ``exec`` without a terminal gives them.
+            accept_timeout_s: How long a send waits for the far side's
+                ``accept``.
         """
-        self.stream_id = stream_id
         self.kind = kind
-        self._send_bytes = send_bytes
-        self._grant = grant if grant is not None else _nobody
-        self._close = close if close is not None else _nobody
-        self._eof = eof if eof is not None else _nobody
+        self._connection = connection
+        self._is_raw = is_raw_after_accept
+        self._is_fd_tagged = is_fd_tagged
+        self._accept_timeout_s = accept_timeout_s
+        self._pieces: queue.Queue = queue.Queue(maxsize=STREAM_QUEUE_PIECES)
+        self._send_lock = threading.Lock()
+        self._answered = threading.Event()
         self._closed = threading.Event()
+        self._is_accepted = False
+        self._is_ended = False
+        self._is_closed_here = False
+        self._is_drained = False
+        self._is_reader_done = False
         self._code = ""
         self._params: dict = {}
-        self._is_ended = False
-        self._condition = threading.Condition()
-        self._incoming: collections.deque = collections.deque()
-        self._credit = 0
-        # Set once the hub has granted any credit.
-        self._is_credited = False
-        self._consumed = 0
-        self._is_closed_here = False
+        threading.Thread(
+            target=self._read_forever, name="client_stream", daemon=True
+        ).start()
 
     @property
     def is_done(self) -> bool:
-        """Whether the hub closed the stream, the socket ended, or this side closed it."""
+        """Whether the far side closed the stream, its connection ended, or this side closed it."""
         return self._closed.is_set() or self._is_closed_here
 
-    def wait_close(self, timeout_s: float) -> dict:
-        """Wait for the hub's close and read it.
+    @property
+    def is_accepted(self) -> bool:
+        """Whether the far side accepted the stream."""
+        return self._is_accepted
+
+    def wait_accept(self, timeout_s: float) -> bool:
+        """Wait for the far side's answer.
 
         Args:
             timeout_s: How long to wait.
 
         Returns:
-            The close's ``params``.
+            True once the far side accepted; False when it refused, the
+            connection ended first, or no answer came in time.
+        """
+        self._answered.wait(timeout=timeout_s)
+        return self._is_accepted
+
+    def wait_close(self, timeout_s: float) -> dict:
+        """Wait for the stream's end and read its result.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            The close's ``params``; empty for a raw stream whose bytes ended.
 
         Raises:
             GatewayRefusedDetail: When the close carries a code.
-            GatewayUnreachable: When no close arrives in time, or the socket
-                ends first.
+            GatewayUnreachable: When no end arrives in time, or the
+                connection ended with no close.
         """
         if not self._closed.wait(timeout=timeout_s):
-            raise GatewayUnreachable(f"the hub did not close the {self.kind} stream")
-        if self._is_ended:
-            raise GatewayUnreachable("the hub socket closed before the stream did")
+            raise GatewayUnreachable(f"the {self.kind} stream did not end in time")
         if self._code:
             raise GatewayRefusedDetail(code=self._code, params=dict(self._params))
+        if self._is_ended:
+            raise GatewayUnreachable("the hub's session closed before the stream did")
         return dict(self._params)
 
+    def refusal(self) -> "dict | None":
+        """The far side's close as a refusal, once the stream has ended.
+
+        Returns:
+            ``{"code", "params"}`` when the close carried a code; None while
+            the stream is open, or when it ended without one.
+        """
+        if not self._closed.is_set() or not self._code:
+            return None
+        return {"code": self._code, "params": dict(self._params)}
+
     def read(self, timeout_s: float) -> "bytes | None":
-        """The next bytes the hub sent on this stream.
-
-        Consuming them grants the hub more once half the window is used.
-
-        Args:
-            timeout_s: How long to wait for bytes.
-
-        Returns:
-            The bytes; empty once the stream is over and nothing is left;
-            None when nothing arrived in time.
-        """
-        deadline = time.monotonic() + timeout_s
-        with self._condition:
-            while not self._incoming:
-                if self.is_done:
-                    return b""
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return None
-                self._condition.wait(timeout=remaining)
-            data = self._incoming.popleft()
-            self._consumed += len(data)
-            renewal = 0
-            if self._consumed >= CLIENT_STREAM_CREDIT_BYTES // 2 and not self.is_done:
-                renewal, self._consumed = self._consumed, 0
-        if renewal:
-            try:
-                self._grant(renewal)
-            except GatewayUnreachable:
-                # The reader sees the socket's end on its next read.
-                pass
-        return data
-
-    def send(self, data: bytes) -> None:
-        """Send bytes on this stream, no faster than the hub's credit.
-
-        Args:
-            data: The bytes, cut into frames of at most
-                ``CLIENT_WS_CHUNK_BYTES``.
-
-        Raises:
-            GatewayUnreachable: When the stream or the socket has ended, or
-                the stream sends no bytes.
-            TimeoutError: When the hub grants no credit within
-                ``CLIENT_WS_CREDIT_TIMEOUT_S``.
-        """
-        if self._send_bytes is None:
-            raise GatewayUnreachable(f"a {self.kind} stream carries no bytes")
-        view = memoryview(bytes(data))
-        while view:
-            size = self._take_credit(min(len(view), CLIENT_WS_CHUNK_BYTES))
-            self._send_bytes(encode_binary(self.stream_id, bytes(view[:size])))
-            view = view[size:]
-
-    def send_eof(self) -> None:
-        """Tell the hub no more input follows; the stream stays open the other way.
-
-        Raises:
-            GatewayUnreachable: When the stream or the socket has ended.
-        """
-        if self.is_done:
-            raise GatewayUnreachable(f"the {self.kind} stream has ended")
-        self._eof()
-
-    def try_send(self, data: bytes) -> bool:
-        """Send one frame now if the hub's credit covers it, never waiting.
-
-        Args:
-            data: The frame's bytes, at most ``CLIENT_WS_CHUNK_BYTES``.
-
-        Returns:
-            Whether it went; False when the credit is short, the stream has
-            ended, or the socket is gone.
-        """
-        if self._send_bytes is None or len(data) > CLIENT_WS_CHUNK_BYTES:
-            return False
-        with self._condition:
-            if self.is_done or self._credit < len(data):
-                return False
-            self._credit -= len(data)
-        try:
-            self._send_bytes(encode_binary(self.stream_id, bytes(data)))
-        except GatewayUnreachable:
-            return False
-        return True
-
-    def wait_credit(self, timeout_s: float) -> bool:
-        """Wait until the hub has granted any credit, or the stream ends.
+        """The next bytes the far side sent.
 
         Args:
             timeout_s: How long to wait.
 
         Returns:
-            True once the hub has granted credit while the stream is open.
+            The bytes, each piece of an fd-tagged stream with its output's
+            byte first; empty once the stream is over and nothing is left;
+            None when nothing arrived in time.
         """
-        deadline = time.monotonic() + timeout_s
-        with self._condition:
-            while not self._is_credited and not self.is_done:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return False
-                self._condition.wait(timeout=remaining)
-            return self._is_credited and not self.is_done
+        if self._is_drained:
+            return b""
+        try:
+            if timeout_s > 0:
+                piece = self._pieces.get(timeout=timeout_s)
+            else:
+                piece = self._pieces.get_nowait()
+        except queue.Empty:
+            if self._is_closed_here or self._is_reader_done:
+                self._is_drained = True
+                return b""
+            return None
+        if piece is STREAM_END:
+            self._is_drained = True
+            return b""
+        return piece
 
-    def read_frame(self, timeout_s: float) -> "bytes | None":
-        """The next binary frame the hub sent, its bytes granted back at once.
+    def send(self, data: bytes) -> None:
+        """Send bytes on the stream, once the far side accepted it.
 
         Args:
-            timeout_s: How long to wait for a frame.
+            data: The bytes; a record stream cuts them into records of at
+                most ``CLIENT_RECORD_BYTES_MAX``.
 
-        Returns:
-            The frame's bytes; empty once the stream is over and nothing is
-            left; None when nothing arrived in time.
+        Raises:
+            GatewayUnreachable: When the stream was refused, has ended, or
+                no answer came in time.
         """
-        deadline = time.monotonic() + timeout_s
-        with self._condition:
-            while not self._incoming:
-                if self.is_done:
-                    return b""
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return None
-                self._condition.wait(timeout=remaining)
-            data = self._incoming.popleft()
-        if data and not self.is_done:
+        self._wait_open()
+        view = memoryview(bytes(data))
+        with self._send_lock:
             try:
-                self._grant(len(data))
-            except GatewayUnreachable:
-                pass
-        return data
+                if self._is_raw:
+                    self._connection.sendall(bytes(view))
+                    return
+                while view:
+                    piece = bytes(view[:CLIENT_RECORD_BYTES_MAX])
+                    self._connection.sendall(encode_record(RECORD_DATA, piece))
+                    view = view[len(piece) :]
+            except OSError as error:
+                raise GatewayUnreachable(f"the {self.kind} stream ended") from error
 
-    def refusal(self) -> "dict | None":
-        """The hub's close as a refusal, once the stream has ended.
+    def send_datagram(self, source: int, datagram: bytes) -> None:
+        """Send one datagram on a UDP stream.
 
-        Returns:
-            ``{"code", "params"}`` when the hub closed the stream with a
-            code; None while it is open, or when it ended without one.
+        Args:
+            source: The port it left from.
+            datagram: The datagram.
+
+        Raises:
+            GatewayUnreachable: When the stream was refused or has ended.
         """
-        if not self._closed.is_set() or self._is_ended or not self._code:
-            return None
-        return {"code": self._code, "params": dict(self._params)}
+        self._send_record(
+            encode_record(RECORD_DATAGRAM, int(source).to_bytes(2, "big") + datagram)
+        )
+
+    def send_eof(self) -> None:
+        """Tell the far side no more input follows; the stream stays open the other way.
+
+        Raises:
+            GatewayUnreachable: When the stream was refused or has ended.
+        """
+        self._send_record(encode_record(RECORD_EOF))
+
+    def resize(self, cols: int, rows: int) -> None:
+        """Tell the far side the terminal's new size.
+
+        Args:
+            cols: The width in columns.
+            rows: The height in rows.
+
+        Raises:
+            GatewayUnreachable: When the stream was refused or has ended.
+        """
+        self._send_record(
+            encode_json_record(RECORD_RESIZE, {"cols": int(cols), "rows": int(rows)})
+        )
 
     def close(self) -> None:
-        """End the stream from this side; the hub sends no close back. Idempotent."""
-        with self._condition:
-            if self.is_done:
-                return
-            self._is_closed_here = True
-            self._condition.notify_all()
+        """End the stream from this side; the far side sends no close back. Idempotent."""
+        if self._is_closed_here:
+            return
+        self._is_closed_here = True
         try:
-            self._close()
-        except GatewayUnreachable:
+            self._pieces.put_nowait(STREAM_END)
+        except queue.Full:
             pass
+        if not self._is_raw and self._is_accepted and not self._closed.is_set():
+            try:
+                with self._send_lock:
+                    self._connection.sendall(
+                        encode_json_record(RECORD_CLOSE, {"code": "", "params": {}})
+                    )
+            except OSError:
+                pass
+        _end_connection(self._connection)
 
-    def take_bytes(self, data: bytes) -> None:
-        """Queue bytes the hub sent, for the reader; an empty frame is dropped.
-
-        Args:
-            data: The binary frame's bytes, without the stream id.
-        """
-        if not data:
-            return
-        with self._condition:
-            self._incoming.append(bytes(data))
-            self._condition.notify_all()
-
-    def take_credit(self, nbytes: int) -> None:
-        """Add the hub's grant to what this side may send.
-
-        Args:
-            nbytes: How many more bytes the hub takes.
-        """
-        with self._condition:
-            self._credit += max(int(nbytes), 0)
-            if self._credit > 0:
-                self._is_credited = True
-            self._condition.notify_all()
-
-    def take_close(self, *, code: str, params: dict) -> None:
-        """Record the hub's close and wake every waiter.
-
-        Args:
-            code: The close's code, empty for a result.
-            params: The close's params.
-        """
-        self._code = code
-        self._params = dict(params)
-        with self._condition:
-            self._closed.set()
-            self._condition.notify_all()
-
-    def end(self) -> None:
-        """Wake every waiter with no close: the socket ended first."""
-        self._is_ended = True
-        with self._condition:
-            self._closed.set()
-            self._condition.notify_all()
-
-    def _take_credit(self, wanted: int) -> int:
-        """Wait for credit, then spend up to ``wanted`` of it.
+    def _wait_open(self) -> None:
+        """Wait for the far side's accept before a send.
 
         Raises:
-            GatewayUnreachable: When the stream ends while waiting.
-            TimeoutError: When no credit arrives in time.
+            GatewayUnreachable: When it refused, ended, or did not answer.
         """
-        deadline = time.monotonic() + CLIENT_WS_CREDIT_TIMEOUT_S
-        with self._condition:
-            while self._credit <= 0:
-                if self.is_done:
-                    raise GatewayUnreachable(f"the {self.kind} stream has ended")
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError(f"the hub granted no credit on {self.kind}")
-                self._condition.wait(timeout=remaining)
-            if self.is_done:
-                raise GatewayUnreachable(f"the {self.kind} stream has ended")
-            size = min(wanted, self._credit)
-            self._credit -= size
-            return size
+        if self._is_closed_here:
+            raise GatewayUnreachable(f"the {self.kind} stream was closed here")
+        if not self._answered.wait(timeout=self._accept_timeout_s):
+            raise GatewayUnreachable(f"the {self.kind} stream was not answered")
+        if not self._is_accepted or self._closed.is_set():
+            raise GatewayUnreachable(f"the {self.kind} stream has ended")
 
-
-class ClientStreamRegistry:
-    """The streams open on one socket, by id."""
-
-    def __init__(self, *, send_text, send_bytes=None, log=print):
-        """
-        Args:
-            send_text: Sends one text frame on the socket; raises
-                :class:`GatewayUnreachable` when the socket is gone.
-            send_bytes: Sends one binary frame on the socket, likewise;
-                None for a socket that carries no byte stream.
-            log: Callable used for progress messages.
-        """
-        self._send_text = send_text
-        self._send_bytes = send_bytes
-        self._log = log
-        self._lock = threading.Lock()
-        self._next_id = FIRST_STREAM_ID
-        self._streams: dict = {}
-        self._is_ended = False
-
-    def open(self, kind: str, args: dict, *, has_bytes: bool = False) -> ClientStream:
-        """Open one stream: the next odd id, and the open frame sent.
-
-        Args:
-            kind: The stream kind.
-            args: The kind's own arguments, sent beside ``stream`` and
-                ``kind``.
-            has_bytes: Whether the stream carries bytes both ways; such a
-                stream is granted ``CLIENT_STREAM_CREDIT_BYTES`` at once.
-
-        Returns:
-            The stream, to wait on.
+    def _send_record(self, record: bytes) -> None:
+        """Send one record once the stream is open.
 
         Raises:
-            GatewayUnreachable: When the socket is gone.
+            GatewayUnreachable: When the stream was refused or has ended.
         """
-        with self._lock:
-            if self._is_ended:
-                raise GatewayUnreachable("the socket is closed")
-            stream_id = self._next_id
-            self._next_id += STREAM_ID_STEP
-            stream = ClientStream(
-                stream_id=stream_id,
-                kind=kind,
-                send_bytes=self._send_bytes if has_bytes else None,
-                grant=self._granter(stream_id) if has_bytes else None,
-                close=self._closer(stream_id),
-                eof=self._eofer(stream_id) if has_bytes else None,
-            )
-            self._streams[stream_id] = stream
-        frame = {"type": FRAME_OPEN, "stream": stream_id, "kind": kind, **dict(args)}
+        self._wait_open()
+        with self._send_lock:
+            try:
+                self._connection.sendall(record)
+            except OSError as error:
+                raise GatewayUnreachable(f"the {self.kind} stream ended") from error
+
+    def _read_forever(self) -> None:
+        """Read the answer, then the records or the raw bytes, until the end."""
         try:
-            self._send_text(json.dumps(frame))
-            if has_bytes:
-                self.grant(stream_id, CLIENT_STREAM_CREDIT_BYTES)
-        except GatewayUnreachable:
-            with self._lock:
-                self._streams.pop(stream_id, None)
-            raise
-        return stream
+            self._read_answer()
+            if self._is_accepted:
+                if self._is_raw:
+                    self._read_raw()
+                else:
+                    self._read_records()
+        except (OSError, ValueError):
+            pass
+        finally:
+            if not self._closed.is_set():
+                if not self._is_raw or not self._is_accepted:
+                    self._is_ended = True
+                self._closed.set()
+            self._answered.set()
+            self._hand(STREAM_END)
+            self._is_reader_done = True
+            _end_connection(self._connection)
 
-    def grant(self, stream_id: int, nbytes: int) -> None:
-        """Grant the hub more bytes on one stream.
+    def _read_answer(self) -> None:
+        """Read records until the far side's accept or its refusing close."""
+        while True:
+            record = read_record(self._connection.recv)
+            if record is None:
+                return
+            record_type, payload = record
+            if record_type == RECORD_ACCEPT:
+                self._is_accepted = True
+                self._answered.set()
+                return
+            if record_type == RECORD_CLOSE:
+                self._take_close(payload)
+                return
 
-        Args:
-            stream_id: The stream.
-            nbytes: How many more bytes this side takes.
+    def _read_raw(self) -> None:
+        """Hand the raw bytes on until the connection ends."""
+        while True:
+            data = self._connection.recv(STREAM_RAW_READ_BYTES)
+            if not data:
+                self._closed.set()
+                return
+            self._hand(data)
 
-        Raises:
-            GatewayUnreachable: When the socket is gone.
-        """
-        self._send_text(
-            json.dumps({"type": FRAME_CREDIT, "stream": stream_id, "bytes": nbytes})
-        )
-
-    def take_bytes(self, stream_id: int, data: bytes) -> None:
-        """Hand bytes the hub sent to the stream they belong to.
-
-        Args:
-            stream_id: The binary frame's stream id.
-            data: The bytes after the id.
-        """
-        with self._lock:
-            stream = self._streams.get(stream_id)
-        if stream is None:
-            self._log(f"dropping {len(data)} bytes the hub sent on stream {stream_id}")
-            return
-        stream.take_bytes(data)
-
-    def take_credit(self, message: dict) -> None:
-        """Hand one credit frame to the stream it grants.
-
-        Args:
-            message: The credit frame; ``stream`` names the id and ``bytes``
-                the grant.
-
-        Raises:
-            TypeError: When ``stream`` or ``bytes`` is not an integer.
-        """
-        stream_id = message.get("stream")
-        nbytes = message.get("bytes")
-        if not isinstance(stream_id, int) or not isinstance(nbytes, int):
-            raise TypeError("a credit names its stream and bytes by integers")
-        with self._lock:
-            stream = self._streams.get(stream_id)
-        if stream is None:
-            self._log(f"dropping credit on stream {stream_id}")
-            return
-        stream.take_credit(nbytes)
-
-    def take_close(self, message: dict) -> None:
-        """Hand one close to the stream it ends.
-
-        Args:
-            message: The close frame; ``stream`` names the id.
-
-        Raises:
-            TypeError: When ``stream`` is not an integer.
-        """
-        stream_id = message.get("stream")
-        if not isinstance(stream_id, int):
-            raise TypeError("a close names its stream by an integer id")
-        params = message.get("params")
-        with self._lock:
-            stream = self._streams.pop(stream_id, None)
-        if stream is None:
-            self._log(f"dropping a close for stream {stream_id}, which is not open")
-            return
-        stream.take_close(
-            code=str(message.get("code", "") or ""),
-            params=params if isinstance(params, dict) else {},
-        )
-
-    def end_all(self) -> None:
-        """End every open stream: the socket is gone."""
-        with self._lock:
-            self._is_ended = True
-            streams = list(self._streams.values())
-            self._streams = {}
-        for stream in streams:
-            stream.end()
-
-    def _granter(self, stream_id: int):
-        """The grant callback of one stream."""
-
-        def grant(nbytes: int) -> None:
-            self.grant(stream_id, nbytes)
-
-        return grant
-
-    def _eofer(self, stream_id: int):
-        """The ``eof`` callback of one stream."""
-
-        def eof() -> None:
-            self._send_text(json.dumps({"type": FRAME_EOF, "stream": stream_id}))
-
-        return eof
-
-    def _closer(self, stream_id: int):
-        """The close callback of one stream: forget it, then tell the hub."""
-
-        def close() -> None:
-            with self._lock:
-                self._streams.pop(stream_id, None)
-            self._send_text(
-                json.dumps(
-                    {"type": FRAME_CLOSE, "stream": stream_id, "code": "", "params": {}}
+    def _read_records(self) -> None:
+        """Hand each record's bytes on until the close."""
+        while True:
+            record = read_record(self._connection.recv)
+            if record is None:
+                return
+            record_type, payload = record
+            if record_type == RECORD_CLOSE:
+                self._take_close(payload)
+                return
+            if record_type == RECORD_DATA and payload:
+                self._hand(
+                    STREAM_FD_STDOUT + payload if self._is_fd_tagged else payload
                 )
-            )
+            elif record_type == RECORD_STDERR and payload:
+                self._hand(
+                    STREAM_FD_STDERR + payload if self._is_fd_tagged else payload
+                )
+            elif record_type == RECORD_DATAGRAM:
+                self._hand(payload)
 
-        return close
+    def _hand(self, piece) -> None:
+        """Queue one piece for the reader, waiting while the queue is full;
+        a stream closed here takes nothing more."""
+        while not self._is_closed_here:
+            try:
+                self._pieces.put(piece, timeout=STREAM_HAND_WAIT_S)
+                return
+            except queue.Full:
+                continue
+
+    def _take_close(self, payload: bytes) -> None:
+        """Record the far side's close."""
+        close = json_payload(payload)
+        params = close.get("params")
+        self._code = str(close.get("code", "") or "")
+        self._params = params if isinstance(params, dict) else {}
+        self._closed.set()
+        self._answered.set()
+
+
+def _end_connection(connection) -> None:
+    """Close a local connection at once, waking a thread blocked on it."""
+    try:
+        connection.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        connection.close()
+    except OSError:
+        pass

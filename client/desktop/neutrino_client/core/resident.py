@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -35,10 +36,12 @@ import time
 import uuid
 
 from neutrino_client import CLIENT_VERSION
+from neutrino_client.bundled import bundled_path
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DEFAULT_THEME,
     CLIENT_IDLE_POLL_INTERVAL_S,
+    CLIENT_LANGUAGES,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_NOTICE_S,
     CLIENT_ORIGINAL_DIR_NAME,
@@ -46,6 +49,11 @@ from neutrino_client.constants import (
     CLIENT_STATE_FILE_NAME,
     CLIENT_STREAM_TIMEOUT_S,
     CLIENT_TERMINAL_FONT_SIZE,
+    CLIENT_THEMES,
+    CLIENT_TRANSPORT_BIN_ENV,
+    CLIENT_TRANSPORT_LOG_NAME,
+    CLIENT_TRANSPORT_PROGRAM,
+    CLIENT_TRANSPORT_START_TIMEOUT_S,
 )
 from neutrino_client.core import enrollment
 from neutrino_client.core.overlay import OverlayMemberships
@@ -56,8 +64,11 @@ from neutrino_client.core.session import (
 )
 from neutrino_client.core.streams import ClientStream
 from neutrino_client.core.terminal import ExecBridge, TerminalBridge
+from neutrino_client.core.transport import (
+    ClientTransportChannel,
+    ClientTransportProcess,
+)
 from neutrino_client.exceptions import (
-    GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
@@ -65,6 +76,12 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
+from neutrino_client.services.app import (
+    AppServiceHandler,
+    app_entries,
+    entry_protocol,
+    panel_url,
+)
 from neutrino_client.services.base import channel_refusal, service_key
 from neutrino_client.services.file import MOUNT_SHAPE_ADAPTER, FileServiceHandler
 from neutrino_client.services.files_adapter import (
@@ -73,16 +90,17 @@ from neutrino_client.services.files_adapter import (
     FilesSocksEndpoint,
 )
 from neutrino_client.services.forward import (
+    FORWARD_KIND_PANEL,
     FORWARD_PANEL_ID,
     ConnectStreamSocket,
     ForwardListenerRegistry,
     PortLocalTable,
     forward_refusal,
+    is_app_kind,
 )
-from neutrino_client.services.port import PortServiceHandler, entry_protocol
 from neutrino_client.services.rdp import RdpViewerHandler
+from neutrino_client.services.ssh import SshConfigWriter
 from neutrino_client.services.store import ClientServiceStore
-from neutrino_client.services.web import WebServiceHandler, local_url
 
 # How long a shutdown waits for the watch thread to come back.
 SHUTDOWN_JOIN_TIMEOUT_S = 5
@@ -97,14 +115,6 @@ SHUTDOWN_STEPS = (
     ("rdp", "viewers", "{count} closed"),
     ("forwards", "forwards", "{count} closed"),
 )
-# The entry types whose local port a person may fix in the dialog; every
-# other forward is auto.
-CONFIGURABLE_TYPES = ("port", "web")
-# The panel's address on the loopback: its own name per hub, so each hub's
-# panel keeps its own session cookie.
-PANEL_HOST_PREFIX = "panel-"
-# The panel's own address before the forward's host, port and token go in.
-PANEL_PAGE_URL = "http://panel/"
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
 # How long one watcher is waited for before the announcements go on without
@@ -112,13 +122,12 @@ ANNOUNCE_SETTLE_S = 0.05
 ANNOUNCE_WATCHER_WAIT_S = 5
 ANNOUNCE_WATCHER_HELD_MAX = 4
 # The fields of a binding that make it another hub, or another join: a
-# session outlives a change to any other field, the addresses included,
-# which the session itself writes.
-BINDING_IDENTITY_KEYS = ("id", "fingerprint", "token")
+# session outlives a change to any other field, the addresses and the keys
+# of a 0.5 binding's move included, which the session itself writes.
+BINDING_IDENTITY_KEYS = ("id", "token", "ticket")
 # The step a press on a service entry starts, by its type and action, as
 # the page words it under ``ui.job.``.
 JOB_OPENING = "opening"
-JOB_FORWARDING = "forwarding"
 JOB_DISCONNECTING = "disconnecting"
 JOB_MOUNTING = "mounting"
 JOB_UNMOUNTING = "unmounting"
@@ -128,6 +137,11 @@ JOB_CONNECTING = "connecting"
 MOUNT_WORKING_STATES = ("pending", "queued", "mounting")
 # How long a service job waits for the lane it started.
 SERVICE_SETTLE_TIMEOUT_S = 300
+# The page's settings a Save writes, by the name ``nclient settings`` and the
+# state document give them.
+SETTING_LANGUAGE = "language"
+SETTING_THEME = "theme"
+SETTING_SSH_INCLUDE = "is_ssh_include_enabled"
 
 
 def end_process(status: int = 0) -> None:
@@ -171,13 +185,29 @@ def is_forwardable(entry: dict, mount_shape: str = "") -> bool:
             adapter.
 
     Returns:
-        True for a ``port``, ``web``, ``ai`` and ``rdp`` entry, and for a
-        ``file`` entry off Windows.
+        True for a ``web``, ``port``, ``ssh``, ``ai`` and ``rdp`` entry, and
+        for a ``file`` entry off Windows.
     """
     kind = entry.get("type")
     if kind == "file":
         return mount_shape != MOUNT_SHAPE_ADAPTER
-    return kind in ("port", "web", "ai", "rdp")
+    return kind in ("web", "port", "ssh", "ai", "rdp")
+
+
+def _port_number(value) -> int:
+    """A port as the hub sent it, 0 for anything else."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
+def _setting_number(value):
+    """A number the person typed, None for an empty field."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return value
 
 
 def _hub_answer(call, *args) -> dict:
@@ -199,7 +229,13 @@ class ClientResident:
     """Everything the person's surfaces face, over every hub joined."""
 
     def __init__(
-        self, *, log=print, platform=None, overlay_drivers=None, start_thread=None
+        self,
+        *,
+        log=print,
+        platform=None,
+        overlay_drivers=None,
+        start_thread=None,
+        transport=None,
     ):
         """
         Args:
@@ -210,6 +246,10 @@ class ClientResident:
             start_thread: ``start_thread(target)`` runs a job a press
                 started; None uses a daemon thread. Tests pass one that
                 runs inline.
+            transport: The
+                :class:`~neutrino_client.core.transport.ClientTransportChannel`
+                every hub is reached through; None runs the carried
+                transport as this resident's child.
         """
         self._log = log
         self._start_thread = (
@@ -223,18 +263,23 @@ class ClientResident:
         self._platform_tuple = platform_tuple()
         self._os_machine_id = self.platform.os_machine_id()
         config_dir = self.platform.config_dir()
+        # The transport program this resident runs; the one a test gives
+        # stands for a program that was found.
+        self._transport_program = "given"
+        self._transport = (
+            transport if transport is not None else self._carried_transport()
+        )
         self._store = ClientServiceStore(
             path=os.path.join(config_dir, CLIENT_STATE_FILE_NAME)
         )
         self._ports = PortLocalTable(store=self._store)
         self._forwards = ForwardListenerRegistry(
-            open_connect=self._open_connect_args,
+            command=self._transport.command,
+            binding_of=self._binding_of,
             ports=self._ports,
             log=log,
             on_change=self.notify,
             on_refused=self._forward_refused,
-            on_answered=self._forward_answered,
-            wait_channel=self._wait_channel,
         )
         # The files adapter a Windows mount goes through.
         self._files_plan = FilesAddressPlan(
@@ -259,16 +304,23 @@ class ClientResident:
         self._announce_lock = threading.Lock()
         self._is_announcing = False
         self._is_pending_announcement = False
+        self._apps = AppServiceHandler(
+            platform=self.platform,
+            forwards=self._forwards,
+            open_service=self.open_service,
+            log=log,
+        )
+        self._ssh = SshConfigWriter(
+            home=self.platform.home(),
+            open_service=self.open_service,
+            restrict_file=self.platform.restrict_to_person,
+            is_windows=self.platform.os_name == "windows",
+            log=log,
+            on_change=self.notify,
+        )
         self._services = {
             handler.service_type: handler
             for handler in (
-                WebServiceHandler(
-                    platform=self.platform,
-                    forwards=self._forwards,
-                    open_service=self.open_service,
-                    log=log,
-                ),
-                PortServiceHandler(forwards=self._forwards, log=log),
                 AiServiceHandler(
                     store=self._store,
                     original_dir=os.path.join(config_dir, CLIENT_ORIGINAL_DIR_NAME),
@@ -289,6 +341,7 @@ class ClientResident:
                     log=log,
                     on_change=self.notify,
                     entries_of=self.service_entries,
+                    open_service=self.open_service,
                     adapter_host=self._files_adapter.host,
                     on_adapter_idle=self._files_adapter.down,
                 ),
@@ -320,12 +373,12 @@ class ClientResident:
         self._opening_panels: set = set()
         self._panel_errors: dict = {}
         # The step a press started on a service entry, and the failure the
-        # last one ended in, by service key.
+        # last one ended in, by service key; the same for an app, by its hub
+        # and its id.
         self._entry_jobs: dict = {}
         self._entry_errors: dict = {}
-        # The refusal each UDP forward outlived, by service key, while it is
-        # still the row's error line.
-        self._forward_refusals: dict = {}
+        self._app_jobs: dict = {}
+        self._app_errors: dict = {}
         # What the page shows above the hubs for a while: [{code, params, id}].
         self._notices: list = []
         # Every terminal open or ended and not yet asked about, by its id:
@@ -348,6 +401,29 @@ class ClientResident:
         self.on_terminal_output = None
         self._drop_repeated_hubs()
         self._reconcile_bindings(enrollment.config_stamp())
+
+    def _carried_transport(self) -> ClientTransportChannel:
+        """The transport this resident runs as its child, at the platform's listener."""
+        program = (
+            os.environ.get(CLIENT_TRANSPORT_BIN_ENV, "")
+            or bundled_path(CLIENT_TRANSPORT_PROGRAM)
+            or shutil.which(CLIENT_TRANSPORT_PROGRAM)
+            or ""
+        )
+        self._transport_program = program
+        listen = self.platform.transport_listen_path()
+        return ClientTransportChannel(
+            connect=self.platform.connect_transport,
+            process=ClientTransportProcess(
+                program=program or CLIENT_TRANSPORT_PROGRAM,
+                listen=listen,
+                log_path=os.path.join(
+                    self.platform.log_dir(), CLIENT_TRANSPORT_LOG_NAME
+                ),
+                bind_child=self.platform.bind_child_process,
+            ),
+            log=self._log,
+        )
 
     # --- what the local page reads ---
 
@@ -481,11 +557,16 @@ class ClientResident:
             The entries of :meth:`service_entries`, each with ``job``, the
             step at work on it or empty, and ``last_error``, the failure the
             last one ended in or None; every entry the client forwards also
-            with ``local_port``, ``"auto"`` or the fixed number, and
-            ``forward``, the loopback port its forward listens on or None.
+            with ``local_port`` and ``forward``, the loopback port its
+            forward listens on or None. An app entry's ``local_port`` is the
+            number it forwards on, the person's or the hub's, with
+            ``is_local_port_own`` saying whose; any other's is ``"auto"``. A
+            ``file`` entry also carries ``mount_default`` and
+            ``is_declared``.
         """
         entries = self.service_entries()
-        mounts = self._services["file"].state().get("mounts") or []
+        file_handler = self._services["file"]
+        mounts = file_handler.state().get("mounts") or []
         forwards = self._forwards.forwards()
         mount_shape = self.platform.mount_location_shape
         with self._lock:
@@ -506,9 +587,50 @@ class ClientResident:
             error = errors.get(key)
             row = dict(entry, job=job, last_error=dict(error) if error else None)
             if is_forwardable(entry, mount_shape):
-                row["local_port"] = self._ports.setting(key)
+                if is_app_kind(str(entry.get("type", ""))):
+                    own = self._ports.setting(key)
+                    row["local_port"] = self._ports.app_port(
+                        key, _port_number(entry.get("local_port"))
+                    )
+                    row["is_local_port_own"] = isinstance(own, int)
+                else:
+                    row["local_port"] = "auto"
                 row["forward"] = forwards.get(key)
+            if entry.get("type") == "file":
+                row.update(file_handler.entry_fields(entry))
             rows.append(row)
+        return rows
+
+    def app_rows(self) -> list:
+        """The apps of every connected hub, each with its job and whether it is in use.
+
+        Returns:
+            ``[{hub_id, id, title, source, device_id, device_name,
+            local_name, job, last_error, is_in_use}]``, hub order; an app
+            whose entries are all ``file`` entries is left out.
+        """
+        entries = self.service_entries()
+        with self._lock:
+            sessions = list(self._sessions.values())
+            jobs = dict(self._app_jobs)
+            errors = dict(self._app_errors)
+        rows = []
+        for session in sessions:
+            hub_id = session.hub_id()
+            for app in session.app_entries():
+                app = dict(app, hub_id=hub_id)
+                if not app_entries(app, entries):
+                    continue
+                key = service_key(hub_id, app["id"])
+                error = errors.get(key)
+                rows.append(
+                    dict(
+                        app,
+                        job=jobs.get(key, ""),
+                        last_error=dict(error) if error else None,
+                        is_in_use=self._apps.is_in_use(app=app, entries=entries),
+                    )
+                )
         return rows
 
     def terminal_entries(self) -> list:
@@ -621,6 +743,54 @@ class ClientResident:
         """
         self._store.set_theme(theme)
         self.notify()
+
+    def is_ssh_include_enabled(self) -> bool:
+        """Whether ``~/.ssh/config`` holds the line that includes Neutrino's own."""
+        return self._ssh.is_include_installed()
+
+    def ssh_config(self) -> dict:
+        """``~/.ssh/neutrino_config`` as it stands.
+
+        Returns:
+            ``{"path", "text"}``.
+        """
+        return self._ssh.config_text()
+
+    def apply_settings(self, body: dict) -> dict:
+        """Keep the Settings page's values, each one given, and say so.
+
+        Args:
+            body: ``{language, theme, is_ssh_include_enabled}``, any of them.
+
+        Returns:
+            Empty when kept; ``setting_value_unknown {name, value}`` for a
+            value the setting does not take, nothing kept then;
+            ``fs_refused`` when ``~/.ssh/config`` cannot be written.
+        """
+        language = body.get(SETTING_LANGUAGE)
+        theme = body.get(SETTING_THEME)
+        include = body.get(SETTING_SSH_INCLUDE)
+        for name, value, is_taken in (
+            (SETTING_LANGUAGE, language, language in CLIENT_LANGUAGES),
+            (SETTING_THEME, theme, theme in CLIENT_THEMES),
+            (SETTING_SSH_INCLUDE, include, isinstance(include, bool)),
+        ):
+            if value is not None and not is_taken:
+                return {
+                    "code": "setting_value_unknown",
+                    "params": {"name": name, "value": str(value)},
+                }
+        if language is not None:
+            self._store.set_language(language)
+        if theme is not None:
+            self._store.set_theme(theme)
+        if include is not None:
+            try:
+                self._ssh.set_include(include)
+            except OSError as error:
+                return {"code": "fs_refused", "params": {"detail": str(error)[:200]}}
+        self.notify()
+        return {}
 
     def terminal_font_size(self) -> int:
         """The terminal's font size in pixels; the default until one is chosen."""
@@ -739,7 +909,7 @@ class ClientResident:
         if binding.get("is_pending") is not True:
             threading.Thread(
                 target=self._tell_hub_left,
-                args=(binding,),
+                args=(session,),
                 name="client_leave",
                 daemon=True,
             ).start()
@@ -773,10 +943,10 @@ class ClientResident:
         """Ask every hub that can answer again now, and show the work.
 
         Each connected, connecting or waiting hub loses its error line and
-        its virtual network's error, its entries lose theirs, and it waits
-        as refreshing until its answer; a hub the session does not refresh
-        is left as it is. Every notice goes. A press while any hub still refreshes
-        asks no hub again and is logged.
+        its virtual network's error, its entries and its apps lose theirs,
+        and it waits as refreshing until its answer; a hub the session does
+        not refresh is left as it is. Every notice goes. A press while any
+        hub still refreshes asks no hub again and is logged.
         """
         with self._lock:
             sessions = list(self._sessions.values())
@@ -792,9 +962,9 @@ class ClientResident:
             self._overlay.clear_error(session.local_key)
             with self._lock:
                 self._panel_errors.pop(session.local_key, None)
-                for key in list(self._entry_errors):
-                    if key.startswith(hub_id + "/"):
-                        self._entry_errors.pop(key, None)
+                for table in (self._entry_errors, self._app_errors):
+                    for key in [key for key in table if key.startswith(hub_id + "/")]:
+                        table.pop(key, None)
         self.notify()
 
     def set_exit(self, hub_id: str) -> dict:
@@ -864,15 +1034,13 @@ class ClientResident:
     def open_connect(self, hub_id: str, entry_id: str) -> ClientStream:
         """Open one ``connect`` stream to a published entry, for any part of the resident.
 
-        Any thread may call it. The stream is open, with this side's credit
-        granted, when this returns; the hub judges it and closes it with a
-        code when it refuses, which ``read`` sees as the end and
-        ``wait_close`` raises. ``send(bytes)`` blocks under the hub's
-        credit, ``read(timeout_s)`` gives the next bytes, empty at the end
+        Any thread may call it. The stream is a connection of its own to the
+        transport; the hub judges it and refuses it with a code before its
+        accept, which ``read`` sees as the end and ``wait_close`` raises.
+        After the accept it carries the connection's raw bytes: ``send``
+        writes them, ``read(timeout_s)`` gives the next, empty at the end
         and None when nothing came in time, and ``close()`` ends the stream
-        from this side;
-        :func:`~neutrino_client.services.forward.relay_socket` carries a
-        connected socket over it until either end ends.
+        from this side.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
@@ -883,7 +1051,7 @@ class ClientResident:
 
         Raises:
             GatewayUnreachable: When this person has not joined that hub or
-                its socket is not up.
+                it is not connected.
         """
         return self._open_connect_args(hub_id, {"id": entry_id})
 
@@ -957,6 +1125,7 @@ class ClientResident:
         rows: int,
         session_id: str = "",
         is_shared: bool = False,
+        account: str = "",
     ) -> dict:
         """Open a shell on one machine a hub offers, for a terminal to attach to.
 
@@ -969,6 +1138,8 @@ class ClientResident:
                 with its kept output; empty opens a new one under a fresh
                 uuid.
             is_shared: Whether a new session is shared from its start.
+            account: The enabled account a new shell runs as; empty for the
+                machine's first.
 
         Returns:
             ``{"terminal_id", "session_id"}``; ``unknown_hub``,
@@ -991,6 +1162,7 @@ class ClientResident:
                 session_id,
                 is_resumed=is_resumed,
                 is_shared=is_shared and not is_resumed,
+                account=account,
             )
         except GatewayUnreachable as error:
             return {"code": "hub_unreachable", "params": {"detail": str(error)}}
@@ -1009,6 +1181,7 @@ class ClientResident:
         is_tty: bool,
         cols: int,
         rows: int,
+        account: str = "",
     ) -> dict:
         """Run one command on one machine a hub offers, for a terminal to attach to.
 
@@ -1023,6 +1196,8 @@ class ClientResident:
             is_tty: Whether it runs on a pseudo-terminal.
             cols: The pseudo-terminal's width in columns.
             rows: The pseudo-terminal's height in rows.
+            account: The enabled account it runs as; empty for the
+                machine's first.
 
         Returns:
             ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` for a
@@ -1036,7 +1211,7 @@ class ClientResident:
         if device_id not in known:
             return {"code": "unknown_terminal", "params": {"device_id": device_id}}
         try:
-            stream = session.open_exec(device_id, argv, is_tty, cols, rows)
+            stream = session.open_exec(device_id, argv, is_tty, cols, rows, account)
         except GatewayUnreachable as error:
             return {"code": "hub_unreachable", "params": {"detail": str(error)}}
         terminal_id = uuid.uuid4().hex
@@ -1044,6 +1219,38 @@ class ClientResident:
         with self._lock:
             self._terminals[terminal_id] = (session, bridge)
         self._log(f"a command on {device_id} is open")
+        return {"terminal_id": terminal_id}
+
+    def open_ssh_proxy(self, hub_id: str, entry_id: str) -> dict:
+        """Open a ``connect`` stream to one ``ssh`` entry, for ``nclient ssh proxy``.
+
+        The proxy's two connections carry its standard input up the stream
+        and the stream's bytes back, raw, as a terminal's do.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            entry_id: The ``ssh`` entry.
+
+        Returns:
+            ``{"terminal_id"}``; ``unknown_hub``, ``service_unknown`` for an
+            entry the hub does not list as ``ssh``, or ``hub_unreachable``.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        if not any(
+            entry.get("id") == entry_id and entry.get("type") == "ssh"
+            for entry in session.service_entries()
+        ):
+            return {"code": "service_unknown", "params": {"service_id": entry_id}}
+        try:
+            stream = session.open_connect({"id": entry_id})
+        except GatewayUnreachable as error:
+            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+        terminal_id = uuid.uuid4().hex
+        with self._lock:
+            self._terminals[terminal_id] = (session, TerminalBridge(stream=stream))
+        self._log(f"an ssh proxy to {entry_id} is open")
         return {"terminal_id": terminal_id}
 
     def attach_terminal(self, terminal_id: str, read) -> None:
@@ -1082,19 +1289,14 @@ class ClientResident:
             rows: The new height in rows.
 
         Returns:
-            Empty on success; ``unknown_terminal``, the hub's refusal, or
-            ``hub_unreachable``.
+            Empty on success; ``unknown_terminal``, or ``shell_unknown`` for
+            a terminal whose stream has ended.
         """
         opened = self._terminal(terminal_id)
         if opened is None:
             return {"code": "unknown_terminal", "params": {}}
-        session, bridge = opened
-        try:
-            session.resize_shell(bridge.stream_id, cols, rows)
-        except GatewayRefusedDetail as refused:
-            return {"code": refused.code, "params": dict(refused.params)}
-        except GatewayUnreachable as error:
-            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+        if not opened[1].resize(cols, rows):
+            return {"code": "shell_unknown", "params": {"shell": terminal_id}}
         return {}
 
     def terminal_result(self, terminal_id: str) -> dict:
@@ -1123,6 +1325,7 @@ class ClientResident:
         cols: int,
         rows: int,
         session_id: str = "",
+        account: str = "",
     ) -> dict:
         """Open a shell for the window's own terminal, its output pushed there.
 
@@ -1137,12 +1340,16 @@ class ClientResident:
             rows: The terminal's height in rows.
             session_id: A shell session the machine keeps, attached to
                 again; empty opens a new one.
+            account: The enabled account a new shell runs as; empty for the
+                machine's first.
 
         Returns:
             ``{"terminal_id", "session_id"}``; ``unknown_hub``,
             ``unknown_terminal`` or ``hub_unreachable`` otherwise.
         """
-        outcome = self.open_terminal(hub_id, device_id, cols, rows, session_id)
+        outcome = self.open_terminal(
+            hub_id, device_id, cols, rows, session_id, account=account
+        )
         terminal_id = outcome.get("terminal_id")
         if terminal_id:
             threading.Thread(
@@ -1335,59 +1542,114 @@ class ClientResident:
         self._start_thread(functools.partial(self._run_entry_job, handler, key, body))
         return {}
 
-    def configure_forward(self, hub_id: str, entry_id: str, setting) -> dict:
-        """Set the local port one port or web entry takes.
+    def open_app(self, hub_id: str, app_id: str) -> dict:
+        """Start using one app, as that app's job: every entry forwarded and its first page opened.
+
+        A press while the app is at work is dropped and logged.
 
         Args:
-            hub_id: The hub the entry came from.
-            entry_id: The entry's id.
-            setting: ``"auto"`` or a fixed number.
+            hub_id: The hub, by its id or by its binding's id.
+            app_id: The app's id.
 
         Returns:
-            Empty when kept; ``unknown_request`` for an entry of another
-            type or a setting of another shape, ``port_taken`` for a
-            number another entry holds.
+            Empty, the press taken or dropped; ``unknown_app`` for an app the
+            hub does not list, ``client_disabled`` while the hub has this
+            client switched off.
         """
-        entry = next(
-            (
-                item
-                for item in self.service_entries()
-                if item.get("hub_id") == hub_id and item.get("id") == entry_id
-            ),
-            None,
-        )
-        if entry is None or entry.get("type") not in CONFIGURABLE_TYPES:
+        return self._app_press(hub_id, app_id, JOB_OPENING)
+
+    def stop_app(self, hub_id: str, app_id: str) -> dict:
+        """End every forward of one app, as that app's job.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            app_id: The app's id.
+
+        Returns:
+            Empty, the press taken or dropped; ``unknown_app`` for an app the
+            hub does not list.
+        """
+        return self._app_press(hub_id, app_id, JOB_DISCONNECTING)
+
+    def configure_app(self, hub_id: str, app_id: str, ports: dict) -> dict:
+        """Set the local ports of one app's entries on this client.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            app_id: The app's id.
+            ports: ``{entry name: number or None}``; None goes back to the
+                hub's number. An entry the map does not name is left as it is.
+
+        Returns:
+            Empty when kept, nothing kept on a refusal: ``unknown_app``,
+            ``app_in_use`` while the app is in use, ``unknown_request`` for
+            an entry name the app has not, ``local_port_invalid {port}`` or
+            ``port_taken {port}`` for a number one entry cannot take.
+        """
+        found = self._find_app(hub_id, app_id)
+        if found is None:
+            return {"code": "unknown_app", "params": {"app_id": app_id}}
+        app, entries = found
+        if self._apps.is_in_use(app=app, entries=entries):
+            return {"code": "app_in_use", "params": {}}
+        named = {
+            str(entry.get("name", "")): entry for entry in app_entries(app, entries)
+        }
+        if any(name not in named for name in ports):
             return {"code": "unknown_request", "params": {}}
-        outcome = self._ports.configure(
-            service_key(hub_id, entry_id), setting, entry_protocol(entry)
-        )
-        if not outcome:
-            self.notify()
-        return outcome
+        changes = {}
+        for name, port in ports.items():
+            entry = named[name]
+            key = service_key(app["hub_id"], str(entry.get("id", "")))
+            changes[key] = (_setting_number(port), entry_protocol(entry))
+        hub_numbers = {
+            service_key(entry.get("hub_id", ""), entry.get("id", "")): (
+                _port_number(entry.get("local_port")),
+                entry_protocol(entry),
+            )
+            for entry in entries
+            if is_app_kind(str(entry.get("type", "")))
+            and service_key(entry.get("hub_id", ""), entry.get("id", "")) not in changes
+        }
+        taken: dict = {}
+        for key, (number, protocol) in changes.items():
+            if number is None:
+                continue
+            outcome = self._ports.check_own(
+                key, number, protocol, hub_numbers, tuple(changes)
+            )
+            if not outcome and (number, protocol) in taken:
+                outcome = {"code": "port_taken", "params": {"port": number}}
+            if outcome:
+                return outcome
+            taken[(number, protocol)] = key
+        for key, (number, protocol) in changes.items():
+            self._ports.set_own(key, number, protocol)
+        self.notify()
+        return {}
 
     def open_service(
         self, hub_id: str, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
     ) -> dict:
-        """Open a ``service`` stream for one entry on its hub and take the close.
+        """Ask one entry's material of its hub with the ``service`` frame.
 
         Args:
             hub_id: The hub the entry came from.
             entry_id: The published entry's id.
-            timeout_s: How long to wait for the close.
+            timeout_s: How long to wait for the reply.
 
         Returns:
-            The close's ``params``: the entry's material.
+            The reply's ``params``: the entry's material.
 
         Raises:
-            GatewayRefusedDetail: When the hub closed the stream with a code.
+            GatewayRefusedDetail: When the hub replied with a code.
             GatewayUnreachable: When this person has not joined that hub,
-                its socket is down or ends, or the close does not arrive in
-                time.
+                its session is down or ends, or no reply arrives in time.
         """
         session = self._find_session(hub_id)
         if session is None:
             raise GatewayUnreachable("this person has not joined that hub")
-        return session.open_service(entry_id, timeout_s)
+        return session.ask_service(entry_id, timeout_s)
 
     # --- the loop ---
 
@@ -1409,6 +1671,12 @@ class ClientResident:
         self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         self._clear_leftovers()
         self._check_ai_gate()
+        self._transport.on_ready(self._transport_ready)
+        self._transport.on_lost(self._transport_lost)
+        self._transport.on_forward_end(self._forwards.take_end)
+        if not self._transport_program:
+            self._add_notice("transport_missing", {})
+        self._transport.start()
         for handler in self._services.values():
             handler.start()
         self._overlay.start()
@@ -1444,9 +1712,10 @@ class ClientResident:
         """Let go of everything and stop every loop. Idempotent.
 
         The order is the one that leaves the machine as it was found: the
-        sockets closed, the virtual networks counted and kept, the tools
+        hubs undialled, the virtual networks counted and kept, the tools
         restored, the shares unmounted, the viewers closed, the forwards
-        closed, then the files adapter taken down and its endpoint stopped.
+        closed, the files adapter taken down and its endpoint stopped, then
+        the transport ended.
         The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
         is given up and the next runs.
@@ -1463,6 +1732,7 @@ class ClientResident:
         self._overlay.stop()
         self._release_in_time()
         self._files_adapter.stop()
+        self._transport.stop()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
@@ -1527,12 +1797,6 @@ class ClientResident:
                     hub_id = str(record.get("hub_id", ""))
                     entry_id = str(record.get("entry_id", ""))
         key = service_key(hub_id, entry_id)
-        if service_type == "web":
-            return key, (
-                JOB_DISCONNECTING if body.get("is_enabled") is False else JOB_OPENING
-            )
-        if service_type == "port":
-            return key, JOB_FORWARDING if body.get("is_enabled") else JOB_DISCONNECTING
         if service_type == "file":
             return key, JOB_UNMOUNTING if action == "unmount" else JOB_MOUNTING
         if service_type == "ai":
@@ -1540,6 +1804,57 @@ class ClientResident:
         if service_type == "rdp":
             return key, JOB_CONNECTING
         return key, ""
+
+    def _app_press(self, hub_id: str, app_id: str, job: str) -> dict:
+        """Start one app's Use or Stop as its job, written before this returns."""
+        found = self._find_app(hub_id, app_id)
+        if found is None:
+            return {"code": "unknown_app", "params": {"app_id": app_id}}
+        app, _entries = found
+        session = self._find_session(app["hub_id"])
+        if job == JOB_OPENING and session is not None:
+            if session.connection() == CONNECTION_DISABLED:
+                return {"code": "client_disabled", "params": {}}
+        key = service_key(app["hub_id"], app["id"])
+        with self._lock:
+            is_dropped = key in self._app_jobs
+            if not is_dropped:
+                self._app_jobs[key] = job
+                self._app_errors.pop(key, None)
+        if is_dropped:
+            self._log(f"a press on the app {key} while it works was dropped")
+            return {}
+        self.notify()
+        self._start_thread(functools.partial(self._run_app_job, app, key, job))
+        return {}
+
+    def _run_app_job(self, app: dict, key: str, job: str) -> None:
+        """Run one app's Use or Stop, then write how it ended and announce it."""
+        try:
+            entries = self.service_entries()
+            if job == JOB_OPENING:
+                outcome = self._apps.use(app=app, entries=entries)
+            else:
+                self._apps.stop(app=app, entries=entries)
+                outcome = {}
+        except Exception as error:  # noqa: BLE001 - reported on the row
+            self._log(f"{key}: the job crashed: {type(error).__name__}: {error}")
+            outcome = {"code": "crashed", "params": {"detail": str(error)[:200]}}
+        with self._lock:
+            self._app_jobs.pop(key, None)
+            if outcome:
+                self._app_errors[key] = dict(outcome)
+        self.notify()
+
+    def _find_app(self, hub_id: str, app_id: str) -> "tuple[dict, list] | None":
+        """One app a connected hub lists, stamped with its hub, and the merged entries."""
+        session = self._find_session(hub_id)
+        if session is None:
+            return None
+        for app in session.app_entries():
+            if app.get("id") == app_id:
+                return dict(app, hub_id=session.hub_id()), self.service_entries()
+        return None
 
     def _is_mounting(self, key: str) -> bool:
         """Whether a mount record of one entry is on its way; the lock is held."""
@@ -1658,6 +1973,7 @@ class ClientResident:
         """One session for one binding, started when the resident is."""
         session = ClientHubSession(
             binding=binding,
+            transport=self._transport,
             hostname=self.hostname(),
             platform_tuple=self._platform_tuple,
             os_machine_id=self._os_machine_id,
@@ -1685,20 +2001,66 @@ class ClientResident:
             self._leaving.discard(session.local_key)
             self._opening_panels.discard(session.local_key)
             self._panel_errors.pop(session.local_key, None)
-            for table in (self._entry_jobs, self._entry_errors):
+            tables = (
+                self._entry_jobs,
+                self._entry_errors,
+                self._app_jobs,
+                self._app_errors,
+            )
+            for table in tables:
                 for key in [key for key in table if key.startswith(hub_id + "/")]:
                     table.pop(key, None)
+            is_last = not self._sessions
         session.stop()
         self._release_hub(hub_id or session.binding_id, session.local_key)
         self._services["file"].drop_withdrawn(hub_id=hub_id, entries=[])
         if hub_id:
             self._files_plan.forget_hub(hub_id)
         self._services["ai"].refresh(entries=self.service_entries())
+        if is_last:
+            self._ssh.clear()
+        else:
+            self._refresh_ssh()
         self.notify()
 
+    def _refresh_ssh(self) -> None:
+        """Give the SSH configuration the machines every connected hub lists now."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+        apps = []
+        hub_names = {}
+        for session in sessions:
+            hub_id = session.hub_id()
+            hub_names[hub_id] = session.hub_name()
+            apps.extend(dict(app, hub_id=hub_id) for app in session.app_entries())
+        self._ssh.refresh(
+            entries=self.service_entries(), apps=apps, hub_names=hub_names
+        )
+
+    def _transport_ready(self) -> None:
+        """The transport started: every hub is dialled and every forward started again."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
+            session.transport_ready()
+        self._forwards.restart()
+
+    def _transport_lost(self) -> None:
+        """The transport ended: no hub has a session until it is back."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
+            session.transport_lost()
+        self.notify()
+
+    def _binding_of(self, hub_id: str) -> str:
+        """The label the transport knows a hub's binding by; empty for a hub not joined."""
+        session = self._find_session(hub_id)
+        return session.label if session is not None else ""
+
     def _hub_services(self, session: ClientHubSession) -> None:
-        """A hub's state arrived: its forwards, its shares, its exit grant and
-        its network may change."""
+        """A hub's state arrived: its forwards, its shares, its exit grant, its
+        SSH machines and its network may change."""
         self._forwards.drop_withdrawn(
             hub_id=session.hub_id(), entries=session.service_entries()
         )
@@ -1707,6 +2069,7 @@ class ClientResident:
         )
         self._check_ai_gate()
         self._services["ai"].refresh(entries=self.service_entries())
+        self._refresh_ssh()
         self._overlay.refresh()
 
     def _hub_joined(self, session: ClientHubSession, binding: dict) -> None:
@@ -1777,7 +2140,7 @@ class ClientResident:
             self._forget_session(session)
             binding = session.binding()
             if is_told and binding.get("token") and not binding.get("is_pending"):
-                self._start_thread(functools.partial(self._tell_hub_left, binding))
+                self._start_thread(functools.partial(self._tell_hub_left, session))
         if replaced:
             self._overlay.refresh()
 
@@ -1936,12 +2299,27 @@ class ClientResident:
             if binding.get("token"):
                 self._start_thread(functools.partial(self._tell_hub_left, binding))
 
-    def _tell_hub_left(self, binding: dict) -> None:
-        """Post the leave to the hub; one that cannot be told is logged."""
-        try:
-            enrollment.leave(binding)
-        except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
-            self._log(f"could not tell the hub we are leaving: {error}")
+    def _tell_hub_left(self, left) -> None:
+        """Tell the hub this client left it, through the transport, once it runs.
+
+        Args:
+            left: The session of the binding left, or the binding itself.
+        """
+        session = left
+        if isinstance(left, dict):
+            session = ClientHubSession(
+                binding=left,
+                transport=self._transport,
+                hostname=self.hostname(),
+                platform_tuple=self._platform_tuple,
+                log=self._log,
+            )
+        if not self._transport.wait_ready(CLIENT_TRANSPORT_START_TIMEOUT_S):
+            self._log("could not tell the hub we are leaving: no transport")
+            return
+        outcome = session.tell_left()
+        if outcome:
+            self._log(f"could not tell the hub we are leaving: {outcome['code']}")
 
     def _follow_exit(self) -> None:
         """Clear the stored choice once the hub it names is gone."""
@@ -2004,31 +2382,21 @@ class ClientResident:
             raise GatewayUnreachable("this person has not joined that hub")
         return session.open_connect(args)
 
-    def _wait_channel(self, hub_id: str, timeout_s: float) -> bool:
-        """Wait until a hub's socket carries its channel; a hub not joined has none."""
-        session = self._find_session(hub_id)
-        if session is None:
-            time.sleep(timeout_s)
-            return False
-        return session.wait_channel(timeout_s)
-
     def _forward_refused(self, hub_id: str, entry_id: str, refusal: dict) -> None:
-        """A forward's stream was refused after its start: the row's error line."""
+        """A forward ended with a code: its entry's error line, and its app's."""
+        app_id = next(
+            (
+                str(entry.get("app_id", "") or "")
+                for entry in self.service_entries()
+                if entry.get("hub_id") == hub_id and entry.get("id") == entry_id
+            ),
+            "",
+        )
         with self._lock:
             self._entry_errors[service_key(hub_id, entry_id)] = dict(refusal)
-            self._forward_refusals[service_key(hub_id, entry_id)] = dict(refusal)
+            if app_id:
+                self._app_errors[service_key(hub_id, app_id)] = dict(refusal)
         self.notify()
-
-    def _forward_answered(self, hub_id: str, entry_id: str) -> None:
-        """The far end answered again after a refusal: its error line goes."""
-        key = service_key(hub_id, entry_id)
-        with self._lock:
-            refusal = self._forward_refusals.pop(key, None)
-            is_gone = refusal is not None and self._entry_errors.get(key) == refusal
-            if is_gone:
-                self._entry_errors.pop(key, None)
-        if is_gone:
-            self.notify()
 
     def _files_connector(self, hub_id: str, entry_id: str) -> ConnectStreamSocket:
         """One ``connect`` stream to a file entry, as the files endpoint takes it.
@@ -2059,22 +2427,16 @@ class ClientResident:
         hub_id = session.hub_id()
         outcome: dict = {}
         try:
-            material = session.open_panel_service()
+            material = session.ask_panel_service()
             token = str((material or {}).get("token", "") or "")
             if not token:
                 outcome = {"code": "web_token_missing", "params": {}}
             else:
                 port = self._forwards.ensure(
-                    hub_id=hub_id, entry_id=FORWARD_PANEL_ID, own_port=0, kind="panel"
+                    hub_id=hub_id, entry_id=FORWARD_PANEL_ID, kind=FORWARD_KIND_PANEL
                 )
                 self.platform.open_url(
-                    local_url(
-                        PANEL_PAGE_URL,
-                        PANEL_HOST_PREFIX + hub_id,
-                        port,
-                        token,
-                        self.platform.os_name,
-                    )
+                    panel_url(hub_id, port, token, self.platform.os_name)
                 )
             token = ""
         except (GatewayRefusedDetail, GatewayUnreachable, GatewayUntrusted) as error:

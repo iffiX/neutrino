@@ -498,13 +498,92 @@ def test_a_mount_table_that_cannot_be_read_answers_not_attached(monkeypatch):
     assert DarwinPlatform().is_share_attached(location="/mnt") is False
 
 
-def test_a_mount_location_is_a_volume_the_system_places():
+def test_a_mount_location_is_a_place_under_the_home(monkeypatch, tmp_path):
+    monkeypatch.setattr(DarwinPlatform, "home", lambda self: str(tmp_path))
     platform = DarwinPlatform()
 
-    assert platform.mount_location_shape == "volume"
+    assert platform.mount_location_shape == "path"
     assert platform.mount_location_choices() == []
     assert platform.suggest_mount_location() == ""
-    assert platform.validate_mount_location(location="") is None
+    assert (
+        platform.validate_mount_location(location=str(tmp_path / "remote" / "x"))
+        is None
+    )
+    for refused in ("", "relative/place", "/Volumes/media"):
+        assert platform.validate_mount_location(location=refused) == {
+            "code": "mountpoint_invalid",
+            "params": {},
+        }
+
+
+def test_the_place_becomes_a_link_to_the_volume(monkeypatch, tmp_path):
+    table = volume_table(source="//media@127.0.0.1:20445/media")
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=table)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+    place = tmp_path / "remote" / "lab-media"
+    place.parent.mkdir()
+    place.mkdir()
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//127.0.0.1/media",
+        port=20445,
+        location=str(place),
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == str(place)
+    assert place.is_symlink()
+    assert os.readlink(str(place)) == "/Volumes/media"
+
+
+def test_a_place_that_holds_something_else_is_refused(monkeypatch, tmp_path):
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=volume_table())]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+    place = tmp_path / "busy"
+    place.mkdir()
+    (place / "file").write_text("x")
+
+    with pytest.raises(ShareAttachError) as caught:
+        DarwinPlatform().attach_share(
+            share_url="//hub/media",
+            location=str(place),
+            credentials_path=credentials_file(tmp_path),
+        )
+    assert caught.value.code == "mountpoint_not_empty"
+
+
+def test_unmounting_a_place_ejects_its_volume_and_removes_the_link(
+    monkeypatch, tmp_path
+):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+    volume = tmp_path / "Volumes" / "media"
+    volume.mkdir(parents=True)
+    place = tmp_path / "lab-media"
+    place.symlink_to(volume)
+
+    DarwinPlatform().detach_share(location=str(place))
+
+    assert recorder.commands == [["diskutil", "unmount", str(volume)]]
+    assert not place.exists() and not place.is_symlink()
+
+
+def test_a_place_is_attached_while_its_volume_is_in_the_mount_table(
+    monkeypatch, tmp_path
+):
+    volume = tmp_path / "Volumes" / "media"
+    volume.mkdir(parents=True)
+    place = tmp_path / "lab-media"
+    place.symlink_to(volume)
+    table = volume_table(location=str(volume))
+    recorder = CommandRecorder([completed(stdout=table)])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    assert DarwinPlatform().is_share_attached(location=str(place))
 
 
 def test_preparing_an_empty_location_makes_no_directory(monkeypatch, tmp_path):

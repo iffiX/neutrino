@@ -25,6 +25,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import time
 import webbrowser
@@ -288,6 +289,50 @@ class ClientPlatform:
             ControlSocketUnavailableError: When the platform cannot place one.
         """
         raise ControlSocketUnavailableError("no control socket here")
+
+    def transport_listen_path(self) -> str:
+        """Where this person's transport listens for the local channel.
+
+        Returns:
+            The absolute socket path or pipe name.
+
+        Raises:
+            ControlSocketUnavailableError: When the platform cannot place one.
+        """
+        raise ControlSocketUnavailableError("no transport socket here")
+
+    def connect_transport(self, path: str):
+        """One local connection to the transport, both ways at once.
+
+        Args:
+            path: The socket path the transport listens on.
+
+        Returns:
+            A connection with ``recv``, ``sendall``, ``shutdown`` and
+            ``close``.
+
+        Raises:
+            OSError: When nothing listens there.
+        """
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            connection.connect(path)
+        except OSError:
+            connection.close()
+            raise
+        return connection
+
+    def restrict_to_person(self, path: str) -> None:
+        """Leave a file to this person alone where its mode bits do not.
+
+        Nothing here: a 0600 file is this person's alone.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When the file's access cannot be set.
+        """
 
     def read_peer_identity(self, connection) -> dict:
         """The kernel-reported identity of a control socket peer.

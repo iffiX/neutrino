@@ -15,6 +15,13 @@ from neutrino_client.exceptions import ControlSocketUnavailableError
 from tests.conftest import FakeClientPlatform, FakeResident, discard
 
 
+@pytest.fixture(autouse=True)
+def english():
+    wording.fix_language("en")
+    yield
+    wording.fix_language("")
+
+
 @pytest.fixture
 def platform(monkeypatch):
     platform = FakeClientPlatform()
@@ -43,13 +50,13 @@ def test_the_running_client_is_asked_to_quit(resident, capsys):
     assert quit_cli.main() == 0
 
     assert resident.is_shut_down.wait(timeout=5)
-    assert capsys.readouterr().out.strip() == wording.QUIT_ASKED
+    assert capsys.readouterr().out.strip() == wording.line("quit_asked")
 
 
 def test_nothing_running_is_said_plainly(platform, capsys):
     assert quit_cli.main() == 1
 
-    assert capsys.readouterr().err.strip() == wording.NOT_RUNNING
+    assert capsys.readouterr().err.strip() == wording.word_code("client_not_running")
 
 
 def test_a_refusal_is_worded_from_its_code(resident, platform, capsys):
@@ -117,7 +124,7 @@ def test_with_none_of_its_own_it_asks_the_client_that_holds_the_machine(
 
     assert named == ["lab"]
     assert resident.relaunches == 1
-    assert capsys.readouterr().out.strip() == wording.QUIT_ASKED
+    assert capsys.readouterr().out.strip() == wording.line("quit_asked")
 
 
 def test_a_holders_client_it_cannot_reach_is_named(platform, monkeypatch, capsys):

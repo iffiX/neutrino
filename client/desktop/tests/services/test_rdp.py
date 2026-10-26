@@ -9,6 +9,7 @@ the viewer. Every viewer opened is closed by ``close_all``, and one hub's by
 ``release_hub``.
 """
 
+import functools
 import json
 
 import pytest
@@ -23,7 +24,6 @@ from neutrino_client.exceptions import (
 from neutrino_client.services.forward import (
     ForwardListenerRegistry,
     PortLocalTable,
-    is_port_free,
 )
 from neutrino_client.services.rdp import (
     RdpViewerHandler,
@@ -33,7 +33,7 @@ from neutrino_client.services.rdp import (
 from tests.conftest import (
     SERVICES,
     FakeClientPlatform,
-    FakeConnectHub,
+    FakeTransportChannel,
     FakeProcess,
     discard,
 )
@@ -74,15 +74,23 @@ def run_inline(target):
     target()
 
 
+def _never_free(port, is_kept=False, protocol="tcp") -> bool:
+    return False
+
+
 def forwards_on(busy=()):
-    """A registry whose table finds every free port free but the busy ones."""
+    """A registry over an in-process transport whose table finds every port
+    free but the busy ones."""
     return ForwardListenerRegistry(
-        open_connect=FakeConnectHub().open_connect,
-        ports=PortLocalTable(
-            is_free=lambda port: port not in busy and is_port_free(port)
-        ),
+        command=FakeTransportChannel().command,
+        binding_of=functools.partial(dict.get, {"h1": "c1", "h2": "c2"}),
+        ports=PortLocalTable(is_free=functools.partial(_is_free, set(busy))),
         log=discard,
     )
+
+
+def _is_free(busy, port, is_kept=False, protocol="tcp") -> bool:
+    return port not in busy
 
 
 @pytest.fixture
@@ -203,7 +211,7 @@ def test_an_action_the_handler_does_not_know_is_typed(handler):
 
 def test_a_forward_that_cannot_listen_starts_no_viewer(handler):
     subject, platform, _hub, _lines = handler
-    subject.forwards.ports = PortLocalTable(is_free=lambda port: False)
+    subject.forwards.ports = PortLocalTable(is_free=_never_free)
 
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
     assert failure_of(subject)["code"] == "forward_failed"

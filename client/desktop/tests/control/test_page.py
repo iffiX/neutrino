@@ -92,7 +92,7 @@ CLIENT_MD_WORDS = {
     "ui.state.hub_silent": "The hub did not answer",
     "ui.state.hub_off_overlay": "The hub is not on the virtual network",
     "ui.state.no_network": "No network",
-    "ui.state.untrusted": "Certificate mismatch",
+    "ui.state.untrusted": "Hub key mismatch",
     "ui.state.admission_paused": "The hub pauses new devices",
     "ui.state.unknown_device": "The hub does not know this device",
     "ui.state.too_old": "Version too old",
@@ -120,7 +120,7 @@ CLIENT_MD_CHINESE = {
     "ui.state.hub_silent": "中枢未响应",
     "ui.state.hub_off_overlay": "中枢未上虚拟网",
     "ui.state.no_network": "无网络",
-    "ui.state.untrusted": "证书不符",
+    "ui.state.untrusted": "中枢密钥不符",
     "ui.state.admission_paused": "中枢暂停接纳",
     "ui.state.unknown_device": "中枢不认识本机",
     "ui.state.too_old": "版本太旧",
@@ -323,7 +323,7 @@ def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
         "This hub no longer knows this client; join it again with a new link"
     )
     assert EN_WORDS["code.hub_untrusted"] == (
-        "The hub's identity changed; if it was reset, join it again"
+        "The hub's key does not match; if it was reset, join it again."
     )
 
 
@@ -1323,7 +1323,7 @@ def run_state_line(hub: dict, now: float) -> dict:
             "wait",
         ),
         ("no_network", None, "No network", "wait"),
-        ("untrusted", 1060.0, "Certificate mismatch · retrying in 60 s", "bad"),
+        ("untrusted", 1060.0, "Hub key mismatch · retrying in 60 s", "bad"),
         (
             "admission_paused",
             1042.0,

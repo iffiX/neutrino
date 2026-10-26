@@ -84,11 +84,11 @@ def test_linux_shares_the_posix_mount_location_judgment():
     assert LinuxPlatform.prepare_mount_location is ClientPlatform.prepare_mount_location
 
 
-def test_mount_locations_are_paths_drive_letters_on_windows_volumes_on_macos():
+def test_mount_locations_are_paths_and_drive_letters_on_windows():
     assert ClientPlatform.mount_location_shape == "path"
     assert LinuxPlatform.mount_location_shape == "path"
     assert WindowsPlatform.mount_location_shape == "drive_letter"
-    assert DarwinPlatform.mount_location_shape == "volume"
+    assert DarwinPlatform.mount_location_shape == "path"
 
 
 def test_the_posix_mount_preparation_wants_an_empty_directory(tmp_path):

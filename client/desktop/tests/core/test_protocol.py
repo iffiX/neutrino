@@ -1,50 +1,100 @@
-"""The frame codec: the words, and the binary frame's u32 stream id prefix."""
+"""The channel's words and the record layout every stream but the control one carries."""
+
+import io
+import json
+import struct
 
 import pytest
 
+from neutrino_client.constants import CLIENT_RECORD_BYTES_MAX
 from neutrino_client.core import protocol
 
 
-def test_the_eight_words_are_the_channels():
+def test_the_frame_words_are_the_channels():
     assert (
         protocol.FRAME_HELLO,
         protocol.FRAME_WELCOME,
         protocol.FRAME_REFUSED,
         protocol.FRAME_STATE,
         protocol.FRAME_REPORT,
-        protocol.FRAME_OPEN,
-        protocol.FRAME_CLOSE,
-        protocol.FRAME_CREDIT,
-    ) == ("hello", "welcome", "refused", "state", "report", "open", "close", "credit")
+        protocol.FRAME_PING,
+        protocol.FRAME_PONG,
+        protocol.FRAME_SERVICE,
+        protocol.FRAME_PERSIST,
+        protocol.FRAME_STOP_SESSION,
+        protocol.FRAME_REPLY,
+    ) == (
+        "hello",
+        "welcome",
+        "refused",
+        "state",
+        "report",
+        "ping",
+        "pong",
+        "service",
+        "persist",
+        "stop_session",
+        "reply",
+    )
 
 
-@pytest.mark.parametrize("stream_id", [0, 1, 2, 255, 256, 65536, (1 << 32) - 1])
-def test_a_binary_frame_round_trips(stream_id):
-    frame = protocol.encode_binary(stream_id, b"\x00line\n")
-
-    assert protocol.decode_binary(frame) == (stream_id, b"\x00line\n")
-
-
-def test_the_id_is_a_big_endian_u32_prefix():
-    assert protocol.encode_binary(1, b"x") == b"\x00\x00\x00\x01x"
-    assert protocol.encode_binary(258, b"") == b"\x00\x00\x01\x02"
+def test_the_record_types_are_the_standards_numbers():
+    assert protocol.RECORD_TYPES == (1, 2, 3, 4, 5, 6, 7, 8)
+    assert protocol.RECORD_ACCEPT == 2
+    assert protocol.RECORD_CLOSE == 8
 
 
-def test_an_id_outside_u32_is_refused():
+def test_a_record_is_a_type_byte_a_big_endian_u32_length_and_the_payload():
+    record = protocol.encode_record(protocol.RECORD_DATA, b"abc")
+    assert record == struct.pack("!BI", 3, 3) + b"abc"
+
+
+def test_a_record_round_trips_through_a_reader():
+    stream = io.BytesIO(
+        protocol.encode_record(protocol.RECORD_DATA, b"one")
+        + protocol.encode_record(protocol.RECORD_EOF)
+    )
+    assert protocol.read_record(stream.read) == (protocol.RECORD_DATA, b"one")
+    assert protocol.read_record(stream.read) == (protocol.RECORD_EOF, b"")
+    assert protocol.read_record(stream.read) is None
+
+
+def test_a_json_record_carries_compact_json():
+    record = protocol.encode_json_record(
+        protocol.RECORD_RESIZE, {"cols": 80, "rows": 24}
+    )
+    assert record[5:] == b'{"cols":80,"rows":24}'
+    assert protocol.json_payload(record[5:]) == {"cols": 80, "rows": 24}
+
+
+def test_a_payload_past_the_limit_is_refused():
     with pytest.raises(ValueError):
-        protocol.encode_binary(1 << 32, b"")
+        protocol.encode_record(
+            protocol.RECORD_DATA, b"x" * (CLIENT_RECORD_BYTES_MAX + 1)
+        )
+
+
+def test_an_unknown_type_is_refused():
     with pytest.raises(ValueError):
-        protocol.encode_binary(-1, b"")
+        protocol.encode_record(9, b"")
 
 
-@pytest.mark.parametrize("frame", [b"", b"\x00", b"\x00\x00\x00"])
-def test_a_frame_shorter_than_an_id_is_refused(frame):
+def test_a_length_past_the_limit_is_refused_when_read():
+    stream = io.BytesIO(struct.pack("!BI", 3, CLIENT_RECORD_BYTES_MAX + 1))
     with pytest.raises(ValueError):
-        protocol.decode_binary(frame)
+        protocol.read_record(stream.read)
 
 
-def test_the_payload_comes_back_as_bytes_whatever_was_given():
-    stream_id, payload = protocol.decode_binary(bytearray(b"\x00\x00\x00\x03ab"))
+def test_a_reader_that_ends_inside_a_record_reads_as_its_end():
+    stream = io.BytesIO(struct.pack("!BI", 3, 10) + b"short")
+    assert protocol.read_record(stream.read) is None
 
-    assert (stream_id, payload) == (3, b"ab")
-    assert isinstance(payload, bytes)
+
+@pytest.mark.parametrize("payload", [b"", b"not json", b"[1]", "é".encode("latin-1")])
+def test_a_payload_that_is_no_object_reads_as_empty(payload):
+    assert protocol.json_payload(payload) == {}
+
+
+def test_a_close_payload_reads_back():
+    payload = json.dumps({"code": "x", "params": {"a": 1}}).encode()
+    assert protocol.json_payload(payload) == {"code": "x", "params": {"a": 1}}

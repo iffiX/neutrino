@@ -12,8 +12,6 @@ machine, which takes the ask from an elevated caller, as an installer is.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import sys
-
 from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.exceptions import PlatformUnsupportedError
@@ -35,7 +33,7 @@ def main(*, is_upgrade: bool = False) -> int:
         platform = detect_platform()
         socket_path = platform.control_socket_path()
     except PlatformUnsupportedError as error:
-        print(wording.word_code(error.code), file=sys.stderr)
+        wording.refuse(error.code)
         return 1
     body = {"is_upgrade": True} if is_upgrade else None
     try:
@@ -43,23 +41,17 @@ def main(*, is_upgrade: bool = False) -> int:
     except (OSError, ValueError):
         holder = wording.other_holder()
         if not holder:
-            print(wording.NOT_RUNNING, file=sys.stderr)
+            wording.refuse("client_not_running")
             return 1
         try:
             status, reply = _ask_quit(platform.control_socket_path_of(holder), body)
         except (OSError, ValueError, PlatformUnsupportedError):
-            print(
-                wording.word_code("client_held", {"account": holder}),
-                file=sys.stderr,
-            )
+            wording.refuse("client_held", {"account": holder})
             return 1
     if status != 200:
-        print(
-            wording.word_code(str(reply.get("code", "")), reply.get("params")),
-            file=sys.stderr,
-        )
+        wording.refuse(str(reply.get("code", "")), reply.get("params"))
         return 1
-    print(wording.QUIT_ASKED)
+    wording.say(wording.line("quit_asked"))
     return 0
 
 

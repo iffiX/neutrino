@@ -1,3280 +1,854 @@
-"""One hub's session: the hello, the welcome, the state, the report, the streams.
+"""One hub's session through the transport, against a scripted transport.
 
-One scripted socket stands in for the wire: a test hands the session the
-frames the hub would send and reads back what the client sent. What is
-pinned here is the hello's six fields, the welcome written onto the binding,
-a refused first frame, a state that replaces what was held and reaches the
-resident through the callbacks, the disabled switch told once, the report
-after every state and on the interval, a service stream correlated to its
-close, the one refusal that hands the binding back and the ones the binding
-survives, at the door and on a live socket alike, a replaced socket waiting
-for a person, the backoff after a broken wire, and a stop that closes the
-socket. The connection round over every address the hub answers on is
-pinned too: every address dialled at once, the first to connect carrying
-the round's one hello and the others closed before one, an address that
-refused dialled again every interval until the round's connect time ends
-while a silent one is dialled once, the one that answered written back, a
-whole round failing being what backs off, the state's ``urls`` kept on
-disk, a network change starting a round at once. The client's ``ping``
-frame and the round trip its ``pong`` sets are pinned too, and the channel
-a forward waits on, open from the welcome until the socket ends.
+The real local channel runs over a Unix socket to a fake transport the test
+scripts: the test reads the commands and frames the client wrote and
+emits the events and frames the transport would. What is pinned: the
+``dial`` with the binding's keys, the token's digest as the psk and every
+candidate with its path; the ``hello`` on every session the transport
+opens, a move's included; the welcome written onto the binding and
+answered with a report; a state that replaces what is held, reaches the
+resident, is answered with a report and, when it names other addresses,
+gives the transport its candidates again with a round; the disabled switch
+told once; the round trip a ``pong`` sets; each question frame answered by
+its ``reply``; every code a round, a session or a refused frame ends in, as
+the Hubs table words it, with the transport's next round as the countdown;
+the one refusal that unbinds; another client's ``replaced`` and a
+Reconnect; a pending join spent through the transport with the pending id
+as its label, the binding's id taken from the answer, and each refusal
+waited by its code; a 0.5 binding moved over the legacy listener; a refresh
+and a network change as a ``round``; a transport that ends and comes back;
+the open records of a shell and an exec naming their account; and a stop
+that undials.
 """
 
-import functools
-import json
-import os
-import socket
+import hashlib
+import queue
 import threading
 import time
 
 import pytest
 
-import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
-    CLIENT_BACKOFF_MIN_S,
-    CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
-    CLIENT_STREAM_CREDIT_BYTES,
     PROTOCOL,
 )
-from neutrino_client.core import enrollment, protocol
+from neutrino_client.core import enrollment
 from neutrino_client.core.session import (
+    CONNECTION_CONNECTED,
+    CONNECTION_CONNECTING,
+    CONNECTION_DISABLED,
+    CONNECTION_REPLACED,
+    CONNECTION_WAITING,
     ClientHubSession,
-    is_better_path,
-    is_port_closed,
+    clean_terminals,
+    is_offline,
+    is_on_local_network,
 )
-from neutrino_client.core.ws_client import WebSocketClient
+from neutrino_client.core.transport import ClientTransportChannel
 from neutrino_client.exceptions import (
-    EnrollmentError,
-    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
-    GatewayUntrusted,
-    SocketClosed,
 )
-from tests.conftest import BINDING, HUB_SERVICES, bind, discard
+from tests.conftest import BINDING, HUB_KEY, HUB_SERVICES, PRIVATE_KEY, bind
+from tests.fake_transport import RECORD_DATA, FakeTransport, unix_connect
 
+WAIT_S = 5
 WELCOME = {
     "type": "welcome",
-    "protocol": 1,
+    "protocol": PROTOCOL,
     "role": "hub",
-    "id": "h2",
-    "name": "office",
-    "software": "neutrino_hub/0.3.0",
+    "id": "h1",
+    "name": "home",
+    "software": "neutrino_hub/0.6.0",
+    "time": 1.0,
 }
-STATE = {"type": "state", "hash": "h1", "is_disabled": False, "services": HUB_SERVICES}
-MATERIAL = {"host": "h", "port": 21118, "password": "p"}  # scan: allow
+STATE = {"type": "state", "hash": "s1", "is_disabled": False, "services": HUB_SERVICES}
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
-SESSION_ID = "5d1c0e2a-7b6f-4c1d-9a8e-3f2b1c0d9e8f"
+HUB_URL = "tcp://192.168.1.2:8443"
 
 
-class ScriptedSocket:
-    """A socket whose frames are written by the test that needs them.
-
-    Attributes:
-        sent: Every message the client sent, decoded.
-        is_closed: Whether the client closed it.
-    """
-
-    def __init__(
-        self,
-        frames,
-        *,
-        connect_error=None,
-        connect_delay_s=0,
-    ):
-        """
-        Args:
-            frames: What ``recv`` hands back in turn. A dict is sent as a
-                text frame, bytes as a binary frame, an exception is raised,
-                an event holds the read until it is set, and the list
-                running out behaves like the hub hanging up.
-            connect_error: Raised by ``connect`` instead of connecting.
-            connect_delay_s: How long ``connect`` takes; an abort ends it
-                at once, unconnected.
-        """
-        self._frames = list(frames)
-        self._connect_error = connect_error
-        self._connect_delay_s = connect_delay_s
-        self._aborted = threading.Event()
-        self.sent = []
-        self.is_closed = False
-        self.is_open = False
-        # Set once the client has read every frame the script holds.
-        self.is_drained = threading.Event()
-
-    def connect(self) -> None:
-        if self._connect_delay_s and self._aborted.wait(timeout=self._connect_delay_s):
-            raise GatewayUnreachable("the connect was aborted")
-        if self._connect_error is not None:
-            raise self._connect_error
-        self.is_open = True
-
-    def send_text(self, text: str) -> None:
-        if self.is_closed:
-            raise GatewayUnreachable("the socket is closed")
-        self.sent.append(json.loads(text))
-
-    def send_bytes(self, data: bytes) -> None:
-        if self.is_closed:
-            raise GatewayUnreachable("the socket is closed")
-        self.sent.append(protocol.decode_binary(data))
-
-    def recv(self):
-        while self._frames and isinstance(self._frames[0], threading.Event):
-            self._frames.pop(0).wait(timeout=5)
-        if not self._frames:
-            self.is_drained.set()
-            raise GatewayUnreachable("hub hung up")
-        frame = self._frames.pop(0)
-        if isinstance(frame, Exception):
-            raise frame
-        if isinstance(frame, bytes):
-            return "binary", frame
-        return "text", json.dumps(frame)
-
-    def close(self, code: int = 1000, reason: str = "") -> None:
-        self.is_closed = True
-        self.is_open = False
-
-    def abort(self) -> None:
-        self._aborted.set()
-        self.is_closed = True
-        self.is_open = False
+def wait_for(condition, timeout_s: float = WAIT_S) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
 
 
-class BlockingSocket(ScriptedSocket):
-    """A socket whose connect blocks until it is aborted.
+class Harness:
+    """A session on a real local channel to a fake transport, and what it told."""
 
-    Attributes:
-        is_aborted: Set by ``abort``; the connect then fails.
-    """
+    def __init__(self, binding: dict, **kwargs):
+        self.transport = FakeTransport()
+        self.channel = ClientTransportChannel(
+            connect=unix_connect,
+            listen=self.transport.listen,
+            secret=self.transport.secret,
+            log=lambda line: None,
+            restart_min_s=0.05,
+        )
+        self.services = queue.Queue()
+        self.disabled = []
+        self.unbound = []
+        self.welcomed = []
+        self.lines = []
+        kwargs.setdefault("local_networks", lambda: ["192.168.1.0/24"])
+        self.session = ClientHubSession(
+            binding=binding,
+            transport=self.channel,
+            hostname="box",
+            platform_tuple=PLATFORM,
+            os_machine_id="machine-1",
+            log=self.lines.append,
+            on_services=self.services.put,
+            on_disabled=self.disabled.append,
+            on_unbound=self.unbound.append,
+            on_welcomed=lambda session, hub_id: self.welcomed.append(hub_id),
+            **kwargs,
+        )
+        self.channel.on_ready(self.session.transport_ready)
+        self.channel.on_lost(self.session.transport_lost)
+        self.channel.start()
+        assert self.channel.wait_ready(WAIT_S)
+        self.session.start()
 
-    def __init__(self):
-        super().__init__([])
-        self.is_aborted = threading.Event()
+    def connect(self, label: str = "c1") -> dict:
+        """Take the dial, open a session, answer the hello with a welcome."""
+        dial = self.transport.next_command("dial")
+        self.transport.emit(
+            {
+                "event": "session_open",
+                "binding": label,
+                "address": HUB_URL,
+                "path": "lan",
+                "handshake_ms": 3,
+            }
+        )
+        self.transport.next_frame("hello")
+        self.transport.frame(label, WELCOME)
+        assert wait_for(lambda: self.session.connection() == CONNECTION_CONNECTED)
+        self.transport.next_frame("report")
+        return dial
 
-    def connect(self) -> None:
-        self.is_aborted.wait(timeout=5)
-        raise GatewayUnreachable("the connect was aborted")
-
-    def abort(self) -> None:
-        self.is_aborted.set()
-        self.is_closed = True
-
-
-class SocketScript:
-    """A fresh scripted socket for every connection, all from one script.
-
-    Attributes:
-        made: Every socket handed out, in the order they were opened.
-        hosts: The host each socket was opened for.
-    """
-
-    def __init__(self, frames, connect_error=None):
-        """
-        Args:
-            frames: What each socket's ``recv`` hands back in turn.
-            connect_error: Raised by every ``connect``.
-        """
-        self._frames = list(frames)
-        self._connect_error = connect_error
-        self.made = []
-        self.hosts = []
-
-    def __call__(self, **kwargs) -> ScriptedSocket:
-        made = ScriptedSocket(self._frames, connect_error=self._connect_error)
-        self.made.append(made)
-        self.hosts.append(kwargs.get("host", ""))
-        return made
-
-
-class Listener:
-    """What the resident hears from a session, recorded in order.
-
-    Attributes:
-        changes: How often the session announced a change.
-        events: ``(name, session)`` for every services, disabled and
-            unbound callback, in order.
-    """
-
-    def __init__(self):
-        self.changes = 0
-        self.events = []
-
-    def on_change(self) -> None:
-        self.changes += 1
-
-    def on_services(self, session) -> None:
-        self.events.append(("services", session))
-
-    def on_disabled(self, session) -> None:
-        self.events.append(("disabled", session))
-
-    def on_unbound(self, session) -> None:
-        self.events.append(("unbound", session))
-
-    def names(self) -> list:
-        return [name for name, _session in self.events]
+    def close(self) -> None:
+        self.session.stop()
+        self.channel.stop()
+        self.transport.close()
 
 
-def socket_of(monkeypatch, frames, *, connect_error=None) -> SocketScript:
-    """Put a scripted socket under every connection a session opens."""
-    script = SocketScript(frames, connect_error=connect_error)
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    return script
+@pytest.fixture
+def harness(config_path):
+    bind(config_path, url=HUB_URL)
+    made = Harness(dict(BINDING, gateway_url=HUB_URL))
+    yield made
+    made.close()
 
 
-def session_for(
-    binding=None, listener=None, log=discard, **options
-) -> ClientHubSession:
-    """A session over one binding, its callbacks on the listener."""
-    listener = listener if listener is not None else Listener()
-    return ClientHubSession(
-        binding=dict(BINDING, gateway_url="https://hub.lan:8443", **(binding or {})),
-        hostname="box",
-        platform_tuple=PLATFORM,
-        log=log,
-        on_change=listener.on_change,
-        on_services=listener.on_services,
-        on_disabled=listener.on_disabled,
-        on_unbound=listener.on_unbound,
-        **options,
+def replying(harness, frame_type: str, reply: dict) -> queue.Queue:
+    """Answer the next question frame of a type with a reply; the question comes back."""
+    asked_frames = queue.Queue()
+
+    def answer():
+        asked = harness.transport.next_frame(frame_type)["frame"]
+        asked_frames.put(asked)
+        harness.transport.frame(
+            "c1", dict(reply, type="reply", request=asked["request"])
+        )
+
+    threading.Thread(target=answer, daemon=True).start()
+    return asked_frames
+
+
+# --- the pure helpers ---
+
+
+def test_an_address_inside_this_machines_network_is_local():
+    assert is_on_local_network("192.168.1.9", ["192.168.1.0/24"])
+    assert not is_on_local_network("10.0.0.1", ["192.168.1.0/24"])
+    assert not is_on_local_network("hub.lan", ["192.168.1.0/24"])
+
+
+def test_only_loopback_and_link_local_networks_are_no_network():
+    assert is_offline(["127.0.0.0/8", "fe80::/64"])
+    assert not is_offline(["127.0.0.0/8", "192.168.1.0/24"])
+    assert not is_offline([])
+
+
+def test_a_terminals_machine_keeps_its_enabled_accounts_in_order():
+    held = clean_terminals(
+        [
+            {
+                "device_id": "d1",
+                "name": "lab",
+                "is_online": True,
+                "accounts": ["iffi", {"account": "lab"}, "iffi", ""],
+                "sessions": [{"session_id": "s1", "account": "iffi"}],
+            }
+        ]
     )
+    assert held["machines"] == [
+        {
+            "device_id": "d1",
+            "name": "lab",
+            "is_online": True,
+            "accounts": ["iffi", "lab"],
+        }
+    ]
+    assert held["sessions"][0]["device_id"] == "d1"
 
 
-def reason_of(session) -> str:
-    """Why a waiting session waits; empty while it does not."""
-    return (session.waiting() or {}).get("reason", "")
+# --- the dial and the hello ---
 
 
-def code_of(session) -> str:
-    """The code behind a waiting session's wait; empty while it does not."""
-    return ((session.waiting() or {}).get("code") or {}).get("code", "")
-
-
-def connected(session, script) -> ScriptedSocket:
-    """Open one socket and take its welcome, without serving frames after it."""
-    made = script()
-    made.connect()
-    session._greet(made)
-    return made
-
-
-def take(session, made, frame) -> None:
-    """Hand the session one frame the way its reader would.
-
-    Args:
-        session: The session under test.
-        made: The socket the frame arrives on.
-        frame: A dict for a text frame, bytes for a binary one.
-    """
-    if isinstance(frame, bytes):
-        session._dispatch(made, "binary", frame)
-    else:
-        session._dispatch(made, "text", json.dumps(frame))
-
-
-def reports(made) -> list:
-    """Every report the client sent on one socket."""
-    return [frame for frame in made.sent if frame["type"] == "report"]
-
-
-def pings(made) -> list:
-    """Every ping the client sent on one socket."""
-    return [frame for frame in made.sent if frame["type"] == "ping"]
-
-
-@pytest.fixture(autouse=True)
-def _rounds_beside_the_channel(request, monkeypatch):
-    """A round a network change starts beside a live channel runs only in a
-    test that asks for ``change_rounds``; elsewhere a state naming new
-    addresses would start one on a thread that outlives the test."""
-    if "change_rounds" not in request.fixturenames:
-        monkeypatch.setattr(ClientHubSession, "_change_rounds", _no_change_round)
-
-
-@pytest.fixture
-def change_rounds():
-    """The rounds a network change starts beside a live channel run."""
-
-
-def _no_change_round(session) -> None:
-    session._is_changing = False
-
-
-@pytest.fixture
-def bound(config_path):
-    bind(config_path, url="https://hub.lan:8443")
-    listener = Listener()
-    return session_for(listener=listener), listener
-
-
-# --- the handshake ---
-
-
-def test_the_hello_is_the_bindings_identity_card(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME, STATE])
-
-    session.run_once()
-
-    hello = script.made[0].sent[0]
-    assert hello == {
-        "type": "hello",
-        "protocol": PROTOCOL,
-        "role": CLIENT_ROLE,
-        "id": "c1",
-        "name": "box",
-        "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
-        "token": "tok",
-    }
-    assert PROTOCOL == 4 and CLIENT_ROLE == "client"
-    for absent in ("hostname", "platform", "catalog_hash", "state_hash", "kind"):
-        assert absent not in hello
-
-
-def test_the_socket_is_opened_at_the_bindings_hub(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME])
-
-    session.run_once()
-
-    assert script.hosts == ["hub.lan"]
-
-
-def test_the_first_report_follows_the_hello_with_the_machine_and_no_hash(
-    bound, monkeypatch
+def test_the_dial_names_the_bindings_keys_the_tokens_digest_and_every_candidate(
+    harness,
 ):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME])
+    dial = harness.transport.next_command("dial")
+    assert dial["binding"] == "c1"
+    assert dial["hub_key"] == HUB_KEY
+    assert dial["private_key"] == PRIVATE_KEY
+    assert dial["psk"] == hashlib.sha256(b"tok").hexdigest()
+    assert dial["role"] == CLIENT_ROLE
+    assert dial["protocol"] == PROTOCOL
+    assert dial["candidates"] == [
+        {"address": "tcp://hub.neutrino.internal:8443", "path": "lan"},
+        {"address": HUB_URL, "path": "lan"},
+    ]
 
-    session.run_once()
 
-    report = script.made[0].sent[1]
+def test_a_candidate_outside_this_machines_networks_is_direct(config_path):
+    bind(config_path, url="tcp://203.0.113.9:8443")
+    made = Harness(dict(BINDING, gateway_url="tcp://203.0.113.9:8443"))
+    try:
+        dial = made.transport.next_command("dial")
+        assert {"address": "tcp://203.0.113.9:8443", "path": "direct"} in dial[
+            "candidates"
+        ]
+    finally:
+        made.close()
+
+
+def test_an_address_of_another_scheme_is_not_dialled(config_path):
+    binding = dict(
+        BINDING,
+        gateway_url=HUB_URL,
+        gateway_urls=[HUB_URL, "quic://192.168.1.2:8443"],
+    )
+    bind(config_path, bindings=[binding])
+    made = Harness(binding)
+    try:
+        dial = made.transport.next_command("dial")
+        assert all(item["address"].startswith("tcp://") for item in dial["candidates"])
+    finally:
+        made.close()
+
+
+def test_every_session_the_transport_opens_is_greeted_with_a_hello(harness):
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {"event": "session_open", "binding": "c1", "address": HUB_URL}
+    )
+    assert harness.transport.next_frame("hello") == {
+        "frame": {
+            "type": "hello",
+            "protocol": PROTOCOL,
+            "role": CLIENT_ROLE,
+            "id": "c1",
+            "name": "box",
+            "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
+        },
+        "binding": "c1",
+    }
+    assert harness.session.connection() == CONNECTION_CONNECTING
+
+
+def test_the_welcome_opens_the_channel_and_is_answered_with_a_report(harness):
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {"event": "session_open", "binding": "c1", "address": HUB_URL}
+    )
+    harness.transport.next_frame("hello")
+    harness.transport.frame("c1", WELCOME)
+    report = harness.transport.next_frame("report")["frame"]
     assert report == {
         "type": "report",
         "state_hash": "",
-        "machine": {"hostname": "box", "platform": PLATFORM},
+        "machine": {
+            "hostname": "box",
+            "platform": PLATFORM,
+            "os_machine_id": "machine-1",
+        },
     }
+    assert harness.session.connection() == CONNECTION_CONNECTED
+    assert harness.session.hub_software() == "neutrino_hub/0.6.0"
+    assert harness.welcomed == ["h1"]
+    assert harness.session.wait_channel(0)
 
 
-def test_the_next_connections_first_report_carries_the_hash_held(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME, STATE])
-
-    session.run_once()
-    session.run_once()
-
-    assert reports(script.made[0])[0]["state_hash"] == ""
-    assert reports(script.made[1])[0]["state_hash"] == "h1"
+def test_a_welcome_of_another_role_opens_nothing(harness):
+    harness.transport.next_command("dial")
+    harness.transport.frame("c1", dict(WELCOME, role="agent"))
+    time.sleep(0.2)
+    assert harness.session.connection() == CONNECTION_CONNECTING
 
 
-def test_the_welcome_names_the_hub_and_is_written_onto_the_binding(
-    bound, monkeypatch, config_path
-):
-    session, _listener = bound
-    socket_of(monkeypatch, [WELCOME, STATE])
-
-    session.run_once()
-
-    assert session.hub_software() == "neutrino_hub/0.3.0"
-    assert (session.hub_id(), session.hub_name()) == ("h2", "office")
-    (binding,) = json.loads(config_path.read_text())["bindings"]
-    assert (binding["hub_id"], binding["hub_name"]) == ("h2", "office")
-    assert (binding["id"], binding["token"]) == ("c1", "tok")
-
-
-def test_a_welcome_names_its_hub_before_the_binding_takes_it_or_a_state_is_read(
-    config_path, monkeypatch
-):
-    bind(config_path, url="https://hub.lan:8443")
-    listener = Listener()
-    seen = []
-
-    def welcomed(session, hub_id: str) -> None:
-        seen.append((hub_id, session.hub_id(), listener.names()))
-
-    session = session_for(
-        binding={"hub_id": "", "hub_name": ""},
-        listener=listener,
-        on_welcomed=welcomed,
+def test_a_move_is_greeted_again_and_the_channel_stays_connected(harness):
+    harness.connect()
+    harness.transport.emit(
+        {
+            "event": "session_open",
+            "binding": "c1",
+            "address": "tcp://10.0.0.1:8443",
+            "path": "netbird",
+        }
     )
-    socket_of(monkeypatch, [WELCOME, STATE])
-
-    session.run_once()
-
-    assert seen == [("h2", "", [])]
-    assert session.hub_id() == "h2"
-    assert listener.names() == ["services"]
-
-
-def test_a_welcome_naming_what_the_binding_holds_writes_nothing(
-    bound, monkeypatch, config_path
-):
-    session, _listener = bound
-    socket_of(monkeypatch, [dict(WELCOME, id="h1", name="home")])
-    before = config_path.stat().st_mtime_ns
-
-    session.run_once()
-
-    assert config_path.stat().st_mtime_ns == before
-    assert session.hub_id() == "h1"
-
-
-def test_a_first_frame_that_is_not_a_welcome_is_unreachable(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [STATE])
-
-    delay = session.run_once()
-
-    assert delay == 5
-    assert reason_of(session) == "hub_silent"
-    assert code_of(session) == "hub_unreachable"
-    assert script.made[0].is_closed is True
-
-
-def test_a_new_round_reads_connecting_until_it_ends(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [STATE])
-    session.run_once()
-    assert reason_of(session) == "hub_silent"
-    seen = []
-
-    def round_seen():
-        seen.append((session.connection(), session.waiting()))
-        raise GatewayUnreachable("still away")
-
-    monkeypatch.setattr(session, "_connect_round", round_seen)
-    session.run_once()
-
-    assert seen == [("connecting", None)]
-    assert session.connection() == "waiting"
-    assert reason_of(session) == "hub_silent"
-
-
-def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [dict(WELCOME, role="agent")])
-
-    session.run_once()
-
-    assert code_of(session) == "hub_unreachable"
-    assert script.made[0].is_closed is True
-    assert session.connection() == "waiting"
-
-
-@pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
-def test_a_refused_first_frame_naming_the_protocol_keeps_the_binding(
-    bound, monkeypatch, config_path, code
-):
-    session, listener = bound
-    script = socket_of(
-        monkeypatch,
-        [{"type": "refused", "code": code, "params": {"peer": 1, "hub": 2, "min": 2}}],
-    )
-
-    delays = [session.run_once() for _ in range(5)]
-
-    assert session.connection() == "waiting"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.waiting() == {
-        "reason": "too_old",
-        "code": {"code": code, "params": {"peer": 1, "hub": 2, "min": 2}},
-        "next_round_at": None,
-    }
-    assert listener.events == []
-    # No round runs by itself after a protocol refusal.
-    assert delays == [CLIENT_IDLE_POLL_INTERVAL_S] * 5
-    assert len(script.made) == 1
-    assert all(made.is_closed for made in script.made)
-
-
-def test_a_refresh_after_an_upgrade_asks_a_hub_too_new_again(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(
-        monkeypatch,
-        [{"type": "refused", "code": "protocol_too_new", "params": {}}],
-    )
-    session.run_once()
-    session.change_network()
-    session.run_once()
-    assert len(script.made) == 1
-
-    assert session.refresh() is True
-    session.run_once()
-
-    assert len(script.made) == 2
-
-
-def test_binding_unknown_is_the_one_refusal_that_hands_the_binding_back(
-    bound, monkeypatch, config_path
-):
-    session, listener = bound
-    script = socket_of(
-        monkeypatch,
-        [{"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}],
-    )
-
-    delay = session.run_once()
-    session.run_once()
-    session.change_network()
-    session.run_once()
-
-    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
-    assert listener.events == [("unbound", session)]
-    assert session.waiting() == {
-        "reason": "unknown_device",
-        "code": {"code": "binding_unknown", "params": {"id": "c1"}},
-        "next_round_at": None,
-    }
-    # The session opens no more, a refresh starts nothing, and the binding
-    # stays until the person leaves.
-    assert session.refresh() is False
-    assert len(script.made) == 1
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-
-
-def test_a_refused_first_frame_of_another_code_keeps_the_binding(
-    bound, monkeypatch, config_path
-):
-    session, listener = bound
-    socket_of(
-        monkeypatch,
-        [{"type": "refused", "code": "ticket_spent", "params": {"id": "c1"}}],
-    )
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection() == "waiting"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert reason_of(session) == "hub_silent"
-    assert session.waiting()["code"] == {"code": "ticket_spent", "params": {"id": "c1"}}
-    assert listener.events == []
-
-
-def test_a_welcome_after_a_refusal_ends_the_wait(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [{"type": "refused", "code": "ticket_spent", "params": {}}])
-    session.run_once()
-    assert code_of(session) == "ticket_spent"
-
-    connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    assert session.waiting() is None
-    assert session.connection() == "connected"
-
-
-def test_a_refused_frame_carries_its_code_on_the_exception(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(
-        monkeypatch,
-        [{"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}],
-    )
-
-    with pytest.raises(GatewayRefused) as refused:
-        connected(session, script)
-
-    assert refused.value.code == "binding_unknown"
-    assert refused.value.params == {"id": "c1"}
-    assert not isinstance(refused.value, GatewayProtocolRefused)
+    assert harness.transport.next_frame("hello")["frame"]["id"] == "c1"
+    assert harness.session.connection() == CONNECTION_CONNECTED
+    harness.transport.frame("c1", WELCOME)
+    harness.transport.next_frame("report")
+    assert wait_for(lambda: harness.session.gateway_url() == "tcp://10.0.0.1:8443")
 
 
 # --- the state ---
 
 
-def test_a_state_replaces_what_was_held_and_reaches_the_resident(bound, monkeypatch):
-    session, listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, STATE)
-    assert [entry["id"] for entry in session.service_entries()] == [
-        entry["id"] for entry in HUB_SERVICES
+def test_a_state_replaces_what_is_held_and_is_answered_with_its_hash(harness):
+    harness.connect()
+    apps = [{"id": "gitea_d1", "title": "Gitea", "source": "module", "local_name": "g"}]
+    terminals = [
+        {"device_id": "d1", "name": "lab", "is_online": True, "accounts": ["a"]}
     ]
-    take(session, made, {"type": "state", "hash": "h2", "services": []})
-
-    assert session.service_entries() == []
-    assert session._state_hash == "h2"
-    assert listener.names() == ["services", "services"]
-
-
-def test_every_state_is_answered_with_a_report_carrying_its_hash(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, STATE)
-    take(session, made, dict(STATE, hash="h2"))
-
-    assert [report["state_hash"] for report in reports(made)] == ["", "h1", "h2"]
-    assert reports(made)[-1]["machine"]["hostname"] == "box"
-
-
-def test_a_state_of_the_wrong_shape_is_typed_and_never_fatal(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(
-        monkeypatch,
-        [WELCOME, {"type": "state", "hash": "h2", "services": "not a list"}],
+    harness.transport.frame(
+        "c1", dict(STATE, apps=apps, terminals=terminals, reached_through="lan")
     )
-    made = script()
-    made.connect()
-    session._greet(made)
-    logged = []
-    session._log = logged.append
-
-    failure = session._serve(made)
-
-    assert isinstance(failure, GatewayUnreachable)
-    assert any("could not read a frame" in line for line in logged)
-    assert session.waiting() is None
-
-
-def test_the_services_of_a_hub_whose_socket_is_down_are_nothing(bound, monkeypatch):
-    """A hub that is unreachable publishes nothing; what it published comes
-    back with its socket, without a new state."""
-    session, listener = bound
-    script = socket_of(monkeypatch, [WELCOME, STATE])
-    made = script()
-    made.connect()
-    session._greet(made)
-    session._serve(made)
-    assert session.service_entries() == []
-    assert session._state_hash == "h1"
-
-    connected(session, script)
-
-    assert [entry["id"] for entry in session.service_entries()] == [
+    assert harness.services.get(timeout=WAIT_S) is harness.session
+    assert harness.transport.next_frame("report")["frame"]["state_hash"] == "s1"
+    assert [entry["id"] for entry in harness.session.service_entries()] == [
         entry["id"] for entry in HUB_SERVICES
     ]
-    assert listener.names() == ["services", "services"]
+    assert harness.session.app_entries()[0]["id"] == "gitea_d1"
+    assert harness.session.terminal_entries()[0]["accounts"] == ["a"]
+    assert harness.session.reached_through() == "lan"
 
 
-def test_a_welcome_with_nothing_held_announces_no_services(bound, monkeypatch):
-    session, listener = bound
-
-    connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    assert listener.names() == []
-
-
-def test_disabled_is_told_once_and_keeps_the_binding(bound, monkeypatch, config_path):
-    session, listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, is_disabled=True))
-    take(session, made, dict(STATE, is_disabled=True))
-
-    assert session.is_disabled() is True
-    assert session.connection() == "disabled"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.waiting() is None
-    assert listener.names() == ["disabled"]
+def test_a_state_naming_other_addresses_dials_again_with_a_round(harness):
+    harness.connect()
+    harness.transport.frame("c1", dict(STATE, urls=[HUB_URL, "tcp://203.0.113.9:8443"]))
+    dial = harness.transport.next_command("dial")
+    assert {"address": "tcp://203.0.113.9:8443", "path": "direct"} in dial["candidates"]
+    assert harness.transport.next_command("round")["binding"] == "c1"
+    kept = enrollment.load_config()["bindings"][0]
+    assert kept["gateway_urls"] == [HUB_URL, "tcp://203.0.113.9:8443"]
 
 
-def test_a_disabled_client_resumes_with_the_next_state(bound, monkeypatch):
-    session, listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, is_disabled=True))
-    take(session, made, dict(STATE, is_disabled=False))
-
-    assert session.is_disabled() is False
-    assert session.waiting() is None
-    assert listener.names() == ["disabled", "services"]
-
-
-def test_an_unknown_frame_is_ignored(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, {"type": "something_else"})
-    take(session, made, STATE)
-
-    assert [entry["id"] for entry in session.service_entries()] == [
-        entry["id"] for entry in HUB_SERVICES
+def test_a_relay_address_is_ranked_as_the_relays_path(harness):
+    harness.connect()
+    harness.transport.frame(
+        "c1",
+        dict(
+            STATE,
+            urls=[HUB_URL, "tcp://relay.example:9443"],
+            ssh_relay_url="tcp://relay.example:9443",
+        ),
+    )
+    dial = harness.transport.next_command("dial")
+    assert {"address": "tcp://relay.example:9443", "path": "ssh_relay"} in dial[
+        "candidates"
     ]
-    assert session.waiting() is None
 
 
-def test_a_report_goes_up_on_the_interval(bound, monkeypatch):
-    session, _listener = bound
-    monkeypatch.setattr(session_module, "CLIENT_REPORT_INTERVAL_S", 0.02)
-    hold = threading.Event()
-    script = socket_of(monkeypatch, [WELCOME, STATE, hold])
-    made = script()
-    made.connect()
-    session._greet(made)
-    served = threading.Thread(target=session._serve, args=(made,))
+def test_the_hub_switching_the_client_off_is_told_once(harness):
+    harness.connect()
+    harness.transport.frame("c1", dict(STATE, is_disabled=True))
+    harness.transport.frame("c1", dict(STATE, is_disabled=True, hash="s2"))
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    time.sleep(0.1)
+    assert harness.disabled == [harness.session]
 
-    served.start()
-    deadline = time.monotonic() + 5
-    while len(reports(made)) < 4 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    hold.set()
-    served.join(timeout=5)
 
-    assert len(reports(made)) >= 4
-    assert {report["state_hash"] for report in reports(made)[2:]} == {"h1"}
+# --- the round trip and the questions ---
+
+
+def test_a_pong_with_the_last_pings_nonce_sets_the_round_trip(harness):
+    harness.connect()
+    ping = harness.transport.next_frame("ping")["frame"]
+    harness.transport.frame("c1", {"type": "pong", "nonce": "other"})
+    time.sleep(0.1)
+    assert harness.session.rtt_ms() is None
+    harness.transport.frame("c1", {"type": "pong", "nonce": ping["nonce"]})
+    assert wait_for(lambda: harness.session.rtt_ms() is not None)
+
+
+def test_a_service_frame_is_answered_by_its_reply(harness):
+    harness.connect()
+    asked = replying(harness, "service", {"params": {"password": "p"}})  # scan: allow
+    assert harness.session.ask_service("rdp_s9") == {"password": "p"}  # scan: allow
+    assert asked.get(timeout=WAIT_S)["id"] == "rdp_s9"
+
+
+def test_a_reply_with_a_code_is_the_hubs_refusal(harness):
+    harness.connect()
+    asked = replying(
+        harness, "service", {"code": "permission_denied", "params": {"kind": "panel"}}
+    )
+    with pytest.raises(GatewayRefusedDetail) as refused:
+        harness.session.ask_panel_service()
+    assert refused.value.code == "permission_denied"
+    assert asked.get(timeout=WAIT_S)["is_panel"] is True
+
+
+def test_persist_and_stop_session_are_frames_answered_by_replies(harness):
+    harness.connect()
+    asked = replying(harness, "persist", {"params": {}})
+    harness.session.persist_shell("s1", is_shared=True)
+    persist = asked.get(timeout=WAIT_S)
+    assert persist["session_id"] == "s1" and persist["is_shared"] is True
+    assert "is_persistent" not in persist
+    asked = replying(harness, "stop_session", {"params": {}})
+    harness.session.stop_shell_session("s1")
+    assert asked.get(timeout=WAIT_S)["session_id"] == "s1"
+
+
+def test_a_question_while_the_hub_is_not_connected_is_unreachable(harness):
+    with pytest.raises(GatewayUnreachable):
+        harness.session.ask_service("x", timeout_s=0.1)
+
+
+def test_a_question_whose_session_ends_is_unreachable(harness):
+    harness.connect()
+    failures = queue.Queue()
+
+    def ask():
+        try:
+            harness.session.ask_service("x", timeout_s=WAIT_S)
+        except GatewayUnreachable as error:
+            failures.put(error)
+
+    threading.Thread(target=ask, daemon=True).start()
+    harness.transport.next_frame("service")
+    harness.transport.emit({"event": "session_end", "binding": "c1"})
+    assert isinstance(failures.get(timeout=WAIT_S), GatewayUnreachable)
+
+
+# --- the waits ---
+
+
+def test_a_round_that_reached_no_address_waits_for_the_transports_next_round(
+    harness,
+):
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {
+            "event": "round_end",
+            "binding": "c1",
+            "code": "hub_unreachable",
+            "params": {"detail": "refused"},
+            "next_round_s": 20,
+        }
+    )
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_WAITING)
+    waiting = harness.session.waiting()
+    assert waiting["reason"] == "hub_silent"
+    assert waiting["code"] == {
+        "code": "hub_unreachable",
+        "params": {"detail": "refused"},
+    }
+    assert 15 < waiting["next_round_at"] - time.time() <= 20
+
+
+def test_a_round_with_the_hubs_network_on_waits_off_the_overlay(harness):
+    harness.session.set_overlay_route("100.64.0.1", "netbird")
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
+    )
+    assert wait_for(lambda: harness.session.waiting() is not None)
+    assert harness.session.waiting()["reason"] == "hub_off_overlay"
+
+
+def test_a_round_on_a_machine_with_no_network_waits_for_one(config_path):
+    bind(config_path, url=HUB_URL)
+    made = Harness(
+        dict(BINDING, gateway_url=HUB_URL), local_networks=lambda: ["127.0.0.0/8"]
+    )
+    try:
+        made.transport.next_command("dial")
+        made.transport.emit(
+            {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
+        )
+        assert wait_for(lambda: made.session.waiting() is not None)
+        assert made.session.waiting()["reason"] == "no_network"
+        assert made.session.waiting()["next_round_at"] is None
+    finally:
+        made.close()
+
+
+@pytest.mark.parametrize(
+    "code, reason, has_countdown",
+    [
+        ("hub_untrusted", "untrusted", True),
+        ("protocol_too_old", "too_old", False),
+        ("protocol_too_new", "too_old", False),
+        ("channel_full", "hub_silent", True),
+        ("control_unavailable", "hub_silent", True),
+    ],
+)
+def test_each_code_waits_as_the_hubs_table_words_it(
+    harness, code, reason, has_countdown
+):
+    harness.transport.next_command("dial")
+    harness.transport.emit({"event": "round_end", "binding": "c1", "code": code})
+    assert wait_for(lambda: harness.session.waiting() is not None)
+    waiting = harness.session.waiting()
+    assert waiting["reason"] == reason
+    assert (waiting["next_round_at"] is not None) is has_countdown
+
+
+def test_binding_unknown_unbinds_once(harness):
+    harness.connect()
+    harness.transport.frame("c1", {"type": "refused", "code": "binding_unknown"})
+    harness.transport.emit(
+        {"event": "session_end", "binding": "c1", "code": "binding_unknown"}
+    )
+    assert wait_for(lambda: harness.unbound == [harness.session])
+    time.sleep(0.1)
+    assert harness.unbound == [harness.session]
+    assert harness.session.waiting()["reason"] == "unknown_device"
+
+
+def test_another_clients_replaced_stands_aside_until_reconnect(harness):
+    harness.connect()
+    harness.transport.frame("c1", {"type": "refused", "code": "replaced"})
+    harness.transport.emit(
+        {"event": "session_end", "binding": "c1", "code": "replaced"}
+    )
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_REPLACED)
+    harness.session.reconnect()
+    harness.transport.next_command("dial")
+    assert harness.session.connection() == CONNECTION_CONNECTING
+
+
+def test_a_session_that_ends_with_no_code_is_connecting_at_once(harness):
+    harness.connect()
+    harness.transport.emit({"event": "session_end", "binding": "c1"})
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_CONNECTING)
+    assert harness.session.service_entries() == []
+
+
+def test_a_round_end_while_connected_changes_nothing(harness):
+    harness.connect()
+    harness.transport.emit(
+        {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
+    )
+    time.sleep(0.1)
+    assert harness.session.connection() == CONNECTION_CONNECTED
+
+
+# --- the person's presses ---
+
+
+def test_a_refresh_on_a_connected_hub_asks_for_the_whole_state(harness):
+    harness.connect()
+    assert harness.session.refresh()
+    assert harness.transport.next_frame("report")["frame"]["is_refresh"] is True
+    assert harness.session.is_refreshing()
+    harness.transport.frame("c1", STATE)
+    assert wait_for(lambda: not harness.session.is_refreshing())
+
+
+def test_a_refresh_on_a_waiting_hub_starts_a_round(harness):
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
+    )
+    assert wait_for(lambda: harness.session.waiting() is not None)
+    assert harness.session.refresh()
+    assert harness.transport.next_command("round")["binding"] == "c1"
+    assert harness.session.connection() == CONNECTION_CONNECTING
+
+
+def test_a_network_change_is_a_round(harness):
+    harness.connect()
+    harness.session.change_network()
+    assert harness.transport.next_command("round")["binding"] == "c1"
+
+
+def test_a_network_turning_on_gives_its_address_and_a_round(harness):
+    harness.connect()
+    harness.session.set_overlay_route("100.64.0.1", "netbird")
+    dial = harness.transport.next_command("dial")
+    assert dial["candidates"][0] == {
+        "address": "tcp://100.64.0.1:8443",
+        "path": "netbird",
+    }
+    harness.transport.next_command("round")
+
+
+# --- the transport ending, and the stop ---
+
+
+def test_a_transport_that_ends_drops_the_session_and_dials_again_once_back(harness):
+    harness.connect()
+    harness.transport.drop_control()
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_CONNECTING)
+    assert harness.transport.next_command("dial")["binding"] == "c1"
+
+
+def test_a_stop_undials(harness):
+    harness.connect()
+    harness.session.stop()
+    assert harness.transport.next_command("undial")["binding"] == "c1"
+
+
+def test_a_leave_is_told_through_the_transport(harness):
+    harness.connect()
+    harness.transport.answers["leave"] = lambda line: {}
+    assert harness.session.tell_left() == {}
+    leave = harness.transport.next_command("leave")
+    assert leave["binding"] == "c1"
+    assert leave["psk"] == hashlib.sha256(b"tok").hexdigest()
+    assert HUB_URL in leave["addresses"]
 
 
 # --- the streams ---
 
 
-def test_a_service_stream_goes_up_odd_and_its_close_comes_back(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    answered = _open_while(
-        session, made, {"type": "close", "stream": 1, "params": MATERIAL}
-    )
-
-    opened = made.sent[-1]
-    assert opened == {"type": "open", "stream": 1, "kind": "service", "id": "rdp_s9"}
-    assert answered == MATERIAL
-
-
-def test_the_state_names_the_way_in_and_the_panel(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
-
-    for way in (
-        "lan",
-        "netbird",
-        "easytier",
-        "ssh_relay",
-        "direct",
-        "sakurafrp",
-        "openfrp",
-    ):
-        take(session, made, dict(STATE, reached_through=way, is_panel_allowed=True))
-        assert (session.reached_through(), session.is_panel_allowed()) == (way, True)
-
-    take(session, made, dict(STATE, is_panel_allowed="yes"))
-    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
-
-
-def test_a_connect_stream_carries_bytes_both_ways_under_credit(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    stream = session.open_connect({"id": "svc_tcp"})
-    take(session, made, {"type": "credit", "stream": stream.stream_id, "bytes": 4})
-    stream.send(b"ping")
-    take(session, made, stream.stream_id.to_bytes(4, "big") + b"pong")
-
-    assert made.sent[-3:] == [
-        {"type": "open", "stream": 1, "kind": "connect", "id": "svc_tcp"},
-        {"type": "credit", "stream": 1, "bytes": 1048576},
-        (1, b"ping"),
-    ]
-    assert stream.read(1) == b"pong"
-    take(session, made, {"type": "close", "stream": 1, "code": "", "params": {}})
-    assert stream.read(1) == b""
-
-
-def test_a_connect_stream_for_the_panel_names_it(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    session.open_connect({"is_panel": True})
-
-    assert {"type": "open", "stream": 1, "kind": "connect", "is_panel": True} in (
-        made.sent
-    )
-
-
-def test_the_panels_sign_in_is_a_service_stream_naming_the_panel(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    token = "once"  # scan: allow
-
-    answered = _open_while(
-        session,
-        made,
-        {"type": "close", "stream": 1, "params": {"token": token}},
-        opener=session.open_panel_service,
-    )
-
-    assert {"type": "open", "stream": 1, "kind": "service", "is_panel": True} in (
-        made.sent
-    )
-    assert answered == {"token": token}
-
-
-def test_a_connect_stream_needs_the_socket(bound):
-    session, _listener = bound
-
-    with pytest.raises(GatewayUnreachable):
-        session.open_connect({"id": "svc_tcp"})
-
-
-def test_a_second_stream_takes_the_next_odd_id(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    _open_while(session, made, {"type": "close", "stream": 1, "params": {}})
-
-    _open_while(session, made, {"type": "close", "stream": 3, "params": {}})
-
-    assert [frame["stream"] for frame in made.sent if frame["type"] == "open"] == [
-        1,
-        3,
-    ]
-
-
-def test_a_close_carrying_a_code_is_the_hubs_own_refusal(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    with pytest.raises(GatewayRefusedDetail) as refused:
-        _open_while(
-            session,
-            made,
-            {
-                "type": "close",
-                "stream": 1,
-                "code": "rdp_not_shared",
-                "params": {"id": "rdp_s9"},
-            },
-        )
-
-    assert refused.value.code == "rdp_not_shared"
-    assert refused.value.params == {"id": "rdp_s9"}
-
-
-def test_a_stream_with_no_socket_is_unreachable(bound):
-    session, _listener = bound
-
-    with pytest.raises(GatewayUnreachable):
-        session.open_service("rdp_s9")
-
-
-def test_a_stream_nobody_closes_gives_up(bound, monkeypatch):
-    session, _listener = bound
-    connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    with pytest.raises(GatewayUnreachable):
-        session.open_service("rdp_s9", timeout_s=0.05)
-
-
-def test_a_socket_that_ends_wakes_the_stream_unreachable(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    outcome = {}
-
-    def wait() -> None:
-        try:
-            session.open_service("rdp_s9", timeout_s=5)
-        except GatewayUnreachable as error:
-            outcome["error"] = error
-
-    waiter = threading.Thread(target=wait)
-    waiter.start()
-    while len(made.sent) < 3:
-        time.sleep(0.01)
-    session._end_socket(made)
-    waiter.join(timeout=5)
-
-    assert isinstance(outcome.get("error"), GatewayUnreachable)
-    assert session._streams is None
-
-
-def test_the_channel_is_open_from_the_welcome_until_the_socket_ends(bound, monkeypatch):
-    session, _listener = bound
-    assert session.wait_channel(0.01) is False
-
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    assert session.wait_channel(0.01) is True
-
-    session._end_socket(made)
-    assert session.wait_channel(0.01) is False
-
-
-def test_a_close_for_nobody_is_dropped(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, {"type": "close", "stream": 9, "params": {}})
-
-    assert session.waiting() is None
-
-
-def test_credit_and_bytes_for_no_open_stream_are_dropped(monkeypatch, config_path):
-    lines = []
-    session = session_for(log=lines.append)
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, {"type": "credit", "stream": 1, "bytes": 4096})
-    take(session, made, protocol.encode_binary(1, b"line\n"))
-
-    assert session.waiting() is None
-    assert [line for line in lines if line.startswith("dropping")] == [
-        "dropping credit on stream 1",
-        "dropping 5 bytes the hub sent on stream 1",
-    ]
-    assert all(frame["type"] != "credit" for frame in made.sent)
-
-
-def test_a_shell_opens_odd_with_its_size_and_grants_the_window(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    stream = session.open_shell("dev_lepton", 120, 40, SESSION_ID)
-
-    assert stream.stream_id == 1
-    assert made.sent[-2] == {
-        "type": "open",
-        "stream": 1,
+def test_a_shell_opens_naming_its_machine_its_size_and_its_account(harness):
+    harness.connect()
+    harness.session.open_shell("d1", 80, 24, "s1", is_shared=True, account="lab")
+    peer = harness.transport.next_open()
+    assert peer.binding == "c1"
+    assert peer.open == {
         "kind": "shell",
-        "device_id": "dev_lepton",
-        "cols": 120,
-        "rows": 40,
-        "session_id": SESSION_ID,
-    }
-    assert made.sent[-1] == {
-        "type": "credit",
-        "stream": 1,
-        "bytes": CLIENT_STREAM_CREDIT_BYTES,
+        "device_id": "d1",
+        "cols": 80,
+        "rows": 24,
+        "account": "lab",
+        "session_id": "s1",
+        "is_shared": True,
     }
 
 
-def test_a_kept_session_is_opened_again_as_resumed(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    session.open_shell("dev_lepton", 80, 24, SESSION_ID, is_resumed=True)
-
-    opened = made.sent[-2]
-    assert (opened["session_id"], opened["is_resumed"]) == (SESSION_ID, True)
-
-
-def test_a_new_shared_session_says_so_in_its_open(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    session.open_shell("dev_lepton", 80, 24, SESSION_ID, is_shared=True)
-
-    assert made.sent[-2]["is_shared"] is True
-
-
-def test_an_exec_opens_with_its_argv_and_grants_the_window(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    stream = session.open_exec("dev_lepton", ["psql", "app"], False, 120, 40)
-
-    assert stream.stream_id == 1
-    assert made.sent[-2] == {
-        "type": "open",
-        "stream": 1,
+def test_an_exec_opens_with_its_argv_and_tags_its_outputs_without_a_terminal(
+    harness,
+):
+    harness.connect()
+    stream = harness.session.open_exec("d1", ["uptime"], False, 80, 24)
+    peer = harness.transport.next_open()
+    assert peer.open == {
         "kind": "exec",
-        "device_id": "dev_lepton",
-        "argv": ["psql", "app"],
+        "device_id": "d1",
+        "argv": ["uptime"],
         "is_tty": False,
-        "cols": 120,
-        "rows": 40,
+        "cols": 80,
+        "rows": 24,
+        "account": "",
     }
-    assert made.sent[-1] == {
-        "type": "credit",
-        "stream": 1,
-        "bytes": CLIENT_STREAM_CREDIT_BYTES,
-    }
+    peer.accept()
+    peer.send_record(RECORD_DATA, b"up")
+    assert stream.read(WAIT_S) == b"\x01up"
 
 
-def test_an_execs_input_ends_with_eof_after_its_last_bytes(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_exec("dev_lepton", ["cat"], False, 80, 24)
-    take(session, made, {"type": "credit", "stream": 1, "bytes": 1024})
-
-    stream.send(b"select 1;\n")
-    stream.send_eof()
-
-    assert made.sent[-2:] == [(1, b"select 1;\n"), {"type": "eof", "stream": 1}]
+def test_a_connect_opens_raw_after_its_accept(harness):
+    harness.connect()
+    stream = harness.session.open_connect({"id": "ssh_server_d1_lab"})
+    peer = harness.transport.next_open()
+    assert peer.open == {"kind": "connect", "id": "ssh_server_d1_lab"}
+    peer.accept()
+    peer.send_raw(b"SSH-2.0-x\r\n")
+    assert stream.read(WAIT_S) == b"SSH-2.0-x\r\n"
 
 
-def test_an_execs_frames_reach_the_reader_with_their_fd_byte(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_exec("dev_lepton", ["ls"], False, 80, 24)
-
-    take(session, made, protocol.encode_binary(1, b"\x01out"))
-    take(session, made, protocol.encode_binary(1, b"\x02err"))
-    take(session, made, {"type": "close", "stream": 1, "params": {"exit_code": 3}})
-
-    assert stream.read(timeout_s=1) == b"\x01out"
-    assert stream.read(timeout_s=1) == b"\x02err"
-    assert stream.wait_close(1) == {"exit_code": 3}
-
-
-def test_no_eof_goes_on_an_ended_stream(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_exec("dev_lepton", ["ls"], False, 80, 24)
-    take(session, made, {"type": "close", "stream": 1, "params": {"exit_code": 0}})
-
+def test_no_stream_opens_while_the_hub_is_not_connected(harness):
     with pytest.raises(GatewayUnreachable):
-        stream.send_eof()
+        harness.session.open_connect({"id": "x"})
 
-    assert all(
-        frame.get("type") != "eof" for frame in made.sent if isinstance(frame, dict)
+
+# --- the join ---
+
+
+def pending(config_path) -> dict:
+    binding = enrollment._binding(
+        {
+            "id": "pending_1",
+            "name": "box",
+            "gateway_url": HUB_URL,
+            "gateway_urls": [HUB_URL],
+            "hub_key": HUB_KEY,
+            "private_key": PRIVATE_KEY,
+            "ticket": "tkt",
+            "is_pending": True,
+        }
     )
-
-
-def answered(session, made, ask, stream_id: int):
-    """Run one ask on a thread, answer its command's open, and hand back what it got."""
-    outcome = {}
-
-    def run() -> None:
-        try:
-            outcome["params"] = ask()
-        except Exception as error:  # noqa: BLE001 - handed back to the test
-            outcome["error"] = error
-
-    asking = threading.Thread(target=run)
-    asking.start()
-    deadline = time.monotonic() + 5
-    while made.sent[-1].get("stream") != stream_id and time.monotonic() < deadline:
-        time.sleep(0.01)
-    take(session, made, {"type": "close", "stream": stream_id, "params": {}})
-    asking.join(timeout=5)
-    return outcome
-
-
-def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    def persist():
-        return session.persist_shell(SESSION_ID, True, False)
-
-    def stop():
-        return session.stop_shell_session(SESSION_ID)
-
-    def share():
-        return session.persist_shell(SESSION_ID, is_shared=True)
-
-    assert answered(session, made, persist, 1) == {"params": {}}
-    assert answered(session, made, stop, 3) == {"params": {}}
-    assert answered(session, made, share, 5) == {"params": {}}
-
-    commands = [frame for frame in made.sent if frame.get("kind") == "command"]
-    assert commands == [
-        {
-            "type": "open",
-            "stream": 1,
-            "kind": "command",
-            "verb": "persist",
-            "session_id": SESSION_ID,
-            "is_persistent": True,
-            "is_shared": False,
-            "module": "agent",
-        },
-        {
-            "type": "open",
-            "stream": 3,
-            "kind": "command",
-            "verb": "stop_session",
-            "session_id": SESSION_ID,
-            "module": "agent",
-        },
-        {
-            "type": "open",
-            "stream": 5,
-            "kind": "command",
-            "verb": "persist",
-            "session_id": SESSION_ID,
-            "is_shared": True,
-            "module": "agent",
-        },
-    ]
-
-
-def test_a_session_the_machine_does_not_keep_is_the_hubs_refusal(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    outcome = {}
-
-    def stop() -> None:
-        try:
-            session.stop_shell_session(SESSION_ID, timeout_s=5)
-        except GatewayRefusedDetail as refused:
-            outcome["code"] = refused.code
-
-    asking = threading.Thread(target=stop)
-    asking.start()
-    while made.sent[-1].get("kind") != "command":
-        time.sleep(0.01)
-    take(
-        session,
-        made,
-        {
-            "type": "close",
-            "stream": 1,
-            "code": "session_unknown",
-            "params": {"session_id": SESSION_ID},
-        },
-    )
-    asking.join(timeout=5)
-
-    assert outcome == {"code": "session_unknown"}
-
-
-def test_the_hubs_bytes_on_a_shell_reach_its_reader(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
-
-    take(session, made, protocol.encode_binary(1, b"$ "))
-
-    assert stream.read(timeout_s=1) == b"$ "
-
-
-def test_a_shell_sends_only_after_the_hubs_credit(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
-    sent = threading.Thread(target=stream.send, args=(b"ls\n",))
-
-    sent.start()
-    time.sleep(0.05)
-    assert all(not isinstance(frame, tuple) for frame in made.sent)
-    take(session, made, {"type": "credit", "stream": 1, "bytes": 1024})
-    sent.join(timeout=5)
-
-    assert made.sent[-1] == (1, b"ls\n")
-
-
-def test_a_resize_opens_a_command_naming_the_shell(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
-    outcome = {}
-
-    def resize() -> None:
-        outcome["params"] = session.resize_shell(stream.stream_id, 100, 30)
-
-    asking = threading.Thread(target=resize)
-    asking.start()
-    while made.sent[-1].get("kind") != "command":
-        time.sleep(0.01)
-    take(session, made, {"type": "close", "stream": 3, "params": {}})
-    asking.join(timeout=5)
-
-    assert made.sent[-1] == {
-        "type": "open",
-        "stream": 3,
-        "kind": "command",
-        "module": "agent",
-        "verb": "resize",
-        "shell": 1,
-        "cols": 100,
-        "rows": 30,
-    }
-    assert outcome == {"params": {}}
-
-
-def test_a_socket_that_ends_wakes_a_shell_reader_empty(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
-    outcome = {}
-
-    def read() -> None:
-        outcome["data"] = stream.read(timeout_s=5)
-
-    reader = threading.Thread(target=read)
-    reader.start()
-    session._end_socket(made)
-    reader.join(timeout=5)
-
-    assert outcome == {"data": b""}
-
-
-def test_a_shell_with_no_socket_is_unreachable(bound):
-    session, _listener = bound
-
-    with pytest.raises(GatewayUnreachable):
-        session.open_shell("dev_lepton", 80, 24, SESSION_ID)
-
-
-def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, {"type": "open", "stream": 2, "kind": "shell", "cols": 80})
-
-    assert made.sent[-1] == {
-        "type": "close",
-        "stream": 2,
-        "code": "kind_unknown",
-        "params": {"kind": "shell"},
-    }
-    assert session.waiting() is None
-
-
-def test_a_binary_frame_shorter_than_an_id_is_typed_and_never_fatal(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME, b"\x00\x01"])
-    made = script()
-    made.connect()
-    session._greet(made)
-    logged = []
-    session._log = logged.append
-
-    failure = session._serve(made)
-
-    assert isinstance(failure, GatewayUnreachable)
-    assert any("could not read a frame" in line for line in logged)
-    assert session.waiting() is None
-
-
-# --- what ends a connection ---
-
-
-def test_a_broken_wire_backs_off_and_keeps_the_binding(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [5, 10, 20]
-    assert session.connection() == "waiting"
-    assert code_of(session) == "hub_unreachable"
-
-
-def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
-    """Another socket holds this binding; this one opens no more on its own."""
-    session, listener = bound
-    script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-
-    session.run_once()
-    delay = session.run_once()
-
-    assert session.connection() == "replaced"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.waiting() is None
-    assert listener.events == []
-    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
-    assert len(script.made) == 1
-
-
-def test_a_person_takes_a_replaced_binding_back(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-    session.run_once()
-    session._news.clear()
-
-    session.reconnect()
-
-    assert session.connection() == "connecting"
-    assert session._news.is_set()
-    session.run_once()
-    assert len(script.made) == 2
-    assert script.made[1].sent[0]["type"] == "hello"
-
-
-@pytest.mark.parametrize(
-    "error, code, reason",
-    [
-        (GatewayRefused("401"), "hub_refused", "hub_silent"),
-        (GatewayUntrusted("pin"), "hub_untrusted", "untrusted"),
-        (
-            GatewayRefused("refused", code="role_mismatch"),
-            "role_mismatch",
-            "hub_silent",
-        ),
-    ],
-)
-def test_a_refusal_the_binding_survives_asks_again_a_minute_later(
-    bound, monkeypatch, config_path, error, code, reason
-):
-    session, listener = bound
-    socket_of(monkeypatch, [], connect_error=error)
-    session._wall_clock = lambda: 1000.0
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection() == "waiting"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert reason_of(session) == reason
-    assert code_of(session) == code
-    assert session.waiting()["next_round_at"] == 1000.0 + CLIENT_BACKOFF_MAX_S
-    assert listener.events == []
-
-
-@pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
-def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
-    bound, monkeypatch, config_path, code
-):
-    session, listener = bound
-    socket_of(
-        monkeypatch,
-        [],
-        connect_error=GatewayProtocolRefused(code=code, peer=1, hub=2, minimum=2),
-    )
-
-    delays = [session.run_once() for _ in range(5)]
-
-    assert session.connection() == "waiting"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.waiting() == {
-        "reason": "too_old",
-        "code": {"code": code, "params": {"peer": 1, "hub": 2, "min": 2}},
-        "next_round_at": None,
-    }
-    assert listener.events == []
-    assert delays == [CLIENT_IDLE_POLL_INTERVAL_S] * 5
-
-
-def live_refused(code: str, params=None) -> list:
-    """A hub that welcomes, pushes a state, then refuses and closes 4000."""
-    return [
-        WELCOME,
-        STATE,
-        {"type": "refused", "code": code, "params": dict(params or {})},
-        SocketClosed(4000, code),
-    ]
-
-
-def test_binding_unknown_on_a_live_socket_hands_the_binding_back_at_once(
-    bound, monkeypatch, config_path
-):
-    """The panel forgot this client while its socket was up: the refusal is
-    read where it arrives, and what the hub published goes with it."""
-    session, listener = bound
-    script = socket_of(monkeypatch, live_refused("binding_unknown", {"id": "c1"}))
-
-    delay = session.run_once()
-    session.run_once()
-
-    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
-    assert listener.names() == ["services", "unbound"]
-    assert reason_of(session) == "unknown_device"
-    assert session.waiting()["code"] == {
-        "code": "binding_unknown",
-        "params": {"id": "c1"},
-    }
-    assert session.service_entries() == []
-    # The session opens no more; the binding stays until the person leaves.
-    assert len(script.made) == 1
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-
-
-@pytest.mark.parametrize(
-    "code, params, reason, delay",
-    [
-        (
-            "protocol_too_new",
-            {"peer": 1, "hub": 2, "min": 2},
-            "too_old",
-            CLIENT_IDLE_POLL_INTERVAL_S,
-        ),
-        ("ticket_spent", {"id": "c1"}, "hub_silent", CLIENT_BACKOFF_MAX_S),
-    ],
-)
-def test_a_refusal_on_a_live_socket_keeps_the_binding_and_records_its_code(
-    bound, monkeypatch, config_path, code, params, reason, delay
-):
-    """The close 4000 behind the frame is the end of a refusal already
-    recorded, so the code stays the hub's own."""
-    session, listener = bound
-    socket_of(monkeypatch, live_refused(code, params))
-
-    first = session.run_once()
-
-    assert first == delay
-    assert session.connection() == "waiting"
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert reason_of(session) == reason
-    assert session.waiting()["code"] == {"code": code, "params": params}
-    assert "unbound" not in listener.names()
-
-
-def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(
-    bound, monkeypatch, config_path
-):
-    """The close arrives instead of the welcome, which is when the hub sends
-    one."""
-    session, listener = bound
-    socket_of(monkeypatch, [SocketClosed(4000, "")])
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.waiting()["code"] == {"code": "hub_refused", "params": {}}
-    assert listener.events == []
-
-
-# --- the addresses the hub answers on ---
-
-
-LAN_URL = "https://192.0.2.1:8443"
-WAN_URL = "https://198.51.100.1:8443"
-OVERLAY_URL = "https://100.64.0.1:8443"
-NAME_ADDRESS = "192.0.2.1"
-STATE_WITH_URLS = dict(STATE, urls=[LAN_URL, OVERLAY_URL])
-DOWN = GatewayUnreachable("down")
-
-
-class Delayed:
-    """An address that answers with these frames after a delay."""
-
-    def __init__(self, frames, delay_s: float):
-        self.frames = frames
-        self.delay_s = delay_s
-
-
-class AddressScript:
-    """One scripted socket per address dialled, told apart by host.
-
-    Attributes:
-        hosts: The host of every socket opened, in order.
-        made: Every socket handed out, in order.
-    """
-
-    def __init__(self, by_host: dict, default=DOWN):
-        """
-        Args:
-            by_host: Host to what its socket does: a list of frames, a
-                :class:`Delayed` answer, or an exception ``connect`` raises.
-            default: What a host the script does not name does.
-        """
-        self._by_host = by_host
-        self._default = default
-        self.hosts = []
-        self.made = []
-
-    def __call__(self, **kwargs) -> ScriptedSocket:
-        host = kwargs.get("host", "")
-        script = self._by_host.get(host, self._default)
-        if isinstance(script, Exception):
-            made = ScriptedSocket([], connect_error=script)
-        elif isinstance(script, Delayed):
-            made = ScriptedSocket(script.frames, connect_delay_s=script.delay_s)
-        else:
-            made = ScriptedSocket(script)
-        self.hosts.append(host)
-        self.made.append(made)
-        return made
-
-
-def addresses_of(monkeypatch, by_host: dict, default=DOWN) -> AddressScript:
-    script = AddressScript(by_host, default)
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    return script
-
-
-def stored_binding(config_path) -> dict:
-    (binding,) = json.loads(config_path.read_text())["bindings"]
+    bind(config_path, bindings=[binding])
     return binding
 
 
-@pytest.fixture
-def bound_everywhere(config_path):
-    """A session whose binding holds three addresses, the LAN one last answered."""
-    bind(
-        config_path,
-        bindings=[
-            dict(
-                BINDING,
-                gateway_url=LAN_URL,
-                gateway_urls=[LAN_URL, WAN_URL, OVERLAY_URL],
-            )
-        ],
-    )
-    listener = Listener()
-    lines = []
-    session = ClientHubSession(
-        binding=stored_binding(config_path),
-        hostname="box",
-        platform_tuple=PLATFORM,
-        log=lines.append,
-        on_change=listener.on_change,
-    )
-    return session, lines
-
-
-def test_the_next_address_is_tried_when_one_stops_answering(
-    bound_everywhere, monkeypatch, config_path
-):
-    """Two addresses fail, the third answers: it is written back as the one
-    that answered, and the next round still starts from the first (N48)."""
-    session, lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
-
-    delay = session.run_once()
-
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert delay == 0
-    assert session.gateway_url() == OVERLAY_URL
-    assert stored_binding(config_path)["gateway_url"] == OVERLAY_URL
-    assert stored_binding(config_path)["gateway_urls"] == [
-        LAN_URL,
-        WAN_URL,
-        OVERLAY_URL,
-    ]
-    assert f"the hub answered at {OVERLAY_URL}" in lines
-
-    session.run_once()
-
-    assert script.hosts[3] == "192.0.2.1"
-
-
-def test_a_whole_round_failing_is_what_backs_off(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {})
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [5, 10, 20]
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"] * 3
-    assert code_of(session) == "hub_unreachable"
-    assert session.gateway_url() == LAN_URL
-
-
-class HangingSocket(ScriptedSocket):
-    """A socket whose connect takes its whole connect time and then fails."""
-
-    def __init__(self, timeout_s: float):
-        super().__init__([])
-        self._timeout_s = timeout_s
-
-    def connect(self) -> None:
-        self._aborted.wait(timeout=self._timeout_s)
-        raise GatewayUnreachable("timed out")
-
-
-class HangingFirstScript(AddressScript):
-    """The first address hangs for its connect time; the rest as scripted."""
-
-    def __call__(self, **kwargs) -> ScriptedSocket:
-        if kwargs.get("host") != "192.0.2.1":
-            return super().__call__(**kwargs)
-        made = HangingSocket(kwargs["timeout_s"])
-        self.hosts.append(kwargs["host"])
-        self.made.append(made)
-        return made
-
-
-def test_a_hanging_first_address_costs_the_round_nothing(bound_everywhere, monkeypatch):
-    """The first address hangs, the second is down, the third answers: the
-    round connects through the third within one address's connect time, and
-    the hanging socket is closed with no hello on it (N55)."""
-    session, _lines = bound_everywhere
-    monkeypatch.setattr(session_module, "CLIENT_CONNECT_TIMEOUT_S", 2)
-    script = HangingFirstScript({"100.64.0.1": [WELCOME]})
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    started = time.monotonic()
-
-    client = session._connect_round()
-
-    assert time.monotonic() - started < 1
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert client is script.made[2]
-    assert script.made[0].is_closed and script.made[0].sent == []
-    assert session.gateway_url() == OVERLAY_URL
-
-
-def refused() -> GatewayUnreachable:
-    """What a dial to a host that is up with the port not open raises."""
-    error = GatewayUnreachable("cannot reach hub: [Errno 111] Connection refused")
-    error.__cause__ = ConnectionRefusedError(111, "Connection refused")
-    return error
-
-
-class DialScript(AddressScript):
-    """Each address's dials in turn, the last turn repeating.
-
-    Attributes:
-        timeouts: The connect time every socket was opened with, in order.
-    """
-
-    def __init__(self, by_host: dict):
-        """
-        Args:
-            by_host: Host to its turns: an exception ``connect`` raises, or
-                the frames of a socket that connects.
-        """
-        super().__init__(by_host)
-        self.timeouts = []
-
-    def __call__(self, **kwargs) -> ScriptedSocket:
-        host = kwargs.get("host", "")
-        turns = self._by_host.get(host, [DOWN])
-        script = turns[min(self.hosts.count(host), len(turns) - 1)]
-        if isinstance(script, Exception):
-            made = ScriptedSocket([], connect_error=script)
-        else:
-            made = ScriptedSocket(script)
-        self.hosts.append(host)
-        self.made.append(made)
-        self.timeouts.append(kwargs.get("timeout_s"))
-        return made
-
-
-def dials_of(monkeypatch, by_host: dict) -> DialScript:
-    script = DialScript(by_host)
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    return script
-
-
-def test_a_refused_address_is_dialled_again_each_interval_until_it_answers(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 0.05)
-    script = dials_of(monkeypatch, {"192.0.2.1": [refused(), refused(), [WELCOME]]})
-    started = time.monotonic()
-
-    client = session._connect_round()
-
-    assert 0.1 <= time.monotonic() - started < 1
-    assert script.hosts.count("192.0.2.1") == 3
-    assert script.hosts.count("198.51.100.1") == 1
-    assert script.hosts.count("100.64.0.1") == 1
-    assert client is [made for made in script.made if made.is_open][0]
-    assert session.gateway_url() == LAN_URL
-
-
-def test_a_refused_address_is_dialled_until_the_rounds_connect_time_and_a_silent_one_once(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 0.05)
-    monkeypatch.setattr(session_module, "CLIENT_CONNECT_TIMEOUT_S", 0.5)
-    script = dials_of(monkeypatch, {"192.0.2.1": [refused()]})
-    started = time.monotonic()
-
-    delay = session.run_once()
-
-    assert 0.4 <= time.monotonic() - started < 1
-    assert delay == CLIENT_BACKOFF_MIN_S
-    assert 5 <= script.hosts.count("192.0.2.1") <= 10
-    assert script.hosts.count("198.51.100.1") == 1
-    assert script.hosts.count("100.64.0.1") == 1
-    redials = [
-        timeout
-        for host, timeout in zip(script.hosts, script.timeouts)
-        if host == "192.0.2.1"
-    ][1:]
-    assert all(0 < timeout < 0.5 for timeout in redials)
-    assert code_of(session) == "hub_unreachable"
-
-
-def test_a_stop_ends_a_round_waiting_to_dial_again(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 5)
-    script = dials_of(monkeypatch, {"192.0.2.1": [refused()]})
-    threading.Timer(0.2, session._stop.set).start()
-    started = time.monotonic()
-
-    with pytest.raises(GatewayUnreachable):
-        session._connect_round()
-
-    assert time.monotonic() - started < 1
-    assert script.hosts.count("192.0.2.1") == 1
-
-
-def test_a_port_nothing_listens_on_is_what_a_round_dials_again():
-    probe = socket.create_server(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
-    probe.close()
-    client = WebSocketClient(
-        host="127.0.0.1", port=port, path="/", fingerprint="ab" * 32, timeout_s=2
-    )
-
-    with pytest.raises(GatewayUnreachable) as raised:
-        client.connect()
-
-    assert is_port_closed(raised.value)
-    assert not is_port_closed(DOWN)
-
-
-def test_one_hello_per_round_and_every_other_socket_closed_before_one(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    script = addresses_of(
-        monkeypatch,
-        {
-            "192.0.2.1": [WELCOME],
-            "198.51.100.1": Delayed([WELCOME], 0.05),
-            "100.64.0.1": Delayed([WELCOME], 0.05),
-        },
-    )
-
-    client = session._connect_round()
-    time.sleep(0.3)
-
-    assert client is script.made[0]
-    hellos = [
-        frame for made in script.made for frame in made.sent if frame["type"] == "hello"
-    ]
-    assert len(hellos) == 1 and hellos[0] is client.sent[0]
-    assert [made.is_closed for made in script.made] == [False, True, True]
-    assert [made.sent for made in script.made[1:]] == [[], []]
-
-
-def test_a_stop_ends_the_round(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {})
-    session._stop.set()
-    started = time.monotonic()
-
-    session.run_once()
-
-    assert script.hosts == []
-    assert time.monotonic() - started < 1
-
-
-def test_a_pong_echoing_the_last_pings_nonce_sets_the_round_trip_until_the_socket_ends(
-    config_path, monkeypatch
-):
-    bind(config_path, url="https://hub.lan:8443")
-    clocks = Clocks()
-    listener = Listener()
-    session = session_for(
-        listener=listener, clock=clocks.monotonic, wall_clock=clocks.time
-    )
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    assert session.rtt_ms() is None
-
-    session._ping(made)
-    (ping,) = pings(made)
-    clocks.now += 0.0123
-    changes = listener.changes
-    take(session, made, {"type": "pong", "nonce": ping["nonce"]})
-
-    assert ping == {"type": "ping", "nonce": ping["nonce"]}
-    assert isinstance(ping["nonce"], str) and 0 < len(ping["nonce"]) <= 64
-    assert session.rtt_ms() == 12
-    assert listener.changes == changes + 1
-
-    session._end_socket(made)
-
-    assert session.rtt_ms() is None
-
-
-def test_a_pong_with_another_nonce_is_dropped(bound, monkeypatch):
-    session, listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    session._ping(made)
-    changes = listener.changes
-
-    take(session, made, {"type": "pong", "nonce": "other"})
-    take(session, made, {"type": "pong"})
-
-    assert session.rtt_ms() is None
-    assert listener.changes == changes
-
-
-def test_the_open_socket_is_pinged_after_the_welcome_and_every_interval(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    monkeypatch.setattr(session_module, "CLIENT_PING_INTERVAL_S", 0.02)
-    held = threading.Event()
-    script = SocketScript([WELCOME, held])
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    turn = threading.Thread(target=session.run_once, daemon=True)
-    turn.start()
-    _wait_for(lambda: script.made and len(pings(script.made[0])) >= 3)
-    held.set()
-    turn.join(timeout=5)
-
-    sent = script.made[0].sent
-    assert [frame["type"] for frame in sent[:3]] == ["hello", "report", "ping"]
-    nonces = [frame["nonce"] for frame in pings(script.made[0])]
-    assert len(nonces) >= 3 and len(set(nonces)) == len(nonces)
-
-
-def test_the_states_urls_are_written_to_disk(bound, monkeypatch, config_path):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, STATE_WITH_URLS)
-
-    assert stored_binding(config_path)["gateway_urls"] == [LAN_URL, OVERLAY_URL]
-    assert stored_binding(config_path)["gateway_url"] == "https://hub.lan:8443"
-    assert session.binding()["gateway_urls"] == [LAN_URL, OVERLAY_URL]
-    assert [entry["id"] for entry in session.service_entries()] == [
-        entry["id"] for entry in HUB_SERVICES
-    ]
-
-
-def test_a_state_naming_the_same_urls_writes_nothing(bound, monkeypatch, config_path):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, STATE_WITH_URLS)
-    before = config_path.stat().st_mtime_ns
-
-    take(session, made, STATE_WITH_URLS)
-
-    assert config_path.stat().st_mtime_ns == before
-
-
-def test_a_state_without_urls_keeps_the_list(
-    bound_everywhere, monkeypatch, config_path
-):
-    session, _lines = bound_everywhere
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, STATE)
-
-    assert stored_binding(config_path)["gateway_urls"] == [
-        LAN_URL,
-        WAN_URL,
-        OVERLAY_URL,
-    ]
-
-
-def test_an_old_binding_without_the_list_still_connects(bound, monkeypatch):
-    session, _listener = bound
-    script = addresses_of(monkeypatch, {"hub.lan": [WELCOME]})
-
-    session.run_once()
-
-    assert script.hosts == ["hub.lan"]
-    assert session.gateway_url() == "https://hub.lan:8443"
-
-
-def test_the_name_is_dialled_with_the_others_and_written_back(
-    bound_everywhere, monkeypatch, config_path
-):
-    session, _lines = bound_everywhere
-    session._binding["gateway_url"] = OVERLAY_URL
-    script = addresses_of(monkeypatch, {NAME_ADDRESS: [WELCOME]})
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: NAME_ADDRESS)
-
-    session.run_once()
-
-    assert script.hosts == [NAME_ADDRESS, "198.51.100.1", "100.64.0.1"]
-    assert stored_binding(config_path)["gateway_url"] == LAN_URL
-
-
-def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
-    bound_everywhere, monkeypatch
-):
-    """A foreign network resolving the name to its own portal is not this
-    hub: the round goes on to the stored addresses and records no error."""
-    session, lines = bound_everywhere
-    script = addresses_of(
-        monkeypatch,
-        {
-            "10.9.9.9": GatewayUntrusted("wrong pin"),
-            "192.0.2.1": Delayed([WELCOME], 0.2),
-        },
-    )
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "10.9.9.9")
-
-    client = session._connect_round()
-
-    assert script.hosts == ["10.9.9.9", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert client is script.made[1]
-    assert session.waiting() is None
-    assert session.connection() == "connected"
-    assert (
-        "https://10.9.9.9:8443 answers to the hub's name and is not this hub" in lines
-    )
-
-
-def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
-    bound_everywhere, monkeypatch
-):
-    session, lines = bound_everywhere
-    script = addresses_of(
-        monkeypatch,
-        {
-            "192.0.2.1": GatewayUntrusted("wrong pin"),
-            "198.51.100.1": Delayed([WELCOME], 0.2),
-        },
-    )
-
-    client = session._connect_round()
-
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert client is script.made[1]
-    assert session.waiting() is None
-    assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
-    assert session.gateway_url() == WAN_URL
-
-
-def test_a_stored_address_off_the_pin_alarms_when_no_address_answers(
-    bound_everywhere, monkeypatch, config_path
-):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"192.0.2.1": GatewayUntrusted("wrong pin")})
-
-    delay = session.run_once()
-
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert delay == CLIENT_BACKOFF_MAX_S
-    assert session.waiting()["code"] == {"code": "hub_untrusted", "params": {}}
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-
-
-def test_a_refusal_ends_the_round(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    script = addresses_of(
-        monkeypatch,
-        {"192.0.2.1": [{"type": "refused", "code": "ticket_spent", "params": {}}]},
-    )
-
-    delay = session.run_once()
-
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert delay == CLIENT_BACKOFF_MAX_S
-    assert code_of(session) == "ticket_spent"
-
-
-def sources(monkeypatch, *addresses) -> list:
-    """The route probe answering each address in turn, the last one after."""
-    pending = list(addresses)
-    asked: list = []
-
-    def probe(urls):
-        asked.append(list(urls))
-        return pending.pop(0) if len(pending) > 1 else pending[0]
-
-    monkeypatch.setattr(enrollment, "default_source_address", probe)
-    return asked
-
-
-def test_a_changed_source_address_ends_the_wait_and_resets_the_backoff(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    session._backoff_s = CLIENT_BACKOFF_MAX_S
-    asked = sources(monkeypatch, "10.0.0.5", "192.0.2.20")
-    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
-    started = time.monotonic()
-
-    session._wait_out(CLIENT_BACKOFF_MAX_S)
-
-    assert time.monotonic() - started < 5
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-    assert session._source_address == "192.0.2.20"
-    # The route is looked at toward the hub's own order of addresses.
-    assert asked[0] == [LAN_URL, WAN_URL, OVERLAY_URL]
-
-
-def test_the_first_look_and_an_unchanged_address_wait_the_delay_out(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    sources(monkeypatch, "10.0.0.5")
-    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
-    started = time.monotonic()
-
-    session._wait_out(0.1)
-
-    assert 0.1 <= time.monotonic() - started < 5
-    assert session._source_address == "10.0.0.5"
-
-
-def test_news_ends_the_wait_before_the_network_is_looked_at(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    asked = sources(monkeypatch, "10.0.0.5")
-    session._news.set()
-
-    session._wait_out(CLIENT_BACKOFF_MAX_S)
-
-    assert asked == []
-
-
-def test_a_connectivity_change_on_a_live_socket_starts_a_round(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-    client = session._connect_round()
-    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
-    sources(monkeypatch, "10.0.0.5", "10.0.0.5", "192.0.2.20")
-    changes = []
-    monkeypatch.setattr(session, "change_network", functools.partial(changes.append, 1))
-    ended = threading.Event()
-    watcher = threading.Thread(target=session._report_on_interval, args=(client, ended))
-
-    watcher.start()
-    deadline = time.monotonic() + 5
-    while not changes and time.monotonic() < deadline:
-        time.sleep(0.01)
-    ended.set()
-    watcher.join(timeout=5)
-
-    assert changes
-    assert session._source_address == "192.0.2.20"
-    assert client.is_closed is False
-
-
-def test_a_state_naming_other_urls_starts_a_round_and_the_same_urls_do_not(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    changes = []
-    monkeypatch.setattr(session, "change_network", functools.partial(changes.append, 1))
-
-    take(session, made, STATE_WITH_URLS)
-    take(session, made, STATE_WITH_URLS)
-
-    assert changes == [1]
-
-
-def test_a_socket_closed_from_here_is_no_failure(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    session._end_socket(made)
-    failure = session._serve(made)
-
-    assert failure is None
-    assert session.waiting() is None
-
-
-# --- the loop and the way out ---
-
-
-def test_stop_closes_the_socket_and_ends_the_loop(bound, monkeypatch):
-    session, _listener = bound
-    hold = threading.Event()
-    script = socket_of(monkeypatch, [WELCOME, hold])
-
-    session.start()
-    deadline = time.monotonic() + 5
-    while not script.made and time.monotonic() < deadline:
-        time.sleep(0.01)
-    while script.made and len(script.made[0].sent) < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    hold.set()
-    session.stop()
-    session.stop()
-
-    assert script.made[0].is_closed is True
-    assert session.connection() == "connecting"
-    assert not session._thread.is_alive()
-
-
-def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    made = BlockingSocket()
-    monkeypatch.setattr(session_module, "WebSocketClient", lambda **kwargs: made)
-
-    session.start()
-    deadline = time.monotonic() + 5
-    while not session._dialings and time.monotonic() < deadline:
-        time.sleep(0.01)
-    started = time.monotonic()
-    session.stop()
-    elapsed = time.monotonic() - started
-    session._thread.join(timeout=5)
-
-    assert elapsed < 1
-    assert made.is_aborted.is_set()
-    assert not session._thread.is_alive()
-    assert session._dialings == []
-
-
-def test_refresh_reports_on_a_live_socket(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    session.refresh()
-
-    assert [frame["type"] for frame in made.sent] == ["hello", "report", "report"]
-
-
-def test_refresh_wakes_a_waiting_session_with_its_backoff_reset(bound):
-    session, _listener = bound
-    session._backoff_s = CLIENT_BACKOFF_MAX_S
-    session._news.clear()
-
-    session.refresh()
-
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-    assert session._news.is_set()
-
-
-def test_a_stop_before_the_thread_is_published_joins_nothing_and_still_ends_it(
-    bound,
-):
-    """A stop from another thread can land between the thread being made
-    and it running; it has nothing to join, and the loop it did not see
-    ends on its first turn."""
-    session, _listener = bound
-    turns = []
-    session.run_once = lambda: turns.append(1) or 60
-
-    session.stop()
-    session.start()
-    session._thread.join(timeout=5)
-
-    assert not session._thread.is_alive()
-    assert turns == []
-
-
-def test_a_stop_during_a_turn_ends_the_loop_without_waiting_out_the_delay(bound):
-    """The stop lands while a turn runs; the wait after it must not sleep."""
-    session, _listener = bound
-    turns = []
-
-    def one_turn():
-        turns.append(1)
-        session.stop()
-        return 60
-
-    session.run_once = one_turn
-    started = time.monotonic()
-    session.run_forever()
-
-    assert turns == [1]
-    assert time.monotonic() - started < 5
-
-
-def test_a_socket_that_ends_while_stopping_is_no_failure(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    session._stop.set()
-
-    failure = session._serve(made)
-
-    assert failure is None
-    assert session.waiting() is None
-
-
-def test_every_change_the_page_draws_is_announced(bound, monkeypatch):
-    session, listener = bound
-    script = socket_of(monkeypatch, [WELCOME, STATE])
-
-    session.run_once()
-
-    # The welcome, the state and the socket's end each announce once; a
-    # lost socket goes back to connecting with nothing more to draw.
-    assert listener.changes == 3
-    assert script.made[0].is_closed is True
-
-
-def _open_while(session, made, close_frame, opener=None):
-    """Open a service stream on one thread while the test closes it.
-
-    Args:
-        session: The session under test.
-        made: The scripted socket the open lands on.
-        close_frame: The close the hub answers with, handed to the session
-            once the open has gone up.
-        opener: Opens the stream, with a timeout; None opens ``rdp_s9``'s.
-
-    Returns:
-        What :meth:`ClientHubSession.open_service` returned.
-
-    Raises:
-        Exception: Whatever the open raised.
-    """
-    outcome = {}
-    opens_before = len([frame for frame in made.sent if frame["type"] == "open"])
-
-    def run() -> None:
-        try:
-            if opener is None:
-                outcome["result"] = session.open_service("rdp_s9", timeout_s=5)
-            else:
-                outcome["result"] = opener(timeout_s=5)
-        except Exception as error:  # noqa: BLE001 - handed back to the test
-            outcome["error"] = error
-
-    thread = threading.Thread(target=run)
-    thread.start()
-    deadline = time.monotonic() + 5
-    while (
-        len([frame for frame in made.sent if frame["type"] == "open"]) <= opens_before
-        and time.monotonic() < deadline
-    ):
-        time.sleep(0.01)
-    take(session, made, close_frame)
-    thread.join(timeout=5)
-    if "error" in outcome:
-        raise outcome["error"]
-    return outcome["result"]
-
-
-# --- the overlay object and the terminals ---
-
-NETBIRD_OVERLAY = {
-    "provider": "netbird",
-    "setup_key": "KEY-1",  # scan: allow
-    "management_url": "https://nb.example",
-    "fqdn": "hub.netbird.cloud",
-    "hub_address": "100.88.92.30",
-}
-EASYTIER_OVERLAY = {
-    "provider": "easytier",
-    "mode": "manual",
-    "network_name": "home",
-    "network_secret": "s3cret",  # scan: allow
-    "peer": "tcp://203.0.113.7:11010",
-    "hub_address": "10.144.144.1",
-}
-KEPT = {
-    "session_id": SESSION_ID,
-    "account": "alice",
-    "started_at": 1759300000,
-    "title": "vim notes.md",
-    "owner": "client:c1",
-    "owner_name": "box",
-    "is_owned": True,
-    "is_attached": True,
-    "attached_count": 2,
-    "is_persistent": True,
-    "is_shared": True,
-}
-# A kept session as the session holds it.
-KEPT_ROW = {
-    "session_id": SESSION_ID,
-    "device_id": "d1",
-    "account": "alice",
-    "owner": "client:c1",
-    "owner_name": "box",
-    "is_owned": True,
-    "is_persistent": True,
-    "is_shared": True,
-    "attached_count": 2,
-    "title": "vim notes.md",
-    "started_at": 1759300000,
-}
-TERMINALS = [
-    {
-        "device_id": "d1",
-        "name": "lepton",
-        "is_online": True,
-        "sessions": [KEPT, {"account": "no id"}, dict(KEPT, session_id="s2", x=1)],
-    },
-    {"device_id": "d2", "name": "", "is_online": False},
-    {"name": "no id"},
-    "junk",
-]
-
-
-def test_a_states_overlays_are_kept_on_the_binding(bound, monkeypatch, config_path):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY, EASYTIER_OVERLAY]))
-
-    assert session.overlays() == [NETBIRD_OVERLAY, EASYTIER_OVERLAY]
-    assert stored_binding(config_path)["overlays"] == [
-        NETBIRD_OVERLAY,
-        EASYTIER_OVERLAY,
-    ]
-
-
-def test_the_same_overlays_a_second_time_write_nothing(bound, monkeypatch, config_path):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlays=[EASYTIER_OVERLAY]))
-    written = config_path.read_bytes()
-    os.utime(config_path, ns=(0, 0))
-
-    take(session, made, dict(STATE, hash="h2", overlays=[EASYTIER_OVERLAY]))
-
-    assert config_path.stat().st_mtime_ns == 0
-    assert config_path.read_bytes() == written
-
-
-def test_an_empty_list_clears_the_overlays_and_a_state_without_one_keeps_them(
-    bound, monkeypatch, config_path
-):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlays=[EASYTIER_OVERLAY]))
-
-    take(session, made, dict(STATE))
-    assert session.overlays() == [EASYTIER_OVERLAY]
-    take(session, made, dict(STATE, overlays=[]))
-
-    assert session.overlays() == []
-    assert stored_binding(config_path)["overlays"] == []
-
-
-def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
-    bind(config_path, url="https://hub.lan:8443")
-    lines = []
-    session = session_for(log=lines.append)
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY, EASYTIER_OVERLAY]))
-
-    assert lines and not any("KEY-1" in line for line in lines)
-    assert not any("s3cret" in line for line in lines)
-
-
-def test_the_networks_state_and_engine_are_written_onto_the_binding(bound, config_path):
-    session, _listener = bound
-
-    session.set_overlay_choice(True, "easytier")
-
-    assert session.overlay_choice() == (True, "easytier")
-    stored = stored_binding(config_path)
-    assert (stored["is_overlay_on"], stored["overlay_pick"]) == (True, "easytier")
-
-
-def test_a_network_on_adds_its_address_to_every_round(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"100.88.92.30": [WELCOME]})
-
-    session.set_overlay_route("100.88.92.30", "netbird")
-    session.run_once()
-
-    assert script.hosts == ["100.88.92.30", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert session.gateway_url() == "https://100.88.92.30:8443"
-    assert session._news.is_set()
-
-    session.set_overlay_route("", "")
-    script.hosts.clear()
-    session.run_once()
-
-    # Only as the address that answered last, which every binding keeps.
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1", "100.88.92.30"]
-
-
-@pytest.mark.parametrize(
-    "path, handshake_s, live_path, is_better",
-    [
-        ("lan", 0.5, "easytier", True),
-        ("direct", 0.5, "netbird", True),
-        ("netbird", 0.5, "ssh_relay", True),
-        ("easytier", 0.1, "lan", False),
-        ("ssh_relay", 0.1, "direct", False),
-        ("easytier", 0.5, "sakurafrp", True),
-        ("openfrp", 0.1, "netbird", False),
-        ("sakurafrp", 0.1, "ssh_relay", True),
-        ("openfrp", 0.3, "sakurafrp", False),
-        ("netbird", 0.1, "easytier", True),
-        ("netbird", 0.3, "easytier", False),
-        ("lan", 0.2, "lan", False),
-    ],
-)
-def test_the_paths_rank_and_a_tie_goes_to_the_faster_handshake(
-    path, handshake_s, live_path, is_better
-):
-    assert is_better_path(path, handshake_s, live_path, 0.2) is is_better
-
-
-def test_each_candidate_reads_as_its_path(bound_everywhere):
-    session, _lines = bound_everywhere
-    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
-    session.set_overlay_route("100.64.0.1", "easytier")
-    session._server_urls = {
-        "ssh_relay": "https://203.0.113.7:8443",
-        "sakurafrp": "https://frp-cat.example:30443",
-        "openfrp": "",
+def test_a_pending_join_is_spent_through_the_transport_and_then_dialled(config_path):
+    made = Harness(pending(config_path))
+    made.transport.answers["join"] = lambda line: {"binding_id": "c9", "token": "t9"}
+    try:
+        join = made.transport.next_command("join")
+        assert join["binding"] == "pending_1"
+        assert join["ticket"] == "tkt"
+        assert join["hub_key"] == HUB_KEY
+        assert join["private_key"] == PRIVATE_KEY
+        assert join["role"] == "client" and join["protocol"] == PROTOCOL
+        assert join["addresses"] == ["tcp://hub.neutrino.internal:8443", HUB_URL]
+        assert join["platform"]["os"]
+        dial = made.transport.next_command("dial")
+        assert dial["binding"] == "c9"
+        assert dial["psk"] == hashlib.sha256(b"t9").hexdigest()
+        kept = enrollment.load_config()["bindings"]
+        assert [(item["id"], item["token"]) for item in kept] == [("c9", "t9")]
+        assert "ticket" not in kept[0]
+        assert made.session.local_key == "pending_1"
+        assert made.session.label == "c9"
+    finally:
+        made.close()
+
+
+def test_a_refused_ticket_waits_for_good(config_path):
+    made = Harness(pending(config_path))
+    made.transport.answers["join"] = lambda line: {"code": "ticket_spent"}
+    try:
+        made.transport.next_command("join")
+        assert wait_for(lambda: made.session.waiting() is not None)
+        assert made.session.waiting()["reason"] == "join_refused"
+        with pytest.raises(queue.Empty):
+            made.transport.next_command("join", timeout_s=1.5)
+    finally:
+        made.close()
+
+
+def test_a_paused_join_counts_down_and_joins_again(config_path):
+    made = Harness(pending(config_path))
+    made.transport.answers["join"] = lambda line: {
+        "code": "admission_paused",
+        "params": {"retry_after_s": 1},
     }
-
-    assert session._path_of(LAN_URL) == "lan"
-    assert session._path_of(WAN_URL) == "direct"
-    assert session._path_of(OVERLAY_URL) == "easytier"
-    assert session._path_of("https://203.0.113.7:8443") == "ssh_relay"
-    assert session._path_of("https://frp-cat.example:30443") == "sakurafrp"
-    assert session._path_of("https://frp-cat.example:30444") == "direct"
-    assert session._path_of("https://hub.lan:8443") == "direct"
-
-
-def test_a_state_names_each_servers_address(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(
-        session,
-        made,
-        dict(
-            STATE,
-            ssh_relay_url="https://203.0.113.7:8443",
-            sakurafrp_url="https://frp-cat.example:30443",
-            openfrp_url="https://frp-dog.example:21443",
-        ),
-    )
-
-    assert session._path_of("https://203.0.113.7:8443") == "ssh_relay"
-    assert session._path_of("https://frp-cat.example:30443") == "sakurafrp"
-    assert session._path_of("https://frp-dog.example:21443") == "openfrp"
-
-    take(session, made, dict(STATE, relay_url="https://203.0.113.7:8443"))
-
-    assert session._path_of("https://203.0.113.7:8443") == "direct"
+    try:
+        made.transport.next_command("join")
+        assert wait_for(lambda: made.session.waiting() is not None)
+        assert made.session.waiting()["reason"] == "admission_paused"
+        made.transport.next_command("join", timeout_s=4)
+    finally:
+        made.close()
 
 
-def _wait_for(predicate, timeout_s=5) -> None:
-    deadline = time.monotonic() + timeout_s
-    while not predicate():
-        assert time.monotonic() < deadline, "the state never came"
-        time.sleep(0.01)
-
-
-def test_a_network_turning_on_while_connected_keeps_the_channel_on_a_worse_winner(
-    bound_everywhere, monkeypatch, change_rounds
-):
-    """Connected over the LAN, an EasyTier network comes up: a round starts at
-    once beside the live channel, and its winner, worse, is closed before any
-    hello."""
-    session, lines = bound_everywhere
-    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
-    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-    live = session._connect_round()
-    script._by_host = {"100.88.92.30": [WELCOME]}
-
-    session.set_overlay_route("100.88.92.30", "easytier")
-    _wait_for(lambda: "100.88.92.30" in script.hosts and not session._is_changing)
-
-    winner = script.made[script.hosts.index("100.88.92.30")]
-    assert winner.sent == [] and winner.is_closed
-    assert live.is_closed is False and session._client is live
-    assert session.gateway_url() == LAN_URL
-    assert session.connection() == "connected"
-    assert any("the channel stays at" in line for line in lines)
-    session.stop()
-
-
-def test_a_better_path_moves_the_channel_and_its_4010_is_not_replaced(
-    bound_everywhere, monkeypatch, change_rounds
-):
-    """Connected over EasyTier, the LAN comes back: the LAN socket says hello,
-    the old socket is closed and its 4010 is expected, and the channel reads
-    on the new socket."""
-    session, lines = bound_everywhere
-    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
-    session.set_overlay_route("100.64.0.1", "easytier")
-    old_held = threading.Event()
-    new_held = threading.Event()
-    script = addresses_of(
-        monkeypatch,
-        {"100.64.0.1": [WELCOME, old_held, SocketClosed(4010, "replaced")]},
-    )
-    live = session._connect_round()
-    assert session._connected_path == "easytier"
-    served = threading.Thread(target=session._serve, args=(live,), daemon=True)
-    served.start()
-    script._by_host = {"192.0.2.1": [WELCOME, new_held]}
-
-    session.change_network()
-    _wait_for(lambda: session.gateway_url() == LAN_URL)
-    old_held.set()
-    moved = script.made[len(script.hosts) - 1 - script.hosts[::-1].index("192.0.2.1")]
-    _wait_for(lambda: len(pings(moved)) == 1)
-
-    assert [frame["type"] for frame in moved.sent][:3] == ["hello", "report", "ping"]
-    assert live.is_closed
-    _wait_for(lambda: session._client is moved)
-    assert session.connection() == "connected"
-    assert session._is_replaced is False
-    assert any("moving the channel from" in line for line in lines)
-    new_held.set()
-    served.join(timeout=5)
-    assert session._is_replaced is False
-    session.stop()
-
-
-def test_a_change_on_a_replaced_or_disabled_hub_starts_nothing(bound, monkeypatch):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME])
-    session._is_replaced = True
-
-    session.change_network()
-
-    assert not session._news.is_set() and script.made == []
-    session._is_replaced = False
-    connected(session, script)
-    session._is_disabled = True
-
-    session.change_network()
-
-    assert not session._is_changing and len(script.made) == 1
-
-
-def test_a_change_on_a_hub_not_connected_starts_its_round_now(bound):
-    session, _listener = bound
-    session._backoff_s = CLIENT_BACKOFF_MAX_S
-
-    session.change_network()
-
-    assert session._news.is_set()
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-
-
-def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, terminals=TERMINALS))
-
-    assert session.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True},
-        {"device_id": "d2", "name": "d2", "is_online": False},
-    ]
-    assert session.terminal_sessions() == [
-        KEPT_ROW,
-        dict(KEPT_ROW, session_id="s2"),
-    ]
-    session._end_socket(made)
-    assert session.terminal_entries() == []
-    assert session.terminal_sessions() == []
-
-
-def test_the_terminals_as_two_lists_read_the_same(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    terminals = {
-        "machines": [{"device_id": "d1", "name": "lepton", "is_online": True}],
-        "sessions": [dict(KEPT, device_id="d1"), {"session_id": "no machine"}],
+def test_a_join_that_reached_no_address_waits_and_tries_again(config_path):
+    made = Harness(pending(config_path))
+    made.transport.answers["join"] = lambda line: {
+        "code": "hub_unreachable",
+        "params": {"detail": "timeout"},
     }
-
-    take(session, made, dict(STATE, terminals=terminals))
-
-    assert session.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True}
-    ]
-    assert session.terminal_sessions() == [KEPT_ROW]
-
-
-def test_a_session_from_an_older_hub_counts_its_attachment(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    older = {
-        "session_id": "s9",
-        "account": "alice",
-        "started_at": 1,
-        "title": "",
-        "is_attached": True,
-        "is_persistent": False,
-    }
-    terminals = [
-        {"device_id": "d1", "name": "lepton", "is_online": True, "sessions": [older]}
-    ]
-
-    take(session, made, dict(STATE, terminals=terminals))
-
-    row = session.terminal_sessions()[0]
-    assert (row["attached_count"], row["owner"], row["is_owned"]) == (1, "", False)
-    assert row["owner_name"] == ""
-    assert row["is_shared"] is False
+    try:
+        made.transport.next_command("join")
+        assert wait_for(lambda: made.session.waiting() is not None)
+        assert made.session.waiting()["reason"] == "hub_silent"
+        made.session.change_network()
+        made.transport.next_command("join")
+    finally:
+        made.close()
 
 
-def test_the_flags_set_show_at_once_until_the_next_state(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, terminals=TERMINALS))
-
-    session.note_session_flags(SESSION_ID, False, False)
-    assert (
-        session.terminal_sessions()[0]["is_persistent"],
-        session.terminal_sessions()[0]["is_shared"],
-    ) == (False, False)
-
-    take(session, made, dict(STATE, hash="h2", terminals=TERMINALS))
-    assert session.terminal_sessions()[0]["is_shared"] is True
+def test_a_join_on_another_key_waits_untrusted_a_minute(config_path):
+    made = Harness(pending(config_path))
+    made.transport.answers["join"] = lambda line: {"code": "hub_untrusted"}
+    try:
+        made.transport.next_command("join")
+        assert wait_for(lambda: made.session.waiting() is not None)
+        waiting = made.session.waiting()
+        assert waiting["reason"] == "untrusted"
+        assert waiting["next_round_at"] - time.time() > CLIENT_BACKOFF_MAX_S - 5
+    finally:
+        made.close()
 
 
-def test_a_state_without_terminals_holds_none(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, terminals=TERMINALS))
-
-    take(session, made, dict(STATE))
-
-    assert session.terminal_entries() == []
+# --- a binding of 0.5 ---
 
 
-# --- the five connection states ---
+class FakeLegacyChannel:
+    """The pinned channel a 0.5 binding moves over, answering by address."""
+
+    def __init__(self, answers: dict):
+        self.answers = answers
+        self.posts = []
+
+    def __call__(self, url: str, fingerprint: str):
+        outer = self
+
+        class Channel:
+            def post(self, path, body):
+                outer.posts.append((url, fingerprint, path, dict(body)))
+                answer = outer.answers.get(url)
+                if isinstance(answer, Exception):
+                    raise answer
+                if answer is None:
+                    raise GatewayUnreachable("silence")
+                return answer
+
+        return Channel()
 
 
-def test_a_session_starts_connecting():
-    session = session_for()
-
-    assert session.connection() == "connecting"
-
-
-def test_a_round_that_ends_in_a_code_is_waiting_and_the_next_round_connecting(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-    session.run_once()
-    assert session.connection() == "waiting"
-
-    seen = []
-
-    def round_seen():
-        seen.append(session.connection())
-        raise GatewayUnreachable("still")
-
-    monkeypatch.setattr(session, "_connect_round", round_seen)
-    session.run_once()
-
-    assert seen == ["connecting"]
-    assert session.connection() == "waiting"
-
-
-def test_a_lost_socket_is_connecting_at_once_with_no_wait(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [WELCOME, GatewayUnreachable("wire cut")])
-
-    delay = session.run_once()
-
-    assert delay == 0
-    assert session.connection() == "connecting"
-    assert session.waiting() is None
-
-
-def test_a_disabled_hub_is_disabled_and_enabled_again_is_connected(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    take(session, made, dict(STATE, is_disabled=True))
-    assert session.connection() == "disabled"
-    take(session, made, dict(STATE, hash="h2", is_disabled=False))
-    assert session.connection() == "connected"
-
-
-def test_every_connection_state_is_named():
-    assert session_module.CONNECTION_STATES == (
-        "connected",
-        "connecting",
-        "waiting",
-        "replaced",
-        "disabled",
+def legacy(config_path) -> dict:
+    binding = dict(
+        BINDING,
+        gateway_url="https://192.168.1.2:8443",
+        gateway_urls=["https://192.168.1.2:8443"],
+        hub_key="",
+        private_key="",
+        fingerprint="ff" * 32,
     )
-    assert session_module.WAIT_REASONS == (
-        "hub_silent",
-        "hub_off_overlay",
-        "no_network",
-        "untrusted",
-        "admission_paused",
-        "unknown_device",
-        "too_old",
-        "join_refused",
-    )
-
-
-# --- the refresh ---
-
-
-def test_a_refresh_of_a_connected_hub_asks_for_the_whole_state(bound, monkeypatch):
-    session, listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    changes = listener.changes
-
-    assert session.refresh() is True
-
-    assert session.is_refreshing() is True
-    assert session.waiting() is None
-    deadline = time.monotonic() + 5
-    while not made.sent[-1].get("is_refresh") and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert made.sent[-1]["type"] == "report"
-    assert made.sent[-1]["is_refresh"] is True
-    assert listener.changes == changes + 1
-
-
-class Clocks:
-    """A monotonic clock and a wall clock, each moved by hand."""
-
-    def __init__(self):
-        self.now = 1000.0
-        self.wall = 1_700_000_000.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def time(self) -> float:
-        return self.wall
-
-
-@pytest.mark.parametrize(
-    "jump",
-    [
-        {"wall": 4.5 * 3600},
-        {"wall": -4.5 * 3600},
-        {"now": 4.5 * 3600},
-    ],
-)
-def test_a_clock_jump_ends_the_refresh_whatever_its_timer_does(
-    monkeypatch, config_path, jump
-):
-    """A machine waking from sleep moves its clocks; the refresh ends then."""
-    bind(config_path)
-    clocks = Clocks()
-    monkeypatch.setattr(session_module.threading, "Timer", NoTimer)
-    session = session_for(
-        refresh_timeout_s=10, clock=clocks.monotonic, wall_clock=clocks.time
-    )
-    assert session.refresh() is True
-    assert session.is_refreshing() is True
-
-    clocks.wall += jump.get("wall", 0)
-    clocks.now += jump.get("now", 0)
-
-    assert session.is_refreshing() is False
-    assert session.connection() == "connecting"
-    assert session.refresh() is True
-
-
-def test_a_refresh_past_its_limit_ends_when_its_timer_never_fires(
-    monkeypatch, config_path
-):
-    bind(config_path)
-    clocks = Clocks()
-    monkeypatch.setattr(session_module.threading, "Timer", NoTimer)
-    session = session_for(
-        refresh_timeout_s=10, clock=clocks.monotonic, wall_clock=clocks.time
-    )
-    session.refresh()
-
-    clocks.now += 9.9
-    clocks.wall += 9.9
-    assert session.is_refreshing() is True
-    clocks.now += 0.1
-    clocks.wall += 0.1
-    assert session.is_refreshing() is False
-
-
-class NoTimer:
-    """A timer that never fires."""
-
-    def __init__(self, *args, **kwargs):
-        self.daemon = False
-
-    def start(self) -> None:
-        pass
-
-
-class SilentSocket(ScriptedSocket):
-    """A socket whose sends never return: the far end takes no bytes."""
-
-    def __init__(self, frames):
-        super().__init__(frames)
-        self.held = threading.Event()
-
-    def send_text(self, text: str) -> None:
-        if json.loads(text).get("is_refresh"):
-            self.held.wait(timeout=10)
-            return
-        super().send_text(text)
-
-
-def test_a_socket_that_never_answers_holds_neither_the_press_nor_the_refresh(
-    monkeypatch, config_path
-):
-    bind(config_path)
-    session = session_for(refresh_timeout_s=0.2)
-    made = SilentSocket([WELCOME])
-    made.connect()
-    session._greet(made)
-
-    started = time.monotonic()
-    assert session.refresh() is True
-    assert time.monotonic() - started < 1
-    deadline = time.monotonic() + 5
-    while session.is_refreshing() and time.monotonic() < deadline:
-        time.sleep(0.01)
-
-    assert session.is_refreshing() is False
-    assert session.connection() == "connected"
-    made.held.set()
-
-
-def test_a_plain_report_carries_no_refresh(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-
-    assert "is_refresh" not in made.sent[-1]
-
-
-def test_a_state_ends_the_refresh(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    session.refresh()
-
-    take(session, made, dict(STATE))
-
-    assert session.is_refreshing() is False
-
-
-def test_a_second_refresh_while_one_runs_is_not_taken(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    session.refresh()
-    sent = len(made.sent)
-
-    assert session.refresh() is False
-    assert len(made.sent) == sent
-
-
-def test_a_refresh_of_a_waiting_hub_starts_a_round_now_at_the_floor(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-    session.run_once()
-    session.run_once()
-    session._news.clear()
-    assert session._backoff_s > CLIENT_BACKOFF_MIN_S
-
-    assert session.refresh() is True
-
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-    assert session._news.is_set()
-    assert session.waiting() is None
-    assert session.is_refreshing() is True
-
-
-def test_a_round_that_ends_in_a_code_ends_the_refresh(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-    session.refresh()
-
-    session.run_once()
-
-    assert session.is_refreshing() is False
-    assert session.connection() == "waiting"
-    assert code_of(session) == "hub_unreachable"
-
-
-def test_a_refresh_that_reaches_a_hub_asks_its_first_report_for_the_whole_state(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    script = socket_of(monkeypatch, [WELCOME])
-    session.refresh()
-
-    made = connected(session, script)
-
-    reports = [frame for frame in made.sent if frame.get("type") == "report"]
-    assert reports[0]["is_refresh"] is True
-
-
-def test_a_refresh_nothing_answers_ends_by_itself(monkeypatch, config_path):
-    bind(config_path)
-    listener = Listener()
-    session = session_for(listener=listener, refresh_timeout_s=0.05)
-
-    assert session.refresh() is True
-    deadline = time.monotonic() + 5
-    while session.is_refreshing() and time.monotonic() < deadline:
-        time.sleep(0.01)
-
-    assert session.is_refreshing() is False
-
-
-@pytest.mark.parametrize("state", ["replaced", "disabled"])
-def test_a_replaced_or_disabled_hub_does_not_refresh(bound, monkeypatch, state):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    if state == "replaced":
-        session._is_replaced = True
-    else:
-        take(session, made, dict(STATE, is_disabled=True))
-    sent = len(made.sent)
-
-    assert session.refresh() is False
-    assert session.is_refreshing() is False
-    assert len(made.sent) == sent
-
-
-def test_a_session_without_an_owner_name_is_named_by_its_stamp(bound, monkeypatch):
-    session, _listener = bound
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    nameless = dict(KEPT)
-    del nameless["owner_name"]
-    terminals = [
-        {"device_id": "d1", "name": "lepton", "is_online": True, "sessions": [nameless]}
-    ]
-
-    take(session, made, dict(STATE, terminals=terminals))
-
-    assert session.terminal_sessions()[0]["owner_name"] == "client:c1"
-
-
-# --- a join that has not reached its hub yet ---
-
-
-PENDING_BINDING = dict(
-    BINDING,
-    id="pending_1",
-    hub_id="",
-    hub_name="",
-    gateway_url=LAN_URL,
-    gateway_urls=[LAN_URL, OVERLAY_URL],
-    token="",
-    ticket="ticket-1",
-    is_pending=True,
-)
-
-
-@pytest.fixture
-def pending_session(config_path):
-    bind(config_path, bindings=[PENDING_BINDING])
-    lines = []
-    session = ClientHubSession(
-        binding=stored_binding(config_path),
-        hostname="box",
-        platform_tuple=PLATFORM,
-        log=lines.append,
-    )
-    return session, lines
-
-
-class JoinDesk:
-    """The hub's join, as the round reaches it: completed or refused.
-
-    Attributes:
-        asked: Every address the ticket was spent at, in order.
-        refusal: The refusal the join ends in; None completes it.
-        unreachable_at: An address that stops answering mid-join.
-        sockets: The sockets of the round, for the order of join and hello.
-    """
-
-    def __init__(self, sockets):
-        self.asked = []
-        self.refusal = None
-        self.unreachable_at = ""
-        self.sockets = sockets
-
-    def __call__(self, binding, url):
-        self.asked.append((url, [list(made.sent) for made in self.sockets.made]))
-        if url == self.unreachable_at:
-            raise GatewayUnreachable("gone")
-        if self.refusal is not None:
-            raise self.refusal
-        return enrollment._binding(
-            dict(
-                binding,
-                id="c7",
-                token="tok7",
-                gateway_url=url,
-                ticket="",
-                is_pending=False,
-            )
+    bind(config_path, bindings=[binding])
+    return enrollment._binding(binding)
+
+
+def test_a_binding_of_05_moves_over_the_legacy_listener_and_is_dialled(config_path):
+    channel = FakeLegacyChannel({"https://192.168.1.2:8443": {"key": "33" * 32}})
+    made = Harness(legacy(config_path), legacy_channel=channel)
+    try:
+        dial = made.transport.next_command("dial")
+        assert dial["hub_key"] == "33" * 32
+        assert dial["candidates"][-1]["address"] == HUB_URL
+        url, fingerprint, path, body = channel.posts[0]
+        assert (url, fingerprint, path) == (
+            "https://192.168.1.2:8443",
+            "ff" * 32,
+            "/api/channel/key/set",
         )
+        assert body["id"] == "c1" and body["token"] == "tok"
+        assert len(body["public_key"]) == 64
+        kept = enrollment.load_config()["bindings"][0]
+        assert kept["fingerprint"] == "" and kept["hub_key"] == "33" * 32
+        assert kept["gateway_url"] == HUB_URL
+    finally:
+        made.close()
 
 
-def test_a_pending_join_reads_connecting_as_its_first_round_starts(pending_session):
-    session, _lines = pending_session
-
-    assert session.connection() == "connecting"
-    assert session.waiting() is None
-    assert session.is_pending() is True
-    assert session.local_key == "pending_1"
-
-
-def test_the_first_address_that_answers_spends_the_ticket_before_the_hello(
-    pending_session, monkeypatch, config_path
+def test_a_binding_of_05_the_hub_does_not_move_waits_on_hub_key_missing(
+    config_path,
 ):
-    session, _lines = pending_session
-    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
-    desk = JoinDesk(script)
-    monkeypatch.setattr(enrollment, "complete_join", desk)
+    made = Harness(legacy(config_path), legacy_channel=FakeLegacyChannel({}))
+    try:
+        assert wait_for(lambda: made.session.waiting() is not None)
+        assert made.session.waiting()["code"]["code"] == "hub_key_missing"
+    finally:
+        made.close()
 
-    session.run_once()
 
-    assert script.hosts == ["192.0.2.1", "100.64.0.1"]
-    (asked,) = desk.asked
-    assert asked == (OVERLAY_URL, [[], []])
-    hello = script.made[-1].sent[0]
-    assert (hello["type"], hello["id"], hello["token"]) == ("hello", "c7", "tok7")
-    (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert (stored["id"], stored["token"], stored["gateway_url"]) == (
-        "c7",
-        "tok7",
-        OVERLAY_URL,
+def test_a_binding_of_05_the_hub_forgot_is_unbound(config_path):
+    refusal = GatewayRefused("no", code="binding_unknown")
+    made = Harness(
+        legacy(config_path),
+        legacy_channel=FakeLegacyChannel({"https://192.168.1.2:8443": refusal}),
     )
-    assert "ticket" not in stored and "is_pending" not in stored
-    assert session.binding_id == "c7" and session.local_key == "pending_1"
-    assert session.is_pending() is False
-
-
-@pytest.mark.parametrize(
-    "refusal",
-    [
-        EnrollmentError("ticket_spent"),
-        EnrollmentError("protocol_too_old", {"peer": 1, "hub": 3, "min": 2}),
-    ],
-)
-def test_a_refused_join_waits_with_its_code_and_runs_no_more_rounds(
-    pending_session, monkeypatch, config_path, refusal
-):
-    session, _lines = pending_session
-    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-    desk = JoinDesk(script)
-    desk.refusal = refusal
-    monkeypatch.setattr(enrollment, "complete_join", desk)
-
-    session.run_once()
-    session.run_once()
-    session.change_network()
-    session.run_once()
-
-    assert session.connection() == "waiting"
-    assert session.waiting() == {
-        "reason": "join_refused",
-        "code": {"code": refusal.code, "params": refusal.params},
-        "next_round_at": None,
-    }
-    assert session.refresh() is False
-    assert script.hosts == ["192.0.2.1", "100.64.0.1"]
-    assert script.made[0].sent == []
-    assert stored_binding(config_path)["is_pending"] is True
-
-
-def test_a_paused_admission_counts_down_its_wait_and_joins_again_at_0(
-    pending_session, monkeypatch, config_path
-):
-    session, _lines = pending_session
-    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-    desk = JoinDesk(script)
-    desk.refusal = EnrollmentError("admission_paused", {"retry_after_s": 42})
-    monkeypatch.setattr(enrollment, "complete_join", desk)
-    session._wall_clock = lambda: 1000.0
-
-    delay = session.run_once()
-
-    assert delay == 42
-    assert session.connection() == "waiting"
-    assert session.waiting() == {
-        "reason": "admission_paused",
-        "code": {"code": "admission_paused", "params": {"retry_after_s": 42}},
-        "next_round_at": 1042.0,
-    }
-    assert stored_binding(config_path)["is_pending"] is True
-    assert stored_binding(config_path)["ticket"]
-
-    desk.refusal = None
-    session.run_once()
-
-    assert script.hosts == ["192.0.2.1", "100.64.0.1"] * 2
-
-
-def test_an_address_that_stops_answering_mid_join_ends_the_round_and_keeps_the_ticket(
-    pending_session, monkeypatch, config_path
-):
-    session, _lines = pending_session
-    script = addresses_of(
-        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": Delayed([WELCOME], 0.2)}
-    )
-    desk = JoinDesk(script)
-    desk.unreachable_at = LAN_URL
-    monkeypatch.setattr(enrollment, "complete_join", desk)
-
-    session.run_once()
-
-    assert [url for url, _sent in desk.asked] == [LAN_URL]
-    assert session.connection() == "waiting"
-    assert reason_of(session) == "hub_silent"
-    assert code_of(session) == "hub_unreachable"
-    assert stored_binding(config_path)["ticket"]
-
-    desk.unreachable_at = ""
-    session.run_once()
-
-    assert session.binding_id == "c7"
-
-
-def test_a_networks_ipv6_address_is_reached_in_brackets(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"fd7a:115c::1": [WELCOME]})
-
-    session.set_overlay_route("fd7a:115c::1", "netbird")
-    session.run_once()
-
-    assert script.hosts == ["fd7a:115c::1", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert session.gateway_url() == "https://[fd7a:115c::1]:8443"
-
-
-def test_the_report_names_the_systems_id_for_the_machine(config_path, monkeypatch):
-    bind(config_path, url="https://hub.lan:8443")
-    session = session_for(os_machine_id="os-id-1")
-    script = socket_of(monkeypatch, [WELCOME])
-
-    session.run_once()
-
-    assert script.made[0].sent[1]["machine"] == {
-        "hostname": "box",
-        "platform": PLATFORM,
-        "os_machine_id": "os-id-1",
-    }
-
-
-# --- why a hub waits, and the round a change ends ---
-
-
-def test_a_silent_hub_counts_down_the_backoff_from_the_wall_clock(bound, monkeypatch):
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-    session._wall_clock = lambda: 1000.0
-
-    session.run_once()
-    first = session.waiting()
-    session.run_once()
-
-    assert first == {
-        "reason": "hub_silent",
-        "code": {"code": "hub_unreachable", "params": {"detail": "down"}},
-        "next_round_at": 1000.0 + CLIENT_BACKOFF_MIN_S,
-    }
-    assert session.waiting()["next_round_at"] == 1000.0 + 2 * CLIENT_BACKOFF_MIN_S
-
-
-def test_a_hub_silent_while_its_virtual_network_is_on_is_off_the_overlay(
-    bound, monkeypatch
-):
-    """The client's own network line decides it: on, with or without the
-    hub's address on it, and back to silent once the line is off."""
-    session, _listener = bound
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-
-    session.set_overlay_route("", "easytier")
-    session.run_once()
-    assert reason_of(session) == "hub_off_overlay"
-
-    session.set_overlay_route("100.64.0.9", "netbird")
-    session.run_once()
-    assert reason_of(session) == "hub_off_overlay"
-
-    session.set_overlay_route("", "")
-    session.run_once()
-    assert reason_of(session) == "hub_silent"
-
-
-@pytest.mark.parametrize(
-    "networks, is_none",
-    [
-        (["127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/64"], True),
-        (["127.0.0.0/8", "192.168.1.0/24"], False),
-        (["127.0.0.0/8", "100.64.0.0/10"], False),
-        ([], False),
-        (["not a network"], False),
-    ],
-)
-def test_no_network_is_loopback_and_link_local_alone(networks, is_none):
-    assert session_module.is_offline(networks) is is_none
-
-
-def test_a_device_with_no_network_waits_with_no_countdown(config_path, monkeypatch):
-    bind(config_path, url="https://hub.lan:8443")
-    session = session_for(local_networks=lambda: ["127.0.0.0/8", "fe80::/64"])
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("no route"))
-
-    delay = session.run_once()
-
-    assert delay == float("inf")
-    assert session.waiting() == {
-        "reason": "no_network",
-        "code": {"code": "hub_unreachable", "params": {"detail": "no route"}},
-        "next_round_at": None,
-    }
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-
-
-def test_the_wait_for_a_network_ends_when_the_device_has_one(config_path, monkeypatch):
-    bind(config_path, url="https://hub.lan:8443")
-    networks = [["127.0.0.0/8"]]
-    session = session_for(local_networks=lambda: networks[0])
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("no route"))
-    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
-    session._news.clear()
-    delay = session.run_once()
-    assert reason_of(session) == "no_network"
-    ended = threading.Event()
-
-    def wait():
-        session._wait_out(delay)
-        ended.set()
-
-    threading.Thread(target=wait, daemon=True).start()
-    assert not ended.wait(timeout=0.1)
-    networks[0] = ["127.0.0.0/8", "192.168.1.0/24"]
-
-    assert ended.wait(timeout=2)
-
-
-def test_a_change_ends_the_round_in_flight_and_starts_another_at_once(
-    bound_everywhere, monkeypatch
-):
-    """A dial that never answers is closed, not waited for: the round ends
-    well inside one connect time, waits on nothing, and the next round
-    starts at once."""
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {})
-    blocking = []
-
-    def dial(**kwargs):
-        made = BlockingSocket()
-        blocking.append(made)
-        script.hosts.append(kwargs.get("host", ""))
-        return made
-
-    monkeypatch.setattr(session_module, "WebSocketClient", dial)
-    session._backoff_s = CLIENT_BACKOFF_MAX_S
-    result = []
-    turn = threading.Thread(target=lambda: result.append(session.run_once()))
-    turn.start()
-    deadline = time.monotonic() + 5
-    while len(blocking) < 3 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    started = time.monotonic()
-
-    session.change_network()
-    turn.join(timeout=5)
-
-    assert time.monotonic() - started < 1
-    assert result == [0]
-    assert all(made.is_aborted.is_set() for made in blocking)
-    assert session.connection() == "connecting"
-    assert session.waiting() is None
-    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
-
-
-def test_a_refresh_ends_the_round_in_flight_too(bound_everywhere, monkeypatch):
-    session, _lines = bound_everywhere
-    blocking = []
-
-    def dial(**kwargs):
-        made = BlockingSocket()
-        blocking.append(made)
-        return made
-
-    monkeypatch.setattr(session_module, "WebSocketClient", dial)
-    result = []
-    turn = threading.Thread(target=lambda: result.append(session.run_once()))
-    turn.start()
-    deadline = time.monotonic() + 5
-    while len(blocking) < 3 and time.monotonic() < deadline:
-        time.sleep(0.01)
-
-    assert session.refresh() is True
-    turn.join(timeout=5)
-
-    assert result == [0]
-    assert all(made.is_aborted.is_set() for made in blocking)
-
-
-def test_a_change_between_rounds_cuts_nothing_of_the_next(
-    bound_everywhere, monkeypatch
-):
-    """A change during the wait ends the wait; the round after it dials as
-    any round does."""
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"198.51.100.1": [WELCOME]})
-
-    session.change_network()
-    delay = session.run_once()
-
-    assert delay == 0
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert session.gateway_url() == WAN_URL
+    try:
+        assert wait_for(lambda: made.unbound == [made.session])
+    finally:
+        made.close()

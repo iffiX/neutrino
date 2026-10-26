@@ -1,13 +1,20 @@
-"""``nclient`` entry: the verb tree, the version, and root refused.
+"""``nclient``: the command tree, its help at every level, and who may run it.
 
-The client runs as a person; root is refused with a typed line before any
-command runs. The Windows console is switched to UTF-8.
+Each verb reaches its command with what was typed; a bare machine after
+``terminal`` is ``open``, and the words after ``--`` of ``terminal exec``
+and ``ssh open`` are the command. ``--hub`` is taken before the group,
+after it, or after the verb. Every level prints its help with ``-h`` in
+the client's language and exits 0; a group with no verb prints its help
+and exits 2, and a usage error prints the level's usage line and where its
+help is. The levels of 0.5 are gone. Root is refused, and another
+account's client holding the machine is named, for every command but
+``gui`` and ``quit``.
 """
 
 import pytest
 
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.cli import entry, wording
+from neutrino_client.cli import entry, help_pages, wording
 
 
 class FakeStream:
@@ -20,324 +27,398 @@ class FakeStream:
         self.reconfigured = (encoding, errors)
 
 
+@pytest.fixture
+def person(monkeypatch):
+    """A person's account, holding the machine, in English."""
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(wording, "other_holder", lambda: "")
+    wording.fix_language("en")
+    yield
+    wording.fix_language("")
+
+
+def run(monkeypatch, argv):
+    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + list(argv))
+    return entry.main()
+
+
+# (argv, module, function, args, kwargs)
+DISPATCHED = [
+    (["ssh", "list"], "ssh", "main_list", (), {"hub": ""}),
+    (["ssh", "open", "lab@gpu"], "ssh", "main_open", ("lab@gpu", []), {"hub": ""}),
+    (
+        ["ssh", "open", "gpu", "--", "nvidia-smi", "-L"],
+        "ssh",
+        "main_open",
+        ("gpu", ["nvidia-smi", "-L"]),
+        {"hub": ""},
+    ),
+    (["ssh", "config", "show"], "ssh", "main_config_show", (), {}),
+    (
+        ["ssh", "config", "install"],
+        "ssh",
+        "main_config_install",
+        (),
+        {"is_installed": True},
+    ),
+    (
+        ["ssh", "config", "uninstall"],
+        "ssh",
+        "main_config_install",
+        (),
+        {"is_installed": False},
+    ),
+    (["ssh", "proxy", "lab@gpu.nt"], "ssh", "main_proxy", ("lab@gpu.nt",), {"hub": ""}),
+    (["hub", "list"], "hub", "main_list", (), {}),
+    (
+        ["hub", "join", "neutrino://enroll/x"],
+        "hub",
+        "main_join",
+        ("neutrino://enroll/x",),
+        {},
+    ),
+    (["hub", "join"], "hub", "main_join", ("",), {}),
+    (["hub", "leave", "home"], "hub", "main_leave", ("home",), {"is_forced": False}),
+    (["hub", "leave", "2", "--yes"], "hub", "main_leave", ("2",), {"is_forced": True}),
+    (["hub", "open", "home"], "hub", "main_open", ("home",), {}),
+    (["app", "list"], "app", "main_list", (), {"hub": ""}),
+    (["app", "open", "gitea"], "app", "main_open", ("gitea",), {"hub": ""}),
+    (["app", "stop", "gitea"], "app", "main_stop", ("gitea",), {"hub": ""}),
+    (
+        ["app", "set", "gitea", "--port", "web=8080", "--port", "ssh="],
+        "app",
+        "main_set",
+        ("gitea", ["web=8080", "ssh="]),
+        {"hub": ""},
+    ),
+    (["ai", "show"], "ai", "main_show", (), {"hub": ""}),
+    (["ai", "set"], "ai", "main_set", (), {"hub": ""}),
+    (["file", "list"], "file", "main_list", (), {"hub": ""}),
+    (
+        ["file", "mount", "gpu/alice"],
+        "file",
+        "main_mount",
+        ("gpu/alice",),
+        {"path": "", "drive": "", "hub": ""},
+    ),
+    (
+        ["file", "mount", "gpu", "--path", "/mnt/g"],
+        "file",
+        "main_mount",
+        ("gpu",),
+        {"path": "/mnt/g", "drive": "", "hub": ""},
+    ),
+    (
+        ["file", "mount", "gpu", "--drive", "Z:"],
+        "file",
+        "main_mount",
+        ("gpu",),
+        {"path": "", "drive": "Z:", "hub": ""},
+    ),
+    (["file", "unmount", "gpu"], "file", "main_unmount", ("gpu",), {"hub": ""}),
+    (["terminal", "list", "gpu"], "terminal", "main_list", ("gpu",), {"hub": ""}),
+    (
+        ["terminal", "open", "gpu", "--account", "lab"],
+        "terminal",
+        "main_open",
+        ("gpu",),
+        {"account": "lab", "hub": ""},
+    ),
+    (
+        ["terminal", "gpu"],
+        "terminal",
+        "main_open",
+        ("gpu",),
+        {"account": "", "hub": ""},
+    ),
+    (
+        ["terminal", "attach", "gpu", "3f2a"],
+        "terminal",
+        "main_attach",
+        ("gpu", "3f2a"),
+        {"hub": ""},
+    ),
+    (
+        ["terminal", "exec", "gpu", "--tty", "--", "htop", "-d", "5"],
+        "terminal",
+        "main_exec",
+        ("gpu", ["htop", "-d", "5"]),
+        {"account": "", "hub": "", "is_tty": True},
+    ),
+    (
+        ["terminal", "exec", "gpu", "--account", "ci", "--", "ls", "--", "-x"],
+        "terminal",
+        "main_exec",
+        ("gpu", ["ls", "--", "-x"]),
+        {"account": "ci", "hub": "", "is_tty": False},
+    ),
+    (
+        ["terminal", "set", "gpu", "3f2a", "--persist", "on", "--share", "off"],
+        "terminal",
+        "main_set",
+        ("gpu", "3f2a"),
+        {"is_persistent": True, "is_shared": False, "hub": ""},
+    ),
+    (
+        ["terminal", "set", "gpu", "3f2a", "--share", "on"],
+        "terminal",
+        "main_set",
+        ("gpu", "3f2a"),
+        {"is_persistent": None, "is_shared": True, "hub": ""},
+    ),
+    (
+        ["terminal", "stop", "gpu", "3f2a"],
+        "terminal",
+        "main_stop",
+        ("gpu", "3f2a"),
+        {"hub": ""},
+    ),
+    (["rdp", "list"], "rdp", "main_list", (), {"hub": ""}),
+    (["rdp", "connect", "gpu"], "rdp", "main_connect", ("gpu",), {"hub": ""}),
+    (["settings", "show"], "settings", "main_show", (), {}),
+    (
+        ["settings", "set", "language", "zh-CN"],
+        "settings",
+        "main_set",
+        ("language", "zh-CN"),
+        {},
+    ),
+]
+
+
+@pytest.mark.parametrize("argv, module, function, args, kwargs", DISPATCHED)
+def test_each_verb_reaches_its_command(
+    person, monkeypatch, argv, module, function, args, kwargs
+):
+    seen = []
+
+    def record(*given_args, **given_kwargs):
+        seen.append((given_args, given_kwargs))
+        return 0
+
+    monkeypatch.setattr(getattr(entry, module), function, record)
+
+    assert run(monkeypatch, argv) == 0
+    assert seen == [(args, kwargs)]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--hub", "office", "app", "open", "gitea"],
+        ["app", "--hub", "office", "open", "gitea"],
+        ["app", "open", "gitea", "--hub", "office"],
+    ],
+)
+def test_the_hub_is_named_before_the_group_after_it_or_after_the_verb(
+    person, monkeypatch, argv
+):
+    seen = []
+    monkeypatch.setattr(
+        entry.app, "main_open", lambda name, *, hub: seen.append((name, hub)) or 0
+    )
+
+    assert run(monkeypatch, argv) == 0
+    assert seen == [("gitea", "office")]
+
+
+def test_a_bare_machine_with_the_hub_named_first_is_open(person, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        entry.terminal,
+        "main_open",
+        lambda machine, *, account, hub: seen.append((machine, hub)) or 0,
+    )
+
+    assert run(monkeypatch, ["terminal", "--hub", "home", "gpu"]) == 0
+    assert seen == [("gpu", "home")]
+
+
+def test_the_gui_and_quit_reach_their_commands(person, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        entry.gui, "main", lambda *, is_hidden: seen.append(is_hidden) or 0
+    )
+    monkeypatch.setattr(
+        entry.quit, "main", lambda *, is_upgrade: seen.append(("quit", is_upgrade)) or 0
+    )
+
+    assert run(monkeypatch, ["gui", "--hidden"]) == 0
+    assert run(monkeypatch, ["quit"]) == 0
+    assert run(monkeypatch, ["quit", "--upgrade"]) == 0
+    assert seen == [True, ("quit", False), ("quit", True)]
+
+
 def test_the_version_answers_any_caller(monkeypatch, capsys):
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "--version"])
+    with pytest.raises(SystemExit) as ended:
+        run(monkeypatch, ["--version"])
 
-    with pytest.raises(SystemExit) as refusal:
-        entry.main()
-
-    assert refusal.value.code == 0
+    assert ended.value.code == 0
     assert CLIENT_VERSION in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("language, opening", [("en", "Usage: "), ("zh-CN", "用法：")])
+@pytest.mark.parametrize("level", help_pages.levels())
+def test_every_level_prints_its_help_in_the_clients_language(
+    person, monkeypatch, capsys, level, language, opening
+):
+    wording.fix_language(language)
+
+    with pytest.raises(SystemExit) as ended:
+        run(monkeypatch, level.split() + ["-h"])
+
+    assert ended.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith(opening + "nclient")
+    assert out.strip() == help_pages.CLIENT_HELP[language][level].strip()
+
+
+def test_every_level_of_the_tree_has_a_help_in_both_languages():
+    tree = {""} | {
+        group if verb is None else f"{group} {verb}"
+        for group, verb in [(key[0], key[1]) for key in entry.DISPATCH]
+    }
+    groups = {key[0].split()[0] for key in entry.DISPATCH} | {
+        "ssh config",
+        "gui",
+        "quit",
+    }
+
+    for level in tree | groups:
+        assert level in help_pages.CLIENT_HELP["en"], level
+        assert level in help_pages.CLIENT_HELP["zh-CN"], level
+    assert set(help_pages.CLIENT_HELP["en"]) == set(help_pages.CLIENT_HELP["zh-CN"])
+
+
+def test_each_help_says_what_it_does_under_its_usage_line():
+    for language in ("en", "zh-CN"):
+        for level, text in help_pages.CLIENT_HELP[language].items():
+            lines = text.splitlines()
+            assert len(lines) >= 3 and lines[1] == "" and lines[2], (language, level)
+
+
+def test_the_chinese_help_is_the_help_pages_own_words():
+    text = help_pages.CLIENT_HELP["zh-CN"]
+
+    assert (
+        text["file mount"].splitlines()[2] == "挂载一个共享。什么都不写就用默认位置："
+    )
+    assert (
+        "  --tty        给命令一个终端：要交互的程序（htop、vim、带进度条的）用它；"
+        in (text["terminal exec"])
+    )
+    assert "--hub <中枢>" in text[""]
+
+
 @pytest.mark.parametrize(
-    "argv",
-    [
-        ["join", "neutrino://enroll/x"],
-        ["leave"],
-        ["status"],
-        ["gui"],
-        ["quit"],
-        ["service", "list"],
-    ],
+    "group", ["ssh", "hub", "app", "ai", "file", "terminal", "rdp", "settings"]
 )
-def test_root_is_refused_with_a_typed_line(monkeypatch, capsys, argv):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
+def test_a_group_with_no_verb_prints_its_help(person, monkeypatch, capsys, group):
+    assert run(monkeypatch, [group]) == 2
 
-    assert entry.main() == 2
+    assert (
+        capsys.readouterr().out.strip() == help_pages.CLIENT_HELP["en"][group].strip()
+    )
 
-    assert wording.word_code("root_refused") in capsys.readouterr().err
+
+def test_ssh_config_with_no_verb_prints_its_help(person, monkeypatch, capsys):
+    assert run(monkeypatch, ["ssh", "config"]) == 2
+
+    assert (
+        capsys.readouterr().out.strip()
+        == help_pages.CLIENT_HELP["en"]["ssh config"].strip()
+    )
 
 
 def test_no_command_prints_the_help(monkeypatch, capsys):
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"])
+    monkeypatch.setattr(entry.sys, "platform", "linux")
 
-    assert entry.main() == 2
+    assert run(monkeypatch, []) == 2
 
-    out = capsys.readouterr().out
-    assert "join" in out and "leave" in out
-
-
-@pytest.mark.parametrize(
-    "argv, target, expected",
-    [
-        (["join", "L"], "join", (("L",), {})),
-        (["leave"], "leave", (("",), {"is_forced": False})),
-        (["leave", "--hub", "office"], "leave", (("office",), {"is_forced": False})),
-        (["leave", "--yes"], "leave", (("",), {"is_forced": True})),
-        (["status"], "status", ((), {"is_json": False})),
-        (["status", "--json"], "status", ((), {"is_json": True})),
-        (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
-        (["quit"], "quit", ((), {"is_upgrade": False})),
-        (["quit", "--upgrade"], "quit", ((), {"is_upgrade": True})),
-    ],
-)
-def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
-    calls = []
-
-    def record(*args, **kwargs):
-        calls.append((args, kwargs))
-        return 0
-
-    monkeypatch.setattr(getattr(entry, target), "main", record)
-
-    assert entry.main() == 0
-
-    assert calls[0] == expected
+    assert capsys.readouterr().out.startswith("Usage: nclient <command>")
 
 
 @pytest.mark.parametrize(
-    "argv, function, expected",
+    "argv, level",
     [
-        (
-            ["terminal", "lepton"],
-            "main_open",
-            (("lepton",), {"hub": "", "is_persistent": False, "is_shared": False}),
-        ),
-        (
-            ["terminal", "--hub", "home", "lepton", "--shared"],
-            "main_open",
-            (("lepton",), {"hub": "home", "is_persistent": False, "is_shared": True}),
-        ),
-        (
-            ["terminal", "open", "list", "--persistent"],
-            "main_open",
-            (("list",), {"hub": "", "is_persistent": True, "is_shared": False}),
-        ),
-        (["terminal", "list"], "main_list", ((), {"hub": "", "is_json": False})),
-        (
-            ["terminal", "list", "--json", "--hub", "home"],
-            "main_list",
-            ((), {"hub": "home", "is_json": True}),
-        ),
-        (
-            ["terminal", "attach", "lepton", "3f2a"],
-            "main_attach",
-            (("lepton", "3f2a"), {"hub": ""}),
-        ),
-        (
-            ["terminal", "exec", "lepton", "--", "git", "log", "--", "f", "--tty"],
-            "main_exec",
-            (
-                ("lepton", ["git", "log", "--", "f", "--tty"]),
-                {"hub": "", "is_tty": False},
-            ),
-        ),
-        (
-            ["terminal", "exec", "--tty", "--hub", "home", "lepton", "--", "top"],
-            "main_exec",
-            (("lepton", ["top"]), {"hub": "home", "is_tty": True}),
-        ),
-        (
-            ["terminal", "--hub", "home", "exec", "lepton", "--", "ls", "-la"],
-            "main_exec",
-            (("lepton", ["ls", "-la"]), {"hub": "home", "is_tty": False}),
-        ),
-        (
-            ["terminal", "exec", "lepton", "uptime"],
-            "main_exec",
-            (("lepton", ["uptime"]), {"hub": "", "is_tty": False}),
-        ),
-        (
-            ["terminal", "persist", "lepton", "3f2a", "--on"],
-            "main_persist",
-            (("lepton", "3f2a"), {"is_on": True, "hub": ""}),
-        ),
-        (
-            ["terminal", "share", "lepton", "3f2a", "--off", "--hub", "home"],
-            "main_share",
-            (("lepton", "3f2a"), {"is_on": False, "hub": "home"}),
-        ),
-        (
-            ["terminal", "stop", "lepton", "3f2a"],
-            "main_stop",
-            (("lepton", "3f2a"), {"hub": ""}),
-        ),
+        (["app", "open"], "app open"),
+        (["terminal", "set", "gpu"], "terminal set"),
+        (["terminal", "set", "gpu", "s", "--persist", "maybe"], "terminal set"),
+        (["file", "mount", "gpu", "--path", "/x", "--drive", "Z:"], "file mount"),
+        (["bogus"], ""),
     ],
 )
-def test_each_terminal_verb_reaches_its_command(monkeypatch, argv, function, expected):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
-    monkeypatch.setattr(wording, "other_holder", lambda: "")
-    calls = []
+def test_a_usage_error_prints_the_usage_line_and_where_the_help_is(
+    person, monkeypatch, capsys, argv, level
+):
+    with pytest.raises(SystemExit) as ended:
+        run(monkeypatch, argv)
 
-    def record(*args, **kwargs):
-        calls.append((args, kwargs))
-        return 0
-
-    monkeypatch.setattr(entry.terminal, function, record)
-
-    assert entry.main() == 0
-
-    assert calls == [expected]
+    assert ended.value.code == 2
+    err = capsys.readouterr().err.splitlines()
+    assert err[0] == help_pages.CLIENT_HELP["en"][level].splitlines()[0]
+    assert err[1] == f"see nclient {level} -h".replace("nclient  -h", "nclient -h")
 
 
 @pytest.mark.parametrize(
     "argv",
-    [
-        ["terminal", "lepton", "--session", "3f2a"],
-        ["terminal", "persist", "lepton", "3f2a"],
-        ["terminal", "share", "lepton", "3f2a", "--on", "--off"],
-    ],
+    [["service", "list"], ["status"], ["join", "neutrino://enroll/x"], ["leave"]],
 )
-def test_a_terminal_verb_given_what_it_does_not_take_is_a_usage_error(
-    monkeypatch, argv
-):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
+def test_the_levels_of_0_5_are_gone(person, monkeypatch, argv):
+    with pytest.raises(SystemExit) as ended:
+        run(monkeypatch, argv)
 
-    with pytest.raises(SystemExit) as refusal:
-        entry.main()
-
-    assert refusal.value.code == 2
-
-
-def test_terminal_without_a_verb_prints_its_help(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "terminal"])
-    monkeypatch.setattr(wording, "other_holder", lambda: "")
-
-    assert entry.main() == 2
-
-    out = capsys.readouterr().out
-    assert all(verb in out for verb in ("list", "attach", "exec", "share"))
+    assert ended.value.code == 2
 
 
 @pytest.mark.parametrize(
-    "argv, function, expected",
-    [
-        (["service", "list"], "main_list", ((), {"hub": ""})),
-        (["service", "list", "--hub", "office"], "main_list", ((), {"hub": "office"})),
-        (["service", "web", "open", "1"], "main_web_open", (("1",), {"hub": ""})),
-        (
-            ["service", "web", "open", "1", "--hub", "office"],
-            "main_web_open",
-            (("1",), {"hub": "office"}),
-        ),
-        (
-            ["service", "port", "forward", "1", "--local-port", "9000"],
-            "main_port",
-            (("1",), {"is_enabled": True, "local_port": 9000, "hub": ""}),
-        ),
-        (
-            ["service", "port", "unforward", "svc_tcp", "--hub", "home"],
-            "main_port",
-            (("svc_tcp",), {"is_enabled": False, "hub": "home"}),
-        ),
-        (
-            ["service", "file", "config", "1", "--path", "/p", "--username", "u"],
-            "main_file_config",
-            (("1",), {"path": "/p", "username": "u", "hub": ""}),
-        ),
-        (
-            ["service", "file", "mount", "1", "--hub", "home"],
-            "main_file_mount",
-            (("1",), {"hub": "home"}),
-        ),
-        (
-            ["service", "file", "unmount", "1"],
-            "main_file_unmount",
-            (("1",), {"hub": ""}),
-        ),
-        (["service", "ai", "show"], "main_ai_show", ((), {"hub": ""})),
-        (
-            ["service", "ai", "show", "--hub", "office"],
-            "main_ai_show",
-            ((), {"hub": "office"}),
-        ),
-        (
-            ["service", "rdp", "connect", "2"],
-            "main_desktop_connect",
-            (("2",), {"hub": ""}),
-        ),
-    ],
+    "argv", [["hub", "list"], ["gui"], ["quit"], ["ssh", "proxy", "gpu"]]
 )
-def test_each_service_verb_reaches_its_function(monkeypatch, argv, function, expected):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
-    calls = []
+def test_root_is_refused_with_a_typed_line(monkeypatch, capsys, argv):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0, raising=False)
+    wording.fix_language("en")
 
-    def record(*args, **kwargs):
-        calls.append((args, kwargs))
-        return 0
+    assert run(monkeypatch, argv) == 2
 
-    monkeypatch.setattr(entry.service, function, record)
-
-    assert entry.main() == 0
-    assert calls == [expected]
+    assert wording.word_code("root_refused") in capsys.readouterr().err
+    wording.fix_language("")
 
 
-def test_ai_apply_names_the_provider_and_the_knobs(monkeypatch):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+@pytest.mark.parametrize(
+    "argv",
+    [["hub", "list"], ["app", "open", "x"], ["terminal", "box"], ["ssh", "list"]],
+)
+def test_another_accounts_client_holding_the_machine_is_named(
+    monkeypatch, capsys, argv
+):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
     monkeypatch.setattr(
-        entry.sys,
-        "argv",
-        ["nclient", "service", "ai", "apply", "hub", "--claude-default", "m2"],
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": False}
     )
-    calls = []
+    wording.fix_language("en")
 
-    def record(**kwargs):
-        calls.append(kwargs)
-        return 0
+    assert run(monkeypatch, argv) == 1
 
-    monkeypatch.setattr(entry.service, "main_ai_apply", record)
+    err = capsys.readouterr().err
+    assert err.strip() == wording.word_code("client_held", {"account": "lab"})
+    assert err.count("\n") == 1
+    wording.fix_language("")
 
-    assert entry.main() == 0
-    assert calls[0]["is_enabled"] is True
-    assert calls[0]["claude_default"] == "m2"
-    assert calls[0]["codex_effort"] is None
-    assert calls[0]["hub"] == ""
 
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "service", "ai", "apply", "off"])
-    entry.main()
-    assert calls[1]["is_enabled"] is False
-
+def test_gui_and_quit_run_whoever_holds_the_machine(monkeypatch):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
     monkeypatch.setattr(
-        entry.sys,
-        "argv",
-        ["nclient", "service", "ai", "apply", "hub", "--hub", "office"],
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": False}
     )
-    entry.main()
-    assert calls[2]["hub"] == "office"
+    ran = []
+    monkeypatch.setattr(entry.gui, "main", lambda *, is_hidden: ran.append("gui") or 0)
+    monkeypatch.setattr(
+        entry.quit, "main", lambda *, is_upgrade: ran.append("quit") or 0
+    )
 
-
-def test_the_removed_verbs_are_gone(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    for argv in (
-        ["connect", "neutrino://enroll/x"],
-        ["disconnect"],
-        ["run"],
-        ["module", "list"],
-        ["operation"],
-        ["service", "rdp", "share"],
-    ):
-        monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
-        with pytest.raises(SystemExit) as refusal:
-            entry.main()
-        assert refusal.value.code == 2
-    assert "--account" not in capsys.readouterr().err
-
-
-def test_joining_asks_nothing_and_takes_no_yes(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "join", "L", "--yes"])
-
-    with pytest.raises(SystemExit) as refusal:
-        entry.main()
-
-    assert refusal.value.code == 2
-    assert "--yes" in capsys.readouterr().err
-
-
-def test_a_kind_without_an_action_prints_its_help(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "service", "web"])
-
-    assert entry.main() == 2
-    assert "open" in capsys.readouterr().out
+    assert run(monkeypatch, ["gui"]) == 0
+    assert run(monkeypatch, ["quit"]) == 0
+    assert ran == ["gui", "quit"]
 
 
 def test_the_windows_console_is_switched_to_utf8(monkeypatch):
@@ -363,10 +444,6 @@ def test_other_platforms_leave_the_console_alone(monkeypatch):
 
 
 def test_a_click_on_the_app_icon_opens_the_window(monkeypatch):
-    """Launch Services starts the bundle's binary with no verb; a click on
-    the icon means the window, never the usage text."""
-    from neutrino_client.cli import entry
-
     opened = []
     monkeypatch.setattr(entry.sys, "platform", "darwin")
     monkeypatch.setattr(
@@ -383,55 +460,54 @@ def test_a_click_on_the_app_icon_opens_the_window(monkeypatch):
     assert opened == [False]
 
 
-def test_a_bare_command_in_a_terminal_still_prints_the_usage(monkeypatch, capsys):
-    from neutrino_client.cli import entry
+# Each command a person types, and its exit status against a client that
+# runs and has joined no hub.
+UNBOUND = [
+    (["ssh", "list"], 0),
+    (["ssh", "open", "gpu"], 1),
+    (["ssh", "proxy", "gpu"], 1),
+    (["hub", "list"], 0),
+    (["hub", "leave", "home", "--yes"], 1),
+    (["hub", "open", "home"], 1),
+    (["app", "list"], 0),
+    (["app", "open", "gitea"], 1),
+    (["app", "stop", "gitea"], 1),
+    (["app", "set", "gitea", "--port", "web=8080"], 1),
+    (["ai", "show"], 0),
+    (["ai", "set"], 1),
+    (["file", "list"], 0),
+    (["file", "mount", "gpu"], 1),
+    (["file", "unmount", "gpu"], 1),
+    (["terminal", "list", "gpu"], 2),
+    (["terminal", "open", "gpu"], 2),
+    (["terminal", "attach", "gpu", "3f"], 2),
+    (["terminal", "exec", "gpu", "--", "ls"], 126),
+    (["terminal", "set", "gpu", "3f", "--share", "on"], 2),
+    (["terminal", "stop", "gpu", "3f"], 2),
+    (["rdp", "list"], 0),
+    (["rdp", "connect", "gpu"], 1),
+    (["settings", "show"], 0),
+]
 
-    monkeypatch.setattr(entry.sys, "platform", "linux")
-    monkeypatch.setattr(entry.sys, "argv", ["/usr/bin/nclient"])
 
-    assert entry.main() == 2
-    assert "usage" in capsys.readouterr().out.lower()
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["join", "neutrino://enroll/x"],
-        ["leave", "--yes"],
-        ["status"],
-        ["service", "list"],
-        ["terminal", "box"],
-    ],
-)
-def test_a_command_of_another_account_names_whose_client_holds_the_machine(
-    monkeypatch, capsys, argv
+@pytest.mark.parametrize("argv, status", UNBOUND)
+def test_every_command_against_a_client_bound_to_no_hub(
+    person, running, monkeypatch, capsys, argv, status
 ):
-    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
-    asked = []
+    from tests.cli.conftest import unbound_document
 
-    def ask_hold(verb):
-        asked.append(verb)
-        return {"holder": "lab", "is_holder": False}
+    running.state = unbound_document()
 
-    monkeypatch.setattr(wording, "ask_hold", ask_hold)
-
-    assert entry.main() == 1
-
-    captured = capsys.readouterr()
-    assert captured.err.strip() == wording.word_code("client_held", {"account": "lab"})
-    assert captured.err.count("\n") == 1
-    assert asked == ["holder"]
+    assert run(monkeypatch, argv) == status
+    assert "Traceback" not in capsys.readouterr().err
 
 
-def test_the_account_that_holds_the_machine_runs_its_commands(monkeypatch):
-    monkeypatch.setattr(entry.sys, "argv", ["nclient", "status"])
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
-    monkeypatch.setattr(
-        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": True}
-    )
-    ran = []
-    monkeypatch.setattr(entry.status, "main", lambda is_json: ran.append(1) or 0)
+@pytest.mark.parametrize("argv, status", UNBOUND)
+def test_every_command_with_no_running_client_says_so(
+    person, running, monkeypatch, capsys, argv, status
+):
+    running.is_running = False
 
-    assert entry.main() == 0
-    assert ran == [1]
+    expected = 125 if argv[:2] == ["terminal", "exec"] else 1
+    assert run(monkeypatch, argv) == expected
+    assert capsys.readouterr().err.strip() == wording.word_code("client_not_running")

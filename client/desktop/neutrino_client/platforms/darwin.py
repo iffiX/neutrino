@@ -4,8 +4,9 @@ The client runs as the person and asks the system to mount an SMB share as
 a network volume, the one the Finder's Connect to Server makes: ``osascript``
 runs ``mount volume`` with the script on its standard input, so the
 password is on no argument vector, and the system picks the mount point
-under ``/Volumes``, read back from the mount table. ``diskutil unmount``
-ejects it. The control channel is a
+under ``/Volumes``, read back from the mount table. The place the person
+chose, a directory under the home, is made a symbolic link to that volume,
+and removed at the unmount; ``diskutil unmount`` ejects the volume. The control channel is a
 Unix socket in the person's client directory, whose peer identity comes
 from the kernel's ``LOCAL_PEERCRED``. An EasyTier network is asked of the
 EasyTier daemon over its socket, which needs no administrator.
@@ -36,6 +37,7 @@ from neutrino_client.constants import (
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
     CLIENT_LOG_DIR_DARWIN,
+    CLIENT_TRANSPORT_SOCKET_NAME,
 )
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.platforms.base import (
@@ -158,7 +160,7 @@ class DarwinPlatform(ClientPlatform):
     """macOS behind the platform contract."""
 
     os_name = "darwin"
-    mount_location_shape = "volume"
+    mount_location_shape = "path"
 
     def config_dir(self) -> str:
         """``~/Library/Application Support/Neutrino/client``."""
@@ -201,6 +203,10 @@ class DarwinPlatform(ClientPlatform):
     def control_socket_path(self) -> str:
         """``~/Library/Application Support/Neutrino/client/client.sock``."""
         return os.path.join(self.config_dir(), CLIENT_CONTROL_SOCKET_NAME)
+
+    def transport_listen_path(self) -> str:
+        """``~/Library/Application Support/Neutrino/client/transport.sock``."""
+        return os.path.join(self.config_dir(), CLIENT_TRANSPORT_SOCKET_NAME)
 
     def read_peer_identity(self, connection) -> dict:
         """The peer's identity, from the kernel's ``LOCAL_PEERCRED``.
@@ -250,18 +256,51 @@ class DarwinPlatform(ClientPlatform):
         return DarwinProcessWatch(pid)
 
     def validate_mount_location(self, *, location: str) -> "dict | None":
-        """Accept any location: the system picks the mount point.
+        """Judge a place: an absolute path under the home.
 
         Args:
-            location: The proposed location; empty on this platform.
+            location: The proposed place.
 
         Returns:
-            None.
+            None when it is one, ``mountpoint_invalid`` otherwise.
         """
+        if not location or not os.path.isabs(location):
+            return {"code": "mountpoint_invalid", "params": {}}
+        home = os.path.realpath(self.home())
+        parent = os.path.realpath(os.path.dirname(os.path.normpath(location)))
+        if parent != home and not parent.startswith(home + os.sep):
+            return {"code": "mountpoint_invalid", "params": {}}
         return None
 
     def prepare_mount_location(self, *, location: str) -> "dict | None":
-        """A volume needs no preparation: the system makes its mount point."""
+        """Have a place ready to become a link to the volume.
+
+        Its parent is made; the place itself must be free, an empty
+        directory, or a link this client made, which a mount replaces.
+
+        Args:
+            location: The place.
+
+        Returns:
+            None when it is ready, otherwise the typed refusal.
+        """
+        if not location:
+            return None
+        if os.path.islink(location):
+            return None
+        if os.path.exists(location):
+            if not os.path.isdir(location):
+                return {"code": "mountpoint_not_empty", "params": {}}
+            try:
+                if os.listdir(location):
+                    return {"code": "mountpoint_not_empty", "params": {}}
+            except OSError:
+                return {"code": "fs_refused", "params": {}}
+            return None
+        try:
+            self.make_directory(path=os.path.dirname(location))
+        except OSError:
+            return {"code": "fs_refused", "params": {}}
         return None
 
     def has_mount_tooling(self) -> bool:
@@ -280,11 +319,11 @@ class DarwinPlatform(ClientPlatform):
         Args:
             share_url: The share, as ``//host/name``.
             port: The port the server answers SMB on; 0 for its own.
-            location: Unused; the system picks the mount point.
+            location: The place, made a symbolic link to the volume.
             credentials_path: The credentials file.
 
         Returns:
-            The mount point the system gave, read from the mount table.
+            The place.
 
         Raises:
             ShareAttachError: ``credentials_missing`` without the file; the
@@ -303,7 +342,7 @@ class DarwinPlatform(ClientPlatform):
             host = f"{host}:{int(port)}"
         mounted = self._volume_location(host, share)
         if mounted:
-            return mounted
+            return self._link_place(location, mounted)
         username, password = read_share_credentials(credentials_path)
         script = mount_volume_script(
             host=host, share=share, username=username, password=password
@@ -330,40 +369,48 @@ class DarwinPlatform(ClientPlatform):
             raise ShareAttachError(
                 "mount_failed", detail=f"//{host}/{share} is not in the mount table"
             )
-        return mounted
+        return self._link_place(location, mounted)
 
     def detach_share(self, *, location: str) -> None:
-        """Eject the volume at a mount point with ``diskutil unmount``.
+        """Eject the volume a place links to with ``diskutil unmount``, and
+        remove the link.
 
         Args:
-            location: The mount point.
+            location: The place, or a mount point itself.
 
         Raises:
             ShareAttachError: ``unmount_failed`` with the tool's own words.
         """
+        volume = os.path.realpath(location) if os.path.islink(location) else location
         try:
             result = run_quietly(
-                [UNMOUNT_TOOL, "unmount", location], timeout_s=UNMOUNT_TIMEOUT_S
+                [UNMOUNT_TOOL, "unmount", volume], timeout_s=UNMOUNT_TIMEOUT_S
             )
         except (OSError, subprocess.SubprocessError) as error:
             raise ShareAttachError("unmount_failed", detail=str(error)[:200])
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()[-200:]
             raise ShareAttachError("unmount_failed", detail=detail)
+        if os.path.islink(location):
+            try:
+                os.unlink(location)
+            except OSError:
+                pass
 
     def is_share_attached(self, *, location: str) -> bool:
-        """Whether anything is mounted at a location, read from ``mount``.
+        """Whether a place links to a volume the mount table lists.
 
         Args:
-            location: The mount point; empty before the system gave one.
+            location: The place, or a mount point itself.
 
         Returns:
-            True when the mount table names it.
+            True when the mount table names what it stands for.
         """
         if not location:
             return False
+        volume = os.path.realpath(location) if os.path.islink(location) else location
         for _source, mounted_at, _options in self._mount_table():
-            if mounted_at == location:
+            if mounted_at == volume:
                 return True
         return False
 
@@ -469,6 +516,29 @@ class DarwinPlatform(ClientPlatform):
             PlatformUnsupportedError: Where this interpreter has no pty.
         """
         return run_on_pty(argv, prompt=prompt, answer=answer, timeout_s=timeout_s)
+
+    def _link_place(self, location: str, volume: str) -> str:
+        """Make a place a symbolic link to a volume, replacing an empty
+        directory or an older link there.
+
+        Returns:
+            The place; the volume itself when no place is given.
+
+        Raises:
+            ShareAttachError: ``mountpoint_not_empty`` when the place holds
+                anything else.
+        """
+        if not location:
+            return volume
+        try:
+            if os.path.islink(location):
+                os.unlink(location)
+            elif os.path.isdir(location):
+                os.rmdir(location)
+            os.symlink(volume, location)
+        except OSError as error:
+            raise ShareAttachError("mountpoint_not_empty", detail=str(error)[:200])
+        return location
 
     def _mount_table(self) -> list:
         """The mount table as ``(source, location, options)``; empty when unreadable."""

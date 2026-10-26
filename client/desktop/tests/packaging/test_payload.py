@@ -70,7 +70,7 @@ def test_the_client_tree_is_staged_with_its_version_stamped_in(tmp_path):
     staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
 
     assert (staged / "cli" / "entry.py").is_file()
-    assert (staged / "core" / "ws_client.py").is_file()
+    assert (staged / "core" / "transport.py").is_file()
     assert 'CLIENT_VERSION = "9.9.9"' in (staged / "_version.py").read_text()
 
 

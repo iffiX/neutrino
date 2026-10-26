@@ -29,6 +29,7 @@ from neutrino_client.constants import (
     CLIENT_AGENT_PROGRAM_DIR_LINUX,
     CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
+    CLIENT_TRANSPORT_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_LINUX,
     CLIENT_EASYTIER_STATE_DIR_LINUX,
     CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
@@ -146,6 +147,18 @@ class LinuxPlatform(ClientPlatform):
         if not runtime_dir:
             raise ControlSocketUnavailableError("XDG_RUNTIME_DIR is not set")
         return os.path.join(runtime_dir, SOCKET_DIR_NAME, CLIENT_CONTROL_SOCKET_NAME)
+
+    def transport_listen_path(self) -> str:
+        """``$XDG_RUNTIME_DIR/neutrino/transport.sock``.
+
+        Raises:
+            ControlSocketUnavailableError: When the runtime directory is
+                not set.
+        """
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
+        if not runtime_dir:
+            raise ControlSocketUnavailableError("XDG_RUNTIME_DIR is not set")
+        return os.path.join(runtime_dir, SOCKET_DIR_NAME, CLIENT_TRANSPORT_SOCKET_NAME)
 
     def read_peer_identity(self, connection) -> dict:
         """The peer's identity, from the kernel's ``SO_PEERCRED``.

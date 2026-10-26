@@ -49,6 +49,7 @@ STORE_MOUNT_KEYS = (
     "username",
     "path",
     "is_own_machine",
+    "is_declared",
 )
 # How often, and how far apart, a replace the system refuses with the
 # file held open is tried.
@@ -390,6 +391,18 @@ class ClientServiceStore:
 
         def change(data: dict) -> None:
             data["local_ports"][key] = record
+
+        self._mutate(change)
+
+    def remove_local_port(self, key: str) -> None:
+        """Drop one entry's local port record.
+
+        Args:
+            key: The entry's service key.
+        """
+
+        def change(data: dict) -> None:
+            data["local_ports"].pop(key, None)
 
         self._mutate(change)
 

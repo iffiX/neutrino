@@ -44,6 +44,23 @@ def pipe_security_sddl(owner_sid: str) -> str:
     return f"D:(A;;GA;;;{owner_sid})(A;;{PIPE_ADMINISTRATORS_ACCESS};;;BA)"
 
 
+def open_duplex_pipe(pipe_name: str, *, api=None) -> "DuplexPipeConnection":
+    """Dial a pipe as a client to read and write at once, as the transport's is.
+
+    Args:
+        pipe_name: The pipe to open.
+        api: The Win32 seam; None uses the real one.
+
+    Returns:
+        A connection with ``recv``, ``sendall``, ``shutdown`` and ``close``.
+
+    Raises:
+        OSError: When nothing answers on the pipe.
+    """
+    pipe_api = api if api is not None else Win32PipeApi()
+    return DuplexPipeConnection(api=pipe_api, handle=pipe_api.open_duplex(pipe_name))
+
+
 def open_pipe_connection(pipe_name: str, *, api=None) -> "PipeConnection":
     """Dial the resident's control pipe as a client.
 
@@ -148,6 +165,105 @@ class Win32PipeApi:
         if not handle or handle == win32.INVALID_HANDLE_VALUE:
             raise ctypes.WinError(ctypes.get_last_error())
         return handle
+
+    def open_duplex(self, pipe_name: str) -> int:
+        """Open the pipe as a client for overlapped reads and writes.
+
+        Args:
+            pipe_name: The pipe name.
+
+        Returns:
+            The client handle.
+
+        Raises:
+            OSError: When the pipe cannot be opened.
+        """
+        handle = self._kernel32.CreateFileW(
+            pipe_name,
+            win32.GENERIC_READ | win32.GENERIC_WRITE,
+            0,
+            None,
+            win32.OPEN_EXISTING,
+            win32.FILE_FLAG_OVERLAPPED,
+            None,
+        )
+        if not handle or handle == win32.INVALID_HANDLE_VALUE:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return handle
+
+    def read_overlapped(self, handle: int, size: int) -> bytes:
+        """Read up to ``size`` bytes, waiting for them; an ended pipe reads empty.
+
+        Args:
+            handle: A handle opened by :meth:`open_duplex`.
+            size: The most to read.
+
+        Returns:
+            The bytes read, empty at end of stream or once cancelled.
+
+        Raises:
+            OSError: On any other read failure.
+        """
+        buffer = ctypes.create_string_buffer(size)
+        done = self._overlapped(self._kernel32.ReadFile, handle, buffer, size)
+        return buffer.raw[:done]
+
+    def write_overlapped(self, handle: int, data: bytes) -> None:
+        """Write every byte, waiting for each write.
+
+        Args:
+            handle: A handle opened by :meth:`open_duplex`.
+            data: What to write.
+
+        Raises:
+            OSError: When the pipe refuses the write or has ended.
+        """
+        view = memoryview(data)
+        while view:
+            chunk = bytes(view)
+            done = self._overlapped(self._kernel32.WriteFile, handle, chunk, len(chunk))
+            if not done:
+                raise ctypes.WinError(win32.ERROR_BROKEN_PIPE)
+            view = view[done:]
+
+    def cancel(self, handle: int) -> None:
+        """Cancel every read and write waiting on a handle. Best-effort."""
+        self._kernel32.CancelIoEx(handle, None)
+
+    def _overlapped(self, call, handle: int, buffer, size: int) -> int:
+        """Run one overlapped ``ReadFile`` or ``WriteFile`` and wait for its
+        count; an ended pipe counts 0.
+
+        Raises:
+            OSError: When the call fails for any other reason.
+        """
+        event = self._kernel32.CreateEventW(None, True, False, None)
+        if not event:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            overlapped = win32.Overlapped()
+            overlapped.hEvent = event
+            if not call(handle, buffer, size, None, ctypes.byref(overlapped)):
+                code = ctypes.get_last_error()
+                if code in (win32.ERROR_BROKEN_PIPE, win32.ERROR_NO_DATA):
+                    return 0
+                if code != win32.ERROR_IO_PENDING:
+                    raise ctypes.WinError(code)
+            count = win32.DWORD(0)
+            if not self._kernel32.GetOverlappedResult(
+                handle, ctypes.byref(overlapped), ctypes.byref(count), True
+            ):
+                code = ctypes.get_last_error()
+                if code in (
+                    win32.ERROR_BROKEN_PIPE,
+                    win32.ERROR_NO_DATA,
+                    win32.ERROR_OPERATION_ABORTED,
+                ):
+                    return 0
+                raise ctypes.WinError(code)
+            return count.value
+        finally:
+            self._kernel32.CloseHandle(event)
 
     def read(self, handle: int, size: int) -> bytes:
         """Read up to ``size`` bytes; a broken pipe reads as end of stream.
@@ -326,6 +442,55 @@ class PipeConnection:
         if self._is_server_end:
             self._api.disconnect(self.pipe_handle)
         self._api.close(self.pipe_handle)
+
+
+class DuplexPipeConnection:
+    """One client end of a pipe, read and written at once from two threads."""
+
+    def __init__(self, *, api, handle: int):
+        """
+        Args:
+            api: The Win32 seam.
+            handle: A handle opened for overlapped reads and writes.
+        """
+        self._api = api
+        self._handle = handle
+        self._lock = threading.Lock()
+        self._is_closed = False
+
+    def recv(self, size: int) -> bytes:
+        """Up to ``size`` bytes; empty at the end.
+
+        Raises:
+            OSError: On a read failure.
+        """
+        if self._is_closed:
+            return b""
+        return self._api.read_overlapped(self._handle, size)
+
+    def sendall(self, data: bytes) -> None:
+        """Write every byte.
+
+        Raises:
+            OSError: When the pipe has ended or refuses.
+        """
+        if self._is_closed:
+            raise OSError("the pipe is closed")
+        self._api.write_overlapped(self._handle, bytes(data))
+
+    def shutdown(self, how) -> None:
+        """Wake every read and write waiting on the pipe."""
+        if not self._is_closed:
+            self._api.cancel(self._handle)
+
+    def close(self) -> None:
+        """Close the handle, once."""
+        with self._lock:
+            if self._is_closed:
+                return
+            self._is_closed = True
+        self._api.cancel(self._handle)
+        self._api.close(self._handle)
 
 
 class ControlPipeHttpServer:

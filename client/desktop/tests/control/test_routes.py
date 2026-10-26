@@ -14,14 +14,14 @@ from neutrino_client.platforms.darwin import DarwinPlatform
 from tests.conftest import FakeClientPlatform, FakeResident, discard
 
 
-def test_the_state_on_a_mac_offers_a_volume_and_no_place():
+def test_the_state_on_a_mac_offers_a_place_under_the_home():
     resident = ClientResident(log=discard, platform=DarwinPlatform())
     try:
         _status, state = routes.dispatch("GET", "/api/state", None, resident)
     finally:
         resident.shutdown()
 
-    assert state["mount_location_shape"] == "volume"
+    assert state["mount_location_shape"] == "path"
     assert state["mount_location_suggestion"] == ""
     assert state["mount_location_choices"] == []
 
@@ -196,29 +196,73 @@ def test_service_actions_carry_only_the_body():
     assert "services" in state
 
 
-def test_a_local_port_setting_reaches_the_resident_and_answers_the_state():
+def test_an_apps_presses_reach_the_resident_and_answer_the_state():
+    resident = FakeResident()
+
+    for path in ("/api/app/open", "/api/app/stop"):
+        status, state = routes.dispatch(
+            "POST", path, {"hub_id": "h1", "app_id": "gitea_d1"}, resident
+        )
+        assert status == 200 and "apps" in state
+    assert resident.app_calls == [
+        ("open", "h1", "gitea_d1"),
+        ("stop", "h1", "gitea_d1"),
+    ]
+
+
+def test_an_apps_local_ports_reach_the_resident_and_a_refusal_answers_its_code():
     resident = FakeResident()
 
     status, state = routes.dispatch(
         "POST",
-        "/api/forward/configure",
-        {"hub_id": "h1", "id": "svc_tcp", "local_port": 15432},
+        "/api/app/set",
+        {"hub_id": "h1", "app_id": "gitea_d1", "ports": {"web": 25001, "ssh": None}},
         resident,
     )
     assert status == 200 and "services" in state
-    resident.forward_reply = {"code": "port_taken", "params": {"port": 15432}}
+    resident.forward_reply = {"code": "port_taken", "params": {"port": 25001}}
     status, reply = routes.dispatch(
         "POST",
-        "/api/forward/configure",
-        {"hub_id": "h1", "id": "svc_web", "local_port": "auto"},
+        "/api/app/set",
+        {"hub_id": "h1", "app_id": "gitea_d1", "ports": "not a map"},
         resident,
     )
-
     assert (status, reply["code"]) == (400, "port_taken")
-    assert resident.forward_settings == [
-        ("h1", "svc_tcp", 15432),
-        ("h1", "svc_web", "auto"),
+    resident.forward_reply = {"code": "app_in_use", "params": {}}
+    status, reply = routes.dispatch(
+        "POST", "/api/app/set", {"hub_id": "h1", "app_id": "gitea_d1"}, resident
+    )
+    assert (status, reply["code"]) == (409, "app_in_use")
+    resident.forward_reply = {"code": "unknown_app", "params": {}}
+    status, reply = routes.dispatch(
+        "POST", "/api/app/open", {"hub_id": "h1", "app_id": "nothing"}, resident
+    )
+    assert (status, reply["code"]) == (404, "unknown_app")
+    assert resident.forward_settings[:2] == [
+        ("h1", "gitea_d1", {"web": 25001, "ssh": None}),
+        ("h1", "gitea_d1", {}),
     ]
+
+
+def test_the_ssh_configuration_is_read_back():
+    status, reply = routes.dispatch("GET", "/api/ssh/config", None, FakeResident())
+
+    assert status == 200
+    assert reply == {
+        "path": "/home/alice/.ssh/neutrino_config",
+        "text": "Host lab.nt\n",
+    }
+
+
+def test_an_ssh_proxy_answers_101_naming_its_stream():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST", "/api/ssh/proxy", {"hub_id": "h1", "entry_id": "ssh_d1_lab"}, resident
+    )
+
+    assert (status, reply) == (101, {"terminal_id": "t1"})
+    assert resident.terminal_calls == [("ssh_proxy", "h1", "ssh_d1_lab")]
 
 
 def test_an_about_link_opens_in_the_browser_and_nothing_but_https_does():
@@ -391,16 +435,33 @@ def test_the_state_names_the_language_every_surface_words_itself_in():
     assert state["language"] == "zh-CN"
 
 
-def test_picking_a_language_keeps_it_and_answers_the_new_state():
+def test_saving_the_settings_keeps_them_and_answers_the_new_state():
     resident = FakeResident()
 
     status, state = routes.dispatch(
-        "POST", "/api/language", {"language": "zh-CN"}, resident
+        "POST",
+        "/api/settings/set",
+        {"language": "zh-CN", "theme": "light", "is_ssh_include_enabled": True},
+        resident,
     )
 
     assert status == 200
-    assert resident.language_value == "zh-CN"
-    assert state["language"] == "zh-CN"
+    assert (state["language"], state["theme"]) == ("zh-CN", "light")
+    assert state["is_ssh_include_enabled"] is True
+
+
+def test_a_setting_value_the_setting_does_not_take_is_refused():
+    resident = FakeResident()
+    resident.settings_reply = {
+        "code": "setting_value_unknown",
+        "params": {"name": "theme", "value": "pink"},
+    }
+
+    status, reply = routes.dispatch(
+        "POST", "/api/settings/set", {"theme": "pink"}, resident
+    )
+
+    assert (status, reply["code"]) == (400, "setting_value_unknown")
 
 
 def test_the_state_names_the_theme_the_window_draws_itself_in():
@@ -409,16 +470,6 @@ def test_the_state_names_the_theme_the_window_draws_itself_in():
 
     _status, state = routes.dispatch("GET", "/api/state", None, resident)
 
-    assert state["theme"] == "light"
-
-
-def test_picking_a_theme_keeps_it_and_answers_the_new_state():
-    resident = FakeResident()
-
-    status, state = routes.dispatch("POST", "/api/theme", {"theme": "light"}, resident)
-
-    assert status == 200
-    assert resident.theme_value == "light"
     assert state["theme"] == "light"
 
 

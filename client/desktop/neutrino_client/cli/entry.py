@@ -1,21 +1,23 @@
-"""The ``nclient`` command.
+"""The ``nclient`` command: one command for each button of the window.
 
 Most people never see this: the client installs with a desktop entry that
-runs ``nclient gui``, which is the resident and its window. These commands
-do the same things from a terminal.
+runs ``nclient gui``, which is the resident and its window. The groups
+follow the window's pages, with the program itself and ``ssh`` above them:
 
-    nclient join neutrino://enroll/...
-    nclient leave [--hub <name>] [--yes]
-    nclient status [--json]
-    nclient gui [--hidden]
-    nclient quit
-    nclient service list | <kind> <action> [--hub <name>]
-    nclient terminal list | open | attach | exec | persist | share | stop
+    nclient gui | quit
+    nclient ssh list | open | config show|install|uninstall | proxy
+    nclient hub list | join | leave | open
+    nclient app list | open | stop | set
+    nclient ai show | set
+    nclient file list | mount | unmount
+    nclient terminal list | open | attach | exec | set | stop
+    nclient rdp list | connect
+    nclient settings show | set
 
-The client runs as a person and never as root. The exceptions are
-``nclient easytier-daemon``, which the system starts as root, or as SYSTEM
-with ``--service`` on Windows, and ``nclient files-daemon``, which Windows
-starts as SYSTEM with ``--service``; no person runs either.
+Every level prints its help with ``-h``, in the client's language. The
+client runs as a person and never as root. The exceptions are ``nclient
+easytier-daemon`` and ``nclient files-daemon``, the services the package
+installs, which no person runs.
 """
 
 import argparse
@@ -24,14 +26,18 @@ import sys
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import (
+    ai,
+    app,
     easytier_daemon,
+    file,
     files_daemon,
     gui,
-    join,
-    leave,
+    help_pages,
+    hub,
     quit,
-    service,
-    status,
+    rdp,
+    settings,
+    ssh,
     terminal,
     wording,
 )
@@ -39,58 +45,93 @@ from neutrino_client.constants import (
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_FILES_DAEMON_VERB,
 )
-from neutrino_client.services.ai import AI_REASONING_EFFORTS
 
-AI_PROVIDER_HUB = "hub"
-AI_PROVIDER_OFF = "off"
-# The one option of ``nclient terminal``'s verbs that takes a value.
-TERMINAL_VALUE_OPTIONS = ("--hub",)
-# What separates ``exec``'s own arguments from the command.
-TERMINAL_COMMAND_SEPARATOR = "--"
+# What separates a command's own arguments from the command it runs.
+COMMAND_SEPARATOR = "--"
+# The levels whose words after ``--`` are a command to run.
+COMMAND_LEVELS = (("terminal", "exec"), ("ssh", "open"))
+# The options of ``nclient terminal``'s verbs that take a value.
+TERMINAL_VALUE_OPTIONS = ("--hub", "--account", "--persist", "--share")
+# The values a session switch takes.
+SWITCH_VALUES = ("on", "off")
+# The commands that run whoever holds the machine.
+UNHELD_COMMANDS = ("gui", "quit")
+# What Launch Services passes a program it opens: a process serial number on
+# older macOS, nothing on newer ones.
+LAUNCH_SERVICES_ARGUMENT_PREFIX = "-psn_"
+
+
+class CliHelpAction(argparse.Action):
+    """``-h``: print one level's help in the client's language, and exit 0."""
+
+    def __init__(self, option_strings, dest, level: str = "", **kwargs):
+        """
+        Args:
+            option_strings: ``-h`` and ``--help``.
+            dest: The name argparse gives the action.
+            level: The words of the command the help is for.
+            **kwargs: What argparse passes on.
+        """
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+        self.level = level
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        """Print the help and end the process.
+
+        Args:
+            parser: The parser the option was given to.
+            namespace: What was parsed so far.
+            values: Nothing.
+            option_string: ``-h`` or ``--help``.
+        """
+        print(wording.console_text(help_pages.page(self.level)))
+        parser.exit(0)
+
+
+class CliArgumentParser(argparse.ArgumentParser):
+    """A parser whose help and whose usage errors are the client's own words."""
+
+    def __init__(self, *args, level: str = "", **kwargs):
+        """
+        Args:
+            *args: What argparse takes.
+            level: The words of the command this parser reads.
+            **kwargs: What argparse takes.
+        """
+        kwargs["add_help"] = False
+        super().__init__(*args, **kwargs)
+        self.level = level
+        self.add_argument("-h", "--help", action=CliHelpAction, level=level)
+
+    def print_help(self, file=None):
+        """Print this level's help in the client's language.
+
+        Args:
+            file: Where to print; None is stdout.
+        """
+        print(wording.console_text(help_pages.page(self.level)), file=file)
+
+    def error(self, message):
+        """Print this level's usage line and where its help is, and exit 2.
+
+        Args:
+            message: argparse's own words, which are not printed.
+        """
+        command = f"nclient {self.level}".strip()
+        wording.say(help_pages.page(self.level).splitlines()[0], is_error=True)
+        wording.say(wording.line("see_help", command=command), is_error=True)
+        self.exit(2)
 
 
 def main() -> int:
-    """Dispatch to a subcommand.
+    """Dispatch to a command.
 
     Returns:
-        The subcommand's exit status.
+        The command's exit status.
     """
     _use_utf8_console()
-    parser = argparse.ArgumentParser(
-        prog="nclient", description=__doc__.splitlines()[0]
-    )
-    parser.add_argument("--version", action="version", version=CLIENT_VERSION)
-    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
-
-    join_parser = subparsers.add_parser("join", help="join the hub a link names")
-    join_parser.add_argument(
-        "link",
-        nargs="?",
-        default="",
-        help="the neutrino://enroll link from the hub; omit it to paste at "
-        "a prompt instead",
-    )
-    leave_parser = subparsers.add_parser("leave", help="leave one hub")
-    _add_hub_argument(leave_parser)
-    leave_parser.add_argument("--yes", action="store_true", help="leave without asking")
-    status_parser = subparsers.add_parser("status", help="what this person is bound to")
-    status_parser.add_argument(
-        "--json", action="store_true", help="print one JSON object"
-    )
-    gui_parser = subparsers.add_parser("gui", help="run the client and its window")
-    gui_parser.add_argument(
-        "--hidden", action="store_true", help="start without showing the window"
-    )
-    quit_parser = subparsers.add_parser("quit", help="stop the running client")
-    quit_parser.add_argument("--upgrade", action="store_true", help=argparse.SUPPRESS)
-    terminal_parser = _add_terminal_parser(subparsers)
-    service_parser, service_kind_parsers = _add_service_parser(subparsers)
-    daemon_parser = subparsers.add_parser(CLIENT_EASYTIER_DAEMON_VERB)
-    daemon_parser.add_argument("--service", action="store_true")
-    files_daemon_parser = subparsers.add_parser(CLIENT_FILES_DAEMON_VERB)
-    files_daemon_parser.add_argument("--service", action="store_true")
-
-    argv, command = _split_terminal_argv(_argv_without_launch_services())
+    parser, levels = _parser()
+    argv, command = _split_argv(_argv_without_launch_services())
     arguments = parser.parse_args(argv)
     if not arguments.command:
         if _is_opened_as_app():
@@ -102,34 +143,373 @@ def main() -> int:
     if arguments.command == CLIENT_FILES_DAEMON_VERB:
         return files_daemon.main(is_service=arguments.service)
     if hasattr(os, "geteuid") and os.geteuid() == 0:
-        print(wording.word_code("root_refused"), file=sys.stderr)
+        wording.refuse("root_refused")
         return 2
-    if arguments.command not in ("gui", "quit"):
+    if arguments.command not in UNHELD_COMMANDS:
         holder = wording.other_holder()
         if holder:
-            print(
-                wording.word_code("client_held", {"account": holder}),
-                file=sys.stderr,
-            )
+            wording.refuse("client_held", {"account": holder})
             return 1
-    if arguments.command == "join":
-        return join.main(arguments.link)
-    if arguments.command == "leave":
-        return leave.main(arguments.hub, is_forced=arguments.yes)
+    hub_name = (
+        getattr(arguments, "hub", "")
+        or getattr(arguments, "group_hub", "")
+        or arguments.top_hub
+    )
     if arguments.command == "gui":
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
         return quit.main(is_upgrade=arguments.upgrade)
-    if arguments.command == "terminal":
-        return _run_terminal(arguments, terminal_parser, command)
-    if arguments.command == "service":
-        return _run_service(arguments, service_parser, service_kind_parsers)
-    return status.main(is_json=arguments.json)
+    verb = getattr(arguments, "verb", None)
+    if not verb:
+        levels[arguments.command].print_help()
+        return 2
+    run = DISPATCH.get((arguments.command, verb))
+    if arguments.command == "ssh" and verb == "config":
+        run = DISPATCH.get(("ssh config", arguments.config_verb))
+        if run is None:
+            levels["ssh config"].print_help()
+            return 2
+    return run(arguments, hub_name, command or [])
 
 
-# What Launch Services passes a program it opens: a process serial number on
-# older macOS, nothing on newer ones.
-LAUNCH_SERVICES_ARGUMENT_PREFIX = "-psn_"
+def _parser():
+    """The whole ``nclient`` tree.
+
+    Returns:
+        ``(parser, levels)``: the top parser, and each group's parser by its
+        words, for its help on a missing verb.
+    """
+    parser = CliArgumentParser(prog="nclient", level="")
+    parser.add_argument("--version", action="version", version=CLIENT_VERSION)
+    parser.add_argument("--hub", dest="top_hub", default="", metavar="<hub>")
+    commands = parser.add_subparsers(dest="command", metavar="<command>")
+    levels = {}
+    gui_parser = commands.add_parser("gui", level="gui")
+    gui_parser.add_argument("--hidden", action="store_true")
+    quit_parser = commands.add_parser("quit", level="quit")
+    quit_parser.add_argument("--upgrade", action="store_true")
+
+    ssh_parser = _group(commands, levels, "ssh")
+    verbs = ssh_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "ssh", "list")
+    _leaf(verbs, "ssh", "open").add_argument("target")
+    config_parser = _leaf(verbs, "ssh", "config", has_hub=False)
+    levels["ssh config"] = config_parser
+    config_verbs = config_parser.add_subparsers(dest="config_verb")
+    for config_verb in ("show", "install", "uninstall"):
+        _leaf(config_verbs, "ssh config", config_verb, has_hub=False)
+    _leaf(verbs, "ssh", "proxy").add_argument("target")
+
+    hub_parser = _group(commands, levels, "hub")
+    verbs = hub_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "hub", "list", has_hub=False)
+    _leaf(verbs, "hub", "join", has_hub=False).add_argument(
+        "link", nargs="?", default=""
+    )
+    leave_parser = _leaf(verbs, "hub", "leave", has_hub=False)
+    leave_parser.add_argument("hub_name")
+    leave_parser.add_argument("--yes", action="store_true")
+    _leaf(verbs, "hub", "open", has_hub=False).add_argument("hub_name")
+
+    app_parser = _group(commands, levels, "app")
+    verbs = app_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "app", "list")
+    _leaf(verbs, "app", "open").add_argument("app")
+    _leaf(verbs, "app", "stop").add_argument("app")
+    set_parser = _leaf(verbs, "app", "set")
+    set_parser.add_argument("app")
+    set_parser.add_argument("--port", action="append", default=[])
+
+    ai_parser = _group(commands, levels, "ai")
+    verbs = ai_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "ai", "show")
+    _leaf(verbs, "ai", "set")
+
+    file_parser = _group(commands, levels, "file")
+    verbs = file_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "file", "list")
+    mount_parser = _leaf(verbs, "file", "mount")
+    mount_parser.add_argument("share")
+    place = mount_parser.add_mutually_exclusive_group()
+    place.add_argument("--path", default="")
+    place.add_argument("--drive", default="")
+    _leaf(verbs, "file", "unmount").add_argument("share")
+
+    terminal_parser = _group(commands, levels, "terminal")
+    verbs = terminal_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "terminal", "list").add_argument("machine")
+    open_parser = _leaf(verbs, "terminal", "open")
+    open_parser.add_argument("machine")
+    open_parser.add_argument("--account", default="")
+    attach_parser = _leaf(verbs, "terminal", "attach")
+    attach_parser.add_argument("machine")
+    attach_parser.add_argument("session")
+    exec_parser = _leaf(verbs, "terminal", "exec")
+    exec_parser.add_argument("machine")
+    exec_parser.add_argument("exec_command", nargs="*")
+    exec_parser.add_argument("--account", default="")
+    exec_parser.add_argument("--tty", action="store_true")
+    session_set = _leaf(verbs, "terminal", "set")
+    session_set.add_argument("machine")
+    session_set.add_argument("session")
+    session_set.add_argument("--persist", choices=SWITCH_VALUES, default=None)
+    session_set.add_argument("--share", choices=SWITCH_VALUES, default=None)
+    stop_parser = _leaf(verbs, "terminal", "stop")
+    stop_parser.add_argument("machine")
+    stop_parser.add_argument("session")
+
+    rdp_parser = _group(commands, levels, "rdp")
+    verbs = rdp_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "rdp", "list")
+    _leaf(verbs, "rdp", "connect").add_argument("machine")
+
+    settings_parser = _group(commands, levels, "settings")
+    verbs = settings_parser.add_subparsers(dest="verb")
+    _leaf(verbs, "settings", "show", has_hub=False)
+    settings_set = _leaf(verbs, "settings", "set", has_hub=False)
+    settings_set.add_argument("name")
+    settings_set.add_argument("value")
+
+    daemon_parser = commands.add_parser(CLIENT_EASYTIER_DAEMON_VERB, level="")
+    daemon_parser.add_argument("--service", action="store_true")
+    files_daemon_parser = commands.add_parser(CLIENT_FILES_DAEMON_VERB, level="")
+    files_daemon_parser.add_argument("--service", action="store_true")
+    return parser, levels
+
+
+def _group(commands, levels: dict, name: str):
+    """One group's parser, kept by its name for its help."""
+    group = commands.add_parser(name, level=name)
+    group.add_argument("--hub", dest="group_hub", default="")
+    levels[name] = group
+    return group
+
+
+def _leaf(verbs, group: str, verb: str, *, has_hub: bool = True):
+    """One verb's parser, with ``--hub`` where the verb names a hub's things."""
+    leaf = verbs.add_parser(verb, level=f"{group} {verb}")
+    if has_hub:
+        leaf.add_argument("--hub", default="")
+    return leaf
+
+
+def _run_ssh_list(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_list(hub=hub_name)
+
+
+def _run_ssh_open(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_open(arguments.target, command, hub=hub_name)
+
+
+def _run_ssh_proxy(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_proxy(arguments.target, hub=hub_name)
+
+
+def _run_ssh_config_show(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_config_show()
+
+
+def _run_ssh_config_install(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_config_install(is_installed=True)
+
+
+def _run_ssh_config_uninstall(arguments, hub_name: str, command: list) -> int:
+    return ssh.main_config_install(is_installed=False)
+
+
+def _run_hub_list(arguments, hub_name: str, command: list) -> int:
+    return hub.main_list()
+
+
+def _run_hub_join(arguments, hub_name: str, command: list) -> int:
+    return hub.main_join(arguments.link)
+
+
+def _run_hub_leave(arguments, hub_name: str, command: list) -> int:
+    return hub.main_leave(arguments.hub_name, is_forced=arguments.yes)
+
+
+def _run_hub_open(arguments, hub_name: str, command: list) -> int:
+    return hub.main_open(arguments.hub_name)
+
+
+def _run_app_list(arguments, hub_name: str, command: list) -> int:
+    return app.main_list(hub=hub_name)
+
+
+def _run_app_open(arguments, hub_name: str, command: list) -> int:
+    return app.main_open(arguments.app, hub=hub_name)
+
+
+def _run_app_stop(arguments, hub_name: str, command: list) -> int:
+    return app.main_stop(arguments.app, hub=hub_name)
+
+
+def _run_app_set(arguments, hub_name: str, command: list) -> int:
+    return app.main_set(arguments.app, list(arguments.port), hub=hub_name)
+
+
+def _run_ai_show(arguments, hub_name: str, command: list) -> int:
+    return ai.main_show(hub=hub_name)
+
+
+def _run_ai_set(arguments, hub_name: str, command: list) -> int:
+    return ai.main_set(hub=hub_name)
+
+
+def _run_file_list(arguments, hub_name: str, command: list) -> int:
+    return file.main_list(hub=hub_name)
+
+
+def _run_file_mount(arguments, hub_name: str, command: list) -> int:
+    return file.main_mount(
+        arguments.share, path=arguments.path, drive=arguments.drive, hub=hub_name
+    )
+
+
+def _run_file_unmount(arguments, hub_name: str, command: list) -> int:
+    return file.main_unmount(arguments.share, hub=hub_name)
+
+
+def _run_terminal_list(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_list(arguments.machine, hub=hub_name)
+
+
+def _run_terminal_open(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_open(
+        arguments.machine, account=arguments.account, hub=hub_name
+    )
+
+
+def _run_terminal_attach(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_attach(arguments.machine, arguments.session, hub=hub_name)
+
+
+def _run_terminal_exec(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_exec(
+        arguments.machine,
+        list(arguments.exec_command) + list(command),
+        account=arguments.account,
+        hub=hub_name,
+        is_tty=arguments.tty,
+    )
+
+
+def _run_terminal_set(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_set(
+        arguments.machine,
+        arguments.session,
+        is_persistent=_switch(arguments.persist),
+        is_shared=_switch(arguments.share),
+        hub=hub_name,
+    )
+
+
+def _run_terminal_stop(arguments, hub_name: str, command: list) -> int:
+    return terminal.main_stop(arguments.machine, arguments.session, hub=hub_name)
+
+
+def _run_rdp_list(arguments, hub_name: str, command: list) -> int:
+    return rdp.main_list(hub=hub_name)
+
+
+def _run_rdp_connect(arguments, hub_name: str, command: list) -> int:
+    return rdp.main_connect(arguments.machine, hub=hub_name)
+
+
+def _run_settings_show(arguments, hub_name: str, command: list) -> int:
+    return settings.main_show()
+
+
+def _run_settings_set(arguments, hub_name: str, command: list) -> int:
+    return settings.main_set(arguments.name, arguments.value)
+
+
+# Each verb's runner, by its group and its verb.
+DISPATCH = {
+    ("ssh", "list"): _run_ssh_list,
+    ("ssh", "open"): _run_ssh_open,
+    ("ssh", "proxy"): _run_ssh_proxy,
+    ("ssh config", "show"): _run_ssh_config_show,
+    ("ssh config", "install"): _run_ssh_config_install,
+    ("ssh config", "uninstall"): _run_ssh_config_uninstall,
+    ("hub", "list"): _run_hub_list,
+    ("hub", "join"): _run_hub_join,
+    ("hub", "leave"): _run_hub_leave,
+    ("hub", "open"): _run_hub_open,
+    ("app", "list"): _run_app_list,
+    ("app", "open"): _run_app_open,
+    ("app", "stop"): _run_app_stop,
+    ("app", "set"): _run_app_set,
+    ("ai", "show"): _run_ai_show,
+    ("ai", "set"): _run_ai_set,
+    ("file", "list"): _run_file_list,
+    ("file", "mount"): _run_file_mount,
+    ("file", "unmount"): _run_file_unmount,
+    ("terminal", "list"): _run_terminal_list,
+    ("terminal", "open"): _run_terminal_open,
+    ("terminal", "attach"): _run_terminal_attach,
+    ("terminal", "exec"): _run_terminal_exec,
+    ("terminal", "set"): _run_terminal_set,
+    ("terminal", "stop"): _run_terminal_stop,
+    ("rdp", "list"): _run_rdp_list,
+    ("rdp", "connect"): _run_rdp_connect,
+    ("settings", "show"): _run_settings_show,
+    ("settings", "set"): _run_settings_set,
+}
+
+
+def _switch(value: "str | None") -> "bool | None":
+    """``on`` as True, ``off`` as False, nothing as None."""
+    if value is None:
+        return None
+    return value == "on"
+
+
+def _split_argv(argv: list) -> tuple:
+    """The arguments with ``open`` for a bare machine, and a command cut off.
+
+    Args:
+        argv: The arguments as given.
+
+    Returns:
+        ``(argv, command)``: ``terminal <machine>`` read as ``terminal open
+        <machine>``, and the words after ``--`` of ``terminal exec`` and
+        ``ssh open`` cut off as the command; ``command`` is None without one.
+    """
+    position = _first_word(argv)
+    if position is None:
+        return argv, None
+    group = argv[position]
+    rest = list(argv[position + 1 :])
+    head = list(argv[: position + 1])
+    verb_position = _first_word(rest)
+    if group == "terminal" and verb_position is not None:
+        if rest[verb_position] not in terminal.TERMINAL_VERBS:
+            rest.insert(verb_position, terminal.TERMINAL_DEFAULT_VERB)
+    if verb_position is None:
+        return head + rest, None
+    if (group, rest[verb_position]) in COMMAND_LEVELS and COMMAND_SEPARATOR in rest:
+        cut = rest.index(COMMAND_SEPARATOR)
+        return head + rest[:cut], rest[cut + 1 :]
+    return head + rest, None
+
+
+def _first_word(words: list) -> "int | None":
+    """Where the first word that is not an option is, None when there is none."""
+    position = 0
+    while position < len(words):
+        word = words[position]
+        if word == COMMAND_SEPARATOR:
+            return None
+        if word in TERMINAL_VALUE_OPTIONS:
+            position += 2
+            continue
+        if word.startswith("-"):
+            position += 1
+            continue
+        return position
+    return None
 
 
 def _is_opened_as_app() -> bool:
@@ -172,405 +552,6 @@ def _use_utf8_console() -> None:
             reconfigure(encoding="utf-8", errors="replace")
         except (OSError, ValueError):
             pass
-
-
-def _add_hub_argument(parser) -> None:
-    """Name the hub a command acts on, on one parser.
-
-    Args:
-        parser: The parser the flag belongs to.
-    """
-    parser.add_argument(
-        "--hub",
-        default="",
-        metavar="<name>",
-        help="the hub, by name or id; omit it with one hub joined",
-    )
-
-
-def _split_terminal_argv(argv: list) -> tuple:
-    """The arguments with ``open`` for a bare machine, and exec's command cut off.
-
-    Args:
-        argv: The arguments as given.
-
-    Returns:
-        ``(argv, command)``: the verb moved to just after ``terminal``, and
-        the words after ``exec``'s ``--``; ``command`` is None without one.
-    """
-    if not argv or argv[0] != "terminal":
-        return argv, None
-    rest = list(argv[1:])
-    position = _terminal_verb_position(rest)
-    if position is None:
-        return argv, None
-    verb = rest.pop(position)
-    if verb not in terminal.TERMINAL_VERBS:
-        rest.insert(position, verb)
-        verb = terminal.TERMINAL_DEFAULT_VERB
-    if verb == "exec" and TERMINAL_COMMAND_SEPARATOR in rest:
-        cut = rest.index(TERMINAL_COMMAND_SEPARATOR)
-        return ["terminal", verb] + rest[:cut], rest[cut + 1 :]
-    return ["terminal", verb] + rest, None
-
-
-def _terminal_verb_position(rest: list) -> "int | None":
-    """Where the first word that is not an option is, None when there is none."""
-    position = 0
-    while position < len(rest):
-        word = rest[position]
-        if word == TERMINAL_COMMAND_SEPARATOR:
-            return None
-        if word in TERMINAL_VALUE_OPTIONS:
-            position += 2
-            continue
-        if word.startswith("-"):
-            position += 1
-            continue
-        return position
-    return None
-
-
-def _add_terminal_parser(subparsers):
-    """The ``nclient terminal`` verb tree.
-
-    Args:
-        subparsers: The top-level subparser group.
-
-    Returns:
-        The terminal parser, for its help on a missing verb.
-    """
-    terminal_parser = subparsers.add_parser(
-        "terminal",
-        help="shells and commands on the machines a hub offers them on",
-        description="A bare machine opens a shell: nclient terminal <machine>.",
-    )
-    verbs = terminal_parser.add_subparsers(dest="terminal_command", metavar="<verb>")
-    list_parser = verbs.add_parser(
-        "list", help="every online machine and the sessions it keeps"
-    )
-    _add_hub_argument(list_parser)
-    list_parser.add_argument(
-        "--json", action="store_true", help="print one JSON object"
-    )
-    open_parser = verbs.add_parser("open", help="open a new shell in this terminal")
-    _add_machine_argument(open_parser)
-    open_parser.add_argument(
-        "--persistent",
-        action="store_true",
-        help="keep the session after its last window closes",
-    )
-    open_parser.add_argument(
-        "--shared",
-        action="store_true",
-        help="let every client with terminal rights on the machine attach",
-    )
-    _add_hub_argument(open_parser)
-    attach_parser = verbs.add_parser(
-        "attach", help="attach this terminal to a session the machine keeps"
-    )
-    _add_machine_argument(attach_parser)
-    _add_session_argument(attach_parser)
-    _add_hub_argument(attach_parser)
-    exec_parser = verbs.add_parser(
-        "exec",
-        help="run one command and return its exit code",
-        usage="nclient terminal exec <machine> [--tty] [--hub <name>] "
-        "-- <command> ...",
-    )
-    _add_machine_argument(exec_parser)
-    exec_parser.add_argument(
-        "exec_command", nargs="*", metavar="<command>", help="the command, after --"
-    )
-    exec_parser.add_argument(
-        "--tty",
-        action="store_true",
-        help="run it on a pseudo-terminal, for programs such as top and vim",
-    )
-    _add_hub_argument(exec_parser)
-    for verb, description, on_help, off_help in (
-        (
-            "persist",
-            "keep a session after its last window closes, or stop keeping it",
-            "keep the session",
-            "stop keeping it",
-        ),
-        (
-            "share",
-            "let other clients attach to a session, or stop letting them",
-            "share the session",
-            "stop sharing it; the others are cut off at once",
-        ),
-    ):
-        verb_parser = verbs.add_parser(verb, help=description)
-        _add_machine_argument(verb_parser)
-        _add_session_argument(verb_parser)
-        switch = verb_parser.add_mutually_exclusive_group(required=True)
-        switch.add_argument("--on", dest="is_on", action="store_true", help=on_help)
-        switch.add_argument("--off", dest="is_on", action="store_false", help=off_help)
-        _add_hub_argument(verb_parser)
-    stop_parser = verbs.add_parser("stop", help="end a session the machine keeps")
-    _add_machine_argument(stop_parser)
-    _add_session_argument(stop_parser)
-    _add_hub_argument(stop_parser)
-    return terminal_parser
-
-
-def _add_machine_argument(parser) -> None:
-    """Name the machine a terminal verb acts on, on one parser.
-
-    Args:
-        parser: The parser the argument belongs to.
-    """
-    parser.add_argument("machine", help="the machine, by name or id")
-
-
-def _add_session_argument(parser) -> None:
-    """Name the session a terminal verb acts on, on one parser.
-
-    Args:
-        parser: The parser the argument belongs to.
-    """
-    parser.add_argument(
-        "session",
-        metavar="session-id",
-        help="the session's id, or its first characters as list prints them",
-    )
-
-
-def _run_terminal(arguments, terminal_parser, command) -> int:
-    """Dispatch one ``nclient terminal`` verb.
-
-    Args:
-        arguments: The parsed arguments.
-        terminal_parser: The terminal parser, for its help.
-        command: The words after exec's ``--``; None without one.
-
-    Returns:
-        The verb's exit status.
-    """
-    verb = arguments.terminal_command
-    if verb == "list":
-        return terminal.main_list(hub=arguments.hub, is_json=arguments.json)
-    if verb == "open":
-        return terminal.main_open(
-            arguments.machine,
-            hub=arguments.hub,
-            is_persistent=arguments.persistent,
-            is_shared=arguments.shared,
-        )
-    if verb == "attach":
-        return terminal.main_attach(
-            arguments.machine, arguments.session, hub=arguments.hub
-        )
-    if verb == "exec":
-        return terminal.main_exec(
-            arguments.machine,
-            list(arguments.exec_command) + list(command or []),
-            hub=arguments.hub,
-            is_tty=arguments.tty,
-        )
-    if verb == "persist":
-        return terminal.main_persist(
-            arguments.machine,
-            arguments.session,
-            is_on=arguments.is_on,
-            hub=arguments.hub,
-        )
-    if verb == "share":
-        return terminal.main_share(
-            arguments.machine,
-            arguments.session,
-            is_on=arguments.is_on,
-            hub=arguments.hub,
-        )
-    if verb == "stop":
-        return terminal.main_stop(
-            arguments.machine, arguments.session, hub=arguments.hub
-        )
-    terminal_parser.print_help()
-    return 2
-
-
-def _add_service_parser(subparsers):
-    """The ``nclient service`` verb tree, one branch per service type.
-
-    Args:
-        subparsers: The top-level subparser group.
-
-    Returns:
-        The service parser and each kind's parser, for their help on a
-        missing action.
-    """
-    service_parser = subparsers.add_parser(
-        "service", help="what the hub publishes for this person"
-    )
-    kinds = service_parser.add_subparsers(dest="service_command", metavar="<kind>")
-    list_parser = kinds.add_parser(
-        "list", help="every published entry, by hub and then by kind"
-    )
-    _add_hub_argument(list_parser)
-
-    web_parser = kinds.add_parser("web", help="published links")
-    web_actions = web_parser.add_subparsers(dest="web_action", metavar="<action>")
-    web_open = web_actions.add_parser("open", help="open one link in the browser")
-    web_open.add_argument("ref", help="the entry's number in service list, or its id")
-    _add_hub_argument(web_open)
-
-    port_parser = kinds.add_parser("port", help="published ports")
-    port_actions = port_parser.add_subparsers(dest="port_action", metavar="<action>")
-    forward = port_actions.add_parser(
-        "forward", help="relay one port to this machine's loopback"
-    )
-    forward.add_argument("ref", help="the entry's number in service list, or its id")
-    forward.add_argument(
-        "--local-port", type=int, default=0, help="the loopback port to prefer"
-    )
-    _add_hub_argument(forward)
-    unforward = port_actions.add_parser("unforward", help="close that relay")
-    unforward.add_argument("ref", help="the entry's number in service list, or its id")
-    _add_hub_argument(unforward)
-
-    file_parser = kinds.add_parser("file", help="published shares")
-    file_actions = file_parser.add_subparsers(dest="file_action", metavar="<action>")
-    file_config = file_actions.add_parser(
-        "config", help="save a share's login and path, and mount it"
-    )
-    file_config.add_argument(
-        "ref", help="the entry's number in service list, or its id"
-    )
-    file_config.add_argument("--path", required=True, help="where to mount the share")
-    file_config.add_argument("--username", default="", help="the share's own username")
-    _add_hub_argument(file_config)
-    for verb, description in (
-        ("mount", "mount a share again with its saved login"),
-        ("unmount", "unmount a share; its saved login stays"),
-    ):
-        verb_parser = file_actions.add_parser(verb, help=description)
-        verb_parser.add_argument(
-            "ref", help="the entry's number in service list, or its id"
-        )
-        _add_hub_argument(verb_parser)
-
-    ai_parser = kinds.add_parser("ai", help="the AI gateway service")
-    ai_actions = ai_parser.add_subparsers(dest="ai_action", metavar="<action>")
-    ai_show = ai_actions.add_parser("show", help="where this person's tools point")
-    _add_hub_argument(ai_show)
-    ai_apply = ai_actions.add_parser(
-        "apply", help="point the tools at the hub, or put them back"
-    )
-    ai_apply.add_argument(
-        "provider",
-        choices=(AI_PROVIDER_HUB, AI_PROVIDER_OFF),
-        help="hub points the tools at the gateway; off puts them back",
-    )
-    for flag, description in (
-        ("--claude-default", "Claude Code's default model slot"),
-        ("--claude-opus", "Claude Code's opus slot"),
-        ("--claude-sonnet", "Claude Code's sonnet slot"),
-        ("--claude-haiku", "Claude Code's haiku slot"),
-        ("--codex-model", "Codex's model"),
-        ("--gemini-model", "Gemini's model"),
-    ):
-        ai_apply.add_argument(
-            flag,
-            metavar="<model>",
-            help=f"{description}; omit to keep, pass '' for the gateway default",
-        )
-    ai_apply.add_argument(
-        "--hub",
-        default="",
-        metavar="<name>",
-        help="make this hub the exit first; omit to keep the exit as it is",
-    )
-    ai_apply.add_argument(
-        "--codex-effort",
-        choices=AI_REASONING_EFFORTS + ("",),
-        metavar="<effort>",
-        help=(
-            "Codex's reasoning effort: "
-            + ", ".join(AI_REASONING_EFFORTS)
-            + "; omit to keep, pass '' for the gateway default"
-        ),
-    )
-
-    rdp_parser = kinds.add_parser("rdp", help="desktops the fleet shares")
-    rdp_actions = rdp_parser.add_subparsers(dest="rdp_action", metavar="<action>")
-    rdp_connect = rdp_actions.add_parser(
-        "connect", help="open the viewer at one shared desktop"
-    )
-    rdp_connect.add_argument(
-        "ref", help="the entry's number in service list, or its id"
-    )
-    _add_hub_argument(rdp_connect)
-
-    kind_parsers = {
-        "web": web_parser,
-        "port": port_parser,
-        "file": file_parser,
-        "ai": ai_parser,
-        "rdp": rdp_parser,
-    }
-    return service_parser, kind_parsers
-
-
-def _run_service(arguments, service_parser, kind_parsers) -> int:
-    """Dispatch one ``nclient service`` action.
-
-    Args:
-        arguments: The parsed arguments.
-        service_parser: The service parser, for its help.
-        kind_parsers: Each kind's parser, for theirs.
-
-    Returns:
-        The action's exit status.
-    """
-    kind = arguments.service_command
-    if kind == "list":
-        return service.main_list(hub=arguments.hub)
-    if kind == "web" and arguments.web_action == "open":
-        return service.main_web_open(arguments.ref, hub=arguments.hub)
-    if kind == "port" and arguments.port_action == "forward":
-        return service.main_port(
-            arguments.ref,
-            is_enabled=True,
-            local_port=arguments.local_port,
-            hub=arguments.hub,
-        )
-    if kind == "port" and arguments.port_action == "unforward":
-        return service.main_port(arguments.ref, is_enabled=False, hub=arguments.hub)
-    if kind == "file" and arguments.file_action == "config":
-        return service.main_file_config(
-            arguments.ref,
-            path=arguments.path,
-            username=arguments.username,
-            hub=arguments.hub,
-        )
-    if kind == "file" and arguments.file_action == "mount":
-        return service.main_file_mount(arguments.ref, hub=arguments.hub)
-    if kind == "file" and arguments.file_action == "unmount":
-        return service.main_file_unmount(arguments.ref, hub=arguments.hub)
-    if kind == "ai" and arguments.ai_action == "show":
-        return service.main_ai_show(hub=arguments.hub)
-    if kind == "ai" and arguments.ai_action == "apply":
-        return service.main_ai_apply(
-            is_enabled=arguments.provider == AI_PROVIDER_HUB,
-            claude_default=arguments.claude_default,
-            claude_opus=arguments.claude_opus,
-            claude_sonnet=arguments.claude_sonnet,
-            claude_haiku=arguments.claude_haiku,
-            codex_model=arguments.codex_model,
-            codex_effort=arguments.codex_effort,
-            gemini_model=arguments.gemini_model,
-            hub=arguments.hub,
-        )
-    if kind == "rdp" and arguments.rdp_action == "connect":
-        return service.main_desktop_connect(arguments.ref, hub=arguments.hub)
-    if kind in kind_parsers:
-        kind_parsers[kind].print_help()
-        return 2
-    service_parser.print_help()
-    return 2
 
 
 if __name__ == "__main__":

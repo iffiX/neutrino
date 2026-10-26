@@ -42,34 +42,57 @@ CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"
 
-# The hub's channel, on the pinned-TLS agent port. Joining and leaving are
-# HTTP; everything else rides the one socket.
-CLIENT_JOIN_PATH = "/api/channel/join"
-CLIENT_LEAVE_PATH = "/api/channel/leave"
-CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
+# The client's transport: the Go program the resident runs as its child, in
+# the person's own account, which holds a session to every hub and every
+# forward. The resident starts it with the mode and the listener named below
+# and writes the local channel's secret, 64 hex characters, as the first
+# line of its standard input, which stays open: the transport ends when it
+# closes. ``NEUTRINO_TRANSPORT_BIN`` names another program.
+CLIENT_TRANSPORT_PROGRAM = "neutrino_transport"
+CLIENT_TRANSPORT_MODE = "client"
+CLIENT_TRANSPORT_LISTEN_FLAG = "--listen"
+CLIENT_TRANSPORT_BIN_ENV = "NEUTRINO_TRANSPORT_BIN"
+CLIENT_TRANSPORT_SOCKET_NAME = "transport.sock"
+CLIENT_TRANSPORT_PIPE_NAME_PREFIX = "neutrino_client_transport_"
+CLIENT_TRANSPORT_LOG_NAME = "transport.log"
+CLIENT_TRANSPORT_SECRET_BYTES = 32
+# How long the transport may take to listen once started, how long an
+# answer to a command may take, and the wait before a transport that ended
+# is started again, doubling from the least to the most.
+CLIENT_TRANSPORT_START_TIMEOUT_S = 10
+CLIENT_TRANSPORT_COMMAND_TIMEOUT_S = 5
+CLIENT_TRANSPORT_RESTART_MIN_S = 1
+CLIENT_TRANSPORT_RESTART_MAX_S = 30
+# How long the transport is given to end once its standard input closes.
+CLIENT_TRANSPORT_STOP_TIMEOUT_S = 5
+# A join dials as a round does and waits for the hub's answer, within the
+# hub's admission time.
+CLIENT_JOIN_TIMEOUT_S = 30
+# The address scheme every link and state names; an address of any other
+# scheme is skipped.
+CLIENT_ADDRESS_SCHEME = "tcp"
+# The binding a 0.5 client kept holds a certificate fingerprint and no hub
+# key; while the hub's legacy listener is on it is moved over that pinned
+# TLS listener, at this route, on the agent port.
+CLIENT_LEGACY_KEY_PATH = "/api/channel/key/set"
+CLIENT_LEGACY_SCHEME = "https"
+CLIENT_REQUEST_TIMEOUT_S = 10
 
-# The stream kinds a client opens, and the code it closes a stream the hub
-# opened with. A ``shell`` carries terminal bytes both ways; an ``exec`` runs
-# one command; a ``command`` resizes either; a ``connect`` carries one TCP
-# connection to a published entry or to the hub's panel.
-CLIENT_STREAM_KIND_SERVICE = "service"
+# The stream kinds a client opens: a ``shell`` carries terminal bytes both
+# ways, an ``exec`` runs one command, and a ``connect`` carries one TCP
+# connection, or a UDP entry's datagrams, to a published entry or to the
+# hub's panel.
 CLIENT_STREAM_KIND_SHELL = "shell"
 CLIENT_STREAM_KIND_EXEC = "exec"
-CLIENT_STREAM_KIND_COMMAND = "command"
 CLIENT_STREAM_KIND_CONNECT = "connect"
-CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
-# The module and verb a resize names on a ``command`` stream.
-CLIENT_SHELL_RESIZE_MODULE = "agent"
-CLIENT_SHELL_RESIZE_VERB = "resize"
-# The verbs that keep a shell session once nobody is attached, and end one.
-CLIENT_SHELL_PERSIST_VERB = "persist"
-CLIENT_SHELL_STOP_VERB = "stop_session"
 
 # How often an unbound resident looks at its configuration again.
 CLIENT_IDLE_POLL_INTERVAL_S = 2
-CLIENT_REQUEST_TIMEOUT_S = 10
 # How long telling a hub of a leave may take in all, after the binding is gone.
 CLIENT_LEAVE_TELL_TIMEOUT_S = 5
+# The transport's redial backoff, which a round's countdown mirrors when the
+# transport names no time of its own, and the wait after a refusal the
+# binding survives.
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
 # How long a refresh waits for a hub's answer before it ends by itself.
@@ -79,22 +102,14 @@ CLIENT_NOTICE_S = 60
 # The shortest wait before a join the hub paused is tried again.
 CLIENT_JOIN_RETRY_MIN_S = 1
 # The name every network a hub serves resolves to that hub's address on it.
-# It is one of the addresses a round dials.
+# It is one of the addresses a round dials, resolved by the transport.
 CLIENT_HUB_NAME = "hub.neutrino.internal"
 
-# How long the open socket may stay silent before it counts as dead.
-CLIENT_WS_SILENCE_TIMEOUT_S = 45
-# How long connecting to the hub and the handshake on top of it may take
-# together, before the socket is open and the silence window takes over.
-CLIENT_CONNECT_TIMEOUT_S = 10
-# How often a round dials again an address that refused, until the round's
-# connect time has passed since it started.
-CLIENT_REDIAL_INTERVAL_S = 1
 # How often a report goes up while nothing changes.
 CLIENT_REPORT_INTERVAL_S = 30
 # How long asking the system for this machine's networks may take.
 CLIENT_LOCAL_NETWORKS_TIMEOUT_S = 10
-# How often the client sends a ping frame on the open socket; the pong that
+# How often the client sends a ping frame on the live session; the pong that
 # echoes its nonce sets the round trip.
 CLIENT_PING_INTERVAL_S = 20
 # The paths a candidate address reaches the hub by, best first: a round a
@@ -111,31 +126,15 @@ CLIENT_PATH_RANKS = {
 # The paths through a server outside the box, each the path of the address
 # the hub's state names as ``<path>_url``.
 CLIENT_SERVER_PATHS = ("ssh_relay", "sakurafrp", "openfrp")
-# How long a stream this side opened waits for the hub's close.
+# How long a ``service``, ``persist`` or ``stop_session`` frame waits for
+# the hub's reply.
 CLIENT_STREAM_TIMEOUT_S = 15
-# A byte stream's credit window: what this side grants the hub when it opens
-# one, and grants again as it consumes. Half the window consumed sends the
-# next grant.
-CLIENT_STREAM_CREDIT_BYTES = 1024 * 1024
-# The most one binary frame carries.
-CLIENT_WS_CHUNK_BYTES = 64 * 1024
-# How long a send waits for the hub's credit before it gives up.
-CLIENT_WS_CREDIT_TIMEOUT_S = 60
+# The most one record carries.
+CLIENT_RECORD_BYTES_MAX = 64 * 1024
 # A terminal's Clear drops the output until the stream has been quiet this
 # long, and for this long at most.
 CLIENT_TERMINAL_CLEAR_QUIET_S = 0.5
 CLIENT_TERMINAL_CLEAR_MAX_S = 20
-# A UDP forward: the sources it remembers an address for, the datagrams it
-# holds while its stream waits for its first credit, and how often a stream
-# refused after it carried a datagram is opened again.
-CLIENT_UDP_SOURCES_MAX = 64
-CLIENT_UDP_HELD_DATAGRAMS_MAX = 16
-CLIENT_UDP_REOPEN_INTERVAL_S = 1
-
-# What the hub's close codes mean: a refused hello, and a second socket for
-# the same binding replacing this one.
-CLIENT_WS_CLOSE_REFUSED = 4000
-CLIENT_WS_CLOSE_REPLACED = 4010
 
 # The files under the platform's configuration directory.
 CLIENT_CONFIG_FILE_NAME = "client.json"
@@ -188,12 +187,14 @@ CLIENT_AGENT_PROGRAM_DIR_LINUX = "/opt/neutrino/agent"
 CLIENT_AGENT_PROGRAM_DIR_DARWIN = "/Library/Application Support/Neutrino/agent/app"
 CLIENT_AGENT_PROGRAM_SUBDIR_WINDOWS = ("Neutrino", "agent")
 CLIENT_BUNDLED_PATHS_LINUX = {
+    "neutrino_transport": "bin/neutrino_transport",
     "cc-switch": "bin/cc-switch",
     "rustdesk": "rustdesk/rustdesk",
     "easytier-core": "easytier/easytier-core",
     "easytier-cli": "easytier/easytier-cli",
 }
 CLIENT_BUNDLED_PATHS_WINDOWS = {
+    "neutrino_transport": "bin\\neutrino_transport.exe",
     "cc-switch": "bin\\cc-switch.exe",
     "rustdesk": "bin\\rustdesk.exe",
     "easytier-core": "bin\\easytier-core.exe",
@@ -203,6 +204,7 @@ CLIENT_BUNDLED_PATHS_WINDOWS = {
 # Under the app bundle's Contents directory, beside the MacOS directory the
 # compiled package runs from.
 CLIENT_BUNDLED_PATHS_DARWIN = {
+    "neutrino_transport": "Resources/bin/neutrino_transport",
     "cc-switch": "Resources/bin/cc-switch",
     "rustdesk": "Resources/rustdesk/RustDesk.app/Contents/MacOS/RustDesk",
     "easytier-core": "Resources/easytier/easytier-core",

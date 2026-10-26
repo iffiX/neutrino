@@ -174,11 +174,9 @@ REAL_ASK_HOLD = wording_module.ask_hold
 
 @pytest.fixture(autouse=True)
 def _isolated_network(monkeypatch):
-    """The hub's name resolves to nothing, no route is looked at and no
-    EasyTier daemon of this machine is asked who holds it, unless a test says
-    otherwise."""
+    """No route is looked at and no EasyTier daemon of this machine is asked
+    who holds it, unless a test says otherwise."""
     monkeypatch.setattr(wording_module, "ask_hold", lambda verb: {})
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
 
 
@@ -211,13 +209,18 @@ def discard(message: str) -> None:
     """Swallow the log lines."""
 
 
+# The hub's static public key a link carries, and this client's private key.
+HUB_KEY = "11" * 32
+PRIVATE_KEY = "22" * 32
 BINDING = {
     "id": "c1",
     "name": "box",
     "hub_id": "h1",
     "hub_name": "home",
-    "gateway_url": "http://127.0.0.1:9",
+    "gateway_url": "tcp://127.0.0.1:9",
     "gateway_urls": [],
+    "hub_key": HUB_KEY,
+    "private_key": PRIVATE_KEY,
     "fingerprint": "",
     "token": "tok",
     "overlays": [],
@@ -229,8 +232,10 @@ OFFICE_BINDING = {
     "name": "box",
     "hub_id": "h2",
     "hub_name": "office",
-    "gateway_url": "https://office.lan:8443",
+    "gateway_url": "tcp://office.lan:8443",
     "gateway_urls": [],
+    "hub_key": HUB_KEY,
+    "private_key": PRIVATE_KEY,
     "fingerprint": "",
     "token": "tok2",
     "overlays": [],
@@ -239,7 +244,7 @@ OFFICE_BINDING = {
 }
 
 
-def bind(path, url="http://127.0.0.1:9", fingerprint="", bindings=None) -> None:
+def bind(path, url="tcp://127.0.0.1:9", fingerprint="", bindings=None) -> None:
     """The bindings on disk, the way ``client.json`` keeps them.
 
     Args:
@@ -250,7 +255,10 @@ def bind(path, url="http://127.0.0.1:9", fingerprint="", bindings=None) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     if bindings is None:
-        bindings = [dict(BINDING, gateway_url=url, fingerprint=fingerprint)]
+        binding = dict(BINDING, gateway_url=url, fingerprint=fingerprint)
+        if fingerprint:
+            binding.update(hub_key="", private_key="")
+        bindings = [binding]
     path.write_text(json.dumps({"bindings": list(bindings), "exit_hub_id": ""}))
 
 
@@ -434,75 +442,185 @@ class FakeClientPlatform(ClientPlatform):
         return 0, self.answer_output
 
 
-class FakeConnectHub:
-    """The hub's end of ``connect`` streams, played over real loopback sockets.
+class FakeTransportChannel:
+    """The client's local channel to its transport, in process and scripted.
 
-    Every open is recorded as ``(hub_id, args)``. The far end the hub would
-    dial is ``far_port`` on the loopback, whatever the entry's payload names,
-    so a byte that comes back proves it went through the stream and not to
-    a device address. ``refusal`` closes every stream at once with that
-    code, as the hub does when it judges the open; ``error`` is raised
-    instead of opening, as for a hub that is not connected.
+    Every command is recorded and answered from ``answers`` (``{command:
+    callable(fields) -> answer}``, empty by default); every frame sent is
+    recorded as ``(binding, frame)``; a stream opens on ``open_stream``,
+    which a test sets, else :class:`FakeStreamEnd` accepts it. Lines for a
+    binding reach the session through its listener, which ``deliver`` calls.
+
+    Attributes:
+        commands: ``(name, fields)`` of every command, in order.
+        frames: ``(binding, frame)`` of every frame sent, in order.
+        opens: ``(binding, open_record)`` of every stream opened.
+        listeners: The binding listeners, by label.
     """
 
-    def __init__(self, far_port: int = 0):
-        self.far_port = far_port
+    def __init__(self):
+        self.commands = []
+        self.frames = []
         self.opens = []
-        self.refusal = ""
-        self.error = None
-        self.closed_here = []
-        self._lock = threading.Lock()
-        self._next_id = 1
+        self.answers = {}
+        self.listeners = {}
+        self.ready_listeners = []
+        self.lost_listeners = []
+        self.forward_end_listeners = []
+        self.is_running = True
+        self.stream_factory = None
+        self.started = 0
+        self.stopped = 0
 
-    def open_connect(self, hub_id: str, args: dict):
-        from neutrino_client.core.streams import ClientStream
+    def listen_binding(self, binding, listener):
+        self.listeners[binding] = listener
 
-        if self.error is not None:
-            raise self.error
-        with self._lock:
-            stream_id = self._next_id
-            self._next_id += 2
-        self.opens.append((hub_id, dict(args)))
-        if self.refusal:
-            stream = ClientStream(stream_id=stream_id, kind="connect")
-            stream.take_close(code=self.refusal, params={"service_id": "x"})
-            return stream
-        far = socket.create_connection(("127.0.0.1", self.far_port), timeout=5)
-        far.settimeout(None)
+    def forget_binding(self, binding, listener=None):
+        held = self.listeners.get(binding)
+        if listener is None or held == listener:
+            self.listeners.pop(binding, None)
 
-        def send_bytes(frame: bytes) -> None:
-            far.sendall(frame[4:])
+    def on_ready(self, listener):
+        self.ready_listeners.append(listener)
 
-        def close() -> None:
-            self.closed_here.append(stream_id)
-            try:
-                far.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            far.close()
+    def on_lost(self, listener):
+        self.lost_listeners.append(listener)
 
-        stream = ClientStream(
-            stream_id=stream_id,
-            kind="connect",
-            send_bytes=send_bytes,
-            grant=lambda nbytes: None,
-            close=close,
-        )
-        stream.take_credit(1 << 30)
+    def on_forward_end(self, listener):
+        self.forward_end_listeners.append(listener)
 
-        def pump() -> None:
-            while True:
-                try:
-                    data = far.recv(65536)
-                except OSError:
-                    break
-                if not data:
-                    break
-                stream.take_bytes(data)
-            stream.take_close(code="", params={})
+    def start(self):
+        self.started += 1
 
-        threading.Thread(target=pump, daemon=True).start()
-        return stream
+    def stop(self):
+        self.stopped += 1
+
+    def is_ready(self):
+        return self.is_running
+
+    def wait_ready(self, timeout_s):
+        return self.is_running
+
+    def command(self, command, fields, timeout_s=5):
+        from neutrino_client.exceptions import GatewayUnreachable
+
+        if not self.is_running:
+            raise GatewayUnreachable("the client's transport is not running")
+        self.commands.append((command, dict(fields)))
+        answer_of = self.answers.get(command)
+        return {} if answer_of is None else dict(answer_of(dict(fields)))
+
+    def send_frame(self, binding, frame, is_last=False):
+        from neutrino_client.exceptions import GatewayUnreachable
+
+        if not self.is_running:
+            raise GatewayUnreachable("the client's transport is not running")
+        self.frames.append((binding, dict(frame)))
+
+    def open_stream(self, binding, open_record, **kwargs):
+        self.opens.append((binding, dict(open_record)))
+        if self.stream_factory is not None:
+            return self.stream_factory(binding, dict(open_record), **kwargs)
+        return FakeStreamEnd()
+
+    def deliver(self, binding, line):
+        """Hand one event or frame line to a binding's session, as the transport does."""
+        self.listeners[binding](dict(line, binding=binding))
+
+    def frames_of(self, frame_type):
+        return [
+            frame for _binding, frame in self.frames if frame.get("type") == frame_type
+        ]
+
+    def commands_of(self, name):
+        return [fields for command, fields in self.commands if command == name]
+
+
+class FakeStreamEnd:
+    """A stream the far side accepted, whose bytes and close a test scripts.
+
+    Attributes:
+        sent: The bytes sent on it.
+        resizes: ``(cols, rows)`` of every resize.
+        is_eof_sent: Whether ``send_eof`` was called.
+    """
+
+    kind = "shell"
+
+    def __init__(self, pieces=(), close=None, refusal=None):
+        import queue as queue_module
+
+        self.sent = []
+        self.resizes = []
+        self.is_eof_sent = False
+        self.is_closed_here = False
+        self._pieces = queue_module.Queue()
+        for piece in pieces:
+            self._pieces.put(piece)
+        self._close = dict(close or {})
+        self._refusal = refusal
+        if refusal is not None:
+            self._pieces.put(b"")
+
+    @property
+    def is_done(self):
+        return self.is_closed_here or self._refusal is not None
+
+    @property
+    def is_accepted(self):
+        return self._refusal is None
+
+    def wait_accept(self, timeout_s):
+        return self._refusal is None
+
+    def end(self, close=None):
+        """The far side ends the stream with a close's params."""
+        self._close = dict(close or {})
+        self._pieces.put(b"")
+
+    def push(self, data):
+        self._pieces.put(bytes(data))
+
+    def read(self, timeout_s):
+        import queue as queue_module
+
+        try:
+            return self._pieces.get(timeout=max(timeout_s, 0.001))
+        except queue_module.Empty:
+            return None
+
+    def send(self, data):
+        from neutrino_client.exceptions import GatewayUnreachable
+
+        if self.is_done:
+            raise GatewayUnreachable("ended")
+        self.sent.append(bytes(data))
+
+    def send_eof(self):
+        self.is_eof_sent = True
+
+    def resize(self, cols, rows):
+        from neutrino_client.exceptions import GatewayUnreachable
+
+        if self.is_done:
+            raise GatewayUnreachable("ended")
+        self.resizes.append((cols, rows))
+
+    def close(self):
+        self.is_closed_here = True
+        self._pieces.put(b"")
+
+    def refusal(self):
+        return dict(self._refusal) if self._refusal else None
+
+    def wait_close(self, timeout_s):
+        from neutrino_client.exceptions import GatewayRefusedDetail
+
+        if self._refusal is not None:
+            raise GatewayRefusedDetail(
+                code=self._refusal["code"], params=dict(self._refusal["params"])
+            )
+        return dict(self._close)
 
 
 def echo_server():
@@ -744,19 +862,28 @@ class FakeResident:
         rows: int,
         session_id="",
         is_shared=False,
+        account="",
     ):
         call = ("open", hub_id, device_id, cols, rows)
         call += (session_id,) if session_id else ()
         call += ("shared",) if is_shared else ()
+        call += (("account", account),) if account else ()
         self.terminal_calls.append(call)
         return dict(self.terminal_reply)
 
     def open_exec(
-        self, hub_id: str, device_id: str, argv: list, is_tty: bool, cols, rows
+        self,
+        hub_id: str,
+        device_id: str,
+        argv: list,
+        is_tty: bool,
+        cols,
+        rows,
+        account="",
     ):
-        self.terminal_calls.append(
-            ("exec", hub_id, device_id, list(argv), is_tty, cols, rows)
-        )
+        call = ("exec", hub_id, device_id, list(argv), is_tty, cols, rows)
+        call += (("account", account),) if account else ()
+        self.terminal_calls.append(call)
         return dict(self.terminal_reply)
 
     def attach_terminal(self, terminal_id: str, read) -> None:
@@ -784,10 +911,18 @@ class FakeResident:
         return {"exit_code": 0}
 
     def open_window_terminal(
-        self, hub_id: str, device_id: str, cols: int, rows: int, session_id=""
+        self,
+        hub_id: str,
+        device_id: str,
+        cols: int,
+        rows: int,
+        session_id="",
+        account="",
     ):
         call = ("window", hub_id, device_id, cols, rows)
-        self.terminal_calls.append(call + ((session_id,) if session_id else ()))
+        call += (session_id,) if session_id else ()
+        call += (("account", account),) if account else ()
+        self.terminal_calls.append(call)
         return dict(self.terminal_reply)
 
     def persist_terminal(
@@ -881,9 +1016,43 @@ class FakeResident:
     def subscribe(self, watcher) -> None:
         self.__dict__.setdefault("watchers", []).append(watcher)
 
-    def configure_forward(self, hub_id: str, entry_id: str, setting) -> dict:
-        self.forward_settings.append((hub_id, entry_id, setting))
+    def is_ssh_include_enabled(self) -> bool:
+        return self.__dict__.get("ssh_include", False)
+
+    def ssh_config(self) -> dict:
+        return {"path": "/home/alice/.ssh/neutrino_config", "text": "Host lab.nt\n"}
+
+    def apply_settings(self, body: dict) -> dict:
+        self.__dict__.setdefault("settings_calls", []).append(dict(body))
+        reply = self.__dict__.get("settings_reply", {})
+        if reply:
+            return dict(reply)
+        if "language" in body:
+            self.language_value = body["language"]
+        if "theme" in body:
+            self.theme_value = body["theme"]
+        if "is_ssh_include_enabled" in body:
+            self.ssh_include = body["is_ssh_include_enabled"]
+        return {}
+
+    def app_rows(self) -> list:
+        return list(self.__dict__.get("apps_value", []))
+
+    def open_app(self, hub_id: str, app_id: str) -> dict:
+        self.__dict__.setdefault("app_calls", []).append(("open", hub_id, app_id))
         return dict(self.forward_reply)
+
+    def stop_app(self, hub_id: str, app_id: str) -> dict:
+        self.__dict__.setdefault("app_calls", []).append(("stop", hub_id, app_id))
+        return dict(self.forward_reply)
+
+    def configure_app(self, hub_id: str, app_id: str, ports: dict) -> dict:
+        self.forward_settings.append((hub_id, app_id, dict(ports)))
+        return dict(self.forward_reply)
+
+    def open_ssh_proxy(self, hub_id: str, entry_id: str) -> dict:
+        self.terminal_calls.append(("ssh_proxy", hub_id, entry_id))
+        return dict(self.terminal_reply)
 
     def service_action(self, service_type: str, body: dict) -> dict:
         self.service_calls.append((service_type, dict(body)))

@@ -1,7 +1,10 @@
-"""Talking to the hub with the standard library, pinned over TLS.
+"""The one request a client of 0.5 still makes, pinned over TLS.
 
-The HTTP channel serves joining and leaving; the one live socket in
-``ws_client`` connects the same way and carries everything else.
+A binding a 0.5 client kept is pinned by the hub's certificate and holds no
+hub key. While the hub's legacy listener is on, the binding is moved to the
+transport by one ``POST /api/channel/key/set`` over that listener, which the
+hub's agent port hands every TLS connection; everything else rides the
+transport.
 
 An ``https`` hub is verified by fingerprint alone: the handshake runs with
 chain and hostname checks off, and the peer certificate's SHA-256 digest must

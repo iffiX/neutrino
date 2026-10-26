@@ -1,30 +1,44 @@
 """The resident over several hubs: one session per binding, the handlers shared.
 
-What is pinned here is a second binding getting a session of its own on its
-own socket, the merged service list carrying every hub's id, a hub that is
-down subtracting only its own entries, leaving one hub stopping only its
-session and releasing only its entries, the one refusal that unbinds
-removing the binding through the resident, a disabled hub releasing only
-its own, the binding file diffed by id so a rewrite restarts only the
-sessions it changed and the welcome's own write restarts none, the exit
-hub chosen and followed with the tools moved in one activation, the
-disabled check per hub, a start that turns nothing on and clears
-what an unclean exit left, and a shutdown that runs its order once, logs a
-line a step, and lets no step hold up the rest. The state document's jobs:
-a refresh set per hub and cleared by its answer, a leave and a service
-press shown before the work, a duplicate press dropped and never answered
-as ``busy``, a failure kept on the entry until the next press or a refresh,
-the notice a forgotten binding leaves, closed or dropped by a refresh, a
-leave that forgets the binding whatever the hub answers, and the clipboard
-written. One binding per hub id: a join ending the binding held for its hub,
-by the id the hub gave before the hello with the hub not told, and by the
-hub id the welcome names with the hub told whatever it answers, and a start
-keeping the binding joined last of each hub.
+Every hub is reached through the client's transport, played here in process
+by the conftest's scripted channel: a test hands a session the events and
+frames the transport would pass, and reads back the commands, the frames and
+the streams the resident sent. What is pinned here is a second binding
+dialled under its own id, the merged service list carrying every hub's id,
+a hub that is down subtracting only its own entries, leaving one hub
+stopping only its session, releasing only its entries and telling the hub
+with the transport's ``leave`` from a thread of its own whatever it
+answers, the one refusal that unbinds keeping the row for a Leave, a
+disabled hub releasing only its own, the binding file diffed by id so a
+rewrite restarts only the sessions it changed and the welcome's own write
+restarts none, the exit hub chosen and followed with the tools moved in one
+activation, the disabled check per hub, a start that turns nothing on and
+clears what an unclean exit left, and a shutdown that runs its order once,
+logs a line a step, lets no step hold up the rest and ends the transport.
+The state document's jobs: a refresh set per hub and cleared by its answer,
+a leave and a service press shown before the work, a duplicate press
+dropped and never answered as ``busy``, a failure kept on its row until the
+next press or a refresh, the notice closed or dropped by a refresh, and the
+clipboard written. One binding per hub id: a join landing on the binding
+held here ending it with the hub not told, a welcome naming a hub another
+binding holds ending that one with the hub told whatever it answers, and a
+start keeping the binding joined last of each hub. The apps: one row per
+app with entries the client forwards, Use forwarding every entry at its
+fixed number through ``forward_start`` and opening the browser at the
+app's local name, a token page opened with the token a ``service`` reply
+gives, a number another program holds refused ``port_taken`` with the
+other forwards kept, Stop ending them, and Configure's numbers judged
+before any is kept. The panel's sign-in asked with a ``service`` frame
+before its forward, the terminals' streams opened through the transport
+with their account, the window terminal's Clear, the shares on Windows
+through the files adapter, and the Settings page's values.
 """
 
 import functools
+import hashlib
 import io
 import json
+import queue
 import socket
 import threading
 import time
@@ -32,44 +46,37 @@ import uuid
 
 import pytest
 
-import neutrino_client.core.channel as channel
 import neutrino_client.core.resident as resident_module
-import neutrino_client.core.session as session_module
-from neutrino_client.constants import (
-    CLIENT_IDLE_POLL_INTERVAL_S,
-    CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
-)
+from neutrino_client.constants import CLIENT_MOUNT_CREDENTIALS_DIR_NAME
 from neutrino_client.core import enrollment
 from neutrino_client.core.resident import ClientResident
-from neutrino_client.exceptions import (
-    GatewayRefused,
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-)
+from neutrino_client.exceptions import GatewayRefusedDetail, GatewayUnreachable
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import ServiceTypeHandler
 from neutrino_client.services.file import mount_record_id
 from tests.conftest import (
     BINDING,
+    HUB_KEY,
     HUB_SERVICES,
     OFFICE_BINDING,
     OFFICE_SERVICES,
     Clock,
     FakeClientPlatform,
+    FakeTransportChannel,
     bind,
     discard,
     link_for,
     with_hub,
 )
-from tests.core.test_session import ScriptedSocket
 
 HOME_WELCOME = {
     "type": "welcome",
-    "protocol": 1,
+    "protocol": 4,
     "role": "hub",
     "id": "h1",
     "name": "home",
-    "software": "neutrino_hub/0.3.0",
+    "software": "neutrino_hub/0.6.0",
+    "time": 1.0,
 }
 OFFICE_WELCOME = dict(HOME_WELCOME, id="h2", name="office")
 HOME_STATE = {
@@ -84,8 +91,8 @@ OFFICE_STATE = {
     "is_disabled": False,
     "services": OFFICE_SERVICES,
 }
-HOME_URL = "https://hub.lan:8443"
-OFFICE_URL = "https://office.lan:8443"
+HOME_URL = "tcp://hub.lan:8443"
+OFFICE_URL = "tcp://office.lan:8443"
 
 
 class RecordingHandler(ServiceTypeHandler):
@@ -162,6 +169,9 @@ class RecordingHandler(ServiceTypeHandler):
     def machines(self) -> set:
         return set()
 
+    def entry_fields(self, entry: dict) -> dict:
+        return {}
+
     def let_go(self) -> None:
         """Let a hanging release finish, so the test leaves no thread behind."""
         self._held.set()
@@ -176,6 +186,12 @@ class RecordingForwards(RecordingHandler):
     def port_of(self, hub_id: str, entry_id: str) -> int:
         return 0
 
+    def take_end(self, line: dict) -> None:
+        """A listener's end, which no forward of this one has."""
+
+    def restart(self) -> None:
+        """Nothing to start again."""
+
 
 class AiForwards:
     """The forward registry as the AI handler sees it: one port per hub."""
@@ -185,7 +201,7 @@ class AiForwards:
     def __init__(self):
         self.running = {}
 
-    def ensure(self, *, hub_id, entry_id, own_port, kind, local_port=0):
+    def ensure(self, *, hub_id, entry_id, own_port=0, kind="", protocol="tcp"):
         self.running[(hub_id, entry_id)] = self.PORTS[hub_id]
         return self.PORTS[hub_id]
 
@@ -193,43 +209,165 @@ class AiForwards:
         return self.running.pop((hub_id, entry_id), None) is not None
 
 
-class HubScripts:
-    """One scripted socket per hub, told apart by the host dialled.
+class ScriptedStream:
+    """One stream the transport opened, the far side accepting it; a test
+    scripts the bytes it sends back and how it ends.
 
     Attributes:
-        made: ``(host, socket)`` for every socket handed out, in order.
+        binding: The binding it was opened on.
+        open: Its open record.
+        records: What this side sent, in order: ``("data", bytes)``,
+            ``("eof",)``, ``("resize", cols, rows)`` and ``("close",)``.
     """
 
-    def __init__(self, frames_by_host: dict):
-        """
-        Args:
-            frames_by_host: What each hub's socket hands back in turn.
-        """
-        self._frames_by_host = frames_by_host
+    kind = "stream"
+
+    def __init__(self, binding: str, open_record: dict):
+        self.binding = binding
+        self.open = dict(open_record)
+        self.records = []
+        self._pieces = queue.Queue()
+        self._lock = threading.Lock()
+        self._is_drained = False
+        self._code = ""
+        self._params: dict = {}
+        self.is_far_ended = False
+        self.is_closed_here = False
+
+    @property
+    def is_done(self) -> bool:
+        return self.is_far_ended or self.is_closed_here
+
+    @property
+    def is_accepted(self) -> bool:
+        return not self._code
+
+    def wait_accept(self, timeout_s: float) -> bool:
+        return not self._code
+
+    def push(self, data: bytes) -> None:
+        """The far side sends bytes."""
+        self._pieces.put(bytes(data))
+
+    def end(self, params=None, code: str = "") -> None:
+        """The far side closes the stream: its result, or a refusal's code."""
+        self._params = dict(params or {})
+        self._code = code
+        self.is_far_ended = True
+        self._pieces.put(b"")
+
+    def read(self, timeout_s: float):
+        if self._is_drained:
+            return b""
+        try:
+            piece = self._pieces.get(timeout=max(timeout_s, 0.001))
+        except queue.Empty:
+            return None
+        if piece == b"":
+            self._is_drained = True
+        return piece
+
+    def send(self, data: bytes) -> None:
+        if self.is_done:
+            raise GatewayUnreachable("the stream has ended")
+        with self._lock:
+            self.records.append(("data", bytes(data)))
+
+    def send_eof(self) -> None:
+        if self.is_done:
+            raise GatewayUnreachable("the stream has ended")
+        with self._lock:
+            self.records.append(("eof",))
+
+    def resize(self, cols: int, rows: int) -> None:
+        if self.is_done:
+            raise GatewayUnreachable("the stream has ended")
+        with self._lock:
+            self.records.append(("resize", cols, rows))
+
+    def close(self) -> None:
+        if self.is_closed_here:
+            return
+        if not self.is_far_ended:
+            with self._lock:
+                self.records.append(("close",))
+        self.is_closed_here = True
+        self._pieces.put(b"")
+
+    def refusal(self):
+        if not self._code:
+            return None
+        return {"code": self._code, "params": dict(self._params)}
+
+    def wait_close(self, timeout_s: float) -> dict:
+        if self._code:
+            raise GatewayRefusedDetail(code=self._code, params=dict(self._params))
+        if not self.is_far_ended:
+            raise GatewayUnreachable("the stream did not end in time")
+        return dict(self._params)
+
+    def data(self) -> list:
+        """The bytes this side sent, record by record."""
+        with self._lock:
+            return [record[1] for record in self.records if record[0] == "data"]
+
+
+class Streams:
+    """The transport's stream factory: every stream it opened, in order."""
+
+    def __init__(self):
         self.made = []
 
-    def __call__(self, **kwargs) -> ScriptedSocket:
-        host = kwargs.get("host", "")
-        made = ScriptedSocket(self._frames_by_host.get(host, []))
-        self.made.append((host, made))
+    def __call__(self, binding, open_record, **kwargs) -> ScriptedStream:
+        made = ScriptedStream(binding, open_record)
+        self.made.append(made)
         return made
 
-    def sockets_of(self, host: str) -> list:
-        return [made for made_host, made in self.made if made_host == host]
+
+def answering(transport, respond) -> None:
+    """Answer every question frame the resident sends with ``respond``'s reply.
+
+    Args:
+        transport: The scripted channel.
+        respond: ``respond(frame)`` gives the reply's ``{params}`` or
+            ``{code, params}``.
+    """
+    sent = transport.send_frame
+
+    def send_frame(binding, frame, is_last=False):
+        sent(binding, frame, is_last)
+        if "request" in frame:
+            reply = dict(respond(dict(frame)))
+            transport.deliver(
+                binding,
+                {"frame": dict(reply, type="reply", request=frame["request"])},
+            )
+
+    transport.send_frame = send_frame
 
 
-def sockets_by_hub(monkeypatch, frames_by_host: dict) -> HubScripts:
-    """Put one scripted socket under every hub's session."""
-    scripts = HubScripts(frames_by_host)
-    monkeypatch.setattr(session_module, "WebSocketClient", scripts)
-    return scripts
+def listen(resident, transport) -> None:
+    """Hand each session the lines of its binding, as a started one takes them."""
+    for session in list(resident._sessions.values()):
+        transport.listen_binding(session.label, session.take_line)
+
+
+def up(transport, label: str, url: str, welcome: dict, state=None) -> None:
+    """Open one hub's session, welcome it, and hand it a state."""
+    transport.deliver(
+        label,
+        {"event": "session_open", "address": url, "path": "lan", "handshake_ms": 1},
+    )
+    transport.deliver(label, {"frame": welcome})
+    if state is not None:
+        transport.deliver(label, {"frame": state})
 
 
 def released_handlers(resident, counts=None) -> list:
     """Swap every releasable handler for one that records, and return the log."""
     log = []
     counts = counts or {}
-    for service_type in ("ai", "file", "port", "rdp"):
+    for service_type in ("ai", "file", "rdp"):
         resident._services[service_type] = RecordingHandler(
             service_type, log, count=counts.get(service_type)
         )
@@ -252,15 +390,18 @@ def sessions_of(resident) -> dict:
     return dict(resident._sessions)
 
 
-def turn(resident, binding_id: str) -> int:
-    """One loop turn of one hub's session, by hand."""
-    return resident._sessions[binding_id].run_once()
-
-
 def wait_until(condition, timeout_s: float = 5) -> None:
     deadline = time.monotonic() + timeout_s
     while not condition() and time.monotonic() < deadline:
         time.sleep(0.01)
+
+
+def free_port() -> int:
+    """A loopback port nothing listens on now."""
+    probe = socket.create_server(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    return port
 
 
 class QuietSwitcher:
@@ -323,54 +464,53 @@ def inline_ai(resident, *, is_managed=None) -> tuple:
 
 
 @pytest.fixture
-def two_hubs(config_path):
-    """A resident bound to two hubs, neither connected yet."""
+def transport():
+    """The transport, in process, every stream it opens a scripted one."""
+    made = FakeTransportChannel()
+    made.stream_factory = Streams()
+    return made
+
+
+@pytest.fixture
+def two_hubs(config_path, transport):
+    """A resident bound to two hubs, neither connected yet, each session listening."""
     bind(
         config_path,
         bindings=[dict(BINDING, gateway_url=HOME_URL), dict(OFFICE_BINDING)],
     )
     resident = ClientResident(
-        log=discard, platform=FakeClientPlatform(), start_thread=run_inline
+        log=discard,
+        platform=FakeClientPlatform(),
+        start_thread=run_inline,
+        transport=transport,
     )
+    listen(resident, transport)
     yield resident
     resident.shutdown()
 
 
 @pytest.fixture
-def two_hubs_up(two_hubs, monkeypatch):
-    """Both hubs welcomed and their states taken, on their own sockets."""
-    scripts = sockets_by_hub(
-        monkeypatch,
-        {
-            "hub.lan": [HOME_WELCOME, HOME_STATE],
-            "office.lan": [OFFICE_WELCOME, OFFICE_STATE],
-        },
-    )
-    for binding_id, host in (("c1", "hub.lan"), ("c2", "office.lan")):
-        session = two_hubs._sessions[binding_id]
-        made = scripts(host=host)
-        made.connect()
-        session._greet(made)
-        kind, payload = made.recv()
-        session._dispatch(made, kind, payload)
-    return two_hubs, scripts
+def two_hubs_up(two_hubs, transport):
+    """Both hubs welcomed and their states taken."""
+    up(transport, "c1", HOME_URL, HOME_WELCOME, HOME_STATE)
+    up(transport, "c2", OFFICE_URL, OFFICE_WELCOME, OFFICE_STATE)
+    return two_hubs, transport
 
 
 # --- one session per binding ---
 
 
-def test_a_second_binding_gets_a_session_and_a_socket_of_its_own(two_hubs, monkeypatch):
-    scripts = sockets_by_hub(
-        monkeypatch,
-        {"hub.lan": [HOME_WELCOME, HOME_STATE], "office.lan": [OFFICE_WELCOME]},
-    )
+def test_a_second_binding_is_dialled_under_its_own_id(two_hubs, transport):
+    for session in sessions_of(two_hubs).values():
+        session.run_once()
 
-    turn(two_hubs, "c1")
-    turn(two_hubs, "c2")
-
+    dials = transport.commands_of("dial")
+    assert [dial["binding"] for dial in dials] == ["c1", "c2"]
+    assert [dial["psk"] for dial in dials] == [
+        hashlib.sha256(b"tok").hexdigest(),
+        hashlib.sha256(b"tok2").hexdigest(),
+    ]
     assert list(sessions_of(two_hubs)) == ["c1", "c2"]
-    assert [host for host, _made in scripts.made] == ["hub.lan", "office.lan"]
-    assert [made.sent[0]["id"] for _host, made in scripts.made] == ["c1", "c2"]
     rows = two_hubs.hubs()
     assert [(row["hub_id"], row["binding_id"]) for row in rows] == [
         ("h1", "c1"),
@@ -378,17 +518,30 @@ def test_a_second_binding_gets_a_session_and_a_socket_of_its_own(two_hubs, monke
     ]
 
 
+def test_each_hello_names_its_own_binding(two_hubs_up):
+    _resident, transport = two_hubs_up
+
+    hellos = [
+        (binding, frame["id"])
+        for binding, frame in transport.frames
+        if frame["type"] == "hello"
+    ]
+
+    assert hellos == [("c1", "c1"), ("c2", "c2")]
+    assert all("token" not in frame for _binding, frame in transport.frames)
+
+
 def test_a_hub_row_carries_the_round_trip_its_last_pong_measured(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     session = resident._sessions["c1"]
-    (made,) = scripts.sockets_of("hub.lan")
     clock = Clock()
     session._clock = clock
 
-    session._ping(made)
+    session._ping()
     clock.now += 0.0236
-    session._dispatch(
-        made, "text", json.dumps({"type": "pong", "nonce": made.sent[-1]["nonce"]})
+    transport.deliver(
+        "c1",
+        {"frame": {"type": "pong", "nonce": transport.frames_of("ping")[-1]["nonce"]}},
     )
 
     home, office = resident.hubs()
@@ -396,7 +549,7 @@ def test_a_hub_row_carries_the_round_trip_its_last_pong_measured(two_hubs_up):
 
 
 def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     home, office = resident.hubs()
 
@@ -405,7 +558,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "hub_name": "home",
         "binding_id": "c1",
         "gateway_url": HOME_URL,
-        "software": "neutrino_hub/0.3.0",
+        "software": "neutrino_hub/0.6.0",
         "connection": "connected",
         "wait_reason": "",
         "wait_code": None,
@@ -442,7 +595,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
 
 
 def test_the_merged_list_carries_every_entrys_hub(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     merged = resident.service_entries()
 
@@ -451,10 +604,9 @@ def test_the_merged_list_carries_every_entrys_hub(two_hubs_up):
 
 
 def test_a_hub_that_is_down_subtracts_only_its_own_entries(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    office = resident._sessions["c2"]
+    resident, transport = two_hubs_up
 
-    office._drop_socket()
+    transport.deliver("c2", {"event": "session_end"})
 
     assert resident.service_entries() == with_hub(HUB_SERVICES, "h1")
     assert [row["connection"] for row in resident.hubs()] == [
@@ -464,29 +616,23 @@ def test_a_hub_that_is_down_subtracts_only_its_own_entries(two_hubs_up):
 
 
 def test_a_hubs_state_refreshes_the_ai_handler_with_the_merged_list(
-    two_hubs, monkeypatch
+    two_hubs, transport
 ):
     released_handlers(two_hubs)
-    sockets_by_hub(
-        monkeypatch,
-        {"hub.lan": [HOME_WELCOME, HOME_STATE], "office.lan": [OFFICE_WELCOME]},
-    )
 
-    turn(two_hubs, "c1")
+    up(transport, "c1", HOME_URL, HOME_WELCOME, HOME_STATE)
 
-    # The state, then the socket's end after it, each converge once.
-    assert two_hubs._services["ai"].refreshed[0] == with_hub(HUB_SERVICES, "h1")
+    assert two_hubs._services["ai"].refreshed[-1] == with_hub(HUB_SERVICES, "h1")
 
 
 def test_a_hubs_state_and_a_leave_tell_the_shares_what_that_hub_lists(
-    two_hubs_up, monkeypatch, config_path
+    two_hubs_up, config_path
 ):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
     home = resident._sessions["c1"]
 
-    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
+    transport.deliver("c1", {"frame": HOME_STATE})
     listed = home.service_entries()
     resident.disconnect("h1")
 
@@ -498,28 +644,23 @@ def test_a_hubs_state_and_a_leave_tell_the_shares_what_that_hub_lists(
 
 
 def test_leaving_one_hub_stops_only_its_session_and_releases_only_its_hub(
-    two_hubs_up, monkeypatch, config_path
+    two_hubs_up, config_path
 ):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released = released_handlers(resident)
-    posted = []
-
-    def post(self, path, payload):
-        posted.append((path, payload))
-        return {}
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
     home = resident._sessions["c1"]
 
     resident.disconnect("h2")
 
-    wait_until(lambda: posted)
-    assert posted == [("/api/channel/leave", {"id": "c2", "token": "tok2"})]
+    wait_until(lambda: transport.commands_of("leave"))
+    (leave,) = transport.commands_of("leave")
+    assert leave["binding"] == "c2"
+    assert leave["psk"] == hashlib.sha256(b"tok2").hexdigest()
+    assert OFFICE_URL in leave["addresses"]
     assert list(sessions_of(resident)) == ["c1"]
     assert resident._sessions["c1"] is home
     assert home.connection() == "connected"
-    assert scripts.sockets_of("office.lan")[0].is_closed is True
-    assert scripts.sockets_of("hub.lan")[0].is_closed is False
+    assert set(transport.listeners) == {"c1"}
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
     assert released == []
     for handler in hub_releasers(resident):
@@ -527,13 +668,11 @@ def test_leaving_one_hub_stops_only_its_session_and_releases_only_its_hub(
     assert resident.service_entries() == with_hub(HUB_SERVICES, "h1")
 
 
-def test_leaving_lets_go_when_the_hub_refuses_the_leave(two_hubs_up, monkeypatch):
-    resident, _scripts = two_hubs_up
-
-    def refuse(self, path, payload):
-        raise GatewayRefused("401")
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", refuse, raising=True)
+def test_leaving_lets_go_when_the_hub_refuses_the_leave(two_hubs_up):
+    resident, transport = two_hubs_up
+    transport.answers["leave"] = functools.partial(
+        dict, code="binding_unknown", params={}
+    )
 
     resident.disconnect("h1")
 
@@ -542,54 +681,58 @@ def test_leaving_lets_go_when_the_hub_refuses_the_leave(two_hubs_up, monkeypatch
 
 
 def test_leaving_drops_the_binding_first_and_tells_the_hub_from_its_own_thread(
-    two_hubs_up, monkeypatch
+    two_hubs_up,
 ):
     """The row is gone before the hub hears; a hub that takes its time
     holds nobody up."""
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
-    posted = []
+    told = []
     hold = threading.Event()
 
-    def post(self, path, payload):
-        posted.append([binding["id"] for binding in enrollment.bindings()])
+    def leave(fields):
+        told.append([binding["id"] for binding in enrollment.bindings()])
         hold.wait(timeout=5)
         return {}
 
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
+    transport.answers["leave"] = leave
     started = time.monotonic()
 
     resident.disconnect("h2")
     elapsed = time.monotonic() - started
-    wait_until(lambda: posted)
+    wait_until(lambda: told)
     hold.set()
 
     assert elapsed < 1
-    assert posted == [["c1"]]
+    assert told == [["c1"]]
     assert list(sessions_of(resident)) == ["c1"]
 
 
-def test_a_refresh_reports_on_a_live_socket_and_wakes_a_session_that_is_down(
+def test_a_refresh_reports_on_a_live_session_and_starts_a_round_for_one_that_is_down(
     two_hubs_up,
 ):
-    resident, scripts = two_hubs_up
-    home = scripts.sockets_of("hub.lan")[0]
+    resident, transport = two_hubs_up
     office = resident._sessions["c2"]
-    office._end_socket(scripts.sockets_of("office.lan")[0])
-    office._backoff_s = 60
-    office._news.clear()
-    reports_before = len([frame for frame in home.sent if frame["type"] == "report"])
+    office.run_once()
+    transport.deliver("c2", {"event": "session_end"})
+    reports_before = len(transport.frames_of("report"))
 
     resident.refresh()
+    office.run_once()
 
-    reports_after = len([frame for frame in home.sent if frame["type"] == "report"])
-    assert reports_after == reports_before + 1
-    assert office._backoff_s == 5
-    assert office._news.is_set()
+    refreshed = [
+        (binding, frame)
+        for binding, frame in transport.frames
+        if frame["type"] == "report" and frame.get("is_refresh")
+    ]
+    assert [binding for binding, _frame in refreshed] == ["c1"]
+    assert len(transport.frames_of("report")) == reports_before + 1
+    assert transport.commands_of("round") == [{"binding": "c2"}]
+    assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [True, True]
 
 
 def test_a_hub_nobody_joined_cannot_be_left_or_reconnected(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     with pytest.raises(KeyError):
         resident.disconnect("h9")
@@ -600,10 +743,11 @@ def test_a_hub_nobody_joined_cannot_be_left_or_reconnected(two_hubs_up):
     assert list(sessions_of(resident)) == ["c1", "c2"]
 
 
-def test_an_empty_name_means_the_one_hub_joined(config_path, monkeypatch):
+def test_an_empty_name_means_the_one_hub_joined(config_path, transport):
     bind(config_path, url=HOME_URL)
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     try:
         resident.reconnect("")
         resident.disconnect("")
@@ -614,10 +758,7 @@ def test_an_empty_name_means_the_one_hub_joined(config_path, monkeypatch):
     assert enrollment.bindings() == []
 
 
-def test_a_binding_whose_hub_has_not_answered_is_named_by_its_binding_id(
-    two_hubs, monkeypatch
-):
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+def test_a_binding_whose_hub_has_not_answered_is_named_by_its_binding_id(two_hubs):
     assert [row["hub_id"] for row in two_hubs.hubs()] == ["h1", "h2"]
     two_hubs._sessions["c2"]._binding["hub_id"] = ""
 
@@ -629,50 +770,47 @@ def test_a_binding_whose_hub_has_not_answered_is_named_by_its_binding_id(
 # --- a hub that no longer knows this device ---
 
 
-def test_binding_unknown_keeps_the_row_waiting_for_leave(
-    two_hubs, monkeypatch, config_path
-):
+def test_binding_unknown_keeps_the_row_waiting_for_leave(two_hubs, transport):
     released_handlers(two_hubs)
-    scripts = sockets_by_hub(
-        monkeypatch,
+    up(transport, "c1", HOME_URL, HOME_WELCOME, HOME_STATE)
+
+    transport.deliver(
+        "c2",
         {
-            "hub.lan": [HOME_WELCOME, HOME_STATE],
-            "office.lan": [
-                {"type": "refused", "code": "binding_unknown", "params": {"id": "c2"}}
-            ],
+            "frame": {
+                "type": "refused",
+                "code": "binding_unknown",
+                "params": {"id": "c2"},
+            }
         },
     )
-    turn(two_hubs, "c1")
+    transport.deliver(
+        "c2",
+        {"event": "session_end", "code": "binding_unknown", "params": {"id": "c2"}},
+    )
 
-    delay = turn(two_hubs, "c2")
-    turn(two_hubs, "c2")
-
-    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
     assert list(sessions_of(two_hubs)) == ["c1", "c2"]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1", "c2"]
     for handler in hub_releasers(two_hubs):
         assert handler.released_hubs == ["h2"]
-    home, office = two_hubs.hubs()
+    _home, office = two_hubs.hubs()
     assert (office["connection"], office["wait_reason"]) == (
         "waiting",
         "unknown_device",
     )
     assert office["wait_code"] == {"code": "binding_unknown", "params": {"id": "c2"}}
     assert two_hubs.notices() == []
-    assert len(scripts.sockets_of("office.lan")) == 1
 
 
 # --- a hub that switches this client off ---
 
 
 def test_disabled_releases_only_that_hubs_entries(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released = released_handlers(resident)
-    office = resident._sessions["c2"]
-    made = ScriptedSocket([])
 
-    office._dispatch(made, "text", json.dumps(dict(OFFICE_STATE, is_disabled=True)))
-    office._dispatch(made, "text", json.dumps(dict(OFFICE_STATE, is_disabled=True)))
+    transport.deliver("c2", {"frame": dict(OFFICE_STATE, is_disabled=True)})
+    transport.deliver("c2", {"frame": dict(OFFICE_STATE, is_disabled=True)})
 
     assert released == []
     for handler in hub_releasers(resident):
@@ -681,24 +819,19 @@ def test_disabled_releases_only_that_hubs_entries(two_hubs_up):
         "connected",
         "disabled",
     ]
-    assert resident.service_action(
-        "port", {"hub_id": "h2", "id": "svc_tcp", "is_enabled": True}
-    ) == {"code": "client_disabled", "params": {}}
-    assert (
-        resident.service_action(
-            "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
-        )
-        == {}
-    )
+    assert resident.service_action("rdp", {"hub_id": "h2", "id": "rdp_lab"}) == {
+        "code": "client_disabled",
+        "params": {},
+    }
+    assert resident.service_action("rdp", {"hub_id": "h1", "id": "rdp_s9"}) == {}
 
 
 def test_an_action_naming_no_hub_is_the_exit_hubs(two_hubs_up, config_path):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
     resident.set_exit("h1")
-    home = resident._sessions["c1"]
-    made = ScriptedSocket([])
-    home._dispatch(made, "text", json.dumps(dict(HOME_STATE, is_disabled=True)))
+
+    transport.deliver("c1", {"frame": dict(HOME_STATE, is_disabled=True)})
 
     assert resident.service_action("ai", {"is_enabled": True}) == {
         "code": "client_disabled",
@@ -707,25 +840,26 @@ def test_an_action_naming_no_hub_is_the_exit_hubs(two_hubs_up, config_path):
 
 
 def test_an_action_reaches_its_handler_with_the_merged_list(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     released_handlers(resident)
 
-    assert resident.service_action("port", {"hub_id": "h2", "id": "svc_tcp"}) == {}
+    assert resident.service_action("file", {"hub_id": "h2", "id": "share_media"}) == {}
 
-    entries, body = resident._services["port"].acted[0]
+    entries, body = resident._services["file"].acted[0]
     assert entries == resident.service_entries()
-    assert body == {"hub_id": "h2", "id": "svc_tcp"}
-    assert resident.service_action("nothing", {}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
+    assert body == {"hub_id": "h2", "id": "share_media"}
+    for gone in ("nothing", "web", "port"):
+        assert resident.service_action(gone, {}) == {
+            "code": "unknown_request",
+            "params": {},
+        }
 
 
 # --- the exit hub ---
 
 
 def test_the_exit_is_the_chosen_hub_and_no_hub_otherwise(two_hubs_up, config_path):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     assert resident.exit_hub_id() == ""
     assert [row["is_exit"] for row in resident.hubs()] == [False, False]
@@ -741,7 +875,7 @@ def test_the_exit_is_the_chosen_hub_and_no_hub_otherwise(two_hubs_up, config_pat
 
 
 def test_the_chosen_exit_is_where_the_tools_point(two_hubs_up, config_path):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler, switcher = inline_ai(resident)
 
     assert resident.set_exit("h1") == {}
@@ -756,7 +890,7 @@ def test_the_chosen_exit_is_where_the_tools_point(two_hubs_up, config_path):
 def test_set_exit_to_a_joined_hub_moves_the_tools_in_one_activation(
     two_hubs_up, config_path
 ):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler, switcher = inline_ai(resident)
     resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
@@ -776,11 +910,11 @@ def test_set_exit_to_a_joined_hub_moves_the_tools_in_one_activation(
 
 
 def test_a_hub_that_is_not_connected_cannot_be_the_exit(two_hubs_up, config_path):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     _handler, switcher = inline_ai(resident)
     office = resident._sessions["c2"]
 
-    office._drop_socket()
+    transport.deliver("c2", {"event": "session_end"})
     assert resident.set_exit("h2") == {
         "code": "no_exit_hub",
         "params": {"hub_id": "h2"},
@@ -799,11 +933,10 @@ def test_a_hub_that_is_not_connected_cannot_be_the_exit(two_hubs_up, config_path
 
 
 def test_leaving_the_exit_leaves_no_exit_and_puts_the_tools_back(
-    two_hubs_up, monkeypatch, config_path
+    two_hubs_up, config_path
 ):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler, switcher = inline_ai(resident)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
     resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
 
@@ -817,11 +950,10 @@ def test_leaving_the_exit_leaves_no_exit_and_puts_the_tools_back(
 
 
 def test_a_rejoin_after_leaving_the_exit_makes_no_hub_the_exit(
-    two_hubs_up, monkeypatch, config_path
+    two_hubs_up, config_path
 ):
-    resident, scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     released_handlers(resident)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
     resident.set_exit("h1")
     resident.disconnect("h1")
     assert enrollment.exit_hub_id() == ""
@@ -835,7 +967,7 @@ def test_a_rejoin_after_leaving_the_exit_makes_no_hub_the_exit(
 
 
 def test_a_binding_gone_from_the_file_clears_the_exit(two_hubs_up, config_path):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     released_handlers(resident)
     resident.set_exit("h1")
     time.sleep(0.01)
@@ -849,37 +981,33 @@ def test_a_binding_gone_from_the_file_clears_the_exit(two_hubs_up, config_path):
 
 
 def test_binding_unknown_on_the_exit_keeps_it_until_leave(
-    two_hubs, monkeypatch, config_path
+    two_hubs, transport, config_path
 ):
     released_handlers(two_hubs)
     two_hubs._pin_exit("h1")
-    sockets_by_hub(
-        monkeypatch,
+    up(transport, "c2", OFFICE_URL, OFFICE_WELCOME, OFFICE_STATE)
+
+    transport.deliver(
+        "c1",
         {
-            "hub.lan": [
-                {"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}
-            ],
-            "office.lan": [OFFICE_WELCOME, OFFICE_STATE],
+            "frame": {
+                "type": "refused",
+                "code": "binding_unknown",
+                "params": {"id": "c1"},
+            }
         },
     )
-    turn(two_hubs, "c2")
-
-    turn(two_hubs, "c1")
 
     assert two_hubs.exit_hub_id() == "h1"
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
     two_hubs.disconnect("h1")
 
     assert two_hubs.exit_hub_id() == ""
     assert enrollment.exit_hub_id() == ""
 
 
-def test_with_no_joined_hub_the_tools_are_restored(
-    two_hubs_up, monkeypatch, config_path
-):
-    resident, _scripts = two_hubs_up
+def test_with_no_joined_hub_the_tools_are_restored(two_hubs_up, config_path):
+    resident, _transport = two_hubs_up
     handler, switcher = inline_ai(resident)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
     resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
 
@@ -894,34 +1022,41 @@ def test_with_no_joined_hub_the_tools_are_restored(
     assert handler.state()["ai"]["is_active"] is False
 
 
-def test_the_service_stream_is_opened_on_the_hub_named(two_hubs_up):
-    resident, scripts = two_hubs_up
-    outcome = {}
+def test_the_service_frame_is_asked_of_the_hub_named(two_hubs_up):
+    resident, transport = two_hubs_up
+    asked = []
 
-    def wait() -> None:
-        outcome["reply"] = resident.open_service("h2", "rdp_lab", timeout_s=5)
+    def respond(frame):
+        asked.append(frame)
+        return {"params": {"host": "x"}}
 
-    waiter = threading.Thread(target=wait)
-    waiter.start()
-    office_socket = scripts.sockets_of("office.lan")[0]
-    wait_until(lambda: any(frame["type"] == "open" for frame in office_socket.sent))
-    (opened,) = [frame for frame in office_socket.sent if frame["type"] == "open"]
-    resident._sessions["c2"]._dispatch(
-        office_socket,
-        "text",
-        json.dumps(
-            {"type": "close", "stream": opened["stream"], "params": {"host": "x"}}
-        ),
-    )
-    waiter.join(timeout=5)
+    answering(transport, respond)
 
-    assert opened["id"] == "rdp_lab"
-    assert outcome["reply"] == {"host": "x"}
-    assert all(
-        frame["type"] != "open" for frame in scripts.sockets_of("hub.lan")[0].sent
-    )
-    with pytest.raises(resident_module.GatewayUnreachable):
+    assert resident.open_service("h2", "rdp_lab", timeout_s=5) == {"host": "x"}
+
+    services = [
+        (binding, frame)
+        for binding, frame in transport.frames
+        if frame["type"] == "service"
+    ]
+    assert [(binding, frame["id"]) for binding, frame in services] == [
+        ("c2", "rdp_lab")
+    ]
+    with pytest.raises(GatewayUnreachable):
         resident.open_service("h9", "rdp_lab", timeout_s=0.05)
+
+
+def test_a_reply_with_a_code_is_the_hubs_refusal(two_hubs_up):
+    resident, transport = two_hubs_up
+    answering(
+        transport,
+        functools.partial(dict, code="service_unknown", params={"service_id": "x"}),
+    )
+
+    with pytest.raises(GatewayRefusedDetail) as refused:
+        resident.open_service("h1", "x", timeout_s=5)
+
+    assert refused.value.code == "service_unknown"
 
 
 # --- the binding file, diffed by id ---
@@ -930,7 +1065,7 @@ def test_the_service_stream_is_opened_on_the_hub_named(two_hubs_up):
 def test_a_rewrite_of_the_file_restarts_only_the_sessions_it_changed(
     two_hubs_up, config_path
 ):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
     home = resident._sessions["c1"]
     office = resident._sessions["c2"]
@@ -951,13 +1086,13 @@ def test_a_rewrite_of_the_file_restarts_only_the_sessions_it_changed(
     assert resident._sessions["c1"] is home
     assert resident._sessions["c2"] is not office
     assert home.connection() == "connected"
-    assert scripts.sockets_of("office.lan")[0].is_closed is True
+    assert "c2" not in transport.listeners and "c1" in transport.listeners
     assert resident._services["file"].released_hubs == ["h2"]
     assert resident._sessions["c2"].binding()["token"] == "rotated"
 
 
 def test_a_binding_gone_from_the_file_stops_its_session(two_hubs_up, config_path):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
     time.sleep(0.01)
     bind(config_path, bindings=[dict(OFFICE_BINDING)])
@@ -965,52 +1100,53 @@ def test_a_binding_gone_from_the_file_stops_its_session(two_hubs_up, config_path
     resident._adopt_external_binding()
 
     assert list(sessions_of(resident)) == ["c2"]
-    assert scripts.sockets_of("hub.lan")[0].is_closed is True
+    assert "c1" not in transport.listeners
     assert resident._forwards.released_hubs == ["h1"]
     assert resident.service_entries() == with_hub(OFFICE_SERVICES, "h2")
 
 
-def test_the_hubs_name_written_by_the_welcome_restarts_nothing(
-    config_path, monkeypatch
-):
+def test_the_hubs_name_written_by_the_welcome_restarts_nothing(config_path, transport):
     bind(config_path, bindings=[dict(BINDING, hub_id="", hub_name="")])
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    scripts = sockets_by_hub(monkeypatch, {"127.0.0.1": [HOME_WELCOME, HOME_STATE]})
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
+    listen(resident, transport)
     session = resident._sessions["c1"]
-    made = scripts(host="127.0.0.1")
     try:
-        made.connect()
-        session._greet(made)
+        up(transport, "c1", "tcp://127.0.0.1:9", HOME_WELCOME, HOME_STATE)
         assert json.loads(config_path.read_text())["bindings"][0]["hub_id"] == "h1"
 
         resident._adopt_external_binding()
 
         assert resident._sessions["c1"] is session
-        assert made.is_closed is False
+        assert "c1" in transport.listeners
         assert resident.hubs()[0]["hub_name"] == "home"
     finally:
         resident.shutdown()
 
 
 def test_an_external_binding_is_adopted_and_an_unbound_resident_idles(
-    config_path, monkeypatch
+    config_path, transport
 ):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     assert resident.is_connected() is False
     assert resident.hubs() == []
-    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME]})
 
     bind(config_path, url=HOME_URL)
     resident._adopt_external_binding()
-    turn(resident, "c1")
+    resident._sessions["c1"].run_once()
 
     assert resident.is_connected() is True
-    assert scripts.made[0][1].sent[0]["type"] == "hello"
+    assert [dial["binding"] for dial in transport.commands_of("dial")] == ["c1"]
     resident.shutdown()
 
 
-def test_connect_starts_the_new_hubs_session(config_path, monkeypatch):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+def test_connect_starts_the_new_hubs_session(config_path, monkeypatch, transport):
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     monkeypatch.setattr(
         enrollment,
         "enroll",
@@ -1025,11 +1161,14 @@ def test_connect_starts_the_new_hubs_session(config_path, monkeypatch):
         resident.shutdown()
 
 
-def test_a_started_resident_adopts_the_file_on_its_own(config_path, monkeypatch):
+def test_a_started_resident_starts_its_transport_and_adopts_the_file_on_its_own(
+    config_path, monkeypatch, transport
+):
     monkeypatch.setattr(resident_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.02)
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     released_handlers(resident)
-    sockets_by_hub(monkeypatch, {})
     resident.start()
     try:
         bind(config_path, url=HOME_URL)
@@ -1038,21 +1177,57 @@ def test_a_started_resident_adopts_the_file_on_its_own(config_path, monkeypatch)
             lambda: "c1" in resident._sessions
             and resident._sessions["c1"]._thread is not None
         )
+        wait_until(lambda: transport.commands_of("dial"))
 
+        assert transport.started == 1
         assert list(sessions_of(resident)) == ["c1"]
         assert resident._sessions["c1"]._thread is not None
+        assert transport.commands_of("dial")[0]["binding"] == "c1"
     finally:
         resident.shutdown()
+    assert transport.stopped == 1
+
+
+def test_a_start_with_no_transport_program_leaves_a_notice(config_path, transport):
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
+    released_handlers(resident)
+    resident._transport_program = ""
+
+    resident.start()
+    wait_until(lambda: transport.started == 1)
+    resident.shutdown()
+
+    assert [notice["code"] for notice in resident.notices()] == ["transport_missing"]
+
+
+def test_the_transport_ending_and_coming_back_dials_every_hub_again(two_hubs_up):
+    resident, transport = two_hubs_up
+    for session in sessions_of(resident).values():
+        session.run_once()
+    transport.commands.clear()
+
+    resident._transport_lost()
+    assert [row["connection"] for row in resident.hubs()] == [
+        "connecting",
+        "connecting",
+    ]
+    resident._transport_ready()
+    for session in sessions_of(resident).values():
+        session.run_once()
+
+    assert [dial["binding"] for dial in transport.commands_of("dial")] == ["c1", "c2"]
 
 
 # --- the start, and the one way out ---
 
 
-def test_the_start_turns_nothing_on(config_path, tmp_path):
+def test_the_start_turns_nothing_on(config_path, tmp_path, transport):
     """Opening the client shows a clean machine: a record is a preference,
     never a mount to bring back."""
     platform = FakeClientPlatform()
-    resident = ClientResident(log=discard, platform=platform)
+    resident = ClientResident(log=discard, platform=platform, transport=transport)
     resident._services["ai"]._switcher = QuietSwitcher()
     location = str(tmp_path / "nas")
     record_id = mount_record_id("h1", "share_media", location)
@@ -1069,7 +1244,6 @@ def test_the_start_turns_nothing_on(config_path, tmp_path):
     )
     credentials = tmp_path / "config" / CLIENT_MOUNT_CREDENTIALS_DIR_NAME
     credentials.mkdir(parents=True)
-    (credentials / f"{record_id}.credentials").write_text("username=media")
 
     resident.start()
     try:
@@ -1084,10 +1258,12 @@ def test_the_start_turns_nothing_on(config_path, tmp_path):
     assert [row["state"] for row in states["mounts"]] == ["detached"]
 
 
-def test_the_start_returns_before_the_leftovers_are_cleared(config_path):
+def test_the_start_returns_before_the_leftovers_are_cleared(config_path, transport):
     """The window opens first: the clearing, which can run a console tool,
     happens on the resident's own thread, the handlers after it."""
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     released_handlers(resident)
     entered = threading.Event()
     hold = threading.Event()
@@ -1115,11 +1291,14 @@ def test_the_start_returns_before_the_leftovers_are_cleared(config_path):
     assert is_file_untouched and is_ai_unstarted
 
 
-def test_the_start_clears_what_an_unclean_exit_left(config_path):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+def test_the_start_clears_what_an_unclean_exit_left(config_path, transport):
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
     released_handlers(resident)
 
     resident.start()
+    wait_until(lambda: resident._services["ai"].starts == 1)
     resident.shutdown()
 
     assert resident._services["ai"].cleared == 1
@@ -1127,9 +1306,11 @@ def test_the_start_clears_what_an_unclean_exit_left(config_path):
     assert resident._services["ai"].starts == 1
 
 
-def test_a_handler_that_cannot_clear_is_logged_and_never_fatal(config_path):
+def test_a_handler_that_cannot_clear_is_logged_and_never_fatal(config_path, transport):
     lines = []
-    resident = ClientResident(log=lines.append, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=lines.append, platform=FakeClientPlatform(), transport=transport
+    )
     released_handlers(resident)
 
     def refuse() -> None:
@@ -1138,15 +1319,18 @@ def test_a_handler_that_cannot_clear_is_logged_and_never_fatal(config_path):
     resident._services["file"].clear_leftovers = refuse
 
     resident.start()
+    wait_until(lambda: resident._services["file"].starts == 1)
     resident.shutdown()
 
     assert any(line.startswith("file: could not clear") for line in lines)
     assert resident._services["file"].starts == 1
 
 
-def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
+def test_the_shutdown_logs_one_line_a_step_in_order(config_path, transport):
     lines = []
-    resident = ClientResident(log=lines.append, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=lines.append, platform=FakeClientPlatform(), transport=transport
+    )
     released_handlers(resident, counts={"file": 2, "forwards": 1, "rdp": 0})
 
     resident.shutdown()
@@ -1159,14 +1343,17 @@ def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
         "forwards: 1 closed",
         "shut down",
     ]
+    assert transport.stopped == 1
 
 
 def test_a_step_that_hangs_is_given_up_and_the_others_still_run(
-    config_path, monkeypatch
+    config_path, monkeypatch, transport
 ):
     monkeypatch.setattr(resident_module, "CLIENT_SHUTDOWN_DEADLINE_S", 0.4)
     lines = []
-    resident = ClientResident(log=lines.append, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=lines.append, platform=FakeClientPlatform(), transport=transport
+    )
     released = released_handlers(resident)
     hanging = RecordingHandler("ai", released, is_hanging=True)
     resident._services["ai"] = hanging
@@ -1183,17 +1370,21 @@ def test_a_step_that_hangs_is_given_up_and_the_others_still_run(
     assert time.monotonic() - started < 5
 
 
-def test_shutdown_runs_the_order_once_closes_every_socket_and_is_idempotent(
+def test_shutdown_runs_the_order_once_undials_every_hub_and_ends_the_transport(
     two_hubs_up,
 ):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
+    for session in sessions_of(resident).values():
+        session.run_once()
     released = released_handlers(resident)
 
     resident.shutdown()
     resident.shutdown()
 
     assert released == ["ai", "file", "rdp", "forwards"]
-    assert all(made.is_closed for _host, made in scripts.made)
+    assert transport.commands_of("undial") == [{"binding": "c1"}, {"binding": "c2"}]
+    assert transport.stopped == 1
+    assert transport.listeners == {}
 
 
 def test_shutdown_survives_a_handler_that_refuses(two_hubs):
@@ -1240,7 +1431,7 @@ def test_show_reaches_the_registered_window(two_hubs):
     assert shown == [1]
 
 
-# --- the language, the theme and the announcements ---
+# --- the settings, the language, the theme and the announcements ---
 
 
 def test_the_first_start_takes_the_machines_language_and_keeps_it(two_hubs):
@@ -1265,6 +1456,54 @@ def test_a_picked_language_and_theme_are_kept_and_the_watchers_are_told(two_hubs
     assert two_hubs.language() == "zh-CN"
     assert two_hubs.theme() == "light"
     assert told == [1, 1]
+
+
+def test_the_settings_save_keeps_each_value_given(two_hubs, tmp_path):
+    ssh_config = tmp_path / "home" / ".ssh" / "config"
+    ssh_config.parent.mkdir()
+    ssh_config.write_text("Host lab\n    User me\n")
+
+    assert (
+        two_hubs.apply_settings(
+            {"language": "zh-CN", "theme": "light", "is_ssh_include_enabled": True}
+        )
+        == {}
+    )
+
+    assert (two_hubs.language(), two_hubs.theme()) == ("zh-CN", "light")
+    assert two_hubs.is_ssh_include_enabled() is True
+    assert ssh_config.read_text().splitlines()[0] == "Include ~/.ssh/neutrino_config"
+    assert two_hubs.apply_settings({"is_ssh_include_enabled": False}) == {}
+    assert ssh_config.read_text() == "Host lab\n    User me\n"
+    assert two_hubs.apply_settings({"theme": "dark"}) == {}
+    assert two_hubs.language() == "zh-CN"
+
+
+@pytest.mark.parametrize(
+    "body, name, value",
+    [
+        ({"language": "fr"}, "language", "fr"),
+        ({"theme": "pink"}, "theme", "pink"),
+        ({"is_ssh_include_enabled": "yes"}, "is_ssh_include_enabled", "yes"),
+    ],
+)
+def test_a_setting_value_it_does_not_take_keeps_nothing(two_hubs, body, name, value):
+    two_hubs.set_theme("light")
+
+    outcome = two_hubs.apply_settings(dict(body, theme=body.get("theme", "dark")))
+
+    assert outcome == {
+        "code": "setting_value_unknown",
+        "params": {"name": name, "value": value},
+    }
+    assert two_hubs.theme() == "light"
+
+
+def test_the_ssh_configuration_is_read_back(two_hubs):
+    reply = two_hubs.ssh_config()
+
+    assert reply["path"].endswith("/.ssh/neutrino_config")
+    assert set(reply) == {"path", "text"}
 
 
 def test_a_burst_of_changes_reaches_the_watchers_once(two_hubs, monkeypatch):
@@ -1374,19 +1613,18 @@ def test_a_watcher_held_too_often_is_skipped_until_it_returns(two_hubs, monkeypa
 
 
 def test_the_resident_forwards_a_sessions_changes_to_the_watchers(
-    two_hubs, monkeypatch
+    two_hubs, transport, monkeypatch
 ):
     monkeypatch.setattr(resident_module, "ANNOUNCE_SETTLE_S", 0.01)
     heard = threading.Event()
     two_hubs.subscribe(heard.set)
-    sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME]})
 
-    turn(two_hubs, "c1")
+    up(transport, "c1", HOME_URL, HOME_WELCOME)
 
     assert heard.wait(timeout=5)
 
 
-# --- the virtual networks and the terminals ---
+# --- the virtual networks and the joins ---
 
 EASYTIER_OVERLAY = {
     "provider": "easytier",
@@ -1425,7 +1663,7 @@ class FakeOverlayDriver:
 
 
 @pytest.fixture
-def overlay_resident(config_path):
+def overlay_resident(config_path, transport):
     bind(
         config_path,
         bindings=[dict(BINDING, gateway_url=HOME_URL, overlays=[EASYTIER_OVERLAY])],
@@ -1435,24 +1673,27 @@ def overlay_resident(config_path):
         log=discard,
         platform=FakeClientPlatform(),
         overlay_drivers={"easytier": driver, "netbird": FakeOverlayDriver()},
+        transport=transport,
     )
     yield resident, driver
     resident.shutdown()
 
 
 @pytest.fixture
-def joining_resident(config_path):
+def joining_resident(config_path, transport):
     driver = FakeOverlayDriver()
     resident = ClientResident(
         log=discard,
         platform=FakeClientPlatform(),
         overlay_drivers={"easytier": driver, "netbird": FakeOverlayDriver()},
+        transport=transport,
     )
     resident.connect(
         link_for(
             {
-                "urls": [HOME_URL, "https://10.144.144.1:8443"],
+                "urls": [HOME_URL, "tcp://10.144.144.1:8443"],
                 "token": "ticket-1",
+                "key": HUB_KEY,
                 "overlays": [EASYTIER_OVERLAY],
             }
         )
@@ -1476,15 +1717,37 @@ def test_a_join_shows_its_row_at_once_connecting_with_its_network(joining_reside
     assert resident.connect_overlay(row["binding_id"]) == {}
 
 
+def test_a_join_is_spent_through_the_transport_under_the_pending_id(
+    joining_resident, transport
+):
+    resident, _driver = joining_resident
+    (session,) = sessions_of(resident).values()
+    pending_id = session.binding_id
+    transport.answers["join"] = functools.partial(dict, binding_id="c7", token="tok7")
+    transport.listen_binding(session.label, session.take_line)
+
+    session.run_once()
+    session.run_once()
+
+    (join,) = transport.commands_of("join")
+    assert join["binding"] == pending_id
+    assert join["ticket"] == "ticket-1"
+    assert join["hub_key"] == HUB_KEY
+    (dial,) = transport.commands_of("dial")
+    assert dial["binding"] == "c7"
+    assert dial["psk"] == hashlib.sha256(b"tok7").hexdigest()
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c7"]
+    assert resident.hubs()[0]["binding_id"] == "c7"
+    assert "c7" in transport.listeners and pending_id not in transport.listeners
+
+
 def test_a_completed_join_keeps_the_session_and_its_network(joining_resident):
     resident, _driver = joining_resident
     (session,) = sessions_of(resident).values()
     pending_id = session.binding_id
     assert resident.connect_overlay(pending_id) == {}
     wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
-    completed = dict(
-        session.binding(), id="c7", token="tok7", ticket="", is_pending=False
-    )
+    completed = enrollment.joined_binding(session.binding(), "c7", "tok7")
 
     resident._hub_joined(session, completed)
     resident._reconcile_bindings(enrollment.config_stamp())
@@ -1496,49 +1759,16 @@ def test_a_completed_join_keeps_the_session_and_its_network(joining_resident):
     assert [binding["id"] for binding in enrollment.bindings()] == ["c7"]
 
 
-class LeaveDesk:
-    """The hub's leave route as the resident reaches it.
-
-    Attributes:
-        told: The id of every binding the hub was told of, in order.
-        refusal: Raised by every tell; None answers each one.
-    """
-
-    def __init__(self, refusal=None):
-        self.told = []
-        self.refusal = refusal
-
-    def __call__(self, binding: dict) -> None:
-        self.told.append(binding["id"])
-        if self.refusal is not None:
-            raise self.refusal
-
-
-def completing(binding_id: str):
-    """``complete_join`` as a hub answers it, with the id it gives."""
-
-    def complete(binding: dict, url: str) -> dict:
-        return enrollment._binding(
-            dict(
-                binding,
-                id=binding_id,
-                token="fresh",
-                gateway_url=url,
-                ticket="",
-                is_pending=False,
-            )
-        )
-
-    return complete
+def told_left(transport) -> list:
+    """The binding of every leave the hub was told of, in order."""
+    return [fields["binding"] for fields in transport.commands_of("leave")]
 
 
 @pytest.fixture
-def rejoining(config_path, monkeypatch):
+def rejoining(config_path, transport):
     """The home hub's binding c1, the exit, and a join of the home hub beside it."""
     bind(config_path, url=HOME_URL)
     enrollment.set_exit_hub_id("h1")
-    desk = LeaveDesk()
-    monkeypatch.setattr(enrollment, "leave", desk)
     lines = []
     resident = ClientResident(
         log=lines.append,
@@ -1548,17 +1778,21 @@ def rejoining(config_path, monkeypatch):
             "netbird": FakeOverlayDriver(),
         },
         start_thread=run_inline,
+        transport=transport,
     )
-    resident.connect(link_for({"urls": [HOME_URL], "token": "ticket-2"}))
-    yield resident, desk, lines
+    resident.connect(
+        link_for({"urls": [HOME_URL], "token": "ticket-2", "key": HUB_KEY})
+    )
+    listen(resident, transport)
+    yield resident, lines
     resident.shutdown()
 
 
 def test_a_join_landing_on_the_binding_held_here_ends_it_and_tells_no_hub(
-    rejoining,
+    rejoining, transport
 ):
     """The hub lands a machine joining again on its row: the old binding gives way."""
-    resident, desk, _lines = rejoining
+    resident, _lines = rejoining
     _held, joining = sessions_of(resident).values()
     completed = dict(
         joining.binding(), id="c1", token="fresh", ticket="", is_pending=False
@@ -1573,20 +1807,18 @@ def test_a_join_landing_on_the_binding_held_here_ends_it_and_tells_no_hub(
     assert resident.exit_hub_id() == "h1"
     stored = [(binding["id"], binding["token"]) for binding in enrollment.bindings()]
     assert stored == [("c1", "fresh")]
-    assert desk.told == []
+    assert told_left(transport) == []
 
 
 def test_a_join_given_a_new_id_ends_the_binding_its_welcome_names_and_tells_the_hub(
-    rejoining, monkeypatch
+    rejoining, transport
 ):
-    resident, desk, _lines = rejoining
+    resident, _lines = rejoining
     held, joining = sessions_of(resident).values()
-    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
-    monkeypatch.setattr(enrollment, "complete_join", completing("c9"))
-    made = scripts(host="hub.lan")
-    made.connect()
+    transport.answers["join"] = functools.partial(dict, binding_id="c9", token="fresh")
 
-    joining._greet(made, HOME_URL)
+    joining.run_once()
+    up(transport, "c9", HOME_URL, HOME_WELCOME, HOME_STATE)
 
     assert list(sessions_of(resident).values()) == [joining]
     (row,) = resident.hubs()
@@ -1594,33 +1826,33 @@ def test_a_join_given_a_new_id_ends_the_binding_its_welcome_names_and_tells_the_
     assert row["connection"] == "connected"
     assert resident.exit_hub_id() == "h1"
     assert [binding["id"] for binding in enrollment.bindings()] == ["c9"]
-    assert desk.told == ["c1"]
+    assert told_left(transport) == ["c1"]
     assert held.connection() != "connected"
 
 
 def test_a_binding_the_hub_forgot_ends_at_the_welcome_whatever_the_leave_answers(
-    rejoining, monkeypatch
+    rejoining, transport
 ):
-    resident, desk, lines = rejoining
-    desk.refusal = GatewayRefused("hub refused this client's token")
+    resident, lines = rejoining
+    transport.answers["leave"] = functools.partial(
+        dict, code="binding_unknown", params={}
+    )
+    transport.answers["join"] = functools.partial(dict, binding_id="c9", token="fresh")
     held, joining = sessions_of(resident).values()
     held._unbind({"code": "binding_unknown", "params": {}})
     assert resident.hubs()[0]["wait_reason"] == "unknown_device"
-    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
-    monkeypatch.setattr(enrollment, "complete_join", completing("c9"))
-    made = scripts(host="hub.lan")
-    made.connect()
 
-    joining._greet(made, HOME_URL)
+    joining.run_once()
+    up(transport, "c9", HOME_URL, HOME_WELCOME, HOME_STATE)
 
     assert [row["binding_id"] for row in resident.hubs()] == ["c9"]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c9"]
-    assert desk.told == ["c1"]
+    assert told_left(transport) == ["c1"]
     assert any("could not tell the hub we are leaving" in line for line in lines)
 
 
 def test_a_start_with_two_bindings_for_one_hub_keeps_the_one_joined_last(
-    config_path, monkeypatch
+    config_path, transport
 ):
     bind(
         config_path,
@@ -1630,29 +1862,32 @@ def test_a_start_with_two_bindings_for_one_hub_keeps_the_one_joined_last(
             dict(BINDING, id="c3", token="tok3", gateway_url=HOME_URL),
         ],
     )
-    desk = LeaveDesk(refusal=GatewayRefused("hub refused this client's token"))
-    monkeypatch.setattr(enrollment, "leave", desk)
+    transport.answers["leave"] = functools.partial(
+        dict, code="binding_unknown", params={}
+    )
 
     resident = ClientResident(
-        log=discard, platform=FakeClientPlatform(), start_thread=run_inline
+        log=discard,
+        platform=FakeClientPlatform(),
+        start_thread=run_inline,
+        transport=transport,
     )
 
     assert [row["binding_id"] for row in resident.hubs()] == ["c2", "c3"]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c2", "c3"]
-    assert desk.told == ["c1"]
+    assert told_left(transport) == ["c1"]
     resident.shutdown()
 
 
-def test_leaving_a_pending_join_tells_no_hub(joining_resident, monkeypatch):
+def test_leaving_a_pending_join_tells_no_hub(joining_resident, transport):
     resident, _driver = joining_resident
-    told = []
-    monkeypatch.setattr(enrollment, "leave", told.append)
     (row,) = resident.hubs()
 
     resident.disconnect(row["binding_id"])
 
     assert resident.hubs() == [] and enrollment.bindings() == []
-    assert told == []
+    time.sleep(0.05)
+    assert told_left(transport) == []
 
 
 def test_a_hub_row_carries_its_networks_row_and_no_secret(overlay_resident):
@@ -1788,12 +2023,16 @@ def test_leaving_a_hub_leaves_its_network_when_no_other_hub_names_it(
     assert driver.steps == [("join", "home"), ("leave", "home")]
 
 
+# --- the terminals ---
+
+
 def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     lepton = {
         "device_id": "d1",
         "name": "lepton",
         "is_online": True,
+        "accounts": ["alice", "lab"],
         "sessions": [
             {
                 "session_id": "s1",
@@ -1804,13 +2043,14 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
             }
         ],
     }
-    resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
+    transport.deliver("c1", {"frame": dict(HOME_STATE, terminals=[lepton])})
 
     assert resident.terminal_entries() == [
         {
             "device_id": "d1",
             "name": "lepton",
             "is_online": True,
+            "accounts": ["alice", "lab"],
             "hub_id": "h1",
         }
     ]
@@ -1830,31 +2070,40 @@ def offered(resident) -> None:
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton, muon]))
 
 
-def test_a_terminal_opens_a_shell_stream_with_its_size(two_hubs_up):
-    resident, scripts = two_hubs_up
+def opened(transport, kind: str) -> list:
+    """The open record of every stream of one kind, with its binding."""
+    return [
+        (binding, record)
+        for binding, record in transport.opens
+        if record.get("kind") == kind
+    ]
+
+
+def test_a_terminal_opens_a_shell_stream_with_its_size_and_account(two_hubs_up):
+    resident, transport = two_hubs_up
     offered(resident)
 
-    outcome = resident.open_terminal("h1", "d1", 120, 40)
+    outcome = resident.open_terminal("h1", "d1", 120, 40, account="lab")
 
-    (made,) = scripts.sockets_of("hub.lan")
-    opened = [frame for frame in made.sent if frame.get("type") == "open"]
-    assert opened == [
-        {
-            "type": "open",
-            "stream": 1,
-            "kind": "shell",
-            "device_id": "d1",
-            "cols": 120,
-            "rows": 40,
-            "session_id": outcome["session_id"],
-        }
+    assert opened(transport, "shell") == [
+        (
+            "c1",
+            {
+                "kind": "shell",
+                "device_id": "d1",
+                "cols": 120,
+                "rows": 40,
+                "account": "lab",
+                "session_id": outcome["session_id"],
+            },
+        )
     ]
     assert str(uuid.UUID(outcome["session_id"])) == outcome["session_id"]
     assert resident.has_terminal(outcome["terminal_id"])
 
 
 def test_every_new_terminal_is_a_new_session(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     offered(resident)
 
     first = resident.open_terminal("h1", "d1", 80, 24)
@@ -1864,19 +2113,45 @@ def test_every_new_terminal_is_a_new_session(two_hubs_up):
 
 
 def test_a_kept_session_is_attached_to_again_by_its_id(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
 
     outcome = resident.open_window_terminal("h1", "d1", 80, 24, "kept-1")
 
-    (made,) = scripts.sockets_of("hub.lan")
-    (opened,) = [frame for frame in made.sent if frame.get("kind") == "shell"]
-    assert (opened["session_id"], opened["is_resumed"]) == ("kept-1", True)
+    ((_binding, record),) = opened(transport, "shell")
+    assert (record["session_id"], record["is_resumed"]) == ("kept-1", True)
     assert outcome["session_id"] == "kept-1"
 
 
+def test_a_window_terminal_runs_as_the_account_picked(two_hubs_up):
+    resident, transport = two_hubs_up
+    offered(resident)
+
+    resident.open_window_terminal("h1", "d1", 80, 24, account="lab")
+
+    ((_binding, record),) = opened(transport, "shell")
+    assert record["account"] == "lab"
+
+
+def test_a_resize_goes_to_the_shell_as_a_record(two_hubs_up):
+    resident, transport = two_hubs_up
+    offered(resident)
+    terminal_id = resident.open_terminal("h1", "d1", 80, 24)["terminal_id"]
+    (stream,) = transport.stream_factory.made
+
+    assert resident.resize_terminal(terminal_id, 132, 50) == {}
+    stream.end({"exit_code": 0})
+
+    assert stream.records == [("resize", 132, 50)]
+    assert resident.resize_terminal(terminal_id, 80, 24) == {
+        "code": "shell_unknown",
+        "params": {"shell": terminal_id},
+    }
+    assert resident.resize_terminal("nobody", 80, 24)["code"] == "unknown_terminal"
+
+
 def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     offered(resident)
     outcome = resident.open_terminal("h1", "d1", 80, 24)
     session = resident._sessions["c1"]
@@ -1909,20 +2184,32 @@ def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up)
     ]
 
 
+def test_persist_and_stop_go_to_the_hub_as_frames_answered_by_replies(two_hubs_up):
+    resident, transport = two_hubs_up
+    answering(transport, functools.partial(dict, params={}))
+
+    assert resident.persist_terminal_session("h1", "kept-1", is_shared=True) == {}
+    assert resident.stop_terminal_session("h1", "kept-1") == {}
+
+    persist = transport.frames_of("persist")[0]
+    assert (persist["session_id"], persist["is_shared"]) == ("kept-1", True)
+    assert "is_persistent" not in persist
+    assert transport.frames_of("stop_session")[0]["session_id"] == "kept-1"
+
+
 def test_a_new_shared_terminal_says_so_and_a_resumed_one_does_not(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
 
     resident.open_terminal("h1", "d1", 80, 24, is_shared=True)
     resident.open_terminal("h1", "d1", 80, 24, "kept-1", is_shared=True)
 
-    (made,) = scripts.sockets_of("hub.lan")
-    shells = [frame for frame in made.sent if frame.get("kind") == "shell"]
-    assert [frame.get("is_shared") for frame in shells] == [True, None]
+    shells = [record for _binding, record in opened(transport, "shell")]
+    assert [record.get("is_shared") for record in shells] == [True, None]
 
 
 def test_a_machine_the_hub_does_not_offer_opens_no_shell(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     offered(resident)
 
     assert resident.open_terminal("h1", "d9", 80, 24) == {
@@ -1932,28 +2219,30 @@ def test_a_machine_the_hub_does_not_offer_opens_no_shell(two_hubs_up):
 
 
 def test_an_exec_opens_on_a_machine_the_hub_offers(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
 
-    outcome = resident.open_exec("h1", "d2", ["uptime"], False, 80, 24)
+    outcome = resident.open_exec("h1", "d2", ["uptime"], False, 80, 24, "lab")
 
-    (made,) = scripts.sockets_of("hub.lan")
-    (opened,) = [frame for frame in made.sent if frame.get("type") == "open"]
-    assert opened == {
-        "type": "open",
-        "stream": 1,
-        "kind": "exec",
-        "device_id": "d2",
-        "argv": ["uptime"],
-        "is_tty": False,
-        "cols": 80,
-        "rows": 24,
-    }
+    assert opened(transport, "exec") == [
+        (
+            "c1",
+            {
+                "kind": "exec",
+                "device_id": "d2",
+                "argv": ["uptime"],
+                "is_tty": False,
+                "cols": 80,
+                "rows": 24,
+                "account": "lab",
+            },
+        )
+    ]
     assert resident.has_terminal(outcome["terminal_id"])
 
 
 def test_an_exec_on_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     offered(resident)
     resident._sessions["c1"]._take_state(
         dict(
@@ -1974,11 +2263,10 @@ def test_an_exec_on_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
 def test_an_execs_pieces_carry_its_input_its_eof_and_its_two_outputs(two_hubs_up):
     from neutrino_client.core.terminal import encode_piece, read_piece
 
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
     terminal_id = resident.open_exec("h1", "d2", ["cat"], False, 80, 24)["terminal_id"]
-    session = resident._sessions["c1"]
-    session._streams.take_credit({"type": "credit", "stream": 1, "bytes": 64})
+    (stream,) = transport.stream_factory.made
     typed = io.BytesIO(encode_piece(b"hi\n") + encode_piece(b""))
     is_ended = threading.Event()
 
@@ -1990,21 +2278,17 @@ def test_an_execs_pieces_carry_its_input_its_eof_and_its_two_outputs(two_hubs_up
 
     typing = threading.Thread(target=resident.attach_terminal, args=(terminal_id, read))
     typing.start()
-    (made,) = scripts.sockets_of("hub.lan")
-    wait_until(lambda: {"type": "eof", "stream": 1} in made.sent)
-    session._streams.take_bytes(1, b"\x01hi\n")
-    session._streams.take_bytes(1, b"\x02warn")
-    session._streams.take_close(
-        {"type": "close", "stream": 1, "params": {"exit_code": 4}}
-    )
+    wait_until(lambda: ("eof",) in stream.records)
+    stream.push(b"\x01hi\n")
+    stream.push(b"\x02warn")
+    stream.end({"exit_code": 4})
     is_ended.set()
     typing.join(timeout=5)
     shown = io.BytesIO()
     resident.terminal_output(terminal_id, shown.write)
 
-    sent = made.sent
-    assert sent.index((1, b"hi\n")) < sent.index({"type": "eof", "stream": 1})
-    assert {"type": "close", "stream": 1, "code": "", "params": {}} not in sent
+    assert stream.records.index(("data", b"hi\n")) < stream.records.index(("eof",))
+    assert ("close",) not in stream.records
     shown.seek(0)
     assert [read_piece(shown.read), read_piece(shown.read)] == [
         b"\x01hi\n",
@@ -2014,7 +2298,7 @@ def test_an_execs_pieces_carry_its_input_its_eof_and_its_two_outputs(two_hubs_up
 
 
 def test_persist_by_session_id_names_only_the_flag_given(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     offered(resident)
     session = resident._sessions["c1"]
     asked = []
@@ -2032,7 +2316,7 @@ def test_persist_by_session_id_names_only_the_flag_given(two_hubs_up):
 
 
 def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     assert resident.open_terminal("h1", "d9", 80, 24) == {
         "code": "unknown_terminal",
@@ -2042,30 +2326,39 @@ def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
 
 
 def test_the_result_is_asked_once_after_the_shell_ended(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
     terminal_id = resident.open_terminal("h1", "d1", 80, 24)["terminal_id"]
-    session = resident._sessions["c1"]
-    session._streams.take_close(
-        {"type": "close", "stream": 1, "params": {"exit_code": 0}}
-    )
+    (stream,) = transport.stream_factory.made
+    stream.end({"exit_code": 0})
 
     assert resident.terminal_result(terminal_id) == {"exit_code": 0}
     assert resident.terminal_result(terminal_id)["code"] == "unknown_terminal"
 
 
+def test_a_refused_shell_says_why(two_hubs_up):
+    resident, transport = two_hubs_up
+    offered(resident)
+    terminal_id = resident.open_terminal("h1", "d1", 80, 24)["terminal_id"]
+    (stream,) = transport.stream_factory.made
+    stream.end({"account": "root"}, code="account_not_enabled")
+
+    assert resident.terminal_result(terminal_id) == {
+        "code": "account_not_enabled",
+        "params": {"account": "root"},
+    }
+
+
 def test_the_windows_terminal_pushes_its_output_then_its_end(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
     pieces = []
     resident.on_terminal_output = pieces.append
 
     terminal_id = resident.open_window_terminal("h1", "d1", 80, 24)["terminal_id"]
-    session = resident._sessions["c1"]
-    session._streams.take_bytes(1, b"$ ")
-    session._streams.take_close(
-        {"type": "close", "stream": 1, "params": {"exit_code": 0}}
-    )
+    (stream,) = transport.stream_factory.made
+    stream.push(b"$ ")
+    stream.end({"exit_code": 0})
 
     wait_until(lambda: len(pieces) == 2)
     assert pieces == [
@@ -2076,42 +2369,90 @@ def test_the_windows_terminal_pushes_its_output_then_its_end(two_hubs_up):
 
 
 def test_the_windows_keys_and_close_reach_the_shell(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
     terminal_id = resident.open_window_terminal("h1", "d1", 80, 24)["terminal_id"]
-    session = resident._sessions["c1"]
-    session._streams.take_credit({"type": "credit", "stream": 1, "bytes": 64})
+    (stream,) = transport.stream_factory.made
 
     assert resident.terminal_input(terminal_id, b"ls\r") == {}
     assert resident.close_terminal(terminal_id) == {}
 
-    (made,) = scripts.sockets_of("hub.lan")
-    assert [frame for frame in made.sent if isinstance(frame, tuple)] == [(1, b"ls\r")]
-    assert {"type": "close", "stream": 1, "code": "", "params": {}} in made.sent
+    assert stream.records == [("data", b"ls\r"), ("close",)]
     assert resident.terminal_input(terminal_id, b"x")["code"] == "unknown_terminal"
     assert resident.close_terminal(terminal_id)["code"] == "unknown_terminal"
 
 
 def test_a_machine_the_hub_does_not_offer_opens_no_window_terminal(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     assert resident.open_window_terminal("h1", "d9", 80, 24)["code"] == (
         "unknown_terminal"
     )
 
 
+# --- ssh for other programs ---
+
+SSH_ENTRY = {
+    "id": "ssh_server_d1_lab",
+    "type": "ssh",
+    "title": "SSH (lab)",
+    "payload": {
+        "host": "192.168.1.5",
+        "port": 22001,
+        "account": "lab",
+        "host_key_fingerprint": "SHA256:x",
+    },
+    "is_healthy": True,
+    "source": "module",
+    "device_id": "d1",
+    "device_name": "lab-gpu",
+    "app_id": "ssh_server_d1",
+    "name": "lab",
+    "local_port": 24001,
+}
+
+
+def test_an_ssh_proxy_carries_its_bytes_on_a_connect_stream_raw(two_hubs_up):
+    resident, transport = two_hubs_up
+    transport.deliver("c1", {"frame": dict(HOME_STATE, services=[SSH_ENTRY])})
+
+    outcome = resident.open_ssh_proxy("h1", "ssh_server_d1_lab")
+    (stream,) = transport.stream_factory.made
+    stream.push(b"SSH-2.0-server\r\n")
+    stream.end()
+    shown = io.BytesIO()
+    resident.terminal_output(outcome["terminal_id"], shown.write)
+
+    assert opened(transport, "connect") == [
+        ("c1", {"kind": "connect", "id": "ssh_server_d1_lab"})
+    ]
+    assert shown.getvalue() == b"SSH-2.0-server\r\n"
+    assert resident.terminal_result(outcome["terminal_id"]) == {"exit_code": None}
+
+
+def test_an_ssh_proxy_names_an_ssh_entry_of_a_hub_joined(two_hubs_up):
+    resident, transport = two_hubs_up
+
+    assert resident.open_ssh_proxy("h1", "svc_tcp") == {
+        "code": "service_unknown",
+        "params": {"service_id": "svc_tcp"},
+    }
+    assert resident.open_ssh_proxy("h9", "x")["code"] == "unknown_hub"
+    assert transport.opens == []
+
+
 # --- the jobs in the state document ---
 
 
 class SlowHandler(ServiceTypeHandler):
-    """A handler whose action waits until the test lets it finish.
+    """A desktop handler whose action waits until the test lets it finish.
 
     Attributes:
         acted: Every body it was handed.
         answer: What the action ends with.
     """
 
-    service_type = "port"
+    service_type = "rdp"
 
     def __init__(self):
         self.acted = []
@@ -2136,103 +2477,66 @@ def entry(resident, hub_id: str, entry_id: str) -> dict:
 
 
 def test_a_press_writes_its_job_before_the_work_and_clears_it_after(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler = SlowHandler()
-    resident._services["port"] = handler
+    resident._services["rdp"] = handler
     held = []
     resident._start_thread = held.append
 
-    assert (
-        resident.service_action(
-            "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
-        )
-        == {}
-    )
-    assert entry(resident, "h1", "svc_tcp")["job"] == "forwarding"
+    assert resident.service_action("rdp", {"hub_id": "h1", "id": "rdp_s9"}) == {}
+    assert entry(resident, "h1", "rdp_s9")["job"] == "connecting"
     assert handler.acted == []
 
     handler.release_it.set()
     held[0]()
-    assert entry(resident, "h1", "svc_tcp")["job"] == ""
-    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
-
-
-def test_a_forwardable_entry_carries_its_local_port_and_its_forward(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    probe = socket.create_server(("127.0.0.1", 0))
-    wanted = probe.getsockname()[1]
-    probe.close()
-
-    row = entry(resident, "h1", "svc_tcp")
-    assert (row["local_port"], row["forward"]) == ("auto", None)
-    for entry_id in ("svc_wiki", "ai", "rdp_s9", "share_media"):
-        assert entry(resident, "h1", entry_id)["local_port"] == "auto"
-    assert resident.configure_forward("h1", "svc_tcp", wanted) == {}
-    assert resident.configure_forward("h2", "svc_tcp", wanted)["code"] == "port_taken"
-    assert resident.configure_forward("h1", "svc_wiki", 15000) == {}
-    for entry_id in ("ai", "rdp_s9", "share_media"):
-        assert resident.configure_forward("h1", entry_id, 15001) == {
-            "code": "unknown_request",
-            "params": {},
-        }
-    resident._services["port"].forward(hub_id="h1", entry_id="svc_tcp", port=1)
-
-    row = entry(resident, "h1", "svc_tcp")
-    assert (row["local_port"], row["forward"]) == (wanted, wanted)
-    resident._forwards.release()
+    assert entry(resident, "h1", "rdp_s9")["job"] == ""
+    assert entry(resident, "h1", "rdp_s9")["last_error"] is None
 
 
 def test_a_second_press_while_the_job_runs_is_dropped(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler = SlowHandler()
-    resident._services["port"] = handler
+    resident._services["rdp"] = handler
     held = []
     resident._start_thread = held.append
-    body = {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
+    body = {"hub_id": "h1", "id": "rdp_s9"}
 
-    resident.service_action("port", body)
-    assert resident.service_action("port", body) == {}
+    resident.service_action("rdp", body)
+    assert resident.service_action("rdp", body) == {}
 
     assert len(held) == 1
 
 
 def test_a_failed_job_is_the_entrys_error_until_a_refresh(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler = SlowHandler()
     handler.answer = {"code": "forward_failed", "params": {"detail": "in use"}}
     handler.release_it.set()
-    resident._services["port"] = handler
+    resident._services["rdp"] = handler
 
-    resident.service_action(
-        "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
-    )
+    resident.service_action("rdp", {"hub_id": "h1", "id": "rdp_s9"})
 
-    assert entry(resident, "h1", "svc_tcp")["last_error"] == {
+    assert entry(resident, "h1", "rdp_s9")["last_error"] == {
         "code": "forward_failed",
         "params": {"detail": "in use"},
     }
     resident.refresh()
-    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+    assert entry(resident, "h1", "rdp_s9")["last_error"] is None
 
 
 def test_a_lane_that_answers_busy_never_reaches_the_page(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     handler = SlowHandler()
     handler.answer = {"code": "busy", "params": {"step": "switching"}}
     handler.release_it.set()
-    resident._services["port"] = handler
+    resident._services["rdp"] = handler
 
-    assert (
-        resident.service_action(
-            "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": False}
-        )
-        == {}
-    )
-    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+    assert resident.service_action("rdp", {"hub_id": "h1", "id": "rdp_s9"}) == {}
+    assert entry(resident, "h1", "rdp_s9")["last_error"] is None
 
 
 def test_a_mount_on_its_way_is_the_entrys_job(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     class Mounting(ServiceTypeHandler):
         service_type = "file"
@@ -2249,55 +2553,66 @@ def test_a_mount_on_its_way_is_the_entrys_job(two_hubs_up):
                 ]
             }
 
+        def entry_fields(self, entry):
+            return {}
+
     resident._services["file"] = Mounting()
 
     assert entry(resident, "h1", "share_media")["job"] == "mounting"
 
 
+def test_a_file_entry_carries_its_default_place_and_whose_login_mounts_it(
+    two_hubs_up, tmp_path
+):
+    resident, _transport = two_hubs_up
+
+    row = entry(resident, "h1", "share_media")
+
+    assert row["mount_default"] == str(tmp_path / "home" / "remote" / "hub-media")
+    assert row["is_declared"] is False
+    assert (row["local_port"], row["forward"]) == ("auto", None)
+
+
 def test_a_refresh_sets_each_hub_refreshing_and_clears_its_errors(two_hubs_up):
-    resident, scripts = two_hubs_up
-    home = resident._sessions["c1"]
-    home._last_error = {"code": "hub_reply_unreadable", "params": {}}
+    resident, transport = two_hubs_up
+    resident._panel_errors["c1"] = {"code": "web_token_missing", "params": {}}
 
     resident.refresh()
 
     assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [True, True]
     assert resident.hubs()[0]["last_error"] is None
-    (made,) = scripts.sockets_of("hub.lan")
-    assert made.sent[-1]["is_refresh"] is True
+    refreshed = [
+        binding
+        for binding, frame in transport.frames
+        if frame["type"] == "report" and frame.get("is_refresh")
+    ]
+    assert refreshed == ["c1", "c2"]
 
-    home._dispatch(made, "text", json.dumps(dict(HOME_STATE, hash="s9")))
+    transport.deliver("c1", {"frame": dict(HOME_STATE, hash="s9")})
     assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [False, True]
 
 
 def test_a_refresh_while_a_hub_refreshes_is_dropped(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     resident.refresh()
-    (made,) = scripts.sockets_of("hub.lan")
-    sent = len(made.sent)
+    sent = len(transport.frames)
 
     resident.refresh()
 
-    assert len(made.sent) == sent
+    assert len(transport.frames) == sent
 
 
 def test_a_disabled_hub_does_not_refresh(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    office = resident._sessions["c2"]
-    office._dispatch(
-        ScriptedSocket([]), "text", json.dumps(dict(OFFICE_STATE, is_disabled=True))
-    )
+    resident, transport = two_hubs_up
+    transport.deliver("c2", {"frame": dict(OFFICE_STATE, is_disabled=True)})
 
     resident.refresh()
 
     assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [True, False]
 
 
-def test_a_leave_is_shown_before_the_hub_is_left(two_hubs_up, monkeypatch):
-    resident, _scripts = two_hubs_up
-    monkeypatch.setattr(
-        channel.GatewayHttpChannel, "post", lambda self, path, payload: {}
-    )
+def test_a_leave_is_shown_before_the_hub_is_left(two_hubs_up):
+    resident, _transport = two_hubs_up
     held = []
     resident._start_thread = held.append
 
@@ -2311,16 +2626,16 @@ def test_a_leave_is_shown_before_the_hub_is_left(two_hubs_up, monkeypatch):
 
 
 def test_leaving_a_hub_nobody_joined_is_a_key_error(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
 
     with pytest.raises(KeyError):
         resident.leave("h9")
 
 
 def test_a_forgotten_binding_keeps_its_row_and_leaves_no_notice(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     office = resident._sessions["c2"]
-    office._drop_socket()
+    transport.deliver("c2", {"event": "session_end"})
 
     office._unbind({"code": "binding_unknown", "params": {}})
 
@@ -2330,7 +2645,7 @@ def test_a_forgotten_binding_keeps_its_row_and_leaves_no_notice(two_hubs_up):
 
 
 def test_a_closed_notice_is_gone_and_a_refresh_drops_every_notice(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, _transport = two_hubs_up
     resident._add_notice("binding_unknown", {"hub": "office"})
     resident._add_notice("binding_unknown", {"hub": "lab"})
     first, second = resident.notices()
@@ -2346,33 +2661,30 @@ def test_a_closed_notice_is_gone_and_a_refresh_drops_every_notice(two_hubs_up):
     assert resident.notices() == []
 
 
-def leave_with_hub_answering(resident, monkeypatch, answer):
-    """Press Leave on the office hub while the hub answers its leave with
-    ``answer``; returns the binding ids on disk at each post."""
-    seen = []
-
-    def post(self, path, payload):
-        seen.append([binding["id"] for binding in enrollment.bindings()])
-        raise answer
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
-    resident.leave("h2")
-    wait_until(lambda: seen)
-    return seen
+def _unreachable(fields):
+    raise GatewayUnreachable("cannot reach hub")
 
 
 @pytest.mark.parametrize(
     "answer",
-    [GatewayUnreachable("cannot reach hub"), GatewayRefused("401")],
+    [_unreachable, functools.partial(dict, code="binding_unknown", params={})],
     ids=["unreachable", "token_rejected"],
 )
 def test_a_leave_forgets_the_binding_and_the_row_whatever_the_hub_answers(
-    two_hubs_up, monkeypatch, answer
+    two_hubs_up, answer
 ):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     released_handlers(resident)
+    seen = []
 
-    seen = leave_with_hub_answering(resident, monkeypatch, answer)
+    def leave(fields):
+        seen.append([binding["id"] for binding in enrollment.bindings()])
+        return answer(fields)
+
+    transport.answers["leave"] = leave
+
+    resident.leave("h2")
+    wait_until(lambda: seen)
 
     assert seen == [["c1"]]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
@@ -2415,43 +2727,387 @@ def test_a_clipboard_the_platform_cannot_write_is_a_code(two_hubs):
     }
 
 
-def test_a_token_entry_opens_as_a_job(two_hubs_up, monkeypatch):
-    resident, _scripts = two_hubs_up
-    token_entry = {
+# --- the apps ---
+
+
+def app_state(web_port: int, port_port: int, *, is_token_required=False) -> dict:
+    """The home hub's state with one app of two entries and a declared share."""
+    services = [
+        {
+            "id": "gitea_d1_web",
+            "type": "web",
+            "title": "Gitea",
+            "payload": {
+                "url": "http://192.168.1.5:3000/explore?tab=repos",
+                "is_token_required": is_token_required,
+            },
+            "is_healthy": True,
+            "source": "module",
+            "device_id": "d1",
+            "device_name": "lab",
+            "app_id": "gitea_d1",
+            "name": "web",
+            "local_port": web_port,
+        },
+        {
+            "id": "gitea_d1_ssh",
+            "type": "port",
+            "title": "Gitea",
+            "payload": {"host": "192.168.1.5", "port": 2222, "protocol": "tcp"},
+            "is_healthy": True,
+            "source": "module",
+            "device_id": "d1",
+            "device_name": "lab",
+            "app_id": "gitea_d1",
+            "name": "ssh",
+            "local_port": port_port,
+        },
+        {
+            "id": "nas_file_media",
+            "type": "file",
+            "title": "media",
+            "payload": {"protocol": "smb", "host": "192.168.1.9", "share": "media"},
+            "is_healthy": True,
+            "source": "declared",
+            "device_id": "",
+            "device_name": "",
+            "app_id": "nas",
+            "name": "file_media",
+        },
+    ]
+    apps = [
+        {
+            "id": "gitea_d1",
+            "title": "Gitea",
+            "source": "module",
+            "device_id": "d1",
+            "device_name": "lab",
+            "local_name": "gitea.lab.localhost",
+        },
+        {
+            "id": "nas",
+            "title": "NAS",
+            "source": "declared",
+            "device_id": "",
+            "device_name": "",
+            "local_name": "nas.nas.localhost",
+        },
+    ]
+    return dict(HOME_STATE, hash="sa", services=services, apps=apps)
+
+
+@pytest.fixture
+def app_hub(two_hubs_up):
+    """The home hub publishing Gitea's two entries at free fixed numbers."""
+    resident, transport = two_hubs_up
+    ports = (free_port(), free_port())
+    transport.deliver("c1", {"frame": app_state(*ports)})
+    return resident, transport, ports
+
+
+def forward_starts(transport) -> list:
+    return transport.commands_of("forward_start")
+
+
+def test_an_app_row_is_listed_with_its_job_and_whether_it_is_in_use(app_hub):
+    resident, _transport, _ports = app_hub
+
+    (row,) = resident.app_rows()
+
+    assert row == {
+        "id": "gitea_d1",
+        "title": "Gitea",
+        "source": "module",
+        "device_id": "d1",
+        "device_name": "lab",
+        "local_name": "gitea.lab.localhost",
         "hub_id": "h1",
-        "id": "cloudcli_d1_alice",
-        "type": "web",
-        "payload": {"url": "http://h:3001/", "is_token_required": True},
+        "job": "",
+        "last_error": None,
+        "is_in_use": False,
     }
-    monkeypatch.setattr(resident, "service_entries", lambda: [token_entry])
 
-    assert resident._entry_job("web", {"hub_id": "h1", "id": "cloudcli_d1_alice"}) == (
-        "h1/cloudcli_d1_alice",
-        "opening",
+
+def test_an_app_entry_forwards_at_the_hubs_number_until_the_person_sets_one(app_hub):
+    resident, _transport, (web_port, _port_port) = app_hub
+
+    row = entry(resident, "h1", "gitea_d1_web")
+
+    assert (row["local_port"], row["is_local_port_own"], row["forward"]) == (
+        web_port,
+        False,
+        None,
     )
 
 
-def test_every_web_entry_opens_as_a_job_and_its_disconnect_is_one(two_hubs_up):
-    resident, _scripts = two_hubs_up
+def test_use_forwards_every_entry_at_its_number_and_opens_the_first_page(app_hub):
+    resident, transport, (web_port, port_port) = app_hub
+    held = []
+    resident._start_thread = held.append
 
-    assert resident._entry_job("web", {"hub_id": "h1", "id": "svc_wiki"}) == (
-        "h1/svc_wiki",
-        "opening",
+    assert resident.open_app("h1", "gitea_d1") == {}
+    assert resident.app_rows()[0]["job"] == "opening"
+    held[0]()
+
+    assert forward_starts(transport) == [
+        {
+            "binding": "c1",
+            "listen": f"127.0.0.1:{web_port}",
+            "protocol": "tcp",
+            "open": {"kind": "connect", "id": "gitea_d1_web"},
+        },
+        {
+            "binding": "c1",
+            "listen": f"127.0.0.1:{port_port}",
+            "protocol": "tcp",
+            "open": {"kind": "connect", "id": "gitea_d1_ssh"},
+        },
+    ]
+    assert resident.platform.opened_urls == [
+        f"http://gitea.lab.localhost:{web_port}/explore?tab=repos"
+    ]
+    row = resident.app_rows()[0]
+    assert (row["job"], row["last_error"], row["is_in_use"]) == ("", None, True)
+    assert entry(resident, "h1", "gitea_d1_ssh")["forward"] == port_port
+
+
+def test_use_on_a_mac_opens_the_loopback(app_hub):
+    resident, _transport, (web_port, _port_port) = app_hub
+    resident.platform.os_name = "darwin"
+
+    resident.open_app("h1", "gitea_d1")
+
+    assert resident.platform.opened_urls == [
+        f"http://127.0.0.1:{web_port}/explore?tab=repos"
+    ]
+
+
+def test_a_token_page_opens_with_the_token_its_service_reply_gives(two_hubs_up):
+    resident, transport = two_hubs_up
+    ports = (free_port(), free_port())
+    transport.deliver("c1", {"frame": app_state(*ports, is_token_required=True)})
+    asked = []
+
+    def respond(frame):
+        asked.append(frame.get("id"))
+        return {"params": {"token": "t0k"}}
+
+    answering(transport, respond)
+
+    resident.open_app("h1", "gitea_d1")
+
+    assert asked == ["gitea_d1_web"]
+    assert resident.platform.opened_urls == [
+        f"http://gitea.lab.localhost:{ports[0]}/explore?tab=repos&tkn=t0k"
+    ]
+    assert "t0k" not in json.dumps(resident.app_rows())
+
+
+def test_a_number_another_program_holds_is_refused_and_the_other_forwards_stay(
+    app_hub,
+):
+    resident, transport, (web_port, port_port) = app_hub
+    held = socket.create_server(("127.0.0.1", port_port))
+    try:
+        resident.open_app("h1", "gitea_d1")
+    finally:
+        held.close()
+
+    row = resident.app_rows()[0]
+    assert row["last_error"] == {"code": "port_taken", "params": {"port": port_port}}
+    assert row["is_in_use"] is True
+    assert [command["listen"] for command in forward_starts(transport)] == [
+        f"127.0.0.1:{web_port}"
+    ]
+
+
+def test_a_number_the_transport_cannot_bind_is_port_taken(app_hub):
+    resident, transport, (web_port, _port_port) = app_hub
+    transport.answers["forward_start"] = functools.partial(
+        dict, code="port_taken", params={"port": web_port}
     )
-    assert resident._entry_job(
-        "web", {"hub_id": "h1", "id": "svc_wiki", "is_enabled": False}
-    ) == ("h1/svc_wiki", "disconnecting")
+
+    resident.open_app("h1", "gitea_d1")
+
+    assert resident.app_rows()[0]["last_error"] == {
+        "code": "port_taken",
+        "params": {"port": web_port},
+    }
+    assert resident.platform.opened_urls == []
+
+
+def test_stop_ends_every_forward_of_the_app(app_hub):
+    resident, transport, (web_port, port_port) = app_hub
+    resident.open_app("h1", "gitea_d1")
+
+    assert resident.stop_app("h1", "gitea_d1") == {}
+
+    assert transport.commands_of("forward_stop") == [
+        {"listen": f"127.0.0.1:{web_port}", "protocol": "tcp"},
+        {"listen": f"127.0.0.1:{port_port}", "protocol": "tcp"},
+    ]
+    assert resident.app_rows()[0]["is_in_use"] is False
+
+
+def test_an_app_the_hub_does_not_list_is_unknown(app_hub):
+    resident, _transport, _ports = app_hub
+
+    assert resident.open_app("h1", "nobody") == {
+        "code": "unknown_app",
+        "params": {"app_id": "nobody"},
+    }
+    assert resident.stop_app("h9", "gitea_d1")["code"] == "unknown_app"
+    assert resident.configure_app("h1", "nobody", {})["code"] == "unknown_app"
+
+
+def test_a_failed_use_is_the_apps_error_until_a_refresh(app_hub):
+    resident, transport, _ports = app_hub
+    transport.answers["forward_start"] = functools.partial(
+        dict, code="forward_failed", params={}
+    )
+    resident.open_app("h1", "gitea_d1")
+    assert resident.app_rows()[0]["last_error"] is not None
+
+    resident.refresh()
+
+    assert resident.app_rows()[0]["last_error"] is None
+
+
+def test_configure_keeps_the_persons_numbers_and_an_empty_one_goes_back(app_hub):
+    resident, _transport, (web_port, port_port) = app_hub
+    own = free_port()
+
+    assert resident.configure_app("h1", "gitea_d1", {"web": own}) == {}
+
+    row = entry(resident, "h1", "gitea_d1_web")
+    assert (row["local_port"], row["is_local_port_own"]) == (own, True)
+    assert resident.configure_app("h1", "gitea_d1", {"web": None}) == {}
+    row = entry(resident, "h1", "gitea_d1_web")
+    assert (row["local_port"], row["is_local_port_own"]) == (web_port, False)
+    assert resident.configure_app("h1", "gitea_d1", {"web": ""}) == {}
+
+
+@pytest.mark.parametrize("number", [80, 70000, "abc", True])
+def test_configure_refuses_a_number_out_of_range(app_hub, number):
+    resident, _transport, _ports = app_hub
+
+    assert resident.configure_app("h1", "gitea_d1", {"web": number}) == {
+        "code": "local_port_invalid",
+        "params": {"port": number},
+    }
+    assert entry(resident, "h1", "gitea_d1_web")["is_local_port_own"] is False
+
+
+def test_configure_refuses_another_entrys_number_and_keeps_nothing(app_hub):
+    resident, _transport, (web_port, port_port) = app_hub
+    own = free_port()
+
+    assert resident.configure_app("h1", "gitea_d1", {"web": port_port}) == {
+        "code": "port_taken",
+        "params": {"port": port_port},
+    }
+    assert resident.configure_app("h1", "gitea_d1", {"web": own, "ssh": own}) == {
+        "code": "port_taken",
+        "params": {"port": own},
+    }
+    assert entry(resident, "h1", "gitea_d1_web")["local_port"] == web_port
+    assert entry(resident, "h1", "gitea_d1_ssh")["local_port"] == port_port
+
+
+def test_configure_lets_two_entries_of_one_save_trade_numbers(app_hub):
+    resident, _transport, (web_port, port_port) = app_hub
+
+    assert (
+        resident.configure_app("h1", "gitea_d1", {"web": port_port, "ssh": web_port})
+        == {}
+    )
+
+    assert entry(resident, "h1", "gitea_d1_web")["local_port"] == port_port
+    assert entry(resident, "h1", "gitea_d1_ssh")["local_port"] == web_port
+
+
+def test_configure_is_refused_while_the_app_is_in_use(app_hub):
+    resident, _transport, _ports = app_hub
+    resident.open_app("h1", "gitea_d1")
+
+    assert resident.configure_app("h1", "gitea_d1", {"web": free_port()}) == {
+        "code": "app_in_use",
+        "params": {},
+    }
+
+
+def test_configure_refuses_an_entry_the_app_has_not(app_hub):
+    resident, _transport, _ports = app_hub
+
+    assert resident.configure_app("h1", "gitea_d1", {"file_media": 30000}) == {
+        "code": "unknown_request",
+        "params": {},
+    }
+
+
+def test_a_tcp_and_a_udp_entry_may_hold_one_number(two_hubs_up):
+    resident, transport = two_hubs_up
+    state = app_state(free_port(), free_port())
+    udp = dict(
+        state["services"][1],
+        id="gitea_d1_dns_udp",
+        name="dns_udp",
+        payload={"host": "192.168.1.5", "port": 53, "protocol": "udp"},
+        local_port=free_port(),
+    )
+    state["services"].insert(2, udp)
+    transport.deliver("c1", {"frame": state})
+    shared = free_port()
+
+    assert resident.configure_app("h1", "gitea_d1", {"ssh": shared}) == {}
+    assert resident.configure_app("h1", "gitea_d1", {"dns_udp": shared}) == {}
+    assert resident._store.local_ports()["h1/gitea_d1_dns_udp"]["protocol"] == "udp"
+
+
+def test_an_entry_gone_from_the_hubs_list_ends_its_forward(app_hub):
+    resident, transport, (web_port, port_port) = app_hub
+    resident.open_app("h1", "gitea_d1")
+    state = app_state(web_port, port_port)
+    state["services"] = state["services"][:1] + state["services"][2:]
+
+    transport.deliver("c1", {"frame": dict(state, hash="sb")})
+
+    assert list(resident._forwards.forwards()) == ["h1/gitea_d1_web"]
+    assert transport.commands_of("forward_stop") == [
+        {"listen": f"127.0.0.1:{port_port}", "protocol": "tcp"}
+    ]
+
+
+def test_a_forward_that_ends_with_a_code_is_its_entrys_and_its_apps_error(app_hub):
+    resident, transport, (_web_port, port_port) = app_hub
+    resident.open_app("h1", "gitea_d1")
+    refusal = {"code": "agent_offline", "params": {"device": "d1"}}
+
+    resident._forwards.take_end(
+        dict(
+            refusal,
+            event="forward_end",
+            listen=f"127.0.0.1:{port_port}",
+            protocol="tcp",
+        )
+    )
+
+    assert entry(resident, "h1", "gitea_d1_ssh")["last_error"] == refusal
+    assert resident.app_rows()[0]["last_error"] == refusal
+    assert entry(resident, "h1", "gitea_d1_ssh")["forward"] is None
+    resident.refresh()
+    assert entry(resident, "h1", "gitea_d1_ssh")["last_error"] is None
 
 
 # --- the way in, the panel and the connect stream ---
 
 
 def test_the_hub_row_says_the_way_in_and_whether_the_panel_is_allowed(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    home = resident._sessions["c1"]
+    resident, transport = two_hubs_up
 
-    home._take_state(
-        dict(HOME_STATE, reached_through="ssh_relay", is_panel_allowed=True)
+    transport.deliver(
+        "c1",
+        {"frame": dict(HOME_STATE, reached_through="ssh_relay", is_panel_allowed=True)},
     )
 
     row, office = resident.hubs()
@@ -2460,77 +3116,52 @@ def test_the_hub_row_says_the_way_in_and_whether_the_panel_is_allowed(two_hubs_u
 
 
 def test_open_connect_opens_a_connect_stream_on_the_hub_named(two_hubs_up):
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
 
-    stream = resident.open_connect("h2", "svc_tcp")
+    resident.open_connect("h2", "svc_tcp")
 
-    (made,) = scripts.sockets_of("office.lan")
-    opened = [frame for frame in made.sent if frame.get("type") == "open"]
-    assert opened == [
-        {"type": "open", "stream": stream.stream_id, "kind": "connect", "id": "svc_tcp"}
+    assert opened(transport, "connect") == [
+        ("c2", {"kind": "connect", "id": "svc_tcp"})
     ]
-    assert {"type": "credit", "stream": stream.stream_id, "bytes": 1048576} in made.sent
     with pytest.raises(GatewayUnreachable):
         resident.open_connect("h9", "svc_tcp")
-
-
-def test_a_hubs_forwards_wait_on_that_hubs_channel(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    office = resident._sessions["c2"]
-
-    assert resident._wait_channel("h1", 0.01) is True
-    assert resident._wait_channel("h2", 0.01) is True
-    assert resident._wait_channel("h9", 0.01) is False
-
-    office._end_socket(office._client)
-
-    assert resident._wait_channel("h1", 0.01) is True
-    assert resident._wait_channel("h2", 0.01) is False
-    assert resident._forwards._wait_channel == resident._wait_channel
 
 
 PANEL_TOKEN = "panel-token-once"  # scan: allow
 
 
-def panel_allowed(resident, *, code="", params=None) -> None:
-    """The home hub allows the panel and answers its ``service`` stream.
+def panel_allowed(resident, transport, *, code="", params=None) -> list:
+    """The home hub allows the panel and answers its ``service`` frame.
 
-    The answer is the close the hub sends once the client's open arrives:
-    ``{token}``, or the refusal ``code`` with ``params``.
+    Returns:
+        Every step, in order: ``("service", frame)`` for each question and
+        ``("forward_start", fields)`` for each forward.
     """
-    session = resident._sessions["c1"]
-    session._take_state(dict(HOME_STATE, is_panel_allowed=True))
-    made = session._client
+    transport.deliver("c1", {"frame": dict(HOME_STATE, is_panel_allowed=True)})
+    steps = []
     answer = {"token": PANEL_TOKEN} if params is None and not code else params
 
-    def answer_the_open() -> None:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            opened = [
-                frame
-                for frame in list(made.sent)
-                if isinstance(frame, dict)
-                and frame.get("kind") == "service"
-                and frame.get("is_panel") is True
-            ]
-            if opened:
-                session._streams.take_close(
-                    {
-                        "type": "close",
-                        "stream": opened[0]["stream"],
-                        "code": code,
-                        "params": answer or {},
-                    }
-                )
-                return
-            time.sleep(0.005)
+    def respond(frame):
+        steps.append(("service", frame))
+        reply = {"params": dict(answer or {})}
+        if code:
+            reply["code"] = code
+        return reply
 
-    threading.Thread(target=answer_the_open, daemon=True).start()
+    def forward_start(fields):
+        steps.append(("forward_start", fields))
+        return {}
+
+    answering(transport, respond)
+    transport.answers.setdefault("forward_start", forward_start)
+    return steps
 
 
-def test_panel_makes_the_forward_and_opens_the_hubs_own_address(two_hubs_up):
-    resident, scripts = two_hubs_up
-    panel_allowed(resident)
+def test_panel_asks_its_sign_in_then_makes_the_forward_and_opens_its_address(
+    two_hubs_up,
+):
+    resident, transport = two_hubs_up
+    steps = panel_allowed(resident, transport)
     held = []
     resident._start_thread = held.append
 
@@ -2543,33 +3174,24 @@ def test_panel_makes_the_forward_and_opens_the_hubs_own_address(two_hubs_up):
     row = resident.hubs()[0]
     port = row["panel_forward"]
     assert row["jobs"]["is_opening_panel"] is False
-    assert port >= 20000
+    assert 20000 <= port <= 23999
     assert resident.platform.opened_urls == [
         f"http://panel-h1.localhost:{port}/?tkn={PANEL_TOKEN}"
     ]
-    socket.create_connection(("127.0.0.1", port), timeout=5).close()
-    (made,) = scripts.sockets_of("hub.lan")
-    opens = [frame for frame in made.sent if frame.get("type") == "open"]
-    # The token is asked for before the forward stands.
-    assert opens[0]["kind"] == "service" and opens[0]["is_panel"] is True
-    wait_until(
-        lambda: any(
-            frame.get("kind") == "connect" and frame.get("is_panel") is True
-            for frame in list(made.sent)
-        )
-    )
-    assert any(
-        frame.get("kind") == "connect" and frame.get("is_panel") is True
-        for frame in made.sent
-    )
-    resident._forwards.release()
+    assert [step for step, _detail in steps] == ["service", "forward_start"]
+    assert steps[0][1]["is_panel"] is True
+    assert steps[1][1] == {
+        "binding": "c1",
+        "listen": f"127.0.0.1:{port}",
+        "protocol": "tcp",
+        "open": {"kind": "connect", "is_panel": True},
+    }
 
 
 def test_panel_on_a_mac_opens_the_loopback(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    panel_allowed(resident)
+    resident, transport = two_hubs_up
+    panel_allowed(resident, transport)
     resident.platform.os_name = "darwin"
-    resident._start_thread = run_inline
 
     assert resident.open_panel("h1") == {}
 
@@ -2577,30 +3199,29 @@ def test_panel_on_a_mac_opens_the_loopback(two_hubs_up):
     assert resident.platform.opened_urls == [
         f"http://127.0.0.1:{port}/?tkn={PANEL_TOKEN}"
     ]
-    resident._forwards.release()
 
 
 def test_panel_is_refused_without_the_permission_or_the_hub(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
 
     assert resident.open_panel("h1") == {
         "code": "permission_denied",
         "params": {"kind": "panel"},
     }
     assert resident.open_panel("h9")["code"] == "unknown_hub"
-    panel_allowed(resident)
-    resident._sessions["c1"]._drop_socket()
+    panel_allowed(resident, transport)
+    transport.deliver("c1", {"event": "session_end"})
     assert resident.open_panel("h1")["code"] == "hub_unreachable"
 
 
-def test_a_panel_that_cannot_listen_is_the_hub_rows_error_until_a_refresh(
+def test_a_panel_the_transport_cannot_listen_for_is_the_hub_rows_error_until_a_refresh(
     two_hubs_up,
 ):
-    resident, _scripts = two_hubs_up
-    panel_allowed(resident)
-    resident._start_thread = run_inline
-    held = socket.create_server(("127.0.0.1", 0))
-    resident._ports.configure("h1/:panel", held.getsockname()[1])
+    resident, transport = two_hubs_up
+    transport.answers["forward_start"] = functools.partial(
+        dict, code="port_taken", params={"port": 20000}
+    )
+    panel_allowed(resident, transport)
 
     assert resident.open_panel("h1") == {}
 
@@ -2608,7 +3229,6 @@ def test_a_panel_that_cannot_listen_is_the_hub_rows_error_until_a_refresh(
     assert resident.platform.opened_urls == []
     resident.refresh()
     assert resident.hubs()[0]["last_error"] is None
-    held.close()
 
 
 @pytest.mark.parametrize(
@@ -2621,9 +3241,8 @@ def test_a_panel_that_cannot_listen_is_the_hub_rows_error_until_a_refresh(
 def test_a_refused_sign_in_opens_nothing_and_is_the_rows_error(
     two_hubs_up, code, params
 ):
-    resident, _scripts = two_hubs_up
-    panel_allowed(resident, code=code, params=params)
-    resident._start_thread = run_inline
+    resident, transport = two_hubs_up
+    steps = panel_allowed(resident, transport, code=code, params=params)
 
     assert resident.open_panel("h1") == {}
 
@@ -2631,12 +3250,12 @@ def test_a_refused_sign_in_opens_nothing_and_is_the_rows_error(
     assert row["last_error"] == {"code": code, "params": params}
     assert row["panel_forward"] is None
     assert resident.platform.opened_urls == []
+    assert [step for step, _detail in steps] == ["service"]
 
 
 def test_an_answer_without_a_token_opens_nothing(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    panel_allowed(resident, params={})
-    resident._start_thread = run_inline
+    resident, transport = two_hubs_up
+    panel_allowed(resident, transport, params={})
 
     resident.open_panel("h1")
 
@@ -2645,12 +3264,11 @@ def test_an_answer_without_a_token_opens_nothing(two_hubs_up):
 
 
 def test_the_panel_token_is_in_no_log_line_and_not_in_the_state(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, transport = two_hubs_up
     lines = []
     resident._log = lines.append
     resident._forwards._log = lines.append
-    panel_allowed(resident)
-    resident._start_thread = run_inline
+    panel_allowed(resident, transport)
 
     resident.open_panel("h1")
 
@@ -2665,67 +3283,23 @@ def test_the_panel_token_is_in_no_log_line_and_not_in_the_state(two_hubs_up):
         }
     )
     assert PANEL_TOKEN not in state
-    resident._forwards.release()
+    assert all(
+        PANEL_TOKEN not in json.dumps(fields) for _command, fields in transport.commands
+    )
 
 
-def test_leaving_a_hub_ends_its_panel_forward(two_hubs_up, monkeypatch):
-    resident, _scripts = two_hubs_up
-    panel_allowed(resident)
-    resident._start_thread = run_inline
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+def test_leaving_a_hub_ends_its_panel_forward(two_hubs_up):
+    resident, transport = two_hubs_up
+    panel_allowed(resident, transport)
     resident.open_panel("h1")
     port = resident.hubs()[0]["panel_forward"]
 
     resident.disconnect("h1")
 
     assert resident._forwards.forwards() == {}
-    with pytest.raises(OSError):
-        socket.create_connection(("127.0.0.1", port), timeout=1)
-
-
-def test_a_udp_stream_refused_later_is_the_entrys_error_until_a_refresh(
-    two_hubs_up,
-):
-    resident, _scripts = two_hubs_up
-
-    resident._forward_refused(
-        "h1", "svc_tcp", {"code": "agent_offline", "params": {"device": "d1"}}
+    assert {"listen": f"127.0.0.1:{port}", "protocol": "tcp"} in (
+        transport.commands_of("forward_stop")
     )
-
-    assert entry(resident, "h1", "svc_tcp")["last_error"] == {
-        "code": "agent_offline",
-        "params": {"device": "d1"},
-    }
-    resident.refresh()
-    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
-
-
-def test_a_udp_entrys_local_port_is_configured_on_its_own_protocol(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    udp = dict(
-        HUB_SERVICES[2],
-        id="svc_dns_udp",
-        payload={"host": "h", "port": 53, "protocol": "udp"},
-    )
-    resident._sessions["c1"]._take_state(
-        dict(HOME_STATE, hash="s8", services=HUB_SERVICES + [udp])
-    )
-
-    assert resident.configure_forward("h1", "svc_tcp", 15353) == {}
-    assert resident.configure_forward("h1", "svc_dns_udp", 15353) == {}
-    assert resident._store.local_ports()["h1/svc_dns_udp"]["protocol"] == "udp"
-
-
-def test_an_entry_gone_from_the_hubs_list_ends_its_forward(two_hubs_up):
-    resident, _scripts = two_hubs_up
-    resident._services["port"].forward(hub_id="h1", entry_id="svc_tcp", port=0)
-    resident._services["port"].forward(hub_id="h2", entry_id="svc_tcp", port=0)
-    home = resident._sessions["c1"]
-
-    home._take_state(dict(HOME_STATE, hash="s9", services=HUB_SERVICES[:2]))
-
-    assert list(resident._forwards.forwards()) == ["h2/svc_tcp"]
-    resident._forwards.release()
 
 
 # --- Clear on the window's terminal ---
@@ -2737,25 +3311,23 @@ def test_clear_sends_ctrl_c_and_drops_the_output_until_the_stream_is_quiet(
     import neutrino_client.core.terminal as terminal_module
 
     monkeypatch.setattr(terminal_module, "CLIENT_TERMINAL_CLEAR_QUIET_S", 0.2)
-    resident, scripts = two_hubs_up
+    resident, transport = two_hubs_up
     offered(resident)
     pieces = []
     resident.on_terminal_output = pieces.append
     terminal_id = resident.open_window_terminal("h1", "d1", 80, 24)["terminal_id"]
-    session = resident._sessions["c1"]
-    session._streams.take_credit({"type": "credit", "stream": 1, "bytes": 64})
+    (stream,) = transport.stream_factory.made
 
     assert resident.clear_terminal(terminal_id) == {}
-    session._streams.take_bytes(1, b"flood")
+    stream.push(b"flood")
     wait_until(lambda: {"id": terminal_id, "clearing": False} in pieces)
-    session._streams.take_bytes(1, b"$ ")
+    stream.push(b"$ ")
     wait_until(lambda: {"id": terminal_id, "data": b"$ "} in pieces)
 
     assert pieces[0] == {"id": terminal_id, "clearing": True}
     assert {"id": terminal_id, "data": b"flood"} not in pieces
     assert pieces[-1] == {"id": terminal_id, "data": b"$ "}
-    (made,) = scripts.sockets_of("hub.lan")
-    assert (1, b"\x03") in made.sent
+    assert ("data", b"\x03") in stream.records
     assert resident.clear_terminal("nobody")["code"] == "unknown_terminal"
     resident.close_terminal(terminal_id)
 
@@ -2765,6 +3337,7 @@ def test_clear_sends_ctrl_c_and_drops_the_output_until_the_stream_is_quiet(
 FILES_PIPE = "\\\\.\\pipe\\neutrino_client_files"
 FIRST_FILES_ADDRESS = "198.19.255.2"  # scan: allow
 STRANGER_FILES_ADDRESS = "198.19.255.9"  # scan: allow
+SHARE_LOGIN = {"user": "media", "password": "pw"}  # scan: allow
 
 
 class DrivePlatform(FakeClientPlatform):
@@ -2804,21 +3377,20 @@ class FilesDaemon:
 
 
 @pytest.fixture
-def windows_hub(config_path, monkeypatch):
-    """A Windows resident whose home hub is connected and publishes a share."""
+def windows_hub(config_path, transport):
+    """A Windows resident whose home hub is connected and publishes a share,
+    the share's login answered by the hub."""
     bind(config_path, bindings=[dict(BINDING, gateway_url=HOME_URL)])
     platform = DrivePlatform()
-    resident = ClientResident(log=discard, platform=platform, start_thread=run_inline)
+    resident = ClientResident(
+        log=discard, platform=platform, start_thread=run_inline, transport=transport
+    )
     daemon = FilesDaemon()
     resident._files_adapter._ask = daemon
-    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
-    session = resident._sessions["c1"]
-    made = scripts(host="hub.lan")
-    made.connect()
-    session._greet(made)
-    kind, payload = made.recv()
-    session._dispatch(made, kind, payload)
-    yield resident, platform, daemon, made
+    listen(resident, transport)
+    up(transport, "c1", HOME_URL, HOME_WELCOME, HOME_STATE)
+    answering(transport, functools.partial(dict, params=dict(SHARE_LOGIN)))
+    yield resident, platform, daemon, transport
     resident.shutdown()
 
 
@@ -2827,14 +3399,7 @@ def mount_z(resident) -> None:
     assert (
         resident.service_action(
             "file",
-            {
-                "action": "mount",
-                "hub_id": "h1",
-                "id": "share_media",
-                "username": "media",
-                "password": "pw",
-                "path": "Z:",
-            },
+            {"action": "mount", "hub_id": "h1", "id": "share_media", "path": "Z:"},
         )
         == {}
     )
@@ -2857,10 +3422,10 @@ def socks_to(port: int, user: str, password: str, address: str) -> socket.socket
     return client
 
 
-def test_a_windows_mount_maps_the_machines_address_and_rides_a_connect_stream(
+def test_a_windows_mount_asks_the_hub_for_the_login_and_maps_the_machines_address(
     windows_hub,
 ):
-    resident, platform, daemon, made = windows_hub
+    resident, platform, daemon, transport = windows_hub
 
     mount_z(resident)
 
@@ -2868,26 +3433,35 @@ def test_a_windows_mount_maps_the_machines_address_and_rides_a_connect_stream(
     assert call["share_url"] == f"//{FIRST_FILES_ADDRESS}/media"
     assert (call["location"], call["port"]) == ("Z:", 0)
     assert daemon.verbs == ["up"]
+    assert [frame["id"] for frame in transport.frames_of("service")] == ["share_media"]
+    assert not __import__("os").path.exists(call["credentials_path"])
+    (row,) = resident._services["file"].rows()
+    assert (row["state"], row["username"]) == ("mounted", "media")
+
+
+def test_a_windows_share_rides_a_connect_stream_through_the_endpoint(windows_hub):
+    resident, _platform, _daemon, transport = windows_hub
+    mount_z(resident)
     endpoint = resident._files_adapter._endpoint
+
     client = socks_to(
         endpoint.port, endpoint.user, endpoint.password, FIRST_FILES_ADDRESS
     )
     assert client.recv(10)[:2] == b"\x05\x00"
-    wait_until(lambda: any(frame.get("kind") == "connect" for frame in list(made.sent)))
-    (opened,) = [frame for frame in made.sent if frame.get("kind") == "connect"]
-    assert opened["id"] == "share_media"
-    session = resident._sessions["c1"]
-    session._streams.take_credit(
-        {"type": "credit", "stream": opened["stream"], "bytes": 64}
-    )
     client.sendall(b"smb")
-    wait_until(lambda: (opened["stream"], b"smb") in list(made.sent))
-    assert (opened["stream"], b"smb") in made.sent
+    wait_until(lambda: transport.stream_factory.made)
+    (stream,) = transport.stream_factory.made
+    wait_until(lambda: stream.data() == [b"smb"])
+
+    assert opened(transport, "connect") == [
+        ("c1", {"kind": "connect", "id": "share_media"})
+    ]
+    assert stream.data() == [b"smb"]
     client.close()
 
 
 def test_the_endpoint_refuses_another_port_or_address(windows_hub):
-    resident, _platform, _daemon, made = windows_hub
+    resident, _platform, _daemon, transport = windows_hub
     mount_z(resident)
     endpoint = resident._files_adapter._endpoint
 
@@ -2896,7 +3470,7 @@ def test_the_endpoint_refuses_another_port_or_address(windows_hub):
     )
 
     assert stranger.recv(10)[:2] == b"\x05\x02"
-    assert not any(frame.get("kind") == "connect" for frame in made.sent)
+    assert opened(transport, "connect") == []
     stranger.close()
 
 
@@ -2905,7 +3479,7 @@ def test_the_adapter_stays_up_after_the_last_unmount_and_goes_with_a_quit(
 ):
     """Windows keeps its SMB connection to an address after the unmount, and
     an adapter taken away and brought back under it fails the next mount."""
-    resident, _platform, daemon, _made = windows_hub
+    resident, _platform, daemon, _transport = windows_hub
     mount_z(resident)
     (row,) = resident._services["file"].rows()
 
@@ -2923,7 +3497,7 @@ def test_the_adapter_stays_up_after_the_last_unmount_and_goes_with_a_quit(
 
 
 def test_a_daemon_that_refuses_fails_the_row_with_the_adapters_code(windows_hub):
-    resident, platform, daemon, _made = windows_hub
+    resident, platform, daemon, _transport = windows_hub
     daemon.refusal = {"code": "adapter_failed", "params": {"detail": "no wintun"}}
 
     mount_z(resident)
@@ -2934,11 +3508,8 @@ def test_a_daemon_that_refuses_fails_the_row_with_the_adapters_code(windows_hub)
     assert platform.attach_calls == []
 
 
-def test_leaving_a_hub_forgets_the_files_addresses_no_record_names(
-    windows_hub, monkeypatch
-):
-    resident, _platform, daemon, _made = windows_hub
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+def test_leaving_a_hub_forgets_the_files_addresses_no_record_names(windows_hub):
+    resident, _platform, daemon, _transport = windows_hub
     daemon.refusal = {"code": "adapter_failed", "params": {"detail": "no wintun"}}
     mount_z(resident)
     assert list(resident._store.files_addresses()) == [FIRST_FILES_ADDRESS]
@@ -2950,12 +3521,11 @@ def test_leaving_a_hub_forgets_the_files_addresses_no_record_names(
 
 
 def test_leaving_a_hub_frees_its_drive_letters_in_the_state_file(
-    windows_hub, monkeypatch, config_path
+    windows_hub, config_path
 ):
     """The lab's LETTER row: a leave ends the hub's mounts and drops their
     records, so the letter the picker offers is one Mount takes."""
-    resident, platform, _daemon, _made = windows_hub
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident, platform, _daemon, _transport = windows_hub
     mount_z(resident)
     assert platform.attached == {"Z:"}
 
@@ -2971,14 +3541,14 @@ def test_leaving_a_hub_frees_its_drive_letters_in_the_state_file(
 
 
 def test_a_kept_record_holds_its_machines_address(windows_hub):
-    resident, _platform, _daemon, _made = windows_hub
+    resident, _platform, _daemon, _transport = windows_hub
     mount_z(resident)
 
     assert resident._held_files_addresses() == {FIRST_FILES_ADDRESS}
 
 
 def test_a_quit_takes_the_adapter_down_and_stops_the_endpoint(windows_hub):
-    resident, _platform, daemon, _made = windows_hub
+    resident, _platform, daemon, _transport = windows_hub
     mount_z(resident)
 
     resident.shutdown()
@@ -2987,71 +3557,9 @@ def test_a_quit_takes_the_adapter_down_and_stops_the_endpoint(windows_hub):
     assert resident._files_adapter._endpoint.is_running is False
 
 
-# --- the agent's gate on the AI page ---
-
-
-def test_the_start_looks_for_the_agent(config_path):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    released_handlers(resident)
-
-    resident.start()
-    resident.shutdown()
-
-    assert resident._services["ai"].gates == 1
-
-
-def test_each_hubs_state_looks_for_the_agent_before_the_refresh(two_hubs, monkeypatch):
-    released_handlers(two_hubs)
-    sockets_by_hub(
-        monkeypatch,
-        {"hub.lan": [HOME_WELCOME, HOME_STATE], "office.lan": [OFFICE_WELCOME]},
-    )
-
-    turn(two_hubs, "c1")
-
-    order = two_hubs._services["ai"].order
-    assert order[:2] == ["gate", "refresh"]
-
-
-def test_the_agent_turns_the_chip_off_once_and_its_removal_frees_the_page(
-    two_hubs_up, monkeypatch, tmp_path
-):
-    resident, _scripts = two_hubs_up
-    program_dir = tmp_path / "agent"
-    monkeypatch.setattr(
-        resident.platform, "agent_program_dir", lambda: str(program_dir)
-    )
-    handler, switcher = inline_ai(
-        resident, is_managed=resident.platform.is_agent_installed
-    )
-    home = resident._sessions["c1"]
-    resident.set_exit("h1")
-    resident.service_action("ai", {"is_enabled": True})
-
-    program_dir.mkdir()
-    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
-    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
-    refused = resident.service_action("ai", {"is_enabled": True})
-
-    assert switcher.calls == ["activate", "deactivate"]
-    assert refused == {}
-    assert list(resident._entry_errors.values()) == [
-        {"code": "ai_tools_managed", "params": {}}
-    ]
-    row = handler.state()["ai"]
-    assert row["is_managed"] is True and row["is_enabled"] is False
-
-    program_dir.rmdir()
-    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
-
-    assert handler.state()["ai"]["is_managed"] is False
-    assert resident.service_action("ai", {"is_enabled": True}) == {}
-    assert switcher.calls == ["activate", "deactivate", "activate"]
-
-
 def test_a_mount_job_that_crashes_says_so_in_the_log(windows_hub, monkeypatch):
     """A first mount once ended with a bare failure and no line anywhere."""
-    resident, platform, _daemon, _made = windows_hub
+    resident, platform, _daemon, _transport = windows_hub
     lines = []
     monkeypatch.setattr(resident, "_log", lines.append)
 
@@ -3063,14 +3571,7 @@ def test_a_mount_job_that_crashes_says_so_in_the_log(windows_hub, monkeypatch):
     assert (
         resident.service_action(
             "file",
-            {
-                "action": "mount",
-                "hub_id": "h1",
-                "id": "share_media",
-                "username": "media",
-                "password": "pw",
-                "path": "T:",
-            },
+            {"action": "mount", "hub_id": "h1", "id": "share_media", "path": "T:"},
         )
         == {}
     )
@@ -3080,6 +3581,66 @@ def test_a_mount_job_that_crashes_says_so_in_the_log(windows_hub, monkeypatch):
         "h1/share_media: the job crashed: PermissionError" in line for line in lines
     )
     assert platform.attach_calls == []
+
+
+# --- the agent's gate on the AI page ---
+
+
+def test_the_start_looks_for_the_agent(config_path, transport):
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), transport=transport
+    )
+    released_handlers(resident)
+
+    resident.start()
+    wait_until(lambda: resident._services["ai"].gates == 1)
+    resident.shutdown()
+
+    assert resident._services["ai"].gates == 1
+
+
+def test_each_hubs_state_looks_for_the_agent_before_the_refresh(two_hubs, transport):
+    released_handlers(two_hubs)
+
+    up(transport, "c1", HOME_URL, HOME_WELCOME, HOME_STATE)
+
+    order = two_hubs._services["ai"].order
+    assert order[:2] == ["gate", "refresh"]
+
+
+def test_the_agent_turns_the_chip_off_once_and_its_removal_frees_the_page(
+    two_hubs_up, monkeypatch, tmp_path
+):
+    resident, transport = two_hubs_up
+    program_dir = tmp_path / "agent"
+    monkeypatch.setattr(
+        resident.platform, "agent_program_dir", lambda: str(program_dir)
+    )
+    handler, switcher = inline_ai(
+        resident, is_managed=resident.platform.is_agent_installed
+    )
+    resident.set_exit("h1")
+    resident.service_action("ai", {"is_enabled": True})
+
+    program_dir.mkdir()
+    transport.deliver("c1", {"frame": HOME_STATE})
+    transport.deliver("c1", {"frame": HOME_STATE})
+    refused = resident.service_action("ai", {"is_enabled": True})
+
+    assert switcher.calls == ["activate", "deactivate"]
+    assert refused == {}
+    assert list(resident._entry_errors.values()) == [
+        {"code": "ai_tools_managed", "params": {}}
+    ]
+    row = handler.state()["ai"]
+    assert row["is_managed"] is True and row["is_enabled"] is False
+
+    program_dir.rmdir()
+    transport.deliver("c1", {"frame": HOME_STATE})
+
+    assert handler.state()["ai"]["is_managed"] is False
+    assert resident.service_action("ai", {"is_enabled": True}) == {}
+    assert switcher.calls == ["activate", "deactivate", "activate"]
 
 
 class RelaunchPlatform(FakeClientPlatform):
@@ -3103,31 +3664,14 @@ class RelaunchPlatform(FakeClientPlatform):
         ),
     ],
 )
-def test_an_upgrade_quit_arranges_the_return_and_says_how_it_went(outcome, line):
+def test_an_upgrade_quit_arranges_the_return_and_says_how_it_went(
+    outcome, line, transport
+):
     lines = []
-    resident = ClientResident(log=lines.append, platform=RelaunchPlatform(outcome))
+    resident = ClientResident(
+        log=lines.append, platform=RelaunchPlatform(outcome), transport=transport
+    )
 
     resident.arrange_relaunch()
 
     assert line in lines
-
-
-def test_a_udp_rows_refusal_line_goes_at_the_first_answer_after_it(config_path):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    refusal = {"code": "port_not_published", "params": {"port": 5353}}
-
-    resident._forward_refused("h1", "dns_udp", refusal)
-    assert resident._entry_errors["h1/dns_udp"] == refusal
-    resident._forward_answered("h1", "dns_udp")
-
-    assert "h1/dns_udp" not in resident._entry_errors
-
-
-def test_an_answer_leaves_a_later_error_of_another_kind(config_path):
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    resident._forward_refused("h1", "dns_udp", {"code": "agent_offline", "params": {}})
-    resident._entry_errors["h1/dns_udp"] = {"code": "forward_failed", "params": {}}
-
-    resident._forward_answered("h1", "dns_udp")
-
-    assert resident._entry_errors["h1/dns_udp"]["code"] == "forward_failed"

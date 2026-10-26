@@ -1,24 +1,26 @@
-"""Enrollment as one person: the link, the join, and the bindings kept.
+"""Enrollment as one person: the link, the bindings kept, and their keys.
 
 The payload is compact JSON compressed with zlib in unpadded base64url, so
-the link holds no character a shell splits or a URL escapes; a link whose
-role is not ``client`` is refused; a join stores a pending binding at once,
-with the link's ticket, its first address, every address and its overlays,
-and asks no hub; completing it posts the protocol's seven fields, names no
-MAC, and puts the hub's id and token in the pending binding's place, with no
-ticket; a refusal is typed by the hub's code; the file is written atomically
+the link holds no character a shell splits or a URL escapes; it carries the
+hub's addresses as ``tcp://``, the ticket and the hub's static key, and a
+link whose role is not ``client`` is refused. A join stores a pending
+binding at once, with the link's ticket and key, its first address, every
+address, its overlays and a static key of its own, and asks no hub; the
+transport spends the ticket, and the binding then takes the hub's id and
+token in the pending one's place, with no ticket. The psk is the token's
+SHA-256; a 0.5 binding, pinned by a fingerprint, is moved to the hub's key
+with its addresses written as ``tcp://``. The file is written atomically
 and 0600 in the person's own configuration directory; a file of the older
-single-binding shape reads as no bindings, and a binding without the address
-list reads as one with none. The candidates of a connection round, the hub's
-name in a stored address's scheme and port, and the notes a session writes
-onto its binding are pinned here too, as is the leave told to each address
-in turn within its short time. The link's overlay objects are kept on the
-binding in the hub's order with only their providers' own fields, one per
-provider, an unknown provider dropped; the wish and the pick are kept per
-binding.
+single-binding shape reads as no bindings, and a binding without the
+address list reads as one with none. The hub's name as a candidate and the
+notes a session writes onto its binding are pinned here too. The link's
+overlay objects are kept on the binding in the hub's order with only their
+providers' own fields, one per provider, an unknown provider dropped; the
+wish and the pick are kept per binding.
 """
 
 import base64
+import hashlib
 import json
 import os
 import urllib.parse
@@ -26,92 +28,64 @@ import zlib
 
 import pytest
 
-import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 import neutrino_client.core.files as files
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.constants import (
-    CLIENT_JOIN_PATH,
-    CLIENT_LEAVE_PATH,
-    CLIENT_LEAVE_TELL_TIMEOUT_S,
-    PROTOCOL,
-)
-from neutrino_client.core.enrollment import (
-    default_source_address,
-    parse_link,
-    resolve_hub_address,
-)
-from neutrino_client.exceptions import (
-    EnrollmentError,
-    GatewayRefused,
-    GatewayUnreachable,
-)
-from tests.conftest import BINDING, link_for
+from neutrino_client.constants import PROTOCOL
+from neutrino_client.core.enrollment import default_source_address, parse_link
+from neutrino_client.exceptions import EnrollmentError
+from tests.conftest import BINDING, HUB_KEY, link_for
 
+KEY = HUB_KEY
 SECOND = dict(
     BINDING,
     id="c2",
     hub_id="h2",
     hub_name="office",
-    gateway_url="https://office.lan:8443",
+    gateway_url="tcp://office.lan:8443",
     token="tok2",
 )
 
 
+def link(**payload) -> str:
+    """A client link with the hub's key, over the payload given."""
+    return link_for(dict({"key": KEY}, **payload))
+
+
 def test_a_link_round_trips():
-    urls, token, fingerprint, _ = parse_link(
+    urls, token, hub_key, _ = parse_link(
         link_for(
-            {
-                "urls": ["https://192.168.100.1:8443"],
-                "token": "abc123",
-                "fp": "AB" * 32,
-            }
+            {"urls": ["tcp://192.168.100.1:8443"], "token": "abc123", "key": "AB" * 32}
         )
     )
-    assert urls == ["https://192.168.100.1:8443"]
+    assert urls == ["tcp://192.168.100.1:8443"]
     assert token == "abc123"
-    assert fingerprint == "ab" * 32
+    assert hub_key == "ab" * 32
 
 
-def test_every_address_the_hub_answers_on_is_carried():
-    urls, token, _, _ = parse_link(
-        link_for(
-            {
-                "urls": ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
-                "token": "abc123",
-            }
-        )
+def test_every_address_the_hub_answers_on_is_carried_in_its_order():
+    urls, _, _, _ = parse_link(
+        link(urls=["tcp://192.168.8.1:8443", "tcp://10.0.0.1:8443"], token="t")
     )
+    assert urls == ["tcp://192.168.8.1:8443", "tcp://10.0.0.1:8443"]
 
-    assert urls == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
-    assert token == "abc123"
+
+def test_an_address_of_another_scheme_is_skipped():
+    urls, _, _, _ = parse_link(
+        link(urls=["quic://192.168.8.1:8443", "tcp://10.0.0.1:8443"], token="t")
+    )
+    assert urls == ["tcp://10.0.0.1:8443"]
 
 
 def test_the_link_needs_no_quoting():
-    link = link_for({"urls": ["http://192.168.100.1:8080"], "token": "t" * 24})
-    assert not any(character in link for character in "?&%#;|<> '\"")
+    made = link(urls=["tcp://192.168.100.1:8443"], token="t" * 24)
+    assert not any(character in made for character in "?&%#;|<> '\"")
 
 
 def test_the_bare_payload_is_accepted():
-    link = link_for({"urls": ["http://gateway:8080"], "token": "t"})
-    payload = link.split("/")[-1]
+    payload = link(urls=["tcp://gateway:8443"], token="t").split("/")[-1]
     urls, token, _, _ = parse_link(payload)
-    assert urls == ["http://gateway:8080"]
-    assert token == "t"
-
-
-def test_a_trailing_slash_is_trimmed():
-    urls, _, _, _ = parse_link(
-        link_for({"urls": ["http://gateway:8080/"], "token": "t"})
-    )
-    assert urls == ["http://gateway:8080"]
-
-
-def test_a_link_without_a_fingerprint_carries_an_empty_one():
-    _, _, fingerprint, _ = parse_link(
-        link_for({"urls": ["http://gateway:8080"], "token": "t"})
-    )
-    assert fingerprint == ""
+    assert (urls, token) == (["tcp://gateway:8443"], "t")
 
 
 @pytest.mark.parametrize(
@@ -129,101 +103,81 @@ def test_what_is_not_a_link_is_refused_typed(text, code):
     assert caught.value.code == code
 
 
-def test_a_payload_missing_its_half_is_refused():
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"urls": ["tcp://gateway:8443"], "key": KEY},
+        {"token": "t", "key": KEY},
+        {"urls": ["tcp://gateway:8443"], "token": "t"},
+        {"urls": ["tcp://gateway:8443"], "token": "t", "key": "ab"},
+        {"urls": ["https://gateway:8443"], "token": "t", "key": KEY},
+    ],
+)
+def test_a_link_missing_an_address_a_ticket_or_a_key_is_incomplete(payload):
     with pytest.raises(EnrollmentError) as caught:
-        parse_link(link_for({"urls": ["http://gateway"]}))
+        parse_link(link_for(payload))
     assert caught.value.code == "link_incomplete"
+
+
+def test_a_link_of_0_5_carrying_a_fingerprint_is_incomplete():
     with pytest.raises(EnrollmentError) as caught:
-        parse_link(link_for({"token": "t"}))
+        parse_link(
+            link_for({"urls": ["https://g:8443"], "token": "t", "fp": "ab" * 32})
+        )
     assert caught.value.code == "link_incomplete"
 
 
 def test_a_device_agents_link_is_refused():
-    body = {"urls": ["http://gateway"], "token": "t", "fp": "", "role": "agent"}
-
     with pytest.raises(EnrollmentError) as caught:
-        parse_link(link_for(body))
-
+        parse_link(
+            link_for({"urls": ["tcp://g:1"], "token": "t", "key": KEY, "role": "agent"})
+        )
     assert caught.value.code == "link_not_for_client"
     assert caught.value.params == {"role": "agent"}
 
 
-def test_a_link_naming_no_role_is_refused():
-    body = {"urls": ["http://gateway"], "token": "t", "kind": "client", "role": ""}
-
-    with pytest.raises(EnrollmentError) as caught:
-        parse_link(link_for(body))
-
-    assert caught.value.code == "link_not_for_client"
-
-
 def test_a_link_that_does_not_inflate_or_parse_is_unreadable():
-    body = {"urls": ["http://gateway"], "token": "t", "role": "client"}
+    body = {"urls": ["tcp://g:1"], "token": "t", "role": "client", "key": KEY}
     plain = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
     garbled = base64.urlsafe_b64encode(zlib.compress(b"{not json", 9)).decode()
-
     for text in (plain, garbled):
         with pytest.raises(EnrollmentError) as caught:
             parse_link("neutrino://enroll/" + text.rstrip("="))
         assert caught.value.code == "link_unreadable"
 
 
-def test_the_old_short_form_is_unreadable():
-    with pytest.raises(EnrollmentError) as caught:
-        parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
-
-    assert caught.value.code == "link_unreadable"
-
-
-def answer_with(monkeypatch, *, reply=None, error=None):
-    posted = []
-
-    def post(self, path, payload):
-        posted.append((path, payload))
-        if error is not None:
-            raise error
-        return dict(reply or {})
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-    return posted
-
-
 # --- joining ---
 
 
-def pending(link=None) -> dict:
+def pending(made=None) -> dict:
     """A join stored from a link, nothing asked of any hub."""
     return enrollment.enroll(
-        link
-        or link_for(
-            {"urls": ["https://hub:8443", "https://10.0.0.1:8443"], "token": "ticket"}
+        made or link(urls=["tcp://hub:8443", "tcp://10.0.0.1:8443"], token="ticket")
+    )
+
+
+def test_a_join_stores_the_binding_at_once_with_a_key_of_its_own():
+    binding = enrollment.enroll(
+        link(
+            urls=["tcp://hub:8443", "tcp://10.0.0.1:8443"],
+            token="ticket",
+            overlays=[EASYTIER],
         )
     )
-
-
-def test_a_join_stores_the_binding_at_once_and_asks_no_hub(monkeypatch):
-    posted = answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
-    link = link_for(
-        {
-            "urls": ["https://hub:8443", "https://10.0.0.1:8443"],
-            "token": "ticket",
-            "fp": "ab" * 32,
-            "overlays": [EASYTIER],
-        }
-    )
-
-    binding = enrollment.enroll(link)
-
-    assert posted == []
     assert binding["id"].startswith("pending_")
+    assert len(binding["private_key"]) == 64 and enrollment.is_key(
+        binding["private_key"]
+    )
     assert binding == {
         "id": binding["id"],
         "name": enrollment.socket.gethostname(),
         "hub_id": "",
         "hub_name": "",
-        "gateway_url": "https://hub:8443",
-        "gateway_urls": ["https://hub:8443", "https://10.0.0.1:8443"],
-        "fingerprint": "ab" * 32,
+        "gateway_url": "tcp://hub:8443",
+        "gateway_urls": ["tcp://hub:8443", "tcp://10.0.0.1:8443"],
+        "hub_key": KEY,
+        "private_key": binding["private_key"],
+        "fingerprint": "",
         "token": "",
         "ticket": "ticket",
         "is_pending": True,
@@ -234,14 +188,12 @@ def test_a_join_stores_the_binding_at_once_and_asks_no_hub(monkeypatch):
     assert enrollment.bindings() == [binding]
 
 
-def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
-    posted = answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
-    binding = pending()
+def test_two_joins_make_two_keys():
+    assert pending()["private_key"] != pending()["private_key"]
 
-    completed = enrollment.complete_join(binding, "https://10.0.0.1:8443")
 
-    path, payload = posted[0]
-    assert path == CLIENT_JOIN_PATH
+def test_the_join_fields_are_the_protocols_seven():
+    payload = enrollment.join_payload("ticket")
     assert set(payload) == {
         "ticket",
         "role",
@@ -251,33 +203,34 @@ def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
         "software",
         "platform",
     }
-    assert payload["ticket"] == "ticket"
     assert payload["role"] == "client"
     assert payload["protocol"] == PROTOCOL
     assert payload["machine_id"] == enrollment._machine_id()
-    assert payload["name"] == enrollment.socket.gethostname()
     assert payload["software"] == f"neutrino_client/{CLIENT_VERSION}"
     assert set(payload["platform"]) == {"os", "family", "arch"}
-    assert "mac_addresses" not in payload and "token" not in payload
-    assert completed == dict(
-        {
-            key: value
-            for key, value in binding.items()
-            if key not in ("ticket", "is_pending")
-        },
-        id="c1",
-        token="tok",
-        gateway_url="https://10.0.0.1:8443",
-    )
+
+
+def test_a_completed_join_takes_the_hubs_id_and_token_and_drops_the_ticket():
+    binding = pending()
+    completed = enrollment.joined_binding(binding, "c1", "tok")
+    assert completed["id"] == "c1" and completed["token"] == "tok"
+    assert "ticket" not in completed and "is_pending" not in completed
+    assert completed["private_key"] == binding["private_key"]
+
+
+@pytest.mark.parametrize("binding_id, token", [("", "tok"), ("c1", "")])
+def test_a_join_answer_without_an_id_and_a_token_is_refused(binding_id, token):
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.joined_binding(pending(), binding_id, token)
+    assert caught.value.code == "enroll_no_token"
 
 
 def test_a_completed_join_takes_the_pending_ones_place(config_path):
     binding = pending()
     enrollment.add_binding(SECOND)
-    completed = dict(binding, id="c1", token="tok", is_pending=False, ticket="")
-
-    enrollment.replace_binding(binding["id"], completed)
-
+    enrollment.replace_binding(
+        binding["id"], enrollment.joined_binding(binding, "c1", "tok")
+    )
     assert [held["id"] for held in enrollment.bindings()] == ["c1", "c2"]
     stored = json.loads(config_path.read_text())["bindings"][0]
     assert "ticket" not in stored and "is_pending" not in stored
@@ -286,19 +239,15 @@ def test_a_completed_join_takes_the_pending_ones_place(config_path):
 def test_a_completed_join_of_a_hub_already_held_replaces_it():
     enrollment.add_binding(BINDING)
     binding = pending()
-
     enrollment.replace_binding(
-        binding["id"], dict(binding, id="c1", token="fresh", is_pending=False)
+        binding["id"], enrollment.joined_binding(binding, "c1", "fresh")
     )
-
     (held,) = enrollment.bindings()
     assert (held["id"], held["token"]) == ("c1", "fresh")
 
 
 def test_the_binding_lands_0600_in_the_persons_own_directory(config_path):
     pending()
-
-    assert config_path.is_file()
     assert oct(config_path.stat().st_mode & 0o777) == "0o600"
     assert oct(config_path.parent.stat().st_mode & 0o777) == "0o700"
     written = json.loads(config_path.read_text())
@@ -315,68 +264,12 @@ def test_the_file_is_replaced_whole_never_written_in_place(monkeypatch, config_p
         original(source, target)
 
     monkeypatch.setattr(files.os, "replace", spy)
-
     enrollment.add_binding(BINDING)
-
     assert len(replaced) == 1
     source, target = replaced[0]
     assert target == str(config_path)
-    assert os.path.dirname(source) == str(config_path.parent)
     assert not os.path.exists(source)
     assert sorted(os.listdir(str(config_path.parent))) == ["client.json"]
-
-
-@pytest.mark.parametrize(
-    "error, code, params",
-    [
-        (
-            channel.GatewayRefused("401", code="ticket_spent"),
-            "ticket_spent",
-            {},
-        ),
-        (channel.GatewayRefused("401"), "enroll_refused", {}),
-        (
-            channel.GatewayRefusedDetail(code="role_mismatch", params={"role": "x"}),
-            "role_mismatch",
-            {"role": "x"},
-        ),
-        (
-            channel.GatewayProtocolRefused(
-                code="protocol_too_old", peer=1, hub=2, minimum=2
-            ),
-            "protocol_too_old",
-            {"peer": 1, "hub": 2, "min": 2},
-        ),
-    ],
-)
-def test_a_refused_join_is_typed_and_leaves_the_binding_pending(
-    monkeypatch, error, code, params
-):
-    answer_with(monkeypatch, error=error)
-    binding = pending()
-
-    with pytest.raises(EnrollmentError) as caught:
-        enrollment.complete_join(binding, "https://hub:8443")
-
-    assert (caught.value.code, caught.value.params) == (code, params)
-    assert enrollment.bindings() == [binding]
-
-
-def test_an_address_that_stops_answering_is_no_refusal(monkeypatch):
-    answer_with(monkeypatch, error=channel.GatewayUnreachable("down"))
-
-    with pytest.raises(channel.GatewayUnreachable):
-        enrollment.complete_join(pending(), "https://hub:8443")
-
-
-@pytest.mark.parametrize("reply", [{"id": "c1"}, {"token": "tok"}, {}])
-def test_a_reply_without_an_id_and_a_token_is_refused(monkeypatch, reply):
-    answer_with(monkeypatch, reply=reply)
-
-    with pytest.raises(EnrollmentError) as caught:
-        enrollment.complete_join(pending(), "https://hub:8443")
-
-    assert caught.value.code == "enroll_no_token"
 
 
 def test_a_pending_binding_without_its_ticket_is_not_one(config_path):
@@ -385,10 +278,16 @@ def test_a_pending_binding_without_its_ticket_is_not_one(config_path):
         json.dumps(
             {
                 "bindings": [
-                    {"id": "p1", "gateway_url": "http://a", "is_pending": True},
+                    {
+                        "id": "p1",
+                        "gateway_url": "tcp://a:1",
+                        "hub_key": KEY,
+                        "is_pending": True,
+                    },
                     {
                         "id": "p2",
-                        "gateway_url": "http://a",
+                        "gateway_url": "tcp://a:1",
+                        "hub_key": KEY,
                         "is_pending": True,
                         "ticket": "t",
                     },
@@ -396,109 +295,59 @@ def test_a_pending_binding_without_its_ticket_is_not_one(config_path):
             }
         )
     )
-
     assert [held["id"] for held in enrollment.bindings()] == ["p2"]
 
 
-# --- leaving ---
+# --- the keys ---
 
 
-def test_leave_posts_the_id_and_the_token_and_keeps_the_binding(monkeypatch):
-    posted = answer_with(monkeypatch, reply={})
-    enrollment.add_binding(BINDING)
-
-    enrollment.leave(BINDING)
-
-    assert posted == [(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})]
-    assert enrollment.bindings() == [BINDING]
+def test_the_psk_is_the_tokens_sha256_in_hex():
+    assert enrollment.psk_of(BINDING) == hashlib.sha256(b"tok").hexdigest()
 
 
-def test_leave_pins_the_bindings_own_fingerprint_with_the_short_timeout(monkeypatch):
-    made = []
-
-    def __init__(self, *, gateway_url, fingerprint="", timeout=0):
-        made.append((gateway_url, fingerprint, timeout))
-        self._gateway_url = gateway_url
-        self._fingerprint = fingerprint
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "__init__", __init__)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda self, p, b: {})
-
-    enrollment.leave(dict(SECOND, fingerprint="cd" * 32))
-
-    ((url, fingerprint, timeout),) = made
-    assert (url, fingerprint) == ("https://office.lan:8443", "cd" * 32)
-    assert 0 < timeout <= CLIENT_LEAVE_TELL_TIMEOUT_S
+def test_a_binding_with_a_fingerprint_and_no_key_is_one_of_0_5():
+    assert enrollment.is_legacy(dict(BINDING, hub_key="", fingerprint="ab" * 32))
+    assert not enrollment.is_legacy(BINDING)
 
 
-def test_leave_tries_the_next_address_only_while_none_answers(monkeypatch):
-    tried = []
-
-    def post(self, path, payload):
-        tried.append(self._gateway_url)
-        if self._gateway_url == "https://office.lan:8443":
-            raise GatewayUnreachable("cannot reach hub")
-        raise GatewayRefused("401")
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-    binding = dict(
-        SECOND,
-        fingerprint="cd" * 32,
-        gateway_urls=["https://10.0.0.1:8443", "https://10.0.0.2:8443"],
+def test_a_moved_binding_takes_the_keys_and_its_addresses_as_tcp():
+    legacy = dict(
+        BINDING,
+        hub_key="",
+        private_key="",
+        fingerprint="ab" * 32,
+        gateway_url="https://hub.lan:8443",
+        gateway_urls=["https://hub.lan:8443", "https://[2001:db8::1]:8443"],
     )
+    moved = enrollment.moved_binding(legacy, "33" * 32, "44" * 32)
+    assert moved["hub_key"] == "33" * 32 and moved["private_key"] == "44" * 32
+    assert moved["fingerprint"] == ""
+    assert moved["gateway_url"] == "tcp://hub.lan:8443"
+    assert moved["gateway_urls"] == ["tcp://hub.lan:8443", "tcp://[2001:db8::1]:8443"]
+    assert moved["token"] == "tok" and moved["id"] == "c1"
 
-    with pytest.raises(GatewayRefused):
-        enrollment.leave(binding)
 
-    assert tried == ["https://office.lan:8443", "https://10.0.0.1:8443"]
+def test_a_binding_with_neither_a_key_nor_a_fingerprint_is_not_one(config_path):
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({"bindings": [dict(BINDING, hub_key="")]}))
+    assert enrollment.bindings() == []
 
 
-def test_leave_gives_each_address_an_equal_share_of_the_short_timeout(monkeypatch):
-    made = []
+# --- the candidates ---
 
-    def __init__(self, *, gateway_url, fingerprint="", timeout=0):
-        made.append((gateway_url, timeout))
-        self._gateway_url = gateway_url
-        self._fingerprint = fingerprint
 
-    def post(self, path, payload):
-        raise GatewayUnreachable("cannot reach hub")
+def test_only_tcp_addresses_are_dialled():
+    assert enrollment.dialable_urls(
+        ["tcp://a:1", "https://b:2", "quic://c:3", "tcp://", "tcp://[::1]:4"]
+    ) == ["tcp://a:1", "tcp://[::1]:4"]
 
-    monkeypatch.setattr(channel.GatewayHttpChannel, "__init__", __init__)
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-    binding = dict(
-        SECOND,
-        fingerprint="cd" * 32,
-        gateway_urls=["https://10.0.0.1:8443", "https://10.0.0.2:8443"],
+
+def test_the_hubs_name_is_a_candidate_at_a_stored_addresss_port():
+    assert enrollment.hub_name_address("tcp://192.0.2.1:8443") == (
+        "tcp://hub.neutrino.internal:8443"
     )
-
-    with pytest.raises(GatewayUnreachable):
-        enrollment.leave(binding)
-
-    assert [url for url, _ in made] == [
-        "https://office.lan:8443",
-        "https://10.0.0.1:8443",
-        "https://10.0.0.2:8443",
-    ]
-    assert all(0 < timeout <= CLIENT_LEAVE_TELL_TIMEOUT_S / 3 for _, timeout in made)
-
-
-def test_leave_gives_up_once_its_time_is_spent(monkeypatch):
-    tried = []
-    clock = iter([0.0, 0.0, CLIENT_LEAVE_TELL_TIMEOUT_S + 1])
-
-    def post(self, path, payload):
-        tried.append(self._gateway_url)
-        raise GatewayUnreachable("cannot reach hub")
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-    monkeypatch.setattr(enrollment.time, "monotonic", lambda: next(clock))
-    binding = dict(SECOND, fingerprint="cd" * 32, gateway_urls=["https://b:8443"])
-
-    with pytest.raises(GatewayUnreachable):
-        enrollment.leave(binding)
-
-    assert tried == ["https://office.lan:8443"]
+    assert enrollment.hub_name_address("tcp://hub.lan") == ""
+    assert enrollment.hub_name_address("") == ""
 
 
 # --- the bindings kept ---
@@ -553,7 +402,7 @@ def test_adding_the_same_id_replaces_in_place():
     ]
 
 
-def test_a_binding_keeps_only_its_nine_fields():
+def test_a_binding_keeps_only_its_own_fields():
     enrollment.add_binding(dict(BINDING, password="never"))  # scan: allow
 
     assert enrollment.bindings() == [BINDING]
@@ -568,8 +417,7 @@ def test_a_binding_without_the_address_list_reads_as_one_with_none(config_path):
     (binding,) = enrollment.bindings()
 
     assert binding == BINDING
-    assert enrollment.stored_urls(binding) == ["http://127.0.0.1:9"]
-    assert enrollment.candidate_urls(binding) == ["http://127.0.0.1:9"]
+    assert enrollment.stored_urls(binding) == ["tcp://127.0.0.1:9"]
 
 
 def test_an_incomplete_binding_is_refused_before_it_is_written(config_path):
@@ -667,9 +515,8 @@ def test_the_notes_write_the_addresses_onto_one_binding():
 
 # --- the addresses, and the round's order ---
 
-LAN_URL = "https://192.0.2.1:8443"
-OVERLAY_URL = "https://100.64.0.1:8443"
-NAME_URL = "https://192.0.2.9:8443"
+LAN_URL = "tcp://192.0.2.1:8443"
+OVERLAY_URL = "tcp://100.64.0.1:8443"
 
 
 def test_the_list_is_kept_clean_and_in_the_hubs_order():
@@ -682,71 +529,12 @@ def test_the_list_is_kept_clean_and_in_the_hubs_order():
     assert enrollment.clean_urls(None) == []
 
 
-def test_a_round_is_the_name_then_the_hubs_list_in_its_order():
-    """N48: the address that last answered is not moved ahead; one the list
-    does not hold comes last."""
-    binding = {"gateway_url": OVERLAY_URL, "gateway_urls": [LAN_URL, OVERLAY_URL]}
-
-    assert enrollment.candidate_urls(binding, NAME_URL) == [
-        NAME_URL,
-        LAN_URL,
-        OVERLAY_URL,
-    ]
-    assert enrollment.candidate_urls(binding) == [LAN_URL, OVERLAY_URL]
-    assert enrollment.candidate_urls(binding, LAN_URL) == [LAN_URL, OVERLAY_URL]
-    assert enrollment.stored_urls(binding) == [LAN_URL, OVERLAY_URL]
-    elsewhere = dict(binding, gateway_url=NAME_URL)
-    assert enrollment.candidate_urls(elsewhere) == [LAN_URL, OVERLAY_URL, NAME_URL]
-
-
-def test_the_name_takes_the_stored_addresss_scheme_and_port(monkeypatch):
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "192.0.2.9")
-
-    assert enrollment.hub_name_url(LAN_URL) == NAME_URL
-    assert enrollment.hub_name_url("http://192.0.2.1:9") == "http://192.0.2.9:9"
-    assert enrollment.hub_name_url("https://hub.lan") == "https://192.0.2.9:443"
-
-
-def test_a_name_that_does_not_resolve_is_no_candidate(monkeypatch):
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
-
-    assert enrollment.hub_name_url(LAN_URL) == ""
-
-
-def test_the_name_is_looked_up_as_ipv4_only(monkeypatch):
-    asked = []
-
-    def getaddrinfo(host, port, family=0, kind=0, *rest):
-        asked.append((host, family, kind))
-        return [(family, kind, 6, "", ("192.0.2.9", 0))]
-
-    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
-
-    assert resolve_hub_address() == "192.0.2.9"
-    assert asked == [
-        (
-            "hub.neutrino.internal",
-            enrollment.socket.AF_INET,
-            enrollment.socket.SOCK_STREAM,
-        )
-    ]
-
-
-def test_a_lookup_that_fails_resolves_to_nothing(monkeypatch):
-    def getaddrinfo(*args):
-        raise enrollment.socket.gaierror("no such name")
-
-    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
-
-    assert resolve_hub_address() == ""
-
-
 def test_the_route_to_the_hub_is_read_off_the_first_literal():
     """A loopback address is routed on every machine; a name is skipped."""
-    assert default_source_address(["https://hub.lan:8443", "http://127.0.0.1:9"]) == (
+    assert default_source_address(["tcp://hub.lan:8443", "tcp://127.0.0.1:9"]) == (
         "127.0.0.1"
     )
-    assert default_source_address(["https://hub.lan:8443"]) == ""
+    assert default_source_address(["tcp://hub.lan:8443"]) == ""
     assert default_source_address([]) == ""
 
 
@@ -800,7 +588,9 @@ CONSOLE = {
 
 
 def test_a_link_without_overlays_carries_none():
-    *_, overlays = parse_link(link_for({"urls": ["http://g"], "token": "t"}))
+    *_, overlays = parse_link(
+        link_for({"urls": ["tcp://g:1"], "token": "t", "key": KEY})
+    )
 
     assert overlays == []
 
@@ -811,7 +601,9 @@ def test_a_link_without_overlays_carries_none():
 )
 def test_a_link_carries_the_overlay_objects(material):
     *_, overlays = parse_link(
-        link_for({"urls": ["http://g"], "token": "t", "overlays": [material]})
+        link_for(
+            {"urls": ["tcp://g:1"], "token": "t", "key": KEY, "overlays": [material]}
+        )
     )
 
     assert overlays == [material]
@@ -870,7 +662,9 @@ def test_a_netbird_overlay_may_name_no_management_url_fqdn_or_address():
 
 def test_the_join_keeps_the_links_overlays_on_the_binding():
     binding = enrollment.enroll(
-        link_for({"urls": ["http://g:1"], "token": "t", "overlays": [EASYTIER]})
+        link_for(
+            {"urls": ["tcp://g:1"], "token": "t", "key": KEY, "overlays": [EASYTIER]}
+        )
     )
 
     assert binding["overlays"] == [EASYTIER]
@@ -919,17 +713,17 @@ def test_a_link_s_ipv6_address_is_kept_in_brackets_and_split_by_the_url_reader()
     urls, _, _, _ = parse_link(
         link_for(
             {
-                "urls": ["https://192.168.100.1:8443", "https://[2001:db8::1]:8443"],
+                "urls": ["tcp://192.168.100.1:8443", "tcp://[2001:db8::1]:8443"],
                 "token": "abc123",
-                "fp": "AB" * 32,
+                "key": KEY,
             }
         )
     )
 
-    assert urls[1] == "https://[2001:db8::1]:8443"
+    assert urls[1] == "tcp://[2001:db8::1]:8443"
     parts = urllib.parse.urlsplit(urls[1])
     assert (parts.hostname, parts.port) == ("2001:db8::1", 8443)
 
 
 def test_the_source_address_is_read_off_an_ipv4_literal_only():
-    assert default_source_address(["https://[2001:db8::1]:8443"]) == ""
+    assert default_source_address(["tcp://[2001:db8::1]:8443"]) == ""

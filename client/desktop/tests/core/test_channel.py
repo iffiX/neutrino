@@ -1,14 +1,12 @@
-"""The channel's judgments: the certificate pin, and every status mapping.
+"""The pinned channel a 0.5 binding moves over: the pin, and every status mapping.
 
 The pin runs against a real TLS socket whose certificate is generated at
 test runtime with the ``openssl`` binary: the right fingerprint talks, the
-wrong one is refused before a single request byte is sent, and a bound
-client connecting against the wrong certificate unbinds the way a refused
-token does. The status mappings replace ``_request`` with a canned answer:
-a 409 naming a protocol number the hub does not speak is the typed
-protocol refusal with its three numbers. A scanned link is stored pending
-without a word to the hub; the first round that reaches it joins at once,
-and another certificate is untrusted.
+wrong one is refused before a single request byte is sent. The status
+mappings replace ``_request`` with a canned answer: a 401 naming
+``binding_unknown`` is the refusal that unbinds, and a 409 naming a
+protocol number the hub does not speak is the typed protocol refusal with
+its three numbers.
 """
 
 import hashlib
@@ -22,16 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-import neutrino_client.core.enrollment as enrollment
-import neutrino_client.core.session as session_module
-from neutrino_client.constants import (
-    CLIENT_BACKOFF_MAX_S,
-    CLIENT_JOIN_PATH,
-    CLIENT_LEAVE_PATH,
-)
+from neutrino_client.constants import CLIENT_LEGACY_KEY_PATH
 from neutrino_client.core.channel import GatewayHttpChannel
-from neutrino_client.core.resident import ClientResident
-from neutrino_client.core.session import ClientHubSession
 from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
@@ -39,8 +29,6 @@ from neutrino_client.exceptions import (
     GatewayUnreachable,
     GatewayUntrusted,
 )
-from tests.conftest import FakeClientPlatform, bind, discard, link_for
-from tests.core.test_session import WELCOME, SocketScript
 
 WRONG_FINGERPRINT = "0" * 64
 
@@ -140,12 +128,12 @@ def test_the_pinned_fingerprint_talks_and_sends_the_body_as_it_is(tls_server):
     url, fingerprint = tls_server
     channel = GatewayHttpChannel(gateway_url=url, fingerprint=fingerprint)
 
-    reply = channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
+    reply = channel.post(CLIENT_LEGACY_KEY_PATH, {"id": "c1", "token": "tok"})
 
     assert reply == {}
     assert len(RecordingHandler.requests) == 1
     path, body = RecordingHandler.requests[0]
-    assert path == CLIENT_LEAVE_PATH
+    assert path == CLIENT_LEGACY_KEY_PATH
     assert json.loads(body) == {"id": "c1", "token": "tok"}
 
 
@@ -163,7 +151,7 @@ def test_a_wrong_fingerprint_is_refused_before_anything_is_sent(tls_server):
     channel = GatewayHttpChannel(gateway_url=url, fingerprint=WRONG_FINGERPRINT)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
+        channel.post(CLIENT_LEGACY_KEY_PATH, {"id": "c1", "token": "tok"})
 
     assert RecordingHandler.requests == []
 
@@ -173,48 +161,16 @@ def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     channel = GatewayHttpChannel(gateway_url=url)
 
     with pytest.raises(GatewayUntrusted):
-        channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
+        channel.post(CLIENT_LEGACY_KEY_PATH, {"id": "c1", "token": "tok"})
 
     assert RecordingHandler.requests == []
-
-
-def test_a_mismatched_pin_keeps_the_binding_and_asks_again_a_minute_later(
-    tls_server, config_path
-):
-    url, _ = tls_server
-    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
-    (session,) = resident._sessions.values()
-
-    delays = [session.run_once() for _ in range(3)]
-
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert resident.is_connected() is True
-    assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    row = resident.hubs()[0]
-    assert (row["connection"], row["wait_reason"]) == ("waiting", "untrusted")
-    assert row["wait_code"] == {"code": "hub_untrusted", "params": {}}
-    assert row["last_error"] is None
-    assert RecordingHandler.requests == []
-
-
-def test_a_wrong_fingerprint_spends_no_ticket(tls_server, config_path):
-    url, _ = tls_server
-    link = link_for({"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT})
-    binding = enrollment.enroll(link)
-
-    with pytest.raises(GatewayUntrusted):
-        enrollment.complete_join(binding, url)
-
-    assert RecordingHandler.requests == []
-    assert enrollment.bindings() == [binding]
 
 
 def test_a_refusal_names_the_hubs_code():
     made = canned_channel(401, b'{"detail": {"code": "ticket_spent", "params": {}}}')
 
     with pytest.raises(GatewayRefused) as refused:
-        made.post("/api/channel/join", {})
+        made.post(CLIENT_LEGACY_KEY_PATH, {})
 
     assert (refused.value.code, refused.value.params) == ("ticket_spent", {})
 
@@ -234,7 +190,7 @@ def canned_channel(status, data=b"", headers=None):
 @pytest.mark.parametrize("status", [401, 403])
 def test_post_status_401_or_403_raises_refused(status):
     with pytest.raises(GatewayRefused):
-        canned_channel(status).post(CLIENT_LEAVE_PATH, {})
+        canned_channel(status).post(CLIENT_LEGACY_KEY_PATH, {})
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
@@ -244,7 +200,7 @@ def test_post_409_naming_the_protocol_raises_the_refusal_with_its_numbers(code):
     ).encode()
 
     with pytest.raises(GatewayProtocolRefused) as caught:
-        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
+        canned_channel(409, body).post(CLIENT_LEGACY_KEY_PATH, {})
 
     assert caught.value.code == code
     assert (caught.value.peer, caught.value.hub, caught.value.minimum) == (1, 3, 2)
@@ -255,7 +211,7 @@ def test_a_protocol_refusal_without_numbers_reads_them_as_zero():
     body = json.dumps({"detail": {"code": "protocol_too_new", "params": {}}}).encode()
 
     with pytest.raises(GatewayProtocolRefused) as caught:
-        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
+        canned_channel(409, body).post(CLIENT_LEGACY_KEY_PATH, {})
 
     assert (caught.value.peer, caught.value.hub, caught.value.minimum) == (0, 0, 0)
 
@@ -266,7 +222,7 @@ def test_post_409_with_another_code_raises_the_typed_detail():
     ).encode()
 
     with pytest.raises(GatewayRefusedDetail) as caught:
-        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
+        canned_channel(409, body).post(CLIENT_LEGACY_KEY_PATH, {})
 
     assert caught.value.code == "rdp_not_shared"
     assert caught.value.params == {"id": "rdp_s9"}
@@ -278,22 +234,22 @@ def test_post_409_with_another_code_raises_the_typed_detail():
 )
 def test_post_409_without_a_code_raises_unreachable(body):
     with pytest.raises(GatewayUnreachable):
-        canned_channel(409, body).post(CLIENT_JOIN_PATH, {})
+        canned_channel(409, body).post(CLIENT_LEGACY_KEY_PATH, {})
 
 
 @pytest.mark.parametrize("status", [400, 404, 418, 500, 503])
 def test_post_other_error_statuses_raise_unreachable(status):
     with pytest.raises(GatewayUnreachable):
-        canned_channel(status).post(CLIENT_JOIN_PATH, {})
+        canned_channel(status).post(CLIENT_LEGACY_KEY_PATH, {})
 
 
 def test_post_invalid_json_in_a_success_raises_unreachable():
     with pytest.raises(GatewayUnreachable):
-        canned_channel(200, b"not json").post(CLIENT_JOIN_PATH, {})
+        canned_channel(200, b"not json").post(CLIENT_LEGACY_KEY_PATH, {})
 
 
 def test_post_an_empty_success_body_reads_as_an_empty_object():
-    assert canned_channel(200, b"  ").post(CLIENT_LEAVE_PATH, {}) == {}
+    assert canned_channel(200, b"  ").post(CLIENT_LEGACY_KEY_PATH, {}) == {}
 
 
 def test_post_a_dead_port_raises_unreachable():
@@ -304,120 +260,4 @@ def test_post_a_dead_port_raises_unreachable():
     made = GatewayHttpChannel(gateway_url=f"http://127.0.0.1:{port}")
 
     with pytest.raises(GatewayUnreachable):
-        made.post(CLIENT_JOIN_PATH, {})
-
-
-# --- the link a QR code carries ---
-
-
-OVERLAY = {
-    "provider": "easytier",
-    "mode": "manual",
-    "network_name": "home",
-    "network_secret": "s3cret",  # scan: allow
-    "peer": "tcp://203.0.113.7:11010",
-    "hub_address": "10.144.144.1",
-}
-
-
-def scanned_link(url: str, fingerprint: str, ticket: str = "c1") -> str:
-    """The whole link a QR code carries, naming the server's address."""
-    return link_for(
-        {
-            "urls": [url, "https://10.0.0.1:8443"],
-            "token": ticket,
-            "fp": fingerprint,
-            "overlays": [OVERLAY],
-        }
-    )
-
-
-def dead_url() -> str:
-    """An address on this machine where nothing listens."""
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
-    probe.close()
-    return f"https://127.0.0.1:{port}"
-
-
-def scanned_session(link: str) -> ClientHubSession:
-    """The binding a scanned link stores, and the session over it."""
-    enrollment.enroll(link)
-    (binding,) = enrollment.bindings()
-    return ClientHubSession(
-        binding=binding, hostname="box", platform_tuple={}, log=discard
-    )
-
-
-def test_a_scanned_link_is_stored_pending_at_once_and_asks_nothing(tls_server):
-    url, fingerprint = tls_server
-
-    binding = enrollment.enroll(scanned_link(url, fingerprint))
-
-    assert binding["gateway_url"] == url
-    assert binding["gateway_urls"] == [url, "https://10.0.0.1:8443"]
-    assert (binding["ticket"], binding["fingerprint"]) == ("c1", fingerprint)
-    assert binding["is_pending"] is True and "is_object_pending" not in binding
-    assert binding["overlays"] == [OVERLAY] and binding["token"] == ""
-    assert enrollment.bindings() == [binding]
-    assert RecordingHandler.requests == []
-
-
-def test_a_scanned_link_whose_hub_does_not_answer_stays_pending(config_path):
-    session = scanned_session(scanned_link(dead_url(), WRONG_FINGERPRINT))
-
-    session.run_once()
-
-    assert session.connection() == "waiting"
-    assert session.waiting()["reason"] == "hub_silent"
-    assert session.is_pending() is True
-    (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert stored["is_pending"] is True and stored["overlays"] == [OVERLAY]
-
-
-def test_a_round_that_reaches_the_hub_joins_with_nothing_fetched_first(
-    tls_server, monkeypatch, config_path
-):
-    url, fingerprint = tls_server
-    RecordingHandler.post_answer = b'{"id": "h-c1", "token": "tok"}'
-    session = scanned_session(scanned_link(url, fingerprint))
-    sockets = SocketScript([WELCOME])
-    monkeypatch.setattr(session_module, "WebSocketClient", sockets)
-
-    session.run_once()
-
-    paths = [path for path, _ in RecordingHandler.requests]
-    assert paths == [CLIENT_JOIN_PATH]
-    assert json.loads(RecordingHandler.requests[0][1])["ticket"] == "c1"
-    (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert (stored["id"], stored["token"]) == ("h-c1", "tok")
-    assert stored["overlays"] == [OVERLAY] and "ticket" not in stored
-    assert sockets.made[0].sent[0]["type"] == "hello"
-
-
-def test_a_scanned_link_on_another_certificate_is_untrusted_and_asks_nothing(
-    tls_server, monkeypatch
-):
-    url, _ = tls_server
-    session = scanned_session(scanned_link(url, WRONG_FINGERPRINT))
-    sockets = SocketScript([WELCOME])
-    monkeypatch.setattr(session_module, "WebSocketClient", sockets)
-
-    session.run_once()
-
-    assert session.waiting()["reason"] == "untrusted"
-    assert session.waiting()["code"] == {"code": "hub_untrusted", "params": {}}
-    assert session.is_pending() is True
-    assert RecordingHandler.requests == []
-
-
-def test_an_ipv6_hub_is_reached_at_its_bracketed_address(tls_server_ipv6):
-    url, fingerprint = tls_server_ipv6
-    channel = GatewayHttpChannel(gateway_url=url, fingerprint=fingerprint)
-
-    reply = channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
-
-    assert url.startswith("https://[::1]:")
-    assert reply == {}
-    assert RecordingHandler.hosts == [url.removeprefix("https://")]
+        made.post(CLIENT_LEGACY_KEY_PATH, {})

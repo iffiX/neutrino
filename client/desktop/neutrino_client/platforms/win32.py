@@ -35,6 +35,10 @@ ERROR_PIPE_CONNECTED = 535
 ERROR_BROKEN_PIPE = 109
 ERROR_NO_DATA = 232
 ERROR_NOT_CONNECTED = 2250
+# Overlapped I/O on a pipe a client opens to read and write at once.
+FILE_FLAG_OVERLAPPED = 0x40000000
+ERROR_IO_PENDING = 997
+ERROR_OPERATION_ABORTED = 995
 
 # Tokens.
 TOKEN_QUERY = 0x0008
@@ -360,6 +364,18 @@ class TokenUser:
         ).contents.value
 
 
+class Overlapped(ctypes.Structure):
+    """``OVERLAPPED``: one asynchronous read or write and the event it sets."""
+
+    _fields_ = [
+        ("Internal", ctypes.c_void_p),
+        ("InternalHigh", ctypes.c_void_p),
+        ("Offset", DWORD),
+        ("OffsetHigh", DWORD),
+        ("hEvent", ctypes.c_void_p),
+    ]
+
+
 class Coord(ctypes.Structure):
     """A console size."""
 
@@ -633,6 +649,20 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
+        self.kernel32.CreateEventW.restype = ctypes.c_void_p
+        self.kernel32.CreateEventW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_wchar_p,
+        ]
+        self.kernel32.GetOverlappedResult.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_int,
+        ]
+        self.kernel32.CancelIoEx.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         self.kernel32.GetModuleHandleW.restype = ctypes.c_void_p
         self.kernel32.GetUserDefaultUILanguage.restype = ctypes.c_ushort
         self.kernel32.GetUserDefaultUILanguage.argtypes = []

@@ -30,6 +30,9 @@ SERVICES_PREFIX = "/api/services/"
 TERMINAL_ATTACH_ROUTE = "/api/terminal/attach"
 TERMINAL_EXEC_ROUTE = "/api/terminal/exec"
 TERMINAL_OUTPUT_ROUTE = "/api/terminal/output"
+# The route that answers 101 and carries ``nclient ssh proxy``'s standard
+# input up an ``ssh`` entry's ``connect`` stream.
+SSH_PROXY_ROUTE = "/api/ssh/proxy"
 # The two flags a persist may carry.
 TERMINAL_PERSIST_FLAGS = ("is_persistent", "is_shared")
 # The header a 101 names the terminal in.
@@ -49,8 +52,10 @@ def state_payload(resident) -> dict:
         versions of the programs the package carries as
         ``carried_versions``, empty in a checkout, the
         hubs joined as ``hubs``, each with its connection, its virtual
-        network and its jobs, the services they publish as ``services``,
-        each with its job, the machines they offer a terminal on and the
+        network and its jobs, the apps they publish as ``apps``, each with
+        its job and whether it is in use, the services they publish as
+        ``services``, each with its job, the machines they offer a
+        terminal on, each with its enabled accounts, and the
         sessions they list as ``terminals`` ``{machines, sessions}``, each
         stamped with its ``hub_id``, the notices above the hubs, then every
         handler's state; no token, password or network secret is in it.
@@ -68,10 +73,12 @@ def state_payload(resident) -> dict:
         "mount_location_suggestion": resident.suggest_mount_location(),
         "mount_location_choices": resident.mount_location_choices(),
         "home": resident.home(),
+        "is_ssh_include_enabled": resident.is_ssh_include_enabled(),
         "is_connected": resident.is_connected(),
         "exit_hub_id": resident.exit_hub_id(),
         "hubs": resident.hubs(),
         "notices": resident.notices(),
+        "apps": resident.app_rows(),
         "services": resident.entry_rows(),
         "terminals": {
             "machines": resident.terminal_entries(),
@@ -108,16 +115,34 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             if outcome.get("code"):
                 return refusal_status(str(outcome["code"])), outcome
             return 200, outcome
+        if route == "/api/ssh/config":
+            return 200, resident.ssh_config()
         return 404, {"code": "unknown_request", "params": {}}
     if method == "POST":
         if route == "/api/join":
             return _join(resident, payload)
-        if route == "/api/language":
-            resident.set_language(str(payload.get("language", "")))
-            return 200, state_payload(resident)
-        if route == "/api/theme":
-            resident.set_theme(str(payload.get("theme", "")))
-            return 200, state_payload(resident)
+        if route == "/api/settings/set":
+            return _answer(resident, resident.apply_settings(payload))
+        if route == "/api/app/open":
+            return _answer(
+                resident, resident.open_app(_hub_id(payload), _app_id(payload))
+            )
+        if route == "/api/app/stop":
+            return _answer(
+                resident, resident.stop_app(_hub_id(payload), _app_id(payload))
+            )
+        if route == "/api/app/set":
+            ports = payload.get("ports")
+            return _answer(
+                resident,
+                resident.configure_app(
+                    _hub_id(payload),
+                    _app_id(payload),
+                    ports if isinstance(ports, dict) else {},
+                ),
+            )
+        if route == SSH_PROXY_ROUTE:
+            return _open_ssh_proxy(resident, payload)
         if route == "/api/terminal/font":
             resident.set_terminal_font_size(_size(payload, "size"))
             return 200, state_payload(resident)
@@ -191,15 +216,6 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
                     _hub_id(payload), str(payload.get("provider", "") or "")
                 ),
             )
-        if route == "/api/forward/configure":
-            return _answer(
-                resident,
-                resident.configure_forward(
-                    _hub_id(payload),
-                    str(payload.get("id", "") or ""),
-                    payload.get("local_port"),
-                ),
-            )
         if route.startswith(SERVICES_PREFIX):
             return _service_action(resident, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":
@@ -226,7 +242,7 @@ def serve_upgrade(route: str, reply: dict, resident, *, read, write) -> None:
         write: ``write(data)`` writes the connection.
     """
     terminal_id = str(reply.get("terminal_id", ""))
-    if route in (TERMINAL_ATTACH_ROUTE, TERMINAL_EXEC_ROUTE):
+    if route in (TERMINAL_ATTACH_ROUTE, TERMINAL_EXEC_ROUTE, SSH_PROXY_ROUTE):
         resident.attach_terminal(terminal_id, read)
     elif route == TERMINAL_OUTPUT_ROUTE:
         resident.terminal_output(terminal_id, write)
@@ -242,8 +258,10 @@ def refusal_status(code: str) -> int:
         404 for an unknown request or hub, 403 for a refused scope, path or
         authorization, 400 otherwise.
     """
-    if code in ("unknown_request", "unknown_hub", "unknown_terminal"):
+    if code in ("unknown_request", "unknown_hub", "unknown_terminal", "unknown_app"):
         return 404
+    if code in ("app_in_use",):
+        return 409
     if code in (
         "control_peer_refused",
         "fs_refused",
@@ -323,6 +341,10 @@ def _hub_id(body: dict) -> str:
     return str(body.get("hub_id", "") or "")
 
 
+def _app_id(body: dict) -> str:
+    return str(body.get("app_id", "") or "")
+
+
 def _terminal_id(body: dict) -> str:
     return str(body.get("terminal_id", "") or "")
 
@@ -344,6 +366,7 @@ def _attach_terminal(resident, body: dict):
         _size(body, "rows"),
         str(body.get("session_id", "") or ""),
         is_shared=body.get("is_shared") is True,
+        account=str(body.get("account", "") or ""),
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome
@@ -360,6 +383,17 @@ def _open_exec(resident, body: dict):
         body.get("is_tty") is True,
         _size(body, "cols"),
         _size(body, "rows"),
+        str(body.get("account", "") or ""),
+    )
+    if "code" in outcome:
+        return refusal_status(str(outcome["code"])), outcome
+    return 101, outcome
+
+
+def _open_ssh_proxy(resident, body: dict):
+    """Open an ``ssh`` entry's stream and answer 101 naming it, or the refusal."""
+    outcome = resident.open_ssh_proxy(
+        _hub_id(body), str(body.get("entry_id", "") or "")
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome
@@ -397,6 +431,7 @@ def _open_window_terminal(resident, body: dict):
         _size(body, "cols"),
         _size(body, "rows"),
         str(body.get("session_id", "") or ""),
+        account=str(body.get("account", "") or ""),
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome

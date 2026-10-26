@@ -49,6 +49,7 @@ from neutrino_client.constants import (
     CLIENT_WINDOWED_PROGRAM_WINDOWS,
     CLIENT_LOG_SUBDIR_WINDOWS,
     CLIENT_STATE_SUBDIR_WINDOWS,
+    CLIENT_TRANSPORT_PIPE_NAME_PREFIX,
 )
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import (
@@ -67,12 +68,15 @@ from neutrino_client.platforms.windows_console import (
     WindowsRawConsole,
 )
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
+from neutrino_client.platforms.windows_pipe import open_duplex_pipe
 from neutrino_client.words import language_for_tag
 
 # This person's client directory under the roaming and the local profile
 # roots.
 WINDOWS_CLIENT_DIR_PARTS = ("Neutrino", "client")
 WINDOWS_MOUNT_TIMEOUT_S = 60
+# How long setting a key file's access list may take.
+RESTRICT_TIMEOUT_S = 30
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
 # The id Windows gave this installation, read from the 64-bit view of the
@@ -322,6 +326,51 @@ class WindowsPlatform(ClientPlatform):
     def current_account(self) -> str:
         """The account this process runs as."""
         return getpass.getuser()
+
+    def transport_listen_path(self) -> str:
+        """This person's own pipe of the transport."""
+        return (
+            CLIENT_CONTROL_PIPE_PREFIX
+            + CLIENT_TRANSPORT_PIPE_NAME_PREFIX
+            + _pipe_safe_name(self.current_account())
+        )
+
+    def connect_transport(self, path: str):
+        """One connection to the transport's pipe, read and written at once.
+
+        Args:
+            path: The pipe's name.
+
+        Returns:
+            The connection.
+
+        Raises:
+            OSError: When nothing answers on the pipe.
+        """
+        return open_duplex_pipe(path)
+
+    def restrict_to_person(self, path: str) -> None:
+        """Leave a file to this account alone: its access list grants it and
+        nobody else, nothing inherited.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When ``icacls`` cannot set it.
+        """
+        result = run_quietly(
+            [
+                "icacls",
+                path,
+                "/inheritance:r",
+                "/grant:r",
+                f"{self.current_account()}:F",
+            ],
+            timeout_s=RESTRICT_TIMEOUT_S,
+        )
+        if result.returncode != 0:
+            raise OSError((result.stderr or result.stdout or "icacls failed").strip())
 
     def read_peer_identity(self, connection) -> dict:
         """A pipe peer's identity, from pipe impersonation.

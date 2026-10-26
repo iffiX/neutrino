@@ -1,41 +1,36 @@
-"""One hub's session: a binding, its socket, and the reconnect that holds it.
+"""One hub's session: a binding, its session through the transport, and the waits between.
 
-A session belongs to one binding and speaks to one hub. It holds the socket
-open and reconnects when it drops: a round dials every address of the hub at
-once and keeps the first socket to connect with the pinned certificate, and
-dials an address that refused again every second until the round's connect
-time ends. A network change starts a round at once: a virtual network
-turning on, this machine's address toward the hub changing, a state naming other
-addresses, or the peers of a virtual network that is on changing. On a hub
-that is not connected the change ends the wait and the round in flight,
-whose dials still waiting are closed; on a connected hub the round runs
-beside the live channel, and its winner takes the channel only on a better
-path. The hub pushes its
-``state``, the addresses it answers on, the services it publishes and
-whether this client is switched off, and the session answers each state and
-every interval with a ``report``. What a
-service handler needs from the hub comes down a ``service`` stream the
-session opens on request, a terminal on a managed machine comes down a
-``shell`` stream carrying bytes both ways, one command runs on an ``exec``
-stream, and every connection a local
-forward accepts rides a ``connect`` stream. The resident owns the handlers and the store; the
-session tells it what changed through its callbacks and never touches them.
+A session belongs to one binding and speaks to one hub, through the
+client's transport, which holds the connection: the session gives it the
+binding's keys and every candidate address with its path in ``dial``, and
+the transport runs the rounds, the redials and the moves to a better path.
+The candidates are the hub's address on its virtual network that is on, the
+hub's name, and the addresses the binding holds. A network change, a
+virtual network turning on, this machine's address toward the hub changing,
+or a state naming other addresses, sends ``round``; new candidates are sent
+in a ``dial`` again first.
 
-A ``refused`` frame ends the socket whenever it arrives, and says the same
-as one that arrives instead of the welcome: its code decides what becomes
-of the binding.
+Every frame of the hub's control stream passes through the transport as a
+line. The session writes ``hello`` when a round's winner opens its session,
+and again when the transport moves the live channel; it takes the
+``welcome``, the ``state`` it answers with a ``report``, the ``pong`` that
+sets the round trip, and the ``reply`` to each ``service``, ``persist`` and
+``stop_session`` it asked. Streams open as connections of their own to the
+transport.
+
+A pending join is the transport's ``join``: it dials as a round does and
+spends the ticket at the first address whose handshake completes under the
+link's key; the binding then takes the hub's id and token, and is dialled.
+The transport answers a join once, and the session tries it again by the
+code. A binding a 0.5 client kept is moved first, over the hub's legacy
+listener, when that is on.
 
 The connection is one of five states: ``connected``, ``connecting`` while a
 round dials, ``waiting`` once a round ended and the session waits for what
-its reason names, ``replaced`` while another socket holds the binding, and
+its reason names, ``replaced`` while another client holds the binding, and
 ``disabled`` while the hub has this client switched off. A waiting session
 carries its reason and, while a countdown runs, the moment of the next
-round. A join whose ticket is not spent rounds like any other: the first
-address that answers with the pinned certificate spends it before the
-hello, and a hub that refuses it leaves the session waiting for good. A
-refresh is the same loop moved to now. The client sends a ``ping`` frame
-on the open socket every interval, and the ``pong`` that echoes its nonce
-sets the round trip the hub row shows.
+round.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -46,8 +41,6 @@ does its own wording.
 from __future__ import annotations
 
 import ipaddress
-import json
-import queue
 import secrets
 import threading
 import time
@@ -55,50 +48,41 @@ import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
+    CLIENT_ADDRESS_SCHEME,
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
-    CLIENT_CHANNEL_WS_PATH,
-    CLIENT_CONNECT_TIMEOUT_S,
     CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_JOIN_RETRY_MIN_S,
-    CLIENT_PATH_RANKS,
+    CLIENT_JOIN_TIMEOUT_S,
+    CLIENT_LEAVE_TELL_TIMEOUT_S,
+    CLIENT_LEGACY_KEY_PATH,
     CLIENT_PING_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
-    CLIENT_REDIAL_INTERVAL_S,
     CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
+    CLIENT_REQUEST_TIMEOUT_S,
     CLIENT_ROLE,
     CLIENT_SERVER_PATHS,
-    CLIENT_SHELL_PERSIST_VERB,
-    CLIENT_SHELL_RESIZE_MODULE,
-    CLIENT_SHELL_RESIZE_VERB,
-    CLIENT_SHELL_STOP_VERB,
     CLIENT_SOFTWARE_PREFIX,
-    CLIENT_STREAM_CODE_KIND_UNKNOWN,
-    CLIENT_STREAM_KIND_COMMAND,
     CLIENT_STREAM_KIND_CONNECT,
     CLIENT_STREAM_KIND_EXEC,
-    CLIENT_STREAM_KIND_SERVICE,
     CLIENT_STREAM_KIND_SHELL,
     CLIENT_STREAM_TIMEOUT_S,
-    CLIENT_WS_CLOSE_REPLACED,
-    CLIENT_WS_SILENCE_TIMEOUT_S,
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
-from neutrino_client.core.channel import refusal_error
-from neutrino_client.core.streams import ClientStream, ClientStreamRegistry
-from neutrino_client.core.ws_client import WebSocketClient, close_error
+from neutrino_client.core.channel import GatewayHttpChannel
+from neutrino_client.core.static_key import public_key_of
+from neutrino_client.core.streams import ClientStream
 from neutrino_client.exceptions import (
     EnrollmentError,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    SocketClosed,
 )
 
 # How the five connection states of a session are named to every surface.
@@ -147,14 +131,18 @@ WAIT_REASONS_HELD = (WAIT_UNKNOWN_DEVICE, WAIT_TOO_OLD, WAIT_JOIN_REFUSED)
 # spends a credential the hub already refused.
 WAIT_REASONS_FINAL = (WAIT_UNKNOWN_DEVICE, WAIT_JOIN_REFUSED)
 
-# How long a stop waits for the loop thread to come back, its connect in
-# progress aborted.
-STOP_JOIN_TIMEOUT_S = 1
-# How long a round waits for one dial's result before it looks again
-# whether the session is stopping.
-DIAL_WAIT_TURN_S = 0.1
-# The rank of a path the table does not name: below every named one.
-PATH_RANK_UNKNOWN = max(CLIENT_PATH_RANKS.values()) + 1
+# The codes a round or a join ends in that are the session's own words.
+CODE_HUB_UNREACHABLE = "hub_unreachable"
+CODE_HUB_UNTRUSTED = "hub_untrusted"
+CODE_HUB_KEY_MISSING = "hub_key_missing"
+CODE_REPLACED = "replaced"
+# The refusals of a join the hub answers that keep the ticket: tried again
+# a minute later.
+JOIN_RETRIED_CODES = ("control_unavailable", "channel_full")
+# How long one turn of the session's thread waits when nothing is due.
+SESSION_TICK_S = 1
+# How long telling the transport to stop dialling may take.
+UNDIAL_TIMEOUT_S = 2
 
 
 def channel_error(error: Exception) -> dict:
@@ -169,33 +157,12 @@ def channel_error(error: Exception) -> dict:
     if isinstance(error, GatewayRefusedDetail):
         return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
-        return {"code": "hub_untrusted", "params": {}}
+        return {"code": CODE_HUB_UNTRUSTED, "params": {}}
     if isinstance(error, GatewayRefused):
         if error.code:
             return {"code": error.code, "params": dict(error.params)}
         return {"code": "hub_refused", "params": {}}
-    return {"code": "hub_unreachable", "params": {"detail": str(error)}}
-
-
-def is_better_path(
-    path: str, handshake_s: float, live_path: str, live_handshake_s: float
-) -> bool:
-    """Whether a round's winner is a better path than the live channel.
-
-    Args:
-        path: The winner's path, a key of ``CLIENT_PATH_RANKS``.
-        handshake_s: How long the winner's handshake took.
-        live_path: The live channel's path.
-        live_handshake_s: How long the live channel's handshake took when
-            it won.
-
-    Returns:
-        True when the winner's path ranks higher, or ranks the same and its
-        handshake took less time.
-    """
-    rank = CLIENT_PATH_RANKS.get(path, PATH_RANK_UNKNOWN)
-    live_rank = CLIENT_PATH_RANKS.get(live_path, PATH_RANK_UNKNOWN)
-    return rank < live_rank or (rank == live_rank and handshake_s < live_handshake_s)
+    return {"code": CODE_HUB_UNREACHABLE, "params": {"detail": str(error)}}
 
 
 def is_on_local_network(host: str, networks: list) -> bool:
@@ -221,18 +188,6 @@ def is_on_local_network(host: str, networks: list) -> bool:
     return False
 
 
-def is_port_closed(error: Exception) -> bool:
-    """Whether a dial failed on a host that is up with the port not open.
-
-    Args:
-        error: What the dial raised.
-
-    Returns:
-        True when the connect was refused.
-    """
-    return isinstance(error.__cause__, ConnectionRefusedError)
-
-
 def is_offline(networks: list) -> bool:
     """Whether a machine's networks leave it no network at all.
 
@@ -256,70 +211,20 @@ def is_offline(networks: list) -> bool:
     return True
 
 
-def _decode(payload) -> "dict | None":
-    """One text frame as an object, or None when it is not one.
-
-    Args:
-        payload: The frame's text.
-
-    Returns:
-        The decoded object, or None when the frame is not one.
-    """
-    try:
-        message = json.loads(payload)
-    except (TypeError, ValueError):
-        return None
-    return message if isinstance(message, dict) else None
-
-
-def _refusal(message: dict) -> Exception:
-    """What a refused frame means: the hub turned this binding away.
-
-    Args:
-        message: The frame, wherever on the socket it arrived.
-
-    Returns:
-        The channel error its code maps to.
-    """
-    code = str(message.get("code", "") or "")
-    params = message.get("params")
-    params = params if isinstance(params, dict) else {}
-    if code in CLIENT_PROTOCOL_REFUSAL_CODES:
-        return refusal_error(code, params)
-    return GatewayRefused(f"hub refused this client ({code})", code=code, params=params)
-
-
-def _no_networks() -> list:
-    """No network of this machine is known."""
-    return []
-
-
-def _nobody(*_args) -> None:
-    """Nobody listening."""
-
-
-def _adopt_join(session, binding: dict) -> None:
-    """Keep a completed join on the session that made it.
-
-    Raises:
-        OSError: When the binding file cannot be written.
-    """
-    session.adopt_join(binding)
-
-
 def clean_terminals(value) -> dict:
     """The state's ``terminals`` as the session holds it: machines and sessions.
 
-    The hub sends either ``{machines, sessions}`` or a list of machines,
-    each with its own ``sessions``; both read as the same two lists.
+    The hub sends a list of machines, each with its enabled accounts and its
+    own ``sessions``; ``{machines, sessions}`` reads the same.
 
     Args:
         value: What the state carried.
 
     Returns:
-        ``{"machines": [{device_id, name, is_online}], "sessions": [...]}``,
-        each session as :func:`_clean_session` keeps it and stamped with
-        its machine; a machine or a session without an id is dropped.
+        ``{"machines": [{device_id, name, is_online, accounts}], "sessions":
+        [...]}``, each session as :func:`_clean_session` keeps it and
+        stamped with its machine; a machine or a session without an id is
+        dropped.
     """
     if isinstance(value, dict):
         machines = value.get("machines")
@@ -339,6 +244,7 @@ def clean_terminals(value) -> dict:
                 "device_id": device_id,
                 "name": str(entry.get("name", "") or "") or device_id,
                 "is_online": bool(entry.get("is_online")),
+                "accounts": _clean_accounts(entry.get("accounts")),
             }
         )
         nested = entry.get("sessions")
@@ -353,6 +259,17 @@ def clean_terminals(value) -> dict:
     return {"machines": kept_machines, "sessions": sessions}
 
 
+def _clean_accounts(value) -> list:
+    """A machine's enabled accounts, the first the default, each a name once."""
+    accounts: list = []
+    for item in value if isinstance(value, list) else []:
+        name = item.get("account") if isinstance(item, dict) else item
+        name = str(name or "").strip()
+        if name and name not in accounts:
+            accounts.append(name)
+    return accounts
+
+
 def _clean_session(entry, device_id: str) -> "dict | None":
     """One shell session as the session holds it.
 
@@ -364,8 +281,7 @@ def _clean_session(entry, device_id: str) -> "dict | None":
     Returns:
         ``{session_id, device_id, account, owner, owner_name, is_owned,
         is_persistent, is_shared, attached_count, title, started_at}``; None
-        for an entry
-        without a session id or a machine.
+        for an entry without a session id or a machine.
     """
     if not isinstance(entry, dict) or not entry.get("session_id"):
         return None
@@ -397,13 +313,51 @@ def _clean_session(entry, device_id: str) -> "dict | None":
     }
 
 
+def _clean_apps(value) -> list:
+    """The state's ``apps`` as the session holds them, each with an id."""
+    apps = []
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        apps.append(
+            {
+                "id": str(entry["id"]),
+                "title": str(entry.get("title", "") or ""),
+                "source": str(entry.get("source", "") or ""),
+                "device_id": str(entry.get("device_id", "") or ""),
+                "device_name": str(entry.get("device_name", "") or ""),
+                "local_name": str(entry.get("local_name", "") or ""),
+            }
+        )
+    return apps
+
+
+def _no_networks() -> list:
+    """No network of this machine is known."""
+    return []
+
+
+def _nobody(*_args) -> None:
+    """Nobody listening."""
+
+
+def _adopt_join(session, binding: dict) -> None:
+    """Keep a completed join on the session that made it.
+
+    Raises:
+        OSError: When the binding file cannot be written.
+    """
+    session.adopt_join(binding)
+
+
 class ClientHubSession:
-    """One binding's socket to its hub, reconnecting until stopped."""
+    """One binding's session to its hub, through the transport, until stopped."""
 
     def __init__(
         self,
         *,
         binding: dict,
+        transport,
         hostname: str,
         platform_tuple: dict,
         os_machine_id: str = "",
@@ -418,10 +372,14 @@ class ClientHubSession:
         refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
         clock=time.monotonic,
         wall_clock=time.time,
+        legacy_channel=None,
     ):
         """
         Args:
             binding: The binding this session speaks for.
+            transport: The
+                :class:`~neutrino_client.core.transport.ClientTransportChannel`
+                the session goes through.
             hostname: This machine's hostname, sent in every report.
             platform_tuple: This machine's platform tuple, sent in every
                 report.
@@ -442,20 +400,25 @@ class ClientHubSession:
                 OSError when it cannot; None adopts it directly.
             on_welcomed: ``on_welcomed(session, hub_id)`` is called after
                 every welcome, with the hub id it names, before the binding
-                takes that id and before the socket's first state is read;
+                takes that id and before the session's first state is read;
                 None for nobody listening.
             local_networks: Returns this machine's networks, as
                 ``a.b.c.d/n`` or IPv6 prefixes, by which a candidate address
                 reads as ``lan``; None knows none.
             refresh_timeout_s: How long a refresh waits for its answer.
-            clock: The monotonic clock a refresh's limit is measured on.
+            clock: The monotonic clock a refresh's limit and the waits are
+                measured on.
             wall_clock: The wall clock, read beside it, so a jump of either
                 clock, as a machine waking from sleep makes, ends the
                 refresh instead of holding it.
+            legacy_channel: ``legacy_channel(url, fingerprint)`` makes the
+                pinned channel a 0.5 binding is moved over, with ``post``;
+                None makes a :class:`GatewayHttpChannel`.
         """
         self._log = log
         self._lock = threading.Lock()
         self._binding = dict(binding)
+        self._transport = transport
         self._hostname = hostname
         self._platform_tuple = dict(platform_tuple)
         self._os_machine_id = os_machine_id
@@ -468,84 +431,72 @@ class ClientHubSession:
         self._local_networks = (
             local_networks if local_networks is not None else _no_networks
         )
+        self._legacy_channel = (
+            legacy_channel if legacy_channel is not None else _pinned_channel
+        )
+        self._clock = clock
+        self._wall_clock = wall_clock
         # The binding's id when the session began, the same for its life,
-        # whatever id a completed join brings.
+        # whatever id a completed join brings; and the label the transport
+        # knows the binding by now.
         self._local_key = str(binding.get("id", ""))
-        # Set whenever the loop should stop waiting: a person asked for a
-        # connection now, or the session is stopping.
+        self._label = self._local_key
         self._news = threading.Event()
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
-        self._client: "WebSocketClient | None" = None
-        # The rounds in progress, for a stop or a network change to abort.
-        self._dialings: list = []
-        # Set once a network change or a refresh ended the round in flight.
-        self._is_round_cut = False
-        # The address the live socket was opened through, its path, and how
-        # long its handshake took when it won.
-        self._connected_url = ""
-        self._connected_path = ""
-        self._connected_handshake_s = 0.0
-        # A round beside the live channel runs, and another is due after it.
-        self._is_changing = False
-        self._is_change_due = False
-        # The socket the channel last moved off, whose 4010 is expected; the
-        # event set once that move ended; the socket a move is greeting.
-        self._moved_from: "WebSocketClient | None" = None
-        self._moving = threading.Event()
-        self._moving.set()
-        self._moving_to: "WebSocketClient | None" = None
-        # This machine's own address on the route to the hub as last seen;
-        # None before the first look.
-        self._source_address: "str | None" = None
-        self._streams: "ClientStreamRegistry | None" = None
-        self._is_welcomed = False
-        # Set while a welcomed socket carries the channel.
-        self._channel_open = threading.Event()
-        # The round trip the last pong on the live socket measured, in
-        # whole milliseconds; None before the first pong.
-        self._rtt_ms: "int | None" = None
-        # The nonce and the send time of the last ping on the live socket;
-        # None before the first, and once its pong was read.
-        self._ping_sent: "tuple[str, float] | None" = None
+        # What the session thread has to do: the transport given the
+        # binding, a dial to send again with new candidates, a round to ask
+        # for, and when the next join or move of a pending or 0.5 binding
+        # is due on the monotonic clock.
+        self._is_dialed = False
+        self._is_dial_due = False
+        self._is_round_due = False
+        self._next_attempt_at = 0.0
         self._backoff_s = CLIENT_BACKOFF_MIN_S
-        # Set while another socket holds this binding; only a person clears it.
+        # The live session: whether a welcome came, the session a hello
+        # went out on, the address and path the transport named.
+        self._is_welcomed = False
+        # Whether the session the hub refused by a frame is the one that
+        # ends next, whose end then says nothing new.
+        self._is_session_refused = False
+        self._channel_open = threading.Event()
+        self._address = ""
+        self._path = ""
+        self._hub_software = ""
+        # The round trip the last pong measured, and the last ping sent.
+        self._rtt_ms: "int | None" = None
+        self._ping_sent: "tuple[str, float] | None" = None
+        self._next_report_at = 0.0
+        self._next_ping_at = 0.0
+        # The questions waiting for a reply, by request.
+        self._replies: dict = {}
+        # This machine's own address toward the hub, as last seen.
+        self._source_address: "str | None" = None
+        self._next_look_at = 0.0
         self._is_replaced = False
-        # Why the session waits, one of ``WAIT_REASONS``, empty while it
-        # does not; the code behind it; and the wall clock's moment of the
-        # next round, None while no countdown runs.
         self._wait_reason = ""
         self._wait_code: "dict | None" = None
         self._next_round_at: "float | None" = None
         self._services_list: list = []
-        # The state's word for the way this socket reached the hub, and
-        # whether this client may open the hub's panel; empty and False
-        # before the first state.
+        self._apps_list: list = []
         self._reached_through = ""
         self._is_panel_allowed = False
         self._terminals: dict = {"machines": [], "sessions": []}
         self._state_hash = ""
-        self._hub_software = ""
         self._is_disabled = False
         self._was_disabled = False
-        # The refresh in flight, if any, and the count that tells a timer
-        # of an older one apart.
         self._is_refreshing = False
         self._refresh_count = 0
         self._refresh_timeout_s = refresh_timeout_s
-        self._clock = clock
-        self._wall_clock = wall_clock
-        # When the refresh in flight began, on both clocks.
         self._refresh_since = (0.0, 0.0)
         # The hub's address on its virtual network that is on, and that
         # network's engine; empty while none is on.
         self._overlay_host = ""
         self._overlay_provider = ""
-        # Whether this client's virtual network of the hub's is on.
         self._is_overlay_on = False
         # The members of the state's ``urls`` that are a server's address,
         # by the path each reaches the hub by.
-        self._server_urls: dict[str, str] = {}
+        self._server_urls: dict = {path: "" for path in CLIENT_SERVER_PATHS}
 
     # --- what the resident reads ---
 
@@ -553,6 +504,12 @@ class ClientHubSession:
     def local_key(self) -> str:
         """The binding's id when the session began, unchanged by a completed join."""
         return self._local_key
+
+    @property
+    def label(self) -> str:
+        """The binding's label the transport knows it by now."""
+        with self._lock:
+            return self._label
 
     def is_pending(self) -> bool:
         """Whether the binding is a join whose ticket is not spent yet."""
@@ -576,8 +533,9 @@ class ClientHubSession:
 
     @property
     def binding_id(self) -> str:
-        """The binding's id, the same for the life of the session."""
-        return self._binding.get("id", "")
+        """The binding's id as it stands now."""
+        with self._lock:
+            return self._binding.get("id", "")
 
     def binding(self) -> dict:
         """The binding this session speaks for, as it stands now."""
@@ -595,7 +553,7 @@ class ClientHubSession:
             return self._binding.get("hub_name", "")
 
     def gateway_url(self) -> str:
-        """The hub's address on its agent port."""
+        """The hub's address that last answered."""
         with self._lock:
             return self._binding.get("gateway_url", "")
 
@@ -605,12 +563,12 @@ class ClientHubSession:
             return self._hub_software
 
     def connection(self) -> str:
-        """Where the socket stands, one of ``CONNECTION_STATES``."""
+        """Where the session stands, one of ``CONNECTION_STATES``."""
         with self._lock:
             return self._connection()
 
     def wait_channel(self, timeout_s: float) -> bool:
-        """Wait until a welcomed socket carries the channel.
+        """Wait until a welcomed session carries the channel.
 
         Args:
             timeout_s: How long to wait.
@@ -621,12 +579,7 @@ class ClientHubSession:
         return self._channel_open.wait(timeout_s)
 
     def is_refreshing(self) -> bool:
-        """Whether a refresh waits for its answer, within its limit.
-
-        A refresh whose limit has passed on either clock, or whose wall
-        clock moved back, is over here and now, whether or not its timer
-        has fired.
-        """
+        """Whether a refresh waits for its answer, within its limit."""
         with self._lock:
             if self._is_refreshing and self._is_refresh_over():
                 self._is_refreshing = False
@@ -657,24 +610,31 @@ class ClientHubSession:
             }
 
     def service_entries(self) -> list:
-        """The typed service list the hub last sent, while its socket is up.
+        """The typed service list the hub last sent, while its session is up.
 
         Returns:
-            The entries; empty while the socket is down, so a hub that is
+            The entries; empty while the session is down, so a hub that is
             unreachable publishes nothing.
         """
         with self._lock:
             if not self._is_welcomed:
                 return []
-            return [entry for entry in self._services_list if isinstance(entry, dict)]
+            return [dict(entry) for entry in self._services_list]
 
-    def reached_through(self) -> str:
-        """The way the channel reached the hub, as the hub's last state named it.
+    def app_entries(self) -> list:
+        """The apps the hub last sent, while its session is up.
 
         Returns:
-            ``lan``, ``netbird``, ``easytier``, ``ssh_relay``, ``direct``,
-            ``sakurafrp`` or ``openfrp``; empty before the first state.
+            ``[{id, title, source, device_id, device_name, local_name}]``;
+            empty while the session is down.
         """
+        with self._lock:
+            if not self._is_welcomed:
+                return []
+            return [dict(app) for app in self._apps_list]
+
+    def reached_through(self) -> str:
+        """The way the channel reached the hub, as the hub's last state named it."""
         with self._lock:
             return self._reached_through
 
@@ -683,7 +643,7 @@ class ClientHubSession:
 
         Returns:
             Whole milliseconds; None before the first pong on the live
-            socket and while the hub is not ``connected``.
+            session and while the hub is not ``connected``.
         """
         with self._lock:
             if self._connection() != CONNECTION_CONNECTED:
@@ -696,23 +656,12 @@ class ClientHubSession:
             return self._is_panel_allowed
 
     def overlays(self) -> list:
-        """How this machine joins each of the hub's virtual networks, as last named.
-
-        Returns:
-            The binding's overlay objects, the hub's preferred first; they
-            are kept while the socket is down, since a virtual network is
-            what can bring the hub back.
-        """
+        """How this machine joins each of the hub's virtual networks, as last named."""
         with self._lock:
             return [dict(item) for item in self._binding.get("overlays") or []]
 
     def overlay_choice(self) -> "tuple[bool, str]":
-        """Where the hub's virtual network last stood, and the engine chosen.
-
-        Returns:
-            Whether the network was last ``on``, and the provider chosen,
-            empty for the hub's first.
-        """
+        """Where the hub's virtual network last stood, and the engine chosen."""
         with self._lock:
             return (
                 self._binding.get("is_overlay_on") is True,
@@ -737,16 +686,19 @@ class ClientHubSession:
             self._binding["overlay_pick"] = str(pick)
 
     def terminal_entries(self) -> list:
-        """The machines the hub offers a terminal on, while its socket is up.
+        """The machines the hub offers a terminal on, while its session is up.
 
         Returns:
-            ``[{device_id, name, is_online}]``; empty while the socket is
-            down.
+            ``[{device_id, name, is_online, accounts}]``; empty while the
+            session is down.
         """
         with self._lock:
             if not self._is_welcomed:
                 return []
-            return [dict(entry) for entry in self._terminals["machines"]]
+            return [
+                dict(entry, accounts=list(entry["accounts"]))
+                for entry in self._terminals["machines"]
+            ]
 
     def note_session_flags(
         self,
@@ -772,12 +724,7 @@ class ClientHubSession:
                     entry["is_shared"] = bool(is_shared)
 
     def terminal_sessions(self) -> list:
-        """The shell sessions the hub lists for this client, while its socket is up.
-
-        Returns:
-            One row per session, as :func:`clean_terminals` keeps it; empty
-            while the socket is down.
-        """
+        """The shell sessions the hub lists for this client, while its session is up."""
         with self._lock:
             if not self._is_welcomed:
                 return []
@@ -788,9 +735,9 @@ class ClientHubSession:
     def set_overlay_route(self, host: str, provider: str) -> None:
         """Name the hub's address on its virtual network that is on, and its engine.
 
-        Every round dials the address with the others from then on. A
+        The candidates change, so the transport is given them again; a
         network that just turned on, or whose peers changed, is a network
-        change, so a round starts at once; an empty host drops the address.
+        change, so a round starts at once. An empty host drops the address.
 
         Args:
             host: The hub's address on the network; empty while the hub
@@ -799,22 +746,27 @@ class ClientHubSession:
                 empty once it is off.
         """
         with self._lock:
+            is_changed = (host, provider if host else "") != (
+                self._overlay_host,
+                self._overlay_provider,
+            )
             self._overlay_host = host
             self._overlay_provider = provider if host else ""
             self._is_overlay_on = bool(provider)
+            if is_changed:
+                self._is_dial_due = self._is_dialed
         if provider:
             self.change_network()
+        elif is_changed:
+            self._news.set()
 
     def change_network(self) -> None:
         """Start one round at once, as a network change does.
 
-        A hub ``replaced`` or ``disabled``, or waiting on a reason that
-        only a person ends, is left as it is. A hub that is not connected
-        has its backoff put at the floor, its wait and its round in flight
-        ended, and a new round started. A connected hub gets a round
-        beside its live channel, whose winner takes the channel only on a
-        better path; a change while that round runs starts one more after
-        it.
+        A hub ``replaced`` or ``disabled``, or waiting on a reason only a
+        person ends, is left as it is. A pending join is tried again now;
+        any other hub gets a round from the transport, which on a connected
+        hub runs beside the live channel and moves it only to a better path.
         """
         with self._lock:
             connection = self._connection()
@@ -822,23 +774,18 @@ class ClientHubSession:
                 return
             if self._wait_reason in WAIT_REASONS_HELD:
                 return
-            is_live = connection == CONNECTION_CONNECTED
-            if is_live and self._is_changing:
-                self._is_change_due = True
-                return
-            if is_live:
-                self._is_changing = True
-        if not is_live:
-            self._cut_round()
-            return
-        threading.Thread(
-            target=self._change_rounds, name="client_change_round", daemon=True
-        ).start()
+            self._backoff_s = CLIENT_BACKOFF_MIN_S
+            if self._is_dialed:
+                self._is_round_due = True
+            else:
+                self._next_attempt_at = 0.0
+        self._news.set()
 
     def reconnect(self) -> None:
-        """Take the binding back from the socket that replaced it, and connect now."""
+        """Take the binding back from the client that replaced it, and connect now."""
         with self._lock:
             self._is_replaced = False
+            self._is_dial_due = self._is_dialed
         self._news.set()
         self._on_change()
 
@@ -847,10 +794,8 @@ class ClientHubSession:
 
         A connected hub is sent a report with ``is_refresh``, which the hub
         answers with its whole state; a hub that is connecting or waiting
-        has its backoff put back to the floor, its wait and its round in
-        flight ended, and a round started, which resolves its name again.
-        Refreshing ends with the next state, a round ending in a code, or
-        ``refresh_timeout_s``.
+        has its wait ended and a round started. Refreshing ends with the
+        next state, a round ending in a code, or ``refresh_timeout_s``.
 
         Returns:
             Whether the hub entered refreshing: False while it is replaced,
@@ -869,96 +814,84 @@ class ClientHubSession:
             self._refresh_since = (self._clock(), self._wall_clock())
             self._refresh_count += 1
             count = self._refresh_count
-            client = self._client if connection == CONNECTION_CONNECTED else None
-            if client is None:
+            is_live = connection == CONNECTION_CONNECTED
+            if not is_live:
                 self._wait_reason = ""
                 self._wait_code = None
                 self._next_round_at = None
+                self._backoff_s = CLIENT_BACKOFF_MIN_S
+                if self._is_dialed:
+                    self._is_round_due = True
+                else:
+                    self._next_attempt_at = 0.0
         timer = threading.Timer(
             self._refresh_timeout_s, self._refresh_timed_out, args=(count,)
         )
         timer.daemon = True
         timer.start()
-        if client is None:
-            self._cut_round()
-        else:
-            # Sent from a thread of its own: a socket that takes no bytes
-            # holds that thread until its send timeout, never the press.
-            threading.Thread(
-                target=self._send_refresh,
-                args=(client,),
-                name="client_refresh",
-                daemon=True,
-            ).start()
+        if is_live:
+            try:
+                self._report(is_refresh=True)
+            except GatewayUnreachable:
+                pass
+        self._news.set()
         self._on_change()
         return True
 
-    def _send_refresh(self, client) -> None:
-        """Send the report a refresh asks for; a dead socket ends the socket."""
-        try:
-            self._report(client, is_refresh=True)
-        except GatewayUnreachable:
-            # The reader sees the socket's end.
-            pass
-
-    def open_service(
+    def ask_service(
         self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
     ) -> dict:
-        """Open a ``service`` stream for one entry and take the hub's close.
+        """Send a ``service`` frame for one entry and take the hub's reply.
 
         Args:
             entry_id: The published entry's id.
-            timeout_s: How long to wait for the close.
+            timeout_s: How long to wait for the reply.
 
         Returns:
-            The close's ``params``: the entry's material.
+            The reply's ``params``: the entry's material.
 
         Raises:
-            GatewayRefusedDetail: When the hub closed the stream with a code.
-            GatewayUnreachable: When there is no socket, the socket ends, or
-                the close does not arrive in time.
+            GatewayRefusedDetail: When the hub replied with a code.
+            GatewayUnreachable: When the hub is not connected, its session
+                ends, or no reply arrives in time.
         """
-        stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
-        return stream.wait_close(timeout_s)
+        return self._ask(protocol.FRAME_SERVICE, {"id": entry_id}, timeout_s)
 
-    def open_panel_service(self, timeout_s: float = CLIENT_STREAM_TIMEOUT_S) -> dict:
-        """Open a ``service`` stream for the hub's own panel and take the close.
+    def ask_panel_service(self, timeout_s: float = CLIENT_STREAM_TIMEOUT_S) -> dict:
+        """Send a ``service`` frame for the hub's own panel and take the reply.
 
         Args:
-            timeout_s: How long to wait for the close.
+            timeout_s: How long to wait for the reply.
 
         Returns:
-            The close's ``params``: ``{token}``, a sign-in usable once.
+            The reply's ``params``: ``{token}``, a sign-in usable once.
 
         Raises:
-            GatewayRefusedDetail: When the hub closed the stream with a code,
+            GatewayRefusedDetail: When the hub replied with a code,
                 ``permission_denied {kind: panel}`` among them.
-            GatewayUnreachable: When there is no socket, the socket ends, or
-                the close does not arrive in time.
+            GatewayUnreachable: When the hub is not connected, its session
+                ends, or no reply arrives in time.
         """
-        stream = self._live_streams().open(
-            CLIENT_STREAM_KIND_SERVICE, {"is_panel": True}
-        )
-        return stream.wait_close(timeout_s)
+        return self._ask(protocol.FRAME_SERVICE, {"is_panel": True}, timeout_s)
 
     def open_connect(self, args: dict) -> ClientStream:
         """Open a ``connect`` stream: one TCP connection the hub carries.
 
-        The hub's refusal arrives as the stream's close: a read comes back
-        empty and ``wait_close`` raises it.
+        The hub's refusal arrives as the stream's close before its accept:
+        a read comes back empty and ``wait_close`` raises it.
 
         Args:
             args: ``{"id"}`` naming a published entry, or
                 ``{"is_panel": True}`` for the hub's own panel.
 
         Returns:
-            The open stream, credit granted, to read, send on and close.
+            The stream, its raw bytes after the accept.
 
         Raises:
-            GatewayUnreachable: When there is no socket, or it is gone.
+            GatewayUnreachable: When the hub is not connected.
         """
-        return self._live_streams().open(
-            CLIENT_STREAM_KIND_CONNECT, dict(args), has_bytes=True
+        return self._open(
+            dict(args, kind=CLIENT_STREAM_KIND_CONNECT), is_raw_after_accept=True
         )
 
     def open_shell(
@@ -969,11 +902,12 @@ class ClientHubSession:
         session_id: str,
         is_resumed: bool = False,
         is_shared: bool = False,
+        account: str = "",
     ) -> ClientStream:
-        """Open a ``shell`` stream to one managed machine, credit granted.
+        """Open a ``shell`` stream to one managed machine.
 
-        The hub's refusal arrives as the stream's close: a read comes back
-        empty and ``wait_close`` raises it.
+        The hub's refusal, or the shell's ``exit_code``, arrives as the
+        stream's close.
 
         Args:
             device_id: The machine, as the state's ``terminals`` names it.
@@ -983,32 +917,41 @@ class ClientHubSession:
             is_resumed: Whether ``session_id`` names a session the machine
                 keeps, attached to again with its kept output.
             is_shared: Whether a new session is shared from its start.
+            account: The enabled account it runs as; empty for the first.
 
         Returns:
-            The open stream, to read, send on and close.
+            The stream, to read, send on, resize and close.
 
         Raises:
-            GatewayUnreachable: When there is no socket, or it is gone.
+            GatewayUnreachable: When the hub is not connected.
         """
-        args = {
+        open_record = {
+            "kind": CLIENT_STREAM_KIND_SHELL,
             "device_id": device_id,
             "cols": int(cols),
             "rows": int(rows),
+            "account": str(account or ""),
             "session_id": session_id,
         }
         if is_resumed:
-            args["is_resumed"] = True
+            open_record["is_resumed"] = True
         if is_shared:
-            args["is_shared"] = True
-        return self._live_streams().open(CLIENT_STREAM_KIND_SHELL, args, has_bytes=True)
+            open_record["is_shared"] = True
+        return self._open(open_record)
 
     def open_exec(
-        self, device_id: str, argv: list, is_tty: bool, cols: int, rows: int
+        self,
+        device_id: str,
+        argv: list,
+        is_tty: bool,
+        cols: int,
+        rows: int,
+        account: str = "",
     ) -> ClientStream:
         """Open an ``exec`` stream: one command on one managed machine.
 
-        Without ``is_tty`` each frame down starts with its ``fd`` byte, 1 for
-        stdout and 2 for stderr. The hub's refusal, or the command's
+        Without ``is_tty`` each piece read starts with its output's byte,
+        1 for stdout and 2 for stderr. The hub's refusal, or the command's
         ``exit_code``, arrives as the stream's close.
 
         Args:
@@ -1017,21 +960,26 @@ class ClientHubSession:
             is_tty: Whether it runs on a pseudo-terminal.
             cols: The pseudo-terminal's width in columns.
             rows: The pseudo-terminal's height in rows.
+            account: The enabled account it runs as; empty for the first.
 
         Returns:
-            The open stream, to read, send on, end the input of and close.
+            The stream, to read, send on, end the input of and close.
 
         Raises:
-            GatewayUnreachable: When there is no socket, or it is gone.
+            GatewayUnreachable: When the hub is not connected.
         """
-        args = {
-            "device_id": device_id,
-            "argv": [str(part) for part in argv],
-            "is_tty": bool(is_tty),
-            "cols": int(cols),
-            "rows": int(rows),
-        }
-        return self._live_streams().open(CLIENT_STREAM_KIND_EXEC, args, has_bytes=True)
+        return self._open(
+            {
+                "kind": CLIENT_STREAM_KIND_EXEC,
+                "device_id": device_id,
+                "argv": [str(part) for part in argv],
+                "is_tty": bool(is_tty),
+                "cols": int(cols),
+                "rows": int(rows),
+                "account": str(account or ""),
+            },
+            is_fd_tagged=not is_tty,
+        )
 
     def persist_shell(
         self,
@@ -1050,23 +998,23 @@ class ClientHubSession:
                 attached; None leaves it.
             is_shared: Whether every client with terminal rights on the
                 machine lists it; None leaves it.
-            timeout_s: How long to wait for the close.
+            timeout_s: How long to wait for the reply.
 
         Returns:
-            The close's ``params``.
+            The reply's ``params``.
 
         Raises:
             GatewayRefusedDetail: When the hub refused, ``session_unknown``
                 and ``session_not_owned`` among the codes.
-            GatewayUnreachable: When there is no socket, it ends, or the
-                close does not arrive in time.
+            GatewayUnreachable: When the hub is not connected, its session
+                ends, or no reply arrives in time.
         """
-        args = {"verb": CLIENT_SHELL_PERSIST_VERB, "session_id": session_id}
+        fields = {"session_id": session_id}
         if is_persistent is not None:
-            args["is_persistent"] = bool(is_persistent)
+            fields["is_persistent"] = bool(is_persistent)
         if is_shared is not None:
-            args["is_shared"] = bool(is_shared)
-        return self._agent_command(args, timeout_s)
+            fields["is_shared"] = bool(is_shared)
+        return self._ask(protocol.FRAME_PERSIST, fields, timeout_s)
 
     def stop_shell_session(
         self, session_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
@@ -1075,622 +1023,689 @@ class ClientHubSession:
 
         Args:
             session_id: The shell session's id.
-            timeout_s: How long to wait for the close.
+            timeout_s: How long to wait for the reply.
 
         Returns:
-            The close's ``params``.
+            The reply's ``params``.
 
         Raises:
             GatewayRefusedDetail: When the hub refused, ``session_unknown``
                 among the codes.
-            GatewayUnreachable: When there is no socket, it ends, or the
-                close does not arrive in time.
+            GatewayUnreachable: When the hub is not connected, its session
+                ends, or no reply arrives in time.
         """
-        return self._agent_command(
-            {"verb": CLIENT_SHELL_STOP_VERB, "session_id": session_id}, timeout_s
+        return self._ask(
+            protocol.FRAME_STOP_SESSION, {"session_id": session_id}, timeout_s
         )
 
-    def resize_shell(
-        self,
-        stream_id: int,
-        cols: int,
-        rows: int,
-        timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
-    ) -> dict:
-        """Tell the hub a shell's terminal changed size, and take the close.
+    def tell_left(self, timeout_s: float = CLIENT_LEAVE_TELL_TIMEOUT_S) -> dict:
+        """Tell the hub this client leaves it, once, through the transport.
+
+        The binding is already forgotten here; the answer changes nothing.
 
         Args:
-            stream_id: The shell stream's id.
-            cols: The new width in columns.
-            rows: The new height in rows.
-            timeout_s: How long to wait for the close.
+            timeout_s: How long the transport is given.
 
         Returns:
-            The close's ``params``.
-
-        Raises:
-            GatewayRefusedDetail: When the hub refused, ``shell_unknown``
-                among the codes.
-            GatewayUnreachable: When there is no socket, it ends, or the
-                close does not arrive in time.
+            Empty when the hub took it; ``{code, params}`` otherwise.
         """
-        stream = self._live_streams().open(
-            CLIENT_STREAM_KIND_COMMAND,
-            {
-                "module": CLIENT_SHELL_RESIZE_MODULE,
-                "verb": CLIENT_SHELL_RESIZE_VERB,
-                "shell": int(stream_id),
-                "cols": int(cols),
-                "rows": int(rows),
-            },
-        )
-        return stream.wait_close(timeout_s)
+        with self._lock:
+            binding = dict(self._binding)
+        if binding.get("is_pending") or not binding.get("token"):
+            return {}
+        try:
+            return self._transport.command(
+                "leave",
+                {
+                    "binding": binding.get("id", ""),
+                    "hub_key": binding.get("hub_key", ""),
+                    "private_key": binding.get("private_key", ""),
+                    "psk": enrollment.psk_of(binding),
+                    "role": CLIENT_ROLE,
+                    "protocol": PROTOCOL,
+                    "addresses": [item["address"] for item in self._candidates()],
+                },
+                timeout_s,
+            )
+        except GatewayUnreachable as error:
+            return channel_error(error)
+
+    # --- the transport's news ---
+
+    def transport_ready(self) -> None:
+        """The transport started: the binding is given to it again."""
+        with self._lock:
+            self._is_dialed = False
+            self._next_attempt_at = 0.0
+        self._news.set()
+
+    def transport_lost(self) -> None:
+        """The transport ended: no session stands, and no reply comes."""
+        with self._lock:
+            self._is_dialed = False
+            was_live = self._is_welcomed
+            self._drop_session()
+        self._fail_replies()
+        if was_live:
+            self._log("the client's transport ended; the hub's session with it")
+        self._on_change()
+
+    def take_line(self, line: dict) -> None:
+        """Take one event or frame the transport passed for this binding.
+
+        Args:
+            line: An event line, or a ``{frame, binding}`` line.
+        """
+        frame = line.get("frame")
+        if isinstance(frame, dict):
+            self._take_frame(frame)
+            return
+        event = line.get("event")
+        if event == "session_open":
+            self._take_session_open(line)
+        elif event == "round_end":
+            self._take_round_end(line)
+        elif event == "session_end":
+            self._take_session_end(line)
 
     # --- the loop ---
 
     def start(self) -> None:
-        """Run the loop on a thread of its own.
-
-        The thread is published only once it runs, so a ``stop()`` from
-        another thread meanwhile joins nothing: the loop sees the stop on
-        its first turn and ends by itself.
-        """
+        """Hand the binding to the transport and run the session's own thread."""
+        self._transport.listen_binding(self.label, self.take_line)
         thread = threading.Thread(
-            target=self.run_forever, name=f"hub_session_{self.binding_id}", daemon=True
+            target=self.run_forever, name=f"hub_session_{self._local_key}", daemon=True
         )
         thread.start()
         self._thread = thread
 
     def stop(self) -> None:
-        """Close the socket and end the loop, a connect in progress aborted. Idempotent."""
+        """Stop dialling the hub and end the session's thread. Idempotent."""
         self._stop.set()
         self._news.set()
+        label = self.label
         with self._lock:
-            dialings = list(self._dialings)
-            moving_to = self._moving_to
-        for dialing in dialings:
-            dialing.settle()
-        if moving_to is not None:
-            moving_to.abort()
-        self._drop_socket()
+            is_dialed = self._is_dialed
+            self._is_dialed = False
+            self._drop_session()
+        self._fail_replies()
+        self._transport.forget_binding(label, self.take_line)
+        if is_dialed:
+            try:
+                self._transport.command("undial", {"binding": label}, UNDIAL_TIMEOUT_S)
+            except GatewayUnreachable:
+                pass
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=STOP_JOIN_TIMEOUT_S)
+            thread.join(timeout=UNDIAL_TIMEOUT_S)
 
     def run_forever(self) -> None:
-        """Hold the socket until the session is stopped."""
+        """Do what is due, turn after turn, until the session is stopped."""
         while not self._stop.is_set():
-            # Cleared before the turn, so news that lands during it, the
-            # stop included, is still standing when the wait begins.
             self._news.clear()
-            delay = self.run_once()
-            self._wait_out(delay)
+            try:
+                self.run_once()
+            except Exception as error:  # noqa: BLE001 - the loop must survive
+                self._log(
+                    f"the hub session's turn failed: {type(error).__name__}: {error}"
+                )
+            self._news.wait(timeout=SESSION_TICK_S)
 
-    def run_once(self) -> float:
-        """One connection's lifetime, or one idle turn.
-
-        Returns:
-            How many seconds to wait before the next one: none after the
-            socket ends or a network change ended the round, a backing-off
-            delay after a round no address answered, a minute after a
-            refusal the binding survives, the hub's own delay after a paused
-            join, no end while the device has no network, and a short idle
-            wait while another socket holds the binding or the session
-            waits on a reason only a person ends.
-        """
+    def run_once(self) -> None:
+        """One turn: a join, a move or a dial when due, then the interval's reports and pings."""
+        if not self._transport.is_ready():
+            return
         with self._lock:
-            if self._is_replaced or self._wait_reason in WAIT_REASONS_HELD:
-                return CLIENT_IDLE_POLL_INTERVAL_S
-            was_waiting = bool(self._wait_reason)
-            self._wait_reason = ""
-            self._wait_code = None
-            self._next_round_at = None
-        if was_waiting:
-            self._on_change()
-        try:
-            client = self._connect_round()
-        except EnrollmentError as error:
-            return self._on_join_refused(error)
-        except (GatewayRefused, GatewayUntrusted) as error:
-            return self._on_rejected(error)
-        except GatewayUnreachable as error:
-            if self._take_round_cut():
-                self._log("a network change ended the round; starting another")
-                return 0
-            return self._on_unreachable(error)
-        failure = self._serve(client)
-        if isinstance(failure, GatewayRefused):
-            return self._on_rejected(failure)
-        if failure is not None:
-            self._log(f"hub socket lost: {failure}; connecting again")
-        return 0
+            is_held = self._is_replaced or self._wait_reason in WAIT_REASONS_HELD
+            is_pending = self._binding.get("is_pending") is True
+            is_legacy = enrollment.is_legacy(self._binding)
+            is_due = self._clock() >= self._next_attempt_at
+            is_dialed = self._is_dialed
+            is_dial_due = self._is_dial_due
+            is_round_due = self._is_round_due
+        if is_pending:
+            if is_due and not is_held:
+                self._join()
+            return
+        if is_legacy:
+            if is_due and not is_held:
+                self._move_legacy()
+            return
+        if not is_dialed or is_dial_due:
+            if not is_held or is_dialed:
+                self._dial()
+            return
+        if is_round_due:
+            with self._lock:
+                self._is_round_due = False
+            self._command("round", {"binding": self.label})
+        self._keep_up()
 
-    def _connect_round(self):
-        """Connect through whichever of the hub's addresses answers first.
+    # --- what happens on the thread ---
 
-        Every address is dialled at once: the hub's address on each virtual
-        network that is up, the name's address, and the addresses the
-        binding holds; none is preferred for having answered last. The
-        first socket to connect with the pinned certificate is the round's,
-        every other one is closed before any hello, and the hello goes on
-        the round's socket alone. An address the name resolves to that is
-        not a stored one and fails the fingerprint check is not this hub
-        and is skipped; a stored address failing it is logged. The address
-        that answers is written onto the binding.
-
-        Returns:
-            The connected socket, its welcome taken and its first report
-            sent.
-
-        Raises:
-            EnrollmentError: When the hub refused a pending join.
-            GatewayUntrusted: When a stored address presented another
-                certificate and no address answered.
-            GatewayRefused: When the hub refused the upgrade or the hello,
-                by a frame or by its close; the protocol refusals are their
-                own kind.
-            GatewayUnreachable: When no address answered, the round's
-                socket ended before the welcome, or a stop or a network
-                change ended the round.
-        """
-        if self._stop.is_set():
-            raise GatewayUnreachable("the session is stopping")
-        with self._lock:
-            self._is_round_cut = False
-        urls, name_url, stored = self._candidates()
-        url, client, errors, handshake_s = self._dial_all(urls)
-        untrusted, failure = self._sort_failures(errors, name_url, stored)
-        with self._lock:
-            is_cut = self._is_round_cut
-        if self._stop.is_set() or is_cut:
-            if client is not None:
-                client.close()
-            raise GatewayUnreachable("the round was ended")
-        if client is None:
-            if isinstance(failure, GatewayRefused):
-                raise failure
-            if untrusted is not None:
-                raise untrusted
-            raise failure if failure is not None else GatewayUnreachable("no address")
-        self._greet(client, url)
-        path = self._path_of(url)
-        with self._lock:
-            self._connected_url = url
-            self._connected_path = path
-            self._connected_handshake_s = handshake_s
-        self._note_url(url)
-        return client
-
-    def _candidates(self) -> "tuple[list, str, list]":
-        """Every address a round dials, the name's address, and the stored ones.
-
-        Returns:
-            ``(urls, name_url, stored)``: the hub's address on its virtual
-            network that is on, the name's address and the stored ones,
-            each once; the name's address, empty when the name does not
-            resolve; and the addresses the binding holds.
-        """
+    def _dial(self) -> None:
+        """Give the transport the binding and every candidate."""
         with self._lock:
             binding = dict(self._binding)
-            overlay_host = self._overlay_host
-        stored = enrollment.stored_urls(binding)
-        urls = self._host_urls([overlay_host]) if overlay_host else []
-        name_url = enrollment.hub_name_url(binding["gateway_url"])
-        urls += [
-            url
-            for url in enrollment.candidate_urls(binding, name_url)
-            if url not in urls
-        ]
-        return urls, name_url, stored
-
-    def _sort_failures(self, errors: list, name_url: str, stored: list) -> tuple:
-        """Log the addresses off the pin, and keep the round's last failures.
-
-        Returns:
-            ``(untrusted, failure)``: the last refusal of the pin by a stored
-            address, and the last other failure; each None when there was
-            none.
-        """
-        untrusted: "Exception | None" = None
-        failure: "Exception | None" = None
-        for failed_url, error in errors:
-            if not isinstance(error, GatewayUntrusted):
-                failure = error
-            elif failed_url == name_url and failed_url not in stored:
-                self._log(f"{failed_url} answers to the hub's name and is not this hub")
-            else:
-                self._log(f"{failed_url} presented a certificate that is not the hub's")
-                untrusted = error
-        return untrusted, failure
-
-    def _path_of(self, url: str) -> str:
-        """The path one candidate address reaches the hub by.
-
-        Returns:
-            The virtual network's engine for the hub's address on it,
-            ``ssh_relay``, ``sakurafrp`` or ``openfrp`` for the state's
-            ``ssh_relay_url``, ``sakurafrp_url`` or ``openfrp_url``, ``lan``
-            for an address inside a network this machine holds an address
-            in, and ``direct`` for any other.
-        """
-        parts = urllib.parse.urlsplit(url)
-        with self._lock:
-            overlay_host = self._overlay_host
-            overlay_provider = self._overlay_provider
-            server_urls = self._server_urls
-        if overlay_host and parts.hostname == overlay_host:
-            return overlay_provider
-        where = (parts.hostname, parts.port)
-        for path, server_url in server_urls.items():
-            server = urllib.parse.urlsplit(server_url)
-            if server_url and (server.hostname, server.port) == where:
-                return path
-        if is_on_local_network(parts.hostname or "", self._local_networks()):
-            return "lan"
-        return "direct"
-
-    def _change_rounds(self) -> None:
-        """Run rounds beside the live channel until no network change is due."""
-        while True:
-            self._change_round()
-            with self._lock:
-                if not self._is_change_due or self._stop.is_set():
-                    self._is_changing = False
-                    return
-                self._is_change_due = False
-
-    def _change_round(self) -> None:
-        """One round beside the live channel; its winner moves the channel only on a better path."""
-        with self._lock:
-            live = self._client if self._is_welcomed else None
-            live_url = self._connected_url
-            live_path = self._connected_path
-            live_handshake_s = self._connected_handshake_s
-        if live is None:
-            return
-        urls, name_url, stored = self._candidates()
-        url, client, errors, handshake_s = self._dial_all(urls)
-        self._sort_failures(errors, name_url, stored)
-        if client is None:
-            return
-        path = self._path_of(url)
-        with self._lock:
-            is_live = self._client is live and self._is_welcomed
-        is_better = url != live_url and is_better_path(
-            path, handshake_s, live_path, live_handshake_s
+            label = self._label
+            self._is_dial_due = False
+        candidates = self._candidates()
+        answer = self._command(
+            "dial",
+            {
+                "binding": label,
+                "hub_key": binding.get("hub_key", ""),
+                "private_key": binding.get("private_key", ""),
+                "psk": enrollment.psk_of(binding),
+                "role": CLIENT_ROLE,
+                "protocol": PROTOCOL,
+                "candidates": candidates,
+            },
         )
-        if not is_live or not is_better or self._stop.is_set():
-            self._log(
-                f"a network change found {url} ({path}); the channel stays "
-                f"at {live_url} ({live_path})"
+        if answer is None:
+            return
+        with self._lock:
+            was_dialed = self._is_dialed
+            self._is_dialed = True
+            is_round_due = self._is_round_due and was_dialed
+            self._is_round_due = False
+        if is_round_due:
+            self._command("round", {"binding": label})
+        self._log(
+            "dialling the hub at "
+            + ", ".join(f"{item['address']} ({item['path']})" for item in candidates)
+        )
+
+    def _join(self) -> None:
+        """Spend the pending join's ticket through the transport, once."""
+        with self._lock:
+            binding = dict(self._binding)
+            label = self._label
+        fields = {
+            "binding": label,
+            "hub_key": binding.get("hub_key", ""),
+            "private_key": binding.get("private_key", ""),
+            "addresses": [item["address"] for item in self._candidates()],
+        }
+        fields.update(enrollment.join_payload(binding.get("ticket", "")))
+        try:
+            answer = self._transport.command("join", fields, CLIENT_JOIN_TIMEOUT_S)
+        except GatewayUnreachable as error:
+            self._join_failed(
+                {"code": CODE_HUB_UNREACHABLE, "params": {"detail": str(error)}}
             )
-            client.close()
             return
-        self._move(live, client, url, path, handshake_s)
-
-    def _move(self, live, client, url: str, path: str, handshake_s: float) -> None:
-        """Move the channel onto a better path's socket; its hello replaces the live one."""
-        moving = threading.Event()
-        with self._lock:
-            live_url = self._connected_url
-            self._moved_from = live
-            self._moving = moving
-            self._moving_to = client
-            streams = self._streams
-        self._log(f"moving the channel from {live_url} to {url} ({path})")
-        try:
-            self._greet(client, url)
-        except (
-            EnrollmentError,
-            GatewayRefused,
-            GatewayUnreachable,
-            GatewayUntrusted,
-        ) as error:
-            self._log(f"the channel could not move to {url}: {error}")
-            with self._lock:
-                self._moved_from = None
+        if answer.get("code"):
+            self._join_failed(
+                {"code": str(answer["code"]), "params": _params_of(answer)}
+            )
             return
-        finally:
-            with self._lock:
-                self._moving_to = None
-            moving.set()
-        with self._lock:
-            self._connected_url = url
-            self._connected_path = path
-            self._connected_handshake_s = handshake_s
-            self._rtt_ms = None
-            self._ping_sent = None
-        self._note_url(url)
-        if streams is not None:
-            streams.end_all()
-        live.close()
-
-    def _dial_all(self, urls: list) -> "tuple[str, object, list, float]":
-        """Open a socket at every address at once and keep the first to connect.
-
-        Args:
-            urls: The addresses to dial.
-
-        Returns:
-            ``(url, client, errors, handshake_s)``: the address, the open
-            socket and the handshake's seconds of the first to connect, or
-            an empty address, None and 0 when none did, the hub refused the
-            upgrade, the session is stopping, or a network change ended the
-            round; ``errors`` holds
-            ``(url, error)`` for every address that failed before the round
-            settled.
-        """
-        dialing = _ClientDialRound(
-            clients=[(url, self._open_client(url)) for url in urls],
-            open_client=self._open_client,
-        )
-        with self._lock:
-            self._dialings.append(dialing)
-        errors: list = []
         try:
-            dialing.start()
-            while len(errors) < len(urls):
-                if self._stop.is_set() or self._is_cut():
-                    dialing.settle()
-                    break
-                result = dialing.next_result(DIAL_WAIT_TURN_S)
-                if result is None:
-                    continue
-                url, client, error, handshake_s = result
-                if client is not None:
-                    dialing.settle(kept=client)
-                    return url, client, errors, handshake_s
-                errors.append((url, error))
-                if isinstance(error, GatewayRefused):
-                    dialing.settle()
-                    break
-        finally:
-            with self._lock:
-                self._dialings.remove(dialing)
-        return "", None, errors, 0.0
-
-    def _join_at(self, url: str) -> None:
-        """Spend the pending join's ticket at the address that answered.
-
-        Raises:
-            EnrollmentError: When the hub refused the ticket.
-            GatewayUntrusted: When what answers is not the pinned hub.
-            GatewayUnreachable: When the address stops answering, or the
-                completed binding cannot be kept.
-        """
-        completed = enrollment.complete_join(self.binding(), url)
+            completed = enrollment.joined_binding(
+                binding,
+                str(answer.get("binding_id", "") or ""),
+                str(answer.get("token", "") or ""),
+            )
+        except EnrollmentError as error:
+            self._join_failed({"code": error.code, "params": dict(error.params)})
+            return
         try:
             self._on_joined(self, completed)
         except OSError as error:
-            raise GatewayUnreachable(f"the join could not be kept: {error}")
-        self._log(f"joined the hub at {url}")
+            self._log(f"the join could not be kept: {error}")
+            self._join_failed(
+                {"code": CODE_HUB_UNREACHABLE, "params": {"detail": str(error)}}
+            )
+            return
+        self._relabel(completed["id"])
+        self._log("joined the hub")
+        self._news.set()
 
-    def _on_join_refused(self, error: EnrollmentError) -> float:
-        """Take the hub's refusal of a pending join: waiting, and no more rounds.
+    def _join_failed(self, code: dict) -> None:
+        """Wait after a join that did not complete, by its code.
 
-        ``admission_paused`` is the one refusal that keeps the ticket: the
-        session counts down the ``retry_after_s`` it names and joins again.
+        ``hub_unreachable`` waits the backoff, ``hub_untrusted``,
+        ``control_unavailable`` and ``channel_full`` a minute, and
+        ``admission_paused`` the seconds the hub names; any other code is
+        the hub refusing the ticket, which waits for good.
         """
-        if error.code == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
-            return self._on_admission_paused(error)
-        self._wait(
-            WAIT_JOIN_REFUSED, {"code": error.code, "params": dict(error.params)}, None
-        )
-        self._log(f"the hub refused the join: {error.code}")
-        return CLIENT_IDLE_POLL_INTERVAL_S
+        name = code["code"]
+        if name == CODE_HUB_UNREACHABLE:
+            self._unreachable(code, None)
+        elif name == CODE_HUB_UNTRUSTED:
+            self._wait(WAIT_UNTRUSTED, code, CLIENT_BACKOFF_MAX_S, is_retried=True)
+        elif name == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
+            try:
+                delay = float(code["params"].get("retry_after_s") or 0)
+            except (TypeError, ValueError):
+                delay = 0
+            delay = max(delay, CLIENT_JOIN_RETRY_MIN_S)
+            self._wait(WAIT_ADMISSION_PAUSED, code, delay, is_retried=True)
+            self._log(f"the hub paused admissions; joining again in {delay:g}s")
+        elif name in JOIN_RETRIED_CODES:
+            self._wait(
+                self._silent_reason(), code, CLIENT_BACKOFF_MAX_S, is_retried=True
+            )
+        else:
+            self._wait(WAIT_JOIN_REFUSED, code, None)
+            self._log(f"the hub refused the join: {name}")
 
-    def _on_admission_paused(self, error: EnrollmentError) -> float:
-        """Keep a join the hub paused: counted down, and joined again at 0.
+    def _move_legacy(self) -> None:
+        """Move a 0.5 binding to the transport over the hub's legacy listener.
 
-        Returns:
-            The hub's ``retry_after_s``, at least ``CLIENT_JOIN_RETRY_MIN_S``.
+        The hub's static key comes back for this client's own; a hub whose
+        legacy listener is off answers nothing, and the binding waits on
+        ``hub_key_missing``.
         """
-        try:
-            delay = float(error.params.get("retry_after_s") or 0)
-        except (TypeError, ValueError):
-            delay = 0
-        delay = max(delay, CLIENT_JOIN_RETRY_MIN_S)
-        self._wait(
-            WAIT_ADMISSION_PAUSED,
-            {"code": error.code, "params": dict(error.params)},
-            delay,
-        )
-        self._log(f"the hub paused admissions; joining again in {delay:g}s")
-        return delay
-
-    def _host_urls(self, hosts: list) -> list:
-        """The hub's address on each host: a stored one, else at the gateway port."""
         with self._lock:
             binding = dict(self._binding)
-        stored = enrollment.stored_urls(binding)
-        port = urllib.parse.urlsplit(binding.get("gateway_url", "")).port or 443
-        urls = []
-        for host in hosts:
-            known = [
-                url for url in stored if urllib.parse.urlsplit(url).hostname == host
-            ]
-            bracketed = f"[{host}]" if ":" in host else host
-            url = known[0] if known else f"https://{bracketed}:{port}"
-            if url not in urls:
-                urls.append(url)
-        return urls
-
-    def _open_client(
-        self, gateway_url: str, timeout_s: "float | None" = None
-    ) -> WebSocketClient:
-        """A socket for the binding at one of the hub's addresses.
-
-        Args:
-            gateway_url: The address to open the socket at.
-            timeout_s: How long its connect may take; None for
-                ``CLIENT_CONNECT_TIMEOUT_S``.
-
-        Returns:
-            The unconnected socket.
-        """
-        with self._lock:
-            fingerprint = self._binding.get("fingerprint", "")
-        parts = urllib.parse.urlsplit(gateway_url)
-        return WebSocketClient(
-            host=parts.hostname or "",
-            port=parts.port or 443,
-            path=CLIENT_CHANNEL_WS_PATH,
-            fingerprint=fingerprint,
-            timeout_s=CLIENT_CONNECT_TIMEOUT_S if timeout_s is None else timeout_s,
-        )
-
-    def _greet(self, client, url: str = "") -> None:
-        """Spend a pending join's ticket, say hello on the open socket, and report once.
-
-        Args:
-            client: The open socket.
-            url: The address the socket is open at; empty for the binding's
-                own.
-
-        Raises:
-            EnrollmentError: When the hub refused a pending join.
-            GatewayUntrusted: When the join's address is not the pinned hub.
-            GatewayRefused: When the hub refused the hello, by a frame or by
-                its close; the protocol refusals are their own kind.
-            GatewayUnreachable: On any network error, or a first frame that
-                is neither a welcome nor a refusal.
-        """
-        try:
-            if self.is_pending():
-                self._join_at(url or self.gateway_url())
-            client.send_text(json.dumps(self._hello()))
-            welcome = self._take_welcome(client)
+        private_key = enrollment.make_private_key()
+        body = {
+            "id": binding.get("id", ""),
+            "token": binding.get("token", ""),
+            "public_key": public_key_of(private_key),
+        }
+        for url in enrollment.stored_urls(binding):
+            try:
+                answer = self._legacy_channel(url, binding.get("fingerprint", "")).post(
+                    CLIENT_LEGACY_KEY_PATH, body
+                )
+            except GatewayRefused as error:
+                if error.code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
+                    self._unbind({"code": error.code, "params": dict(error.params)})
+                    return
+                continue
+            except (GatewayUnreachable, GatewayUntrusted, ValueError):
+                continue
+            hub_key = str(answer.get("key", "") or "").strip().lower()
+            if not enrollment.is_key(hub_key):
+                continue
+            moved = enrollment.moved_binding(binding, hub_key, private_key)
+            try:
+                enrollment.add_binding(moved)
+            except (OSError, ValueError) as error:
+                self._log(f"the moved binding could not be kept: {error}")
+                return
             with self._lock:
-                is_refreshing = self._is_refreshing
-            self._report(client, is_refresh=is_refreshing)
-        except SocketClosed as closed:
-            raise close_error(closed.code, closed.reason) from closed
-        except Exception:
-            client.close()
-            raise
-        self._on_welcomed(self, str(welcome.get("id", "") or ""))
+                self._binding = moved
+            self._log(f"the binding moved to the transport at {url}")
+            self._news.set()
+            return
+        self._unreachable({"code": CODE_HUB_KEY_MISSING, "params": {}}, None)
+
+    def _keep_up(self) -> None:
+        """Report and ping on their intervals, and look at the route to the hub."""
+        now = self._clock()
+        with self._lock:
+            is_live = self._is_welcomed
+            is_report_due = is_live and now >= self._next_report_at
+            is_ping_due = is_live and now >= self._next_ping_at
+            is_look_due = now >= self._next_look_at
+            is_offline_wait = self._wait_reason == WAIT_NO_NETWORK
+        if is_report_due:
+            try:
+                self._report()
+            except GatewayUnreachable:
+                pass
+        if is_ping_due:
+            try:
+                self._ping()
+            except GatewayUnreachable:
+                pass
+        if not is_look_due:
+            return
+        with self._lock:
+            self._next_look_at = now + CLIENT_IDLE_POLL_INTERVAL_S
+        if self._watch_network():
+            self.change_network()
+        elif is_offline_wait and not self._is_offline():
+            self._log("this machine has a network again")
+            self.change_network()
+
+    # --- the transport's events ---
+
+    def _take_session_open(self, line: dict) -> None:
+        """A round's winner opened its session: say hello on it."""
+        address = str(line.get("address", "") or "")
+        if address and "://" not in address:
+            address = f"{CLIENT_ADDRESS_SCHEME}://{address}"
+        path = str(line.get("path", "") or "")
+        with self._lock:
+            is_move = self._is_welcomed
+            self._is_session_refused = False
+            self._address = address
+            self._path = path
+            if not is_move:
+                self._wait_reason = ""
+                self._wait_code = None
+                self._next_round_at = None
+        if is_move:
+            self._log(f"the channel moves to {address} ({path})")
+        try:
+            self._send(self._hello())
+        except GatewayUnreachable:
+            return
+        self._on_change()
+
+    def _take_round_end(self, line: dict) -> None:
+        """A round ended with no session: wait by its code."""
+        code = {"code": str(line.get("code", "") or ""), "params": _params_of(line)}
+        try:
+            next_round_s = float(line.get("next_round_s") or 0)
+        except (TypeError, ValueError):
+            next_round_s = 0.0
+        with self._lock:
+            if self._is_welcomed:
+                return
+        self._take_refusal(code, next_round_s if next_round_s > 0 else None)
+
+    def _take_session_end(self, line: dict) -> None:
+        """The live session ended: by a refusal, or a round starts at once."""
+        code = str(line.get("code", "") or "")
+        with self._lock:
+            was_live = self._is_welcomed
+            is_told = self._is_session_refused
+            self._is_session_refused = False
+            self._drop_session()
+        self._fail_replies()
+        if code and not is_told:
+            self._take_refusal({"code": code, "params": _params_of(line)}, None)
+        elif was_live:
+            self._log("the hub's session ended; the transport dials again")
+        self._on_change()
+
+    def _take_frame(self, frame: dict) -> None:
+        """Take one frame of the hub's control stream."""
+        kind = frame.get("type")
+        if kind == protocol.FRAME_WELCOME:
+            self._take_welcome(frame)
+        elif kind == protocol.FRAME_STATE:
+            self._take_state(frame)
+            try:
+                self._report()
+            except GatewayUnreachable:
+                pass
+        elif kind == protocol.FRAME_PONG:
+            self._take_pong(frame)
+        elif kind == protocol.FRAME_REPLY:
+            self._take_reply(frame)
+        elif kind == protocol.FRAME_REFUSED:
+            with self._lock:
+                self._drop_session()
+                self._is_session_refused = True
+            self._fail_replies()
+            self._take_refusal(
+                {"code": str(frame.get("code", "") or ""), "params": _params_of(frame)},
+                None,
+            )
+        else:
+            self._log(f"ignoring a {kind!r} frame from the hub")
+
+    def _take_welcome(self, welcome: dict) -> None:
+        """The hub's identity card: the channel is open."""
+        if welcome.get("role") != CLIENT_HUB_ROLE:
+            self._log("the hub's welcome names another role; ignored")
+            return
+        hub_id = str(welcome.get("id", "") or "")
+        self._on_welcomed(self, hub_id)
         self._note_hub(welcome)
         with self._lock:
-            self._client = client
-            self._streams = ClientStreamRegistry(
-                send_text=client.send_text,
-                send_bytes=client.send_bytes,
-                log=self._log,
-            )
             self._is_welcomed = True
-            self._channel_open.set()
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
-            # A hub whose state hash the report matches pushes no state; what
-            # it published last is published again once the socket is up.
+            self._rtt_ms = None
+            self._ping_sent = None
+            self._next_ping_at = 0.0
+            self._next_report_at = self._clock() + CLIENT_REPORT_INTERVAL_S
+            is_refreshing = self._is_refreshing
+            address = self._address
             has_services = bool(self._services_list) and not self._is_disabled
+        self._channel_open.set()
+        if address:
+            self._note_url(address)
+        try:
+            self._report(is_refresh=is_refreshing)
+        except GatewayUnreachable:
+            pass
+        self._news.set()
         if has_services:
             self._on_services(self)
         self._on_change()
 
-    def _serve(self, client) -> "Exception | None":
-        """Read frames until the channel ends, following it when it moves.
+    def _take_state(self, message: dict) -> None:
+        """Replace what is held with the state the hub just sent."""
+        services = message.get("services", [])
+        if not isinstance(services, list):
+            services = []
+        urls = message.get("urls")
+        is_moved = isinstance(urls, list) and self._note_urls(urls)
+        if "overlays" in message:
+            self._note_overlays(message.get("overlays"))
+        is_disabled = bool(message.get("is_disabled"))
+        server_urls = {
+            path: str(message.get(f"{path}_url", "") or "")
+            for path in CLIENT_SERVER_PATHS
+        }
+        with self._lock:
+            self._services_list = [
+                dict(entry) for entry in services if isinstance(entry, dict)
+            ]
+            self._apps_list = _clean_apps(message.get("apps"))
+            self._reached_through = str(message.get("reached_through", "") or "")
+            is_moved = is_moved or server_urls != self._server_urls
+            self._server_urls = server_urls
+            self._is_panel_allowed = message.get("is_panel_allowed") is True
+            self._terminals = clean_terminals(message.get("terminals", []))
+            self._state_hash = str(message.get("hash", "") or "")
+            self._is_refreshing = False
+            if is_moved:
+                self._is_dial_due = self._is_dialed
+                self._is_round_due = True
+        self._take_disabled(is_disabled)
+        if not is_disabled:
+            self._on_services(self)
+        if is_moved:
+            self._news.set()
+        self._on_change()
 
-        A socket the channel moved off ends with the move: its reading
-        goes on with the socket the move greeted.
+    def _take_disabled(self, is_disabled: bool) -> None:
+        """Tell the resident once when the hub switches this client off."""
+        with self._lock:
+            was_disabled = self._was_disabled
+            self._is_disabled = is_disabled
+            self._was_disabled = is_disabled
+        if is_disabled and not was_disabled:
+            self._log("the hub switched this client off")
+            self._on_disabled(self)
 
-        Args:
-            client: The connected socket.
+    def _take_pong(self, message: dict) -> None:
+        """Set the round trip from the pong to the last ping; any other is dropped."""
+        with self._lock:
+            sent = self._ping_sent
+            if sent is None:
+                return
+            nonce, sent_at = sent
+            if message.get("nonce") != nonce:
+                return
+            self._ping_sent = None
+            self._rtt_ms = round((self._clock() - sent_at) * 1000)
+        self._on_change()
+
+    def _take_reply(self, message: dict) -> None:
+        """Hand a reply to the question that waits for it."""
+        request = str(message.get("request", "") or "")
+        with self._lock:
+            waiter = self._replies.get(request)
+        if waiter is None:
+            self._log("dropping a reply to a question nobody waits for")
+            return
+        waiter[1] = message
+        waiter[0].set()
+
+    def _take_refusal(self, code: dict, next_round_s: "float | None") -> None:
+        """Wait by the code a round, a session or a refused frame ended in.
+
+        ``binding_unknown`` unbinds, ``replaced`` is another client taking
+        the binding, a protocol refusal waits for a new client, and every
+        other code waits for the transport's next round.
+        """
+        name = code["code"]
+        if name == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
+            self._unbind(code)
+        elif name == CODE_REPLACED:
+            self._stand_aside()
+        elif name in CLIENT_PROTOCOL_REFUSAL_CODES:
+            self._wait(WAIT_TOO_OLD, code, None)
+            self._log(f"the hub refused this client's protocol: {name}")
+        elif name == CODE_HUB_UNTRUSTED:
+            self._wait(WAIT_UNTRUSTED, code, next_round_s or CLIENT_BACKOFF_MAX_S)
+        elif name == CODE_HUB_UNREACHABLE or not name:
+            self._unreachable(code, next_round_s)
+        else:
+            self._wait(
+                self._silent_reason(), code, next_round_s or CLIENT_BACKOFF_MAX_S
+            )
+            self._log(f"the hub refused the session: {name}")
+
+    # --- the pieces ---
+
+    def _candidates(self) -> list:
+        """Every address a round dials, each with its path, each once.
 
         Returns:
-            What ended the channel, as :meth:`_serve_socket` says it.
+            ``[{address, path}]``: the hub's address on its virtual network
+            that is on, the hub's name, and the addresses the binding holds.
         """
-        while True:
-            failure = self._serve_socket(client)
-            with self._lock:
-                is_moved = client is self._moved_from
-                moving = self._moving
-            if not is_moved or self._stop.is_set():
-                return failure
-            moving.wait(timeout=CLIENT_WS_SILENCE_TIMEOUT_S)
-            with self._lock:
-                successor = self._client if self._is_welcomed else None
-            if successor is None or successor is client:
-                return failure
-            client = successor
+        with self._lock:
+            binding = dict(self._binding)
+            overlay_host = self._overlay_host
+            overlay_provider = self._overlay_provider
+        stored = enrollment.dialable_urls(enrollment.stored_urls(binding))
+        gateway_url = stored[0] if stored else ""
+        try:
+            port = urllib.parse.urlsplit(gateway_url).port or 0
+        except ValueError:
+            port = 0
+        candidates: list = []
+        if overlay_host and port:
+            bracketed = f"[{overlay_host}]" if ":" in overlay_host else overlay_host
+            candidates.append(
+                {"address": f"tcp://{bracketed}:{port}", "path": overlay_provider}
+            )
+        name_address = enrollment.hub_name_address(gateway_url)
+        if name_address:
+            candidates.append({"address": name_address, "path": "lan"})
+        for url in stored:
+            candidates.append({"address": url, "path": self._path_of(url)})
+        kept: list = []
+        for candidate in candidates:
+            if all(other["address"] != candidate["address"] for other in kept):
+                kept.append(candidate)
+        return kept
 
-    def _serve_socket(self, client) -> "Exception | None":
-        """Read frames until the socket ends, reporting on the interval.
-
-        Args:
-            client: The connected socket.
+    def _path_of(self, url: str) -> str:
+        """The path one stored address reaches the hub by.
 
         Returns:
-            What ended it: the refusal a ``refused`` frame carried, the
-            error a close or a broken wire maps to, or None when a stop, a
-            close from here, or another socket replacing this one did.
+            ``ssh_relay``, ``sakurafrp`` or ``openfrp`` for the state's
+            ``<path>_url``, ``lan`` for an address inside a network this
+            machine holds an address in, and ``direct`` for any other.
         """
-        failure = None
-        ended = threading.Event()
-        reporter = threading.Thread(
-            target=self._report_on_interval,
-            args=(client, ended),
-            name="client_report",
-            daemon=True,
-        )
-        reporter.start()
-        threading.Thread(
-            target=self._ping_on_interval,
-            args=(client, ended),
-            name="client_ping",
-            daemon=True,
-        ).start()
-        while not self._stop.is_set():
-            try:
-                kind, payload = client.recv()
-            except SocketClosed as closed:
-                if closed.code == CLIENT_WS_CLOSE_REPLACED:
-                    if not self._is_moved_from(client):
-                        self._stand_aside()
-                elif self._is_held(client):
-                    failure = close_error(closed.code, closed.reason)
-                break
-            except GatewayUnreachable as error:
-                if self._is_held(client):
-                    failure = error
-                break
-            try:
-                self._dispatch(client, kind, payload)
-            except GatewayRefused as refused:
-                failure = refused
-                break
-            except GatewayUnreachable as error:
-                if self._is_held(client):
-                    failure = error
-                break
-            except Exception as error:  # noqa: BLE001 - logged, never fatal
-                self._log(f"could not read a frame from the hub: {error}")
-        ended.set()
-        self._end_socket(client)
-        return failure
+        with self._lock:
+            server_urls = dict(self._server_urls)
+        for path, server_url in server_urls.items():
+            if server_url and server_url.rstrip("/") == url:
+                return path
+        host = urllib.parse.urlsplit(url).hostname or ""
+        if is_on_local_network(host, self._local_networks()):
+            return "lan"
+        return "direct"
 
-    def _agent_command(self, args: dict, timeout_s: float) -> dict:
-        """Open a ``command`` stream to the agent module and take its close."""
-        stream = self._live_streams().open(
-            CLIENT_STREAM_KIND_COMMAND,
-            dict(args, module=CLIENT_SHELL_RESIZE_MODULE),
-        )
-        return stream.wait_close(timeout_s)
+    def _command(self, command: str, fields: dict) -> "dict | None":
+        """Send one command; a refusal or no answer is logged.
 
-    def _live_streams(self) -> ClientStreamRegistry:
-        """The stream registry of the live socket.
+        Returns:
+            The answer; None when the transport refused or did not answer.
+        """
+        try:
+            answer = self._transport.command(command, fields)
+        except GatewayUnreachable as error:
+            self._log(f"the transport did not take {command}: {error}")
+            return None
+        if answer.get("code"):
+            self._log(f"the transport refused {command}: {answer.get('code')}")
+            return None
+        return answer
+
+    def _open(
+        self,
+        open_record: dict,
+        *,
+        is_raw_after_accept: bool = False,
+        is_fd_tagged: bool = False,
+    ) -> ClientStream:
+        """Open one stream on the live session.
 
         Raises:
             GatewayUnreachable: When the hub is not connected.
         """
         with self._lock:
-            streams = self._streams
-            if streams is None or not self._is_welcomed:
+            if not self._is_welcomed:
                 raise GatewayUnreachable("this hub is not connected")
-        return streams
+            label = self._label
+        return self._transport.open_stream(
+            label,
+            open_record,
+            is_raw_after_accept=is_raw_after_accept,
+            is_fd_tagged=is_fd_tagged,
+        )
+
+    def _ask(self, frame_type: str, fields: dict, timeout_s: float) -> dict:
+        """Send a question frame and take its reply.
+
+        Raises:
+            GatewayRefusedDetail: When the reply carries a code.
+            GatewayUnreachable: When the hub is not connected, its session
+                ends, or no reply arrives in time.
+        """
+        request = secrets.token_hex(8)
+        waiter = [threading.Event(), None]
+        with self._lock:
+            if not self._is_welcomed:
+                raise GatewayUnreachable("this hub is not connected")
+            self._replies[request] = waiter
+        try:
+            self._send({"type": frame_type, "request": request, **dict(fields)})
+            if not waiter[0].wait(timeout=timeout_s):
+                raise GatewayUnreachable(f"the hub did not reply to {frame_type}")
+        finally:
+            with self._lock:
+                self._replies.pop(request, None)
+        reply = waiter[1]
+        if reply is None:
+            raise GatewayUnreachable("the hub's session ended before its reply")
+        code = str(reply.get("code", "") or "")
+        if code:
+            raise GatewayRefusedDetail(code=code, params=_params_of(reply))
+        return _params_of(reply)
+
+    def _fail_replies(self) -> None:
+        """Wake every question waiting for a reply: none comes."""
+        with self._lock:
+            waiting = list(self._replies.values())
+        for waiter in waiting:
+            waiter[0].set()
+
+    def _send(self, frame: dict) -> None:
+        """Send one frame on the binding's control stream.
+
+        Raises:
+            GatewayUnreachable: When the transport is not running.
+        """
+        self._transport.send_frame(self.label, frame)
 
     def _hello(self) -> dict:
-        """This client's identity card, the first frame on the socket."""
+        """This client's identity card, the first frame on every session."""
         with self._lock:
             binding = dict(self._binding)
         return {
@@ -1700,45 +1715,51 @@ class ClientHubSession:
             "id": binding.get("id", ""),
             "name": binding.get("name", ""),
             "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
-            "token": binding.get("token", ""),
         }
 
-    def _take_welcome(self, client) -> dict:
-        """The hub's first frame: its identity card, or the refusal.
-
-        Args:
-            client: The connected socket.
-
-        Returns:
-            The welcome.
+    def _report(self, is_refresh: bool = False) -> None:
+        """Send what is true of this machine and the hash of the state held.
 
         Raises:
-            GatewayRefused: When the first frame is a refusal.
-            GatewayUnreachable: When the first frame is neither, or names
-                another role than the hub's.
+            GatewayUnreachable: When the transport is not running.
         """
-        kind, payload = client.recv()
-        message = _decode(payload) if kind == "text" else None
-        if message is None:
-            raise GatewayUnreachable("the hub's first frame is not a welcome")
-        message_type = message.get("type")
-        if message_type == protocol.FRAME_REFUSED:
-            raise _refusal(message)
-        if message_type != protocol.FRAME_WELCOME:
-            raise GatewayUnreachable("the hub's first frame is not a welcome")
-        if message.get("role") != CLIENT_HUB_ROLE:
-            raise GatewayUnreachable("the hub's welcome names another role")
-        return message
-
-    def _is_held(self, client) -> bool:
-        """Whether a socket is still this session's: one closed from here is not."""
         with self._lock:
-            return self._client is client
+            state_hash = self._state_hash
+            self._next_report_at = self._clock() + CLIENT_REPORT_INTERVAL_S
+        machine = {
+            "hostname": self._hostname,
+            "platform": dict(self._platform_tuple),
+        }
+        if self._os_machine_id:
+            machine["os_machine_id"] = self._os_machine_id
+        report = {
+            "type": protocol.FRAME_REPORT,
+            "state_hash": state_hash,
+            "machine": machine,
+        }
+        if is_refresh:
+            report["is_refresh"] = True
+        self._send(report)
 
-    def _is_moved_from(self, client) -> bool:
-        """Whether the channel moved off this socket, so its 4010 is expected."""
+    def _ping(self) -> None:
+        """Send a ``ping`` frame, its nonce and send time remembered.
+
+        Raises:
+            GatewayUnreachable: When the transport is not running.
+        """
+        nonce = secrets.token_urlsafe(8)
         with self._lock:
-            return self._moved_from is client
+            self._ping_sent = (nonce, self._clock())
+            self._next_ping_at = self._clock() + CLIENT_PING_INTERVAL_S
+        self._send({"type": protocol.FRAME_PING, "nonce": nonce})
+
+    def _relabel(self, binding_id: str) -> None:
+        """Hand the transport's lines of the binding's new id to this session."""
+        with self._lock:
+            old = self._label
+            self._label = binding_id
+        self._transport.forget_binding(old, self.take_line)
+        self._transport.listen_binding(binding_id, self.take_line)
 
     def _note_url(self, gateway_url: str) -> None:
         """Write the address that answered onto the binding, when it changed."""
@@ -1796,54 +1817,6 @@ class ClientHubSession:
             with self._lock:
                 self._binding["overlays"] = previous
 
-    def _watch_network(self) -> bool:
-        """Look at the route to the hub.
-
-        Returns:
-            True when this machine's address on it changed since the last
-            look; the first look is no change.
-        """
-        with self._lock:
-            binding = dict(self._binding)
-            held = self._source_address
-        current = enrollment.default_source_address(enrollment.stored_urls(binding))
-        with self._lock:
-            self._source_address = current
-        if held is None or current == held:
-            return False
-        self._log(f"this machine's address toward the hub is now {current or 'none'}")
-        return True
-
-    def _wait_out(self, delay: float) -> None:
-        """Wait for the next turn: the delay, news, or a network change.
-
-        The route to the hub is looked at every idle poll; a changed
-        address ends the wait and puts the backoff back to its floor. While
-        the device has no network, the wait ends once it has one.
-
-        Args:
-            delay: How long the turn asked to wait; infinite waits for news
-                or a network change alone.
-        """
-        deadline = time.monotonic() + delay
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            if self._news.wait(timeout=min(remaining, CLIENT_IDLE_POLL_INTERVAL_S)):
-                return
-            if self._watch_network():
-                with self._lock:
-                    self._backoff_s = CLIENT_BACKOFF_MIN_S
-                return
-            with self._lock:
-                is_offline_wait = self._wait_reason == WAIT_NO_NETWORK
-            if is_offline_wait and not self._is_offline():
-                self._log("this machine has a network again")
-                with self._lock:
-                    self._backoff_s = CLIENT_BACKOFF_MIN_S
-                return
-
     def _note_hub(self, welcome: dict) -> None:
         """Write the hub's id and name from its welcome onto the binding."""
         hub_id = str(welcome.get("id", "") or "")
@@ -1865,223 +1838,43 @@ class ClientHubSession:
             self._binding["hub_id"] = hub_id
             self._binding["hub_name"] = hub_name
 
-    def _report(self, client, is_refresh: bool = False) -> None:
-        """Send what is true of this machine and the hash of the state held.
+    def _watch_network(self) -> bool:
+        """Look at the route to the hub.
 
-        Args:
-            client: The connected socket.
-            is_refresh: Whether the hub is asked for its whole state
-                whatever the hash.
-
-        Raises:
-            GatewayUnreachable: When the socket is gone.
+        Returns:
+            True when this machine's address on it changed since the last
+            look; the first look is no change.
         """
         with self._lock:
-            state_hash = self._state_hash
-        report = {
-            "type": protocol.FRAME_REPORT,
-            "state_hash": state_hash,
-            "machine": {
-                "hostname": self._hostname,
-                "platform": dict(self._platform_tuple),
-            },
-        }
-        if self._os_machine_id:
-            report["machine"]["os_machine_id"] = self._os_machine_id
-        if is_refresh:
-            report["is_refresh"] = True
-        client.send_text(json.dumps(report))
-
-    def _report_on_interval(self, client, ended: threading.Event) -> None:
-        """Report every interval until the socket ends, and look at the network.
-
-        The route to the hub is looked at every idle poll between reports;
-        a changed address is a network change.
-        """
-        due = time.monotonic() + CLIENT_REPORT_INTERVAL_S
-        while True:
-            wait_s = min(CLIENT_IDLE_POLL_INTERVAL_S, max(due - time.monotonic(), 0))
-            if ended.wait(timeout=wait_s):
-                return
-            if time.monotonic() >= due:
-                try:
-                    self._report(client)
-                except GatewayUnreachable:
-                    return
-                due = time.monotonic() + CLIENT_REPORT_INTERVAL_S
-            if self._watch_network():
-                self.change_network()
-
-    def _ping_on_interval(self, client, ended: threading.Event) -> None:
-        """Ping the socket at once and every interval until it ends."""
-        while True:
-            try:
-                self._ping(client)
-            except GatewayUnreachable:
-                return
-            if ended.wait(timeout=CLIENT_PING_INTERVAL_S):
-                return
-
-    def _ping(self, client) -> None:
-        """Send a ``ping`` frame, its nonce and send time remembered."""
-        nonce = secrets.token_urlsafe(8)
+            binding = dict(self._binding)
+            held = self._source_address
+        current = enrollment.default_source_address(enrollment.stored_urls(binding))
         with self._lock:
-            self._ping_sent = (nonce, self._clock())
-        client.send_text(json.dumps({"type": protocol.FRAME_PING, "nonce": nonce}))
+            self._source_address = current
+        if held is None or current == held:
+            return False
+        self._log(f"this machine's address toward the hub is now {current or 'none'}")
+        return True
 
-    def _take_pong(self, client, message: dict) -> None:
-        """Set the round trip from the pong to the last ping; any other is dropped."""
-        with self._lock:
-            sent = self._ping_sent
-            if sent is None or self._client is not client:
-                return
-            nonce, sent_at = sent
-            if message.get("nonce") != nonce:
-                return
-            self._ping_sent = None
-            self._rtt_ms = round((self._clock() - sent_at) * 1000)
-        self._on_change()
-
-    def _dispatch(self, client, kind: str, payload) -> None:
-        """Take one frame's worth of news.
-
-        Args:
-            client: The connected socket.
-            kind: ``text`` or ``binary``.
-            payload: The frame's payload.
-
-        Raises:
-            TypeError: When a frame carries a field of the wrong shape.
-            ValueError: When a binary frame is shorter than a stream id.
-            GatewayRefused: When the frame is a refusal; the protocol
-                refusals are their own kind.
-            GatewayUnreachable: When the report a state calls for cannot
-                be sent.
-        """
-        if kind == "binary":
-            stream_id, data = protocol.decode_binary(payload)
-            with self._lock:
-                streams = self._streams
-            if streams is None:
-                self._log(f"dropping {len(data)} bytes the hub sent on {stream_id}")
-            else:
-                streams.take_bytes(stream_id, data)
-            return
-        message = _decode(payload)
-        if message is None:
-            return
-        message_type = message.get("type")
-        if message_type == protocol.FRAME_STATE:
-            self._take_state(message)
-            self._report(client)
-        elif message_type == protocol.FRAME_CLOSE:
-            with self._lock:
-                streams = self._streams
-            if streams is not None:
-                streams.take_close(message)
-        elif message_type == protocol.FRAME_CREDIT:
-            with self._lock:
-                streams = self._streams
-            if streams is not None:
-                streams.take_credit(message)
-        elif message_type == protocol.FRAME_OPEN:
-            self._refuse_open(client, message)
-        elif message_type == protocol.FRAME_PONG:
-            self._take_pong(client, message)
-        elif message_type == protocol.FRAME_REFUSED:
-            # The close 4000 behind it is never read: the socket ends here.
-            raise _refusal(message)
-        else:
-            self._log(f"ignoring a {message_type!r} frame from the hub")
-
-    def _take_state(self, message: dict) -> None:
-        """Replace what is held with the state the hub just sent."""
-        services = message.get("services", [])
-        if not isinstance(services, list):
-            raise TypeError("state services is not a list")
-        urls = message.get("urls")
-        is_moved = isinstance(urls, list) and self._note_urls(urls)
-        if "overlays" in message:
-            self._note_overlays(message.get("overlays"))
-        terminals = message.get("terminals", [])
-        is_disabled = bool(message.get("is_disabled"))
-        with self._lock:
-            self._services_list = [
-                entry for entry in services if isinstance(entry, dict)
-            ]
-            self._reached_through = str(message.get("reached_through", "") or "")
-            self._server_urls = {
-                path: str(message.get(f"{path}_url", "") or "")
-                for path in CLIENT_SERVER_PATHS
-            }
-            self._is_panel_allowed = message.get("is_panel_allowed") is True
-            self._terminals = clean_terminals(terminals)
-            self._state_hash = str(message.get("hash", "") or "")
-            self._is_refreshing = False
-        self._take_disabled(is_disabled)
-        if not is_disabled:
-            self._on_services(self)
-        self._on_change()
-        if is_moved:
-            self.change_network()
-
-    def _take_disabled(self, is_disabled: bool) -> None:
-        """Tell the resident once when the hub switches this client off."""
-        with self._lock:
-            was_disabled = self._was_disabled
-            self._is_disabled = is_disabled
-            self._was_disabled = is_disabled
-        if is_disabled and not was_disabled:
-            self._log("the hub switched this client off")
-            self._on_disabled(self)
-
-    def _refuse_open(self, client, message: dict) -> None:
-        """Close a stream the hub opened: a client serves no kind."""
-        stream_id = message.get("stream")
-        if not isinstance(stream_id, int):
-            raise TypeError("an open names its stream by an integer id")
-        client.send_text(
-            json.dumps(
-                {
-                    "type": protocol.FRAME_CLOSE,
-                    "stream": stream_id,
-                    "code": CLIENT_STREAM_CODE_KIND_UNKNOWN,
-                    "params": {"kind": str(message.get("kind", "") or "")},
-                }
-            )
-        )
-
-    def _end_socket(self, client) -> None:
-        """Close the socket and end every stream open on it."""
-        streams = None
-        with self._lock:
-            if self._client is client:
-                self._client = None
-                streams, self._streams = self._streams, None
-                self._is_welcomed = False
-                self._channel_open.clear()
-                self._rtt_ms = None
-                self._ping_sent = None
-        client.close()
-        if streams is not None:
-            streams.end_all()
-        self._on_change()
-
-    def _drop_socket(self) -> None:
-        """End the socket from this side, when there is one."""
-        with self._lock:
-            client = self._client
-        if client is not None:
-            self._end_socket(client)
+    def _drop_session(self) -> None:
+        """Forget the live session; the lock is held."""
+        self._is_welcomed = False
+        self._channel_open.clear()
+        self._rtt_ms = None
+        self._ping_sent = None
 
     def _stand_aside(self) -> None:
-        """Another socket holds this binding: open no more until a person acts."""
+        """Another client holds this binding: dial no more until a person acts."""
         with self._lock:
+            if self._is_replaced:
+                return
             self._is_replaced = True
+            self._is_refreshing = False
         self._log("another client took this binding; not reconnecting until asked")
+        self._on_change()
 
     def _connection(self) -> str:
-        """Where the socket stands; the lock is held."""
+        """Where the session stands; the lock is held."""
         if self._is_replaced:
             return CONNECTION_REPLACED
         if self._is_welcomed:
@@ -2104,207 +1897,79 @@ class ClientHubSession:
             self._is_refreshing = False
         self._on_change()
 
-    def _on_unreachable(self, error: Exception) -> float:
-        """Wait after a round that reached no address.
+    def _silent_reason(self) -> str:
+        """The reason a hub that did not answer waits on: off its network or silent."""
+        with self._lock:
+            is_overlay_on = self._is_overlay_on
+        return WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
+
+    def _unreachable(self, code: dict, next_round_s: "float | None") -> None:
+        """Wait after a round, a join or a move that reached no address.
 
         A device with no network at all waits for one with no countdown.
-        Otherwise the wait is the backoff, which doubles, and its reason
-        says whether this client's virtual network of the hub's is on.
+        Otherwise the countdown is the transport's next round, or the
+        backoff, which doubles, for what the session tries again itself.
         """
         if self._is_offline():
-            self._wait(WAIT_NO_NETWORK, channel_error(error), None)
-            self._log(f"hub socket failed: {error}; this machine has no network")
-            return float("inf")
+            self._wait(WAIT_NO_NETWORK, code, None, is_retried=True)
+            return
         with self._lock:
-            delay = self._backoff_s
-            self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
-            is_overlay_on = self._is_overlay_on
-        reason = WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
-        self._wait(reason, channel_error(error), delay)
-        self._log(f"hub socket failed: {error}; retrying in {delay}s")
-        return delay
+            is_own = next_round_s is None
+            delay = self._backoff_s if is_own else next_round_s
+            if is_own:
+                self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
+        self._wait(self._silent_reason(), code, delay, is_retried=is_own)
 
-    def _on_rejected(self, error: Exception) -> float:
-        """Take a refusal: the one that unbinds, or one the binding survives.
-
-        A protocol refusal waits for a person; a certificate off the pin,
-        and any other refusal, is asked again after ``CLIENT_BACKOFF_MAX_S``.
-
-        Args:
-            error: What the channel raised.
-
-        Returns:
-            Seconds until the next loop turn.
-        """
-        rejection = channel_error(error)
-        code = rejection["code"]
-        if code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
-            return self._unbind(rejection)
-        if code in CLIENT_PROTOCOL_REFUSAL_CODES:
-            self._wait(WAIT_TOO_OLD, rejection, None)
-            self._log(f"{error}; waiting for a refresh")
-            return CLIENT_IDLE_POLL_INTERVAL_S
-        if isinstance(error, GatewayUntrusted):
-            reason = WAIT_UNTRUSTED
-        else:
-            with self._lock:
-                is_overlay_on = self._is_overlay_on
-            reason = WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
-        self._wait(reason, rejection, CLIENT_BACKOFF_MAX_S)
-        self._log(f"{error}; asking again in {CLIENT_BACKOFF_MAX_S}s")
-        return CLIENT_BACKOFF_MAX_S
-
-    def _unbind(self, rejection: dict) -> float:
+    def _unbind(self, code: dict) -> None:
         """The hub holds no such binding any more: wait for a person's Leave."""
-        self._wait(WAIT_UNKNOWN_DEVICE, rejection, None)
+        with self._lock:
+            if self._wait_reason == WAIT_UNKNOWN_DEVICE:
+                return
+        self._wait(WAIT_UNKNOWN_DEVICE, code, None)
         self._log("unbound: the hub no longer knows this client")
         self._on_unbound(self)
-        return CLIENT_IDLE_POLL_INTERVAL_S
 
-    def _wait(self, reason: str, code: "dict | None", delay: "float | None") -> None:
+    def _wait(
+        self,
+        reason: str,
+        code: "dict | None",
+        delay: "float | None",
+        is_retried: bool = False,
+    ) -> None:
         """Enter waiting on one reason, the refresh ended, and announce it.
 
         Args:
             reason: One of ``WAIT_REASONS``.
-            code: The ``{"code", "params"}`` the round ended in.
+            code: The ``{"code", "params"}`` the last round ended in.
             delay: Seconds until the next round; None while no countdown
                 runs.
+            is_retried: Whether the session itself tries again after the
+                delay, a join or a move, rather than the transport.
         """
         with self._lock:
             self._wait_reason = reason
             self._wait_code = dict(code) if code else None
             self._next_round_at = None if delay is None else self._wall_clock() + delay
             self._is_refreshing = False
+            if is_retried:
+                self._next_attempt_at = self._clock() + (
+                    delay if delay is not None else CLIENT_IDLE_POLL_INTERVAL_S
+                )
         self._on_change()
-
-    def _cut_round(self) -> None:
-        """End the wait and the round in flight; the next round starts at once.
-
-        The backoff goes back to its floor, and every dial of the round
-        still waiting out its connect time is aborted, not waited for.
-        """
-        with self._lock:
-            self._backoff_s = CLIENT_BACKOFF_MIN_S
-            dialings = list(self._dialings)
-            if dialings:
-                self._is_round_cut = True
-        for dialing in dialings:
-            dialing.settle()
-        self._news.set()
-
-    def _is_cut(self) -> bool:
-        """Whether a network change ended the round in flight."""
-        with self._lock:
-            return self._is_round_cut
-
-    def _take_round_cut(self) -> bool:
-        """Whether a network change ended the last round; the mark is cleared."""
-        with self._lock:
-            is_cut = self._is_round_cut
-            self._is_round_cut = False
-        return is_cut
 
     def _is_offline(self) -> bool:
         """Whether this machine has no network at all, as its networks say."""
         return is_offline(self._local_networks())
 
 
-class _ClientDialRound:
-    """One round's sockets, dialled at once; the first to connect is kept.
+def _params_of(line: dict) -> dict:
+    """A line's ``params``, empty when it carries none."""
+    params = line.get("params")
+    return dict(params) if isinstance(params, dict) else {}
 
-    An address that refuses is dialled again every ``CLIENT_REDIAL_INTERVAL_S``
-    until ``CLIENT_CONNECT_TIMEOUT_S`` has passed since the round started; an
-    address that fails any other way is dialled once.
-    """
 
-    def __init__(self, *, clients: list, open_client):
-        """
-        Args:
-            clients: ``(url, client)`` per address, each socket unconnected.
-            open_client: ``open_client(url, timeout_s)`` makes the unconnected
-                socket of a dial again.
-        """
-        self._clients = dict(clients)
-        self._open_client = open_client
-        self._results: queue.Queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._settled = threading.Event()
-        self._deadline = 0.0
-
-    def start(self) -> None:
-        """Dial every address, each on a thread of its own."""
-        self._deadline = time.monotonic() + CLIENT_CONNECT_TIMEOUT_S
-        for url, client in self._clients.items():
-            threading.Thread(
-                target=self._dial,
-                args=(url, client),
-                name="client_dial",
-                daemon=True,
-            ).start()
-
-    def next_result(self, timeout_s: float) -> "tuple | None":
-        """The next dial to end, as ``(url, client, error, handshake_s)``.
-
-        Args:
-            timeout_s: How long to wait for one.
-
-        Returns:
-            The open socket, None and the seconds its handshake took, or
-            None, what the connect raised and 0; None when no dial ended
-            within the timeout.
-        """
-        try:
-            return self._results.get(timeout=timeout_s)
-        except queue.Empty:
-            return None
-
-    def settle(self, kept=None) -> None:
-        """End the round: every socket but the kept one is aborted or closed.
-
-        Args:
-            kept: The round's socket, left open; None ends every dial.
-        """
-        with self._lock:
-            self._settled.set()
-            clients = list(self._clients.values())
-        for client in clients:
-            if client is not kept:
-                client.abort()
-
-    def _dial(self, url: str, client) -> None:
-        """Connect one address, timed, again after each refusal; a late one is closed."""
-        while True:
-            started = time.monotonic()
-            try:
-                client.connect()
-            except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
-                client = self._redial(url, error)
-                if client is None:
-                    self._results.put((url, None, error, 0.0))
-                    return
-                continue
-            handshake_s = time.monotonic() - started
-            with self._lock:
-                if not self._settled.is_set():
-                    self._results.put((url, client, None, handshake_s))
-                    return
-            client.close()
-            return
-
-    def _redial(self, url: str, error: Exception):
-        """The next socket of an address that refused, after the interval; None to stop."""
-        if not is_port_closed(error):
-            return None
-        if time.monotonic() + CLIENT_REDIAL_INTERVAL_S >= self._deadline:
-            return None
-        if self._settled.wait(CLIENT_REDIAL_INTERVAL_S):
-            return None
-        timeout_s = self._deadline - time.monotonic()
-        if timeout_s <= 0:
-            return None
-        client = self._open_client(url, timeout_s)
-        with self._lock:
-            if self._settled.is_set():
-                return None
-            self._clients[url] = client
-        return client
+def _pinned_channel(url: str, fingerprint: str) -> GatewayHttpChannel:
+    """The pinned channel a 0.5 binding is moved over."""
+    return GatewayHttpChannel(
+        gateway_url=url, fingerprint=fingerprint, timeout=CLIENT_REQUEST_TIMEOUT_S
+    )

@@ -1,31 +1,33 @@
 """``nclient terminal``: shells and commands on the machines a hub manages.
 
-A machine is one the hub offers a terminal on, named by its id or its name,
-the hub named with ``--hub`` when several are joined; a session is named by
-a unique prefix of its id. The running client opens the stream through its
-hub, and this process carries its bytes over two control connections, one
-each way. ``open`` and ``attach`` put this terminal in raw mode; ``exec``
-does so only with ``--tty`` on a terminal, and otherwise carries stdin up
-and the remote stdout and stderr down apart, so it works in a pipe.
+A machine is one the hub offers a terminal on, named by its name or its id,
+the hub named with ``--hub`` when two hold a machine of one name; a session
+is named by a prefix of its id, as git names a commit. The running client
+opens the stream through its hub as the account named, the machine's first
+enabled one by default, and this process carries its bytes over two
+control connections, one each way. ``open`` and ``attach`` put this
+terminal in raw mode; ``exec`` does so only with ``--tty`` on a terminal,
+and otherwise carries stdin up and the remote stdout and stderr down apart,
+so it works in a pipe.
 
 Exit statuses: ``list`` 0, 1 when the client does not answer; ``open``,
-``attach``, ``persist``, ``share`` and ``stop`` 0 done, 1 refused, 2 no
-such machine or session; ``exec`` the remote command's code, 125 refused,
-126 no such machine.
+``attach``, ``set`` and ``stop`` 0 done, 1 refused, 2 no such machine or
+session; ``exec`` the remote command's code, 125 refused, 126 no such
+machine.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
 import sys
 import threading
+import time
 
-from neutrino_client.cli import wording
+from neutrino_client.cli import names, wording
 from neutrino_client.control import client
 from neutrino_client.core.terminal import encode_piece, read_piece
 from neutrino_client.exceptions import PlatformUnsupportedError
@@ -37,7 +39,7 @@ EXIT_NO_MACHINE = 2
 EXIT_EXEC_REFUSED = 125
 EXIT_EXEC_NO_MACHINE = 126
 # The verbs ``nclient terminal`` takes; a bare machine is ``open``.
-TERMINAL_VERBS = ("list", "open", "attach", "exec", "persist", "share", "stop")
+TERMINAL_VERBS = ("list", "open", "attach", "exec", "set", "stop")
 TERMINAL_DEFAULT_VERB = "open"
 # How much one read of the output, or of stdin, takes.
 TERMINAL_READ_BYTES = 4096
@@ -49,14 +51,20 @@ TERMINAL_FD_STDERR = 2
 TERMINAL_ATTACH_ROUTE = "/api/terminal/attach"
 TERMINAL_EXEC_ROUTE = "/api/terminal/exec"
 TERMINAL_OUTPUT_ROUTE = "/api/terminal/output"
+# How long a session has been open is said in the largest of these units.
+TERMINAL_AGE_UNITS = (("d", 86400), ("h", 3600), ("m", 60), ("s", 1))
 
 
-def main_list(*, hub: str = "", is_json: bool = False) -> int:
-    """Print every online machine and the sessions it keeps.
+def main_list(machine: str, *, hub: str = "") -> int:
+    """Print one machine's sessions.
+
+    Each line is the id's first characters, the account, how long it has
+    been open, whether it is persistent, whether it is shared, and how many
+    windows are attached.
 
     Args:
-        hub: The hub, by name or id; empty lists every hub joined.
-        is_json: Print one JSON object instead of the table.
+        machine: The machine's name or id.
+        hub: What ``--hub`` named.
 
     Returns:
         The exit status.
@@ -64,45 +72,36 @@ def main_list(*, hub: str = "", is_json: bool = False) -> int:
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    machines = _machines(state, hub)
-    if machines is None:
-        return EXIT_REFUSED
-    hub_names = {
-        row.get("hub_id"): wording.hub_name(row) for row in state.get("hubs") or []
-    }
-    listed = [
-        dict(
-            machine,
-            hub_name=hub_names.get(machine.get("hub_id"), ""),
-            sessions=_sessions(state, machine),
-        )
-        for machine in machines
-        if machine.get("is_online")
-    ]
-    if is_json:
-        print(json.dumps({"machines": [_json_machine(row) for row in listed]}))
+    chosen = names.choose_terminal_machine(state, machine, hub)
+    if chosen is None:
+        return EXIT_NO_MACHINE
+    sessions = names.session_rows(state, chosen)
+    if not sessions:
+        wording.say(wording.line("terminal_none", machine=chosen.get("name", "")))
         return EXIT_CLOSED
-    _print_table([wording.TERMINAL_LIST_COLUMNS] + _table_rows(listed))
+    header = [
+        wording.line(key)
+        for key in (
+            "terminal_session",
+            "terminal_account",
+            "terminal_open_for",
+            "terminal_persistent",
+            "terminal_shared",
+            "terminal_attached",
+        )
+    ]
+    rows = [header] + [_session_cells(row) for row in sessions]
+    _print_table(rows)
     return EXIT_CLOSED
 
 
-def main_open(
-    machine: str,
-    *,
-    hub: str = "",
-    is_persistent: bool = False,
-    is_shared: bool = False,
-    platform=None,
-) -> int:
+def main_open(machine: str, *, account: str = "", hub: str = "", platform=None) -> int:
     """Open a new shell on one machine in this terminal.
 
     Args:
-        machine: The machine's id or name.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
-        is_persistent: Whether the session is made persistent once the
-            shell answers.
-        is_shared: Whether the session is shared from its start.
+        machine: The machine's name or id.
+        account: The enabled account to run as; empty is the first.
+        hub: What ``--hub`` named.
         platform: The machine's platform; None detects it.
 
     Returns:
@@ -111,26 +110,19 @@ def main_open(
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub)
+    chosen = names.choose_terminal_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
-    return _run_shell(
-        chosen,
-        platform,
-        session_id="",
-        is_persistent=is_persistent,
-        is_shared=is_shared,
-    )
+    return _run_shell(chosen, platform, session_id="", account=account)
 
 
 def main_attach(machine: str, session: str, *, hub: str = "", platform=None) -> int:
     """Attach this terminal to a shell session the machine keeps.
 
     Args:
-        machine: The machine's id or name.
+        machine: The machine's name or id.
         session: The session's id, or a prefix of it that one session has.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
+        hub: What ``--hub`` named.
         platform: The machine's platform; None detects it.
 
     Returns:
@@ -139,10 +131,10 @@ def main_attach(machine: str, session: str, *, hub: str = "", platform=None) -> 
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub)
+    chosen = names.choose_terminal_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
-    row = _choose_session(state, chosen, session)
+    row = names.choose_session(state, chosen, session)
     if row is None:
         return EXIT_NO_MACHINE
     return _run_shell(chosen, platform, session_id=str(row["session_id"]))
@@ -152,6 +144,7 @@ def main_exec(
     machine: str,
     command: list,
     *,
+    account: str = "",
     hub: str = "",
     is_tty: bool = False,
     platform=None,
@@ -162,10 +155,10 @@ def main_exec(
     """Run one command on one machine and carry its input and outputs.
 
     Args:
-        machine: The machine's id or name.
+        machine: The machine's name or id.
         command: The command and its arguments.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
+        account: The enabled account to run as; empty is the first.
+        hub: What ``--hub`` named.
         is_tty: Whether the command runs on a pseudo-terminal; this terminal
             goes into raw mode for it when stdin is a terminal.
         platform: The machine's platform; None detects it.
@@ -180,7 +173,7 @@ def main_exec(
         The remote command's exit code, or 125 or 126.
     """
     if not command:
-        print(wording.EXEC_COMMAND_MISSING, file=sys.stderr)
+        wording.say(wording.line("exec_command_missing"), is_error=True)
         return EXIT_EXEC_REFUSED
     platform = platform if platform is not None else detect_platform()
     stdin = stdin if stdin is not None else sys.stdin.buffer
@@ -189,16 +182,16 @@ def main_exec(
     state = wording.read_state()
     if state is None:
         return EXIT_EXEC_REFUSED
-    chosen = _choose_machine(state, machine, hub)
+    chosen = names.choose_terminal_machine(state, machine, hub)
     if chosen is None:
         return EXIT_EXEC_NO_MACHINE
     try:
         socket_path = platform.control_socket_path()
     except PlatformUnsupportedError as error:
-        print(wording.word_code(error.code), file=sys.stderr)
+        wording.refuse(error.code)
         return EXIT_EXEC_REFUSED
     size = shutil.get_terminal_size()
-    opened = _open_both(
+    opened = open_both(
         socket_path,
         TERMINAL_EXEC_ROUTE,
         {
@@ -208,7 +201,9 @@ def main_exec(
             "is_tty": is_tty,
             "cols": size.columns,
             "rows": size.lines,
+            "account": account,
         },
+        machine=chosen,
     )
     if opened is None:
         return EXIT_EXEC_REFUSED
@@ -225,7 +220,7 @@ def main_exec(
                 _reader(stdin), _writer(stdout), _writer(stderr), keys, output, is_tty
             )
     except PlatformUnsupportedError as error:
-        print(wording.word_code(error.code), file=sys.stderr)
+        wording.refuse(error.code)
         return EXIT_EXEC_REFUSED
     except KeyboardInterrupt:
         return 128 + signal.SIGINT
@@ -234,7 +229,7 @@ def main_exec(
         output.close()
     if not is_carried:
         return EXIT_EXEC_REFUSED
-    outcome = _outcome(terminal_id)
+    outcome = outcome_of(terminal_id, machine=chosen)
     if outcome is None:
         return EXIT_EXEC_REFUSED
     exit_code = outcome.get("exit_code")
@@ -243,50 +238,47 @@ def main_exec(
     return exit_code
 
 
-def main_persist(machine: str, session: str, *, is_on: bool, hub: str = "") -> int:
-    """Make one session stay after its last window closes, or stop staying.
+def main_set(
+    machine: str,
+    session: str,
+    *,
+    is_persistent: "bool | None" = None,
+    is_shared: "bool | None" = None,
+    hub: str = "",
+) -> int:
+    """Change whether a session stays after its last window, and who sees it.
+
+    Only the session's owner changes it; any other client is refused
+    ``session_not_owned``.
 
     Args:
-        machine: The machine's id or name.
+        machine: The machine's name or id.
         session: The session's id, or a prefix of it that one session has.
-        is_on: Whether the session stays.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
+        is_persistent: Whether the session stays; None leaves it.
+        is_shared: Whether other clients can attach; None leaves it.
+        hub: What ``--hub`` named.
 
     Returns:
         The exit status.
     """
-    return _session_verb(
-        machine, session, hub, "/api/terminal/persist", {"is_persistent": is_on}
-    )
-
-
-def main_share(machine: str, session: str, *, is_on: bool, hub: str = "") -> int:
-    """Share one session with every client with terminal rights, or stop.
-
-    Args:
-        machine: The machine's id or name.
-        session: The session's id, or a prefix of it that one session has.
-        is_on: Whether the session is shared.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
-
-    Returns:
-        The exit status.
-    """
-    return _session_verb(
-        machine, session, hub, "/api/terminal/persist", {"is_shared": is_on}
-    )
+    flags = {}
+    if is_persistent is not None:
+        flags["is_persistent"] = is_persistent
+    if is_shared is not None:
+        flags["is_shared"] = is_shared
+    if not flags:
+        wording.say(wording.line("session_flags_missing"), is_error=True)
+        return EXIT_NO_MACHINE
+    return _session_verb(machine, session, hub, "/api/terminal/persist", flags)
 
 
 def main_stop(machine: str, session: str, *, hub: str = "") -> int:
-    """End one session the machine keeps.
+    """End one session the machine keeps, and every program in it.
 
     Args:
-        machine: The machine's id or name.
+        machine: The machine's name or id.
         session: The session's id, or a prefix of it that one session has.
-        hub: The hub, by name or id; empty names the one hub whose machines
-            match.
+        hub: What ``--hub`` named.
 
     Returns:
         The exit status.
@@ -294,152 +286,118 @@ def main_stop(machine: str, session: str, *, hub: str = "") -> int:
     return _session_verb(machine, session, hub, "/api/terminal/stop", {})
 
 
-def _machines(state: dict, hub: str) -> "list | None":
-    """The machines of the hub named, or of every hub; None after a refusal."""
-    machines = list((state.get("terminals") or {}).get("machines") or [])
-    if not hub:
-        return machines
-    chosen_hub = wording.choose_hub(list(state.get("hubs") or []), hub)
-    if chosen_hub is None:
+def open_both(
+    socket_path: str, path: str, body: dict, *, machine: "dict | None" = None
+) -> "tuple | None":
+    """A kept stream's id and its two connections, one each way.
+
+    Args:
+        socket_path: The control socket.
+        path: The route that opens the stream and answers 101.
+        body: What it is sent.
+        machine: The machine the stream reaches, to name it in a refusal.
+
+    Returns:
+        ``(terminal_id, keys, output)``: the connection that carries this
+        side's bytes up and the one that carries the stream's bytes down;
+        None after the refusal was printed.
+    """
+    typing = _upgrade(socket_path, path, body, machine)
+    if typing is None:
         return None
-    return [row for row in machines if row.get("hub_id") == chosen_hub["hub_id"]]
+    terminal_id, keys = typing
+    shown = _upgrade(
+        socket_path, TERMINAL_OUTPUT_ROUTE, {"terminal_id": terminal_id}, machine
+    )
+    if shown is None:
+        keys.close()
+        return None
+    return terminal_id, keys, shown[1]
 
 
-def _sessions(state: dict, machine: dict) -> list:
-    """The sessions the state lists on one machine."""
+def outcome_of(terminal_id: str, *, machine: "dict | None" = None) -> "dict | None":
+    """How a kept stream ended, a refusal printed.
+
+    Args:
+        terminal_id: The stream's id.
+        machine: The machine it reached, to name it in a refusal.
+
+    Returns:
+        ``{"exit_code"}`` or the refusal; None when the client did not answer.
+    """
+    answer = wording.request(
+        "POST", "/api/terminal/result", {"terminal_id": terminal_id}
+    )
+    if answer is None:
+        return None
+    _status, outcome = answer
+    code = str(outcome.get("code", "") or "")
+    if code:
+        wording.refuse(code, machine_params(outcome.get("params"), machine))
+    return outcome
+
+
+def machine_params(params, machine: "dict | None") -> dict:
+    """A refusal's params with its machine named as the person names it.
+
+    Args:
+        params: The refusal's params.
+        machine: The machine the request reached, or None.
+
+    Returns:
+        The params, ``device`` the machine's name where it names its id.
+    """
+    values = dict(params) if isinstance(params, dict) else {}
+    if machine and values.get("device") in (machine.get("device_id"), None, ""):
+        values["device"] = machine.get("name") or values.get("device", "")
+    return values
+
+
+def _session_cells(row: dict) -> list:
+    """One session's cells in ``list``."""
     return [
-        row
-        for row in (state.get("terminals") or {}).get("sessions") or []
-        if row.get("hub_id") == machine.get("hub_id")
-        and row.get("device_id") == machine.get("device_id")
+        str(row.get("session_id", ""))[:TERMINAL_SESSION_ID_SHOWN],
+        str(row.get("account", "")) or wording.line("none"),
+        _age(row.get("started_at")),
+        _yes_no(row.get("is_persistent")),
+        _yes_no(row.get("is_shared")),
+        str(int(row.get("attached_count") or 0)),
     ]
 
 
-def _json_machine(machine: dict) -> dict:
-    """One machine and its sessions as ``list --json`` prints them."""
-    return {
-        "hub_id": str(machine.get("hub_id", "")),
-        "hub_name": str(machine.get("hub_name", "")),
-        "device_id": str(machine.get("device_id", "")),
-        "name": str(machine.get("name", "")),
-        "sessions": [
-            {
-                "session_id": str(row.get("session_id", "")),
-                "title": str(row.get("title", "")),
-                "account": str(row.get("account", "")),
-                "owner": str(row.get("owner", "")),
-                "owner_name": str(row.get("owner_name", "")),
-                "is_owned": row.get("is_owned") is True,
-                "is_persistent": row.get("is_persistent") is True,
-                "is_shared": row.get("is_shared") is True,
-                "attached_count": int(row.get("attached_count") or 0),
-            }
-            for row in machine["sessions"]
-        ],
-    }
-
-
-def _table_rows(machines: list) -> list:
-    """One row per session, and one for a machine that keeps none."""
-    rows = []
-    for machine in machines:
-        head = [str(machine.get("name", "")), str(machine.get("hub_name", ""))]
-        if not machine["sessions"]:
-            empty = len(wording.TERMINAL_LIST_COLUMNS) - len(head)
-            rows.append(head + [wording.TERMINAL_LIST_NONE] * empty)
-            continue
-        for row in machine["sessions"]:
-            rows.append(
-                head
-                + [
-                    str(row.get("session_id", ""))[:TERMINAL_SESSION_ID_SHOWN],
-                    str(row.get("title", "")) or wording.TERMINAL_LIST_NONE,
-                    str(row.get("account", "")) or wording.TERMINAL_LIST_NONE,
-                    str(row.get("owner_name", "") or row.get("owner", ""))
-                    or wording.TERMINAL_LIST_NONE,
-                    _yes_no(row.get("is_owned")),
-                    _yes_no(row.get("is_persistent")),
-                    _yes_no(row.get("is_shared")),
-                    str(int(row.get("attached_count") or 0)),
-                ]
-            )
-    return rows
+def _age(started_at) -> str:
+    """How long ago a session started, in its largest unit."""
+    if isinstance(started_at, bool) or not isinstance(started_at, (int, float)):
+        return wording.line("none")
+    seconds = max(int(time.time() - started_at), 0)
+    for unit, size in TERMINAL_AGE_UNITS:
+        if seconds >= size:
+            return f"{seconds // size}{unit}"
+    return "0s"
 
 
 def _yes_no(value) -> str:
-    return wording.TERMINAL_LIST_YES if value is True else wording.TERMINAL_LIST_NO
+    return wording.line("yes") if value is True else wording.line("no")
 
 
 def _print_table(rows: list) -> None:
     """Print rows in columns two spaces apart."""
     widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
     for row in rows:
-        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
-
-
-def _choose_machine(state: dict, needle: str, hub: str) -> "dict | None":
-    """The one named machine, or None after saying why."""
-    machines = _machines(state, hub)
-    if machines is None:
-        return None
-    matches = [
-        row for row in machines if needle in (row.get("device_id"), row.get("name"))
-    ]
-    if not matches:
-        print(
-            wording.word_code("unknown_terminal", {"device_id": needle}),
-            file=sys.stderr,
+        wording.say(
+            "  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip()
         )
-        return None
-    if len(matches) > 1:
-        names = ", ".join(
-            wording.hub_name(row)
-            for row in state.get("hubs") or []
-            if row.get("hub_id") in {match["hub_id"] for match in matches}
-        )
-        print(wording.word_code("ambiguous_hub", {"hubs": names}), file=sys.stderr)
-        return None
-    return matches[0]
-
-
-def _choose_session(state: dict, machine: dict, prefix: str) -> "dict | None":
-    """The one session whose id starts with ``prefix``, or None after saying why."""
-    matches = [
-        row
-        for row in _sessions(state, machine)
-        if prefix and str(row.get("session_id", "")).startswith(prefix)
-    ]
-    if not matches:
-        print(
-            wording.word_code("session_unknown", {"session_id": prefix}),
-            file=sys.stderr,
-        )
-        return None
-    if len(matches) > 1:
-        print(
-            wording.SESSION_AMBIGUOUS_LINE.format(
-                prefix=prefix, machine=machine.get("name", "")
-            ),
-            file=sys.stderr,
-        )
-        for row in matches:
-            print(
-                f"  {row.get('session_id', '')}  {row.get('title', '')}".rstrip(),
-                file=sys.stderr,
-            )
-        return None
-    return matches[0]
 
 
 def _session_verb(machine: str, session: str, hub: str, path: str, flags: dict) -> int:
-    """Send one session verb to the resident and say how it went."""
+    """Send one session verb to the client and say how it went."""
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub)
+    chosen = names.choose_terminal_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
-    row = _choose_session(state, chosen, session)
+    row = names.choose_session(state, chosen, session)
     if row is None:
         return EXIT_NO_MACHINE
     answer = wording.request(
@@ -450,27 +408,20 @@ def _session_verb(machine: str, session: str, hub: str, path: str, flags: dict) 
     if answer is None:
         return EXIT_REFUSED
     status, reply = answer
-    if status == 200:
+    if status == 200 and not reply.get("code"):
         return EXIT_CLOSED
     code = str(reply.get("code", "") or "")
-    print(wording.word_code(code, reply.get("params")), file=sys.stderr)
+    wording.refuse(code, machine_params(reply.get("params"), chosen))
     return EXIT_NO_MACHINE if code == "session_unknown" else EXIT_REFUSED
 
 
-def _run_shell(
-    chosen: dict,
-    platform,
-    *,
-    session_id: str,
-    is_persistent: bool = False,
-    is_shared: bool = False,
-) -> int:
+def _run_shell(chosen: dict, platform, *, session_id: str, account: str = "") -> int:
     """Open or attach a shell on the chosen machine and carry it in raw mode."""
     platform = platform if platform is not None else detect_platform()
     try:
         socket_path = platform.control_socket_path()
     except PlatformUnsupportedError as error:
-        print(wording.word_code(error.code), file=sys.stderr)
+        wording.refuse(error.code)
         return EXIT_REFUSED
     size = shutil.get_terminal_size()
     body = {
@@ -479,54 +430,41 @@ def _run_shell(
         "cols": size.columns,
         "rows": size.lines,
         "session_id": session_id,
+        "account": account,
     }
-    if is_shared:
-        body["is_shared"] = True
-    opened = _open_both(socket_path, TERMINAL_ATTACH_ROUTE, body)
+    opened = open_both(socket_path, TERMINAL_ATTACH_ROUTE, body, machine=chosen)
     if opened is None:
         return EXIT_REFUSED
     terminal_id, keys, output = opened
     try:
         with platform.raw_terminal() as term:
-            _carry(term, keys, output, terminal_id, is_persistent)
+            _carry(term, keys, output, terminal_id)
     except PlatformUnsupportedError as error:
-        print(wording.word_code(error.code), file=sys.stderr)
+        wording.refuse(error.code)
         return EXIT_REFUSED
     finally:
         keys.close()
         output.close()
-    outcome = _outcome(terminal_id)
+    outcome = outcome_of(terminal_id, machine=chosen)
     if outcome is None or outcome.get("code"):
         return EXIT_REFUSED
     return EXIT_CLOSED
 
 
-def _open_both(socket_path: str, path: str, body: dict) -> "tuple | None":
-    """The terminal's id and its two connections, or None after the refusal."""
-    typing = _upgrade(socket_path, path, body)
-    if typing is None:
-        return None
-    terminal_id, keys = typing
-    shown = _upgrade(socket_path, TERMINAL_OUTPUT_ROUTE, {"terminal_id": terminal_id})
-    if shown is None:
-        keys.close()
-        return None
-    return terminal_id, keys, shown[1]
-
-
-def _upgrade(socket_path: str, path: str, body: dict) -> "tuple | None":
+def _upgrade(
+    socket_path: str, path: str, body: dict, machine: "dict | None"
+) -> "tuple | None":
     """One kept connection, or None after the refusal was printed."""
     try:
         status, reply, connection = client.upgrade(
             socket_path=socket_path, path=path, body=body
         )
     except (OSError, ValueError):
-        print(wording.word_code("resident_not_running"), file=sys.stderr)
+        wording.refuse("client_not_running")
         return None
     if status != 101 or connection is None:
-        print(
-            wording.word_code(str(reply.get("code", "")), reply.get("params")),
-            file=sys.stderr,
+        wording.refuse(
+            str(reply.get("code", "")), machine_params(reply.get("params"), machine)
         )
         return None
     return str(reply.get("terminal_id", "")), connection
@@ -545,8 +483,8 @@ def _resizer(terminal_id: str):
     return resized
 
 
-def _carry(term, keys, output, terminal_id: str, is_persistent: bool) -> None:
-    """Keys up on a thread, output down here; persistent after the first output."""
+def _carry(term, keys, output, terminal_id: str) -> None:
+    """Keys up on a thread, output down here."""
 
     def send_keys() -> None:
         while True:
@@ -565,29 +503,6 @@ def _carry(term, keys, output, terminal_id: str, is_persistent: bool) -> None:
         if not data:
             return
         term.write(data)
-        if is_persistent:
-            is_persistent = False
-            threading.Thread(
-                target=_persist_open,
-                args=(terminal_id,),
-                name="terminal_persist",
-                daemon=True,
-            ).start()
-
-
-def _persist_open(terminal_id: str) -> None:
-    """Make an open terminal's session persistent; a refusal is printed."""
-    answer = wording.request(
-        "POST",
-        "/api/terminal/persist",
-        {"terminal_id": terminal_id, "is_persistent": True},
-    )
-    if answer is not None and answer[0] != 200:
-        print(
-            wording.word_code(str(answer[1].get("code", "")), answer[1].get("params")),
-            end="\r\n",
-            file=sys.stderr,
-        )
 
 
 def _carry_pieces(read_input, write_out, write_err, keys, output, is_tty: bool) -> bool:
@@ -661,17 +576,3 @@ def _is_terminal(stream) -> bool:
         return stream.isatty()
     except (AttributeError, ValueError):
         return False
-
-
-def _outcome(terminal_id: str) -> "dict | None":
-    """How the stream ended, a refusal printed; None when the client did not answer."""
-    answer = wording.request(
-        "POST", "/api/terminal/result", {"terminal_id": terminal_id}
-    )
-    if answer is None:
-        return None
-    _status, outcome = answer
-    code = str(outcome.get("code", "") or "")
-    if code:
-        print(wording.word_code(code, outcome.get("params")), file=sys.stderr)
-    return outcome

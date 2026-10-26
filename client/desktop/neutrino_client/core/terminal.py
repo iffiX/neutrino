@@ -17,7 +17,8 @@ has been quiet for ``CLIENT_TERMINAL_CLEAR_QUIET_S``, for
 
 An ``exec`` stream's two connections carry pieces, each a big-endian u32
 length and its bytes: up, the command's input, an empty piece ending it;
-down, each frame of the stream, its ``fd`` byte first.
+down, each piece of the stream, its output's byte first, 1 for stdout and 2
+for stderr, without a terminal.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -120,10 +121,21 @@ class TerminalBridge:
         self._drop_since: "float | None" = None
         self._drop_last = 0.0
 
-    @property
-    def stream_id(self) -> int:
-        """The shell stream's id, which a resize names."""
-        return self._stream.stream_id
+    def resize(self, cols: int, rows: int) -> bool:
+        """Tell the far side the terminal's new size, as a ``resize`` record.
+
+        Args:
+            cols: The width in columns.
+            rows: The height in rows.
+
+        Returns:
+            Whether it went; False once the stream has ended.
+        """
+        try:
+            self._stream.resize(cols, rows)
+        except GatewayUnreachable:
+            return False
+        return True
 
     @property
     def session_id(self) -> str:
@@ -142,12 +154,11 @@ class TerminalBridge:
             data: The bytes typed.
 
         Returns:
-            Whether they went; False once the stream has ended or the hub
-            granted no credit in time.
+            Whether they went; False once the stream has ended.
         """
         try:
             self._stream.send(data)
-        except (GatewayUnreachable, TimeoutError):
+        except GatewayUnreachable:
             return False
         return True
 
@@ -198,7 +209,7 @@ class TerminalBridge:
                 break
             try:
                 self._stream.send(data)
-            except (GatewayUnreachable, TimeoutError):
+            except GatewayUnreachable:
                 break
         self._is_closed_here = not self._stream.is_done
         self._stream.close()
@@ -343,7 +354,7 @@ class ExecBridge(TerminalBridge):
                     self._stream.send(piece)
                 elif not self._is_tty:
                     self._stream.send_eof()
-            except (GatewayUnreachable, TimeoutError):
+            except GatewayUnreachable:
                 break
         self._is_closed_here = not self._stream.is_done
         self._stream.close()
