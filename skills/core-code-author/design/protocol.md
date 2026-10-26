@@ -366,7 +366,7 @@ TLS port.
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
 | `/api/hub/client` | Enrolled client sessions and the links that enrol them |
-| `/api/hub/service` | The published service list and manual declarations |
+| `/api/hub/service` | The apps and the other published services, and the apps declared by hand |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
@@ -550,17 +550,20 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
 | `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
-| `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its socket is closed with `binding_unknown` |
+| `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown` |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices}`, `devices` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
-A permission kind is a published service type (`web`, `port`, `ai`, `file`,
-`rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
-`modules/clients/constants.py`. `terminal` opens a `shell` on a managed
+A permission kind is a published service type (`web`, `port`, `ssh`, `ai`,
+`file`, `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS`
+in `modules/clients/constants.py`. `ssh` reaches the machines' SSH servers,
+for `nclient ssh` and for the `ssh` entries of the Apps page; a permission
+stored before it existed does not name it, and the person adds it on the
+**Clients** page. `terminal` opens a `shell` on a managed
 machine and runs one command there through an `exec` stream ("The exec
 stream"). `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
-`service {is_panel: true}` ("The panel ports"); it is off unless a
+the `service` frame `{is_panel: true}` ("The panel ports"); it is off unless a
 permission names it, since it manages the hub without the panel password. A permission may narrow each
 kind but `overlay` and `panel` to the entries some devices provide: `devices` maps a kind to a list
 of device ids, and a kind with no list, or an empty one, allows every device.
@@ -571,12 +574,12 @@ default allows every kind but `panel` on every device, and the default a
 fresh hub copies from `clients.example.json` names every kind but `panel`.
 The device providing an entry is
 the device that hosts it; the hub's own modules belong to the hub's own
-device when it has one; a declared record belongs to the device at its
+device when it has one; a declared app belongs to the device at its
 address, and one at no device's address passes only a kind with no list. A
 client's `services` section holds only the entries whose type and device it
 is allowed, and its `terminals` only the machines its `terminal` list
 allows. A `shell` or an `exec` on a machine outside that list is refused
-`permission_denied {kind: terminal}`. A `connect` is judged as the `service` stream is, and a panel
+`permission_denied {kind: terminal}`. A `connect` is judged as the `service` frame is, and a panel
 `connect` or `service` without `panel` is refused `permission_denied {kind:
 panel}`. Switching a client off, removing it, its leave, and taking `panel`
 from it, through its own permission or the default it follows, end the
@@ -592,11 +595,24 @@ has is refused 400 `permission_device_unknown {device_id}`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | the published list |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port}`, a module's apps first, then the declared, then the manual, each group by title; and `services`, the `ai`, `file` and `rdp` entries as a client's list holds them |
 | `GET /api/hub/service/share` | | the shares devices declared |
-| `POST /api/hub/service/declaration/add` | `{name, kind, host, port, scheme, path, shares, description, protocol}`: `kind` is `web`, `port` or `file`; `protocol` is `tcp` or `udp`, `tcp` when absent, read for a `port` alone, and stores the record as `generic_tcp` or `generic_udp` | |
-| `POST /api/hub/service/declaration/remove` | `{service_id}` | |
-| `POST /api/hub/service/declaration/probe` | `{service_id}` | one health probe |
+| `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol}`: `type` `web` or `port`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; one entry at least, and no two of one type, port and protocol | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
+| `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
+| `POST /api/hub/service/declaration/probe` | `{app_id}` | one health probe of each entry the app has; `ServiceListView` |
+
+`config/services/declared.json` holds `apps`, each `{id, name, host,
+description, created_at, entries}` as `declaration/add` takes it, beside
+`services`, the records of 0.5. A 0.5 record of the kind `http`,
+`generic_tcp` or `generic_udp` reads as an app of one entry with the
+record's id, and is written into `apps` at the next write of the file; a
+`samba` record stays a declared share, a `file` entry with no app. The
+**Declare a service** dialog ([ui_behavior.md](ui_behavior.md), "The
+page") declares an app alone.
+
+A declared app's entry is probed as a 0.5 record of its kind was: a `web`
+entry by an HTTP request to its path, a TCP `port` entry by a connection,
+and a UDP one never.
 
 #### `/api/hub/credential`
 
@@ -1094,7 +1110,8 @@ and platform, which change between releases.
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
-| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
+| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine, app_id, name, local_port}]`, the last three on `web`, `port` and `ssh` entries alone | |
+| `apps` | | | `[{id, title, source, device_id, device_name, local_name}]`: the apps the `web`, `port` and `ssh` entries belong to ("Apps") | |
 | `is_disabled` | | | bool | |
 | `urls` | `["tcp://<address>:<port>", ...]` | | the same list | |
 | `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
@@ -1649,31 +1666,32 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, with the id `hermes_webui_<device>`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/` and the id its `port` entry has, `podman_<device>_<container>_<port>`, or an `http` record is declared |
-| `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`; it is an added field and keeps `PROTOCOL`, and a reader that finds none reads `tcp`. One entry has one protocol, so a number published on both is two entries; a container's UDP entry has the id of its TCP one with `_udp` after it, `podman_<device>_<container>_<port>_udp` | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a `generic_tcp` or `generic_udp` record is declared |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
+| `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
+| `ssh` | `{host, port, account}`: `port` the loopback port the account's instance of the machine's SSH server listens on, and `account` the account it runs as | a device's SSH server module runs that account's instance |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
-| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
+| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
 
-The five types are closed, `SERVICES_TYPES` in
-`modules/services/constants.py`; a sixth is a row here in the same change.
+The six types are closed, `SERVICES_TYPES` in
+`modules/services/constants.py`; a seventh is a row here in the same change.
 Every `host`, `port`, `url` and `endpoint` in a payload is where the
 service is on the hub's networks, resolved for the client's scope ("The
 address a caller is given"). A client shows it to the person and dials none
 of it: every byte to a service goes over a `connect` stream.
 `source` is `module`, `declared` or `device`. `is_healthy` is the module's own
-health, the declared record's last probe, or true for a share a machine is
-reporting now, and empty on a record no probe has reached. A `generic_udp`
-record is never probed, so its health stays empty. Only `false` is
-unhealthy: an entry with empty health carries no health word and keeps its
-actions ([client.md](client.md), "The button rule"). A Gitea entry is
-healthy while its machine reports the server running, and the hub dials
-nothing on the machine to judge it. A container's
-entry, `web` or `port` on either protocol, is healthy while the container
-runs, and a container's TCP binding is a `web` entry or a `port` entry,
-never both
+health, the declared app's last probe of that entry, or true for a share a
+machine is reporting now, and empty on an entry no probe has reached. A UDP
+entry of a declared app is never probed, so its health stays empty. Only
+`false` is unhealthy: an entry with empty health carries no health word and
+keeps its actions ([client.md](client.md), "The button rule"). A Gitea entry
+is healthy while its machine reports the server running, and the hub dials
+nothing on the machine to judge it. A container's entry, `web` or `port` on
+either protocol, is healthy while the container runs, and a container's TCP
+binding is a `web` entry or a `port` entry, never both
 ([agent/modules/containers.md](agent/modules/containers.md), "Services of
-a container").
+a container"). An `ssh` entry is healthy while its machine reports the
+instance running.
 
 `description` is the English provenance line the composer writes, and
 `description_code` names the same provenance for a surface that words it in
@@ -1692,31 +1710,83 @@ its own language:
 | `code_server_module` | `{host, account}`; the same |
 | `codeg_module` | `{host, account}`; the same |
 | `hermes_webui_module` | `{host}`; the entry exists only while the device reports the module `running` |
+| `ssh_server_module` | `{host, account}`; the entry exists only while the device reports the instance running |
 
-A declared record whose person wrote a line of their own gets that line and an
-empty `description_code`, because those are already their words.
+A declared app whose person wrote a line of their own gets that line on each
+of its entries and an empty `description_code`, because those are already
+their words.
 
 `device_name` is what the hub calls the machine that provides the entry: the
 device's name for an entry a device hosts, the hub's own hostname for one of
-the hub's modules, the device at that address for a declared record, and
-empty when no machine the hub knows is there. It is an added field and keeps
-`PROTOCOL` at 2; a hub that predates it sends none, and the client shows the
+the hub's modules, the device at that address for a declared app, and
+empty when no machine the hub knows is there; the client then shows the
 entry's address in its place.
 
 `device_id` is the id of the managed machine that provides the entry, for an
 entry whose `source` is `module` or `device` and that a machine hosts, and
-empty for a declared record and for the hub's own gateway. A client keys what
+empty for a declared app and for the hub's own gateway. A client keys what
 it keeps per machine by it, since a name changes and an address depends on
-the way the hub was reached. It is an added field and keeps `PROTOCOL`.
+the way the hub was reached.
 
 `is_own_machine` is true when the machine that provides the entry is the
 machine the client runs on: the `os_machine_id` of the client's last report
 equals the provider's `machine_id`, which is the device's, as its agent
-reported it, for an entry a device hosts or a declared record at a device's
+reported it, for an entry a device hosts or a declared app at a device's
 address, and the hub box's own for one of the hub's modules. It is false
-when either id is empty or no machine the hub knows provides the entry. It
-is an added field and keeps `PROTOCOL`; a client that does not read it
-mounts as before.
+when either id is empty or no machine the hub knows provides the entry.
+
+### Apps
+
+An app is what a person uses as one thing: one program on one machine, with
+one or more entries. Every `web`, `port` and `ssh` entry belongs to exactly
+one app and carries three fields more: `app_id`, the app's id; `name`, the
+entry's name inside its app; and `local_port`, the port a client forwards it
+on ("The local name and the local port"). An entry's `id` is
+`<app id>_<name>`. `ai`, `file` and `rdp` entries belong to no app. The
+client's `apps` section lists the apps its entries name, each `{id, title,
+source, device_id, device_name, local_name}`:
+
+| The app | `id` | `title` | `source` | Its entries, by `name` |
+| --- | --- | --- | --- | --- |
+| an instance of VS Code, code-server, CloudCLI or Codeg | `<module>_<device id>_<account>` | `<module title> (<account>)` | `module` | `web` |
+| Gitea | `gitea_<device id>` | `Gitea` | `module` | `web` |
+| a container module, Hermes WebUI among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
+| a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
+| a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
+| an app declared on the Services page | the declaration's `id` | its `name` | `declared` | `web_<port>` for a `web` entry, `port_<port>` for a TCP `port` entry, `port_<port>_udp` for a UDP one |
+
+| Rule | Reason |
+| --- | --- |
+| A module the hub manages is one app however many containers it runs, and its source is `module`. A container the hub does not manage is one app of its own, `declared` when the Containers module's configuration names it and `manual` when a person started it by hand, the owners the Containers tab's chips name ([agent/modules/containers.md](agent/modules/containers.md), "Hub containers"). | The person thinks of Hermes WebUI as one thing and of each container they run as one thing, and the chip says who answers for it. |
+| An app's entries are in the list only while the entry kind is allowed to the client on that machine; an app none of whose entries is allowed is not in `apps`. | The permission stays per kind and per machine, as on every other entry. |
+| `app_id` and `name` are added fields and keep `PROTOCOL`; `apps` is an added section. | A reader that predates them reads each entry as before. |
+
+### The local name and the local port
+
+Each app has a local name and each entry a local port, the same on every
+client of the hub, so an address a person saves or a program writes into its
+own configuration holds on every client. The hub computes both and sends
+them; a client takes them as given and computes neither.
+
+```text
+local_name(app) = slug(app title) + "." + slug(machine name) + ".localhost"
+slug(text)      = text in lowercase, each run of characters other than a to z and 0 to 9
+                  turned into one "-", "-" taken off both ends, cut to 63 characters,
+                  and "app" or "machine" when nothing is left
+local_port(id)  = 60000 + (the first four bytes of SHA-256 of the entry id in UTF-8,
+                  read as a big-endian unsigned integer) mod 5536
+```
+
+The machine name is the entry's `device_name`, or the hub's own name for an
+entry no machine the hub knows provides. `local_port` lies in 60000 to
+65535.
+
+| Rule | Reason |
+| --- | --- |
+| The port follows from the entry's id alone. Two entries of one protocol whose ports collide keep the same number from the hub. | Every client, and Gitea's own configuration, compute the same number without asking anybody. |
+| A client never moves a port by itself. The entry forwarded first holds a number its two entries share, and the other's forward fails `port_taken {port}`; a number another program holds fails the same way. The person then gives one of them a number of their own in **Configure** ([client.md](client.md), "The local port table"). | A port moved silently on one client breaks a saved address, a clone address or a tool's setting there alone. |
+| A number the person sets holds on that client alone, kept in its local port table. | The derived number is the default every client shares, and a change is that client's own business. |
+| A device's rename changes its apps' local names and none of their ports. | The name is what a person reads; the port is what a program keeps. |
 
 ### The kinds
 

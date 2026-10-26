@@ -374,20 +374,23 @@ modules/services split exists to prevent
   made, and the panel does not render those choices at all.
 
 A service is anything the hub can publish: a device's Samba shares, its
-Gitea, a container's published port, the hub's own AI gateway, a desktop a
-machine is sharing, and the services somebody declares by hand on machines
-the hub does not run. A module's entries live only while the module runs on
-an enabled device; a hand-declared entry is probed, a UDP port excepted; a desktop entry is the
-machine's own word and lives only while it keeps reporting.
+Gitea, a container's published port, a machine's SSH server, the hub's own
+AI gateway, a desktop a machine is sharing, and the apps somebody declares by
+hand on machines the hub does not run. A module's entries live only while
+the module runs on an enabled device; a hand-declared entry is probed, a UDP
+port excepted; a desktop entry is the machine's own word and lives only
+while it keeps reporting. Every `web`, `port` and `ssh` entry belongs to one
+app, the thing a person uses ([protocol.md](protocol.md), "Apps").
 
 ```
-module on a device (samba, gitea, podman)   -> service entry
+module on a device (samba, gitea, podman)   -> service entries, an app's
 the hub's AI gateway                        -> the one ai entry
 a machine sharing its desktop               -> an rdp entry, from its reports
-declared by hand (web, port, file)          -> the same shape, probed
+an app declared by hand (web, port)         -> the same shape, probed
                                                 (a UDP port never)
-  service entry: {id, type, title, payload, is_healthy, source, description}
-  types: web | port | ai | file | rdp
+  service entry: {id, type, title, payload, is_healthy, source, description,
+                  app_id, name, local_port}
+  types: web | port | ssh | ai | file | rdp
 ```
 
 **The service list carries no secrets.** It is composed once, fingerprinted,
