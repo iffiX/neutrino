@@ -1839,19 +1839,20 @@ local_name(app) = slug(app title) + "." + slug(machine name) + ".localhost"
 slug(text)      = text in lowercase, each run of characters other than a to z and 0 to 9
                   turned into one "-", "-" taken off both ends, cut to 63 characters,
                   and "app" or "machine" when nothing is left
-local_port(id)  = 60000 + (the first four bytes of SHA-256 of the entry id in UTF-8,
-                  read as a big-endian unsigned integer) mod 5536
+local_port(id)  = 24000 + (the first four bytes of SHA-256 of the entry id in UTF-8,
+                  read as a big-endian unsigned integer) mod 8000
 ```
 
 The machine name is the entry's `device_name`, or the hub's own name for an
 entry no machine the hub knows provides. Two machines of one hub whose names
 give one slug each take `-` and the first six hex characters of its device
-id after it, and so do two apps of one machine. `local_port` lies in 60000
-to 65535.
+id after it, and so do two apps of one machine. `local_port` lies in 24000
+to 31999.
 
 | Rule | Reason |
 | --- | --- |
 | The port follows from the entry's id alone. Two entries of one protocol whose ports collide keep the same number from the hub. | Every client, and Gitea's own configuration, compute the same number without asking anybody. |
+| The range, 24000 to 31999, lies below the ports every system hands outgoing connections, 32768 up on Linux and 49152 up on Windows and macOS, and above the picks of the forwards of no app, 20000 to 23999 ([client.md](client.md), "The local port table"). | A port the system has handed an outgoing connection is taken for that connection's life, so a fixed port inside that range fails now and then for no reason the person can see. |
 | A client never moves a port by itself. The entry forwarded first holds a number its two entries share, and the other's forward fails `port_taken {port}`; a number another program holds fails the same way. The person then gives one of them a number of their own in **Configure** ([client.md](client.md), "The local port table"). | A port moved silently on one client breaks a saved address, a clone address or a tool's setting there alone. |
 | A number the person sets holds on that client alone, kept in its local port table. | The derived number is the default every client shares, and a change is that client's own business. |
 | A device's rename changes its apps' local names and none of their ports. | The name is what a person reads; the port is what a program keeps. |
