@@ -49,6 +49,17 @@ class ConstantsTest {
     }
 
     @Test
+    fun theAboutScreenNamesTheTransportsGoModulesAtTheVersionsGoModPins() {
+        val goMod = RepositoryFiles.text("transport/go.mod")
+        for (module in CLIENT_TRANSPORT_MODULES) {
+            val path = if (module.name.startsWith("golang.org/")) module.name else "github.com/${module.name}"
+            val pinned = Regex("""(?m)^\s*$path(?:/v\d+)? v([0-9.]+)""").find(goMod)?.groupValues?.get(1)
+            assertEquals(module.name, pinned, module.version)
+            assertEquals(module.name, true, module.sourceUrl.endsWith("v${module.version}"))
+        }
+    }
+
+    @Test
     fun theDesktopTimingsAreTheSame() {
         val desktop = RepositoryFiles.text("client/desktop/neutrino_client/constants.py")
         for ((name, value) in listOf(

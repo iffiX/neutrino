@@ -416,6 +416,7 @@ def _expected_licenses(os_name, *, is_agent_carried):
         "inter.txt",
         "jetbrains_mono.txt",
         "hub_notices.txt",
+        "go_notices.txt",
     }
     if is_agent_carried:
         names.add("rustdesk.txt")

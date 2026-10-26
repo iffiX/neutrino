@@ -166,13 +166,15 @@ LINUX_GUI_BUILD_HEADERS = (
 )
 
 # The licences of what the client packages carry, by the file name they have
-# in the repository's own ``licenses/``.
+# in the repository's own ``licenses/``; ``go_notices.txt`` is the notice of
+# the Go modules compiled into the carried transport.
 CARRIED_LICENSES = netbird_payload.CARRIED_LICENSES + (
     PACKAGING_CC_SWITCH_LICENSE,
     "rustdesk.txt",
     "easytier.txt",
     "xterm.txt",
     "meslolgs_nf.txt",
+    "go_notices.txt",
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
 # prebuilt binaries licence, the stand-in packet.dll, which says what it is,
@@ -368,6 +370,7 @@ def stage_client_tree(
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": PACKAGING_CC_SWITCH_VERSION,
+        TRANSPORT_PROGRAM: package_version,
     }
     if is_windows:
         carried["tun2socks"] = bundled.hub_assets.pinned_version(

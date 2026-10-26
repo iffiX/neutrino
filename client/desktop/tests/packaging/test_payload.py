@@ -100,6 +100,7 @@ def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": constants.PACKAGING_CC_SWITCH_VERSION,
+        "neutrino_transport": "9.9.9",
     }
     assert "tun2socks" not in stamped["CLIENT_CARRIED_VERSIONS"]
 
@@ -368,6 +369,7 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
         + [
             "cc_switch.txt",
             "easytier.txt",
+            "go_notices.txt",
             "gobject_introspection.txt",
             "meslolgs_nf.txt",
             "rustdesk.txt",

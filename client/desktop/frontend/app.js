@@ -51,6 +51,9 @@ const CARRIED = [
   { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
     repository: 'https://github.com/xjasonlyu/tun2socks', tag: 'v{version}',
     os: 'windows' },
+  { name: 'neutrino_transport', key: 'neutrino_transport', licence: 'MIT',
+    repository: 'https://github.com/iffiX/neutrino',
+    mainland: 'https://cnb.cool/iffi-X/neutrino', tag: 'v{version}' },
 ];
 
 function fill(template, params) {

@@ -261,6 +261,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         + [
             "cc_switch.txt",
             "easytier.txt",
+            "go_notices.txt",
             "meslolgs_nf.txt",
             "rustdesk.txt",
             "xterm.txt",
@@ -461,6 +462,7 @@ def test_the_licences_travel_inside_the_bundle(tmp_path):
         + [
             "cc_switch.txt",
             "easytier.txt",
+            "go_notices.txt",
             "meslolgs_nf.txt",
             "rustdesk.txt",
             "xterm.txt",

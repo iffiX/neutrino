@@ -164,7 +164,7 @@ PANEL_LICENSES = (
 )
 # The licences of what the agent package a hub package carries holds, the
 # agent's own CARRIED_LICENSES.
-AGENT_PACKAGE_LICENSES = ("rustdesk.txt",)
+AGENT_PACKAGE_LICENSES = ("rustdesk.txt", "go_notices.txt")
 # What builds the agent's own package of each family, when no directory of
 # packages already built is given.
 AGENT_BUILD_SCRIPTS = {"deb": "build_deb.py", "rpm": "build_rpm.py"}

@@ -120,6 +120,16 @@ enum Client {
     /// The patch the core is built with, at the app's release tag `v{version}` under the edition's `{blob}`.
     static let rustDeskPatchUrl = "{blob}/v{version}/packaging/build/build_core_rustdesk.patch"
 
+    /// The Go modules compiled into the transport library the app embeds, as `transport/go.mod` pins them, for
+    /// the About card: each one's name, version, licence and source at that version.
+    static let transportModules: [(name: String, version: String, licence: String, source: String)] = [
+        ("flynn/noise", "1.1.0", "BSD-3-Clause", "https://github.com/flynn/noise/tree/v1.1.0"),
+        ("libp2p/go-buffer-pool", "0.0.2", "MIT", "https://github.com/libp2p/go-buffer-pool/tree/v0.0.2"),
+        ("libp2p/go-yamux", "4.0.2", "MPL-2.0", "https://github.com/libp2p/go-yamux/tree/v4.0.2"),
+        ("golang.org/x/crypto", "0.58.0", "BSD-3-Clause", "https://go.googlesource.com/crypto/+/v0.58.0"),
+        ("golang.org/x/sys", "0.49.0", "BSD-3-Clause", "https://go.googlesource.com/sys/+/v0.49.0"),
+    ]
+
     /// How long an armed destructive button waits for its second press.
     static let armSeconds = 5.0
 

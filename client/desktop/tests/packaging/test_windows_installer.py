@@ -576,6 +576,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
         + [
             "cc_switch.txt",
             "easytier.txt",
+            "go_notices.txt",
             "meslolgs_nf.txt",
             "packet_stub.txt",
             "rustdesk.txt",

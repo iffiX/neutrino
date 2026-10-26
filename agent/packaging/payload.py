@@ -137,8 +137,9 @@ GO_BIN_DIR_NAME = "bin"
 GO_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 
 # The licences of what the agent packages carry, by the file name they have
-# in the repository's own ``licenses/``.
-CARRIED_LICENSES = ("rustdesk.txt",)
+# in the repository's own ``licenses/``: RustDesk's, and the notice of the Go
+# modules compiled into the two Go programs.
+CARRIED_LICENSES = ("rustdesk.txt", "go_notices.txt")
 
 # What each packaging format calls the machine, mapped to what the interpreter
 # release calls it. 32-bit ARM is not on the list: no interpreter is published

@@ -82,6 +82,18 @@ const val CLIENT_RUSTDESK_PATCH_URL = "{blob}/v{version}/packaging/build/build_c
 const val OVERLAY_NETBIRD_VERSION = "0.78.1"
 
 /**
+ * The Go modules compiled into the transport library the app embeds, as `transport/go.mod` pins them, for
+ * the About card.
+ */
+val CLIENT_TRANSPORT_MODULES: List<CarriedCore> = listOf(
+    CarriedCore("flynn/noise", "1.1.0", "BSD-3-Clause", "https://github.com/flynn/noise/tree/v1.1.0"),
+    CarriedCore("libp2p/go-buffer-pool", "0.0.2", "MIT", "https://github.com/libp2p/go-buffer-pool/tree/v0.0.2"),
+    CarriedCore("libp2p/go-yamux", "4.0.2", "MPL-2.0", "https://github.com/libp2p/go-yamux/tree/v4.0.2"),
+    CarriedCore("golang.org/x/crypto", "0.58.0", "BSD-3-Clause", "https://go.googlesource.com/crypto/+/v0.58.0"),
+    CarriedCore("golang.org/x/sys", "0.49.0", "BSD-3-Clause", "https://go.googlesource.com/sys/+/v0.49.0"),
+)
+
+/**
  * The cores every edition of the app carries, for the About card. The mainland edition links EasyTier's
  * own Gitee repository and Gitee's RustDesk mirror, each holding the same tag at the same commit.
  */
@@ -108,7 +120,7 @@ val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
         CLIENT_RUSTDESK_PATCH_URL,
         "https://gitee.com/mirrors/rustdesk/tree/1.4.9",
     ),
-)
+) + CLIENT_TRANSPORT_MODULES
 
 /** The `platform_os` a desktop entry carries when the sharing machine is a Mac. */
 const val CLIENT_PLATFORM_OS_DARWIN = "darwin"

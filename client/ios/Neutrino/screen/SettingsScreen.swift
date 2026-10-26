@@ -65,6 +65,11 @@ struct SettingsScreen: View {
                 "\(Client.rustDeskName) \(Client.rustDeskVersion)", licence: Client.rustDeskLicence,
                 source: Client.rustDeskSourceUrls[core.edition] ?? Client.rustDeskSourceUrls[Client.editionIntl] ?? "",
                 patch: rustDeskPatch)
+            ForEach(Array(Client.transportModules.enumerated()), id: \.offset) { entry in
+                creditRow(
+                    "\(entry.element.name) \(entry.element.version)", licence: entry.element.licence,
+                    source: entry.element.source)
+            }
         }
         .padding(16)
     }

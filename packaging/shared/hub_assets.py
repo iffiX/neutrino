@@ -79,6 +79,8 @@ HUB_ASSET_LICENSES = {
     "tun2socks": PACKAGING_TUN2SOCKS_LICENSE,
 }
 HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}
+# The notice of the Go modules compiled into the carried Go programs.
+HUB_ASSET_GO_LICENSES = ("go_notices.txt",)
 HUB_ASSET_GEODATA_LICENSES = ("v2fly_geoip.txt", "v2fly_domain_list_community.txt")
 HUB_ASSET_FETCH_TIMEOUT_S = 300
 # A publisher answering 5xx for a few minutes is the usual way a build
@@ -137,7 +139,7 @@ def carried_names(os_name: str) -> list:
 
 def carried_licenses(os_name: str) -> list:
     """The licences of what :func:`stage_programs` and :func:`stage_geodata`
-    put into one system's package.
+    put into one system's package, and the notice of the Go programs' modules.
 
     Args:
         os_name: ``linux``, ``darwin`` or ``windows``.
@@ -157,6 +159,8 @@ def carried_licenses(os_name: str) -> list:
             ]
     if _has_module(HUB_ASSET_GEODATA_MODULE):
         names += list(HUB_ASSET_GEODATA_LICENSES)
+    if HUB_ASSET_GO_PROGRAMS:
+        names += list(HUB_ASSET_GO_LICENSES)
     return names
 
 
