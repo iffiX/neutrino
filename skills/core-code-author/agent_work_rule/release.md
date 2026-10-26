@@ -521,7 +521,7 @@ sentence when a tool it needs is missing.
 | `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
 | `build_transport.py` | `neutrino_transport` for one system and architecture, `--target linux-amd64` and the like, cross-compiled from `transport/` with `CGO_ENABLED=0` and the version stamped by `-ldflags "-X"`, into `dist/go/<target>/` | anywhere with the pinned Go |
 | `build_ssh_server.py` | `neutrino_ssh_server` from `agent/sshserver/`, the same way | anywhere with the pinned Go |
-| `build_core_transport.py` | the transport's library for the phones: an `.aar` for Android and an `.xcframework` for iOS, by gomobile `bind` with `-androidapi 26` and `-iosversion 16.0`, cached as every core is | Linux or macOS with the pinned Go and gomobile, and Xcode for iOS |
+| `build_core_transport.py` | the transport's library for the phones: `Mobile.xcframework` for iOS, by gomobile `bind` with `-iosversion 16.0`, cached as every core is; on Android the transport is bound into NetBird's `.aar` by `build_core_netbird.py`, one gomobile `bind` over both modules with `-androidapi 26`, because an app loads one gomobile library | Linux or macOS with the pinned Go and gomobile, and Xcode for iOS |
 
 ```bash
 python3 packaging/build/build_agent.py --architecture amd64 --output-dir dist/

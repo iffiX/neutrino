@@ -986,8 +986,9 @@ counts as no failed admission.
 
 The peer opens the session's first stream as `open {kind: control}`, and the
 transport accepts it. Its `data` records carry one byte stream of JSON
-lines: one frame per line, UTF-8, each at most `ControlFrameBytesMax`, split
-into records at any byte, so a large frame spans several records. The peer's
+lines: one frame per line, its `type` the frame's name, UTF-8, each at most
+`ControlFrameBytesMax`, split into records at any byte, so a large frame
+spans several records. The peer's
 Python writes the first frame, `hello`, `join` or `leave`, through its
 transport; any other first frame, or none within `HelloTimeout`, is refused
 `hello_invalid`. The transport passes the frames of an admitted session to
@@ -2151,7 +2152,7 @@ or a Windows named pipe in the run root of the package ([files.md](files.md)):
 | --- | --- | --- |
 | hub | `/run/neutrino/hub/transport/transport.sock` on Linux, `/var/run/neutrino/hub/transport/transport.sock` on macOS, `\\.\pipe\neutrino_hub_transport` on Windows | mode 0600, owned by the transport's account, under a 0700 directory of that account, which root opens as root opens any file; the pipe's access list grants the transport's account, SYSTEM and the administrators |
 | agent | `/run/neutrino/agent/transport.sock`, `/var/run/neutrino/agent/transport.sock`, `\\.\pipe\neutrino_agent_transport` | mode 0600 under the 0700 run directory, root's; the pipe grants SYSTEM and the administrators, as the agent's control pipe does |
-| client | `$XDG_RUNTIME_DIR/neutrino/transport.sock`, `~/Library/Application Support/Neutrino/client/transport.sock`, `\\.\pipe\neutrino_client_transport_<user>`; on a phone, `transport.sock` in the app's own data directory | mode 0600, the person's own; the pipe grants the person's account alone |
+| client | `$XDG_RUNTIME_DIR/neutrino/transport.sock`, `~/Library/Application Support/Neutrino/client/transport.sock`, `\\.\pipe\neutrino_client_transport_<user>`; on a phone, `transport.sock` in the directory the app gives `Start`, its own data directory, or, when that path is longer than the system's socket path limit, as in the iOS Simulator, in a directory of the library's own, mode 0700, under the system's temporary directory; `Start` returns the path it bound | mode 0600, the person's own; the pipe grants the person's account alone |
 
 Every connection to the listener opens with one JSON line that holds
 `secret`, 64 hex characters the transport received at its start; a
@@ -2162,7 +2163,7 @@ second, is closed with nothing written.
 | --- | --- |
 | hub on Linux | `control_secret` under the transport's state directory, 32 random bytes in hex, mode 0640, owned by root with the transport's group; the panel's process writes it when it is missing, and the transport reads it at its start, exiting when it is not there yet, so its unit starts it again |
 | hub on macOS and Windows, the agent, the desktop client, and a checkout | the first line on the transport's standard input, written by the process that starts the transport as its child, which makes the secret afresh at each start |
-| the Android and iOS apps | the argument of the library's `Start(socket_path, secret)`, the library's whole surface beside `Stop()` |
+| the Android and iOS apps | the argument of the library's `Start(directory, secret)`, which returns the socket's path; the library's whole surface beside `Stop()`. On Android the library is bound into one `.aar` with NetBird's, as the class `io.netbird.gomobile.mobile.Mobile` with `start` and `stop`; on iOS it is `Mobile.xcframework`, with `MobileStart` and `MobileStop` |
 
 ### Connections and lines
 
@@ -2172,7 +2173,7 @@ A local connection is one of three by its first line:
 | --- | --- |
 | `{secret, op: control}` | the control connection: questions, commands and events, as JSON lines both ways; a second one replaces the first |
 | `{secret, op: attach, stream}` | takes a stream the transport announced with the event `stream`, whose `open` the event carried; the Python writes the stream's answer first, `accept` or a refusing `close`, and the connection then carries the stream's records both ways, unchanged. A stream nobody attaches within `ControlQuestionTimeout` is closed `control_unavailable` |
-| `{secret, op: open, session, open}` | opens a stream on that session (`binding` in place of `session` on the client), `open` being the open record's JSON; the connection then carries the stream's records, the far side's `accept` or refusing `close` first |
+| `{secret, op: open, session, open}` | opens a stream on that session (`binding` in place of `session` on the client, and nothing on the agent), `open` being the open record's JSON; the connection then carries the stream's records, the far side's `accept` or refusing `close` first, and after the `accept` of a TCP `connect` its raw bytes |
 
 Every line is one JSON object in UTF-8, at most `ControlFrameBytesMax`:
 
@@ -2181,7 +2182,7 @@ Every line is one JSON object in UTF-8, at most `ControlFrameBytesMax`:
 | a question, from the transport | `{id, question, ...fields}`, answered by the Python's `{id, ...answer}` |
 | a command, from the Python | `{id, command, ...fields}`, answered by the transport's `{id}` or `{id, code, params}` |
 | an event, from the transport | `{event, ...fields}`, with no answer |
-| a frame, either way | `{frame, session}`, `binding` in place of `session` on the client and nothing on the agent: one frame of a control stream, passed on with no answer; from the Python it can add `is_last: true`, and the transport ends the session once the frame is written |
+| a frame, either way | `{frame, session}`, `binding` in place of `session` on the client and nothing on the agent: one frame of a control stream as the stream carries it, `{type, ...body}`, passed on with no answer; from the Python it can add `is_last: true`, and the transport ends the session once the frame is written |
 
 `id` is the asker's own string, unique among its open questions or commands.
 The questions open on a control connection that a second one replaces are
@@ -2192,7 +2193,7 @@ answered `control_unavailable`.
 | Question | Asked | Fields | The Python's answer |
 | --- | --- | --- | --- |
 | `peer` | after a bound peer's knock opened, before the transport answers it | `{public_key, role, protocol, address, listener}`, `listener` being `main`, `sakurafrp` or `openfrp` | `{binding_id, role, psk}` to admit, `role` being the table the key is in, which the session takes; or `{code, params}`, which the transport writes after a handshake under the zero psk: `binding_unknown` for a key no binding holds, `role_mismatch` for a knock whose role is not the key's, and the admission codes |
-| `ticket` | at a `join` frame | `{ticket, role, protocol, public_key, machine_id, name, software, platform, address, listener}` | `{id, token}`, the ticket spent and the binding made with `public_key`; or `{code, params}` |
+| `ticket` | at a `join` frame | `{ticket, role, protocol, public_key, machine_id, name, software, platform, address, listener}` | `{binding_id, token}`, the ticket spent and the binding made with `public_key`, which the transport writes as `joined {id, token}`; or `{code, params}`. `id` on an answer line is the question's own, so the binding's id is `binding_id` here as in `peer`'s answer |
 | `entry` | when a client opens `connect`, `shell` or `exec`, or an agent opens `connect` | `{session, binding_id, open}` | `{kind, device_id, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under and `device_id` the machine it reaches, kept with the stream for `streams_close`; or `{code, params}` |
 | `token` | at a client's `service` frame | `{session, binding_id, frame}` | `{params}`, the material, or `{code, params}`; the transport sends it as the `reply` |
 
@@ -2227,10 +2228,10 @@ writes every frame, `hello` first, as a frame line.
 | Command | Fields | The transport |
 | --- | --- | --- |
 | `dial` | `{hub_key, private_key, psk, role, protocol, addresses}`, `addresses` in the order "The address a caller is given" sets | keeps one session to the hub, dialling the addresses in order, and again after each end ("The redial") |
-| `join` | `{hub_key, private_key, addresses, ticket, role, protocol, machine_id, name, software, platform}` | dials as a round does, knocks with `is_join` on the round's winner alone, sends the one `join` there, and answers `{id, token}` or `{code, params}` |
+| `join` | `{hub_key, private_key, addresses, ticket, role, protocol, machine_id, name, software, platform}` | dials as a round does, knocks with `is_join` on the round's winner alone, sends the one `join` there, and answers `{binding_id, token}`, the `joined` frame's `id` and `token`, or `{code, params}`: `hub_unreachable {detail}` when no address answered, `hub_untrusted` when a link's address answered under neither psk, which ends the round, else the hub's own |
 | `leave` | `{hub_key, private_key, psk, role, protocol, addresses}` | dials, sends `leave`, and answers `{}` or `{code, params}` |
-| `forward_start` | `{listen, protocol, open}` | listens on `listen`, `127.0.0.1:8317` for the AI gateway forward, and opens a stream with `open`, `{kind: connect, id: ai}`, for each connection, relaying its bytes |
-| `forward_stop` | `{listen}` | closes that listener |
+| `forward_start` | `{listen, protocol, open}` | listens on `listen`, `127.0.0.1:8317` for the AI gateway forward, and opens a stream with `open`, `{kind: connect, id: ai}`, for each connection, relaying its bytes; answers `{id, listen}`, the address bound |
+| `forward_stop` | `{listen, protocol}` | closes that listener |
 | `undial` | `{}` | ends the session and dials no more |
 
 | Question | Fields | The agent's answer |
@@ -2241,7 +2242,8 @@ writes every frame, `hello` first, as a frame line.
 | --- | --- | --- |
 | `session_open` | `{address, local_address}` | a handshake completed and the control stream opened; the agent then writes `hello`. `local_address` is the connection's own, which the report names as the link |
 | `session_end` | `{code, params}` | the session ended, with the refusal that ended it, if any |
-| a frame | `{frame}` | each frame from the hub but `pong` |
+| `round_end` | `{code, params, next_round_s}` | a round through the whole address set ended with no session: `hub_unreachable {detail}`, `hub_untrusted` or the hub's own `refused`, and the seconds until the next round, 0 when none follows |
+| a frame | `{frame}` | each frame from the hub, `pong` included |
 | `stream` | `{stream, open}` | the hub opened `shell`, `exec`, `file` or `command`, which the agent takes with `attach`; a `connect` the transport serves itself after `port` |
 
 ### The client's local channel
@@ -2256,17 +2258,17 @@ binding's id, and the client writes every frame of each, `hello` first.
 | `dial` | `{binding, hub_key, private_key, psk, role, protocol, candidates}`, each candidate `{address, path}`, `path` being one of the paths [client.md](client.md) ranks | keeps one session to that hub by the round rules of [client.md](client.md), "The Hubs page" |
 | `undial` | `{binding}` | ends that hub's session and dials it no more |
 | `round` | `{binding}` | starts a round at once, as a network change does |
-| `join`, `leave` | the agent's fields, with `binding` | as on the agent |
-| `forward_start` | `{binding, listen, protocol, open}` | listens on `listen` and opens a stream with `open` on that hub's session for each TCP connection, or one stream for a UDP listener, relaying its bytes; while the hub has no session the listener accepts nothing new |
-| `forward_stop` | `{listen}` | closes that listener and its streams |
+| `join`, `leave` | the agent's fields, with `binding`: on a `join` the client's own label for the binding it has no id for yet, which no event carries; the answer's `id` is the binding's | as on the agent |
+| `forward_start` | `{binding, listen, protocol, open}` | listens on `listen` and opens a stream with `open` on that hub's session for each TCP connection, or one stream for a UDP listener, relaying its bytes; while the hub has no session the listener accepts nothing new; answers `{id, listen}`, the address bound, so a `listen` whose port is 0 gets the system's pick. A program that keeps a listener of its own opens each connection with an `open` connection instead, `{op: open, binding, open: {kind: connect, id}}` |
+| `forward_stop` | `{listen, protocol}` | closes that listener and its streams; a TCP and a UDP forward may hold one number |
 
 | Event | Fields | When |
 | --- | --- | --- |
-| `session_open` | `{binding, address, path, handshake_ms}` | a round's winner completed its handshake and opened its control stream; the client then writes `hello` |
-| `round_end` | `{binding, code, params}` | a round ended with no session, with the code the client's Hubs row words |
+| `session_open` | `{binding, address, path, handshake_ms}` | a round's winner completed its handshake and opened its control stream; the client then writes `hello`. For a binding whose session is live it is a move to a better path ([client.md](client.md), "A network change starts a round"): the client writes `hello` on the new session, and the transport drops every frame of the session it moved off, its `refused replaced` among them, and sends no `session_end` for it, so a `replaced` the client reads is another client taking the binding |
+| `round_end` | `{binding, code, params, next_round_s}` | a round ended with no session, with the code the client's Hubs row words: `hub_unreachable {detail}` when no address answered or completed a handshake, `detail` the last address's error, `hub_untrusted` when an address answered under neither psk, else the hub's own `refused`; and the seconds until the transport's next round, 0 when none follows |
 | `session_end` | `{binding, code, params}` | a session ended, with the refusal that ended it, if any |
-| a frame | `{frame, binding}` | each frame from the hub but `pong`, which sets the session's round trip |
-| `forward_end` | `{listen, code, params}` | a listener could not start or stopped, `port_taken {port}` among the codes |
+| a frame | `{frame, binding}` | each frame from the hub, `pong` included: the client sets `rtt_ms` from the `pong` whose `nonce` is its last `ping` ("The control stream") |
+| `forward_end` | `{listen, protocol, code, params}` | a listener stopped: a UDP forward whose one stream the hub or the agent closed with a code ends with that code, `permission_denied`, `agent_offline` and `port_not_published` among them, and the client starts it again when it wants it; a TCP forward's refused stream closes that one connection and ends nothing. A listener that cannot start is the answer to its `forward_start`, `port_taken {port}` among the codes |
 
 ### The redial
 
