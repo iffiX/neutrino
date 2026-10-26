@@ -6,7 +6,7 @@ enum HubWaitReason: String {
     case hubSilent = "hub_silent"
     /// The phone has no network at all; the next round waits for its connectivity to change.
     case noNetwork = "no_network"
-    /// An address answered with another certificate.
+    /// An address answered with another hub key.
     case untrusted
     /// The hub paused new devices; the join runs again after the seconds it named.
     case admissionPaused = "admission_paused"
