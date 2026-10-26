@@ -579,6 +579,35 @@ def test_a_refused_knock_with_no_session_is_recorded_too(fake, config_path):
     assert agent.last_error()["code"] == "protocol_too_old"
 
 
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("hub_unreachable", {"detail": "dial tcp 192.0.2.1:8443: i/o timeout"}),
+        ("hub_untrusted", {}),
+        ("protocol_too_old", {"peer": 4, "hub": 5, "min": 5}),
+    ],
+)
+def test_a_round_that_found_no_session_says_why(fake, config_path, code, params):
+    agent = agent_on(fake, config=config_path)
+    agent.run_once()
+
+    fake.send_event("round_end", code=code, params=params, next_round_s=5)
+    until(lambda: agent.last_error() is not None)
+
+    assert agent.last_error() == {"code": code, "params": params}
+    assert enrollment_module.is_bound()
+
+
+def test_a_round_ended_by_binding_unknown_unbinds(fake, config_path):
+    agent = agent_on(fake, config=config_path)
+    agent.run_once()
+
+    fake.send_event("round_end", code="binding_unknown", params={}, next_round_s=0)
+    until(lambda: not enrollment_module.is_bound())
+
+    assert agent.last_error()["code"] == "binding_unknown"
+
+
 def test_a_session_that_drops_is_hub_unreachable_and_keeps_the_binding(
     fake, config_path
 ):

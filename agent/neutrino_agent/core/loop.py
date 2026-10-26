@@ -116,6 +116,7 @@ DEV_VERSION_SUFFIX = "+dev"
 # The events of the agent's local channel.
 EVENT_SESSION_OPEN = "session_open"
 EVENT_SESSION_END = "session_end"
+EVENT_ROUND_END = "round_end"
 EVENT_STREAM = "stream"
 QUESTION_PORT = "port"
 # The commands this side sends its transport.
@@ -503,6 +504,8 @@ class Agent:
                 self._backoff_s = min(self._backoff_s * 2, AGENT_BACKOFF_MAX_S)
             return delay
         self._ensure_dialed()
+        # The transport refuses a listener before its first dial.
+        self._ai_forward.take(self._desired.latest())
         with self._lock:
             session = self._session
         if session is None:
@@ -601,7 +604,6 @@ class Agent:
             self._dialed = None
             self._backoff_s = AGENT_BACKOFF_MIN_S
         self._ai_forward.reset()
-        self._ai_forward.take(self._desired.latest())
         return True
 
     def _stop_transport(self) -> None:
@@ -691,6 +693,8 @@ class Agent:
             elif event.get("code"):
                 self._take_refusal(refusal_of(event))
             self._news.set()
+        elif kind == EVENT_ROUND_END:
+            self._on_round_end(event)
         elif kind == EVENT_STREAM:
             with self._lock:
                 session = self._session
@@ -700,6 +704,23 @@ class Agent:
                 self._log("a stream came with no session; it is not taken")
         else:
             self._log(f"ignoring a {kind!r} event from the transport")
+
+    def _on_round_end(self, event: dict) -> None:
+        """A round through every address ended with no session: why, as the
+        error the report shows, and a refusal read by its code."""
+        with self._lock:
+            session = self._session
+        if session is not None and not session.is_ended:
+            return
+        if event.get("code"):
+            self._take_refusal(refusal_of(event))
+        else:
+            with self._lock:
+                self._last_error = {
+                    "code": "hub_unreachable",
+                    "params": {"detail": "no address answered"},
+                }
+        self._news.set()
 
     def _on_session_open(self, event: dict) -> None:
         """A session opened: write ``hello`` on it."""
