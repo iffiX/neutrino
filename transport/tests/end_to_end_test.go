@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -549,4 +550,70 @@ func shortTempDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
+}
+
+// pendingConnection connects to a forward and checks that nothing is served
+// yet: the kernel holds the connection and the transport reads nothing.
+func pendingConnection(t *testing.T, listen string) net.Conn {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", listen, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write([]byte("early")); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	if _, err := conn.Read(make([]byte, 1)); err == nil || !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("a forward without a session served or closed the connection: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	return conn
+}
+
+func TestForwardBindsBeforeTheFirstDial(t *testing.T) {
+	dir := shortTempDir(t)
+	port := freePort(t)
+	hub := startHub(t, dir, port, 0)
+	echoPort := echoServer(t)
+	hub.records.mu.Lock()
+	hub.records.tickets["ticket-agent"] = "dev-3"
+	hub.records.tickets["ticket-client"] = "cli-3"
+	hub.records.entries["echo"] = map[string]any{"kind": "port", "device_id": "dev-3", "target": map[string]any{"open": map[string]any{"kind": "connect", "port": echoPort, "protocol": "tcp"}}}
+	hub.records.mu.Unlock()
+
+	agent := startAgent(t, dir, echoPort)
+	forward := agent.python.command("forward_start", map[string]any{"listen": "127.0.0.1:0", "protocol": "tcp", "open": map[string]any{"kind": "connect", "id": "echo"}})
+	agentListen, _ := forward["listen"].(string)
+	if forward["code"] != nil || agentListen == "" {
+		t.Fatalf("the agent's forward before any dial: %v", forward)
+	}
+	agentConn := pendingConnection(t, agentListen)
+
+	client := startClient(t, dir)
+	forward = client.python.command("forward_start", map[string]any{"binding": "cli-3", "listen": "127.0.0.1:0", "protocol": "tcp", "open": map[string]any{"kind": "connect", "id": "echo"}})
+	clientListen, _ := forward["listen"].(string)
+	if forward["code"] != nil || clientListen == "" {
+		t.Fatalf("the client's forward before any dial: %v", forward)
+	}
+	clientConn := pendingConnection(t, clientListen)
+
+	agentBinding, agentPsk := agent.join(t, hub, "ticket-agent", "dev-3")
+	agent.dial(t, hub, agentBinding, agentPsk)
+	agent.hello(t, hub, agentBinding)
+	clientBinding, clientPsk := client.join(t, hub, "ticket-client", "cli-3")
+	if clientBinding != "cli-3" {
+		t.Fatalf("client binding %q", clientBinding)
+	}
+	client.dial(t, hub, clientBinding, clientPsk)
+	client.hello(t, hub, clientBinding)
+
+	for name, conn := range map[string]net.Conn{"agent": agentConn, "client": clientConn} {
+		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		got := make([]byte, 5)
+		if _, err := io.ReadFull(conn, got); err != nil || string(got) != "early" {
+			t.Fatalf("the %s's pending connection after the session: %q %v", name, got, err)
+		}
+		conn.Close()
+	}
 }

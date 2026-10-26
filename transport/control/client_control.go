@@ -168,19 +168,32 @@ func (c *ClientControl) link(binding string) *clientLink {
 }
 
 // dial starts a link for a binding, or gives an existing one new candidates
-// and keeps its live session.
+// and keeps its live session; a link a forward made before any dial starts
+// dialling now.
 func (c *ClientControl) dial(binding string, settings dialSettings, candidates []candidate) {
 	c.linkMu.Lock()
 	link, ok := c.links[binding]
-	if ok {
-		link.replaceCandidates(settings, candidates)
-		c.linkMu.Unlock()
-		return
+	if !ok {
+		link = newClientLink(c, binding)
+		c.links[binding] = link
 	}
-	link = newClientLink(c, binding, settings, candidates)
-	c.links[binding] = link
 	c.linkMu.Unlock()
-	go link.run()
+	if link.start(settings, candidates) {
+		go link.run()
+	}
+}
+
+// linkFor is the link of a binding, made undialled when there is none, so a
+// forward binds before the first dial.
+func (c *ClientControl) linkFor(binding string) *clientLink {
+	c.linkMu.Lock()
+	defer c.linkMu.Unlock()
+	link, ok := c.links[binding]
+	if !ok {
+		link = newClientLink(c, binding)
+		c.links[binding] = link
+	}
+	return link
 }
 
 // joinOrLeave dials a round at once and sends the one join or leave frame on
@@ -214,10 +227,10 @@ func (c *ClientControl) joinOrLeave(line *LineConnection, parsed peerLine) {
 }
 
 func (c *ClientControl) startForward(command forwardCommand) (string, *session.Refusal) {
-	link := c.link(command.Binding)
-	if link == nil {
-		return "", session.NewRefusal(CodeBindingUnknown, map[string]any{"binding": command.Binding})
+	if command.Binding == "" {
+		return "", session.NewRefusal(CodeBodyInvalid, map[string]any{"field": "binding"})
 	}
+	link := c.linkFor(command.Binding)
 	protocol := command.Protocol
 	if protocol == "" {
 		protocol = session.ProtocolTCP
@@ -269,24 +282,35 @@ type clientLink struct {
 	cancel  context.CancelFunc
 	wake    chan struct{}
 
-	// mu guards settings, candidates, current and ready.
+	// mu guards settings, candidates, isDialling, current and ready.
 	mu         sync.Mutex
 	settings   dialSettings
 	candidates []candidate
+	isDialling bool
 	current    *PeerSession
 	ready      chan struct{}
 }
 
-func newClientLink(control *ClientControl, binding string, settings dialSettings, candidates []candidate) *clientLink {
+// newClientLink makes a link that holds no session and dials nothing until
+// start.
+func newClientLink(control *ClientControl, binding string) *clientLink {
 	ctx, cancel := context.WithCancel(control.ctx)
-	return &clientLink{control: control, binding: binding, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), settings: settings, candidates: candidates, ready: make(chan struct{})}
+	return &clientLink{control: control, binding: binding, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), ready: make(chan struct{})}
 }
 
-func (l *clientLink) replaceCandidates(settings dialSettings, candidates []candidate) {
+// start gives the link its settings and candidates. It returns true the
+// first time, when the caller starts run; a later call replaces the
+// candidates and keeps the live session.
+func (l *clientLink) start(settings dialSettings, candidates []candidate) bool {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.settings = settings
 	l.candidates = candidates
-	l.mu.Unlock()
+	if l.isDialling {
+		return false
+	}
+	l.isDialling = true
+	return true
 }
 
 // roundNow asks for a round at once: it ends a wait, or runs beside the live

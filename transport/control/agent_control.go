@@ -22,10 +22,12 @@ type AgentControl struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 
-	// linkMu guards link and forwards.
+	// linkMu guards link, forwards and ready.
 	linkMu   sync.Mutex
 	link     *agentLink
 	forwards map[string]*relay.Forward
+	// ready is closed while the link holds a session.
+	ready chan struct{}
 }
 
 // dialCommand is the agent's dial, leave and join: the keys, the addresses
@@ -59,6 +61,44 @@ func NewAgentControl(listener net.Listener, secret string, timings session.Timin
 		ctx:      ctx,
 		cancel:   cancel,
 		forwards: make(map[string]*relay.Forward),
+		ready:    make(chan struct{}),
+	}
+}
+
+// OpenStream opens a stream on the live session for a forward. It returns
+// relay.ErrNoSession while the agent has none.
+func (a *AgentControl) OpenStream(ctx context.Context, open json.RawMessage) (*relay.RecordStream, *session.Refusal, error) {
+	link := a.currentLink()
+	if link == nil {
+		return nil, nil, relay.ErrNoSession
+	}
+	return link.OpenStream(ctx, open)
+}
+
+// Ready is closed while a session is live, so a forward accepts nothing
+// before the first session and between sessions.
+func (a *AgentControl) Ready() <-chan struct{} {
+	a.linkMu.Lock()
+	defer a.linkMu.Unlock()
+	return a.ready
+}
+
+// setLive records whether link, when it is the current one, holds a session.
+func (a *AgentControl) setLive(link *agentLink, isLive bool) {
+	a.linkMu.Lock()
+	defer a.linkMu.Unlock()
+	if a.link != link {
+		return
+	}
+	select {
+	case <-a.ready:
+		if !isLive {
+			a.ready = make(chan struct{})
+		}
+	default:
+		if isLive {
+			close(a.ready)
+		}
 	}
 }
 
@@ -170,6 +210,11 @@ func (a *AgentControl) startLink(settings dialSettings, addresses []string) {
 	a.linkMu.Lock()
 	earlier := a.link
 	a.link = link
+	select {
+	case <-a.ready:
+		a.ready = make(chan struct{})
+	default:
+	}
 	a.linkMu.Unlock()
 	if earlier != nil {
 		earlier.stop()
@@ -265,12 +310,9 @@ func sendJoinOrLeave(peer *PeerSession, raw []byte, isJoin bool) (map[string]any
 	return nil, session.NewRefusal(session.CodeHelloInvalid, nil)
 }
 
-// startForward starts a forward on the live link.
+// startForward binds a forward, before or after a dial; it accepts nothing
+// until a session is live.
 func (a *AgentControl) startForward(command forwardCommand) (string, *session.Refusal) {
-	link := a.currentLink()
-	if link == nil {
-		return "", session.NewRefusal(CodeNoSession, nil)
-	}
 	protocol := command.Protocol
 	if protocol == "" {
 		protocol = session.ProtocolTCP
@@ -282,7 +324,7 @@ func (a *AgentControl) startForward(command forwardCommand) (string, *session.Re
 		code, params := refusalFields(refusal)
 		a.event(EventForwardEnd, map[string]any{"listen": forward.Listen, "protocol": protocol, "code": code, "params": params})
 	}
-	forward, refusal, err := relay.StartForward(a.ctx, command.Listen, protocol, command.Open, link, onEnd)
+	forward, refusal, err := relay.StartForward(a.ctx, command.Listen, protocol, command.Open, a, onEnd)
 	if err != nil {
 		return "", session.NewRefusal(CodeBodyInvalid, map[string]any{"detail": err.Error()})
 	}
@@ -321,15 +363,14 @@ type agentLink struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 
-	// mu guards current and ready.
+	// mu guards current.
 	mu      sync.Mutex
 	current *PeerSession
-	ready   chan struct{}
 }
 
 func newAgentLink(control *AgentControl, settings dialSettings, addresses []string) *agentLink {
 	ctx, cancel := context.WithCancel(control.ctx)
-	return &agentLink{control: control, settings: settings, addresses: addresses, ctx: ctx, cancel: cancel, ready: make(chan struct{})}
+	return &agentLink{control: control, settings: settings, addresses: addresses, ctx: ctx, cancel: cancel}
 }
 
 // run dials rounds until stopped: at once after a drop, then backing off
@@ -496,13 +537,9 @@ func (l *agentLink) serveConnect(record *relay.RecordStream, open []byte) {
 
 func (l *agentLink) setSession(peer *PeerSession) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.current = peer
-	if peer != nil {
-		close(l.ready)
-	} else {
-		l.ready = make(chan struct{})
-	}
+	l.mu.Unlock()
+	l.control.setLive(l, peer != nil)
 }
 
 func (l *agentLink) session() *PeerSession {
@@ -526,18 +563,11 @@ func (l *agentLink) stop() {
 	}
 }
 
-// OpenStream opens a stream on the live session for a forward.
+// OpenStream opens a stream on the live session.
 func (l *agentLink) OpenStream(ctx context.Context, open json.RawMessage) (*relay.RecordStream, *session.Refusal, error) {
 	peer := l.session()
 	if peer == nil {
 		return nil, nil, relay.ErrNoSession
 	}
 	return peer.OpenStream(ctx, open)
-}
-
-// Ready is closed while a session is live.
-func (l *agentLink) Ready() <-chan struct{} {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.ready
 }
