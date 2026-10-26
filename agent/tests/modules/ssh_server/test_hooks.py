@@ -11,16 +11,14 @@ row's, else the login shell, else ``/bin/sh``, and PowerShell on Windows;
 on Linux the template unit reads the port and the shell from each
 account's environment file, on macOS the job carries the account's
 environment, and on Windows the task signs in with the password and logs
-under the agent's log root; a new instance takes the first free port from
-22000 up that no record holds and no other new instance took, and a
-running one keeps its port; the details carry the host key and its
-fingerprint; and through the shared runner two accounts run, a third
-refused, one disabled losing its unit and its run directory.
+under the agent's log root; the shared runner takes each instance's port
+from 22000 up; the details carry the host key and its fingerprint; and
+through the shared runner two accounts run, a third refused, one disabled
+losing its unit and its run directory.
 """
 
 import functools
 import os
-import socket
 import stat
 
 import pytest
@@ -31,13 +29,11 @@ from neutrino_agent.modules.shared.account_service import (
     ServiceMachine,
 )
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
-from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.ssh_server.config import SshServerInstance
 from neutrino_agent.modules.ssh_server.hooks import (
     SshServerHooks,
     binary_path,
-    is_loopback_port_free,
     windows_powershell,
 )
 from neutrino_agent.platforms.base import AgentPlatform
@@ -53,10 +49,21 @@ LAB = AccountEntry(1001, 1001, "/home/lab", "/bin/bash")
 DEV = AccountEntry(1002, 1002, "/home/dev", "")
 
 
+# Where each system's package puts the agent's Go programs.
+BIN_DIRS = {
+    "linux": "/opt/neutrino/agent/bin",
+    "darwin": "/Library/Application Support/Neutrino/agent/app/bin",
+    "windows": "C:\\Program Files\\Neutrino\\agent\\bin",
+}
+
+
 class Platform(AgentPlatform):
     def __init__(self, os_name="linux", log_path=""):
         self.os_name = os_name
         self._log_path = log_path
+
+    def agent_bin_dir(self):
+        return BIN_DIRS[self.os_name]
 
     def agent_log_path(self):
         return self._log_path
@@ -110,12 +117,9 @@ def machine_at(tmp_path, os_name="linux", run=None):
     )
 
 
-def hooks_for(tmp_path, os_name="linux", *, run=None, busy=(), log_path=""):
+def hooks_for(tmp_path, os_name="linux", *, run=None, log_path=""):
     hooks = SshServerHooks(
-        platform=Platform(os_name, log_path),
-        log=lambda line: None,
-        binary=BINARY,
-        is_port_free=lambda port: port not in busy,
+        platform=Platform(os_name, log_path), log=lambda line: None, binary=BINARY
     )
     hooks.bind(machine_at(tmp_path, os_name, run), None)
     return hooks
@@ -139,13 +143,11 @@ def instance(account="lab", **fields):
         ("windows", "C:\\Program Files\\Neutrino\\agent\\bin\\neutrino_ssh_server.exe"),
     ],
 )
-def test_the_program_is_the_one_under_the_agent_s_bin(monkeypatch, os_name, path):
-    monkeypatch.delenv("ProgramFiles", raising=False)
-
+def test_the_program_is_the_one_under_the_agent_s_bin(os_name, path):
     assert binary_path(Platform(os_name)) == path
 
 
-def test_the_platform_s_own_bin_directory_comes_first():
+def test_the_program_is_under_the_platform_s_own_bin_directory():
     assert binary_path(BinPlatform("linux")) == "/custom/bin/neutrino_ssh_server"
 
 
@@ -298,43 +300,15 @@ def test_a_windows_instance_signs_in_with_its_password_and_logs_under_the_log_ro
 # --- the port ---
 
 
-def test_a_new_instance_takes_the_first_free_port_from_22000(tmp_path):
-    hooks = hooks_for(tmp_path, busy={22000})
-    hooks.prepare_module()
-
-    assert hooks.record(None, instance(), {}) == {"account": "lab", "port": 22001}
-    assert hooks.record(None, instance("dev"), {}) == {"account": "dev", "port": 22002}
-
-
-def test_a_port_another_record_holds_is_skipped(tmp_path):
+def test_the_record_is_the_account_and_the_port_the_runner_took(tmp_path):
     hooks = hooks_for(tmp_path)
-    InstanceRecordStore(
-        directory=hooks.machine.record_dir, fields=("account", "port")
-    ).write({"account": "dev", "port": 22000})
     hooks.prepare_module()
 
-    assert hooks.record(None, instance(), {})["port"] == 22001
-
-
-def test_a_port_a_listener_holds_is_not_free():
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(1)
-    port = listener.getsockname()[1]
-    try:
-        assert is_loopback_port_free(port) is False
-    finally:
-        listener.close()
-
-    assert is_loopback_port_free(port) is True
-
-
-def test_a_running_instance_keeps_its_port(tmp_path):
-    hooks = hooks_for(tmp_path, busy={22005})
-    hooks.prepare_module()
-
-    held = {"account": "lab", "port": 22005}
-    assert hooks.record(None, instance(), held) == held
+    assert hooks.record(None, instance(), {"port": 22005}) == {
+        "account": "lab",
+        "port": 22005,
+    }
+    assert hooks.base_port == 22000
 
 
 # --- through the shared runner ---
@@ -343,14 +317,13 @@ def test_a_running_instance_keeps_its_port(tmp_path):
 @pytest.fixture
 def runner(tmp_path):
     machine = machine_at(tmp_path)
-    hooks_class = functools.partial(
-        SshServerHooks, binary=BINARY, is_port_free=lambda port: True
-    )
+    hooks_class = functools.partial(SshServerHooks, binary=BINARY)
     return InstancesModuleRunner(
         hooks_class=hooks_class,
         platform=Platform(),
         log=lambda line: None,
         machine=machine,
+        is_port_free=lambda port: True,
     )
 
 

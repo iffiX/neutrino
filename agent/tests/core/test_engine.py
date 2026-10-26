@@ -1398,8 +1398,8 @@ def test_a_platform_without_packages_reports_only_what_the_agent_carries(
 
     engine._refresh(is_forced=True)
 
-    assert set(engine.module_runners) == {"terminal", "remote_desktop"}
-    assert set(engine.report()) == {"terminal", "remote_desktop"}
+    assert set(engine.module_runners) == {"terminal", "remote_desktop", "ssh_server"}
+    assert set(engine.report()) == {"terminal", "remote_desktop", "ssh_server"}
 
 
 def test_a_module_the_state_names_there_is_unsupported_never_failed(
@@ -1500,7 +1500,12 @@ def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
     engine._refresh(is_forced=True)
     report = engine.report()
 
-    assert set(engine.module_runners) == {"samba", "terminal", "remote_desktop"}
+    assert set(engine.module_runners) == {
+        "samba",
+        "terminal",
+        "remote_desktop",
+        "ssh_server",
+    }
     assert report["samba"]["state"] == "installed"
     assert report["fakedesk"]["state"] == "unsupported"
     assert engine.install("samba", receive=None) == {}
@@ -1557,6 +1562,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "codeg",
         "terminal",
         "remote_desktop",
+        "ssh_server",
     }
     assert engine.module_runners["podman"].runner == "podman_machine"
     assert engine.report()["vscode"]["state"] == "absent"
@@ -1627,6 +1633,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "codeg",
         "terminal",
         "remote_desktop",
+        "ssh_server",
     }
     assert type(engine.module_runners["podman"]) is PodmanModuleRunner
     assert set(engine._runners_by_name) == {
@@ -1640,6 +1647,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "codeg",
         "terminal",
         "remote_desktop",
+        "ssh_server",
     }
 
 

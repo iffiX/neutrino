@@ -6,16 +6,13 @@ SSH_SERVER_NAME = "ssh_server"
 SSH_SERVER_RUNNER = "ssh_server"
 SSH_SERVER_TITLE = "SSH server"
 
-# The program the agent's package carries under its program directory's
-# ``bin``, and that directory on each system where the platform names none.
+# The program the agent's package carries under the platform's
+# ``agent_bin_dir()``.
 SSH_SERVER_BINARY_NAME = "neutrino_ssh_server"
 SSH_SERVER_WINDOWS_BINARY_NAME = "neutrino_ssh_server.exe"
-SSH_SERVER_LINUX_BIN_DIR = "/opt/neutrino/agent/bin"
-SSH_SERVER_DARWIN_BIN_DIR = "/Library/Application Support/Neutrino/agent/app/bin"
-SSH_SERVER_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
-SSH_SERVER_WINDOWS_BIN_PARTS = ("Neutrino", "agent", "bin")
 
-# The first port an instance takes on 127.0.0.1, and the address it listens on.
+# The port the shared runner takes the first instance's from on 127.0.0.1,
+# and the address it listens on.
 SSH_SERVER_BASE_PORT = 22000
 SSH_SERVER_LISTEN_HOST = "127.0.0.1"
 

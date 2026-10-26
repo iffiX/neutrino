@@ -1,14 +1,15 @@
-"""What the SSH server adds to the shared runner: the host key, each instance's run directory and port.
+"""What the SSH server adds to the shared runner: the host key and each instance's run directory.
 
 The agent carries ``neutrino_ssh_server`` in its own package, so nothing is
 installed. The first apply makes the machine's Ed25519 host key with that
 program, kept root's alone under the module's directory. Each instance runs
-the program as its account on ``127.0.0.1`` at a port from 22000 up, kept
-in its record, reading a copy of the host key and its one authorized key
-from its run directory, which the account owns. No forwarder stands in
-front of it: the hub reaches it through the agent's ``connect`` stream.
+the program as its account on ``127.0.0.1`` at the port the shared runner
+takes for it from 22000 up and keeps in its record, reading a copy of the
+host key and its one authorized key from its run directory, which the
+account owns. No forwarder stands in front of it: the hub reaches it
+through the agent's ``connect`` stream.
 
-Not pure: makes the host key and probes ports.
+Not pure: makes the host key.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -18,7 +19,6 @@ from __future__ import annotations
 import contextlib
 import ntpath
 import os
-import socket
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -27,7 +27,6 @@ from neutrino_agent.modules.shared.account_service import (
     AccountService,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.ssh_server.config import (
     SshServerConfig,
@@ -37,11 +36,9 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_AUTHORIZED_KEY_NAME,
     SSH_SERVER_BASE_PORT,
     SSH_SERVER_BINARY_NAME,
-    SSH_SERVER_DARWIN_BIN_DIR,
     SSH_SERVER_DARWIN_PATH,
     SSH_SERVER_FALLBACK_SHELL,
     SSH_SERVER_HOST_KEY_NAME,
-    SSH_SERVER_LINUX_BIN_DIR,
     SSH_SERVER_LISTEN_HOST,
     SSH_SERVER_MAKE_HOST_KEY_TIMEOUT_S,
     SSH_SERVER_NAME,
@@ -51,19 +48,14 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_RUNNER,
     SSH_SERVER_SHELL_VARIABLE,
     SSH_SERVER_TITLE,
-    SSH_SERVER_WINDOWS_BIN_PARTS,
     SSH_SERVER_WINDOWS_BINARY_NAME,
     SSH_SERVER_WINDOWS_POWERSHELL_PARTS,
-    SSH_SERVER_WINDOWS_PROGRAM_FILES_DEFAULT,
     SSH_SERVER_WINDOWS_SYSTEM_ROOT_DEFAULT,
 )
 from neutrino_agent.modules.ssh_server.openssh_key import (
     fingerprint,
     public_line_of_private,
 )
-
-# Where the program's directory is on each system, when the platform names none.
-BIN_DIRS = {"linux": SSH_SERVER_LINUX_BIN_DIR, "darwin": SSH_SERVER_DARWIN_BIN_DIR}
 
 
 def binary_path(platform) -> str:
@@ -73,24 +65,11 @@ def binary_path(platform) -> str:
         platform: The machine's platform.
 
     Returns:
-        The program under the agent's ``bin`` directory.
+        The program under the platform's ``agent_bin_dir()``.
     """
-    agent_bin_dir = getattr(platform, "agent_bin_dir", None)
     if platform.os_name == "windows":
-        if agent_bin_dir is not None:
-            directory = agent_bin_dir()
-        else:
-            root = (
-                os.environ.get("ProgramFiles", "")
-                or SSH_SERVER_WINDOWS_PROGRAM_FILES_DEFAULT
-            )
-            directory = ntpath.join(root, *SSH_SERVER_WINDOWS_BIN_PARTS)
-        return ntpath.join(directory, SSH_SERVER_WINDOWS_BINARY_NAME)
-    if agent_bin_dir is not None:
-        directory = agent_bin_dir()
-    else:
-        directory = BIN_DIRS.get(platform.os_name, SSH_SERVER_LINUX_BIN_DIR)
-    return os.path.join(directory, SSH_SERVER_BINARY_NAME)
+        return ntpath.join(platform.agent_bin_dir(), SSH_SERVER_WINDOWS_BINARY_NAME)
+    return os.path.join(platform.agent_bin_dir(), SSH_SERVER_BINARY_NAME)
 
 
 def windows_powershell() -> str:
@@ -101,30 +80,6 @@ def windows_powershell() -> str:
     """
     root = os.environ.get("SystemRoot", "") or SSH_SERVER_WINDOWS_SYSTEM_ROOT_DEFAULT
     return ntpath.join(root, *SSH_SERVER_WINDOWS_POWERSHELL_PARTS)
-
-
-def is_loopback_port_free(port: int) -> bool:
-    """Whether a port on ``127.0.0.1`` can be bound now, as the server binds it.
-
-    On Linux and macOS the probe reuses the address, as the server's
-    listener does.
-
-    Args:
-        port: The port.
-
-    Returns:
-        False when something holds it.
-    """
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        if os.name == "posix":
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        probe.bind((SSH_SERVER_LISTEN_HOST, port))
-    except OSError:
-        return False
-    finally:
-        probe.close()
-    return True
 
 
 class SshServerHooks(InstanceHooks):
@@ -138,25 +93,18 @@ class SshServerHooks(InstanceHooks):
     is_forwarded = False
     base_port = SSH_SERVER_BASE_PORT
 
-    def __init__(self, *, platform, log=print, binary: str = "", is_port_free=None):
+    def __init__(self, *, platform, log=print, binary: str = ""):
         """
         Args:
             platform: The machine's platform.
             log: Callable used for progress messages.
             binary: The ``neutrino_ssh_server`` run; empty is the one the
                 agent's package carries.
-            is_port_free: Returns whether a loopback port can be bound;
-                None probes it.
         """
         super().__init__(platform=platform, log=log)
         self._os_name = platform.os_name
         self._join = ntpath.join if self._os_name == "windows" else os.path.join
         self.binary = binary or binary_path(platform)
-        self._is_port_free = (
-            is_port_free if is_port_free is not None else is_loopback_port_free
-        )
-        # The ports this apply gave out; a new instance takes none of them.
-        self._given_ports: set = set()
 
     @property
     def host_key_path(self) -> str:
@@ -211,7 +159,6 @@ class SshServerHooks(InstanceHooks):
                 cannot make the key.
             OSError: When the module's directory cannot be written.
         """
-        self._given_ports = set()
         module_dir = self.machine.module_dir
         run_root = self._join(module_dir, SSH_SERVER_RUN_DIR_NAME)
         os.makedirs(run_root, exist_ok=True)
@@ -222,30 +169,6 @@ class SshServerHooks(InstanceHooks):
             return []
         self._make_host_key()
         return ["made the host key"]
-
-    def record(self, parsed, instance: SshServerInstance, held: dict) -> dict:
-        """One instance's record: its account and the port it keeps.
-
-        Args:
-            parsed: The parsed configuration.
-            instance: The instance.
-            held: The record held before this apply, empty for a new one.
-
-        Returns:
-            ``{account, port}``, the port held, or the first free one from
-            :attr:`base_port` up for a new instance.
-
-        Raises:
-            ModuleApplyError: ``apply_failed {detail}`` when no port is free.
-        """
-        try:
-            port = int(held.get("port") or 0)
-        except (TypeError, ValueError):
-            port = 0
-        if not port:
-            port = self._free_port()
-        self._given_ports.add(port)
-        return {"account": instance.account, "port": port}
 
     def service(
         self, instance: SshServerInstance, entry: AccountEntry, record: dict
@@ -368,18 +291,3 @@ class SshServerHooks(InstanceHooks):
                 "apply_failed", {"detail": command_detail(error)[:500]}
             ) from None
         self._log(f"{self.name}: made the host key")
-
-    def _free_port(self) -> int:
-        """The first port from the base up that no record holds, this apply gave out, or anything binds."""
-        held = {
-            int(record.get("port") or 0)
-            for record in InstanceRecordStore(
-                directory=self.machine.record_dir, fields=self.record_fields
-            ).read_all()
-        }
-        for port in range(self.base_port, 65536):
-            if port in held or port in self._given_ports:
-                continue
-            if self._is_port_free(port):
-                return port
-        raise ModuleApplyError("apply_failed", {"detail": "no free loopback port"})
