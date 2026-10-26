@@ -17,6 +17,7 @@ code-server that does not answer.
 
 import io
 import os
+import re
 import shutil
 import socket
 import socketserver
@@ -248,6 +249,15 @@ class FakeCodeServerConnection(socketserver.BaseRequestHandler):
                 return
             received += chunk
         head, _, body = received.partition(b"\r\n\r\n")
+        # The forwarder may send the body after the head; the whole body is
+        # read before the answer, as a server does.
+        match = re.search(rb"(?im)^content-length:\s*(\d+)", head)
+        length = int(match.group(1)) if match else 0
+        while len(body) < length:
+            chunk = self.request.recv(65536)
+            if not chunk:
+                break
+            body += chunk
         self.server.requests.append(head + b"\r\n\r\n" + body)
         if b"Upgrade: websocket" in head:
             self.request.sendall(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
