@@ -2208,6 +2208,69 @@ def test_an_artifact_whose_digest_is_unchanged_is_not_fetched_again(switched):
     assert (module / "cli").read_bytes() == b"cli 1.0"
 
 
+def test_an_msi_is_switched_by_uninstalling_the_old_package_before_installing(
+    tmp_path,
+):
+    import hashlib
+
+    journal: list = []
+    root = tmp_path / "state"
+    (root / "fakedesk").mkdir(parents=True)
+    platform = SwitchPlatform(root)
+    runner = SwitchRunner(platform, journal)
+    runner.uninstall_package = lambda recipe, artifact: journal.append(
+        ("uninstall", artifact["name"])
+    )
+    runner.install_artifact = lambda recipe, artifact, path: journal.append(
+        ("install", artifact["name"])
+    )
+    engine = bare_engine(runner=runner, tmp_path=tmp_path)
+    engine._platform = platform
+    data = b"an msi of 2.0"
+
+    def msi_recipe(version, digest):
+        return {
+            "runner": "fakedesk",
+            "method": "hub",
+            "params": {
+                "version": version,
+                "artifacts": [
+                    {
+                        "name": "app",
+                        "kind": "msi",
+                        "directory": "app",
+                        "digest": "sha256:" + digest,
+                    }
+                ],
+                "verify": "true",
+            },
+        }
+
+    engine._keep_version("fakedesk", msi_recipe("1.0", "11" * 32))
+    digest = hashlib.sha256(data).hexdigest()
+    engine.take_state(
+        {
+            "fakedesk": {
+                "want": "running",
+                "config": {},
+                "install": msi_recipe("2.0", digest),
+            }
+        }
+    )
+
+    def receive(name, artifact):
+        path = tmp_path / "app.msi"
+        path.write_bytes(data)
+        return {"path": str(path), "sha256": digest}
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(engine_module, "verify_detail", lambda command: "")
+        assert engine.switch_version("fakedesk", receive=receive) == {}
+
+    assert journal == ["stop", ("uninstall", "app"), ("install", "app")]
+    assert engine.installed_version("fakedesk")["version"] == "2.0"
+
+
 def test_a_module_installed_before_versions_were_kept_takes_the_recipe_s(
     switched,
 ):

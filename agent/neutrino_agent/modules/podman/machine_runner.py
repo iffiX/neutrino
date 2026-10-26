@@ -65,6 +65,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
     PODMAN_SOURCE_MANUAL,
+    PODMAN_WINDOWS_WSL_ARTIFACT,
 )
 from neutrino_agent.modules.podman.machine import PodmanMachine
 from neutrino_agent.modules.podman.machine_keeper import keeper_service
@@ -359,6 +360,25 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._log(f"podman: kept {artifact.get('name', '')}")
         if artifact.get("kind") in (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG):
             self._system.install_artifact(dict(artifact), kept)
+
+    def uninstall_package(self, recipe: dict, artifact: dict) -> None:
+        """Uninstall the Podman package before another version's is installed.
+
+        WSL's msi is the system's and stays; the machine stays as well.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: The ``msi`` or ``pkg`` artifact being replaced.
+
+        Raises:
+            ModuleApplyError: ``uninstall_failed`` when msiexec fails.
+            OSError: When a file the pkg put down cannot be deleted.
+            PlatformUnsupportedError: On a system with no applier.
+        """
+        if artifact.get("name") == PODMAN_WINDOWS_WSL_ARTIFACT:
+            return
+        self._system.uninstall()
+        self._log(f"podman: uninstalled {artifact.get('name', '')} for another version")
 
     def uninstall(self, recipe: dict) -> None:
         """Uninstall Podman and delete the kept artifacts; the machine stays.

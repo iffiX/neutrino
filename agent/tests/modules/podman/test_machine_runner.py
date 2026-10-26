@@ -1095,6 +1095,19 @@ def test_uninstall_removes_podman_and_the_kept_files_and_keeps_the_machine(rig):
     assert "me" in rig.world.present
 
 
+def test_another_version_uninstalls_the_podman_package_first_and_keeps_wsl(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.system.calls.clear()
+
+    rig.runner.uninstall_package({}, {"name": "wsl", "kind": "msi"})
+    rig.runner.uninstall_package({}, {"name": "podman", "kind": "msi"})
+
+    assert rig.system.calls == [("uninstall",)]
+    assert "me" in rig.world.present
+    assert rig.plist().exists()
+
+
 # --- a restarted agent ---
 
 

@@ -242,6 +242,15 @@ class ModuleRunner:
             recipe: The module's recipe.
         """
 
+    def uninstall_package(self, recipe: dict, artifact: dict) -> None:
+        """Take off the package an ``msi`` or a ``pkg`` artifact installed,
+        before another version's is installed; its data stays.
+
+        Args:
+            recipe: The module's recipe.
+            artifact: The artifact of the version being replaced.
+        """
+
     def validate(self, config: dict) -> None:
         """Check a configuration before the hub stores it.
 

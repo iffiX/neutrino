@@ -38,6 +38,8 @@ import time
 from neutrino_agent.constants import (
     AGENT_ARTIFACT_KEPT_SUFFIXES,
     AGENT_ARTIFACT_KIND_BINARY,
+    AGENT_ARTIFACT_KIND_MSI,
+    AGENT_ARTIFACT_KIND_PKG,
     AGENT_CONFIGURED_DIR,
     AGENT_CONTAINER_RUNNER,
     AGENT_CONTAINERS_MODULE,
@@ -139,6 +141,9 @@ CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)
 # The suffix of the file one module's failure is kept in.
 FAILURE_SUFFIX = ".json"
+# The artifacts the system's own installer puts on the machine: another
+# version replaces them by an uninstall and an install.
+SYSTEM_INSTALLED_KINDS = (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG)
 # The states that end a container module's hold on installing, beside its
 # want.
 HOLD_ENDING_STATES = (
@@ -832,6 +837,8 @@ class ModuleEngine(ReconcileWorker):
             swapped = swap_in(staged)
             for artifact, path in installed_by_kind:
                 try:
+                    if artifact.get("kind") in SYSTEM_INSTALLED_KINDS:
+                        runner.uninstall_package(recipe, dict(artifact))
                     runner.install_artifact(recipe, dict(artifact), path)
                 finally:
                     remove_received(path)
