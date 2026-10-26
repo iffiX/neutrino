@@ -144,20 +144,27 @@ needs the panel permission.
 The apps published on the machines. An app has one or more entries (web, port).
 
   list         each machine's apps, entries and local addresses
-  open         use an app: forward it, and open the browser at a web entry
+  use          use an app: forward each of its entries
+  open         open the browser at its web page, once it is in use
   stop         end its forwards
   set          fix an entry's local port
 
-Example: nclient app open gitea""",
+Example: nclient app use gitea""",
         "app list": """Usage: nclient app list
 
 List the apps by machine: name, source, each entry's kind and local address,
 and whether it is in use.""",
+        "app use": """Usage: nclient app use <app>
+
+Use an app: forward each of its entries and print their local addresses. The
+local address is <app>.<machine>.localhost:<port>, and the port does not change
+after it is first given.
+
+  app          the app's name; <machine>/<app> when two machines have one name""",
         "app open": """Usage: nclient app open <app>
 
-Use an app: forward each of its entries, and open the browser at an http or
-https entry. The local address is <app>.<machine>.localhost:<port>, and the port
-does not change after it is first given.
+Open the browser at the app's first http or https entry. The app must be in
+use: nclient app use first.
 
   app          the app's name; <machine>/<app> when two machines have one name""",
         "app stop": """Usage: nclient app stop <app>
@@ -407,18 +414,24 @@ Change one setting. The names and the values they take are in nclient settings s
 被控端上发布的应用。一个应用有一个或几个入口（网页、端口）。
 
   list         每台机器下的应用、入口、本机地址
-  open         使用一个应用：开转发，有网页入口就开浏览器
+  use          使用一个应用：给它的每个入口开转发
+  open         应用在用时，在浏览器里打开它的网页
   stop         收回它的转发
   set          固定某个入口的本机端口
 
-例子：nclient app open gitea""",
+例子：nclient app use gitea""",
         "app list": """用法：nclient app list
 
 按机器列出应用：名字、来源、每个入口的种类和本机地址、是否在用。""",
+        "app use": """用法：nclient app use <应用>
+
+使用一个应用：给它的每个入口开转发，并列出本机地址。
+本机地址是 <应用>.<机器>.localhost:<端口>，端口第一次分配后不再变。
+
+  应用         应用名；同名时写 <机器>/<应用>""",
         "app open": """用法：nclient app open <应用>
 
-使用一个应用：给它的每个入口开转发，有 http/https 入口就在浏览器里打开。
-本机地址是 <应用>.<机器>.localhost:<端口>，端口第一次分配后不再变。
+在浏览器里打开这个应用的第一个 http/https 入口。应用要先在用：先 nclient app use。
 
   应用         应用名；同名时写 <机器>/<应用>""",
         "app stop": """用法：nclient app stop <应用>

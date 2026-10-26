@@ -3,8 +3,9 @@
 ``list`` groups the apps by machine, with each entry's kind and its fixed
 local address before the app is used, ``/udp`` after a UDP one, and the
 loopback host on macOS. An app is named by its name, its title, or
-``<machine>/<app>`` where two machines hold one name. ``open`` posts
-**Use**, waits for its job and prints the addresses or the failure; ``set``
+``<machine>/<app>`` where two machines hold one name. ``use`` posts
+**Use**, waits for its job and prints the addresses or the failure;
+``open`` posts **Open** and prints the page it opens; ``set``
 takes ``<entry>=<port>`` and an empty port goes back to the hub's.
 """
 
@@ -74,7 +75,7 @@ def test_list_speaks_chinese(running, chinese, capsys):
     assert "  gitea  模块  未用" in capsys.readouterr().out
 
 
-def test_open_posts_use_waits_and_prints_the_addresses(running, capsys):
+def test_use_posts_use_waits_and_prints_the_addresses(running, capsys):
     reads = []
 
     def using(state):
@@ -83,36 +84,56 @@ def test_open_posts_use_waits_and_prints_the_addresses(running, capsys):
 
     running.on_state = using
 
+    assert app.main_use("lab-gpu/gitea") == 0
+
+    assert running.posts("/api/app/use") == [{"hub_id": "h1", "app_id": "gitea_d1"}]
+    assert running.posts("/api/app/open") == []
+    assert capsys.readouterr().out.splitlines() == [
+        "forwarding http://gitea.lab-gpu.localhost:25101/explore",
+        "forwarding gitea.lab-gpu.localhost:26022",
+    ]
+
+
+def test_open_posts_open_and_prints_the_page_it_opens(running, capsys):
+    running.state["apps"][0]["is_in_use"] = True
+
     assert app.main_open("lab-gpu/gitea") == 0
 
     assert running.posts("/api/app/open") == [{"hub_id": "h1", "app_id": "gitea_d1"}]
     assert capsys.readouterr().out.splitlines() == [
-        "opening http://gitea.lab-gpu.localhost:25101/explore",
-        "opening gitea.lab-gpu.localhost:26022",
+        "opening http://gitea.lab-gpu.localhost:25101/explore"
     ]
 
 
-def test_two_machines_holding_one_name_are_asked_apart(running, capsys):
-    assert app.main_open("gitea") == 1
+@pytest.mark.parametrize("code", ["app_not_in_use", "app_no_page"])
+def test_open_refused_prints_the_code_and_exits_1(running, capsys, code):
+    running.answers["/api/app/open"] = lambda body: (409, {"code": code, "params": {}})
 
-    assert running.posts("/api/app/open") == []
+    assert app.main_open("ssh") == 1
+    assert capsys.readouterr().err.strip() == wording.word_code(code)
+
+
+def test_two_machines_holding_one_name_are_asked_apart(running, capsys):
+    assert app.main_use("gitea") == 1
+
+    assert running.posts("/api/app/use") == []
     assert capsys.readouterr().err.strip() == (
         "gitea names more than one app; say which: build/gitea, lab-gpu/gitea"
     )
 
 
 def test_hub_narrows_a_name_two_machines_hold(running):
-    assert app.main_open("gitea", hub="office") == 0
-    assert running.posts("/api/app/open") == [{"hub_id": "h2", "app_id": "gitea_d7"}]
+    assert app.main_use("gitea", hub="office") == 0
+    assert running.posts("/api/app/use") == [{"hub_id": "h2", "app_id": "gitea_d7"}]
 
 
 def test_an_app_is_named_by_its_title_too(running):
-    assert app.main_open("SSH") == 0
-    assert running.posts("/api/app/open")[0]["app_id"] == "ssh_server_d1"
+    assert app.main_use("SSH") == 0
+    assert running.posts("/api/app/use")[0]["app_id"] == "ssh_server_d1"
 
 
 def test_a_name_that_matches_nothing_prints_the_apps(running, capsys):
-    assert app.main_open("wiki") == 1
+    assert app.main_use("wiki") == 1
 
     err = capsys.readouterr().err.strip()
     assert err.startswith("no app named wiki; there are: ")
@@ -125,19 +146,19 @@ def test_a_failed_use_prints_its_code_and_exits_1(running, capsys):
         "params": {"port": 25101},
     }
 
-    assert app.main_open("lab-gpu/gitea") == 1
+    assert app.main_use("lab-gpu/gitea") == 1
     assert capsys.readouterr().err.strip() == wording.word_code(
         "port_taken", {"port": 25101}
     )
 
 
 def test_a_use_refused_at_once_exits_1(running, capsys):
-    running.answers["/api/app/open"] = lambda body: (
+    running.answers["/api/app/use"] = lambda body: (
         403,
         {"code": "client_disabled", "params": {}},
     )
 
-    assert app.main_open("ssh") == 1
+    assert app.main_use("ssh") == 1
     assert capsys.readouterr().err.strip() == wording.word_code("client_disabled")
 
 
@@ -191,6 +212,7 @@ def test_set_refused_prints_the_code(running, capsys):
     "call",
     [
         lambda: app.main_list(),
+        lambda: app.main_use("ssh"),
         lambda: app.main_open("ssh"),
         lambda: app.main_stop("ssh"),
         lambda: app.main_set("ssh", ["iffi=2222"]),
@@ -210,5 +232,5 @@ def test_an_unbound_client_lists_nothing_and_names_no_app(running, capsys):
 
     assert app.main_list() == 0
     assert capsys.readouterr().out == ""
-    assert app.main_open("gitea") == 1
+    assert app.main_use("gitea") == 1
     assert capsys.readouterr().err.strip() == "no app named gitea; there are none"

@@ -1,10 +1,10 @@
 """``nclient app``: the apps the hubs publish, from a terminal.
 
 ``list`` prints each machine's apps with every entry's kind and local
-address, which are fixed, so they show before the app is used. ``open``
-is the Apps page's **Use**, ``stop`` its **Stop** and ``set`` its
-**Configure**; ``open`` waits for the job it starts and prints how it
-ended.
+address, which are fixed, so they show before the app is used. ``use`` is
+the Apps page's **Use**, ``open`` its **Open**, ``stop`` its **Stop** and
+``set`` its **Configure**; ``use`` and ``open`` wait for the job they start
+and print how it ended.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -64,7 +64,7 @@ def main_list(*, hub: str = "") -> int:
     return 0
 
 
-def main_open(app_name: str, *, hub: str = "") -> int:
+def main_use(app_name: str, *, hub: str = "") -> int:
     """Use an app, as **Use** does, and print the addresses it forwards.
 
     Args:
@@ -72,8 +72,43 @@ def main_open(app_name: str, *, hub: str = "") -> int:
         hub: What ``--hub`` named.
 
     Returns:
-        0 once every forward listens and the browser was told to open, 1
-        for a refusal.
+        0 once every forward listens, 1 for a refusal.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    app = names.choose_app(state, app_name, hub)
+    if app is None:
+        return 1
+    body = {"hub_id": app.get("hub_id", ""), "app_id": app.get("id", "")}
+    if wording.post("/api/app/use", body) is None:
+        return 1
+    fresh = wording.settled_state(_job_ended(app))
+    if fresh is None:
+        return 1
+    row = _app_row(fresh, app) or {}
+    failure = wording.refusal_of(row.get("last_error") or {})
+    if failure is not None:
+        wording.refuse(failure["code"], failure["params"])
+        return 1
+    for entry in names.app_entries(fresh, row or app):
+        address = local_address(fresh, row or app, entry)
+        if address:
+            wording.say(wording.line("forwarding", address=address))
+    return 0
+
+
+def main_open(app_name: str, *, hub: str = "") -> int:
+    """Open the browser at an app's first page, as **Open** does.
+
+    Args:
+        app_name: The app as ``list`` names it.
+        hub: What ``--hub`` named.
+
+    Returns:
+        0 once the browser was told to open, 1 for a refusal:
+        ``app_not_in_use`` for an app not in use, ``app_no_page`` for one
+        with no web page.
     """
     state = wording.read_state()
     if state is None:
@@ -92,10 +127,17 @@ def main_open(app_name: str, *, hub: str = "") -> int:
     if failure is not None:
         wording.refuse(failure["code"], failure["params"])
         return 1
-    for entry in names.app_entries(fresh, row or app):
-        address = local_address(fresh, row or app, entry)
-        if address:
-            wording.say(wording.line("opening", address=address))
+    page = next(
+        (
+            entry
+            for entry in names.app_entries(fresh, row or app)
+            if entry.get("type") == "web"
+        ),
+        None,
+    )
+    if page is not None:
+        address = local_address(fresh, row or app, page)
+        wording.say(wording.line("opening", address=address))
     return 0
 
 

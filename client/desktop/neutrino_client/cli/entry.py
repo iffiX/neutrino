@@ -214,6 +214,7 @@ def _parser():
     app_parser = _group(commands, levels, "app")
     verbs = app_parser.add_subparsers(dest="verb")
     _leaf(verbs, "app", "list")
+    _leaf(verbs, "app", "use").add_argument("app")
     _leaf(verbs, "app", "open").add_argument("app")
     _leaf(verbs, "app", "stop").add_argument("app")
     set_parser = _leaf(verbs, "app", "set")
@@ -337,6 +338,10 @@ def _run_app_list(arguments, hub_name: str, command: list) -> int:
     return app.main_list(hub=hub_name)
 
 
+def _run_app_use(arguments, hub_name: str, command: list) -> int:
+    return app.main_use(arguments.app, hub=hub_name)
+
+
 def _run_app_open(arguments, hub_name: str, command: list) -> int:
     return app.main_open(arguments.app, hub=hub_name)
 
@@ -438,6 +443,7 @@ DISPATCH = {
     ("hub", "leave"): _run_hub_leave,
     ("hub", "open"): _run_hub_open,
     ("app", "list"): _run_app_list,
+    ("app", "use"): _run_app_use,
     ("app", "open"): _run_app_open,
     ("app", "stop"): _run_app_stop,
     ("app", "set"): _run_app_set,

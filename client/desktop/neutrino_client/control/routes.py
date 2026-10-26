@@ -123,9 +123,13 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _join(resident, payload)
         if route == "/api/settings/set":
             return _answer(resident, resident.apply_settings(payload))
-        if route == "/api/app/open":
+        if route == "/api/app/use":
             return _answer(
                 resident, resident.open_app(_hub_id(payload), _app_id(payload))
+            )
+        if route == "/api/app/open":
+            return _answer(
+                resident, resident.open_app_page(_hub_id(payload), _app_id(payload))
             )
         if route == "/api/app/stop":
             return _answer(
@@ -255,12 +259,12 @@ def refusal_status(code: str) -> int:
         code: The refusal code.
 
     Returns:
-        404 for an unknown request or hub, 403 for a refused scope, path or
-        authorization, 400 otherwise.
+        404 for an unknown request or hub, 409 for an app in use or not in
+        use, 403 for a refused scope, path or authorization, 400 otherwise.
     """
     if code in ("unknown_request", "unknown_hub", "unknown_terminal", "unknown_app"):
         return 404
-    if code in ("app_in_use",):
+    if code in ("app_in_use", "app_not_in_use"):
         return 409
     if code in (
         "control_peer_refused",

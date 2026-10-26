@@ -1215,15 +1215,22 @@ function entryLine(app, entry) {
 }
 
 // An app: its title, the machine and its source, one mono line per entry;
-// Use, Configure, and Stop while it is in use.
+// Use and Configure, or while it is in use Stop in Use's place, Configure,
+// and Open for an app with a page.
 function appRow(state, hub, app) {
   const entries = appEntries(state, app);
   const work = appWork(hub, app);
   const isFree = !work && hub.connection !== 'disabled';
-  const use = jobButton(t('ui.app.use'), app.job === 'opening' ? 'opening' : '');
-  if (app.job !== 'opening') {
-    use.disabled = !isFree || entries.length === 0 || isAppUnhealthy(entries);
-    use.onclick = () => send('/api/app/open', { hub_id: app.hub_id, app_id: app.id });
+  const isInUse = !!app.is_in_use || app.job === 'disconnecting';
+  let first;
+  if (isInUse) {
+    first = stopButton(app);
+  } else {
+    first = jobButton(t('ui.app.use'), app.job === 'opening' ? 'opening' : '');
+    if (app.job !== 'opening') {
+      first.disabled = !isFree || entries.length === 0 || isAppUnhealthy(entries);
+      first.onclick = () => send('/api/app/use', { hub_id: app.hub_id, app_id: app.id });
+    }
   }
   const configure = document.createElement('button');
   configure.type = 'button';
@@ -1231,8 +1238,16 @@ function appRow(state, hub, app) {
   configure.textContent = t('ui.app.configure');
   configure.disabled = !isFree || !!app.is_in_use || entries.length === 0;
   configure.onclick = () => openAppPortDialog(app, entries);
-  const actions = [use, configure];
-  if (app.is_in_use || app.job === 'disconnecting') actions.push(stopButton(app));
+  const actions = [first, configure];
+  if (isInUse && entries.some(isPageEntry)) {
+    const isOpening = app.job === 'opening';
+    const open = jobButton(t('ui.app.open'), isOpening ? 'opening' : '', 'ghost');
+    if (!isOpening) {
+      open.disabled = app.job === 'disconnecting';
+      open.onclick = () => send('/api/app/open', { hub_id: app.hub_id, app_id: app.id });
+    }
+    actions.push(open);
+  }
   return rowElement({
     tone: appTone(hub, app, entries),
     title: app.title,
@@ -1240,9 +1255,14 @@ function appRow(state, hub, app) {
     provider: appProviderLine(hub, app, entries),
     extras: entries.map((entry) => entryLine(app, entry)),
     error: wordError(app.last_error),
-    reason: appReason(hub, app, entries, use, configure),
+    reason: appReason(hub, app, entries, first),
     actions: actions,
   });
+}
+
+// Whether an entry is a page a browser opens: a web entry at http or https.
+function isPageEntry(entry) {
+  return entry.type === 'web' && /^https?:\/\//i.test((entry.payload || {}).url || '');
 }
 
 // Stop: ends every forward of an app, and is its indicator while it does.
@@ -1256,11 +1276,11 @@ function stopButton(app) {
 }
 
 // Why Use or Configure cannot act, empty while both can or work runs.
-function appReason(hub, app, entries, use, configure) {
+function appReason(hub, app, entries, first) {
   if (appWork(hub, app)) return '';
   if (hub.connection === 'disabled') return t('ui.reason.disabled');
-  if (use.disabled && isAppUnhealthy(entries)) return t('ui.reason.unhealthy');
-  if (configure.disabled && app.is_in_use) return t('ui.reason.disconnect_first');
+  if (!app.is_in_use && first.disabled && isAppUnhealthy(entries)) return t('ui.reason.unhealthy');
+  if (app.is_in_use) return t('ui.reason.disconnect_first');
   return '';
 }
 

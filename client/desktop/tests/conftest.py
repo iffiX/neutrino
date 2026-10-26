@@ -1248,6 +1248,10 @@ class FakeResident:
         return list(self.__dict__.get("apps_value", []))
 
     def open_app(self, hub_id: str, app_id: str) -> dict:
+        self.__dict__.setdefault("app_calls", []).append(("use", hub_id, app_id))
+        return dict(self.forward_reply)
+
+    def open_app_page(self, hub_id: str, app_id: str) -> dict:
         self.__dict__.setdefault("app_calls", []).append(("open", hub_id, app_id))
         return dict(self.forward_reply)
 

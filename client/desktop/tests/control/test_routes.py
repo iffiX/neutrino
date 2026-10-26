@@ -199,15 +199,21 @@ def test_service_actions_carry_only_the_body():
 def test_an_apps_presses_reach_the_resident_and_answer_the_state():
     resident = FakeResident()
 
-    for path in ("/api/app/open", "/api/app/stop"):
+    for path in ("/api/app/use", "/api/app/open", "/api/app/stop"):
         status, state = routes.dispatch(
             "POST", path, {"hub_id": "h1", "app_id": "gitea_d1"}, resident
         )
         assert status == 200 and "apps" in state
     assert resident.app_calls == [
+        ("use", "h1", "gitea_d1"),
         ("open", "h1", "gitea_d1"),
         ("stop", "h1", "gitea_d1"),
     ]
+    resident.forward_reply = {"code": "app_not_in_use", "params": {}}
+    status, reply = routes.dispatch(
+        "POST", "/api/app/open", {"hub_id": "h1", "app_id": "gitea_d1"}, resident
+    )
+    assert (status, reply["code"]) == (409, "app_not_in_use")
 
 
 def test_an_apps_local_ports_reach_the_resident_and_a_refusal_answers_its_code():
@@ -235,7 +241,7 @@ def test_an_apps_local_ports_reach_the_resident_and_a_refusal_answers_its_code()
     assert (status, reply["code"]) == (409, "app_in_use")
     resident.forward_reply = {"code": "unknown_app", "params": {}}
     status, reply = routes.dispatch(
-        "POST", "/api/app/open", {"hub_id": "h1", "app_id": "nothing"}, resident
+        "POST", "/api/app/use", {"hub_id": "h1", "app_id": "nothing"}, resident
     )
     assert (status, reply["code"]) == (404, "unknown_app")
     assert resident.forward_settings[:2] == [

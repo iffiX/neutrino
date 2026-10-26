@@ -133,6 +133,8 @@ CLIENT_CODE_WORDS = {
         ),
         "local_port_invalid": "give a port from 1024 to 65535, not {port}",
         "app_in_use": "stop the app first: nclient app stop",
+        "app_not_in_use": "use the app first: nclient app use",
+        "app_no_page": "this app has no web page to open",
         "unknown_app": "this client has no such app",
         "setting_value_unknown": (
             "{name} does not take {value}; see nclient settings show"
@@ -322,6 +324,8 @@ CLIENT_CODE_WORDS = {
         "port_taken": "本机端口 {port} 已被占用，用 nclient app set 给这个入口换一个",
         "local_port_invalid": "端口要在 1024 到 65535 之间，{port} 不行",
         "app_in_use": "先停止这个应用：nclient app stop",
+        "app_not_in_use": "先使用这个应用：nclient app use",
+        "app_no_page": "这个应用没有可以打开的网页",
         "unknown_app": "这个客户端没有这个应用",
         "setting_value_unknown": "{name} 不能设成 {value}，看 nclient settings show",
         "ticket_spent": (
@@ -497,6 +501,7 @@ CLIENT_LINES = {
         "what_account": "account",
         "what_setting": "setting",
         "opening": "opening {address}",
+        "forwarding": "forwarding {address}",
         "stopped": "stopped {app}",
         "port_value_invalid": "give --port as <entry>=<port>, not {value}",
         "port_missing": "name at least one --port <entry>=<port>",
@@ -564,6 +569,7 @@ CLIENT_LINES = {
         "what_account": "账户",
         "what_setting": "设置项",
         "opening": "正在打开 {address}",
+        "forwarding": "已转发 {address}",
         "stopped": "已停止 {app}",
         "port_value_invalid": "--port 要写成 <入口>=<端口>，不是 {value}",
         "port_missing": "至少写一个 --port <入口>=<端口>",

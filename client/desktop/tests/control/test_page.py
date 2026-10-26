@@ -2342,6 +2342,7 @@ def run_app_row(app: dict, entries: list, os_name: str = "linux", hub=None) -> d
             "entryLine",
             "appRow",
             "stopButton",
+            "isPageEntry",
             "appReason",
             "isMac",
         )
@@ -2461,6 +2462,12 @@ def test_an_app_row_names_its_machine_its_source_and_every_local_address():
     assert (row["tone"], row["word"], row["reason"]) == ("ok", "", "")
 
 
+def test_an_app_in_use_with_no_page_has_no_open():
+    row = run_app_row(dict(GITEA, is_in_use=True), [GITEA_SSH])
+
+    assert row["actions"] == [["Stop", False, "danger"], ["Configure", True, "ghost"]]
+
+
 def test_an_entry_with_no_number_shows_its_kind_and_no_port():
     row = run_app_row(GITEA, [GITEA_WEB, dict(GITEA_SSH, local_port=None)])
 
@@ -2476,13 +2483,13 @@ def test_on_a_mac_every_local_address_is_the_loopback():
     assert row["lines"] == ["http://127.0.0.1:24123/explore?tab=repos"]
 
 
-def test_an_app_in_use_offers_stop_and_holds_its_ports():
+def test_an_app_in_use_offers_stop_in_uses_place_open_and_holds_its_ports():
     row = run_app_row(dict(GITEA, is_in_use=True), [GITEA_WEB, GITEA_SSH])
 
     assert row["actions"] == [
-        ["Use", False, ""],
-        ["Configure", True, "ghost"],
         ["Stop", False, "danger"],
+        ["Configure", True, "ghost"],
+        ["Open", False, "ghost"],
     ]
     assert row["reason"] == EN_WORDS["ui.reason.disconnect_first"]
 
@@ -2494,11 +2501,16 @@ def test_an_app_job_is_its_buttons_indicator():
     assert row["tone"] == "pulse"
     assert row["actions"][0] == ["Opening…", True, ""]
     assert row["actions"][1][1] is True
+    assert len(row["actions"]) == 2
+
+    opening = run_app_row(dict(GITEA, job="opening", is_in_use=True), [GITEA_WEB])
+    assert opening["actions"][0] == ["Stop", False, "danger"]
+    assert opening["actions"][2] == ["Opening…", True, "ghost"]
 
     stopping = run_app_row(
         dict(GITEA, job="disconnecting", is_in_use=True), [GITEA_WEB]
     )
-    assert stopping["actions"][2] == ["Disconnecting…", True, "danger"]
+    assert stopping["actions"][0] == ["Disconnecting…", True, "danger"]
 
 
 def test_an_unhealthy_entry_says_so_on_its_line_and_use_waits_for_one_healthy():

@@ -2840,7 +2840,7 @@ def test_an_app_entry_forwards_at_the_hubs_number_until_the_person_sets_one(app_
     )
 
 
-def test_use_forwards_every_entry_at_its_number_and_opens_the_first_page(app_hub):
+def test_use_forwards_every_entry_at_its_number_and_opens_nothing(app_hub):
     resident, transport, (web_port, port_port) = app_hub
     held = []
     resident._start_thread = held.append
@@ -2863,20 +2863,66 @@ def test_use_forwards_every_entry_at_its_number_and_opens_the_first_page(app_hub
             "open": {"kind": "connect", "id": "gitea_d1_ssh"},
         },
     ]
-    assert resident.platform.opened_urls == [
-        f"http://gitea.lab.localhost:{web_port}/explore?tab=repos"
-    ]
+    assert resident.platform.opened_urls == []
     row = resident.app_rows()[0]
     assert (row["job"], row["last_error"], row["is_in_use"]) == ("", None, True)
     assert entry(resident, "h1", "gitea_d1_ssh")["forward"] == port_port
+
+
+def test_an_app_is_not_in_use_while_its_use_runs(app_hub):
+    resident, _transport, (web_port, _port_port) = app_hub
+    held = []
+    resident._start_thread = held.append
+    resident.open_app("h1", "gitea_d1")
+    resident._forwards.ensure(
+        hub_id="h1", entry_id="gitea_d1_web", kind="web", own_port=web_port
+    )
+
+    assert resident.app_rows()[0]["is_in_use"] is False
+    held[0]()
+    assert resident.app_rows()[0]["is_in_use"] is True
+
+
+def test_open_opens_the_first_page_of_an_app_in_use(app_hub):
+    resident, _transport, (web_port, _port_port) = app_hub
+    resident.open_app("h1", "gitea_d1")
+    held = []
+    resident._start_thread = held.append
+
+    assert resident.open_app_page("h1", "gitea_d1") == {}
+    assert resident.app_rows()[0]["job"] == "opening"
+    assert resident.app_rows()[0]["is_in_use"] is True
+    held[0]()
+
+    assert resident.platform.opened_urls == [
+        f"http://gitea.lab.localhost:{web_port}/explore?tab=repos"
+    ]
+    assert resident.app_rows()[0]["job"] == ""
+
+
+def test_open_on_an_app_not_in_use_or_with_no_page_is_refused(two_hubs_up):
+    resident, transport = two_hubs_up
+    state = app_state(free_port(), free_port())
+    transport.deliver("c1", {"frame": state})
+
+    assert resident.open_app_page("h1", "gitea_d1") == {
+        "code": "app_not_in_use",
+        "params": {},
+    }
+    state["services"][0]["payload"]["url"] = "ssh://192.168.1.5"
+    transport.deliver("c1", {"frame": dict(state, hash="state-2")})
+    assert resident.open_app_page("h1", "gitea_d1") == {
+        "code": "app_no_page",
+        "params": {},
+    }
+    assert resident.platform.opened_urls == []
 
 
 def test_an_app_entry_the_hub_gave_no_number_has_none_and_use_passes_it_by(
     two_hubs_up,
 ):
     resident, transport = two_hubs_up
-    web_port = free_port()
-    state = app_state(web_port, free_port())
+    state = app_state(free_port(), free_port())
     del state["services"][1]["local_port"]
     transport.deliver("c1", {"frame": state})
     held = []
@@ -2889,17 +2935,15 @@ def test_an_app_entry_the_hub_gave_no_number_has_none_and_use_passes_it_by(
     assert [line["open"]["id"] for line in forward_starts(transport)] == [
         "gitea_d1_web"
     ]
-    assert resident.platform.opened_urls == [
-        f"http://gitea.lab.localhost:{web_port}/explore?tab=repos"
-    ]
     assert resident.app_rows()[0]["last_error"] is None
 
 
-def test_use_on_a_mac_opens_the_loopback(app_hub):
+def test_open_on_a_mac_opens_the_loopback(app_hub):
     resident, _transport, (web_port, _port_port) = app_hub
     resident.platform.os_name = "darwin"
 
     resident.open_app("h1", "gitea_d1")
+    resident.open_app_page("h1", "gitea_d1")
 
     assert resident.platform.opened_urls == [
         f"http://127.0.0.1:{web_port}/explore?tab=repos"
@@ -2919,6 +2963,8 @@ def test_a_token_page_opens_with_the_token_its_service_reply_gives(two_hubs_up):
     answering(transport, respond)
 
     resident.open_app("h1", "gitea_d1")
+    assert asked == []
+    resident.open_app_page("h1", "gitea_d1")
 
     assert asked == ["gitea_d1_web"]
     assert resident.platform.opened_urls == [

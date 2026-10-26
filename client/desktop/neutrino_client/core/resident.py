@@ -128,6 +128,8 @@ BINDING_IDENTITY_KEYS = ("id", "token", "ticket")
 # The step a press on a service entry starts, by its type and action, as
 # the page words it under ``ui.job.``.
 JOB_OPENING = "opening"
+# The app job that opens the browser at its first page, under JOB_OPENING.
+APP_ACTION_OPEN = "open"
 JOB_DISCONNECTING = "disconnecting"
 JOB_MOUNTING = "mounting"
 JOB_UNMOUNTING = "unmounting"
@@ -379,6 +381,8 @@ class ClientResident:
         self._entry_errors: dict = {}
         self._app_jobs: dict = {}
         self._app_errors: dict = {}
+        # The apps whose job is a Use, which is not in use until it ends.
+        self._app_uses: dict = {}
         # What the page shows above the hubs for a while: [{code, params, id}].
         self._notices: list = []
         # Every terminal open or ended and not yet asked about, by its id:
@@ -609,13 +613,15 @@ class ClientResident:
         Returns:
             ``[{hub_id, id, title, source, device_id, device_name,
             local_name, job, last_error, is_in_use}]``, hub order; an app
-            whose entries are all ``file`` entries is left out.
+            whose entries are all ``file`` entries is left out, and an app
+            is not in use while its Use runs.
         """
         entries = self.service_entries()
         with self._lock:
             sessions = list(self._sessions.values())
             jobs = dict(self._app_jobs)
             errors = dict(self._app_errors)
+            uses = set(self._app_uses)
         rows = []
         for session in sessions:
             hub_id = session.hub_id()
@@ -630,7 +636,8 @@ class ClientResident:
                         app,
                         job=jobs.get(key, ""),
                         last_error=dict(error) if error else None,
-                        is_in_use=self._apps.is_in_use(app=app, entries=entries),
+                        is_in_use=key not in uses
+                        and self._apps.is_in_use(app=app, entries=entries),
                     )
                 )
         return rows
@@ -1545,7 +1552,7 @@ class ClientResident:
         return {}
 
     def open_app(self, hub_id: str, app_id: str) -> dict:
-        """Start using one app, as that app's job: every entry forwarded and its first page opened.
+        """Start using one app, as that app's job: every entry forwarded, nothing opened.
 
         A press while the app is at work is dropped and logged.
 
@@ -1559,6 +1566,32 @@ class ClientResident:
             client switched off.
         """
         return self._app_press(hub_id, app_id, JOB_OPENING)
+
+    def open_app_page(self, hub_id: str, app_id: str) -> dict:
+        """Open the browser at one app's first page, as that app's job.
+
+        A press while the app is at work is dropped and logged.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            app_id: The app's id.
+
+        Returns:
+            Empty, the press taken or dropped; ``unknown_app`` for an app the
+            hub does not list, ``client_disabled`` while the hub has this
+            client switched off, ``app_no_page`` for an app with no ``http``
+            or ``https`` entry, ``app_not_in_use`` while that entry has no
+            forward.
+        """
+        found = self._find_app(hub_id, app_id)
+        if found is not None:
+            app, entries = found
+            page = self._apps.page_entry(app=app, entries=entries)
+            if page is None:
+                return {"code": "app_no_page", "params": {}}
+            if not self._forwards.port_of(app["hub_id"], str(page.get("id", ""))):
+                return {"code": "app_not_in_use", "params": {}}
+        return self._app_press(hub_id, app_id, JOB_OPENING, action=APP_ACTION_OPEN)
 
     def stop_app(self, hub_id: str, app_id: str) -> dict:
         """End every forward of one app, as that app's job.
@@ -1807,8 +1840,8 @@ class ClientResident:
             return key, JOB_CONNECTING
         return key, ""
 
-    def _app_press(self, hub_id: str, app_id: str, job: str) -> dict:
-        """Start one app's Use or Stop as its job, written before this returns."""
+    def _app_press(self, hub_id: str, app_id: str, job: str, action: str = "") -> dict:
+        """Start one app's Use, Open or Stop as its job, written before this returns."""
         found = self._find_app(hub_id, app_id)
         if found is None:
             return {"code": "unknown_app", "params": {"app_id": app_id}}
@@ -1822,19 +1855,23 @@ class ClientResident:
             is_dropped = key in self._app_jobs
             if not is_dropped:
                 self._app_jobs[key] = job
+                if job == JOB_OPENING and action != APP_ACTION_OPEN:
+                    self._app_uses[key] = True
                 self._app_errors.pop(key, None)
         if is_dropped:
             self._log(f"a press on the app {key} while it works was dropped")
             return {}
         self.notify()
-        self._start_thread(functools.partial(self._run_app_job, app, key, job))
+        self._start_thread(functools.partial(self._run_app_job, app, key, job, action))
         return {}
 
-    def _run_app_job(self, app: dict, key: str, job: str) -> None:
-        """Run one app's Use or Stop, then write how it ended and announce it."""
+    def _run_app_job(self, app: dict, key: str, job: str, action: str = "") -> None:
+        """Run one app's Use, Open or Stop, then write how it ended and announce it."""
         try:
             entries = self.service_entries()
-            if job == JOB_OPENING:
+            if action == APP_ACTION_OPEN:
+                outcome = self._apps.open_page(app=app, entries=entries)
+            elif job == JOB_OPENING:
                 outcome = self._apps.use(app=app, entries=entries)
             else:
                 self._apps.stop(app=app, entries=entries)
@@ -1844,6 +1881,7 @@ class ClientResident:
             outcome = {"code": "crashed", "params": {"detail": str(error)[:200]}}
         with self._lock:
             self._app_jobs.pop(key, None)
+            self._app_uses.pop(key, None)
             if outcome:
                 self._app_errors[key] = dict(outcome)
         self.notify()
@@ -2008,6 +2046,7 @@ class ClientResident:
                 self._entry_errors,
                 self._app_jobs,
                 self._app_errors,
+                self._app_uses,
             )
             for table in tables:
                 for key in [key for key in table if key.startswith(hub_id + "/")]:

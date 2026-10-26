@@ -3,14 +3,15 @@
 An app is one program on one machine, with one or more ``web``, ``port`` and
 ``ssh`` entries. **Use** forwards every entry the app has not got at its
 fixed local port, the person's number or else the hub's ``local_port``, and
+opens nothing; an entry with no number, the hub having sent none and the
+person set none, gets no forward until one comes. A failure is the first
+refusal; the forwards that started stay up. **Open**, on an app in use,
 opens the system browser at the app's first ``http`` or ``https`` entry, in
 the order the hub lists them, at ``<scheme>://<local name>:<local
 port><path>``; an entry with ``is_token_required`` takes a fresh token from
-the ``service`` frame and opens with ``?tkn=<token>``. An entry with no
-number, the hub having sent none and the person set none, gets no forward
-until one comes. On macOS, whose browser resolves no ``.localhost`` name,
-the host is ``127.0.0.1``. A failure is the first refusal; the forwards
-that started stay up. **Stop** ends every forward of the app.
+the ``service`` frame and opens with ``?tkn=<token>``. On macOS, whose
+browser resolves no ``.localhost`` name, the host is ``127.0.0.1``.
+**Stop** ends every forward of the app.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -159,7 +160,7 @@ class AppServiceHandler:
         self._log = log
 
     def use(self, *, app: dict, entries: list) -> dict:
-        """Forward every entry of an app and open its first page.
+        """Forward every entry of an app.
 
         Args:
             app: The app, stamped with its ``hub_id``.
@@ -171,13 +172,12 @@ class AppServiceHandler:
         """
         hub_id = str(app.get("hub_id", ""))
         failure: dict = {}
-        page = None
         for entry in app_entries(app, entries):
             key = service_key(hub_id, str(entry.get("id", "")))
             if not self._forwards.ports.app_port(key, _number(entry.get("local_port"))):
                 continue
             try:
-                port = self._forwards.ensure(
+                self._forwards.ensure(
                     hub_id=hub_id,
                     entry_id=str(entry.get("id", "")),
                     kind=str(entry.get("type", "")),
@@ -186,13 +186,43 @@ class AppServiceHandler:
                 )
             except OSError as error:
                 failure = failure or forward_refusal(error)
-                continue
-            if page is None and _is_page(entry):
-                page = (entry, port)
-        if page is not None:
-            outcome = self._open_page(app, *page)
-            failure = failure or outcome
         return failure
+
+    def open_page(self, *, app: dict, entries: list) -> dict:
+        """Open the browser at an app's first page, through its forward.
+
+        Args:
+            app: The app, stamped with its ``hub_id``.
+            entries: The merged service list.
+
+        Returns:
+            Empty once the browser was told to open; ``app_no_page`` for an
+            app with no ``http`` or ``https`` entry, ``app_not_in_use`` while
+            that entry has no forward, or the token's refusal.
+        """
+        page = self.page_entry(app=app, entries=entries)
+        if page is None:
+            return {"code": "app_no_page", "params": {}}
+        port = self._forwards.port_of(
+            str(app.get("hub_id", "")), str(page.get("id", ""))
+        )
+        if not port:
+            return {"code": "app_not_in_use", "params": {}}
+        return self._open_page(app, page, port)
+
+    def page_entry(self, *, app: dict, entries: list) -> "dict | None":
+        """An app's first ``http`` or ``https`` entry, in the order the hub lists them.
+
+        Args:
+            app: The app, stamped with its ``hub_id``.
+            entries: The merged service list.
+
+        Returns:
+            The entry, or None for an app with none.
+        """
+        return next(
+            (entry for entry in app_entries(app, entries) if _is_page(entry)), None
+        )
 
     def stop(self, *, app: dict, entries: list) -> int:
         """End every forward of an app.
