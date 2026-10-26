@@ -139,7 +139,10 @@ the person types, and what they typed stays when no row is chosen.
 ## Frames
 
 - One framed group (`settings_group`) per unit of change, closed by one apply
-  bar. Anything unapplied lights the frame (`settings_group--dirty`).
+  bar. Anything unapplied lights the frame (`settings_group--dirty`), the
+  group's outer frame alone; an entry inside it never wears the amber frame.
+  The entry being added or edited wears the accent frame, `inline_form`
+  ([ui_behavior.md](ui_behavior.md), "Inline forms").
 - **The frame and its apply bar answer one question**: is there something here
   that has not been applied. A lit bar over an unlit frame is a box telling two
   stories, and it happens wherever the bar has a term the frame does not — a

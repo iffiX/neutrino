@@ -184,12 +184,14 @@ keeps the menu open, so the second press acts.
 
 A record of a panel is added where its list is. The panel's own add (`Add
 node`, `Add key`, `Add login`) opens a form in place, as the Proxy page's node
-form does: the new entry takes the accent frame while it is being written,
-`settings_group--dirty` or `card--dirty` on that entry alone, and every other
-entry keeps its plain frame. A Cancel sits beside its save; nothing navigates
-away to add one thing, and the same form edits an existing record where the
-record is editable at all; a credential is not (see Secrets). An add from the
-page header is not this form but a dialog (The page, above).
+form does: the entry being added or edited is an `inline_form`, the accent
+frame in cyan, and every other entry keeps its plain frame. The amber frame,
+`settings_group--dirty` or `card--dirty`, is the whole panel's outer frame
+alone, lit with its apply bar while the panel holds something unapplied, and
+is never on an entry. A Cancel sits beside its save; nothing navigates away
+to add one thing, and the same form edits an existing record where the record
+is editable at all; a credential is not (see Secrets). An add from the page
+header is not this form but a dialog (The page, above).
 
 Where a list is a configurable panel, the add is part of the draft: the row
 lights the frame and Apply is what makes it real, and a record born that way is
