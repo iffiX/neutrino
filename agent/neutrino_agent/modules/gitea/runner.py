@@ -30,6 +30,7 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaConfigApplier,
     GiteaInstaller,
     read_listen_port,
+    read_root_url,
 )
 from neutrino_agent.modules.gitea.config import ADMIN_NAME_PATTERN, GiteaConfig
 from neutrino_agent.modules.gitea.constants import (
@@ -105,6 +106,10 @@ class GiteaLinuxApplier:
     def read_listen_port(self) -> int:
         """The port ``/etc/gitea/app.ini`` names."""
         return read_listen_port()
+
+    def read_root_url(self) -> str:
+        """The root URL ``/etc/gitea/app.ini`` names."""
+        return read_root_url()
 
     def journal_units(self) -> list:
         """The unit, whose journal is the server's log."""
@@ -311,8 +316,9 @@ class GiteaModuleRunner(ModuleRunner):
         Returns:
             ``{"is_running", "port", "ssh_listen_port", "url", "version",
             "admins"}``; the port is the held configuration's, else the
-            installed ``app.ini``'s, and ``ssh_listen_port`` the one the
-            agent took for Gitea's own SSH server, 0 before the first apply.
+            installed ``app.ini``'s, the url likewise, and
+            ``ssh_listen_port`` the one the agent took for Gitea's own SSH
+            server, 0 before the first apply.
         """
         state = self._surveyed()
         config = self._config
@@ -324,7 +330,11 @@ class GiteaModuleRunner(ModuleRunner):
                 else self._applier.read_listen_port()
             ),
             "ssh_listen_port": self._kept_ssh_port(),
-            "url": config.derived_root_url if config is not None else "",
+            "url": (
+                config.derived_root_url
+                if config is not None
+                else self._applier.read_root_url()
+            ),
             "version": state.version if state is not None else "",
             "admins": list(state.admin_usernames) if state is not None else [],
         }

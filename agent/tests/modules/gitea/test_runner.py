@@ -241,6 +241,20 @@ def test_the_details_read_the_unit_and_the_port(runner, monkeypatch, tmp_path):
     assert runner.details({})["port"] == 3000
 
 
+def test_the_details_read_the_url_from_the_installed_file_before_an_apply(
+    runner, monkeypatch
+):
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
+    monkeypatch.setattr(runner_module, "read_listen_port", lambda: 3300)
+    monkeypatch.setattr(
+        runner_module, "read_root_url", lambda: "http://192.168.100.7:3300/"
+    )
+
+    assert runner.details({})["url"] == "http://192.168.100.7:3300/"
+    runner.apply(CONFIG)
+    assert runner.details({})["url"] == "http://192.168.100.7:3000/"
+
+
 def test_the_survey_stands_for_a_minute(runner, monkeypatch, tmp_path):
     (tmp_path / "gitea").write_text("")
     monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea"))
@@ -335,6 +349,9 @@ class SystemApplier:
 
     def read_listen_port(self):
         return 0
+
+    def read_root_url(self):
+        return ""
 
     def journal_units(self):
         return []

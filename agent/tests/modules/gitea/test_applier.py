@@ -241,3 +241,11 @@ def test_the_listen_port_is_read_from_the_installed_app_ini(monkeypatch, tmp_pat
 
     conf.write_text("[server]\nHTTP_PORT = many\n")
     assert applier_module.read_listen_port() == 0
+
+
+def test_the_root_url_is_read_from_the_installed_file(tmp_path):
+    path = tmp_path / "app.ini"
+    path.write_text("[server]\nHTTP_PORT = 3000\nROOT_URL = http://box:3000/\n")
+
+    assert applier_module.read_root_url(str(path)) == "http://box:3000/"
+    assert applier_module.read_root_url(str(tmp_path / "missing.ini")) == ""

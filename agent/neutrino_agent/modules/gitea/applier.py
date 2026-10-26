@@ -352,6 +352,28 @@ def read_listen_port(path: str = "") -> int:
     return 0
 
 
+def read_root_url(path: str = "") -> str:
+    """The root URL the installed ``app.ini`` names.
+
+    Args:
+        path: The ``app.ini``; the Linux one when not named.
+
+    Returns:
+        ``ROOT_URL`` from the file, or an empty string when no readable one
+        names it.
+    """
+    try:
+        with open(path or GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
+            lines = stream.read().splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key.strip() == "ROOT_URL":
+            return value.strip()
+    return ""
+
+
 def _unlink(path: str) -> None:
     try:
         os.unlink(path)
