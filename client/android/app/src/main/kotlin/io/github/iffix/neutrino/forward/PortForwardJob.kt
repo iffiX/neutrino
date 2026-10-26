@@ -9,6 +9,9 @@ enum class PortForwardJob(val wordKey: String) {
     /** Stop on an app: every forward of the app is being closed. */
     DISCONNECTING("ui.job.disconnecting"),
 
-    /** Use on an app, or Panel on a hub row: the forwards, the token where one is needed, then the browser. */
+    /**
+     * Use on an app, its forwards; Open on an app or Panel on a hub row: the token where one is
+     * needed, then the browser.
+     */
     OPENING("ui.job.opening"),
 }

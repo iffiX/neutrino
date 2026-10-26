@@ -80,9 +80,9 @@ class PortForwardsTest {
     )
 
     @Test
-    fun useForwardsEveryEntry() = runTest {
+    fun useForwardsEveryEntryAndOpensNothing() = runTest {
         val forwards = forwards()
-        forwards.use(hub, app) { opened += it }
+        forwards.use(hub, app)
         runCurrent()
         assertEquals(listOf(27311 to "tcp", 30418 to "tcp"), forwarder.listening.map { it.second to it.third })
         assertEquals(
@@ -91,29 +91,54 @@ class PortForwardsTest {
                 it.fourth["id"]!!.jsonPrimitive.content
             },
         )
-        assertEquals(listOf("http://gitea.lab.localhost:27311/explore?tab=1"), opened)
+        assertTrue(opened.isEmpty())
         assertTrue(forwards.rows.value["b1/gitea_d1"]!!.isInUse)
         assertTrue(asked.isEmpty())
     }
 
     @Test
+    fun openOpensThePageOfAnAppInUse() = runTest {
+        val forwards = forwards()
+        forwards.open(hub, app) { opened += it }
+        runCurrent()
+        assertTrue(opened.isEmpty())
+        forwards.use(hub, app)
+        runCurrent()
+        forwards.open(hub, app) { opened += it }
+        runCurrent()
+        assertEquals(listOf("http://gitea.lab.localhost:27311/explore?tab=1"), opened)
+        assertEquals(2, forwarder.listening.size)
+    }
+
+    @Test
+    fun anEntryWithNoNumberGetsNoForward() = runTest {
+        val forwards = forwards()
+        forwards.use(hub.copy(services = listOf(web, ssh.copy(localPort = 0))), app)
+        runCurrent()
+        assertEquals(listOf(27311), forwarder.listening.map { it.second })
+        assertNull(forwards.rows.value["b1/gitea_d1"]?.error)
+    }
+
+    @Test
     fun anSshEntryIsLeftOutOnAPhone() = runTest {
         val forwards = forwards()
-        forwards.use(hub, hub.apps[1]) { opened += it }
+        forwards.use(hub, hub.apps[1])
         runCurrent()
         assertTrue(forwarder.listening.isEmpty())
         assertTrue(opened.isEmpty())
     }
 
     @Test
-    fun aTokenPageOpensWithAFreshTokenAtEachUse() = runTest {
+    fun aTokenPageOpensWithAFreshTokenAtEachOpen() = runTest {
         val tokened = web.copy(payload = payload("url" to "http://10.0.0.5:8000/"))
             .let { it.copy(payload = JsonObject(it.payload + ("is_token_required" to JsonPrimitive(true)))) }
         val forwards = forwards()
         val withToken = hub.copy(services = listOf(tokened))
-        forwards.use(withToken, app) { opened += it }
+        forwards.use(withToken, app)
         runCurrent()
-        forwards.use(withToken, app) { opened += it }
+        forwards.open(withToken, app) { opened += it }
+        runCurrent()
+        forwards.open(withToken, app) { opened += it }
         runCurrent()
         assertEquals(List(2) { "http://gitea.lab.localhost:27311/?tkn=t-1_x" }, opened)
         assertEquals(1, forwarder.listening.size)
@@ -124,7 +149,9 @@ class PortForwardsTest {
     @Test
     fun onAPhoneWhoseBrowserResolvesNoLocalhostNameThePageOpensAtTheLoopback() = runTest {
         val forwards = forwards(host = "127.0.0.1")
-        forwards.use(hub, app) { opened += it }
+        forwards.use(hub, app)
+        runCurrent()
+        forwards.open(hub, app) { opened += it }
         runCurrent()
         assertEquals(listOf("http://127.0.0.1:27311/explore?tab=1"), opened)
     }
@@ -133,7 +160,7 @@ class PortForwardsTest {
     fun aHeldNumberFailsAlone() = runTest {
         busy += 30418
         val forwards = forwards()
-        forwards.use(hub, app) { opened += it }
+        forwards.use(hub, app)
         runCurrent()
         val row = forwards.rows.value["b1/gitea_d1"]!!
         assertEquals("port_taken", row.error?.code)
@@ -146,7 +173,7 @@ class PortForwardsTest {
     fun theTransportsRefusalOfAListenerIsTheRowsCode() = runTest {
         forwarder.refusal = ChannelResult.refused("port_taken", "port" to "27311")
         val forwards = forwards()
-        forwards.use(hub, app) { opened += it }
+        forwards.use(hub, app)
         runCurrent()
         assertEquals("port_taken", forwards.rows.value["b1/gitea_d1"]?.error?.code)
         assertTrue(opened.isEmpty())
@@ -155,7 +182,7 @@ class PortForwardsTest {
     @Test
     fun stopEndsEveryForwardOfTheApp() = runTest {
         val forwards = forwards()
-        forwards.use(hub, app) {}
+        forwards.use(hub, app)
         runCurrent()
         forwards.stop("b1", "gitea_d1")
         assertEquals(PortForwardJob.DISCONNECTING, forwards.rows.value["b1/gitea_d1"]?.job)
@@ -172,7 +199,7 @@ class PortForwardsTest {
             forwards.configure(listOf(hub), "b1", "gitea_d1", mapOf("gitea_d1_web" to 28080)),
         )
         assertEquals(28080, forwards.portOf("b1", web))
-        forwards.use(hub, app) {}
+        forwards.use(hub, app)
         runCurrent()
         assertEquals(28080, forwarder.listening.first().second)
         val refused = forwards.configure(listOf(hub), "b1", "gitea_d1", mapOf("gitea_d1_web" to null))
@@ -189,7 +216,7 @@ class PortForwardsTest {
     @Test
     fun withdrawnEntriesStop() = runTest {
         val forwards = forwards()
-        forwards.use(hub, app) {}
+        forwards.use(hub, app)
         runCurrent()
         forwards.take(listOf(hub.copy(services = listOf(web))))
         runCurrent()
@@ -248,7 +275,7 @@ class PortForwardsTest {
         val forwards = forwards()
         val ends = MutableSharedFlow<TransportForwardEnd>(extraBufferCapacity = 4)
         forwards.follow(MutableStateFlow(listOf(withUdp)), ends)
-        forwards.use(withUdp, game) {}
+        forwards.use(withUdp, game)
         runCurrent()
         assertEquals(listOf(25001 to "udp"), forwarder.listening.map { it.second to it.third })
         ends.emit(

@@ -203,6 +203,7 @@ fun AppShell(
                                         askNotices()
                                         actions.useApp(bindingId, appId)
                                     },
+                                    onOpen = actions::openApp,
                                 )
                             }
                             composable(AppScreen.FILES.route) {

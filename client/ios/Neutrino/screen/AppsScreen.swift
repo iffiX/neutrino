@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// The apps the joined hubs publish, one row each: the title, the hub, the machine and the source, and one mono line
-/// per `web` and `port` entry with its fixed local address, the `ssh` entries left out on a phone. Use
-/// forwards every entry and opens the in-app browser at the first `http` or `https` entry, Configure opens the
-/// local port dialog while the app is not in use, and Stop ends the app's forwards while it is.
+/// per `web` and `port` entry with its fixed local address, the `ssh` entries left out on a phone. Use starts the
+/// app's forwards and Stop takes its place while the app is in use; Configure opens the local port dialog while the
+/// app is not in use; Open, for an app with an `http` or `https` entry, opens the in-app browser there while the app
+/// is in use.
 struct AppsScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -65,6 +66,7 @@ struct AppsScreen: View {
         let row = core.forwardRows[AppForwards.key(hub.binding.id, app.id)] ?? ForwardRow()
         let isFree = row.job == nil && !hub.jobs.isRefreshing
         let isUsable = entries.contains { !$0.isUnhealthy }
+        let hasPage = AppForwards.page(of: hub, app: app) != nil
         FeatureRow(marker: AppText.tone(hub, entries, isBusy: row.job != nil), hasDivider: hasDivider) {
             RowText(text: app.title, style: .title)
             RowText(text: AppText.provider(hub, app, entries, words: words), style: .note)
@@ -77,24 +79,32 @@ struct AppsScreen: View {
             if let error = row.error {
                 RowText(text: words.refusal(error), style: .error)
             }
-            if isFree, let key = AppText.reasonKey(hub, entries, row) {
+            if isFree, let key = AppText.reasonKey(hub, entries, row, hasPage: hasPage) {
                 RowText(text: words.word(key), style: .reason)
             }
         } actions: {
-            NeutrinoButton(
-                label: words.word(row.job == .opening ? ForwardJob.opening.rawValue : "ui.app.use"),
-                tier: .primary, isBusy: row.job == .opening, isEnabled: isFree && isUsable && !hub.isDisabled
-            ) { core.useApp(bindingId: hub.binding.id, app: app) }
-            NeutrinoButton(label: words.word("ui.app.configure"), isEnabled: isFree && !row.isInUse) {
-                configuring = LocalPortTarget(
-                    bindingId: hub.binding.id, appId: app.id, title: app.title, entries: entries)
-            }
-            if row.isInUse {
+            if row.isInUse || row.job == .disconnecting {
                 NeutrinoButton(
                     label: words.word(row.job == .disconnecting ? ForwardJob.disconnecting.rawValue : "ui.app.stop"),
                     tier: row.job == nil ? .danger : .plain, isBusy: row.job == .disconnecting,
                     isEnabled: row.job == nil
                 ) { core.stopApp(bindingId: hub.binding.id, appId: app.id) }
+            } else {
+                NeutrinoButton(
+                    label: words.word(row.job == .opening ? ForwardJob.opening.rawValue : "ui.app.use"),
+                    tier: .primary, isBusy: row.job == .opening, isEnabled: isFree && isUsable && !hub.isDisabled
+                ) { core.useApp(bindingId: hub.binding.id, app: app) }
+            }
+            NeutrinoButton(label: words.word("ui.app.configure"), isEnabled: isFree && !row.isInUse) {
+                configuring = LocalPortTarget(
+                    bindingId: hub.binding.id, appId: app.id, title: app.title, entries: entries)
+            }
+            if hasPage {
+                let isOpening = row.isInUse && row.job == .opening
+                NeutrinoButton(
+                    label: words.word(isOpening ? ForwardJob.opening.rawValue : "ui.app.open"),
+                    isBusy: isOpening, isEnabled: isFree && row.isInUse && !hub.isDisabled
+                ) { core.openApp(bindingId: hub.binding.id, app: app) }
             }
         }
     }

@@ -202,14 +202,24 @@ final class ClientCore: ObservableObject {
     /// Whether any hub refreshes now, which disables the refresh button.
     var isRefreshing: Bool { hubs.contains { $0.jobs.isRefreshing } }
 
-    /// Press Use on an app: its forwards, the token where its page needs one, then the in-app browser.
+    /// Press Use on an app: its forwards.
     ///
     /// - Parameters:
     ///   - bindingId: The hub.
     ///   - app: The app.
     func useApp(bindingId: String, app: ChannelApp) {
         guard let hub = hubs.first(where: { $0.binding.id == bindingId }) else { return }
-        forwards.use(hub: hub, app: app) { [weak self] url in
+        forwards.use(hub: hub, app: app)
+    }
+
+    /// Press Open on an app in use: the token where its page needs one, then the in-app browser.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - app: The app.
+    func openApp(bindingId: String, app: ChannelApp) {
+        guard let hub = hubs.first(where: { $0.binding.id == bindingId }) else { return }
+        forwards.open(hub: hub, app: app) { [weak self] url in
             self?.browser = BrowserTarget(bindingId: bindingId, url: url, title: app.title)
         }
     }

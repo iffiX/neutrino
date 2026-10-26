@@ -36,9 +36,9 @@ import kotlinx.serialization.json.put
 
 /**
  * The loopback forwards of the app core, held by the transport. An app's Use forwards each of its
- * `web` and `port` entries at its local port, the person's number or the hub's, and opens the
- * browser at the app's first `http` or `https` entry, with a fresh token for an entry that takes
- * one; the app is in use until Stop, its hub's leave or the app's quit. A shared desktop's forward
+ * `web` and `port` entries at its local port, the person's number or the hub's, and the app is in
+ * use until Stop, its hub's leave or the app's quit; Open opens the browser at the app's first
+ * `http` or `https` entry, with a fresh token for an entry that takes one. A shared desktop's forward
  * lives from its Connect until its viewer closes, and the hub's panel's from the first press of
  * Panel until the hub is left, each on a number picked from 20000 to 23999 and kept. A forward
  * stops when its hub is left and when its entry leaves the hub's state. A UDP forward the hub
@@ -67,30 +67,50 @@ class PortForwards(
     val rows: StateFlow<Map<String, PortForwardRow>> = current.asStateFlow()
 
     /**
-     * Press Use on an app: every entry's forward it has not got, then the browser at its first
-     * `http` or `https` entry, in the hub's order, with a fresh token where that entry takes one.
-     * A failure writes its code on the row, and the forwards that started stay up. A press while
-     * the row's job runs is dropped.
+     * Press Use on an app: every entry's forward it has not got, in the hub's order, but an entry
+     * with no number, the hub having sent none and the person set none; the app is in use once one
+     * listens. A failure writes its code on the row, and the forwards that started stay up. A press
+     * while the row's job runs is dropped.
      *
      * @param hub The hub that publishes the app.
      * @param app The app.
-     * @param onOpen What opening an address in the browser does.
      */
-    fun use(hub: HubView, app: ChannelApp, onOpen: (String) -> Unit) {
+    fun use(hub: HubView, app: ChannelApp) {
         val bindingId = hub.binding.id
         val key = keyOf(bindingId, app.id)
         if (!begin(key, PortForwardJob.OPENING)) return
         scope.launch {
-            val entries = entriesOf(hub, app)
+            val entries = entriesOf(hub, app).filter { portOf(bindingId, it) > 0 }
             var failure: ChannelResult.Refused? = null
             for (entry in entries) {
                 val made = forward(bindingId, entry)
                 if (made is ChannelResult.Refused && failure == null) failure = made
             }
             val isAny = entries.any { keyOf(bindingId, it.id) in listening.value }
-            val page = entries.firstOrNull { it.type == "web" && targetOf(it.text("url")) != null }
-            val error = failure ?: page?.let { open(hub, app, it, onOpen) }
-            settle(key) { it.copy(isInUse = it.isInUse || isAny, job = null, error = error) }
+            settle(key) { it.copy(isInUse = it.isInUse || isAny, job = null, error = failure) }
+        }
+    }
+
+    /**
+     * Press Open on an app in use: the browser at its first `http` or `https` entry, whose forward
+     * listens again if it does not, with a fresh token where that entry takes one. A press while the
+     * app is not in use, has no such entry or runs a job is dropped.
+     *
+     * @param hub The hub that publishes the app.
+     * @param app The app.
+     * @param onOpen What opening an address in the browser does.
+     */
+    fun open(hub: HubView, app: ChannelApp, onOpen: (String) -> Unit) {
+        val bindingId = hub.binding.id
+        val key = keyOf(bindingId, app.id)
+        val page = pageOf(entriesOf(hub, app)) ?: return
+        if (current.value[key]?.isInUse != true || !begin(key, PortForwardJob.OPENING)) return
+        scope.launch {
+            val error = when (val made = forward(bindingId, page)) {
+                is ChannelResult.Refused -> made
+                is ChannelResult.Ok -> openPage(hub, app, page, onOpen)
+            }
+            settle(key) { it.copy(job = null, error = error) }
         }
     }
 
@@ -287,7 +307,7 @@ class PortForwards(
         }
     }
 
-    private suspend fun open(
+    private suspend fun openPage(
         hub: HubView,
         app: ChannelApp,
         entry: ChannelServiceEntry,
@@ -315,12 +335,9 @@ class PortForwards(
         val entryKey = keyOf(bindingId, entry.id)
         listening.value[entryKey]?.let { return ChannelResult.Ok(it.port) }
         val protocol = entry.protocol
+        if (portOf(bindingId, entry) <= 0) return ChannelResult.refused("local_port_invalid", "port" to "0")
         val port = try {
-            if (entry.localPort <= 0 && table.numberOf(entryKey) == null) {
-                table.pickFor(entryKey, protocol)
-            } else {
-                table.portForEntry(entryKey, entry.localPort, protocol)
-            }
+            table.portForEntry(entryKey, entry.localPort, protocol)
         } catch (error: LocalPortTakenException) {
             return ChannelResult.refused("port_taken", "port" to error.port.toString())
         } catch (error: IOException) {
@@ -452,6 +469,15 @@ class PortForwards(
          * @return `<binding>/<id>`.
          */
         fun keyOf(bindingId: String, id: String): String = "$bindingId/$id"
+
+        /**
+         * The entry an app's Open opens: its first `web` entry with an `http` or `https` address.
+         *
+         * @param entries The app's entries, in the hub's order.
+         * @return The entry, or null for an app with none.
+         */
+        fun pageOf(entries: List<ChannelServiceEntry>): ChannelServiceEntry? =
+            entries.firstOrNull { it.type == "web" && targetOf(it.text("url")) != null }
 
         /**
          * The key of a hub's panel forward.

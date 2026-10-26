@@ -30,28 +30,22 @@ final class ScreenshotTests: XCTestCase {
     private static let services: [JSONValue] = [
         web("gitea", "Gitea", "http://nmxrel:3000/", port: 24001),
         port("gitea_ssh", "Gitea SSH", app: "gitea", port: 24002),
-        web("vscode", "VS Code (lab)", "http://nmxrel:3201/", port: 24003),
-        web("cloudcli", "CloudCLI (demo)", "http://nmxrel:3002/", port: 24004),
-        web("codeg", "Codeg (lab)", "http://nmxrel:3101/", port: 24005),
-        web("antigravity", "Antigravity (direct)", "http://192.168.122.132:49723/", port: 24006, isHealthy: false),
-        port("postgres", "Postgres", app: "postgres", port: 24007),
+        web("hermes", "Hermes WebUI", "http://nmxwin:8787/", port: 24003, machine: "nmxwin", isTokenRequired: true),
+        port("postgres", "Postgres", app: "postgres", port: 24004),
         file("share", "share", host: "192.168.122.46", machine: "nmxwin"),
         file("music", "music, the long library share of the house", host: "nmxrel", machine: "nmxrel"),
         desktop("nmxwin", "nmxwin", host: "192.168.122.46", platform: "windows"),
-        desktop("mac", "mac", host: "192.168.122.50", platform: "darwin"),
+        desktop("nmxrel", "nmxrel", host: "192.168.122.41", platform: "linux"),
     ]
 
     private static let apps: [JSONValue] = [
         app("gitea", "Gitea", source: "module", machine: "nmxrel"),
-        app("vscode", "VS Code (lab)", source: "module", machine: "nmxrel"),
-        app("cloudcli", "CloudCLI (demo)", source: "module", machine: "nmxrel"),
-        app("codeg", "Codeg (lab)", source: "declared", machine: "nmxrel"),
-        app("antigravity", "Antigravity (direct)", source: "manual", machine: ""),
+        app("hermes", "Hermes WebUI", source: "module", machine: "nmxwin"),
         app("postgres", "Postgres", source: "declared", machine: "nmxrel"),
     ]
 
     private static let machines: [JSONValue] = [
-        machine("nmxrel", isOnline: true), machine("mac", isOnline: false), machine("nmxwin", isOnline: true),
+        machine("nmxrel", isOnline: true), machine("nmxwin", isOnline: true),
     ]
 
     private let words = WordCatalog.load(language: "en", bundle: Bundle(for: ClientCore.self))
@@ -138,9 +132,7 @@ final class ScreenshotTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let core = try connectedCore(defaults)
         let hub = try XCTUnwrap(core.hubs.first)
-        core.useApp(bindingId: hub.binding.id, app: try XCTUnwrap(hub.apps.first))
-        XCTAssertTrue(isTrue { core.forwardRows[AppForwards.key(hub.binding.id, "gitea")]?.isInUse == true })
-        core.browser = nil
+        try useGitea(core)
         for (name, palette) in [("apps_light", NeutrinoPalette.light), ("apps_dark", NeutrinoPalette.dark)] {
             let page = VStack(spacing: 0) {
                 TopBar(title: core.words.word(AppScreen.apps.titleKey), onBack: nil, isRefreshing: false) {}
@@ -387,6 +379,56 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    private func useGitea(_ core: ClientCore) throws {
+        let hub = try XCTUnwrap(core.hubs.first)
+        core.useApp(bindingId: hub.binding.id, app: try XCTUnwrap(hub.apps.first { $0.id == "gitea" }))
+        XCTAssertTrue(isTrue { core.forwardRows[AppForwards.key(hub.binding.id, "gitea")]?.isInUse == true })
+    }
+
+    func testEveryPageInChineseInBothThemes() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        try useGitea(core)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        let pages: [(String, AppScreen)] = [
+            ("hubs", .hubs), ("apps", .apps), ("files", .files), ("terminals", .terminals),
+            ("desktops", .desktops), ("settings", .settings),
+        ]
+        for (theme, palette) in [("light", NeutrinoPalette.light), ("dark", NeutrinoPalette.dark)] {
+            core.save(ClientSettings(language: "zh-CN", theme: theme))
+            for (name, page) in pages {
+                let shell = AppShell(core: core, cache: cache, screen: page)
+                    .environment(\.palette, palette)
+                    .environment(\.words, core.words)
+                    .environmentObject(ArmState())
+                let shown = try show(
+                    UIHostingController(rootView: shell), palette.isDark ? .dark : .light, size: screen)
+                if page == .terminals {
+                    core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
+                    settle()
+                }
+                try save(shown, "ios_\(name)_zh-CN_\(theme)", in: directory)
+            }
+            let hub = try XCTUnwrap(core.hubs.first)
+            let app = try XCTUnwrap(hub.apps.first { $0.id == "hermes" })
+            let target = LocalPortTarget(
+                bindingId: hub.binding.id, appId: app.id, title: app.title,
+                entries: AppForwards.entries(of: hub, app: app))
+            let dialog = LocalPortDialog(core: core, target: target)
+                .environment(\.palette, palette)
+                .environment(\.words, core.words)
+            let shown = try show(UIHostingController(rootView: dialog), palette.isDark ? .dark : .light, size: screen)
+            try save(shown, "ios_configure_zh-CN_\(theme)", in: directory)
+        }
+    }
+
     private func makeCore(_ defaults: UserDefaults, transport: FakeTransport = FakeTransport()) -> ClientCore {
         ClientCore(
             secrets: FakeSecretStore(),
@@ -577,13 +619,15 @@ final class ScreenshotTests: XCTestCase {
         try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("\(name).png"))
     }
 
-    private static func web(_ id: String, _ title: String, _ url: String, port: Int, isHealthy: Bool = true)
-        -> JSONValue
-    {
+    private static func web(
+        _ id: String, _ title: String, _ url: String, port: Int, machine: String = "nmxrel",
+        isTokenRequired: Bool = false
+    ) -> JSONValue {
         .object([
             "id": .string(id), "type": .string("web"), "title": .string(title), "source": .string("module"),
-            "payload": .object(["url": .string(url)]), "device_name": .string("nmxrel"), "is_healthy": .bool(isHealthy),
-            "app_id": .string(id), "name": .string("http"), "local_port": .int(port),
+            "payload": .object(["url": .string(url), "is_token_required": .bool(isTokenRequired)]),
+            "device_name": .string(machine), "is_healthy": .bool(true), "app_id": .string(id),
+            "name": .string("http"), "local_port": .int(port),
         ])
     }
 
