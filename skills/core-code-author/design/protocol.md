@@ -711,7 +711,7 @@ to pick one.
 | `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; `AccountListView`; the refusals of `add` |
 | `POST /api/agent/module/account/remove` | `{device_id, account}` | removes the account from every module that enables it, switches its AI tools back, deletes its login and the secrets its modules generated, and pushes the state; `AccountListView` |
 | `GET /api/agent/module/<name>` for `terminal`, `samba`, `ssh_server`, `vscode`, `code_server`, `cloudcli` and `codeg` | `?device_id=` | `EnabledAccountsView`: the fields of every module view; and `accounts`, every available account in the machine page's order, each `{account, is_enabled, port, is_running, code}` with the last three as last reported, and the module's own field: `shell_path` on `terminal`, `share_path` and `user` on `samba`; `ssh_server` adds `host_key_fingerprint`, and `vscode` `is_terms_accepted` and `terms_url` |
-| `POST /api/agent/module/<name>/set` for the same seven | `{device_id, accounts}`, the enabled accounts in order | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("Taking over a machine"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400 |
+| `POST /api/agent/module/<name>/set` for the same seven | `{device_id, accounts}`, the enabled accounts in order | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("The modules section, one entry per module"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400 |
 | `POST /api/agent/module/vscode/terms/set` | `{device_id, is_accepted}` | records, with `is_accepted` true, that the person accepted the terms for this machine, as `terms_accepted_at` in `config/devices/<id>/vscode.json`; false deletes the record; `EnabledAccountsView`. The panel sends true alone, from the press that opens the terms. Until the record exists, `module/install`, `module/start` and `vscode/set` naming `vscode` on that machine are refused 409 `terms_not_accepted {module}` |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `GET /api/agent/module/gitea` | `?device_id=` | |
@@ -1410,22 +1410,21 @@ Containers' **Stop** disables and its install and every apply under `want`
 Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
 
-Taking over a machine happens at its first report on a socket, for each
-module that has an import (`samba`, `gitea`, `podman`; `zfs` has none) and no
-`want` in `modules.json`. A module reporting `stopped` or `running` gets that
+Taking over a machine happens at its first report on a session, for each
+module that has an import (`gitea`, `podman`; `zfs` and the account layer's
+modules have none) and no `want` in `modules.json`. A module reporting `stopped` or `running` gets that
 state as its `want`, and its configuration is imported from the report's
 `details` when the hub holds no file for it. A module reporting `installed`
 is imported, and gets `running` or `stopped` as its `want` by `is_active`,
 when the import finds something. An import that finds nothing leaves the
 module as it reports, and Gitea is taken over only while the hub holds
 `gitea_secrets.json` for the device. The state is pushed and the published
-list recomposed in the same step; a later report on the same socket takes
+list recomposed in the same step; a later report on the same session takes
 nothing over.
 
 A module with no `want` that the machine reports `installed`, `stopped` or
-`running`, one with no import such as VS Code, code-server, CloudCLI and
-Codeg, or
-one whose import found nothing, is the person's from their first press: its
+`running`, one with no import such as the file share, VS Code,
+code-server, CloudCLI and Codeg, or one whose import found nothing, is the person's from their first press: its
 **Start** is live, and an apply of its configuration (`POST
 /api/agent/module/<name>/set` and the like) writes `want: running` with it,
 since applying a configuration asks the module to run it.
@@ -1441,7 +1440,7 @@ the whole file back.
 
 | Module | What `details` reports, and what import reads |
 | --- | --- |
-| Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
+| Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts |
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
@@ -1579,9 +1578,8 @@ per host port: `kind` `auto`, `web` or `port`, `scheme` `http` or `https`
 for `web`, and `protocols` a list of `tcp` and `udp` for `port`; a host
 port the list does not name is `auto`. `machine` is the Run settings,
 `{account, cpus, memory_gib, disk_gib}`, a 0 being Podman's default except
-a Windows `disk_gib`, which is 1 or more, with
-`password`, the vault login's, added for a Windows machine while `login_id`
-stays on the hub. The hub sends `machine` to a Windows or macOS machine
+a Windows `disk_gib`, which is 1 or more, `account` an available account,
+with `password`, that account's login, added for a Windows machine. The hub sends `machine` to a Windows or macOS machine
 alone, and a Linux state never names it. The Linux recipe's runner is
 `podman` and its method `system`; the Windows and macOS recipe's runner is
 `podman_machine` and its method `hub`:

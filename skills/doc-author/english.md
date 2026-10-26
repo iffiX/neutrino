@@ -120,7 +120,7 @@ page. Reuse the shape and none of the words.
 | Example | Fits |
 | --- | --- |
 | `nhub apply --dry-run` renders every module and changes nothing on the system. | the first line of a reference entry |
-| Once the agent is installed, the machine appears on the Devices page, and every step below happens there. | the opening of a how-to guide (each page writes its own; never this sentence on two pages) |
+| Once the agent is installed, the machine appears on the Agents page, and every step below happens there. | the opening of a how-to guide (each page writes its own; never this sentence on two pages) |
 | Before you start, the hub must be reachable from this machine. | a prerequisite line above a procedure |
 | In the **Network** panel, select **Apply**. | a step inside the interface |
 | If the box has one interface, skip this step. | a conditional step |

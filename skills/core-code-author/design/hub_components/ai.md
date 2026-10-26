@@ -113,7 +113,7 @@ The endpoint a tool is given is the client's own local port,
 entry's `endpoint`, empty for the endpoint the hub publishes. The client listens there while it runs and the
 hub is the exit of any tool, and sends each connection to the gateway as a
 `connect` stream ([../protocol.md](../protocol.md), "The connect stream").
-The key is this client's own gateway key from the `service` stream, and the
+The key is this client's own gateway key from the `service` frame, and the
 gateway checks it on every request. A tool works only while the client
 runs, and the client's AI page says so ([../client.md](../client.md), "The
 AI page").
@@ -199,8 +199,8 @@ sections").
 | The accounts | the person's own | every available account whose switch is on, sent in the state with its own tool configuration |
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:8317`, the agent's own forward, which relays each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward"); on the hub's own machine `http://127.0.0.1:<listen-port>`, the gateway itself |
 | A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
-| The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
-| The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
+| The key | the client's own, from the `service` frame | the device's own, from the `ai_tools` section |
+| The unchosen models | the gateway's first model, from the `service` frame | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | Switched back | when the chip goes off | when the account's switch goes off, when the account is removed from the machine page, before `nagent service uninstall`, and when the machine leaves the hub |

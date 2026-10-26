@@ -283,9 +283,11 @@ sudo systemctl restart neutrino_hub_web
 
 The built panel under `neutrino_hub/data/frontend/` is served from disk, so a
 copied build shows on the next page load with no restart. Restarting
-`neutrino_hub_web` closes every agent channel for a moment: an install in
-progress on a device fails with `hub_unreachable` and the agent retries on
-its own, so restart between installs, not during one.
+`neutrino_hub_web` leaves every session to `neutrino_hub_transport`, but every
+question and frame waits on the panel's process for that moment: an install
+in progress on a device fails with `hub_unreachable` or
+`control_unavailable` and the agent retries on its own, so restart between
+installs, not during one.
 
 ## Running a package through the VM lab
 

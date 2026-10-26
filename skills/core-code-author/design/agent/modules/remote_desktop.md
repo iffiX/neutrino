@@ -1,7 +1,7 @@
 # The Remote desktop module
 
 The `remote_desktop` module is one of the two modules the agent's package
-carries ([agent.md](../../agent.md), "The two modules the agent carries").
+carries ([agent.md](../../agent.md), "The kinds of module").
 It holds one switch, off on a new machine. It is the one
 place a desktop share is decided: the hub writes it, the state carries it,
 and the agent makes it true and keeps it true across a restart of the

@@ -780,7 +780,7 @@ port on the **Network** page is how this comes about
 
 ### The frp addresses
 
-While a tunnel is picked, `https://<public-host>:<public-port>` is in
+While a tunnel is picked, `tcp://<public-host>:<public-port>` is in
 `urls`, in every link and in every agent's and client's state, whatever the
 state; an IPv6 host is written in brackets. SakuraFrp's comes after Direct's
 public address, OpenFrp's after it, and the relay's stays last.

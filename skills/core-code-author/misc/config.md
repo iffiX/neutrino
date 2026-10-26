@@ -91,7 +91,7 @@ deleting a key still in use, the relay's included.
 
 **Logins** — one account each, a password with an optional username, sealed
 as `login` objects. A device's SSH password and sudo password reference them
-by id, and so does a declared Samba share's `login_id`; the tab warns before
+by id, and so does an available account's `login_id` on Windows; the tab warns before
 deleting a login something still uses.
 
 **Tokens** — one bare secret string each, sealed as `token` objects. AI

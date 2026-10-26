@@ -121,8 +121,10 @@ leaked into the rendering layer.
 ## One service supervises the daemons on macOS and Windows
 
 On Linux each daemon the hub runs is a systemd unit of its own, and that set
-of units does not change; the relay's `ssh` is the unit
-`neutrino_hub_relay.service` among them, and the two frpc processes are
+of units does not change; the transport is the unit
+`neutrino_hub_transport.service` ([privilege.md](privilege.md), "The transport
+holds the agent port, and is not root"), the relay's `ssh` is the unit
+`neutrino_hub_relay.service`, and the two frpc processes are
 `neutrino_hub_sakurafrp.service` and `neutrino_hub_openfrp.service`. On macOS and Windows the hub is one binary, `nhub`,
 compiled by Nuitka as the agent is, and its package registers one service:
 the LaunchDaemon `com.neutrino.hub`, run as root and starting `nhub run`, and
@@ -132,6 +134,7 @@ as its own child:
 
 | Child | Started as |
 | --- | --- |
+| the transport | `neutrino_transport` with `generated/transport.json`, the local channel's secret on its standard input ([protocol.md](protocol.md), "The local channel") |
 | xray | the rendered configuration, with no service account and no capabilities |
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
