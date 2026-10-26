@@ -31,13 +31,45 @@ env:
   RELEASE_SITES: ${{ startsWith(github.ref, 'refs/tags/') && '--release-sites' || '' }}
 
 jobs:
+  # The two Go programs of every target, built once: neutrino_transport from
+  # transport/ and neutrino_ssh_server from agent/sshserver/, static, with
+  # the version stamped. Every package job of a target downloads its
+  # go_<target> artifact into dist/go/<target>/ and carries the same files.
+  go_programs:
+    name: Go programs (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux-amd64, linux-arm64, windows-amd64, darwin-arm64, darwin-amd64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            transport/go.sum
+            agent/sshserver/go.sum
+
+      - run: python3 packaging/build/build_transport.py --target ${{ matrix.target }} --output-dir dist
+
+      - if: hashFiles('agent/sshserver/go.mod') != ''
+        run: python3 packaging/build/build_ssh_server.py --target ${{ matrix.target }} --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: go_${{ matrix.target }}
+          path: dist/go/${{ matrix.target }}/*
+          if-no-files-found: error
+
   # After every agent: the hub package carries the agent package of its own
   # family and machine, and its manifest names every agent package of the
   # release with its hash, so the build reads them all.
   hub:
     name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
     if: inputs.editions != 'cn'
-    needs: [agent, agent_windows, agent_macos]
+    needs: [go_programs, agent, agent_windows, agent_macos]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -45,6 +77,11 @@ jobs:
         architecture: [amd64, arm64]
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: dist/go/linux-${{ matrix.architecture }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -92,6 +129,7 @@ jobs:
   agent:
     name: agent .deb and .rpm (${{ matrix.architecture }})
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -99,6 +137,11 @@ jobs:
         architecture: [amd64, arm64]
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: dist/go/linux-${{ matrix.architecture }}
 
       # Each package is built in a container of its family, and for arm64
       # that container runs under emulation on an x86-64 runner.
@@ -125,9 +168,15 @@ jobs:
   agent_windows:
     name: agent installer (Windows x64)
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: dist/go/windows-amd64
 
       # The interpreter the agent is compiled against; the build refuses any
       # other minor.
@@ -159,6 +208,7 @@ jobs:
   agent_macos:
     name: agent installer (macOS ${{ matrix.arch }})
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -170,6 +220,11 @@ jobs:
             arch: amd64
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/setup-python@v7
         with:
@@ -190,7 +245,7 @@ jobs:
   hub_macos:
     name: hub installer (macOS ${{ matrix.arch }})
     if: inputs.editions != 'cn'
-    needs: [agent, agent_windows, agent_macos]
+    needs: [go_programs, agent, agent_windows, agent_macos]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -202,6 +257,11 @@ jobs:
             arch: amd64
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -244,10 +304,15 @@ jobs:
   hub_windows:
     name: hub installer (Windows x64)
     if: inputs.editions != 'cn'
-    needs: [agent, agent_windows, agent_macos]
+    needs: [go_programs, agent, agent_windows, agent_macos]
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: dist/go/windows-amd64
 
       - uses: actions/download-artifact@v8
         with:
@@ -311,6 +376,7 @@ jobs:
   client:
     name: client .deb and .rpm (${{ matrix.architecture }})
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -322,6 +388,11 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: dist/go/linux-${{ matrix.architecture }}
 
       - run: >
           python3 packaging/build/build_client_desktop.py
@@ -343,12 +414,18 @@ jobs:
   client_windows:
     name: client installer (Windows x64)
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: windows-2025
     permissions:
       contents: read
       statuses: write
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: dist/go/windows-amd64
 
       # The interpreter the client is compiled against; the build refuses any
       # other minor.
@@ -482,6 +559,7 @@ jobs:
   client_macos:
     name: client installer (macOS ${{ matrix.arch }})
     if: inputs.editions != 'cn'
+    needs: [go_programs]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -493,6 +571,11 @@ jobs:
             arch: amd64
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/setup-python@v7
         with:
@@ -549,7 +632,7 @@ jobs:
       - uses: actions/setup-go@v7
         if: steps.cores.outputs.cache-hit != 'true'
         with:
-          go-version: "1.26.7"
+          go-version: "1.27.3"
 
       - name: Install what building the cores needs
         if: steps.cores.outputs.cache-hit != 'true'
@@ -779,7 +862,7 @@ jobs:
 
   agent_cn:
     name: cn agent .deb and .rpm (${{ matrix.architecture }})
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -793,6 +876,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: cn/dist/go/linux-${{ matrix.architecture }}
 
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
@@ -817,7 +905,7 @@ jobs:
 
   agent_windows_cn:
     name: cn agent installer (Windows x64)
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: windows-2025
     steps:
       - uses: actions/download-artifact@v8
@@ -828,6 +916,11 @@ jobs:
       - name: Unpack the mainland source tree
         shell: bash
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: cn/dist/go/windows-amd64
 
       - uses: actions/setup-python@v7
         with:
@@ -857,7 +950,7 @@ jobs:
   # Both Macs, as the intl job builds them.
   agent_macos_cn:
     name: cn agent installer (macOS ${{ matrix.arch }})
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -875,6 +968,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: cn/dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/setup-python@v7
         with:
@@ -894,7 +992,7 @@ jobs:
 
   hub_cn:
     name: cn hub .deb, .rpm and Arch (${{ matrix.architecture }})
-    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    needs: [go_programs, agent_cn, agent_windows_cn, agent_macos_cn]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -908,6 +1006,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: cn/dist/go/linux-${{ matrix.architecture }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -954,7 +1057,7 @@ jobs:
   # Both Macs, as the intl job builds them.
   hub_macos_cn:
     name: cn hub installer (macOS ${{ matrix.arch }})
-    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    needs: [go_programs, agent_cn, agent_windows_cn, agent_macos_cn]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -972,6 +1075,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: cn/dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/download-artifact@v8
         with:
@@ -1015,7 +1123,7 @@ jobs:
 
   hub_windows_cn:
     name: cn hub installer (Windows x64)
-    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    needs: [go_programs, agent_cn, agent_windows_cn, agent_macos_cn]
     runs-on: windows-2025
     steps:
       - uses: actions/download-artifact@v8
@@ -1026,6 +1134,11 @@ jobs:
       - name: Unpack the mainland source tree
         shell: bash
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: cn/dist/go/windows-amd64
 
       - uses: actions/download-artifact@v8
         with:
@@ -1087,7 +1200,7 @@ jobs:
 
   client_cn:
     name: cn client .deb and .rpm (${{ matrix.architecture }})
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1105,6 +1218,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_linux-${{ matrix.architecture }}
+          path: cn/dist/go/linux-${{ matrix.architecture }}
 
       - run: >
           python3 packaging/build/build_client_desktop.py
@@ -1126,7 +1244,7 @@ jobs:
 
   client_windows_cn:
     name: cn client installer (Windows x64)
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: windows-2025
     permissions:
       contents: read
@@ -1140,6 +1258,11 @@ jobs:
       - name: Unpack the mainland source tree
         shell: bash
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_windows-amd64
+          path: cn/dist/go/windows-amd64
 
       - uses: actions/setup-python@v7
         with:
@@ -1274,7 +1397,7 @@ jobs:
   # Both Macs, as the intl job builds them.
   client_macos_cn:
     name: cn client installer (macOS ${{ matrix.arch }})
-    needs: [sources_cn]
+    needs: [go_programs, sources_cn]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -1292,6 +1415,11 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: go_darwin-${{ matrix.arch }}
+          path: cn/dist/go/darwin-${{ matrix.arch }}
 
       - uses: actions/setup-python@v7
         with:
@@ -1351,7 +1479,7 @@ jobs:
       - uses: actions/setup-go@v7
         if: steps.cores.outputs.cache-hit != 'true'
         with:
-          go-version: "1.26.7"
+          go-version: "1.27.3"
 
       - name: Install what building the cores needs
         if: steps.cores.outputs.cache-hit != 'true'

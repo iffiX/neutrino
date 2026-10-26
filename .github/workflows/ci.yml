@@ -125,7 +125,7 @@ jobs:
       - uses: actions/setup-go@v7
         if: steps.cores.outputs.cache-hit != 'true'
         with:
-          go-version: "1.26.7"
+          go-version: "1.27.3"
 
       - name: Install what building the cores needs
         if: steps.cores.outputs.cache-hit != 'true'
@@ -352,6 +352,48 @@ jobs:
           $found = @('packaging/install/install.ps1', 'agent/neutrino_agent/data/windows/powershell_host.ps1') | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ }
           $found | Format-List RuleName, Severity, Line, Message
           if ($found) { throw "PSScriptAnalyzer found $(@($found).Count) issues" }
+
+  # The Go block: the transport, and the agent's SSH server where the tree
+  # holds it. gofmt and go vet are the gate, staticcheck runs beside them
+  # with no findings, and the tests run with the race detector. The
+  # toolchain is PACKAGING_GO_VERSION in packaging/shared/constants.py.
+  go:
+    name: go vet, staticcheck, tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            transport/go.sum
+            agent/sshserver/go.sum
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l transport agent/sshserver 2>/dev/null)"
+          if [ -n "${unformatted}" ]; then echo "${unformatted}"; exit 1; fi
+
+      - name: transport
+        working-directory: transport
+        run: |
+          go mod tidy -diff
+          go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+          go test -race ./...
+
+      - name: ssh server
+        if: hashFiles('agent/sshserver/go.mod') != ''
+        working-directory: agent/sshserver
+        run: |
+          go mod tidy -diff
+          go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+          go test -race ./...
+
+      - name: the five targets build
+        run: python3 packaging/build/build_transport.py --all --output-dir dist
 
   agent_oldest_python:
     name: agent on Python 3.9

@@ -8,14 +8,17 @@ path (``gomobile init`` done), and ``ANDROID_HOME`` and ``ANDROID_NDK_HOME``
 set.
 
 NetBird publishes no library for phones, so the app carries one compiled
-here: ``gomobile bind`` over ``client/android`` of the pinned release, for
-the two machines the app ships (arm64-v8a for phones, x86_64 for the
-emulator). The source archive is checked against its SHA-256 and the commit
-its header names before anything is built. The result is cached under
+here: ``gomobile bind`` over ``client/android`` of the pinned release and
+over the transport's ``mobile`` package of this tree, one ``.aar`` holding
+both, since an app loads one gomobile library; the two modules are joined
+by a ``go.work`` written for the bind. It is built for the two machines the
+app ships (arm64-v8a for phones, x86_64 for the emulator). The source
+archive is checked against its SHA-256 and the commit its header names
+before anything is built. The result is cached under
 ``~/.cache/neutrino/cores/netbird-<commit>-arm64-v8a+x86_64-<recipe>/``, the
-recipe being the digest of this file, and copied to
-``client/android/app/libs/netbird.aar``. ``--cache-key`` prints that cache
-name and builds nothing.
+recipe being the digest of this file and of the transport's Go sources, and
+copied to ``client/android/app/libs/netbird.aar``. ``--cache-key`` prints
+that cache name and builds nothing.
 
 Not pure: downloads, unpacks and compiles.
 """
@@ -35,6 +38,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import cores_cache  # noqa: E402
+from shared import go_build  # noqa: E402
+from shared.constants import PACKAGING_GO_VERSION  # noqa: E402
 
 # --- the pinned source ---
 # The same archive build_sources.py puts in the release's third_party/.
@@ -48,9 +53,11 @@ NETBIRD_MOBILE_ARCHIVE_SHA256 = (
 )
 
 # --- the build ---
-# The Go package bound, the Java package its classes land in, and the
-# machines built for, as gomobile names them.
+# The Go packages bound, NetBird's and the transport's, the Java package
+# their classes land in, and the machines built for, as gomobile names them.
 NETBIRD_MOBILE_PACKAGE = "./client/android"
+TRANSPORT_MOBILE_PACKAGE = "github.com/iffiX/neutrino/transport/mobile"
+TRANSPORT_MODULE_DIR = REPO_ROOT / "transport"
 NETBIRD_MOBILE_JAVA_PACKAGE = "io.netbird.gomobile"
 NETBIRD_MOBILE_TARGETS = "android/arm64,android/amd64"
 NETBIRD_MOBILE_ANDROID_API = "26"
@@ -62,13 +69,25 @@ NETBIRD_MOBILE_LDFLAGS = (
     f"-X golang.zx2c4.com/wireguard/ipc.socketDirectory={NETBIRD_MOBILE_SOCKET_DIR} "
     f"-X github.com/netbirdio/netbird/version.version={NETBIRD_MOBILE_TAG[1:]}"
 )
-# The Go release the source's go.mod names as its toolchain; its exec
-# workaround reaches into the standard library by linkname.
-NETBIRD_MOBILE_GO_TOOLCHAIN = "go1.26.7"
+# The toolchain the workspace of both modules builds with: the transport's,
+# which is newer than the one NetBird's go.mod names; NetBird's exec
+# workaround reaches into the standard library by linkname, which the
+# `-checklinkname=0` flag above allows.
+NETBIRD_MOBILE_GO_TOOLCHAIN = f"go{PACKAGING_GO_VERSION}"
 NETBIRD_MOBILE_LIBRARY = "netbird.aar"
 # The one library holds both machines, so it is cached under both.
 NETBIRD_MOBILE_ABIS = "arm64-v8a+x86_64"
-NETBIRD_MOBILE_RECIPE = cores_cache.recipe(Path(__file__).resolve())
+# The recipe covers this file and the transport's sources, so a change to
+# either builds the library again.
+NETBIRD_MOBILE_RECIPE = cores_cache.recipe(
+    Path(__file__).resolve(),
+    *sorted(
+        path
+        for path in TRANSPORT_MODULE_DIR.rglob("*")
+        if path.is_file()
+        and (path.suffix == ".go" or path.name in ("go.mod", "go.sum"))
+    ),
+)
 NETBIRD_MOBILE_OUTPUT = REPO_ROOT / "client" / "android" / "app" / "libs"
 
 
@@ -104,18 +123,25 @@ def fetch_source(work_dir: Path) -> Path:
 
 
 def bind(source: Path, output: Path) -> None:
-    """Run ``gomobile bind`` over the Android package into one ``.aar``.
+    """Run ``gomobile bind`` over NetBird's Android package and the transport's
+    mobile package into one ``.aar``.
 
     Args:
-        source: The unpacked tree.
+        source: The unpacked NetBird tree.
         output: The ``.aar`` to write.
 
     Raises:
         SystemExit: When the bind fails.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
+    tools = go_build.install_gomobile()
+    workspace = source / "go.work"
+    workspace.write_text(
+        f"go {PACKAGING_GO_VERSION}\n\nuse (\n\t.\n\t{TRANSPORT_MODULE_DIR}\n)\n",
+        encoding="utf-8",
+    )
     command = [
-        "gomobile",
+        str(tools / "gomobile"),
         "bind",
         "-target",
         NETBIRD_MOBILE_TARGETS,
@@ -129,9 +155,15 @@ def bind(source: Path, output: Path) -> None:
         "-o",
         str(output),
         NETBIRD_MOBILE_PACKAGE,
+        TRANSPORT_MOBILE_PACKAGE,
     ]
     print(" ".join(command))
-    environment = dict(os.environ, GOTOOLCHAIN=NETBIRD_MOBILE_GO_TOOLCHAIN)
+    environment = dict(
+        os.environ,
+        GOTOOLCHAIN=NETBIRD_MOBILE_GO_TOOLCHAIN,
+        GOWORK=str(workspace),
+        PATH=f"{tools}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
     result = subprocess.run(command, cwd=source, env=environment, check=False)
     if result.returncode != 0:
         raise SystemExit(f"gomobile bind exited {result.returncode}")
@@ -198,9 +230,7 @@ def _check_tools() -> None:
     Raises:
         SystemExit: When a tool or an Android variable is missing.
     """
-    for tool in ("go", "gomobile", "gobind"):
-        if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} is needed to build NetBird and is not on the path")
+    go_build.require_go()
     for variable in ("ANDROID_HOME", "ANDROID_NDK_HOME"):
         if not os.environ.get(variable):
             raise SystemExit(f"{variable} is needed to build NetBird and is not set")

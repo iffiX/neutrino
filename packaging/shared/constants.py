@@ -19,6 +19,18 @@ PACKAGING_ASSET_PATTERNS = {
     "ipa": "{name}-{version}-ios{suffix}.ipa",
 }
 
+# The Go toolchain the two Go programs and the phones' libraries are built
+# with, and the targets each program is cross-compiled for, as
+# `dist/go/<target>/` names them.
+PACKAGING_GO_VERSION = "1.27.3"
+PACKAGING_GO_TARGETS = (
+    "linux-amd64",
+    "linux-arm64",
+    "windows-amd64",
+    "darwin-arm64",
+    "darwin-amd64",
+)
+
 # The release sites, GitHub first: each the address of a tag's files, with
 # `{tag}` open, and the address of `latest.json`, which names the latest
 # release as {tag, version}. A release build stamps them into the hub, and
