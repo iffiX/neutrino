@@ -25,9 +25,15 @@ run and to fence, and leaves what the machine serves. On every system the
 shares and the accounts stay as they are and the system's SMB server goes on
 serving them. The agent's own units, scheduled tasks, firewall rules and
 fence go with the package, and so do its modules' Windows services, found
-by name as the rest are. An agent installed again finds the shares and
-accounts that were left and takes them back by the rule above: they are
-displayed, and the first report imports them.
+by name as the rest are. An agent installed again imports nothing it
+finds: the enabled accounts the hub holds for the machine decide, and its
+first apply makes the machine match them. On Linux that apply replaces
+`smb.conf` whole and sets each SMB user's password from `passwords`. On
+Windows and macOS, when the module's record under the state root was kept,
+the shares and accounts it lists are the module's again. When the record is
+gone, an account its marker names is the module's again, and a share left
+under an enabled account's name is not, so the apply refuses it
+`share_name_taken {name}` until the person removes that share.
 
 Its journal on Windows reads the SMB server's latest events from
 `Microsoft-Windows-SMBServer/Operational`, and on macOS what the unified

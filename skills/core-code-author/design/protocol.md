@@ -1490,7 +1490,8 @@ detail}`, `detail` being the tool's own line, and a record of the name that is
 not a usable account and that macOS will not let root delete with
 `user_record_unusable {user, detail}`; either refusal comes once every other
 account and every share is applied. An
-account the module made signs in once `set_password` has set its password.
+account the module made signs in once the agent has set its password from
+`passwords`.
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
 per enabled account. Its configuration is `{address, instances: [{account,

@@ -194,10 +194,13 @@ that reads its `want`, or is in transit, writes no mark and asks for
 nothing new.
 
 Software somebody installs or removes by hand is displayed, never fought. A
-hand-installed Samba reports `installed`; its shares and users become the
-hub's configuration at the machine's first report on a session, and the
-first **Configure** imports them when that report found none
-([protocol.md](protocol.md), "The modules section"). A failure is
+hand-installed Samba reports `installed` and is not imported, since the file
+share serves the enabled accounts alone
+([modules/file_share.md](agent/modules/file_share.md)). For a module with an
+import, what the machine has becomes the hub's configuration at the
+machine's first report on a session, and the first **Configure** imports it
+when that report found none ([protocol.md](protocol.md), "The modules
+section, one entry per module"). A failure is
 in the machine's report and in the agent's record of it, and a hub restart
 loses nothing, because `want` is in `config/`. Machinery whose only purpose
 is surviving a restart, beyond that record and the tried hash, is removed on
