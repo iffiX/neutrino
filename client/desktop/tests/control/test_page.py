@@ -2072,6 +2072,15 @@ def test_about_is_the_panels_card_of_two_groups_with_no_page_of_its_own():
     assert "api('/api/open_link', { url: url });" in body_of("aboutLink")
 
 
+def test_the_monospace_stack_names_each_systems_own_font_before_the_generic_one():
+    root = PAGE_CSS[PAGE_CSS.index("--font-mono:") :]
+    stack = root[: root.index(";")]
+
+    for font in ('"Cascadia Mono"', "Consolas", '"Courier New"', "Menlo"):
+        assert stack.index(font) < stack.index(" monospace")
+    assert "ui-monospace, monospace" not in PAGE_CSS
+
+
 def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_word():
     about = body_of("aboutSection")
     assert "['Neutrino client ' + state.version, CLIENT_LICENCE," in about
@@ -2088,7 +2097,7 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
     assert EN_WORDS["ui.about_source_link"] == "Source"
     assert EN_WORDS["ui.about_patch_link"] == "Patch"
     value_rule = PAGE_CSS[PAGE_CSS.index(".about_value {") :]
-    assert "monospace" in value_rule[: value_rule.index("}")]
+    assert "var(--font-mono)" in value_rule[: value_rule.index("}")]
     row_rule = PAGE_CSS[PAGE_CSS.index(".about_row {") :]
     assert "var(--color-border) 60%" in row_rule[: row_rule.index("}")]
     label_rule = PAGE_CSS[PAGE_CSS.index(".section_label {") :]

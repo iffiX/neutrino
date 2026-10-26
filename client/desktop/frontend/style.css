@@ -42,6 +42,13 @@
   --color-terminal-selection: rgba(12, 106, 132, 0.25);
   --color-scheme: light;
 }
+/* The fixed-width face: each system's own monospace font, then the
+   panel's CJK faces, then the generic one. */
+:root {
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, "Cascadia Mono", Consolas,
+    "DejaVu Sans Mono", "Courier New", "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", monospace;
+}
 html { color-scheme: var(--color-scheme); }
 body { margin: 0; padding: 0; background: var(--color-bg);
        color: var(--color-text);
@@ -83,7 +90,7 @@ button.refresh { display: inline-flex; align-items: center; justify-content: cen
                  font-size: 14px; line-height: 1.4; }
 #content { min-height: 0; overflow-y: auto; padding: 20px; }
 .sub { color: var(--color-text-muted); font-size: 12px;
-       font-family: ui-monospace, monospace; }
+       font-family: var(--font-mono); }
 .card { border: 1px solid var(--color-border); border-radius: 12px;
         background: var(--color-surface); padding: 18px;
         transition: border-color .15s, box-shadow .15s; }
@@ -110,7 +117,7 @@ button.refresh { display: inline-flex; align-items: center; justify-content: cen
 input, select { padding: 9px 12px; border: 1px solid var(--color-border);
         border-radius: 8px; background: var(--color-bg);
         color: var(--color-text);
-        font-family: ui-monospace, monospace; font-size: 13px; }
+        font-family: var(--font-mono); font-size: 13px; }
 input { flex: 1; min-width: 0; }
 input:disabled, select:disabled { opacity: .4; }
 button { padding: 9px 16px; border: 1px solid var(--color-accent);
@@ -206,7 +213,7 @@ button.with_icon { display: inline-flex; gap: 8px; align-items: center; }
 button.term_tab_label { display: inline-flex; gap: 8px; align-items: center;
                         padding: 5px 4px 5px 10px; border: none; background: none;
                         color: var(--color-text-muted);
-                        font-family: ui-monospace, monospace; font-size: 13px; }
+                        font-family: var(--font-mono); font-size: 13px; }
 .term_tab.on button.term_tab_label { color: var(--color-accent); }
 button.term_tab_close { padding: 5px 8px 5px 4px; border: none; background: none;
                         color: var(--color-text-muted); font-size: 14px; }
@@ -218,20 +225,20 @@ button.term_tab_close:hover { color: var(--color-error); }
 .term_clearing { position: absolute; inset: 0; z-index: 2; display: flex;
                  align-items: center; justify-content: center;
                  background: var(--color-bg); color: var(--color-text-muted);
-                 font-family: ui-monospace, monospace; font-size: 13px; }
+                 font-family: var(--font-mono); font-size: 13px; }
 .term_clearing.hidden { display: none; }
 .term_pane.hidden { display: none; }
 .term_pane .xterm { padding: 8px; }
 .term_status { display: flex; gap: 12px; align-items: center;
                justify-content: space-between;
                padding: 6px 14px; border-top: 1px solid var(--color-border);
-               color: var(--color-text-muted); font-family: ui-monospace, monospace;
+               color: var(--color-text-muted); font-family: var(--font-mono);
                font-size: 11px; }
 button.term_tab_close.armed { color: var(--color-error); font-size: 11px; }
 /* The words after a tab's label: kept, shared, how many windows. */
 .badge { padding: 0 6px; border: 1px solid var(--color-border-strong);
          border-radius: 999px; color: var(--color-text-muted);
-         font-family: ui-monospace, monospace; font-size: 10px; line-height: 16px; }
+         font-family: var(--font-mono); font-size: 10px; line-height: 16px; }
 .term_switches { margin-left: auto; display: flex; gap: 14px; align-items: center; }
 /* The menu a right click opens over a terminal, at the pointer. */
 .menu { position: fixed; z-index: 30; min-width: 160px; padding: 4px;
@@ -276,7 +283,7 @@ button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
                 justify-content: flex-end; margin-top: 8px; }
 .rec { display: flex; gap: 8px; align-items: center; padding: 4px 0 4px 20px;
        font-size: 12px; color: var(--color-text-muted);
-       font-family: ui-monospace, monospace; }
+       font-family: var(--font-mono); }
 .rec .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .overlay { position: fixed; inset: 0; background: var(--color-overlay);
            display: flex; align-items: center; justify-content: center;
@@ -305,7 +312,7 @@ button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
 .about_key { flex: none; color: var(--color-text-muted); font-size: 12px; }
 .about_value { min-width: 0; overflow-wrap: anywhere; text-align: right;
                color: var(--color-text);
-               font-family: ui-monospace, monospace; font-size: 12.5px; }
+               font-family: var(--font-mono); font-size: 12.5px; }
 /* A short link word after a value, as the panel draws its links. */
 a.about_link { color: var(--color-accent); text-decoration: none; cursor: pointer; }
 .settings .picker { flex: none; }
@@ -315,7 +322,7 @@ a.about_link { color: var(--color-accent); text-decoration: none; cursor: pointe
 .dirlist button { display: block; width: 100%; text-align: left; border: none;
                   border-bottom: 1px solid var(--color-border);
                   border-radius: 0; background: none; color: var(--color-text);
-                  font-family: ui-monospace, monospace; }
+                  font-family: var(--font-mono); }
 .dirlist button:last-child { border-bottom: none; }
 
 /* The one dropdown, after the hub's credential picker: a field that opens a
@@ -326,7 +333,7 @@ a.about_link { color: var(--color-accent); text-decoration: none; cursor: pointe
         border: 1px solid var(--color-border);
         border-radius: 8px; background: var(--color-bg);
         color: var(--color-text);
-        font-family: ui-monospace, monospace; font-size: 13px; cursor: pointer;
+        font-family: var(--font-mono); font-size: 13px; cursor: pointer;
         text-align: left; }
 .picker_field:disabled { opacity: .4; cursor: default; }
 .picker_field .caret { color: var(--color-text-muted); font-size: 11px; }
@@ -341,7 +348,7 @@ a.about_link { color: var(--color-accent); text-decoration: none; cursor: pointe
 .picker_row { display: block; width: 100%; padding: 8px 10px; border: none;
         border-radius: 6px; background: none; color: var(--color-text);
         cursor: pointer;
-        font-family: ui-monospace, monospace; font-size: 13px; text-align: left; }
+        font-family: var(--font-mono); font-size: 13px; text-align: left; }
 .picker_row:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 .picker_row.on { background: color-mix(in srgb, var(--color-accent) 14%, transparent);
                  color: var(--color-accent); }
