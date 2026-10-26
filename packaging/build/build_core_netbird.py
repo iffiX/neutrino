@@ -10,9 +10,10 @@ set.
 NetBird publishes no library for phones, so the app carries one compiled
 here: ``gomobile bind`` over ``client/android`` of the pinned release and
 over the transport's ``mobile`` package of this tree, one ``.aar`` holding
-both, since an app loads one gomobile library; the two modules are joined
-by a ``go.work`` written for the bind. It is built for the two machines the
-app ships (arm64-v8a for phones, x86_64 for the emulator). The source
+both, since an app loads one gomobile library; NetBird's ``go.mod`` gets a
+``require`` and a ``replace`` of the transport module for the bind. It is
+built for the two machines the app ships (arm64-v8a for phones, x86_64 for
+the emulator). The source
 archive is checked against its SHA-256 and the commit its header names
 before anything is built. The result is cached under
 ``~/.cache/neutrino/cores/netbird-<commit>-arm64-v8a+x86_64-<recipe>/``, the
@@ -56,7 +57,8 @@ NETBIRD_MOBILE_ARCHIVE_SHA256 = (
 # The Go packages bound, NetBird's and the transport's, the Java package
 # their classes land in, and the machines built for, as gomobile names them.
 NETBIRD_MOBILE_PACKAGE = "./client/android"
-TRANSPORT_MOBILE_PACKAGE = "github.com/iffiX/neutrino/transport/mobile"
+TRANSPORT_MODULE_PATH = "github.com/iffiX/neutrino/transport"
+TRANSPORT_MOBILE_PACKAGE = f"{TRANSPORT_MODULE_PATH}/mobile"
 TRANSPORT_MODULE_DIR = REPO_ROOT / "transport"
 NETBIRD_MOBILE_JAVA_PACKAGE = "io.netbird.gomobile"
 NETBIRD_MOBILE_TARGETS = "android/arm64,android/amd64"
@@ -135,11 +137,22 @@ def bind(source: Path, output: Path) -> None:
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     tools = go_build.install_gomobile()
-    workspace = source / "go.work"
-    workspace.write_text(
-        f"go {PACKAGING_GO_VERSION}\n\nuse (\n\t.\n\t{TRANSPORT_MODULE_DIR}\n)\n",
-        encoding="utf-8",
+    program = go_build.require_go()
+    environment = dict(
+        os.environ,
+        GOTOOLCHAIN=NETBIRD_MOBILE_GO_TOOLCHAIN,
+        GOFLAGS="-mod=mod",
+        PATH=f"{tools}{os.pathsep}{os.environ.get('PATH', '')}",
     )
+    edit = [
+        program,
+        "mod",
+        "edit",
+        f"-require={TRANSPORT_MODULE_PATH}@v0.0.0",
+        f"-replace={TRANSPORT_MODULE_PATH}={TRANSPORT_MODULE_DIR}",
+    ]
+    print(" ".join(edit))
+    subprocess.run(edit, cwd=source, env=environment, check=True)
     command = [
         str(tools / "gomobile"),
         "bind",
@@ -158,12 +171,6 @@ def bind(source: Path, output: Path) -> None:
         TRANSPORT_MOBILE_PACKAGE,
     ]
     print(" ".join(command))
-    environment = dict(
-        os.environ,
-        GOTOOLCHAIN=NETBIRD_MOBILE_GO_TOOLCHAIN,
-        GOWORK=str(workspace),
-        PATH=f"{tools}{os.pathsep}{os.environ.get('PATH', '')}",
-    )
     result = subprocess.run(command, cwd=source, env=environment, check=False)
     if result.returncode != 0:
         raise SystemExit(f"gomobile bind exited {result.returncode}")
