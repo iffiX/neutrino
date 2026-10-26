@@ -136,8 +136,26 @@ function serviceKey(entry) {
 let openDialogs = 0;
 
 function renderHint(text) {
-  document.getElementById('content').innerHTML =
-    '<div class="card"><span class="muted">' + text + '</span></div>';
+  const content = document.getElementById('content');
+  clearChildren(content);
+  content.appendChild(mutedCard(text));
+}
+
+// A card holding one muted line of words.
+function mutedCard(text) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const words = document.createElement('span');
+  words.className = 'muted';
+  words.textContent = text;
+  card.appendChild(words);
+  return card;
+}
+
+// Every child of a node taken away; nothing on this page is built from
+// markup, so no word that came from outside is ever read as markup.
+function clearChildren(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
 }
 
 // --- the bridge: the shell carries every request over the channel ---
@@ -282,7 +300,7 @@ function jobButton(label, job, className) {
   button.type = 'button';
   if (className) button.className = className;
   if (job) {
-    button.innerHTML = '<span class="spin"></span>';
+    button.appendChild(spinner());
     button.appendChild(document.createTextNode(t('ui.job.' + job)));
     button.disabled = true;
   } else {
@@ -293,17 +311,16 @@ function jobButton(label, job, className) {
 
 // --- the sidebar and its entries ---
 
-// The sidebar's entries, in order: the hubs, then each kind of service with
-// the terminals among them. The one open is kept across redraws.
-const TABS = ['hubs', 'web', 'port', 'ai', 'file', 'terminals', 'rdp'];
+// The sidebar's pages, in order: the hubs, the apps, then each kind of
+// service with the terminals among them. The one open is kept across redraws.
+const TABS = ['hubs', 'apps', 'ai', 'file', 'terminals', 'rdp'];
 let openTab = 'hubs';
 
-// Every kind of service in the order the sidebar lists it: the type on the
-// wire, its title's key, the function that draws one entry into the kind's
-// panel, and the key of the line the panel carries while nothing is there.
+// Every kind of service a page of its own lists, in the order the sidebar
+// lists it: the type on the wire, its title's key, the function that draws
+// one entry into the kind's panel, and the key of the line the panel
+// carries while nothing is there.
 const KINDS = [
-  ['web', 'ui.panel_web', drawWebEntry, 'ui.empty_web'],
-  ['port', 'ui.panel_ports', drawPortEntry, 'ui.empty_ports'],
   ['ai', 'ui.panel_ai', drawAiEntry, 'ui.empty_ai'],
   ['file', 'ui.panel_files', drawFileEntry, 'ui.empty_files'],
   ['rdp', 'ui.panel_desktops', drawDesktopEntry, 'ui.empty_desktops'],
@@ -330,11 +347,20 @@ const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
 
 // A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
-  return '<span class="' + dotClass(tone) + '"></span>';
+  const dot = document.createElement('span');
+  dot.className = dotClass(tone);
+  return dot;
 }
 
 function dotClass(tone) {
   return 'dot ' + (tone === 'pulse' ? 'wait pulse' : tone);
+}
+
+// The spinner a button that is its job's indicator carries before its word.
+function spinner() {
+  const spin = document.createElement('span');
+  spin.className = 'spin';
+  return spin;
 }
 
 function draw(state) {
@@ -351,9 +377,11 @@ function draw(state) {
   mergeSessions(state);
 
   const content = document.getElementById('content');
-  content.innerHTML = '';
+  clearChildren(content);
   if (openTab === 'hubs') {
     content.appendChild(drawHubs(state));
+  } else if (openTab === 'apps') {
+    content.appendChild(drawApps(state));
   } else if (openTab === 'terminals') {
     content.appendChild(drawTerminals(state));
   } else if (openTab === 'settings') {
@@ -403,7 +431,7 @@ function secondsLeft(hub) {
 // the open one is washed in the accent.
 function drawTabs() {
   const nav = document.getElementById('tabs');
-  nav.innerHTML = '';
+  clearChildren(nav);
   for (const tab of TABS) nav.appendChild(tabButton(tab));
   const rule = document.createElement('div');
   rule.className = 'tab_rule';
@@ -415,7 +443,7 @@ function tabButton(tab) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = tab === openTab ? 'tab on' : 'tab';
-  button.innerHTML = icon(TAB_ICONS[tab], 17);
+  button.appendChild(icon(TAB_ICONS[tab], 17));
   const label = document.createElement('span');
   label.textContent = tabTitle(tab);
   button.appendChild(label);
@@ -425,6 +453,7 @@ function tabButton(tab) {
 
 function tabTitle(tab) {
   if (tab === 'hubs') return t('ui.section_hubs');
+  if (tab === 'apps') return t('ui.panel_apps');
   if (tab === 'terminals') return t('ui.panel_terminals');
   if (tab === 'settings') return t('ui.settings');
   return t(KINDS.filter((kind) => kind[0] === tab)[0][1]);
@@ -432,35 +461,63 @@ function tabTitle(tab) {
 
 // The sidebar's glyph for each entry, drawn from the hub panel's icon set.
 const TAB_ICONS = {
-  hubs: 'server', web: 'globe', port: 'plug', ai: 'sparkles', file: 'folder',
+  hubs: 'server', apps: 'grid', ai: 'sparkles', file: 'folder',
   terminals: 'terminal', rdp: 'desktop', settings: 'settings',
 };
 
-// The hub panel's glyphs, each a 24x24 stroke drawing in currentColor, with
-// the plug drawn for the ports in the same hand.
+// The hub panel's glyphs, each a 24x24 stroke drawing in currentColor: one
+// [element, attributes] pair per stroke.
 const ICON_SHAPES = {
-  server: '<rect x="3" y="3" width="18" height="7" rx="2"/>' +
-    '<rect x="3" y="14" width="18" height="7" rx="2"/>' +
-    '<path d="M7 6.5h.01M7 17.5h.01"/>',
-  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
-    '<path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z"/>',
-  plug: '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/>' +
-    '<path d="M12 17v4"/>',
-  sparkles: '<path d="m10 4 1.7 4.3L16 10l-4.3 1.7L10 16l-1.7-4.3L4 10l4.3-1.7z"/>' +
-    '<path d="m18 13 .9 2.1 2.1.9-2.1.9L18 19l-.9-2.1-2.1-.9 2.1-.9z"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  terminal: '<path d="m4 17 6-5-6-5"/><path d="M12 19h8"/>',
-  desktop: '<rect x="3" y="4" width="18" height="12" rx="2"/>' +
-    '<path d="M9 20h6"/><path d="M12 16v4"/>',
-  settings: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/>' +
-    '<path d="M1 14h6M9 8h6M17 16h6"/>',
+  server: [
+    ['rect', { x: '3', y: '3', width: '18', height: '7', rx: '2' }],
+    ['rect', { x: '3', y: '14', width: '18', height: '7', rx: '2' }],
+    ['path', { d: 'M7 6.5h.01M7 17.5h.01' }],
+  ],
+  grid: [
+    ['rect', { x: '3', y: '3', width: '7', height: '7', rx: '1.5' }],
+    ['rect', { x: '14', y: '3', width: '7', height: '7', rx: '1.5' }],
+    ['rect', { x: '3', y: '14', width: '7', height: '7', rx: '1.5' }],
+    ['rect', { x: '14', y: '14', width: '7', height: '7', rx: '1.5' }],
+  ],
+  sparkles: [
+    ['path', { d: 'm10 4 1.7 4.3L16 10l-4.3 1.7L10 16l-1.7-4.3L4 10l4.3-1.7z' }],
+    ['path', { d: 'm18 13 .9 2.1 2.1.9-2.1.9L18 19l-.9-2.1-2.1-.9 2.1-.9z' }],
+  ],
+  folder: [
+    ['path', { d: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }],
+  ],
+  terminal: [['path', { d: 'm4 17 6-5-6-5' }], ['path', { d: 'M12 19h8' }]],
+  desktop: [
+    ['rect', { x: '3', y: '4', width: '18', height: '12', rx: '2' }],
+    ['path', { d: 'M9 20h6' }],
+    ['path', { d: 'M12 16v4' }],
+  ],
+  settings: [
+    ['path', { d: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3' }],
+    ['path', { d: 'M1 14h6M9 8h6M17 16h6' }],
+  ],
+};
+
+// What every glyph is drawn with.
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const ICON_ATTRIBUTES = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6',
+  'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true',
+  focusable: 'false',
 };
 
 function icon(name, size) {
-  return '<svg class="icon" width="' + size + '" height="' + size +
-    '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"' +
-    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' +
-    ' focusable="false">' + ICON_SHAPES[name] + '</svg>';
+  const svg = document.createElementNS(SVG_NAMESPACE, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  for (const [key, value] of Object.entries(ICON_ATTRIBUTES)) svg.setAttribute(key, value);
+  for (const [tag, attributes] of ICON_SHAPES[name]) {
+    const shape = document.createElementNS(SVG_NAMESPACE, tag);
+    for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
+    svg.appendChild(shape);
+  }
+  return svg;
 }
 
 // Whether any hub waits for the answer to a refresh.
@@ -479,7 +536,8 @@ function drawRefresh(state) {
   button.title = t('ui.refresh');
   button.setAttribute('aria-label', t('ui.refresh'));
   if (isAnyRefreshing(state)) {
-    button.innerHTML = '<span class="spin"></span>';
+    clearChildren(button);
+    button.appendChild(spinner());
     button.disabled = true;
   } else {
     button.textContent = '↻';
@@ -495,7 +553,7 @@ function drawRefresh(state) {
 function rowElement(parts) {
   const row = document.createElement('div');
   row.className = 'feat';
-  row.innerHTML = marker(parts.tone);
+  row.appendChild(marker(parts.tone));
   if (parts.stateKey) row.dataset.stateLine = parts.stateKey;
   const body = document.createElement('div');
   body.className = 'body';
@@ -587,10 +645,7 @@ function hubName(hub) {
 }
 
 function waitCard() {
-  const wait = document.createElement('div');
-  wait.className = 'card';
-  wait.innerHTML = '<span class="muted">' + t('ui.services_wait_join') + '</span>';
-  return wait;
+  return mutedCard(t('ui.services_wait_join'));
 }
 
 // --- the Hubs page: one row per hub, the join row under them ---
@@ -798,7 +853,7 @@ function overlayLine(hub) {
   const line = document.createElement('div');
   line.className = 'overlay_line';
   const tone = jobs.overlay_job ? 'pulse' : state === 'on' ? 'ok' : 'off';
-  line.innerHTML = marker(tone);
+  line.appendChild(marker(tone));
   const name = networks.length === 1
     ? (OVERLAY_TITLES[networks[0].provider] || networks[0].provider)
     : t('ui.overlay');
@@ -852,7 +907,7 @@ function overlayButton(hub, isOtherNetworkInUse) {
   const button = document.createElement('button');
   button.type = 'button';
   if (jobs.overlay_job === 'connecting') {
-    button.innerHTML = '<span class="spin"></span>';
+    button.appendChild(spinner());
     button.appendChild(document.createTextNode(t('ui.network_cancel')));
     button.onclick = () => send('/api/overlay/cancel', { hub_id: key });
     return button;
@@ -917,13 +972,6 @@ function joinRow() {
   });
 }
 
-function noteLine(text) {
-  const note = document.createElement('div');
-  note.className = 'note muted';
-  note.textContent = text;
-  return note;
-}
-
 function entriesOf(state, hub, type) {
   return (state.services || []).filter(
     (entry) => entry.hub_id === hub.hub_id && entry.type === type);
@@ -933,8 +981,10 @@ function entriesOf(state, hub, type) {
 function emptyRow(line) {
   const row = document.createElement('div');
   row.className = 'feat';
-  row.innerHTML = '<div class="body"><div class="note muted">' + line +
-    '</div></div>';
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.appendChild(noteLine(line));
+  row.appendChild(body);
   return row;
 }
 
@@ -1052,50 +1102,6 @@ function serviceAction(type, body) {
   return send('/api/services/' + type, body);
 }
 
-// A web entry: Configure, Open and, while forwarded, Disconnect, with the
-// loopback port on the mono line. Open runs as the opening job while the
-// resident makes the forward and, for an entry with is_token_required,
-// reads its token.
-function drawWebEntry(card, state, hub, entry) {
-  const payload = entry.payload || {};
-  const isOn = !!entry.forward;
-  const opening = entry.job === 'opening' ? entry.job : '';
-  const open = jobButton(t('ui.open'), opening);
-  if (!opening) {
-    open.disabled = isUnhealthy(entry) || !isEntryFree(hub, entry);
-    open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
-  }
-  let reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
-  const configure = configureButton(hub, entry, isOn);
-  const actions = [configure, open];
-  if (isOn || entry.job === 'disconnecting') {
-    actions.push(disconnectButton('web', entry));
-  }
-  if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
-  card.appendChild(entryRow(hub, entry, (payload.url || '') + forwardedTo(entry), '',
-    actions, reason));
-}
-
-function drawPortEntry(card, state, hub, entry) {
-  const payload = entry.payload || {};
-  const isOn = !!entry.forward;
-  const button = jobButton(isOn ? t('ui.port_disconnect') : t('ui.port_connect'),
-    entry.job, isOn ? 'danger' : '');
-  if (!entry.job) {
-    button.disabled = !isEntryFree(hub, entry) || (isUnhealthy(entry) && !isOn);
-    button.onclick = () => serviceAction('port',
-      { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn });
-  }
-  const configure = configureButton(hub, entry, isOn);
-  let reason = button.disabled && !entryWork(hub, entry)
-    ? entryReason(hub, entry, !isOn) : '';
-  if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
-  const suffix = protocolSuffix(entry);
-  card.appendChild(entryRow(hub, entry,
-    (payload.host || '') + ':' + (payload.port || '') + suffix + forwardedTo(entry),
-    '', [configure, button], reason));
-}
-
 // What a port entry's addresses carry after them: `/udp` for a UDP entry,
 // nothing for a TCP one.
 function protocolSuffix(entry) {
@@ -1108,93 +1114,228 @@ function forwardedTo(entry) {
   return ' → ' + t('ui.forwarding_to', { port: entry.forward }) + protocolSuffix(entry);
 }
 
-// The Disconnect of a forwarded page: ends its forward.
-function disconnectButton(type, entry) {
-  const button = jobButton(t('ui.port_disconnect'),
-    entry.job === 'disconnecting' ? entry.job : '', 'danger');
-  if (entry.job !== 'disconnecting') {
-    button.disabled = !!entry.job;
-    button.onclick = () => serviceAction(type,
-      { hub_id: entry.hub_id, id: entry.id, is_enabled: false });
+// --- the Apps page: one row per app, every hub's in hub order ---
+
+// The words an app's source takes, as the hub names it.
+const APP_SOURCES = ['module', 'declared', 'manual'];
+// The numbers a local port may take.
+const PORT_FIRST = 1024;
+const PORT_LAST = 65535;
+// The loopback every forward listens on, which macOS's browser and a share
+// mounted there name.
+const LOOPBACK_SERVER = '127.0.0.1';
+
+function drawApps(state) {
+  const hubs = state.hubs || [];
+  if (hubs.length === 0) return waitCard();
+  const card = panelCard(t('ui.panel_apps'), false);
+  let count = 0;
+  for (const hub of hubs) {
+    if (!isReachable(hub)) {
+      card.appendChild(downRow(hub));
+      continue;
+    }
+    for (const app of appsOf(state, hub)) {
+      card.appendChild(appRow(state, hub, app));
+      count += 1;
+    }
   }
-  return button;
+  if (count === 0) card.appendChild(emptyRow(t('ui.empty_apps')));
+  return card;
 }
 
-// Configure on a forwardable entry: the local port dialog, closed to an
-// entry that is forwarded.
-function configureButton(hub, entry, isForwarded) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = t('ui.configure');
-  button.disabled = isForwarded || !isEntryFree(hub, entry);
-  button.onclick = () => openPortDialog(entry);
-  return button;
+function appsOf(state, hub) {
+  return (state.apps || []).filter((app) => app.hub_id === hub.hub_id);
 }
 
-// The local port dialog: Auto, or Fixed with a number from 1024 to 65535.
-function openPortDialog(entry) {
-  const saved = entry.local_port === undefined ? 'auto' : entry.local_port;
-  let isFixed = saved !== 'auto';
+// An app's entries in the order the hub lists them, but its shares, which
+// the Files page mounts.
+function appEntries(state, app) {
+  return (state.services || []).filter((entry) => entry.hub_id === app.hub_id
+    && entry.app_id === app.id && entry.type !== 'file');
+}
+
+// The work on an app: its own job, else its hub's refresh.
+function appWork(hub, app) {
+  if (app.job) return app.job;
+  return isRefreshing(hub) ? 'refreshing' : '';
+}
+
+// Whether every entry of an app is unhealthy, so none of it can be used.
+function isAppUnhealthy(entries) {
+  return entries.length > 0 && entries.every(isUnhealthy);
+}
+
+// An app's dot: amber pulsing while work runs on it, amber while every entry
+// is unhealthy, green otherwise.
+function appTone(hub, app, entries) {
+  if (appWork(hub, app)) return 'pulse';
+  return isAppUnhealthy(entries) ? 'wait' : 'ok';
+}
+
+// Which hub and which machine an app is on, and who answers for it; an app
+// at no machine the hub knows names the address its entries point at.
+function appProviderLine(hub, app, entries) {
+  const source = APP_SOURCES.indexOf(app.source) >= 0 ? t('ui.app_source.' + app.source) : '';
+  const machine = app.device_name || (entries.length ? entryHost(entries[0]) : '');
+  return t('ui.app_provided_by', { hub: hubName(hub), machine: machine, source: source });
+}
+
+// The host an app's local addresses name: its local name, or the loopback
+// on macOS, whose browser resolves no .localhost name.
+function localHost(app) {
+  return isMac() ? LOOPBACK_SERVER : app.local_name;
+}
+
+// One entry's local address: the page's own url for a web entry, the name
+// and the port for a port entry, ssh before them for an ssh entry.
+function localAddress(app, entry) {
+  const port = typeof entry.local_port === 'number' ? entry.local_port : entry.forward;
+  const where = localHost(app) + ':' + port;
+  if (entry.type === 'web') {
+    const url = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i.exec((entry.payload || {}).url || '');
+    const scheme = url ? url[1].toLowerCase() : 'http';
+    const path = url && url[2] ? url[2] : '/';
+    return scheme + '://' + where + path;
+  }
+  if (entry.type === 'ssh') return 'ssh ' + where;
+  return where + protocolSuffix(entry);
+}
+
+// One entry's mono line under its app: its local address, and the health
+// word when the hub reports it unhealthy.
+function entryLine(app, entry) {
+  const line = document.createElement('div');
+  line.className = 'sub';
+  line.textContent = localAddress(app, entry)
+    + (isUnhealthy(entry) ? ' · ' + t('ui.unhealthy') : '');
+  return line;
+}
+
+// An app: its title, the machine and its source, one mono line per entry;
+// Use, Configure, and Stop while it is in use.
+function appRow(state, hub, app) {
+  const entries = appEntries(state, app);
+  const work = appWork(hub, app);
+  const isFree = !work && hub.connection !== 'disabled';
+  const use = jobButton(t('ui.app.use'), app.job === 'opening' ? 'opening' : '');
+  if (app.job !== 'opening') {
+    use.disabled = !isFree || entries.length === 0 || isAppUnhealthy(entries);
+    use.onclick = () => send('/api/app/open', { hub_id: app.hub_id, app_id: app.id });
+  }
+  const configure = document.createElement('button');
+  configure.type = 'button';
+  configure.className = 'ghost';
+  configure.textContent = t('ui.app.configure');
+  configure.disabled = !isFree || !!app.is_in_use || entries.length === 0;
+  configure.onclick = () => openAppPortDialog(app, entries);
+  const actions = [use, configure];
+  if (app.is_in_use || app.job === 'disconnecting') actions.push(stopButton(app));
+  return rowElement({
+    tone: appTone(hub, app, entries),
+    title: app.title,
+    word: work ? t('ui.job.' + work) : '',
+    provider: appProviderLine(hub, app, entries),
+    extras: entries.map((entry) => entryLine(app, entry)),
+    error: wordError(app.last_error),
+    reason: appReason(hub, app, entries, use, configure),
+    actions: actions,
+  });
+}
+
+// Stop: ends every forward of an app, and is its indicator while it does.
+function stopButton(app) {
+  const isStopping = app.job === 'disconnecting';
+  const stop = jobButton(t('ui.app.stop'), isStopping ? app.job : '', 'danger');
+  if (!isStopping) {
+    stop.onclick = () => send('/api/app/stop', { hub_id: app.hub_id, app_id: app.id });
+  }
+  return stop;
+}
+
+// Why Use or Configure cannot act, empty while both can or work runs.
+function appReason(hub, app, entries, use, configure) {
+  if (appWork(hub, app)) return '';
+  if (hub.connection === 'disabled') return t('ui.reason.disabled');
+  if (use.disabled && isAppUnhealthy(entries)) return t('ui.reason.unhealthy');
+  if (configure.disabled && app.is_in_use) return t('ui.reason.disconnect_first');
+  return '';
+}
+
+// Whether a field holds no number or one a local port may take.
+function isPortField(value) {
+  if (value === '') return true;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= PORT_FIRST && number <= PORT_LAST;
+}
+
+// The local ports of one app: a number per entry, starting at the one it
+// forwards on; an empty field goes back to the hub's number. Save sends the
+// fields that changed.
+function openAppPortDialog(app, entries) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   const modal = document.createElement('div');
   modal.className = 'card modal';
   const heading = document.createElement('div');
   heading.className = 'panel_title';
-  heading.textContent = entry.title;
+  heading.textContent = t('ui.app.port_dialog_title', { app: app.title });
   modal.appendChild(heading);
-  const label = document.createElement('label');
-  label.textContent = t('ui.local_port');
-  modal.appendChild(label);
-  const line = document.createElement('div');
-  line.className = 'row';
-  const number = document.createElement('input');
-  number.type = 'number';
-  number.min = '1024';
-  number.max = '65535';
-  number.value = isFixed ? String(saved) : '';
-  const choice = picker('local_port_' + serviceKey(entry), [
-    { value: 'auto', label: t('ui.local_port_auto') },
-    { value: 'fixed', label: t('ui.local_port_fixed') },
-  ], isFixed ? 'fixed' : 'auto', (value) => { isFixed = value === 'fixed'; check(); },
-  false);
-  choice.style.flex = 'none';
-  choice.style.minWidth = '120px';
-  line.appendChild(choice);
-  line.appendChild(number);
-  modal.appendChild(line);
+  const fields = [];
+  for (const entry of entries) {
+    const label = document.createElement('label');
+    label.textContent = entry.name + ' · ' + t('ui.entry_kind.' + entry.type)
+      + protocolSuffix(entry);
+    modal.appendChild(label);
+    const number = document.createElement('input');
+    number.type = 'number';
+    number.min = String(PORT_FIRST);
+    number.max = String(PORT_LAST);
+    const saved = typeof entry.local_port === 'number' ? String(entry.local_port) : '';
+    number.value = saved;
+    number.oninput = check;
+    modal.appendChild(number);
+    fields.push({ name: entry.name, input: number, saved: saved });
+  }
   const why = reasonLine('');
   modal.appendChild(why);
   const actions = document.createElement('div');
   actions.className = 'form_actions';
   const save = document.createElement('button');
+  save.type = 'button';
   save.textContent = t('ui.save');
   const cancel = document.createElement('button');
+  cancel.type = 'button';
   cancel.className = 'ghost';
   cancel.textContent = t('ui.cancel');
   actions.appendChild(save);
   actions.appendChild(cancel);
   modal.appendChild(actions);
 
-  function chosen() {
-    return isFixed ? Number(number.value) : 'auto';
+  function changes() {
+    const ports = {};
+    for (const field of fields) {
+      const value = field.input.value.trim();
+      if (value === field.saved) continue;
+      ports[field.name] = value === '' ? null : Number(value);
+    }
+    return ports;
   }
   function check() {
-    number.disabled = !isFixed;
-    const value = chosen();
-    const isValid = !isFixed || (Number.isInteger(value) && value >= 1024 && value <= 65535);
+    const isValid = fields.every((field) => isPortField(field.input.value.trim()));
+    const isDirty = Object.keys(changes()).length > 0;
     why.textContent = isValid ? '' : t('ui.reason.port_range');
-    save.disabled = !isValid;
-    modal.classList.toggle('dirty', value !== saved);
+    save.disabled = !isValid || !isDirty;
+    modal.classList.toggle('dirty', isDirty);
   }
-  number.oninput = check;
   save.onclick = async () => {
     save.disabled = true;
-    const reply = await api('/api/forward/configure',
-      { hub_id: entry.hub_id, id: entry.id, local_port: chosen() });
+    const reply = await api('/api/app/set',
+      { hub_id: app.hub_id, app_id: app.id, ports: changes() });
     if (reply && reply.code) {
       why.textContent = reply.code === 'port_taken'
-        ? t('ui.reason.port_taken', { port: chosen() }) : wordError(reply);
+        ? t('ui.reason.port_taken', { port: (reply.params || {}).port })
+        : wordError(reply);
       save.disabled = false;
       return;
     }
@@ -1272,10 +1413,10 @@ function drawAiEntry(card, state, hub, entry) {
   toggle.className = isInUse ? 'chip on' : 'chip';
   toggle.disabled = !isFree;
   if (entry.job) {
-    toggle.innerHTML = '<span class="spin"></span>';
+    toggle.appendChild(spinner());
     toggle.appendChild(document.createTextNode(t('ui.job.switching')));
   } else {
-    toggle.innerHTML = marker(isInUse && ai.is_active ? 'ok' : 'off');
+    toggle.appendChild(marker(isInUse && ai.is_active ? 'ok' : 'off'));
     toggle.appendChild(document.createTextNode(t('ui.ai_use')));
   }
   toggle.onclick = () => askAiUse(hub, entry, !isInUse);
@@ -1310,7 +1451,8 @@ async function askAiUse(hub, entry, isOn) {
 
 // Every tab, in the order it appeared: {key, hub_id, device_id, name,
 // session_id, terminal_id, term, fit, pane, state, note, isRefused, typed,
-// isSending, isListed, isDropped, droppedAt, flags}. ``state`` is 'idle' for
+// isSending, isListed, isDropped, droppedAt, flags, account}; ``account`` is
+// the one a new shell runs as, empty for a listed session. ``state`` is 'idle' for
 // a listed session no window of this page attached to yet, or one whose hub's
 // channel dropped (``isDropped``, at the state count ``droppedAt``),
 // 'connecting', 'open', 'ended' once the hub stopped
@@ -1322,6 +1464,9 @@ let activeShell = '';
 let shellCounter = 0;
 // The machine the chips have picked, by hub and device.
 let shellPick = null;
+// The account each machine's new terminal runs as, as the picker left it,
+// by hub and device.
+const shellAccounts = {};
 // The surface the panes live in, made once.
 let shellSurface = null;
 // Whether the next fit also puts the keyboard on the active shell.
@@ -1456,7 +1601,8 @@ function drawTerminals(state) {
 }
 
 // Every machine a connected hub offers a terminal on, one chip each with its
-// presence dot, and the button that opens a new terminal on the picked one.
+// presence dot, then the account picker of the picked machine and the button
+// that opens a new terminal there.
 function machineStrip(state) {
   const card = document.createElement('div');
   card.className = 'card term_pick';
@@ -1475,7 +1621,7 @@ function machineStrip(state) {
       chip.type = 'button';
       chip.className = isPicked ? 'chip on' : 'chip';
       chip.title = t('ui.machine_provided_by', { hub: hubName(hub), device: machine.name });
-      chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');
+      chip.appendChild(marker(machine.is_online ? 'ok' : 'off'));
       chip.appendChild(document.createTextNode(machine.name));
       chip.onclick = () => {
         shellPick = { hub_id: hub.hub_id, device_id: machine.device_id };
@@ -1491,8 +1637,13 @@ function machineStrip(state) {
   const line = document.createElement('div');
   line.className = 'term_pick_line';
   line.appendChild(chips);
+  const after = document.createElement('div');
+  after.className = 'term_pick_actions';
+  const accounts = picked ? accountPicker(picked) : null;
+  if (accounts) after.appendChild(accounts);
   const open = newShellButton(picked);
-  line.appendChild(open);
+  after.appendChild(open);
+  line.appendChild(after);
   card.appendChild(line);
   if (picked) {
     card.appendChild(noteLine(t('ui.machine_provided_by',
@@ -1513,23 +1664,55 @@ function pickedMachine(state) {
   return null;
 }
 
+// The accounts a machine's terminal is enabled for, the first the default.
+function machineAccounts(machine) {
+  return (machine.accounts || []).filter((account) => typeof account === 'string' && account);
+}
+
+// The account a new terminal on the picked machine runs as: the one the
+// picker left, while the machine still enables it, else the first.
+function pickedAccount(picked) {
+  if (!picked) return '';
+  const accounts = machineAccounts(picked.machine);
+  const chosen = shellAccounts[picked.hub.hub_id + '/' + picked.machine.device_id];
+  return accounts.indexOf(chosen) >= 0 ? chosen : (accounts[0] || '');
+}
+
+// The account picker, drawn only when the picked machine enables two
+// accounts or more.
+function accountPicker(picked) {
+  const accounts = machineAccounts(picked.machine);
+  if (accounts.length < 2) return null;
+  const key = picked.hub.hub_id + '/' + picked.machine.device_id;
+  const options = accounts.map((account) => ({ value: account, label: account }));
+  const wrap = picker('terminal_account', options, pickedAccount(picked),
+    (account) => { shellAccounts[key] = account; }, false);
+  wrap.classList.add('term_account');
+  wrap.title = t('ui.terminal.account');
+  wrap.setAttribute('aria-label', wrap.title);
+  return wrap;
+}
+
 function canOpenShell(picked) {
-  return !!picked && picked.machine.is_online && picked.hub.connection === 'connected';
+  return !!picked && picked.machine.is_online && picked.hub.connection === 'connected'
+    && machineAccounts(picked.machine).length > 0;
 }
 
 function newShellReason(picked) {
   if (!picked) return t('ui.reason.no_machine');
   if (picked.hub.connection === 'disabled') return t('ui.reason.disabled');
-  return t('ui.reason.offline');
+  if (!picked.machine.is_online) return t('ui.reason.offline');
+  return t('ui.reason.terminal_no_account');
 }
 
-// The button that opens a new terminal on the picked machine.
+// The button that opens a new terminal on the picked machine, as the
+// account the picker shows.
 function newShellButton(picked) {
   const open = document.createElement('button');
   open.type = 'button';
   open.textContent = t('ui.terminal_new');
   open.disabled = !canOpenShell(picked);
-  open.onclick = () => openShell(picked.hub, picked.machine);
+  open.onclick = () => openShell(picked.hub, picked.machine, pickedAccount(picked));
   return open;
 }
 
@@ -1539,11 +1722,17 @@ function shellPanel(state) {
   if (shellTabs.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'term_empty';
-    empty.innerHTML = '<span>' + t('ui.terminal_none') + '</span>' +
-      '<span class="faint">' + t('ui.terminal_pick_hint') + '</span>';
+    const none = document.createElement('span');
+    none.textContent = t('ui.terminal_none');
+    const hint = document.createElement('span');
+    hint.className = 'faint';
+    hint.textContent = t('ui.terminal_pick_hint');
+    empty.appendChild(none);
+    empty.appendChild(hint);
     const open = newShellButton(pickedMachine(state));
     open.className = 'with_icon';
-    open.innerHTML = icon('terminal', 14);
+    clearChildren(open);
+    open.appendChild(icon('terminal', 14));
     open.appendChild(document.createTextNode(t('ui.terminal_new')));
     empty.appendChild(open);
     return empty;
@@ -1557,7 +1746,7 @@ function shellPanel(state) {
   head.ondblclick = (event) => {
     if (event.target !== head) return;
     const picked = pickedMachine(state);
-    if (canOpenShell(picked)) openShell(picked.hub, picked.machine);
+    if (canOpenShell(picked)) openShell(picked.hub, picked.machine, pickedAccount(picked));
   };
   panel.appendChild(head);
   panel.appendChild(shellSurfaceElement());
@@ -1601,7 +1790,12 @@ function flagSwitch(label, isOn, isEnabled, onFlip) {
   button.setAttribute('role', 'switch');
   button.setAttribute('aria-checked', String(isOn));
   button.disabled = !isEnabled;
-  button.innerHTML = '<span class="switch_track"><span class="switch_thumb"></span></span>';
+  const track = document.createElement('span');
+  track.className = 'switch_track';
+  const thumb = document.createElement('span');
+  thumb.className = 'switch_thumb';
+  track.appendChild(thumb);
+  button.appendChild(track);
   button.appendChild(document.createTextNode(label));
   button.onclick = onFlip;
   return button;
@@ -1628,7 +1822,7 @@ function shellTabButton(tab) {
   const label = document.createElement('button');
   label.type = 'button';
   label.className = 'term_tab_label';
-  label.innerHTML = marker(shellTone(tab));
+  label.appendChild(marker(shellTone(tab)));
   label.title = tab.name;
   label.appendChild(document.createTextNode(
     tab.state === 'ended' ? t('ui.terminal_ended') : tab.name));
@@ -1754,6 +1948,7 @@ function newTab(hubId, machine, sessionId) {
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
     isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false, isClearing: false,
+    account: '',
     clearMark: document.createElement('div'),
   };
   tab.clearMark.className = 'term_clearing hidden';
@@ -1915,8 +2110,9 @@ document.addEventListener('keydown', (event) => {
 
 // A new terminal on one machine: its tab at once, the shell once the
 // resident has opened it at the pane's size.
-function openShell(hub, machine) {
+function openShell(hub, machine, account) {
   const tab = newTab(hub.hub_id, machine, '');
+  tab.account = account || '';
   activeShell = tab.key;
   shouldFocusShell = true;
   redraw();
@@ -1946,6 +2142,7 @@ function startShell(tab) {
   api('/api/terminal/open', {
     hub_id: tab.hub_id, device_id: tab.device_id,
     cols: tab.term.cols, rows: tab.term.rows, session_id: tab.session_id,
+    account: tab.account,
   }).then((reply) => {
     if (reply && reply.code === 'hub_unreachable' && tab.session_id) {
       loseShell(tab, wordCode(reply.code, reply.params));
@@ -2174,27 +2371,7 @@ function base64Bytes(encoded) {
   return bytes;
 }
 
-// --- the Files panel: Configure, then Mount / Unmount ---
-
-function mountDefaultPath(payload, state) {
-  // A drive letter where that is the shape, the platform's own free one.
-  if ((state.mount_location_shape || 'path') === 'drive_letter') {
-    return state.mount_location_suggestion || 'N:';
-  }
-  // A volume's mount point is the system's to pick.
-  if (!asksMountPlace(state)) return '';
-  return (state.home || '') + '/nas/' + (payload.share || '');
-}
-
-// Whether the form asks where to mount: not for a volume the system places.
-function asksMountPlace(state) {
-  return (state.mount_location_shape || 'path') !== 'volume';
-}
-
-// Whether a staged form holds everything a mount needs.
-function isMountFormFilled(staged, state) {
-  return !!staged.username && (!!staged.path || !asksMountPlace(state));
-}
+// --- the Files page: Configure, then Mount / Unmount ---
 
 // A form staged for an entry no hub carries any more is gone.
 function dropStaleFileStages(state) {
@@ -2204,11 +2381,21 @@ function dropStaleFileStages(state) {
   }
 }
 
-// The codes a record can only leave with a new login: mounting it again as
-// it stands would be refused again, so Mount opens the form instead.
-const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
-// The server a forwarded share is mounted from, as the Finder lists it.
-const LOOPBACK_SERVER = '127.0.0.1';
+// The codes a declared share's record leaves only with a new login: mounting
+// it again with the kept one would be refused again, so Mount opens the form.
+const LOGIN_CODES = ['share_login_rejected', 'share_access_denied', 'credentials_missing'];
+
+// Whether a staged form holds everything a mount needs: every place has its
+// default, and a declared share needs a user name.
+function isMountFormFilled(staged, entry) {
+  return !entry.is_declared || !!staged.username;
+}
+
+// Whether a record failed for its login, which only a declared share's form
+// can mend; a machine's share reads its login from the hub at every mount.
+function isLoginRefused(entry, record) {
+  return !!entry.is_declared && !!record && LOGIN_CODES.indexOf(record.code) >= 0;
+}
 
 // The panel is marked dirty while any entry's form is open. A stage stays
 // through a failed mount and goes once the share is mounted.
@@ -2233,7 +2420,7 @@ function drawFileEntry(card, state, hub, entry) {
     if (staged && staged.is_open) {
       cancelFileForm(key);
     } else {
-      openFileForm(key, state, payload, record);
+      openFileForm(key, state, entry, record);
     }
     redraw();
   };
@@ -2241,46 +2428,38 @@ function drawFileEntry(card, state, hub, entry) {
   const extras = [];
   for (const each of records) {
     extras.push(drawMountRecord(each));
-    // A volume is listed in the Finder under the server it came from.
-    if (!asksMountPlace(state) && each.is_attached && each.path) {
-      extras.push(noteLine(t('ui.mount_finder', { server: each.server || each.host || '' })));
+    // On macOS the volume is listed in the Finder under the server it came
+    // from.
+    if (isMac() && each.is_attached && each.path) {
+      extras.push(noteLine(t('ui.mount_finder', { server: each.server || LOOPBACK_SERVER })));
     }
   }
   let row = null;
   if (staged && staged.is_open) {
-    const isLoginRefused = !!record && LOGIN_CODES.indexOf(record.code) >= 0;
     // After a refused login, Save mounts with the new login at once.
-    const onSave = isLoginRefused && !entry.job
-      ? () => sendFileMount(entry, staged) : null;
-    extras.push(drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {
+    const onSave = isLoginRefused(entry, record) && !entry.job
+      ? () => sendFileLogin(entry, record, staged) : null;
+    extras.push(drawFileForm(staged, state, entry, key, onSave, () => {
       if (!entry.job) {
         mount.disabled = !isEntryFree(hub, entry) || isUnhealthy(entry)
-          || !isMountFormFilled(staged, state);
+          || !isMountFormFilled(staged, entry);
       }
-      if (row) setReasonLine(row, mountReason(state, hub, entry, record, mount));
+      if (row) setReasonLine(row, mountReason(hub, entry, record, mount));
     }));
   }
   row = entryRow(hub, entry,
     '//' + (payload.host || '') + '/' + (payload.share || ''),
-    '', [config, mount], mountReason(state, hub, entry, record, mount), extras);
+    '', [config, mount], mountReason(hub, entry, record, mount), extras);
   card.appendChild(row);
 }
 
-// Why Mount cannot run, empty while it can. Each system's sentence names
-// what its own form asks for: a path, a drive letter, or a user name alone.
-function mountReason(state, hub, entry, record, mount) {
+// Why Mount cannot run, empty while it can: the hub, the share's health, or
+// a declared share's form with no user name.
+function mountReason(hub, entry, record, mount) {
   if (!mount.disabled || entryWork(hub, entry)) return '';
   return entryReason(hub, entry, !(record && record.is_attached))
-    || t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path']
-      || 'ui.reason.mount_form');
+    || (entry.is_declared ? t('ui.reason.mount_user') : '');
 }
-
-// The empty form's reason, by the system's mount location shape.
-const MOUNT_FORM_REASONS = {
-  path: 'ui.reason.mount_form',
-  drive_letter: 'ui.reason.mount_form_drive',
-  volume: 'ui.reason.mount_form_volume',
-};
 
 // A row's faint reason line set to a text, or removed with none.
 function setReasonLine(row, text) {
@@ -2295,9 +2474,9 @@ function setReasonLine(row, text) {
   }
 }
 
-// Open an entry's form on its saved stage, else on the record's login,
-// else on the defaults; what it held before is what Cancel puts back.
-function openFileForm(key, state, payload, record) {
+// Open an entry's form on its saved stage, else on the record's place and
+// login, else on the defaults; what it held before is what Cancel puts back.
+function openFileForm(key, state, entry, record) {
   const staged = fileStaged[key];
   if (staged) {
     staged.before = Object.assign({}, staged);
@@ -2307,8 +2486,7 @@ function openFileForm(key, state, payload, record) {
   fileStaged[key] = {
     is_open: true, username: record ? (record.username || '') : '',
     password: '',
-    path: record && asksMountPlace(state) ? record.path
-      : mountDefaultPath(payload, state),
+    path: record && record.path ? record.path : (entry.mount_default || ''),
     before: null,
   };
 }
@@ -2324,18 +2502,25 @@ function cancelFileForm(key) {
 }
 
 // The one button beside Configure: Mount, its job while it mounts, Unmount
-// once mounted, its job while it unmounts. A stage wins: what it holds is
-// sent as a fresh mount, and it is kept until the share is mounted; after a
-// refused login the press opens the form on it instead.
+// once mounted, its job while it unmounts. A machine's share mounts at the
+// first press at its default place; a stage wins: what it holds is sent as a
+// fresh mount, and it is kept until the share is mounted. After a refused
+// login on a declared share the press opens the form instead.
 function mountButton(state, hub, entry, record, staged) {
   if (entry.job) {
     return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');
   }
+  if (record && record.state === 'unmounting') {
+    return jobButton('', 'unmounting', 'danger');
+  }
+  if (record && MOUNT_BUSY_STATES.indexOf(record.state) >= 0) {
+    return jobButton('', 'mounting');
+  }
   const button = document.createElement('button');
   button.type = 'button';
   const isFree = isEntryFree(hub, entry);
-  const isLoginRefused = !!record && LOGIN_CODES.indexOf(record.code) >= 0;
-  if (staged && !staged.is_open && isLoginRefused) {
+  const isRefused = isLoginRefused(entry, record);
+  if (staged && !staged.is_open && isRefused) {
     button.textContent = t('ui.mount');
     button.disabled = !isFree;
     button.onclick = () => {
@@ -2347,23 +2532,25 @@ function mountButton(state, hub, entry, record, staged) {
   }
   if (staged) {
     button.textContent = t('ui.mount');
-    button.disabled = !isFree || isUnhealthy(entry) || !isMountFormFilled(staged, state);
+    button.disabled = !isFree || isUnhealthy(entry) || !isMountFormFilled(staged, entry);
     button.onclick = () => sendFileMount(entry, staged);
     return button;
   }
   if (record === undefined) {
     button.textContent = t('ui.mount');
-    button.disabled = true;
+    button.disabled = !isFree || isUnhealthy(entry) || !!entry.is_declared;
+    button.onclick = () => serviceAction('file',
+      { action: 'mount', hub_id: entry.hub_id, id: entry.id, path: '' });
     return button;
   }
-  if (isLoginRefused) {
+  if (isRefused) {
     // Nothing to retry with: the press opens the form, the login prefilled.
     button.textContent = t('ui.mount');
     button.disabled = !isFree;
     button.onclick = () => {
       fileStaged[serviceKey(entry)] = {
         is_open: true, username: record.username || '', password: '',
-        path: asksMountPlace(state) ? record.path : '', before: null,
+        path: record.path || entry.mount_default || '', before: null,
       };
       redraw();
     };
@@ -2385,14 +2572,28 @@ function mountButton(state, hub, entry, record, staged) {
 }
 
 // A stage sent as a fresh mount: the form closes, and the stage is kept
-// until the share is mounted.
+// until the share is mounted. A declared share sends the form's login; a
+// machine's share takes its login from the hub.
 function sendFileMount(entry, staged) {
   staged.is_open = false;
   staged.is_sent = true;
   staged.before = null;
+  const body = { action: 'mount', hub_id: entry.hub_id, id: entry.id, path: staged.path };
+  if (entry.is_declared) {
+    body.username = staged.username;
+    body.password = staged.password;
+  }
+  serviceAction('file', body);
+}
+
+// A declared share's new login, saved on its record and mounted at once.
+function sendFileLogin(entry, record, staged) {
+  staged.is_open = false;
+  staged.is_sent = true;
+  staged.before = null;
   serviceAction('file', {
-    action: 'mount', hub_id: entry.hub_id, id: entry.id,
-    username: staged.username, password: staged.password, path: staged.path,
+    action: 'set', hub_id: entry.hub_id, record_id: record.record_id,
+    username: staged.username, password: staged.password,
   });
 }
 
@@ -2402,14 +2603,16 @@ function drawMountRecord(record) {
   const line = document.createElement('div');
   line.className = 'rec';
   const isBusy = MOUNT_BUSY_STATES.indexOf(record.state) >= 0;
+  const isUnmounting = record.state === 'unmounting';
   const status = isBusy ? t('ui.job.mounting')
+    : isUnmounting ? t('ui.job.unmounting')
     : record.code ? wordCode(record.code, record.params)
     : record.is_attached ? '' : t('ui.not_attached');
-  const tone = isBusy ? 'pulse' : record.is_attached ? 'ok' : record.code ? 'bad' : 'off';
-  line.innerHTML = marker(tone);
+  const tone = isBusy || isUnmounting ? 'pulse'
+    : record.is_attached ? 'ok' : record.code ? 'bad' : 'off';
+  line.appendChild(marker(tone));
   const path = document.createElement('span');
   path.className = 'path';
-  // A volume has no path until the system has mounted it.
   path.textContent = record.path
     ? record.path + (status ? ' — ' + status : '') : status;
   line.appendChild(path);
@@ -2417,32 +2620,38 @@ function drawMountRecord(record) {
 }
 
 // The form's fields write the stage as typed, and onChange keeps the Mount
-// button and the reason line in step with them. Save keeps the stage for the
-// next Mount; Cancel puts back what the stage held before the form opened.
-function drawFileForm(staged, state, server, key, onSave, onChange) {
+// button and the reason line in step with them: a declared share's user name
+// and password, then the place. Save keeps the stage for the next Mount;
+// Cancel puts back what the stage held before the form opened.
+function drawFileForm(staged, state, entry, key, onSave, onChange) {
   const form = document.createElement('div');
   form.className = 'form';
-  const fields = [
-    ['username', t('ui.username_hint'), 'text'],
-    ['password', t('ui.password_hint'), 'password'],
-  ];
-  for (const [name, hint, type] of fields) {
-    const line = document.createElement('div');
-    line.className = 'row';
-    const input = document.createElement('input');
-    input.type = type;
-    input.placeholder = hint;
-    input.value = staged[name];
-    input.oninput = () => { staged[name] = input.value; changed(); };
-    // Leaving the field lets a state that arrived while typing draw.
-    input.onblur = settle;
-    line.appendChild(input);
-    form.appendChild(line);
+  if (entry.is_declared) {
+    const users = ((entry.payload || {}).users || []).filter(
+      (user) => typeof user === 'string' && user);
+    const fields = [
+      ['username', t('ui.username_hint'), 'text'],
+      ['password', t('ui.password_hint'), 'password'],
+    ];
+    for (const [name, hint, type] of fields) {
+      const line = document.createElement('div');
+      line.className = 'row';
+      const input = document.createElement('input');
+      input.type = type;
+      input.placeholder = hint;
+      input.value = staged[name];
+      input.oninput = () => { staged[name] = input.value; changed(); };
+      // Leaving the field lets a state that arrived while typing draw.
+      input.onblur = settle;
+      if (name === 'username' && users.length) {
+        line.appendChild(userList(input, users, 'users_' + key));
+      }
+      line.appendChild(input);
+      form.appendChild(line);
+    }
   }
   if ((state.mount_location_shape || 'path') === 'drive_letter') {
-    form.appendChild(driveLetterLine(staged, state));
-  } else if (!asksMountPlace(state)) {
-    form.appendChild(volumeCaptionLine(server));
+    form.appendChild(driveLetterLine(staged, state, entry));
   } else {
     form.appendChild(mountPathLine(staged, changed));
   }
@@ -2452,7 +2661,7 @@ function drawFileForm(staged, state, server, key, onSave, onChange) {
   save.type = 'button';
   save.textContent = t('ui.save');
   save.onclick = () => {
-    if (onSave && isMountFormFilled(staged, state)) { onSave(); return; }
+    if (onSave && isMountFormFilled(staged, entry)) { onSave(); return; }
     staged.is_open = false;
     staged.before = null;
     redraw();
@@ -2466,15 +2675,29 @@ function drawFileForm(staged, state, server, key, onSave, onChange) {
   actions.appendChild(cancel);
   form.appendChild(actions);
   function changed() {
-    save.disabled = !isMountFormFilled(staged, state);
+    save.disabled = !isMountFormFilled(staged, entry);
     onChange();
   }
-  save.disabled = !isMountFormFilled(staged, state);
+  save.disabled = !isMountFormFilled(staged, entry);
   return form;
 }
 
+// The share's own users offered under the user name field, typed text
+// accepted beside them.
+function userList(input, users, id) {
+  const list = document.createElement('datalist');
+  list.id = id;
+  for (const user of users) {
+    const option = document.createElement('option');
+    option.value = user;
+    list.appendChild(option);
+  }
+  input.setAttribute('list', id);
+  return list;
+}
+
 // A directory under the home, with a Browse button that lists it as this
-// person.
+// person; the default is ~/remote/<machine>-<share>.
 function mountPathLine(staged, onChange) {
   const pathLine = document.createElement('div');
   pathLine.className = 'row';
@@ -2496,15 +2719,15 @@ function mountPathLine(staged, onChange) {
   return pathLine;
 }
 
-// A drive letter picked from the ones still free, with a caption naming
-// where the share turns up.
-function driveLetterLine(staged, state) {
+// A drive letter picked from the ones still free, the first free one by
+// default, with a caption naming where the share turns up.
+function driveLetterLine(staged, state, entry) {
   const wrap = document.createElement('div');
   const letters = (state.mount_location_choices || []).slice();
   if (staged.path && letters.indexOf(staged.path) < 0) letters.unshift(staged.path);
   const options = letters.map((letter) => (
     { value: letter, label: t('ui.mount_drive_label') + ' ' + letter }));
-  staged.path = staged.path || (letters[0] || '');
+  staged.path = staged.path || entry.mount_default || (letters[0] || '');
   const select = picker('mount_drive', options, staged.path,
     (value) => { staged.path = value; redraw(); }, false);
   const caption = document.createElement('div');
@@ -2518,32 +2741,27 @@ function driveLetterLine(staged, state) {
   return wrap;
 }
 
-// The caption naming where the system lists a volume: in the Finder,
-// under its server.
-function volumeCaptionLine(server) {
-  const caption = document.createElement('div');
-  caption.className = 'feat';
-  const note = document.createElement('div');
-  note.className = 'note';
-  note.textContent = t('ui.mount_volume_caption', { server: server });
-  caption.appendChild(note);
-  return caption;
-}
-
 // --- the Settings page: About, then the window's own choices ---
 
-// What the settings page holds before Save: {language, theme}, or null while
-// it holds what the window already uses.
+// What the settings page holds before Save: {language, theme,
+// is_ssh_include_enabled}, or null while it holds what the client uses.
 let settingsDraft = null;
 
-// The About card, then the settings card: the language and the palette,
-// nothing sent until Save, the frame lit while the page holds a change.
+// The About card, then the settings card: the language, the palette and
+// whether SSH programs reach the machines, nothing sent until Save, the
+// frame lit while the page holds a change.
 function drawSettings(state) {
   const page = document.createElement('div');
   page.className = 'settings_page';
   page.appendChild(aboutSection(state));
-  const draft = settingsDraft || { language: language, theme: theme };
-  const isDirty = draft.language !== language || draft.theme !== theme;
+  const saved = {
+    language: language,
+    theme: theme,
+    is_ssh_include_enabled: !!state.is_ssh_include_enabled,
+  };
+  const draft = settingsDraft || saved;
+  const isDirty = draft.language !== saved.language || draft.theme !== saved.theme
+    || draft.is_ssh_include_enabled !== saved.is_ssh_include_enabled;
   const card = panelCard(t('ui.settings_title'), isDirty);
   card.classList.add('settings');
   function stage(key, value) {
@@ -2564,6 +2782,12 @@ function drawSettings(state) {
     (code) => ({ value: code, label: t('ui.theme_name.' + code) }));
   card.appendChild(picker('theme', themeOptions, draft.theme,
     (value) => stage('theme', value), false));
+  card.appendChild(flagSwitch(t('ui.settings.ssh_include'), draft.is_ssh_include_enabled,
+    true, () => stage('is_ssh_include_enabled', !draft.is_ssh_include_enabled)));
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = t('ui.settings.ssh_include_hint');
+  card.appendChild(hint);
   const actions = document.createElement('div');
   actions.className = 'form_actions';
   const save = document.createElement('button');
@@ -2572,12 +2796,11 @@ function drawSettings(state) {
   save.disabled = !isDirty;
   save.onclick = () => {
     settingsDraft = null;
-    if (draft.language !== language) {
-      send('/api/language', { language: draft.language });
-    }
-    if (draft.theme !== theme) {
-      send('/api/theme', { theme: draft.theme });
-    }
+    send('/api/settings/set', {
+      language: draft.language,
+      theme: draft.theme,
+      is_ssh_include_enabled: draft.is_ssh_include_enabled,
+    });
     redraw();
   };
   const cancel = document.createElement('button');
@@ -2926,7 +3149,7 @@ function openBrowser(startPath, onChoose) {
     current = reply.path;
     where.textContent = current;
     note.textContent = '';
-    list.innerHTML = '';
+    clearChildren(list);
     if (current !== '/') {
       const up = document.createElement('button');
       up.textContent = t('ui.up');

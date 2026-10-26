@@ -3,15 +3,17 @@
 The page is plain HTML, CSS and JavaScript under ``client/desktop/frontend/``,
 so what can be checked here is the contract's visible surface: the sidebar in
 its order with a glyph on every entry and the settings entry below a rule, one
-hub row per hub and the join row always there, one panel per kind listing
-every hub's entries in hub order with the line each carries while nothing is
-offered, every entry's one provider line, the one AI switch, the staging keyed
-by service key, the redraw guards, the bridge adapter with no direct network
-reach, and the word catalogs asserted complete: the two languages carry the
-same keys, every key the page asks for is in them, and every ``{code}`` and
-every state token the client can emit is enumerated from the source and must
-have a wording, so a new code or state without a word fails this suite.
-Nothing of the agent's Modules section is left.
+hub row per hub and the join row always there, the Apps page with one row per
+app and its local port dialog, one panel per kind listing every hub's entries
+in hub order with the line each carries while nothing is offered, every
+entry's one provider line, the one AI switch, the staging keyed by service
+key, the account picker of the terminals, the settings switch, the redraw
+guards, the bridge adapter with no direct network reach, no word from outside
+read as markup, and the word catalogs asserted complete: the two languages
+carry the same keys, every key the page asks for is in them, and every
+``{code}`` and every state token the client can emit is enumerated from the
+source and must have a wording, so a new code or state without a word fails
+this suite. Nothing of the agent's Modules section is left.
 """
 
 import hashlib
@@ -131,12 +133,11 @@ CLIENT_MD_CHINESE = {
     "ui.state.disabled": "已停用",
 }
 
-# The five kinds in the order the sidebar lists them: the catalog key stem,
-# the type on the wire, the heading, the function drawing one entry, and the
-# line the panel carries while no hub publishes the kind.
+# The kinds with a page of their own, in the order the sidebar lists them:
+# the catalog key stem, the type on the wire, the heading, the function
+# drawing one entry, and the line the panel carries while no hub publishes
+# the kind.
 SERVICE_PANELS = (
-    ("web", "web", "Web", "drawWebEntry", "No web services yet"),
-    ("ports", "port", "Ports", "drawPortEntry", "No ports yet"),
     ("ai", "ai", "AI", "drawAiEntry", "No AI service yet"),
     ("files", "file", "Files", "drawFileEntry", "No shares yet"),
     (
@@ -151,8 +152,7 @@ SERVICE_PANELS = (
 # The sidebar's entries, top to bottom, by their title's key.
 SIDEBAR_KEYS = (
     "ui.section_hubs",
-    "ui.panel_web",
-    "ui.panel_ports",
+    "ui.panel_apps",
     "ui.panel_ai",
     "ui.panel_files",
     "ui.panel_terminals",
@@ -171,8 +171,8 @@ STATE_PATTERNS = (
 NON_STATES = {"off", "cifs"}
 
 # Mount record states the page words through ``is_attached`` rather than a
-# states entry.
-ATTACH_RENDERED_STATES = {"mounted", "detached"}
+# states entry, and the one it words as its job.
+ATTACH_RENDERED_STATES = {"mounted", "detached", "unmounting"}
 
 
 def emitted_codes() -> set:
@@ -266,6 +266,8 @@ def test_every_key_the_page_asks_for_is_in_the_catalog():
     built |= {f"ui.overlay.{state}" for state in OVERLAY_STATES}
     built |= {f"ui.language_name.{language}" for language in CLIENT_LANGUAGES}
     built |= {f"ui.theme_name.{theme}" for theme in CLIENT_THEMES}
+    built |= {f"ui.app_source.{source}" for source in ("module", "declared", "manual")}
+    built |= {f"ui.entry_kind.{kind}" for kind in ("web", "port", "ssh")}
 
     missing = (asked_keys() | built) - set(EN_WORDS)
 
@@ -361,14 +363,12 @@ def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left(
     assert 'id="settings"' not in PAGE_HTML
     assert head.index('id="page_title"') < head.index('id="refresh"')
     assert '<div id="content"></div>' in PAGE_HTML
-    assert (
-        "const TABS = ['hubs', 'web', 'port', 'ai', 'file', 'terminals', 'rdp'];"
-        in (PAGE_JS)
+    assert "const TABS = ['hubs', 'apps', 'ai', 'file', 'terminals', 'rdp'];" in (
+        PAGE_JS
     )
     assert [EN_WORDS[key] for key in SIDEBAR_KEYS] == [
         "Hubs",
-        "Web",
-        "Ports",
+        "Apps",
         "AI",
         "Files",
         "Terminals",
@@ -376,8 +376,7 @@ def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left(
     ]
     assert [CATALOGS["zh-CN"][key] for key in SIDEBAR_KEYS] == [
         "中枢",
-        "网页",
-        "端口",
+        "应用",
         "AI",
         "文件",
         "终端",
@@ -402,9 +401,18 @@ def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left(
         "is_privileged",
         "state.accounts",
         "Modules",
+        "drawWebEntry",
+        "drawPortEntry",
+        "ui.panel_web",
+        "ui.panel_ports",
+        "/api/forward/configure",
+        "/api/services/web",
+        "/api/services/port",
     ):
         assert gone not in PAGE_JS, gone
     assert "ui.section_services" not in EN_WORDS
+    for gone in ("ui.panel_web", "ui.panel_ports", "ui.empty_web", "ui.empty_ports"):
+        assert gone not in EN_WORDS and gone not in CATALOGS["zh-CN"], gone
 
 
 def test_every_sidebar_entry_carries_its_glyph_before_its_name():
@@ -413,22 +421,26 @@ def test_every_sidebar_entry_carries_its_glyph_before_its_name():
     shapes = PAGE_JS.split("const ICON_SHAPES = {")[1].split("};")[0]
     drawing = PAGE_JS.split("function icon(name, size)")[1].split("\n}")[0]
 
+    attributes = PAGE_JS.split("const ICON_ATTRIBUTES = {")[1].split("};")[0]
+
     assert tab.index("icon(TAB_ICONS[tab], 17)") < tab.index("tabTitle(tab)")
+    assert "button.appendChild(icon(TAB_ICONS[tab], 17));" in tab
     assert dict(re.findall(r"([a-z]+): '([a-z]+)'", glyphs)) == {
         "hubs": "server",
-        "web": "globe",
-        "port": "plug",
+        "apps": "grid",
         "ai": "sparkles",
         "file": "folder",
         "terminals": "terminal",
         "rdp": "desktop",
         "settings": "settings",
     }
-    for name in ("server", "globe", "plug", "sparkles", "folder", "terminal"):
-        assert f"  {name}: '<" in shapes, name
-    assert "  desktop: '<" in shapes and "  settings: '<" in shapes
-    assert 'stroke="currentColor" stroke-width="1.6"' in drawing
-    assert 'viewBox="0 0 24 24"' in drawing
+    for name in ("server", "grid", "sparkles", "folder", "terminal", "desktop"):
+        assert f"  {name}: [" in shapes, name
+    assert "  settings: [" in shapes
+    assert "stroke: 'currentColor', 'stroke-width': '1.6'," in attributes
+    assert "viewBox: '0 0 24 24'" in attributes
+    assert "document.createElementNS(SVG_NAMESPACE, 'svg')" in drawing
+    assert "document.createElementNS(SVG_NAMESPACE, tag)" in drawing
     assert "button.tab { position: relative; display: flex; gap: 12px;" in PAGE_CSS
 
 
@@ -528,13 +540,15 @@ def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
 
 def test_every_action_names_the_entrys_hub():
     for sent in (
-        "{ hub_id: entry.hub_id, id: entry.id }",
-        "{ hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }",
         "{ action: 'connect', hub_id: entry.hub_id, id: entry.id }",
-        "action: 'mount', hub_id: entry.hub_id, id: entry.id,",
+        "{ action: 'mount', hub_id: entry.hub_id, id: entry.id, path: '' }",
+        "{ action: 'mount', hub_id: entry.hub_id, id: entry.id, path: staged.path }",
         "{ action: 'mount', hub_id: entry.hub_id, record_id: record.record_id }",
         "{ action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id }",
+        "action: 'set', hub_id: entry.hub_id, record_id: record.record_id,",
         "hub_id: entry.hub_id,\n    is_enabled: isOn,",
+        "{ hub_id: app.hub_id, app_id: app.id }",
+        "{ hub_id: app.hub_id, app_id: app.id, ports: changes() }",
     ):
         assert sent in PAGE_JS, sent
 
@@ -558,7 +572,7 @@ def test_the_kinds_stand_in_their_fixed_order():
     drawn = re.findall(r"\['([a-z]+)', 'ui\.panel_", kinds)
 
     assert drawn == [kind for _, kind, _, _, _ in SERVICE_PANELS]
-    assert drawn == ["web", "port", "ai", "file", "rdp"]
+    assert drawn == ["ai", "file", "rdp"]
 
 
 def test_a_panel_with_no_entry_of_its_kind_draws_its_empty_line_once():
@@ -660,6 +674,7 @@ def test_every_choice_the_page_offers_goes_through_the_one_picker():
         "'gemini_model'",
         "'claude_' + slot",
         "'language'",
+        "'terminal_account'",
     ):
         assert used in PAGE_JS
     # An open list must outlive the poll that would redraw it away.
@@ -791,7 +806,7 @@ def test_the_reason_line_follows_the_mount_button():
     reason = body_of("mountReason")
     assert "if (!mount.disabled || entryWork(hub, entry)) return '';" in reason
     files = body_of("drawFileEntry")
-    assert "setReasonLine(row, mountReason(state, hub, entry, record, mount));" in files
+    assert "setReasonLine(row, mountReason(hub, entry, record, mount));" in files
     assert "if (line) line.remove();" in body_of("setReasonLine")
 
 
@@ -1117,7 +1132,7 @@ def test_every_entry_of_a_refreshing_hub_pulses_with_its_actions_off():
 
 def test_a_button_that_starts_a_job_is_its_indicator():
     button = body_of("jobButton")
-    assert "button.innerHTML = '<span class=\"spin\"></span>';" in button
+    assert "button.appendChild(spinner());" in button
     assert "t('ui.job.' + job)" in button
     assert "button.disabled = true;" in button
 
@@ -1491,6 +1506,7 @@ def run_hubs_page(hubs: list) -> list:
             "const document = {createElement: element,",
             "  createTextNode: (text) => text};",
             "const send = () => {};",
+            "const spinner = () => 'spin';",
             "const noticeLine = () => null;",
             "const joinRow = () => null;",
             "const noteLine = (text) => text;",
@@ -1610,18 +1626,8 @@ def test_the_network_line_reads_on_or_off_and_a_connect_is_its_job():
 def test_every_entry_is_one_row_with_its_provider_line():
     row = body_of("entryRow")
     assert "provider: providerLine(hub, entry)," in row
-    for build in ("drawWebEntry", "drawPortEntry", "drawAiEntry", "drawFileEntry"):
+    for build in ("drawAiEntry", "drawFileEntry", "drawDesktopEntry"):
         assert "entryRow(hub, entry," in body_of(build)
-
-
-def test_every_web_entry_opens_through_a_forward_as_a_job():
-    web = body_of("drawWebEntry")
-    assert "jobButton(t('ui.open'), opening)" in web
-    assert "const actions = [configure, open];" in web
-    assert "actions.push(disconnectButton('web', entry));" in web
-    assert "forwardedTo(entry)" in web
-    assert "is_local_only" not in PAGE_JS
-    assert "ui.open_local" not in EN_WORDS
 
 
 def test_the_hub_row_says_the_way_in_and_offers_the_panel():
@@ -1676,30 +1682,16 @@ def test_the_ai_row_shows_its_forward_and_that_the_tools_need_the_client():
 
 def test_after_a_refused_login_save_mounts_at_once():
     files = body_of("drawFileEntry")
-    assert "const onSave = isLoginRefused && !entry.job" in files
-    assert "? () => sendFileMount(entry, staged) : null;" in files
+    assert "const onSave = isLoginRefused(entry, record) && !entry.job" in files
+    assert "? () => sendFileLogin(entry, record, staged) : null;" in files
     form = body_of("drawFileForm")
-    assert "if (onSave && isMountFormFilled(staged, state)) { onSave(); return; }" in (
+    assert "if (onSave && isMountFormFilled(staged, entry)) { onSave(); return; }" in (
         form
     )
-
-
-def test_a_forwardable_entry_sets_its_local_port_only_while_not_forwarded():
-    configure = body_of("configureButton")
-    assert "button.disabled = isForwarded || !isEntryFree(hub, entry);" in configure
-    port = body_of("drawPortEntry")
-    assert "[configure, button]" in port
-    assert "t('ui.reason.disconnect_first')" in port
-    assert "forwardedTo(entry)" in port
-    dialog = body_of("openPortDialog")
-    assert "api('/api/forward/configure'" in dialog
-    assert "t('ui.reason.port_taken', { port: chosen() })" in dialog
-    assert "value >= 1024 && value <= 65535" in dialog
-
-
-def test_a_forward_disconnects_even_while_its_entry_is_unhealthy():
-    port = body_of("drawPortEntry")
-    assert "(isUnhealthy(entry) && !isOn)" in port
+    refused = body_of("isLoginRefused")
+    assert "!!entry.is_declared && !!record" in refused
+    login = body_of("sendFileLogin")
+    assert "username: staged.username, password: staged.password," in login
 
 
 def test_only_a_false_health_is_unhealthy_on_every_page():
@@ -1761,9 +1753,7 @@ def test_empty_health_leaves_connect_enabled_when_the_page_runs_it():
     ]
 
 
-def test_a_udp_port_row_names_its_protocol_after_both_addresses():
-    port = body_of("drawPortEntry")
-    assert "(payload.host || '') + ':' + (payload.port || '') + suffix" in port
+def test_the_ai_row_names_its_forward_after_the_gateway():
     assert "return (entry.payload || {}).protocol === 'udp' ? '/udp' : '';" in (
         body_of("protocolSuffix")
     )
@@ -1779,69 +1769,74 @@ def test_the_ai_switch_and_configure_wait_for_any_switch_running():
     assert "t('ui.job.switching')" in ai
 
 
-def test_a_mount_waits_for_a_user_name_and_a_path():
-    assert "!isMountFormFilled(staged, state)" in body_of("mountButton")
-    assert "!isMountFormFilled(staged, state)" in body_of("drawFileEntry")
-    filled = body_of("isMountFormFilled")
-    assert "!!staged.username && (!!staged.path || !asksMountPlace(state))" in filled
-    assert "t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path']" in (
-        body_of("mountReason")
+def test_a_machines_share_mounts_at_the_first_press_and_a_declared_one_waits():
+    button = body_of("mountButton")
+    assert (
+        "button.disabled = !isFree || isUnhealthy(entry) || !!entry.is_declared;"
+        in (button)
     )
-
-
-def test_each_system_says_what_its_own_mount_form_asks_for():
-    reasons = PAGE_JS.split("const MOUNT_FORM_REASONS = {")[1].split("};")[0]
-    assert "path: 'ui.reason.mount_form'," in reasons
-    assert "drive_letter: 'ui.reason.mount_form_drive'," in reasons
-    assert "volume: 'ui.reason.mount_form_volume'," in reasons
-    for key in (
+    assert "{ action: 'mount', hub_id: entry.hub_id, id: entry.id, path: '' }" in button
+    assert "!isMountFormFilled(staged, entry)" in button
+    assert "!isMountFormFilled(staged, entry)" in body_of("drawFileEntry")
+    assert "return !entry.is_declared || !!staged.username;" in body_of(
+        "isMountFormFilled"
+    )
+    reason = body_of("mountReason")
+    assert "(entry.is_declared ? t('ui.reason.mount_user') : '')" in reason
+    assert EN_WORDS["ui.reason.mount_user"] == "Enter a user name in Configure first."
+    for gone in (
+        "asksMountPlace",
+        "mountDefaultPath",
+        "MOUNT_FORM_REASONS",
+        "'volume'",
+    ):
+        assert gone not in PAGE_JS, gone
+    for gone in (
         "ui.reason.mount_form",
         "ui.reason.mount_form_drive",
         "ui.reason.mount_form_volume",
+        "ui.mount_volume_caption",
     ):
-        assert key in EN_WORDS and key in CATALOGS["zh-CN"]
-    assert "drive letter" in EN_WORDS["ui.reason.mount_form_drive"]
-    assert "path" not in EN_WORDS["ui.reason.mount_form_drive"]
-    assert "盘符" in CATALOGS["zh-CN"]["ui.reason.mount_form_drive"]
+        assert gone not in EN_WORDS, gone
 
 
-def test_a_volume_form_asks_for_no_place_and_names_the_server():
-    assert "!== 'volume'" in body_of("asksMountPlace")
-    default = body_of("mountDefaultPath")
-    assert "if (!asksMountPlace(state)) return '';" in default
+def test_the_form_holds_the_place_and_a_declared_shares_login():
     form = body_of("drawFileForm")
-    assert "} else if (!asksMountPlace(state)) {" in form
-    assert "form.appendChild(volumeCaptionLine(server));" in form
-    caption = body_of("volumeCaptionLine")
-    assert "t('ui.mount_volume_caption', { server: server })" in caption
-    files = body_of("drawFileEntry")
-    assert "drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {" in files
-    assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
+    assert form.index("if (entry.is_declared) {") < form.index("['username',")
+    assert "form.appendChild(driveLetterLine(staged, state, entry));" in form
+    assert "form.appendChild(mountPathLine(staged, changed));" in form
+    assert "line.appendChild(userList(input, users, 'users_' + key));" in form
+    users = body_of("userList")
+    assert "document.createElement('datalist')" in users
+    assert "option.value = user;" in users
+    opened = body_of("openFileForm")
     assert (
-        EN_WORDS["ui.reason.mount_form_volume"]
-        == "Enter a user name in Configure first."
+        "path: record && record.path ? record.path : (entry.mount_default || ''),"
+        in (opened)
     )
-    assert "path" not in EN_WORDS["ui.reason.mount_form_volume"]
-
-
-def test_a_volume_shows_no_path_before_the_system_mounted_it():
-    assert "path: record && asksMountPlace(state) ? record.path" in body_of(
-        "openFileForm"
-    )
-    assert "path: asksMountPlace(state) ? record.path : ''," in body_of("mountButton")
-    record = body_of("drawMountRecord")
-    assert "path.textContent = record.path\n    ? record.path" in record
-    assert "/Volumes" not in PAGE_JS
-
-
-def test_a_mounted_volume_names_the_server_the_finder_lists_it_under():
-    files = body_of("drawFileEntry")
-    assert "if (!asksMountPlace(state) && each.is_attached && each.path) {" in files
+    drive = body_of("driveLetterLine")
     assert (
-        "noteLine(t('ui.mount_finder', { server: each.server || each.host || '' }))"
+        "staged.path = staged.path || entry.mount_default || (letters[0] || '');"
+        in (drive)
+    )
+    assert "t('ui.mount_drive_caption')" in drive
+
+
+def test_a_mounted_share_on_a_mac_names_the_server_the_finder_lists_it_under():
+    files = body_of("drawFileEntry")
+    assert "if (isMac() && each.is_attached && each.path) {" in files
+    assert (
+        "noteLine(t('ui.mount_finder', { server: each.server || LOOPBACK_SERVER }))"
         in files
     )
     assert EN_WORDS["ui.mount_finder"] == "In the Finder it is under {server}."
+
+
+def test_an_unmounting_record_is_its_job_on_the_button_and_the_line():
+    button = body_of("mountButton")
+    assert "if (record && record.state === 'unmounting') {" in button
+    assert "return jobButton('', 'unmounting', 'danger');" in button
+    assert "isUnmounting ? t('ui.job.unmounting')" in body_of("drawMountRecord")
 
 
 def test_a_desktop_connects_once_while_no_viewer_runs():
@@ -2039,12 +2034,18 @@ def test_no_session_taken_handling_is_left():
 # --- the settings page ---
 
 
-def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
+def test_the_settings_card_carries_the_language_the_theme_and_the_ssh_switch():
     settings = body_of("drawSettings")
     assert settings.index("t('ui.language')") < settings.index("t('ui.theme')")
-    assert "send('/api/language', { language: draft.language });" in settings
-    assert "send('/api/theme', { theme: draft.theme });" in settings
+    assert settings.index("t('ui.theme')") < settings.index(
+        "t('ui.settings.ssh_include')"
+    )
+    assert "send('/api/settings/set', {" in settings
+    assert "is_ssh_include_enabled: draft.is_ssh_include_enabled," in settings
+    assert "is_ssh_include_enabled: !!state.is_ssh_include_enabled," in settings
+    assert "t('ui.settings.ssh_include_hint')" in settings
     assert "save.disabled = !isDirty;" in settings
+    assert "/api/language" not in PAGE_JS and "/api/theme'" not in PAGE_JS
     assert settings.index("page.appendChild(aboutSection(state));") < settings.index(
         "page.appendChild(card);"
     )
@@ -2124,11 +2125,6 @@ def test_the_sidebar_carries_only_the_pages_and_no_foot():
     assert 'id="ident"' not in PAGE_HTML
     assert ".ident" not in PAGE_CSS
     assert "getElementById('ident')" not in PAGE_JS
-
-
-def test_a_token_web_entry_has_open_alone_and_shows_its_job():
-    web = body_of("drawWebEntry")
-    assert "const opening = entry.job === 'opening' ? entry.job : '';" in web
 
 
 def run_ai_row(*, is_managed: bool) -> dict:
@@ -2313,3 +2309,381 @@ def test_every_form_field_spans_its_row():
     assert "max-width" not in settings_picker
     assert ".modal select { width: 100%; }" in PAGE_CSS
     assert ".form .row input { flex: 1; }" in PAGE_CSS
+
+
+# --- the Apps page ---
+
+
+def run_app_row(app: dict, entries: list, os_name: str = "linux", hub=None) -> dict:
+    """The page's own appRow and what it draws with, run in node with the
+    English catalog, returning the row's words, lines and controls."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    functions = "\n".join(
+        body_of(name)
+        for name in (
+            "fill",
+            "isUnhealthy",
+            "isRefreshing",
+            "hubName",
+            "entryHost",
+            "protocolSuffix",
+            "appWork",
+            "isAppUnhealthy",
+            "appTone",
+            "appProviderLine",
+            "localHost",
+            "localAddress",
+            "entryLine",
+            "appRow",
+            "stopButton",
+            "appReason",
+            "isMac",
+        )
+    )
+    constants = "\n".join(
+        f"const {name} = " + PAGE_JS.split(f"const {name} = ")[1].split(";\n")[0] + ";"
+        for name in ("APP_SOURCES", "LOOPBACK_SERVER")
+    )
+    script = "\n".join(
+        [
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "const wordError = (e) => e ? t('code.' + e.code, e.params) : '';",
+            "const lastState = {platform: {os: " + json.dumps(os_name) + "}};",
+            "const element = () => ({children: [], disabled: false, textContent: '',",
+            "  className: '', appendChild(child) { this.children.push(child); }});",
+            "const document = {createElement: element,",
+            "  createTextNode: (text) => text};",
+            "const send = () => {};",
+            "const openAppPortDialog = () => {};",
+            "function jobButton(label, job, className) {",
+            "  const button = element();",
+            "  button.textContent = job ? t('ui.job.' + job) : label;",
+            "  button.disabled = !!job;",
+            "  button.className = className || '';",
+            "  return button;",
+            "}",
+            "const rowElement = (options) => options;",
+            "function appEntries(state, app) { return state.services; }",
+            constants,
+            functions,
+            "const state = {services: " + json.dumps(entries) + "};",
+            "const row = appRow(state, "
+            + json.dumps(hub or HUB_ROW)
+            + ", "
+            + json.dumps(app)
+            + ");",
+            "console.log(JSON.stringify({word: row.word, tone: row.tone,",
+            "  provider: row.provider, error: row.error, reason: row.reason,",
+            "  lines: row.extras.map((line) => line.textContent),",
+            "  actions: row.actions.map((action) => [action.textContent,",
+            "    action.disabled, action.className])}));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+GITEA = {
+    "hub_id": "h1",
+    "id": "gitea_d1",
+    "title": "Gitea",
+    "source": "module",
+    "device_id": "d1",
+    "device_name": "lab-gpu",
+    "local_name": "gitea.lab-gpu.localhost",
+    "job": "",
+    "last_error": None,
+    "is_in_use": False,
+}
+GITEA_WEB = {
+    "hub_id": "h1",
+    "id": "gitea_d1_web",
+    "app_id": "gitea_d1",
+    "name": "web",
+    "type": "web",
+    "payload": {
+        "url": "http://10.0.0.5:3000/explore?tab=repos",
+        "is_token_required": False,
+    },
+    "is_healthy": True,
+    "local_port": 24123,
+    "forward": None,
+}
+GITEA_SSH = {
+    "hub_id": "h1",
+    "id": "gitea_d1_ssh",
+    "app_id": "gitea_d1",
+    "name": "ssh",
+    "type": "port",
+    "payload": {"host": "10.0.0.5", "port": 2222, "protocol": "tcp"},
+    "is_healthy": True,
+    "local_port": 27001,
+    "forward": None,
+}
+
+
+def test_an_app_row_names_its_machine_its_source_and_every_local_address():
+    dns = dict(
+        GITEA_SSH,
+        name="53_udp",
+        type="port",
+        payload={"host": "10.0.0.5", "port": 53, "protocol": "udp"},
+        local_port=25053,
+    )
+    shell = dict(
+        GITEA_SSH,
+        name="lab",
+        type="ssh",
+        payload={"host": "10.0.0.5", "port": 22001, "account": "lab"},
+        local_port=26001,
+    )
+
+    row = run_app_row(GITEA, [GITEA_WEB, GITEA_SSH, dns, shell])
+
+    assert row["provider"] == "from home:lab-gpu · module"
+    assert row["lines"] == [
+        "http://gitea.lab-gpu.localhost:24123/explore?tab=repos",
+        "gitea.lab-gpu.localhost:27001",
+        "gitea.lab-gpu.localhost:25053/udp",
+        "ssh gitea.lab-gpu.localhost:26001",
+    ]
+    assert row["actions"] == [["Use", False, ""], ["Configure", False, "ghost"]]
+    assert (row["tone"], row["word"], row["reason"]) == ("ok", "", "")
+
+
+def test_on_a_mac_every_local_address_is_the_loopback():
+    row = run_app_row(GITEA, [GITEA_WEB], os_name="darwin")
+
+    assert row["lines"] == ["http://127.0.0.1:24123/explore?tab=repos"]
+
+
+def test_an_app_in_use_offers_stop_and_holds_its_ports():
+    row = run_app_row(dict(GITEA, is_in_use=True), [GITEA_WEB, GITEA_SSH])
+
+    assert row["actions"] == [
+        ["Use", False, ""],
+        ["Configure", True, "ghost"],
+        ["Stop", False, "danger"],
+    ]
+    assert row["reason"] == EN_WORDS["ui.reason.disconnect_first"]
+
+
+def test_an_app_job_is_its_buttons_indicator():
+    row = run_app_row(dict(GITEA, job="opening"), [GITEA_WEB])
+
+    assert row["word"] == "Opening…"
+    assert row["tone"] == "pulse"
+    assert row["actions"][0] == ["Opening…", True, ""]
+    assert row["actions"][1][1] is True
+
+    stopping = run_app_row(
+        dict(GITEA, job="disconnecting", is_in_use=True), [GITEA_WEB]
+    )
+    assert stopping["actions"][2] == ["Disconnecting…", True, "danger"]
+
+
+def test_an_unhealthy_entry_says_so_on_its_line_and_use_waits_for_one_healthy():
+    sick = dict(GITEA_SSH, is_healthy=False)
+
+    row = run_app_row(GITEA, [GITEA_WEB, sick])
+    assert row["lines"][1] == "gitea.lab-gpu.localhost:27001 · Not reachable now"
+    assert row["actions"][0][1] is False
+
+    row = run_app_row(GITEA, [dict(GITEA_WEB, is_healthy=False), sick])
+    assert row["actions"][0][1] is True
+    assert row["reason"] == EN_WORDS["ui.reason.unhealthy"]
+    assert row["tone"] == "wait"
+
+
+def test_empty_health_leaves_use_enabled():
+    row = run_app_row(GITEA, [dict(GITEA_WEB, is_healthy=None)])
+
+    assert row["actions"][0][1] is False
+    assert row["tone"] == "ok"
+
+
+def test_a_failed_use_is_worded_on_the_apps_error_line():
+    failed = dict(GITEA, last_error={"code": "port_taken", "params": {"port": 24123}})
+
+    row = run_app_row(failed, [GITEA_WEB])
+
+    assert row["error"] == (
+        "Local port 24123 is in use; give this entry another in Configure."
+    )
+
+
+def test_a_disabled_hub_holds_every_app_still():
+    row = run_app_row(GITEA, [GITEA_WEB], hub=dict(HUB_ROW, connection="disabled"))
+
+    assert [action[1] for action in row["actions"]] == [True, True]
+    assert row["reason"] == EN_WORDS["ui.reason.disabled"]
+
+
+def test_the_apps_page_lists_every_hubs_apps_and_their_entries_but_shares():
+    page_body = body_of("drawApps")
+    assert "if (hubs.length === 0) return waitCard();" in page_body
+    assert "card.appendChild(downRow(hub));" in page_body
+    assert "if (count === 0) card.appendChild(emptyRow(t('ui.empty_apps')));" in (
+        page_body
+    )
+    entries = body_of("appEntries")
+    assert "entry.app_id === app.id && entry.type !== 'file'" in entries
+    assert "} else if (openTab === 'apps') {" in body_of("draw")
+    assert "if (tab === 'apps') return t('ui.panel_apps');" in body_of("tabTitle")
+
+
+def test_the_port_dialog_sends_the_changed_fields_and_says_a_taken_port():
+    dialog = body_of("openAppPortDialog")
+    assert "t('ui.app.port_dialog_title', { app: app.title })" in dialog
+    assert "ports[field.name] = value === '' ? null : Number(value);" in dialog
+    assert "api('/api/app/set'," in dialog
+    assert "t('ui.reason.port_taken', { port: (reply.params || {}).port })" in dialog
+    assert "t('ui.reason.port_range')" in dialog
+    assert "modal.classList.toggle('dirty', isDirty);" in dialog
+    assert dialog.index("save.textContent = t('ui.save');") < dialog.index(
+        "cancel.textContent = t('ui.cancel');"
+    )
+    field = body_of("isPortField")
+    assert "number >= PORT_FIRST && number <= PORT_LAST" in field
+    assert "const PORT_FIRST = 1024;" in PAGE_JS
+    assert "const PORT_LAST = 65535;" in PAGE_JS
+
+
+# --- the terminals' account picker ---
+
+
+def test_the_account_picker_follows_the_chips_with_two_accounts_or_more():
+    strip = body_of("machineStrip")
+    assert strip.index("line.appendChild(chips);") < strip.index(
+        "accountPicker(picked)"
+    )
+    assert strip.index("accountPicker(picked)") < strip.index("newShellButton(picked)")
+    chooser = body_of("accountPicker")
+    assert "if (accounts.length < 2) return null;" in chooser
+    assert "wrap.title = t('ui.terminal.account');" in chooser
+    account = body_of("pickedAccount")
+    assert "return accounts.indexOf(chosen) >= 0 ? chosen : (accounts[0] || '');" in (
+        account
+    )
+    assert "&& machineAccounts(picked.machine).length > 0;" in body_of("canOpenShell")
+    assert "return t('ui.reason.terminal_no_account');" in body_of("newShellReason")
+    assert "openShell(picked.hub, picked.machine, pickedAccount(picked))" in body_of(
+        "newShellButton"
+    )
+    assert "account: tab.account," in body_of("startShell")
+    assert "tab.account = account || '';" in body_of("openShell")
+
+
+# --- no word from outside is read as markup ---
+
+
+def test_no_word_from_outside_is_ever_read_as_markup():
+    """Names, titles, hosts, paths and codes reach the page from the hub and
+    its machines; one compromised machine must not run script in the window.
+    No assignment of markup may build on anything but a constant literal."""
+    for sink in ("outerHTML", "insertAdjacentHTML", "document.write", "DOMParser"):
+        assert sink not in PAGE_JS, sink
+    for match in re.finditer(r"\.innerHTML\s*\+?=\s*([^;]*);", PAGE_JS):
+        assert re.fullmatch(r"'[^'+]*'", match.group(1).strip()), match.group(0)
+    assert "innerHTML" not in PAGE_JS
+
+
+# --- the words of ui_text.md's 0.6.0 table ---
+
+# Key, English, Chinese, as ui_text.md writes them for the clients.
+UI_TEXT_060 = (
+    (
+        "code.control_unavailable",
+        "The hub is busy and did not answer; try again.",
+        "中枢正忙，没有应答，稍后再试。",
+    ),
+    (
+        "code.terminal_account_missing",
+        "No account is enabled for this machine's terminal; enable one on its "
+        "machine page.",
+        "这台机器的终端没有启用的账户，到它的机器页上启用一个。",
+    ),
+    (
+        "code.account_not_enabled",
+        "{account} is not enabled for this machine's terminal.",
+        "这台机器的终端没有启用 {account}。",
+    ),
+    (
+        "code.key_missing",
+        "The SSH server of {account} has no key from the hub; apply the module again.",
+        "{account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。",
+    ),
+    (
+        "code.op_unknown",
+        "This agent cannot do {op} on files.",
+        "这个被控端不能对文件做 {op}。",
+    ),
+    (
+        "code.hub_untrusted",
+        "The hub's key does not match; if it was reset, join it again.",
+        "中枢的密钥对不上；中枢重置过的话就重新加入。",
+    ),
+    ("ui.state.untrusted", "Hub key mismatch", "中枢密钥不符"),
+    (
+        "code.hub_key_missing",
+        "This binding is from 0.5 and the hub no longer moves it; join the hub "
+        "again with a new link.",
+        "这份绑定来自 0.5，中枢已不再迁移；用新链接重新加入中枢。",
+    ),
+    (
+        "code.port_taken",
+        "Local port {port} is in use; give this entry another in Configure.",
+        "本机端口 {port} 已被占用，在“配置”里给这个入口换一个。",
+    ),
+    (
+        "code.client_not_running",
+        "The client is not running; start it with nclient gui.",
+        "客户端没有运行，先 nclient gui。",
+    ),
+    ("ui.panel_apps", "Apps", "应用"),
+    ("ui.app_source.module", "module", "模块"),
+    ("ui.app_source.declared", "declared", "声明"),
+    ("ui.app_source.manual", "manual", "手动"),
+    ("ui.app.use", "Use", "使用"),
+    ("ui.app.configure", "Configure", "配置"),
+    ("ui.app.stop", "Stop", "停止"),
+    ("ui.app.port_dialog_title", "Local ports of {app}", "{app} 的本机端口"),
+    (
+        "ui.reason.terminal_no_account",
+        "No account is enabled for this machine's terminal.",
+        "这台机器的终端没有启用的账户。",
+    ),
+    ("ui.terminal.account", "Account", "账户"),
+    (
+        "ui.settings.ssh_include",
+        "SSH programs reach the machines",
+        "让 SSH 程序直接连被控端",
+    ),
+    (
+        "ui.settings.ssh_include_hint",
+        "Whether ssh, scp, git and VS Code reach each machine as <machine>.nt.",
+        "是否让 ssh、scp、git 和 VS Code 用 <机器>.nt 直接连到每台机器。",
+    ),
+)
+
+
+@pytest.mark.parametrize("key, english, chinese", UI_TEXT_060)
+def test_the_words_of_ui_text_are_in_both_catalogs_as_written(key, english, chinese):
+    assert EN_WORDS[key] == english
+    assert CATALOGS["zh-CN"][key] == chinese
+
+
+def test_a_chinese_invalid_code_opens_with_its_noun():
+    for key, wording in CATALOGS["zh-CN"].items():
+        if key.startswith("code.") and key.endswith("_invalid"):
+            assert wording.startswith("非法"), key

@@ -181,6 +181,10 @@ button.notice_close:hover { color: var(--color-error); }
 .term_pick_line { display: flex; gap: 12px; align-items: center;
                   justify-content: space-between; }
 .term_chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+/* After the chips: the account picker, when the machine enables two or
+   more, then New terminal. */
+.term_pick_actions { flex: none; display: flex; gap: 8px; align-items: center; }
+.picker.term_account { flex: none; min-width: 140px; }
 /* With no shell open, a dashed frame takes the room the panel would, as the
    hub's placeholder does. */
 .term_empty { flex: 1; display: flex; flex-direction: column; gap: 8px;
@@ -281,6 +285,8 @@ button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
 .settings { display: flex; flex-direction: column; gap: 10px; }
+.settings button.switch { margin-top: 6px; }
+.settings .hint { color: var(--color-text-muted); font-size: 12px; }
 /* About, the card above the settings card, after the panel's: a header with
    the title, then groups under their section labels, one row per fact, the
    label at the left and the value in mono at the right. */
