@@ -1099,6 +1099,15 @@ hold for every role, in the transport's own constants.
 | datagrams held while a UDP stream waits for its `accept`: the client's before the hub's, the hub's before the agent's | `UdpHeldDatagramsMax` 16 |
 | a question to the Python beside it | `ControlQuestionTimeout` 5 s |
 | a cookie's life, and the cookie secret's | `CookieSecretLifetime` 120 s |
+| the bytes the hub's transport holds for every stream together | `TransportMemoryMaxBytes`, set by the transport's builder from a measurement and written here |
+
+The transport's own TCP settings:
+
+| Rule | Reason |
+| --- | --- |
+| Every TCP socket the transport holds keeps Go's default, `TCP_NODELAY` on. | A record goes out when it is written, and a keystroke or a small request never waits for an acknowledgement. |
+| The transport never changes the system's TCP settings in 0.6.0: no `sysctl`, no registry value, and no buffer size of its own on a socket. The kernel's own buffers then bound one session's speed on a long path; measured on 2026-10-26 at a 100 ms round trip with Ubuntu 22.04's defaults, one session moved about 27 MB/s, and plain TCP about 30. | The hub could raise only its own side, while a client's or a phone's kernel stays at its default; and a setting the hub changed would be a change to the machine that no page shows. |
+| The hub's transport caps the memory it holds for its streams' bytes: one stream at `StreamWindowMaxBytes`, go-yamux's own largest window, and every stream together at `TransportMemoryMaxBytes`, through go-yamux's memory manager ([connection.md](connection.md), "What an unadmitted peer can cost the hub"). | A peer that reads slowly makes the hub hold up to a full window for each of its streams, in each direction it relays. |
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |

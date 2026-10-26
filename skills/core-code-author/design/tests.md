@@ -49,7 +49,7 @@ Each Go package's tests sit beside its files, `relay_session_test.go` beside
 | --- | --- |
 | `knock/` | `mac1` and `mac2` against vectors kept beside the package; a wrong version, length or `mac1` answered with nothing; the replay window per static key; the cookie reply under load and its 120 seconds; the limits on connections and on knocks in flight with the clock injected |
 | `handshake/` | Noise_IKpsk2 against vectors kept beside the package; the join's zero psk, a bound peer's token psk, and a refusal under the zero psk opened by the peer's second try; `hub_untrusted` for an answer that opens under neither |
-| `session/` | the yamux settings, keepalive closing a silent session, the record layout and every record type, the control stream's JSON lines and the frame cap |
+| `session/` | the yamux settings, the memory cap (a window that stops growing at `TransportMemoryMaxBytes` and a stream refused at its open reset), keepalive closing a silent session, the record layout and every record type, the control stream's JSON lines and the frame cap |
 | `relay/` | a client's `connect` joined to an agent's with raw bytes after `accept`, a UDP stream's datagram records dropped without a wait, `connect_limit`, `streams_close` closing the streams of one kind |
 | `control/` | the local channel: the secret on every connection, the three connection kinds, each question's timeout answered `control_unavailable`, the three commands, and the frames passed both ways, against `hub/tests/web/channel_schema.json` |
 | `mobile/` | `Start` and `Stop` serving the same local channel on a socket in a temporary directory |

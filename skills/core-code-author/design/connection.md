@@ -21,7 +21,7 @@ peer.
 
 | Rule | Reason |
 | --- | --- |
-| A client dials the hub's agent port and no other address. Files, web pages, ports, the panel, remote desktops, terminals and the AI gateway are streams on that one session. | A person outside the home needs one reachable port. A service's address, port and secret stay inside the hub's LAN. |
+| A client dials the hub's agent port and no other address. Files, web pages, ports, the panel, remote desktops, terminals and the AI gateway are streams on that one session, and every stream, a file share's included, rides the peer's one TCP connection; no stream opens a second connection. | A person outside the home needs one reachable port. A service's address, port and secret stay inside the hub's LAN. One connection is one knock, one handshake and one admission for every stream. |
 | An agent dials the same port and listens on none of its own for the hub. The one port it opens for the machine's AI tools is on its own `127.0.0.1`, and for the machine's containers on the Podman bridges on Linux and on WSL's vEthernet adapter on Windows, each with a firewall rule scoped to that interface where the machine's firewall drops it ([agent.md](agent.md), "The listeners a container reaches"). Their connections go to the hub over that session. | A managed machine behind a firewall or a NAT is reached over the session it opened, and the AI gateway answers on the hub's loopback alone. |
 | The hub relays every stream, on the LAN and from outside alike. Each of a client's streams ends at the hub. | A relayed stream works with the routes a home already has. One path has one set of permission checks. |
 | A machine's own services stay reachable on its LAN at their own ports, under each service's own login. | A person at home keeps the tools they already use. The connection is the way from a client, and it closes no other way. |
@@ -98,6 +98,8 @@ which the hub's Python counts in `modules/channel/constants.py`.
 | one record | `RecordBytesMax` 64 KiB | the stream is reset | A record is a chunk of a stream, never a whole file. |
 | the answer to yamux's keepalive on an admitted session | `KeepAliveInterval` 20 s between pings, `KeepAliveTimeout` 60 s for the answer | the session ends and every stream on it ends; the transport writes one line for it, at most once a minute for each peer address | The ping waits behind what the session already queued: a desktop stream can hold a full window unconfirmed, and 60 seconds covers it at a slow uplink. |
 | admitted sessions | `SessionsMax` 512 | the next `hello` is refused `channel_full {limit}` | One binding holds one session, and a home has far fewer than 512 bindings. |
+| the bytes the hub's transport holds for one stream | `StreamWindowMaxBytes` 16 MiB, the stream's largest window | the window grows no further, and the sender waits | A stream whose reader is slow holds at most one window on the hub. |
+| the bytes the hub's transport holds for every stream together | `TransportMemoryMaxBytes`, through go-yamux's memory manager | a window grows only while the total has room, and a stream the manager refuses at its open is reset | 512 sessions of 256 streams at a full window each is more memory than any hub box has. |
 | failed admissions across the hub | `CHANNEL_ADMISSION_FAILURES_MAX` 30 within `CHANNEL_ADMISSION_WINDOW_S` 60 | every `join` is refused `admission_paused {retry_after_s}` until the oldest failure leaves the window | It ends a search for a ticket long before the search can succeed. |
 
 ### Under load
@@ -182,6 +184,7 @@ what a home already has: its LAN and one reachable port.
 | Limit | What follows from it |
 | --- | --- |
 | Every stream shares one TCP connection. A lost packet holds every stream on the session until it is sent again, and yamux's windows do not change that. | A stall on one stream is a stall on all of them, for the length of one retransmission. |
+| A small request waits behind the bytes a bulk transfer on the same session has already queued. Measured on 2026-10-26 at a 100 ms round trip: a 3 KB request took 102 ms on an idle session and 200 ms, at most 300, while a file copy ran on it. | A page or a terminal is slower while a file copies, by up to a few round trips. 0.6.0 accepts this and opens no second connection for file streams. |
 | A datagram in a stream keeps its boundary and loses its timing. It arrives late where plain UDP loses it. | UDP over the connection suits request and reply traffic: DNS, time, discovery, a small game server. Voice, video and fast games need a direct path. |
 | The hub's uplink and its transport bound the speed of every stream. Through the relay or a frp node that server's bandwidth bounds it too. | Terminals, editors, a desktop and ordinary file copies fit inside that bound. A transfer that needs the line's full speed uses a direct path. |
 | A direct path is a subnet route the person sets up in the overlay's own console. The hub lists the served networks for it and manages no route there. | That path is outside the connection. It reaches a machine's own ports under each service's own login, with no kind and no entry in between. |
