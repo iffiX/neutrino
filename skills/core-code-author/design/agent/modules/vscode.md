@@ -1,7 +1,7 @@
 # The VS Code module
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
-per account on Linux, Windows and macOS ([protocol.md](../../protocol.md),
+per enabled account on Linux, Windows and macOS ([protocol.md](../../protocol.md),
 "The modules section, one entry per module"). A VS Code instance listens on
 `127.0.0.1` alone, on every system. A client reaches it through a `connect`
 stream ([agent.md](../../agent.md), "The connect stream"), and its token is
@@ -14,7 +14,9 @@ layer, `modules/shared/account_service/`, runs each instance as its account:
 the unit `neutrino_vscode@<account>.service` with `User=` on Linux, the
 LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` on macOS, and
 the task `neutrino_vscode_<account>` registered with the account's login on
-Windows. The paths each system uses are the "VS Code" row of the platform
+Windows, the one its row on the machine page holds. The agent takes each
+instance's port itself ([../../protocol.md](../../protocol.md), "The account
+layer in the state"). The paths each system uses are the "VS Code" row of the platform
 table ([agent.md](../../agent.md), "The platform layer"). Its token is the
 instance's connection token, which `code serve-web` checks itself, so the
 module names no forwarder rule.

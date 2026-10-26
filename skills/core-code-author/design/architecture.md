@@ -395,9 +395,10 @@ an app declared by hand (web, port)         -> the same shape, probed
 
 **The service list carries no secrets.** It is composed once, fingerprinted,
 and pushed to every client resolved for the address that client reaches the
-hub on. The two secrets a service takes from the hub travel one at a time:
-a client's gateway key rides its own session, and a desktop's seat password
-is unsealed for the one answer to a Connect. The panel's Services page shows
+hub on. Every secret a service takes from the hub travels one at a time, as
+the answer to one `service` frame of one client: its own gateway key, a
+desktop's seat password, a page's token, a share's password, an account's
+SSH key ([protocol.md](protocol.md), "The service frame"). The panel's Services page shows
 the four kinds it can declare or module-publish; a shared desktop appears
 only in the device drawer and on clients.
 

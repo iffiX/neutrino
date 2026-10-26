@@ -40,12 +40,15 @@ password and is turned on for one client at a time.
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/web/panel_tls/` | none | yes: the panel's certificate authority, `authority.pem` in the clear and `authority_key.sealed` under the vault's data key, generated at setup |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
-| `config/devices/<id>/terminal.json` | none | no: the Terminal module's `{account, shell_path}`, both empty for the shell the agent runs by default |
+| `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
+| `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |
+| `config/devices/<id>/samba.json` | none | yes: the file share's enabled accounts and each one's SMB password, sealed under the vault's data key |
+| `config/devices/<id>/code_server.json`, `cloudcli.json`, `codeg.json` | none | yes: each module's enabled accounts and the secrets it generated for each, sealed under the vault's data key ([../design/protocol.md](../design/protocol.md), "The account layer in the state") |
 | `config/devices/<id>/remote_desktop.json` | none | no: the Remote desktop module's `{is_enabled}`; absent is off |
 | `config/devices/<id>/modules.json` | none | no: each module's `want`, `is_settled` and chosen `version`, an empty `version` following the tested one |
 | `config/devices/<id>/<module>.json` of a container module that uses the AI gateway | none | yes: the module's gateway key on that device, sealed under the vault's data key |
 | `config/devices/<id>/hermes_webui.json` | none | yes: the Hermes WebUI module's port, its token secret, the webui's password and its gateway key, the last three sealed under the vault's data key |
-| `config/devices/<id>/vscode.json` | none | yes: each VS Code instance's connection token, sealed under the vault's data key, beside its account, its port and the vault login a Windows machine starts it with |
+| `config/devices/<id>/vscode.json` | none | yes: the VS Code module's enabled accounts, each with its connection token sealed under the vault's data key, and `terms_accepted_at` |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
 | `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |
 | `config/netbird/netbird.json` | `netbird.example.json` | yes: the reusable setup key clients join the overlay with, sealed |

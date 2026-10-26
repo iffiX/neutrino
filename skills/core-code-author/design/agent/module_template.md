@@ -29,15 +29,16 @@ methods.
 
 ## The run
 
-One instance runs per account the configuration names. The account service
-layer, `modules/shared/account_service/` with one file per system, writes
+One instance runs per enabled account of the module, an available account of
+the machine ([agent.md](../agent.md), "The two layers and the accounts"). The
+account service layer, `modules/shared/account_service/` with one file per system, writes
 the service definition, starts, stops, removes and queries it:
 
 | System | The service |
 | --- | --- |
 | Linux | the unit `neutrino_<module>@<account>.service` with `User=<account>`, its output in the unit's journal |
 | macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says, and `AbandonProcessGroup` where the module asks for it, so the processes the program started keep running when the job stops |
-| Windows | a scheduled task under the account's login, the one the Credentials page holds for the instance, started at boot with no time limit and a limited token; a stop ends the task's whole process tree |
+| Windows | a scheduled task under the account's login, the one the account's row on the machine page holds, started at boot with no time limit and a limited token; a stop ends the task's whole process tree |
 
 The service's environment is written from scratch, with nothing inherited
 from a login profile or a version manager, and the module's `hooks.py`
@@ -47,7 +48,11 @@ first on `PATH`, then the account's `~/.local/bin` and `~/bin`, then the
 system's own directories ([cloudcli.md](modules/cloudcli.md)). What the first start
 does, a registration or a first-run file, is the module's hook as well.
 
-The instance listens on loopback alone, and the agent's forwarder,
+The agent takes each instance's port itself, the first free port on
+`127.0.0.1` from the module's base port up, at the instance's first start,
+and keeps it in the instance's record ([../protocol.md](../protocol.md), "The
+account layer in the state"). The instance listens on loopback alone, and
+the agent's forwarder,
 `modules/shared/http_forward.py`, is in front of it on `127.0.0.1` at
 the configured port, where the agent's end of a `connect` stream reaches it.
 The hub generates a token from the instance's secret on every `service` ask,
@@ -73,13 +78,14 @@ shipped manifest.
 
 ## The publish
 
-Each instance a running module serves is one `web` entry in the services
-section, `<module>_<device id>_<account>`, titled `<Title> (<account>)`, with
-`is_token_required: true` and `description_code` `<module>_module`
-([protocol.md](../protocol.md), "The services section, one entry per
-published service"). The entry exists while the device reports the instance
-running, and a client opens it at its own forward's address with the token
-the `service` stream hands.
+Each instance a running module serves is one app,
+`<module>_<device id>_<account>`, titled `<Title> (<account>)`, with one
+`web` entry named `web`, so the entry's id is
+`<module>_<device id>_<account>_web`; the entry has `is_token_required: true`
+and `description_code` `<module>_module` ([../protocol.md](../protocol.md),
+"Apps"). The entry exists while the device reports the instance running, and
+a client opens it at its own forward's address with the token the `service`
+frame hands.
 
 ## The hub side
 
@@ -91,10 +97,10 @@ four programs run as an account share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
 each from that table; VS Code's terms acceptance stays in
-`module_vscode_terms.py`. Their secrets, each instance's token secret and
-CloudCLI's password, are generated the first time and kept sealed under the
-vault's data key in `config/devices/<id>/<module>.json`, and the state
-carries them opened. The panel draws the four with one `instances_panel.tsx`
+`module_vscode_terms.py`. Their secrets, each enabled account's token secret
+and CloudCLI's password, are generated the first time the account is enabled
+and kept sealed under the vault's data key in
+`config/devices/<id>/<module>.json`, and the state carries them opened. The panel draws the four with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The Modules page").
 
 ## What a module owns

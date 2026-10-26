@@ -298,7 +298,7 @@ linked from the table.
 | carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | `agent`, on every system | the module's own applier per system |
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
-| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
+| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
 Terminal and Remote desktop install nothing: their platform entries name the
@@ -324,6 +324,61 @@ definition and starts, stops, removes and queries it, and
 `modules/shared/http_forward.py` is in front of each instance on
 `127.0.0.1`. `modules/shared/` is the one package of what every module
 runner shares, each file one concept.
+
+## The two layers and the accounts
+
+A managed machine runs what the hub asks in two layers. The machine layer
+runs as root, SYSTEM on Windows: installs, system services, Containers, the
+SMB server and the remote desktop service. The account layer runs as one of
+the machine's own accounts, each process being that account and nothing
+more: the terminal, the SSH server, VS Code, code-server, CloudCLI, Codeg,
+the AI tools and the account's file share.
+
+An available account is one of the machine's accounts the person added on
+the machine page, with what every feature of the account layer needs to know
+of it. The hub keeps them per machine in
+`config/devices/<id>/accounts.json`, `{accounts: [{account, login_id,
+share_path, shell_path, is_ai_tools_enabled, tool_configs}]}`:
+
+| Field | Holds |
+| --- | --- |
+| `account` | an account the machine reports in its `machine` section |
+| `login_id` | on Windows, the vault login that holds the account's password, which the form asks once; empty elsewhere |
+| `share_path` | the folder the account's share serves, absolute in the machine's own form; empty is the account's home |
+| `shell_path` | the shell the account's terminal and SSH server start, absolute; empty is the account's login shell, and PowerShell on Windows |
+| `is_ai_tools_enabled` | whether the account's AI tools use the hub's AI gateway ([ai_tools.md](agent/ai_tools.md)); false on a new account |
+| `tool_configs` | the account's model choices, `{claude: {default, opus, sonnet, haiku}, codex: {model, model_reasoning_effort}, gemini: {model}}`, each empty for the gateway's default |
+
+A module of the account layer keeps its enabled accounts in its own file
+under `config/devices/<id>/`, each one an available account, and runs one
+instance for each.
+
+| Rule | Reason |
+| --- | --- |
+| A machine starts with no available account, and every module of the account layer with none enabled. | The hub runs nothing as a person's account until the person chose that account. |
+| The machine reports `account_details` in its `machine` section beside `accounts`, one `{account, home, shell}` for each, `home` in the machine's own form and `shell` the login shell, empty on Windows. | The form shows each default before the person changes it. |
+| Every feature that runs as an account reads that account's row: the file share its `share_path`, the terminal and the SSH server its `shell_path`, every program its login on Windows. | One form per account holds it, so no module asks again and two modules never disagree. |
+| On Windows the account's password is the one login every feature of the account signs in with: the scheduled tasks of the programs and of the SSH server, the terminal's logon, and the AI tools' one-shot tasks. A changed password is a new login; the old one is deleted ([ui_behavior.md](ui_behavior.md), "Secrets"). | Windows starts a process as another account only with its password, and one password per account is the one a person can keep up to date. |
+| A terminal and a command run as an enabled account of the Terminal module, never as root or SYSTEM. With no account enabled, the module opens no shell. | A shell the hub opens is a person's own; root's work is the agent's alone. |
+| The file share serves one share per enabled account, named after the account, at its `share_path`, to one SMB user per enabled account whose password the hub generates and seals ("The file share's accounts"). | The person mounts without a password, and a client holds a password that opens that share alone. |
+| Removing an available account takes it out of every module's enabled accounts, switches its AI tools back, and deletes its login and the generated passwords of its features, in one write. | A module never runs for an account the machine page no longer lists. |
+
+### The file share's accounts
+
+| System | The SMB user of an enabled account | Its password |
+| --- | --- | --- |
+| Linux | the account itself, its Samba password set apart from its login | generated by the hub |
+| Windows | `smb_<account>`, cut to 20 characters, a local account the module makes as it makes its accounts today ([modules/file_share.md](agent/modules/file_share.md)) | generated by the hub |
+| macOS | `smb_<account>`, a hidden account the module makes the same way | generated by the hub |
+
+The hub generates each password, 24 random bytes in base64url, the first
+time the account is enabled, and keeps it sealed under the vault's data key
+in `config/devices/<id>/samba.json`. The state carries it opened in the
+module's `users`, and a client reads it only through the `service` frame of
+the share's `file` entry ([protocol.md](protocol.md), "The service frame").
+On Windows and macOS the module grants the SMB user the share's folder, as it
+grants its accounts today, so the files a client writes there are written
+through that user.
 
 ## The connect stream
 
@@ -484,18 +539,20 @@ code-server, CloudCLI and Codeg, whose instances the account service layer,
 `modules/shared/account_service/`, starts through the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
-account's login, because LocalSystem cannot start a process as another
-account without its password. Every instance listens on `127.0.0.1` alone
+account's login, the one the account's row names, because LocalSystem
+cannot start a process as another account without its password. Every
+instance listens on `127.0.0.1` alone
 and the module opens no port in any firewall, since the hub reaches it
 through the agent's `connect` stream
 ([module_template.md](agent/module_template.md), "The run"). The third is the
 machine's AI tools, pointed at the gateway by cc-switch run as each account
 ([ai_tools.md](agent/ai_tools.md)). The fourth is a terminal or a command for
-the account the Terminal module names, on Linux and macOS: the shell, or the
-command an
-`exec` stream names, runs through the platform's step-down with that
-account's home and environment, the shell as a login shell on a
-pseudo-terminal the agent makes. The fifth is Containers on Windows and
+an enabled account of the Terminal module: on Linux and macOS the shell, or
+the command an `exec` stream names, runs through the platform's step-down
+with that account's home and environment, the shell as a login shell on a
+pseudo-terminal the agent makes; on Windows the agent logs the account on
+with its password (`LogonUserW`) and starts the shell or the command under
+that token, on a pseudo console of its own. The fifth is Containers on Windows and
 macOS, whose Podman machine is the default machine of the account the Run
 settings name: every `podman machine` and `wsl` command, and the root
 script that writes into the machine, run as that account through
@@ -559,9 +616,8 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered through the PowerShell host with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; two runs for one account take turns under a lock per account, since they share the task's name and its directory; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
 | Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
-| Shell stream, the Terminal module's settings empty | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the system configuration's console user, `State:/Users/ConsoleUser` through `scutil`, the login window, root and no name being nobody, and the owner of `/dev/console` only when `scutil` cannot be asked, since under auto-login that owner stays root while a person is signed in; `netstat`; the privacy grants |
-| Shell stream, the Terminal module's account set | `runuser -u <account> -- <shell> -l` on the pseudo-terminal, started in the account's home with its environment | no account: SYSTEM, as above, with the module's shell program | the account's uid and group in the child, its home, `HOME`, `USER` and `LOGNAME`, `<shell> -l` |
+| Shell stream, as an enabled account | `runuser -u <account> -- <shell> -l` on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in the account's home with its environment | the account logged on with its password (`LogonUserW`), the shell started under that token on a pseudo console in a job that kills it on close, in the account's profile directory, PowerShell when the account's row names no shell | the account's uid and group in the child, its home, `HOME`, `USER` and `LOGNAME`, `<shell> -l` on a pseudo-terminal, its controlling terminal as on Linux |
 | RustDesk, the agent's copy | `/usr/lib/neutrino/agent/rustdesk/rustdesk`; with the switch on the agent writes `/etc/systemd/system/rustdesk.service`, which overrides upstream's packaged `rustdesk.service` under `/usr/lib/systemd/system`, and enables and starts it; off, it disables it and deletes the file; `kept/service.json` records whether a packaged `rustdesk.service` was enabled and active, and a unit file of that name in `/etc` that is not the agent's is moved to `kept/`. The host is stopped with `systemctl kill`, never `systemctl stop` of upstream's unit, whose `ExecStop` is `pkill -f "rustdesk --"` and ends a person's viewers too. Upstream's own package deletes `/etc/systemd/system/rustdesk.service` when it is installed, upgraded or removed, so doing that while the switch is on takes the agent's registration away until the switch is applied again | `C:\Program Files\Neutrino\agent\rustdesk\rustdesk.exe` with its files; the service `RustDesk`, `AUTO_START` as LocalSystem, its `ImagePath` `"<copy>" --service`, created when none exists; `kept\service.json` holds a service found before (its `ImagePath`, start type and whether it ran); the service's configuration is read from the service control manager, and RustDesk's processes from the process table | `/Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app`; `/Library/LaunchDaemons/com.carriez.RustDesk_service.plist`, label `com.carriez.RustDesk_service`, the copy's `Contents/MacOS/service`, system domain; `/Library/LaunchAgents/com.carriez.RustDesk_server.plist`, label `com.carriez.RustDesk_server`, the copy's `Contents/MacOS/RustDesk --server`, `LimitLoadToSessionType` `Aqua` and `LoginWindow`, `RunAtLoad`, `KeepAlive` true; files found under those names are moved to `kept/` first |
 | RustDesk's settings | root's and the seat's `~/.config/rustdesk/RustDesk2.toml` and `RustDesk.toml` | LocalService's `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk2.toml` and `RustDesk.toml` | root's and the seated account's `~/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml` and `RustDesk.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through the PowerShell host, one function per operation and the password inside the request: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
@@ -591,19 +647,20 @@ reaches the shell, and the terminal takes the smallest window's size. A
 shell that `persist` marked persistent or shared keeps running when its last
 stream closes; any other ends with it. The agent keeps the `owner` the hub
 stamped on the open as given. The report's `machine` section lists every
-kept shell, and the process holds them, so a restart ends them all ([protocol.md](protocol.md), "The
-verbs on a `command` stream").
+kept shell, and the process holds them, so a restart ends them all ([protocol.md](protocol.md), "Kept
+shells").
 
 **A command runs once and is never kept.** An `exec {argv, is_tty, cols,
-rows}` stream runs `argv` as given, with no shell between, as the account a
-new shell would run as: the Terminal module's account through the same
-step-down as its shell, in that account's home with its environment, else
-root in root's home, and on Windows SYSTEM in the directory the "Shell
-stream" row names. The module's shell program is not read. An empty `argv`,
+rows, account}` stream runs `argv` as given, with no shell between, as the
+enabled account a new shell runs as, through the same step-down as its
+shell, in that account's home with its environment. The account's shell is
+not read. An empty `argv`,
 or one whose program the agent cannot find on the `PATH` the process gets or
 cannot run, is refused `shell_program_unusable {path}` before anything
-starts, and an account the machine does not have `account_unknown
-{account}`, as for a shell ([protocol.md](protocol.md), "The exec stream").
+starts, an account the Terminal module does not enable
+`account_not_enabled {account}`, and an account the machine does not have
+`account_unknown {account}`, as for a shell ([protocol.md](protocol.md),
+"The exec stream").
 
 | `is_tty` | The agent |
 | --- | --- |

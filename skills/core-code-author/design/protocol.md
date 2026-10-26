@@ -658,49 +658,17 @@ and a UDP one never.
 | `POST /api/agent/file/rename` | `{device_id, path, name}` | |
 | `POST /api/agent/file/remove` | `{device_id, path}` | |
 
-The VS Code block keeps `config/devices/<id>/vscode.json` as
-`{terms_accepted_at, instances: [{account, port, login_id, token_sealed}]}`:
-`terms_accepted_at` is the ISO 8601 time the person accepted Microsoft's terms
-for this machine, absent before; each instance's connection
-token is generated with `secrets.token_urlsafe(24)` the first time its
-account is saved and sealed under the vault's data key, and `login_id` names
-the vault login a Windows machine starts it with. The state carries the
-module as `{address, instances: [{account, port, token, password}]}`, the
-token opened, `password` the login's own and sent only to a Windows machine,
-and no seal and no login id. Each instance a running module serves is
-published as one `web` entry, `vscode_<device id>_<account>`, titled
-`VS Code (<account>)`, at `http://<device>:<port>/` with
-`is_token_required: true`.
-
 The four programs run as an account, `vscode`, `code_server`, `cloudcli`
 and `codeg`, share one router, `routers/agent/module_instances.py`, which
 reads each module's row of the description table in `modules/devices/`
-([agent/module_template.md](agent/module_template.md), "The hub side"):
-the instances are `{account, port}`, with a vault login per instance on a
-Windows machine, and the payload it validates is the one the agent
-receives. What the hub seals under the vault's data key in
-`config/devices/<id>/<module>.json` is the module's own row: VS Code's
-connection token per instance, CloudCLI's password and token secret per
-instance, code-server's and Codeg's token secret per instance, each
-generated the first time its account is saved. The state carries them
-opened, and the login's password for a Windows machine; it carries no
-gateway address and no gateway key, which are the `ai_tools` section's
-("The AI tools block" below), and a token minted for a `service` ask stays
-out of it. VS Code's terms acceptance, `terms_accepted_at` in
-`vscode.json`, is served by its own file, `module_vscode_terms.py`. Each
-instance a running module serves is published as one `web` entry with
-`is_token_required: true`.
-
-The AI tools block, `routers/agent/module_ai_tool.py`, keeps
-`config/devices/<id>/ai_tools.json` as `{is_enabled, tool_configs}`, off and
-empty for a device that has none. The accounts it acts on are worked out
-when the state is composed, from the instances in the device's
-`vscode.json`, `code_server.json`, `cloudcli.json` and `codeg.json`, sorted
-by name. The
-device's gateway key lives in the gateway's `device_keys`
-([hub_components/ai.md](hub_components/ai.md), "A key per device as well as per client"):
-`ai_tool/enable` mints it, and `ai_tool/disable` and removing the device
-revoke it.
+([agent/module_template.md](agent/module_template.md), "The hub side"). What
+each module keeps in `config/devices/<id>/<module>.json` and what the state
+carries are "The account layer in the state". VS Code's terms acceptance,
+`terms_accepted_at` in `vscode.json`, is served by its own file,
+`module_vscode_terms.py`. The device's gateway key lives in the gateway's
+`device_keys` ([hub_components/ai.md](hub_components/ai.md), "A key per
+device as well as per client"): the first account whose AI tools switch goes
+on mints it, and the last one turned off and removing the device revoke it.
 
 #### `/api/agent/terminal`
 
@@ -1103,12 +1071,12 @@ and platform, which change between releases.
 
 | Section | `state` to agent | `report` from agent | `state` to client | `report` from client |
 | --- | --- | --- | --- | --- |
-| `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform, os_machine_id}` |
+| `machine` | | `{hostname, platform, accounts, account_details, metrics, sessions}`, `account_details` one `{account, home, shell}` per account | | `{hostname, platform, os_machine_id}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
-| `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
+| `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, accounts: [{account, password, tool_configs}], cc_switch_version, cc_switch_artifact, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine, app_id, name, local_port}]`, the last three on `web`, `port` and `ssh` entries alone | |
 | `apps` | | | `[{id, title, source, device_id, device_name, local_name}]`: the apps the `web`, `port` and `ssh` entries belong to ("Apps") | |
@@ -1116,7 +1084,7 @@ and platform, which change between releases.
 | `urls` | `["tcp://<address>:<port>", ...]` | | the same list | |
 | `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, accounts, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the Terminal module's enabled accounts, the first being the default, and the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's session reached the hub | |
 | `error` | | `{code, params}` | | |
@@ -1224,9 +1192,10 @@ keeps one mark per module and one for the AI tools per device in
 `device_retry_marks.json` under its state root, replaced by each press and
 dropped with the device ([files.md](files.md)).
 
-`ai_tools` in the state is the machine's AI tools setting
-([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
-the setting is on and the gateway serves a model. `is_forwarded` says
+`ai_tools` in the state is the machine's AI tools setting, one switch per
+available account ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is
+true while at least one account's switch is on and the gateway serves a
+model. `is_forwarded` says
 whether the agent opens its AI gateway forward ([agent.md](agent.md), "The
 AI gateway forward"): true on a managed machine while `is_enabled` is true
 or a container module that uses the gateway is installed, and false on the
@@ -1236,16 +1205,14 @@ agent relays on the Podman bridges, and 0 otherwise. With `is_enabled` true,
 `base_url` is `http://127.0.0.1:8317` on a managed machine, the forward, and
 `http://127.0.0.1:<listen-port>` on the hub's own machine, the gateway
 itself. The hub sets all three, and the agent infers none from anything
-else in the state; `api_key` is
-the device's own gateway key, and `tool_configs` is
-`{claude: {default, opus, sonnet, haiku}, codex: {model,
-model_reasoning_effort}, gemini: {model}}`, every Claude slot filled with the
-gateway's first served model where none was chosen, as the client's
-`resolved_configs` fills it. `accounts` names every account with an instance
-in the machine's VS Code, code-server, CloudCLI or Codeg configuration;
-`password`
-is the login's own for the account's first instance in that order, sent only
-to a Windows machine. `cc_switch_version` is the version
+else in the state; `api_key` is the device's own gateway key. `accounts`
+names every available account whose `is_ai_tools_enabled` is true, each with
+its `tool_configs`, `{claude: {default, opus, sonnet, haiku}, codex: {model,
+model_reasoning_effort}, gemini: {model}}`, every slot the person left at the
+gateway's default filled with the gateway's first served model, as the
+client's `resolved_configs` fills it, and `password`, the account's login,
+sent only to a Windows machine. An account whose switch goes off leaves
+`accounts`, and the agent switches it back. `cc_switch_version` is the version
 `data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs,
 and `cc_switch_artifact` that manifest's artifact for the machine's platform,
 `{name, kind, digest}`, which the agent's `package` stream names; it is
@@ -1305,14 +1272,13 @@ Terminal and Remote desktop are composed from their own files, not from
 `modules.json`, and sent to every managed device:
 
 ```json
-"terminal": {"want": "running", "config": {"account": "", "shell_path": ""}, "install": {"runner": "terminal", "method": "agent", "params": {}}},
+"terminal": {"want": "running", "config": {"accounts": [{"account": "lab", "shell_path": "", "password": ""}]}, "install": {"runner": "terminal", "method": "agent", "params": {}}},
 "remote_desktop": {"want": "stopped", "config": {"is_enabled": false}, "install": {"runner": "remote_desktop", "method": "agent", "params": {}}}
 ```
 
-`terminal`'s `want` is always `running`; its `config` is
-`config/devices/<id>/terminal.json`, `{account, shell_path}`, both empty
-when the file is absent, and `account` is always empty for a Windows
-machine. `remote_desktop`'s `want` is `running` while `is_enabled` is true
+`terminal`'s `want` is always `running`; its `config` holds the module's
+enabled accounts ("The account layer in the state"), none when
+`config/devices/<id>/terminal.json` is absent. `remote_desktop`'s `want` is `running` while `is_enabled` is true
 and `stopped` otherwise; its `config` is `remote_desktop.json`,
 `{is_enabled}`, false when the file is absent. Their manifests,
 `terminal.json` and `remote_desktop.json`, name the method `agent` with
@@ -1322,14 +1288,17 @@ answers both `is_supported: true` on every platform, and the four presses
 refuse both 400 `module_not_optional {name}`, as every module the agent
 carries.
 
-The agent reports `terminal` `running` once it holds the settings, and
+The agent reports `terminal` `running` once it holds the accounts, and
 `remote_desktop` `running` while its RustDesk service runs, with nobody at
 the screen too, `stopped`
 while the switch is off and none of its RustDesk processes runs, and
 `failed` with `rdp_takeover_failed {step, detail}` or `rdp_restore_failed
 {step, detail}`. The report's `rustdesk` row of earlier agents is gone. A
 `shell` stream refused for the Terminal module's sake closes
-`account_unknown {account}` or `shell_program_unusable {path}`.
+`terminal_account_missing` while no account is enabled, `account_not_enabled
+{account}` for an account the module does not enable, `account_unknown
+{account}` for one the machine does not have, or `shell_program_unusable
+{path}`.
 
 `install` is the recipe the hub resolves from `data/manifests/<module>.json`
 for the machine's platform and the version the machine chose: `{runner,
@@ -1476,8 +1445,8 @@ account and every share is applied. An
 account the module made signs in once `set_password` has set its password.
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
-per account. Its configuration is `{address, instances: [{account, port,
-token, password}]}`: `address` is empty, and every server listens on
+per enabled account. Its configuration is `{address, instances: [{account,
+token, password}]}` ("The account layer in the state"): `address` is empty, and every server listens on
 `127.0.0.1` alone, where the agent's end of a `connect` stream reaches it
 ("The connect stream"); `token` is the instance's connection token,
 which the hub keeps sealed and sends in the clear inside the state; and
@@ -1490,16 +1459,17 @@ one `code` or `code.exe` inside it: to `/var/lib/neutrino/agent/vscode` on Linux
 `vscode` under the root the `hub_packages` capability names on Windows
 (`%ProgramData%\Neutrino`) and macOS (`/Library/Application
 Support/Neutrino`). `details` is `{instances: [{account, port, url,
-is_running, code}]}`, the url without its token and `code`
-`credential_invalid` for a Windows task that cannot sign its account in. An
-apply refuses `account_invalid`, `account_duplicate`, `port_invalid`,
-`port_duplicate`, `token_missing` and, on Windows, `credential_missing`, all
-naming the `account` or the `port`; `account_unknown {account}` for an
+is_running, code}]}`, `port` the one the agent took, the url without its
+token, and `code` `credential_invalid` for a Windows task that cannot sign
+its account in. An apply refuses `account_invalid`, `account_duplicate`,
+`token_missing` and, on Windows, `credential_missing`, all naming the
+`account`; `account_unknown {account}` for an
 account a Linux machine or a Mac does not have; and `credential_invalid
 {account}` when Windows refuses the login.
 
-The `cloudcli` module runs CloudCLI once per account
-([agent/modules/cloudcli.md](agent/modules/cloudcli.md)). Its recipe names
+The `cloudcli` module runs CloudCLI once per enabled account
+([agent/modules/cloudcli.md](agent/modules/cloudcli.md)), its configuration
+`{instances: [{account, web_password, token_secret, password}]}`. Its recipe names
 two artifacts: the Node.js archive `data/manifests/cloudcli.json` pins for
 the platform, which the agent opens `package {module: cloudcli, artifact,
 digest}` for, and the npm package, of kind `npm`, with the `npm` set as
@@ -1509,9 +1479,10 @@ fails reports the step: `download_failed {file, sources}`,
 `cloudcli_native_module_failed {account, module, detail}` or
 `cloudcli_install_out_of_memory {account}`.
 
-The `codeg` module runs Codeg once per account, on Linux, macOS and Windows
-([agent/modules/codeg.md](agent/modules/codeg.md)). Its configuration is
-`{instances: [{account, port, secret}]}`, `secret` the instance's token
+The `codeg` module runs Codeg once per enabled account, on Linux, macOS and
+Windows ([agent/modules/codeg.md](agent/modules/codeg.md)). Its
+configuration is `{instances: [{account, secret, password}]}`, `secret` the
+instance's token
 secret, generated the first time, kept sealed in
 `config/devices/<id>/codeg.json` and sent opened inside the state as
 code-server's is, with the login's password for a Windows machine as VS
@@ -1521,10 +1492,10 @@ instances: [{account, port, is_running, code}]}`. An apply refuses what
 code-server's refuses, and on Windows `credential_missing {account}` and
 `credential_invalid {account}` as VS Code's does.
 
-The `code_server` module runs code-server once per account, on Linux and
-macOS ([agent/modules/code_server.md](agent/modules/code_server.md)). Its
-configuration is
-`{instances: [{account, port, secret}]}`, `secret` the instance's token
+The `code_server` module runs code-server once per enabled account, on
+Linux and macOS ([agent/modules/code_server.md](agent/modules/code_server.md)).
+Its configuration is `{instances: [{account, secret}]}`, `secret` the
+instance's token
 secret, which the hub generates the first time, keeps sealed in
 `config/devices/<id>/code_server.json` and sends opened inside the state,
 as it sends CloudCLI's. Its recipe names the release of the version the
@@ -1532,9 +1503,8 @@ machine runs, which the agent opens `package {module: code_server,
 artifact, digest}` for. `details` is `{version,
 instances: [{account, port, is_running, code}]}`, `version` being the
 release installed. An apply refuses `account_invalid`,
-`account_duplicate`, `port_invalid`, `port_duplicate` and `secret_missing`,
-each naming the `account` or the `port`, and `account_unknown {account}`
-for an account the machine does not have.
+`account_duplicate` and `secret_missing`, each naming the `account`, and
+`account_unknown {account}` for an account the machine does not have.
 
 The `gitea` module runs Gitea on Linux, macOS and Windows ([agent/modules/gitea.md](agent/modules/gitea.md)). Its configuration is `{listen_port, root_url,
 is_registration_enabled, address, secrets}` on every system. Its recipe names
@@ -1658,6 +1628,34 @@ sources}` ([agent/module_install.md](agent/module_install.md), "Choosing a
 source"). An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
 under the module's tab as it arrives.
+
+### The account layer in the state
+
+A module of the account layer runs one instance per enabled account
+([agent.md](agent.md), "The two layers and the accounts"). The hub composes
+its `config` from the machine's available accounts,
+`config/devices/<id>/accounts.json`, and the module's own file, which holds
+the enabled accounts in the order the person enabled them and the secrets
+the hub generated for each, sealed under the vault's data key:
+
+| Module | `config/devices/<id>/<module>.json` | The module's `config` in the state |
+| --- | --- | --- |
+| `terminal` | `{accounts: [{account}]}` | `{accounts: [{account, shell_path, password}]}` |
+| `samba` | `{accounts: [{account, password_sealed}]}` | `{shares, users}` in the module's own shape: for each enabled account a share `{name: <account>, path: <share_path>, valid_users: [<user>]}` and a user `{name: <user>, password}`, the user being the account's SMB user ([agent.md](agent.md), "The file share's accounts") |
+| `vscode` | `{terms_accepted_at, accounts: [{account, token_sealed}]}` | `{address, instances: [{account, token, password}]}` |
+| `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret}]}` |
+| `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password}]}` |
+| `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password}]}` |
+
+| Rule | Reason |
+| --- | --- |
+| `shell_path` and the share's `path` are the account row's, its `share_path` and `shell_path`, the account's home and its login shell standing for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ("The two layers and the accounts" there). |
+| The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
+| No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's record, and reports it in `details`; the hub publishes the entry at the reported port. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
+| An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
+
+The `ai_tools` section is the same layer's: it names the available accounts
+whose switch is on ("The sections").
 
 ### The services section, one entry per published service
 
@@ -1800,14 +1798,14 @@ its side.
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
 | a peer, to the hub | `control` | `{}`: the session's first stream and its only control stream ("The control stream") |
-| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways as `data`, a later size as `resize`; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on. On the agent the transport hands it to the agent's Python, which holds the pseudo-terminal |
-| hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
+| hub, to an agent | `shell` | `{cols, rows, account}`, the shell running as `account`, an enabled account of the Terminal module, the first one when `account` is empty, with that account's shell; refused `terminal_account_missing` while the module enables none, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways as `data`, a later size as `resize`; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on. On the agent the transport hands it to the agent's Python, which holds the pseudo-terminal |
+| hub, to an agent | `exec` | `{argv, is_tty, cols, rows, account}`: one run of `argv`, a list of strings run as given with no shell between, as `account`, chosen as a `shell`'s is; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused as a `shell` is, and `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
 | hub, to an agent | `file` | `{op: list, path}`: one directory listing, every path absolute in the machine's own form, for the panel's path window ([ui_behavior.md](ui_behavior.md), "Modals, and where a record's detail lives"). It closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. Any other `op` is closed `op_unknown {op}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as `data` line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
-| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows, account}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols`, `rows` and `account`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` frame takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Relayed to an agent's `connect`, or dialled by the hub's transport itself; closed with a refusal's code before its `accept`. "The connect stream" has the checks, the far ends and the codes |
 | agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub's transport dials the gateway on `127.0.0.1` at its `listen_port` and relays the bytes; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there; no `connect_limit` holds on an agent's session; `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; the agent's transport asks the agent's Python whether the port is published and dials it itself; refused `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
@@ -1898,12 +1896,18 @@ the reply its code; the panel's are `binding_unknown`, `client_disabled` and
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
 | `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
-| `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
+| `file` of a device's Samba module | `{user, password}`: the share's SMB user and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
+| `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
 A client opens every `web` entry with `is_token_required` at its forward's
 own address with `?tkn=<token>` added ([client.md](client.md), "The Web
 page"), and never at the entry's address.
+
+| Rule | Reason |
+| --- | --- |
+| A client writes a reply's material to no log, no report and no file but the one the material is for: a share's password into the mount's credentials for the one mount and nowhere after it, a key into the one file [client.md](client.md) names. The hub's Python and the transport log the entry's id and the code, never the params. | The material is the secret itself, and a log is read by more people than the entry admits. |
+| A client asks for the material each time it uses it, a mount, a key it writes, a page it opens, and keeps none in its own state document. | A permission taken away on the **Clients** page ends the next use, not the one after a restart. |
 
 ### The connect stream
 
@@ -2005,7 +2009,9 @@ with the agent's code:
 
 | `code` | Given when |
 | --- | --- |
-| `account_unknown {account}` | the Terminal module names an account the machine does not have |
+| `terminal_account_missing` | the Terminal module enables no account on the machine |
+| `account_not_enabled {account}` | `account` names an account the Terminal module does not enable |
+| `account_unknown {account}` | the account is not one the machine has |
 | `shell_program_unusable {path}` | `argv` is empty or not a list of strings, `path` empty; or its first member cannot be found on the `PATH` the process gets, or cannot be run, `path` that member |
 
 | Concern | Rule |
@@ -2017,7 +2023,7 @@ with the agent's code:
 | End | Once the process ended and both outputs reached end of file, the agent sends what it holds and closes `params: {exit_code}`: the process's code, or 128 plus the signal's number for a process a signal ended. The hub's transport relays the close to the client. |
 | A closed stream | A client that closes its stream, or whose session ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
 | Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is a `resize` record ("Kept shells"); without `is_tty` they are ignored. |
-| Account | The Terminal module's account, else the account the agent runs as, root, and SYSTEM on Windows, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); the module's shell program is not read, since `argv` names the program. |
+| Account | `account`, an enabled account of the Terminal module, the first one when it is empty, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); never root or SYSTEM. The account's shell is not read, since `argv` names the program. |
 
 ### The rules the details settle
 

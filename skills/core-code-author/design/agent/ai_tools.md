@@ -1,28 +1,31 @@
 # The machine's AI tools
 
-The `ai_tools` section of the state says whether the machine's AI tools use
-the hub's gateway, and for which accounts ([protocol.md](../protocol.md), "The
-sections"). It is a setting, not a module: nothing is installed, started or
-stopped, and it has no `want`. The agent makes it true and reports each
+The `ai_tools` section of the state says which of the machine's accounts
+point their AI tools at the hub's gateway, and with which models
+([protocol.md](../protocol.md), "The sections"). It is a setting, not a
+module: nothing is installed, started or stopped, and it has no `want`. The agent makes it true and reports each
 account's result in the `ai_tools` section of its report.
 
-The accounts are the hub's word: every account with an instance in the
-machine's VS Code, code-server, CloudCLI or Codeg configuration. The agent
-looks nothing up and adds no account of its own. Codeg's Claude Code and
+The accounts are the hub's word: every available account whose switch,
+**AI tools use the hub's gateway** in the account's form on the machine page,
+is on, each with its own model choices ([agent.md](../agent.md), "The two
+layers and the accounts"). The agent looks nothing up and adds no account of
+its own. Codeg's Claude Code and
 Codex entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which
 read the account's `~/.claude/settings.json` and `~/.codex/config.toml`, the
 files cc-switch writes, so the setting covers Codeg's sessions as well
 ([modules/codeg.md](modules/codeg.md)).
 
-For each account the state names while the section is on, the agent runs the
-client's steps as that account, with the copy of cc-switch the agent fetched
+For each account the state names, the agent runs the client's steps as that
+account with the account's own `tool_configs`, with the copy of cc-switch the agent fetched
 from the hub ([hub_components/ai.md](../hub_components/ai.md), "How a client
 points its tools at the gateway", and "How a managed machine's tools are
 pointed at the gateway" for what differs). An account whose records already
 carry the wanted settings is not run again. An account is switched back by
 the same steps as the client's deactivation:
 
-- when the section turns off, or the state names it no longer;
+- when its switch goes off, so the state names it no longer, or when the
+  whole section turns off;
 - by `nagent service uninstall`, once the agent's service has stopped and
   before anything is removed;
 - on `nagent leave`, and when a refusal of `binding_unknown` ends the

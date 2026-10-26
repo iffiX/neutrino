@@ -82,9 +82,9 @@ entry appears only after both ("The first start").
 
 ## The page
 
-The page is one `web` entry, `hermes_webui_<device id>`, titled `Hermes
-WebUI`, with `is_token_required: true` and `description_code`
-`hermes_webui_module`. The entry exists while the module reads `running`.
+The page is the `web` entry of the app `hermes_webui_<device id>`, titled
+`Hermes WebUI`, the entry's id `hermes_webui_<device id>_web`, with
+`is_token_required: true` and `description_code` `hermes_webui_module`. The entry exists while the module reads `running`.
 
 | Rule | Reason |
 | --- | --- |

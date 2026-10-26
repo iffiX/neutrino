@@ -1,20 +1,22 @@
 # The CloudCLI module
 
 The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
-tested at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
+tested at 1.37.3 (AGPL-3.0), once per enabled account: a web page for AI coding
 sessions. The module's version is the package's version, which the `npm`
 feed lists ([module_install.md](../module_install.md), "Module
 versions"). It is a program run as a person's account
 ([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/cloudcli/`
 holds `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does
-the rest. Its configuration is `{instances: [{account, port}]}`.
+the rest. Its configuration is `{instances: [{account, web_password,
+token_secret, password}]}`, and the agent takes each instance's port itself
+([../../protocol.md](../../protocol.md), "The account layer in the state").
 
 **The account service layer runs it as the account, never as root**
 ([module_template.md](../module_template.md), "The run"): a unit
 `neutrino_cloudcli@<account>.service` with `User=<account>` on Linux, a
 LaunchDaemon with `UserName` on macOS, and on Windows a scheduled task
-registered with a login the Credentials page holds, chosen per instance as
-for VS Code. Its journal on Windows reads the end of `<account>.log` beside
+registered with the account's login, the one its row on the machine page
+holds, as for VS Code. Its journal on Windows reads the end of `<account>.log` beside
 the CLI, which the task's `cmd.exe` appends to, and an install still running
 shows `run\install_<account>.log`; on macOS the LaunchDaemon's
 `StandardOutPath` and `StandardErrorPath` name
@@ -116,7 +118,7 @@ only while the device reports it running.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
 loopback alone. A thin HTTP forwarder of the agent's listens on
-`127.0.0.1` at the configured port, where the agent's end of a `connect`
+`127.0.0.1` at the instance's port, where the agent's end of a `connect`
 stream reaches it. The hub generates each
 instance's password and keeps it in its vault; on CloudCLI's first start the
 agent registers the account with it through CloudCLI's register endpoint,

@@ -1,12 +1,14 @@
 # The code-server module
 
 The `code_server` module runs code-server, the browser build of VS Code
-that Coder publishes (MIT), once per account on Linux and macOS. Its
+that Coder publishes (MIT), once per enabled account on Linux and macOS. Its
 extensions come from Open VSX, code-server's own default gallery. It is
 a program run as a person's account ([module_template.md](../module_template.md)):
 `agent/neutrino_agent/modules/code_server/` holds `config.py`,
 `constants.py` and `hooks.py`, and `modules/shared/` does the rest. Its
-configuration is `{instances: [{account, port, secret}]}`. Its manifest has
+configuration is `{instances: [{account, secret}]}`, and the agent takes
+each instance's port itself ([../../protocol.md](../../protocol.md), "The
+account layer in the state"). Its manifest has
 no Windows entry, so the Modules page greys it out on Windows.
 
 **The account service layer runs it as the account, never as root**
@@ -41,7 +43,7 @@ account, mode 700. Root and the account alone can open the socket, so
 
 **The agent's forwarder is in front of it, as in front of CloudCLI
 ([cloudcli.md](cloudcli.md)).** It
-listens on `127.0.0.1` at the configured port, where the agent's end of a
+listens on `127.0.0.1` at the instance's port, where the agent's end of a
 `connect` stream reaches it, and passes what it admits to the socket:
 
 | A request | The forwarder |
@@ -58,8 +60,9 @@ expiry))`, the key derived from the instance's secret, and lasts seven days.
 The agent keeps a root-only record per instance, its port and its secret, so
 the forwarder comes back after an agent restart.
 
-Each instance a running module serves is published as one `web` entry,
-`code_server_<device id>_<account>`, titled `code-server (<account>)`, with
+Each instance a running module serves is published as one app,
+`code_server_<device id>_<account>`, titled `code-server (<account>)`, whose
+one entry, `web`, has
 `is_token_required: true` and `description_code` `code_server_module`
 ([protocol.md](../../protocol.md), "The services section, one entry per
 published service").

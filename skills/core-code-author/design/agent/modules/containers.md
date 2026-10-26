@@ -350,8 +350,8 @@ publishes that port on UDP, as it does without the service type.
 | Rule | Reason |
 | --- | --- |
 | A service whose port the container does not publish, whose `kind`, `scheme` or protocol is unknown, or whose port appears twice is refused `service_invalid {name, port}`, as a `port` service with no protocol is refused `service_protocol_none {port}`. | A service is the type of one published host port, and one with no such port, a second one for the same port, or a value the agent does not know gives the agent nothing to publish. |
-| A container's `web` entry has the id its TCP `port` entry has, `podman_<device>_<container>_<port>`, and a UDP `port` entry adds `_udp`. | A client keeps its local port per entry id, so a port whose type changes keeps it. |
-| A TCP binding is a `web` entry or a `port` entry, never both. | A client shows a `web` entry on its Web page and a `port` entry on its Ports page, and one service appears once. |
+| A container is one app, `podman_<device>_<container>`, and each of its entries is named by its port: a `web` entry has the id its TCP `port` entry has, `podman_<device>_<container>_<port>`, and a UDP `port` entry adds `_udp`. A hub container's ports are entries of its module's app instead ([../../protocol.md](../../protocol.md), "Apps"). | A client keeps its local port per entry id, so a port whose type changes keeps it. |
+| A TCP binding is a `web` entry or a `port` entry, never both. | A client shows the binding once in the app's row, and one service appears once. |
 | `<device>` is the device's id and `<container>` the container's name, which `CONTAINER_NAME_PATTERN` keeps to lowercase letters, digits, `_` and `-`. | An id holds no character a client or a file name has to escape. |
 | Every entry of a container is healthy while the container runs. | The container's state is the one health the hub reads for it. |
 | The `connect` stream serves a `web` entry as a TCP connection to the published port. | A web page is TCP on the port the container publishes. |

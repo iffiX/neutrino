@@ -35,9 +35,10 @@ A managed device whose AI tools use the gateway has a gateway key of its
 own. `config/cliproxyapi/cliproxyapi.json` keeps `device_keys` beside
 `client_keys`, sealed the same way, and the renderer writes both lists into
 the gateway's `api-keys`. `ensure_device_key`, beside `ensure_client_key` in
-`modules/clients/ai_keys.py`, mints a device's key when the device's AI tools
-setting goes on. The key is revoked when the setting goes off and when the
-device is removed. No module's state holds it: the device's `ai_tools`
+`modules/clients/ai_keys.py`, mints a device's key when the first of its
+accounts turns its AI tools switch on. The key is revoked when the last one
+turns it off and when the device is removed; every account of the device
+holds the same key. No module's state holds it: the device's `ai_tools`
 section does ("How a managed machine's tools are pointed at the gateway").
 
 A container module that uses the gateway has a key of its own on each
@@ -85,8 +86,8 @@ the tool's configuration (Claude Code: `ANTHROPIC_MODEL` and the three
 gateway-listed name can be used past the menu by spelling it out
 (`--model`, `/model <name>`). Which gateway names a machine's slots map to
 is the tool configuration the switch writes: the client's **Configure**
-dialog on a person's computer, the Modules page's **Global configuration**
-on a managed machine.
+dialog on a person's computer, the account's form on the machine page on a
+managed machine.
 
 ## What each panel surface owns
 
@@ -95,7 +96,7 @@ on a managed machine.
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, revocation — immediate, never staged |
-| Access | Client keys for machines no agent manages, plus the endpoint line, which names the gateway on the hub's loopback; a managed device is keyed when its AI tools setting goes on, on the Modules page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
+| Access | Client keys for machines no agent manages, plus the endpoint line, which names the gateway on the hub's loopback; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
 ## How a client points its tools at the gateway
@@ -180,32 +181,33 @@ client's section above, run by the agent: the same cc-switch, the same
 commands in the same order, the same record per tool, the same switch back.
 This section states only what differs, so the two cannot drift.
 
-The setting is one per managed machine, on the Modules page's **Global
-configuration** ([../ui_behavior.md](../ui_behavior.md), "The Modules
-page"): whether the machine's AI tools use the gateway, and the tool
-configuration the client's **Configure** dialog saves
-(`{claude: {default, opus, sonnet, haiku}, codex: {model,
-model_reasoning_effort}, gemini: {model}}`). It is off on a new machine. The
-hub keeps it in `config/devices/<id>/ai_tools.json` and sends it in the
-device's `ai_tools` section ([../protocol.md](../protocol.md), "The
+The setting is one per available account of the machine, in the account's
+form on the machine page ([../agent.md](../agent.md), "The two layers and the
+accounts"): whether that account's AI tools use the gateway, and the
+account's tool configuration (`{claude: {default, opus, sonnet, haiku},
+codex: {model, model_reasoning_effort}, gemini: {model}}`), each model
+picker's first choice being the gateway's default. It is off on a new
+account. The hub keeps it on the account's row in
+`config/devices/<id>/accounts.json` and sends it in the device's `ai_tools`
+section ([../protocol.md](../protocol.md), "The
 sections").
 
 | | On a person's computer | On a managed machine |
 | --- | --- | --- |
 | Who runs the steps | the client | the agent |
 | As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent/ai_tools.md](../agent/ai_tools.md)) |
-| The accounts | the person's own | every account with an instance in the machine's VS Code, code-server, CloudCLI or Codeg configuration, worked out by the hub and sent in the state |
+| The accounts | the person's own | every available account whose switch is on, sent in the state with its own tool configuration |
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:8317`, the agent's own forward, which relays each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward"); on the hub's own machine `http://127.0.0.1:<listen-port>`, the gateway itself |
 | A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent/ai_tools.md](../agent/ai_tools.md)) |
-| Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
+| Switched back | when the chip goes off | when the account's switch goes off, when the account is removed from the machine page, before `nagent service uninstall`, and when the machine leaves the hub |
 
 cc-switch runs on a store of the agent's own in the account's Neutrino
 tree, as the client's runs on a store of the client's own, so the
-account's `~/.cc-switch` is never read or written ([../agent/ai_tools.md](../agent/ai_tools.md)). An account gained while the setting is on is
+account's `~/.cc-switch` is never read or written ([../agent/ai_tools.md](../agent/ai_tools.md)). An account whose switch turns on is
 switched at the next state. While the gateway serves no model, the hub sends
 the setting as off, so every account is switched back; the stored setting
 and the device's key stay, and the next state after the gateway serves again

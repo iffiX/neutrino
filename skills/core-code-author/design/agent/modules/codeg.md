@@ -1,13 +1,15 @@
 # The Codeg module
 
 The `codeg` module runs Codeg's `codeg-server`, tested at 0.35.1 (Apache-2.0), a web
-page for AI coding sessions beside CloudCLI, once per account on Linux
+page for AI coding sessions beside CloudCLI, once per enabled account on Linux
 (amd64 and arm64), macOS (arm64 and amd64) and Windows (x64; the publisher
 builds no Windows arm64 server). It is a program run as a person's account
 ([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/codeg/` holds
 `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does the
-rest. Its configuration is `{instances: [{account, port, secret}]}`, as
-code-server's, and the first instance's default port is 3101.
+rest. Its configuration is `{instances: [{account, secret, password}]}`,
+as code-server's with the account's login for a Windows machine, and the
+agent takes each instance's port itself from 3101 up
+([../../protocol.md](../../protocol.md), "The account layer in the state").
 
 **Two artifacts, each its own archive.** `data/manifests/codeg.json` names,
 per platform, the server bundle at the module's version: `codeg-server`,
@@ -35,7 +37,7 @@ layer ([module_template.md](../module_template.md), "The run"):
 | Variable | Value |
 | --- | --- |
 | `CODEG_HOST` | `127.0.0.1` |
-| `CODEG_PORT` | an internal loopback port the agent picks and records in the instance's record; the configured port is the forwarder's |
+| `CODEG_PORT` | an internal loopback port the agent picks and records in the instance's record; the instance's port is the forwarder's |
 | `CODEG_TOKEN` | derived from the instance's secret, `base64url(HMAC-SHA256(secret, label))`, `label` a fixed string in the module's `constants.py` |
 | `CODEG_DATA_DIR` | the data directory |
 | `CODEG_STATIC_DIR` | `web/` inside the server artifact's directory |
@@ -52,7 +54,7 @@ at startup. The `journal` verb reads Codeg's own daily log,
 token.
 
 **The forwarder trades a token for the browser's login.** It listens on
-`127.0.0.1` at the configured port, where the agent's end of a `connect`
+`127.0.0.1` at the instance's port, where the agent's end of a `connect`
 stream reaches it, and passes what it admits to `127.0.0.1:<CODEG_PORT>`:
 
 | A request | The forwarder |
@@ -77,14 +79,14 @@ code-server's ([code_server.md](code_server.md)); the instance token stays
 what Codeg's own calls carry.
 
 **The entry, the details and the refusals are code-server's.** Each instance
-a running module serves is published as one `web` entry,
-`codeg_<device id>_<account>`, titled `Codeg (<account>)`, with
+a running module serves is published as one app,
+`codeg_<device id>_<account>`, titled `Codeg (<account>)`, whose one entry,
+`web`, has
 `is_token_required: true` and `description_code` `codeg_module`. `details`
 is `{version, instances: [{account, port, is_running, code}]}`, and an apply
-refuses `account_invalid`, `account_duplicate`, `port_invalid`,
-`port_duplicate` and `secret_missing`, each naming the `account` or the
-`port`, and `account_unknown {account}` for an account the machine does not
-have ([protocol.md](../../protocol.md), "The modules section, one entry per
+refuses `account_invalid`, `account_duplicate` and `secret_missing`, each
+naming the `account`, and `account_unknown {account}` for an account the
+machine does not have ([protocol.md](../../protocol.md), "The modules section, one entry per
 module").
 
 **The version moves in the hub.** Codeg's **Software Update** screen cannot
