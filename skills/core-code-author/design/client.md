@@ -880,7 +880,8 @@ follow the window's pages, with the program itself and `ssh` above them:
 | `hub leave <hub> [--yes]` | leaves a hub, as **Leave** does, after a `[y/N]` question that `--yes` answers | 0, 1 for a refusal |
 | `hub open <hub>` | opens the hub's panel in the browser, as **Panel** does | 0, 1 for a refusal |
 | `app list` | prints each machine's apps: the app, its source, each entry's kind and local address, and whether it is in use | 0 |
-| `app open <app>` | uses an app, as **Use** does | 0, 1 for a refusal |
+| `app use <app>` | uses an app, as **Use** does: makes every entry's forward and prints each entry's local address, opening nothing | 0, 1 for a refusal |
+| `app open <app>` | opens the browser at the app's first `http` or `https` entry, as **Open** does; refused `app_not_in_use` for an app not in use and `app_no_page` for an app with no such entry | 0, 1 for a refusal |
 | `app stop <app>` | ends an app's forwards, as **Stop** does | 0 |
 | `app set <app> --port <entry>=<port>` | sets an entry's local port on this client, as **Configure** does; `--port` repeats; an empty port goes back to the hub's | 0, 1 for a refusal |
 | `ai show` | prints each AI tool's gateway address and whether it is the hub's; a desktop alone | 0 |
