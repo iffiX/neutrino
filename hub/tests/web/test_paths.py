@@ -205,6 +205,7 @@ DOCUMENTED_ROUTE = re.compile(r"`(GET|POST) ((?:/|\.\.\./)[^`]+)`|`(\.\.\./[^`]+
 MODULE_NAMES = (
     "samba",
     "terminal",
+    "ssh_server",
     "remote_desktop",
     "gitea",
     "podman",
