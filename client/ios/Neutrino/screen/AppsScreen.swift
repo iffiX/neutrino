@@ -3,8 +3,8 @@ import SwiftUI
 /// The apps the joined hubs publish, one row each: the title, the hub, the machine and the source, and one mono line
 /// per `web` and `port` entry with its fixed local address, the `ssh` entries left out on a phone. Use starts the
 /// app's forwards and Stop takes its place while the app is in use; Configure opens the local port dialog while the
-/// app is not in use; Open, for an app with an `http` or `https` entry, opens the in-app browser there while the app
-/// is in use.
+/// app is not in use; Open, shown while an app with an `http` or `https` entry is in use, opens the in-app browser
+/// there.
 struct AppsScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -79,7 +79,7 @@ struct AppsScreen: View {
             if let error = row.error {
                 RowText(text: words.refusal(error), style: .error)
             }
-            if isFree, let key = AppText.reasonKey(hub, entries, row, hasPage: hasPage) {
+            if isFree, let key = AppText.reasonKey(hub, entries, row) {
                 RowText(text: words.word(key), style: .reason)
             }
         } actions: {
@@ -99,11 +99,10 @@ struct AppsScreen: View {
                 configuring = LocalPortTarget(
                     bindingId: hub.binding.id, appId: app.id, title: app.title, entries: entries)
             }
-            if hasPage {
-                let isOpening = row.isInUse && row.job == .opening
+            if hasPage && row.isInUse {
                 NeutrinoButton(
-                    label: words.word(isOpening ? ForwardJob.opening.rawValue : "ui.app.open"),
-                    isBusy: isOpening, isEnabled: isFree && row.isInUse && !hub.isDisabled
+                    label: words.word(row.job == .opening ? ForwardJob.opening.rawValue : "ui.app.open"),
+                    isBusy: row.job == .opening, isEnabled: row.job == nil
                 ) { core.openApp(bindingId: hub.binding.id, app: app) }
             }
         }

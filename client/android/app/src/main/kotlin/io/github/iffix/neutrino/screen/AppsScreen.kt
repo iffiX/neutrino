@@ -35,8 +35,8 @@ import java.net.URISyntaxException
  * The apps the joined hubs publish, one row each: the title, the hub, the machine and the source,
  * and one mono line per `web` and `port` entry with its fixed local address, the `ssh` entries left
  * out on a phone. Use starts the app's forwards and Stop takes its place while the app is in use;
- * Configure opens the local port dialog while the app is not in use; Open, for an app with an
- * `http` or `https` entry, opens the browser there while the app is in use.
+ * Configure opens the local port dialog while the app is not in use; Open, shown while an app with
+ * an `http` or `https` entry is in use, opens the browser there.
  *
  * @param hubs Every hub joined.
  * @param forwards Each app's row, by key `<binding>/<app>`.
@@ -148,14 +148,13 @@ private fun AppRow(
                 isSmall = true,
                 isEnabled = isFree && !row.isInUse,
             )
-            if (hasPage) {
-                val isOpening = row.isInUse && job == PortForwardJob.OPENING
+            if (hasPage && row.isInUse) {
                 NeutrinoButton(
-                    words.word(if (isOpening) PortForwardJob.OPENING.wordKey else "ui.app.open"),
+                    words.word(if (job == PortForwardJob.OPENING) job.wordKey else "ui.app.open"),
                     onOpen,
                     isSmall = true,
-                    isBusy = isOpening,
-                    isEnabled = isFree && row.isInUse && !hub.isDisabled,
+                    isBusy = job == PortForwardJob.OPENING,
+                    isEnabled = job == null,
                 )
             }
         },
@@ -166,7 +165,7 @@ private fun AppRow(
             BasicText(entryLineOf(app, entry, portOf(hub.binding.id, entry), words), style = NeutrinoTheme.mono)
         }
         ErrorLine(row.error)
-        if (isFree) ReasonLine(appReasonKey(hub, entries, row, hasPage)?.let { words.word(it) })
+        if (isFree) ReasonLine(appReasonKey(hub, entries, row)?.let { words.word(it) })
     }
 }
 
@@ -255,21 +254,14 @@ private fun entryHostOf(entry: ChannelServiceEntry): String {
  * @param hub The hub that publishes the app.
  * @param entries The app's entries.
  * @param row The app's row.
- * @param hasPage Whether the app has an `http` or `https` entry, which Open opens.
  * @return `ui.reason.disabled` while the hub switched this phone off, `ui.reason.disconnect_first`
  *   for Configure while the app is in use, `ui.reason.unhealthy` for Use while no entry is reachable,
- *   `ui.reason.use_first` for Open while the app is not in use, else null.
+ *   else null.
  */
-internal fun appReasonKey(
-    hub: HubView,
-    entries: List<ChannelServiceEntry>,
-    row: PortForwardRow,
-    hasPage: Boolean,
-): String? = when {
+internal fun appReasonKey(hub: HubView, entries: List<ChannelServiceEntry>, row: PortForwardRow): String? = when {
     hub.isDisabled -> "ui.reason.disabled"
     row.isInUse -> "ui.reason.disconnect_first"
     entries.none { it.isHealthy != false } -> "ui.reason.unhealthy"
-    hasPage -> "ui.reason.use_first"
     else -> null
 }
 

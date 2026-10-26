@@ -78,17 +78,16 @@ class AppsScreenTest {
 
     @Test
     fun theReasonLineSaysWhyUseOrConfigureIsDisabled() {
-        assertNull(appReasonKey(hub, listOf(web), PortForwardRow(), hasPage = false))
-        assertEquals("ui.reason.use_first", appReasonKey(hub, listOf(web), PortForwardRow(), hasPage = true))
+        assertNull(appReasonKey(hub, listOf(web), PortForwardRow()))
         assertEquals(
             "ui.reason.disconnect_first",
-            appReasonKey(hub, listOf(web), PortForwardRow(isInUse = true), hasPage = true),
+            appReasonKey(hub, listOf(web), PortForwardRow(isInUse = true)),
         )
         val down = listOf(web.copy(isHealthy = false))
-        assertEquals("ui.reason.unhealthy", appReasonKey(hub, down, PortForwardRow(), hasPage = true))
-        assertEquals("ui.reason.disconnect_first", appReasonKey(hub, down, PortForwardRow(isInUse = true), true))
+        assertEquals("ui.reason.unhealthy", appReasonKey(hub, down, PortForwardRow()))
+        assertEquals("ui.reason.disconnect_first", appReasonKey(hub, down, PortForwardRow(isInUse = true)))
         val disabled = hub.copy(waitReason = HubWaitReason.DISABLED)
-        assertEquals("ui.reason.disabled", appReasonKey(disabled, listOf(web), PortForwardRow(), hasPage = false))
+        assertEquals("ui.reason.disabled", appReasonKey(disabled, listOf(web), PortForwardRow()))
     }
 
     @Test

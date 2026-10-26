@@ -53,18 +53,17 @@ final class AppTextTests: XCTestCase {
         var hub = HubView(binding: Samples.binding)
         hub.connection = .connected
         let up = entry("web", [:])
-        XCTAssertNil(AppText.reasonKey(hub, [up], ForwardRow(), hasPage: false))
-        XCTAssertEqual(AppText.reasonKey(hub, [up], ForwardRow(), hasPage: true), "ui.reason.use_first")
+        XCTAssertNil(AppText.reasonKey(hub, [up], ForwardRow()))
         XCTAssertEqual(
-            AppText.reasonKey(hub, [up], ForwardRow(isInUse: true), hasPage: true), "ui.reason.disconnect_first")
+            AppText.reasonKey(hub, [up], ForwardRow(isInUse: true)), "ui.reason.disconnect_first")
         XCTAssertEqual(
-            AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow(), hasPage: true),
+            AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow()),
             "ui.reason.unhealthy")
         XCTAssertEqual(
-            AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow(isInUse: true), hasPage: true),
+            AppText.reasonKey(hub, [entry("web", [:], isHealthy: false)], ForwardRow(isInUse: true)),
             "ui.reason.disconnect_first")
         hub.waitReason = .disabled
-        XCTAssertEqual(AppText.reasonKey(hub, [up], ForwardRow(), hasPage: true), "ui.reason.disabled")
+        XCTAssertEqual(AppText.reasonKey(hub, [up], ForwardRow()), "ui.reason.disabled")
     }
 
     func testTheDotIsGreenWhileAnEntryAnswersAndAmberWhenNoneDoes() {
