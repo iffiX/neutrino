@@ -83,7 +83,14 @@ SCAN_SKIPPED_SUFFIXES = (
     ".so",
     ".pyc",
 )
-SCAN_SKIPPED_NAMES = ("package-lock.json", "yarn.lock", "uv.lock", "poetry.lock")
+SCAN_SKIPPED_NAMES = (
+    "package-lock.json",
+    "yarn.lock",
+    "uv.lock",
+    "poetry.lock",
+    "go.sum",
+    "go.work.sum",
+)
 
 # How far back to look for the word that makes a dotted quad a version
 # number rather than an address.

@@ -138,6 +138,12 @@ def test_build_output_and_binaries_are_not_read():
     assert is_scannable("resources/icon.svg") is False
 
 
+def test_checksum_lock_files_are_not_read():
+    assert is_scannable("transport/go.sum") is False
+    assert is_scannable("transport/go.work.sum") is False
+    assert is_scannable("transport/go.mod") is True
+
+
 def test_entropy_separates_prose_from_randomness():
     assert shannon_entropy("") == 0.0
     assert shannon_entropy("aaaaaaaa") == 0.0
