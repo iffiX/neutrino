@@ -85,7 +85,7 @@ def test_a_served_network_is_named_by_its_configured_address(live):
         settings={"agent_listen_port": 9443},
     )
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:9443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:9443"]
 
 
 def test_an_exposed_uplink_is_named_by_its_live_address_and_an_unexposed_lan_not(
@@ -99,7 +99,7 @@ def test_an_exposed_uplink_is_named_by_its_live_address_and_an_unexposed_lan_not
         )
     )
 
-    assert channel_urls(runtime) == ["https://203.0.113.7:8443"]
+    assert channel_urls(runtime) == ["tcp://203.0.113.7:8443"]
 
 
 def test_an_exposed_overlay_is_named_by_its_address_and_its_name(live):
@@ -111,9 +111,9 @@ def test_an_exposed_overlay_is_named_by_its_address_and_its_name(live):
     )
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
-        "https://neutrino.netbird.cloud:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
+        "tcp://neutrino.netbird.cloud:8443",
     ]
 
 
@@ -130,7 +130,7 @@ def test_an_overlay_that_is_not_exposed_is_not_asked_for_its_name(live, monkeypa
 
     monkeypatch.setattr(channel_addresses, "overlay_parts", _parts(not_asked))
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_a_daemon_with_no_name_adds_none(live, monkeypatch):
@@ -143,8 +143,8 @@ def test_a_daemon_with_no_name_adds_none(live, monkeypatch):
     )
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
     ]
 
 
@@ -158,7 +158,7 @@ def test_an_interface_with_no_address_yet_is_left_out(live, monkeypatch):
         )
     )
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_two_overlays_name_the_hub_in_each_network(live):
@@ -175,10 +175,10 @@ def test_two_overlays_name_the_hub_in_each_network(live):
     )
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
-        "https://10.0.0.1:8443",
-        "https://neutrino.netbird.cloud:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
+        "tcp://10.0.0.1:8443",
+        "tcp://neutrino.netbird.cloud:8443",
     ]
 
 
@@ -194,8 +194,8 @@ def test_an_overlay_turned_off_is_named_nowhere(live):
     )
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://10.0.0.1:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://10.0.0.1:8443",
     ]
 
 
@@ -225,8 +225,8 @@ def test_the_relays_address_is_the_last_member_while_it_is_on(live, monkeypatch)
     )
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://vps.example.org:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://vps.example.org:8443",
     ]
 
 
@@ -242,20 +242,20 @@ def test_an_ipv6_relay_host_is_written_in_brackets(live, monkeypatch):
         ),
     )
 
-    assert channel_urls(runtime)[-1] == "https://[2001:db8::5]:18443"
+    assert channel_urls(runtime)[-1] == "tcp://[2001:db8::5]:18443"
 
 
 def test_a_relay_that_is_off_or_not_configured_adds_nothing(live, monkeypatch):
     configured = OverlayRelayConfig(host="vps", account="r", key_id="k")
     off = relay_box(monkeypatch, configured)
-    assert channel_urls(off) == ["https://192.168.8.1:8443"]
+    assert channel_urls(off) == ["tcp://192.168.8.1:8443"]
 
     unstored = relay_box(
         monkeypatch,
         OverlayRelayConfig(is_enabled=True, host="vps", account="r", key_id="k"),
         is_key_stored=False,
     )
-    assert channel_urls(unstored) == ["https://192.168.8.1:8443"]
+    assert channel_urls(unstored) == ["tcp://192.168.8.1:8443"]
 
 
 # --- the frp vendors ---
@@ -290,12 +290,12 @@ def test_urls_hold_sakurafrps_then_openfrps_then_the_relays_address(live, monkey
     monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://203.0.113.7:8443",
-        "https://hub.example.org:443",
-        "https://frp-a.natfrp.cloud:41234",
-        "https://cn-cq-plc-1.of-7af93c01.shop:51607",
-        "https://vps.example.org:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://203.0.113.7:8443",
+        "tcp://hub.example.org:443",
+        "tcp://frp-a.natfrp.cloud:41234",
+        "tcp://cn-cq-plc-1.of-7af93c01.shop:51607",
+        "tcp://vps.example.org:8443",
     ]
 
 
@@ -309,7 +309,7 @@ def test_a_frp_vendor_off_or_without_a_tunnel_adds_nothing(live, monkeypatch):
     }
     monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_an_ipv6_frp_host_is_written_in_brackets(live, monkeypatch):
@@ -320,7 +320,7 @@ def test_an_ipv6_frp_host_is_written_in_brackets(live, monkeypatch):
     }
     monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
 
-    assert channel_urls(runtime)[-1] == "https://[2001:db8::7]:41234"
+    assert channel_urls(runtime)[-1] == "tcp://[2001:db8::7]:41234"
 
 
 # --- Direct ---
@@ -345,13 +345,13 @@ def test_urls_list_the_exposed_set_then_direct_then_its_public_address_then_the_
     )
     monkeypatch.setattr(channel_addresses, "read_direct", lambda: direct)
 
-    expected = ["https://192.168.8.1:8443"]
+    expected = ["tcp://192.168.8.1:8443"]
     if is_direct:
-        expected.append("https://203.0.113.7:8443")
+        expected.append("tcp://203.0.113.7:8443")
         if has_public:
-            expected.append("https://hub.example.org:443")
+            expected.append("tcp://hub.example.org:443")
     if is_relay:
-        expected.append("https://vps.example.org:8443")
+        expected.append("tcp://vps.example.org:8443")
     assert channel_urls(runtime) == expected
 
 
@@ -367,7 +367,7 @@ def test_direct_adds_no_interface_whose_role_is_disabled(live, monkeypatch):
         )
     )
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_a_direct_file_that_does_not_read_is_direct_off(live, monkeypatch):
@@ -377,7 +377,7 @@ def test_a_direct_file_that_does_not_read_is_direct_off(live, monkeypatch):
     monkeypatch.setattr(channel_addresses, "read_direct", unreadable)
     runtime = relay_box(monkeypatch, OverlayRelayConfig())
 
-    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+    assert channel_urls(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_the_hubs_own_agent_is_given_loopback_before_direct(live, monkeypatch):
@@ -389,10 +389,10 @@ def test_the_hubs_own_agent_is_given_loopback_before_direct(live, monkeypatch):
     runtime = relay_box(monkeypatch, OverlayRelayConfig())
 
     assert own_agent_urls(runtime) == [
-        "https://127.0.0.1:8443",
-        "https://192.168.8.1:8443",
-        "https://203.0.113.7:8443",
-        "https://hub.example.org:8443",
+        "tcp://127.0.0.1:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://203.0.113.7:8443",
+        "tcp://hub.example.org:8443",
     ]
 
 
@@ -405,7 +405,7 @@ def test_the_hubs_own_agent_is_given_loopback_alone_when_nothing_is_exposed(live
     )
 
     assert channel_urls(runtime) == []
-    assert own_agent_urls(runtime) == ["https://127.0.0.1:9443"]
+    assert own_agent_urls(runtime) == ["tcp://127.0.0.1:9443"]
 
 
 def test_the_hubs_own_agent_is_given_loopback_before_the_exposed_set(live):
@@ -414,8 +414,8 @@ def test_the_hubs_own_agent_is_given_loopback_before_the_exposed_set(live):
     )
 
     assert own_agent_urls(runtime) == [
-        "https://127.0.0.1:8443",
-        "https://192.168.8.1:8443",
+        "tcp://127.0.0.1:8443",
+        "tcp://192.168.8.1:8443",
     ]
 
 
@@ -429,7 +429,7 @@ def test_only_a_link_for_another_machine_is_refused_with_nothing_exposed(
     with pytest.raises(HTTPException) as refused:
         enrollment_link_parts(runtime)
 
-    assert urls == ["https://127.0.0.1:8443"]
+    assert urls == ["tcp://127.0.0.1:8443"]
     assert fingerprint == "f" * 64
     assert refused.value.detail["code"] == "no_reachable_address"
 
@@ -437,8 +437,8 @@ def test_only_a_link_for_another_machine_is_refused_with_nothing_exposed(
 @pytest.mark.parametrize(
     "is_linux, urls",
     [
-        (True, ["https://203.0.113.7:8443"]),
-        (False, ["https://203.0.113.7:8443", "https://192.168.8.1:8443"]),
+        (True, ["tcp://203.0.113.7:8443"]),
+        (False, ["tcp://203.0.113.7:8443", "tcp://192.168.8.1:8443"]),
     ],
 )
 def test_a_server_names_an_interface_the_config_does_not_as_the_firewall_opens_it(
@@ -495,13 +495,13 @@ def test_direct_puts_each_groups_ipv6_addresses_after_its_ipv4_ones(live, monkey
     runtime, _ = ipv6_box(monkeypatch, is_direct=True)
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://[fd00:8::1]:8443",
-        "https://203.0.113.7:8443",
-        "https://[2001:db8::7]:8443",
-        "https://[2001:db8::8]:8443",
-        "https://[2001:db8::99]:443",
-        "https://vps.example.org:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://[fd00:8::1]:8443",
+        "tcp://203.0.113.7:8443",
+        "tcp://[2001:db8::7]:8443",
+        "tcp://[2001:db8::8]:8443",
+        "tcp://[2001:db8::99]:443",
+        "tcp://vps.example.org:8443",
     ]
 
 
@@ -509,8 +509,8 @@ def test_without_direct_urls_hold_ipv4_alone_and_ipv6_is_not_read(live, monkeypa
     runtime, asked = ipv6_box(monkeypatch, is_direct=False)
 
     assert channel_urls(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://vps.example.org:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://vps.example.org:8443",
     ]
     assert asked == []
 
@@ -524,11 +524,11 @@ def test_an_exposed_overlays_ipv6_address_is_not_direct_s(live, monkeypatch):
 
     urls = channel_urls(runtime)
 
-    assert "https://[fd7a:115c::5]:8443" not in urls
+    assert "tcp://[fd7a:115c::5]:8443" not in urls
     assert urls[:3] == [
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
-        "https://[fd00:8::1]:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
+        "tcp://[fd00:8::1]:8443",
     ]
 
 
@@ -539,10 +539,10 @@ def test_an_interface_with_ipv6_alone_is_named_by_it(live, monkeypatch):
     )
 
     assert channel_urls(runtime)[:4] == [
-        "https://192.168.8.1:8443",
-        "https://[fd00:8::1]:8443",
-        "https://[2001:db8::7]:8443",
-        "https://[2001:db8::8]:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://[fd00:8::1]:8443",
+        "tcp://[2001:db8::7]:8443",
+        "tcp://[2001:db8::8]:8443",
     ]
 
 
@@ -552,11 +552,11 @@ def test_an_interface_with_ipv6_alone_is_named_by_it(live, monkeypatch):
 @pytest.mark.parametrize(
     ("host", "url"),
     [
-        ("hub.example.org", "https://hub.example.org:443"),
-        ("Hub.Example.ORG", "https://hub.example.org:443"),
-        ("203.0.113.7", "https://203.0.113.7:443"),
-        ("2001:db8::7", "https://[2001:db8::7]:443"),
-        ("2001:DB8:0:0::7", "https://[2001:db8::7]:443"),
+        ("hub.example.org", "tcp://hub.example.org:443"),
+        ("Hub.Example.ORG", "tcp://hub.example.org:443"),
+        ("203.0.113.7", "tcp://203.0.113.7:443"),
+        ("2001:db8::7", "tcp://[2001:db8::7]:443"),
+        ("2001:DB8:0:0::7", "tcp://[2001:db8::7]:443"),
     ],
 )
 def test_a_url_spells_each_address_one_way(host, url):
@@ -579,10 +579,10 @@ def test_a_public_address_that_is_an_interface_s_is_listed_once(
     added = direct_urls(runtime, direct)
 
     assert urls == [
-        "https://192.168.8.1:8443",
-        "https://[fd00:8::1]:8443",
-        "https://203.0.113.7:8443",
-        "https://[2001:db8::7]:8443",
-        "https://[2001:db8::8]:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://[fd00:8::1]:8443",
+        "tcp://203.0.113.7:8443",
+        "tcp://[2001:db8::7]:8443",
+        "tcp://[2001:db8::8]:8443",
     ]
     assert added == urls[1:]

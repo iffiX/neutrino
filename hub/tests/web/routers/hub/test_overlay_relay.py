@@ -120,7 +120,7 @@ def test_saving_stores_the_settings_and_converges(api):
 
     assert response.status_code == 200
     view = response.json()
-    assert view["url"] == "https://203.0.113.5:18443"
+    assert view["url"] == "tcp://203.0.113.5:18443"
     assert view["state"] == "connecting"
     assert read_relay() == OverlayRelayConfig(
         is_enabled=False,

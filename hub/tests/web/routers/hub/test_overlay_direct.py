@@ -69,9 +69,9 @@ def test_an_unset_direct_reads_off_and_lists_what_turning_it_on_adds(api):
         "public_host": "",
         "public_port": 8443,
         "urls": [
-            "https://[fd00:8::1]:9443",
-            "https://203.0.113.7:9443",
-            "https://[2001:db8::7]:9443",
+            "tcp://[fd00:8::1]:9443",
+            "tcp://203.0.113.7:9443",
+            "tcp://[2001:db8::7]:9443",
         ],
         "interface_state": "added",
     }
@@ -92,10 +92,10 @@ def test_setting_stores_the_address_keeps_the_switch_and_converges(api):
     )
     assert runtime.converged == 1
     assert response.json()["urls"] == [
-        "https://[fd00:8::1]:9443",
-        "https://203.0.113.7:9443",
-        "https://[2001:db8::7]:9443",
-        "https://hub.example.org:443",
+        "tcp://[fd00:8::1]:9443",
+        "tcp://203.0.113.7:9443",
+        "tcp://[2001:db8::7]:9443",
+        "tcp://hub.example.org:443",
     ]
 
 
@@ -107,7 +107,7 @@ def test_an_empty_host_states_no_public_address(api):
     )
 
     assert response.status_code == 200
-    assert response.json()["urls"][-1] == "https://[2001:db8::7]:9443"
+    assert response.json()["urls"][-1] == "tcp://[2001:db8::7]:9443"
 
 
 @pytest.mark.parametrize("host", ["two words", "-oProxyCommand=x", "a..b"])
@@ -168,14 +168,14 @@ def test_an_ipv6_public_address_is_stored_bare_and_listed_in_brackets(api):
     assert response.status_code == 200
     assert read_direct().public_host == "2001:db8::99"
     assert response.json()["public_host"] == "2001:db8::99"
-    assert response.json()["urls"][-1] == "https://[2001:db8::99]:443"
+    assert response.json()["urls"][-1] == "tcp://[2001:db8::99]:443"
 
 
 @pytest.mark.parametrize(
     ("public_host", "url"),
     [
-        ("203.0.113.7", "https://203.0.113.7:9443"),
-        ("2001:DB8:0::7", "https://[2001:db8::7]:9443"),
+        ("203.0.113.7", "tcp://203.0.113.7:9443"),
+        ("2001:DB8:0::7", "tcp://[2001:db8::7]:9443"),
     ],
 )
 def test_a_public_address_that_is_an_interface_s_is_listed_once(api, public_host, url):
@@ -200,7 +200,7 @@ def test_direct_adding_an_interface_s_address_reads_added(api):
     view = client.get("/api/hub/overlay/direct").json()
 
     assert view["interface_state"] == "added"
-    assert "https://203.0.113.7:9443" in view["urls"]
+    assert "tcp://203.0.113.7:9443" in view["urls"]
 
 
 def test_every_interface_already_exposed_reads_exposed(api, monkeypatch):
@@ -221,7 +221,7 @@ def test_every_interface_already_exposed_reads_exposed(api, monkeypatch):
 
     assert (unset["interface_state"], unset["urls"]) == ("exposed", [])
     assert stated["interface_state"] == "exposed"
-    assert stated["urls"] == ["https://hub.example.org:443"]
+    assert stated["urls"] == ["tcp://hub.example.org:443"]
 
 
 def test_an_exposed_interface_s_ipv6_address_is_one_direct_adds(api, monkeypatch):
@@ -234,7 +234,7 @@ def test_an_exposed_interface_s_ipv6_address_is_one_direct_adds(api, monkeypatch
     view = client.get("/api/hub/overlay/direct").json()
 
     assert view["interface_state"] == "added"
-    assert view["urls"] == ["https://[fd00:8::1]:9443"]
+    assert view["urls"] == ["tcp://[fd00:8::1]:9443"]
 
 
 def test_no_interface_with_an_address_reads_none(api, monkeypatch):

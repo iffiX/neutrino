@@ -78,7 +78,7 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(
         channel_addresses,
         "channel_urls",
-        lambda runtime: ["https://192.168.100.1:8443"],
+        lambda runtime: ["tcp://192.168.100.1:8443"],
     )
     monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
     runtime = FakeRuntime()
@@ -132,7 +132,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
     body = response.json()
     payload = decoded_link(body["link"])
     assert payload["role"] == "client" and payload["key"] == FINGERPRINT
-    assert payload["urls"] == ["https://192.168.100.1:8443"]
+    assert payload["urls"] == ["tcp://192.168.100.1:8443"]
     ticket = runtime.enrollments.get(payload["token"])
     rows = client.get("/api/hub/client").json()["clients"]
     assert len(rows) == 1

@@ -15,7 +15,7 @@ class StubRuntime:
     """Only what the sampler reaches for."""
 
     def __init__(self):
-        self.urls = ["https://192.168.100.1:8443"]
+        self.urls = ["tcp://192.168.100.1:8443"]
         self.calls: list = []
         self.is_device_moved = False
         self.is_resolver_moved = False
@@ -70,7 +70,7 @@ def test_a_set_that_moved_converges_once(monkeypatch):
     watcher, runtime = sampler(monkeypatch)
     watcher.sample_once()
 
-    runtime.urls = ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
+    runtime.urls = ["tcp://192.168.100.1:8443", "tcp://100.64.0.1:8443"]
 
     assert watcher.sample_once() is True
     assert runtime.calls.count("converge") == 1
@@ -83,7 +83,7 @@ def test_a_device_that_moved_is_not_converged_on_twice(monkeypatch):
     watcher.sample_once()
     runtime.is_device_moved = True
 
-    runtime.urls = ["https://192.168.100.1:8443", "https://10.126.126.1:8443"]
+    runtime.urls = ["tcp://192.168.100.1:8443", "tcp://10.126.126.1:8443"]
 
     assert watcher.sample_once() is True
     assert "converge" not in runtime.calls
@@ -126,7 +126,7 @@ def test_resolvers_that_moved_are_not_converged_on_twice(monkeypatch):
     watcher.sample_once()
     runtime.is_resolver_moved = True
 
-    runtime.urls = ["https://192.168.100.1:8443", "https://10.126.126.1:8443"]
+    runtime.urls = ["tcp://192.168.100.1:8443", "tcp://10.126.126.1:8443"]
 
     assert watcher.sample_once() is True
     assert "converge" not in runtime.calls

@@ -113,16 +113,16 @@ def channel_url(host: str, port: int) -> str:
         port: The port.
 
     Returns:
-        ``https://<host>:<port>``: an IP address in its standard form, an
+        ``tcp://<host>:<port>``: an IP address in its standard form, an
         IPv6 one compressed and in brackets, a name in lower case.
     """
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        return f"https://{host.lower()}:{port}"
+        return f"tcp://{host.lower()}:{port}"
     if address.version == 6:
-        return f"https://[{address}]:{port}"
-    return f"https://{address}:{port}"
+        return f"tcp://[{address}]:{port}"
+    return f"tcp://{address}:{port}"
 
 
 def _own_urls(runtime, direct: OverlayDirectConfig, *, is_direct: bool) -> list:
@@ -169,7 +169,7 @@ def own_agent_urls(runtime) -> list[str]:
             port.
 
     Returns:
-        ``https://127.0.0.1:<agent port>``, then :func:`channel_urls`.
+        ``tcp://127.0.0.1:<agent port>``, then :func:`channel_urls`.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     loopback = channel_url(WEB_AGENT_LOOPBACK_HOST, port)
@@ -180,7 +180,7 @@ def relay_url() -> str:
     """The relay's address while it is on and configured.
 
     Returns:
-        ``https://<host>:<public-port>``, an IPv6 host in brackets; empty
+        ``tcp://<host>:<public-port>``, an IPv6 host in brackets; empty
         while the relay is off or names no host, account or key.
     """
     try:
@@ -199,7 +199,7 @@ def frp_url(vendor: str) -> str:
         vendor: ``sakurafrp`` or ``openfrp``.
 
     Returns:
-        ``https://<public-host>:<public-port>``, an IPv6 host in brackets;
+        ``tcp://<public-host>:<public-port>``, an IPv6 host in brackets;
         empty otherwise.
     """
     config = read_frp(vendor)

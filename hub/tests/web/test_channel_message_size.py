@@ -140,7 +140,7 @@ def large_hub(monkeypatch, tmp_path):
         for number in range(SESSIONS_PER_MACHINE)
     ]
     monkeypatch.setattr(channel_state, "sessions_for", lambda runtime, viewer: sessions)
-    urls = [f"https://192.168.{n}.1:8443" for n in range(URLS)]
+    urls = [f"tcp://192.168.{n}.1:8443" for n in range(URLS)]
     monkeypatch.setattr(channel_state, "channel_urls", lambda runtime: list(urls))
     overlays = [
         {"kind": "netbird", "setup_key": text(36), "management_url": text(64)},

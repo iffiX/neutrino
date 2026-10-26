@@ -905,7 +905,7 @@ def hub_carries_a_package(tmp_path, monkeypatch):
     monkeypatch.setattr(
         channel_addresses,
         "channel_urls",
-        lambda runtime: ["https://192.168.100.1:8443"],
+        lambda runtime: ["tcp://192.168.100.1:8443"],
     )
     monkeypatch.setattr(channel_addresses, "read_public_key", lambda: "ab" * 32)
 
@@ -1853,7 +1853,7 @@ def test_the_hubs_own_link_names_loopback_alone_when_nothing_is_exposed(
     response = client.post(ENROLLMENT_PATH, json={"name": "", "is_hub": True})
 
     assert response.status_code == 200
-    assert link_urls(response.json()["link"]) == ["https://127.0.0.1:8443"]
+    assert link_urls(response.json()["link"]) == ["tcp://127.0.0.1:8443"]
 
 
 def test_the_hubs_own_link_names_loopback_before_the_exposed_addresses(
@@ -1862,14 +1862,14 @@ def test_the_hubs_own_link_names_loopback_before_the_exposed_addresses(
     client, runtime = box_api
     runtime.settings = {}
     monkeypatch.setattr(
-        channel_addresses, "channel_urls", lambda runtime: ["https://192.168.8.1:8443"]
+        channel_addresses, "channel_urls", lambda runtime: ["tcp://192.168.8.1:8443"]
     )
 
     hub_link = client.post(ENROLLMENT_PATH, json={"name": "", "is_hub": True})
     other_link = client.post(ENROLLMENT_PATH, json={"name": ""})
 
     assert link_urls(hub_link.json()["link"]) == [
-        "https://127.0.0.1:8443",
-        "https://192.168.8.1:8443",
+        "tcp://127.0.0.1:8443",
+        "tcp://192.168.8.1:8443",
     ]
-    assert link_urls(other_link.json()["link"]) == ["https://192.168.8.1:8443"]
+    assert link_urls(other_link.json()["link"]) == ["tcp://192.168.8.1:8443"]

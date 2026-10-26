@@ -103,7 +103,7 @@ class FrpConfig:
         if not self.has_tunnel or not self.public_host:
             return ""
         host = f"[{self.public_host}]" if ":" in self.public_host else self.public_host
-        return f"https://{host}:{self.public_port}"
+        return f"tcp://{host}:{self.public_port}"
 
     def credential(self) -> str:
         """The credential in the clear.

@@ -103,7 +103,7 @@ class PortRuntime:
 def composed_state(runtime, key) -> dict:
     """A state naming the agent port the runtime holds at the push."""
     port = runtime.settings.get("agent_listen_port", 8443)
-    return {"hash": key, "urls": [f"https://192.168.100.1:{port}"]}
+    return {"hash": key, "urls": [f"tcp://192.168.100.1:{port}"]}
 
 
 @pytest.fixture
@@ -256,7 +256,7 @@ def test_an_agent_port_change_pushes_every_online_peer_before_the_restart(
     assert response.json()["agent_listen_port"] == 9443
     assert stored["agent_listen_port"] == 9443
     assert runtime.settings["agent_listen_port"] == 9443
-    new_urls = ["https://192.168.100.1:9443"]
+    new_urls = ["tcp://192.168.100.1:9443"]
     assert happened == [
         ("push", "device-one", new_urls),
         ("push", "client-one", new_urls),
@@ -279,7 +279,7 @@ def test_a_peer_that_cannot_take_its_state_holds_up_no_move(port_client):
     )
 
     assert happened == [
-        ("push", "client-one", ["https://192.168.100.1:9443"]),
+        ("push", "client-one", ["tcp://192.168.100.1:9443"]),
         "converge",
     ]
 

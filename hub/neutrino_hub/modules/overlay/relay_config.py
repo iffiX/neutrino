@@ -89,7 +89,7 @@ class OverlayRelayConfig:
         if not self.host:
             return ""
         host = f"[{self.host}]" if ":" in self.host else self.host
-        return f"https://{host}:{self.public_port}"
+        return f"tcp://{host}:{self.public_port}"
 
 
 def is_host_refused(host: str) -> bool:

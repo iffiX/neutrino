@@ -110,7 +110,7 @@ def test_the_link_points_at_the_agent_port_over_tls(fingerprinted, live_addresse
 
     assert answer.status_code == 200
     payload = decoded(answer.json()["link"])
-    assert payload["urls"] == ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
+    assert payload["urls"] == ["tcp://192.168.8.1:9443", "tcp://10.0.0.1:9443"]
     assert payload["key"] == FINGERPRINT
     assert payload["role"] == "agent"
 
@@ -120,7 +120,7 @@ def test_the_agent_port_defaults_beside_the_panel_port(fingerprinted, live_addre
         network_config(lan_entry("enp1s0", address="192.168.8.1"), overlays=[])
     )
 
-    assert urls_of(runtime) == ["https://192.168.8.1:8443"]
+    assert urls_of(runtime) == ["tcp://192.168.8.1:8443"]
 
 
 def test_an_exposed_uplink_is_in_the_link_and_an_unexposed_lan_is_not(
@@ -137,7 +137,7 @@ def test_an_exposed_uplink_is_in_the_link_and_an_unexposed_lan_is_not(
         )
     )
 
-    assert urls_of(runtime) == ["https://203.0.113.7:8443"]
+    assert urls_of(runtime) == ["tcp://203.0.113.7:8443"]
 
 
 def test_a_server_generates_from_its_exposed_ports_live_address(
@@ -151,7 +151,7 @@ def test_a_server_generates_from_its_exposed_ports_live_address(
         )
     )
 
-    assert urls_of(runtime) == ["https://192.168.100.7:8443"]
+    assert urls_of(runtime) == ["tcp://192.168.100.7:8443"]
 
 
 def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
@@ -167,8 +167,8 @@ def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
     )
 
     assert urls_of(runtime) == [
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
     ]
 
 
@@ -202,9 +202,9 @@ def test_the_links_address_set_is_the_firewalls_open_set(fingerprinted, live_add
     opened = exposure.networks("ipv4")
     assert f"ip saddr {{ {', '.join(opened)} }} accept" in ruleset
     assert urls == [
-        "https://203.0.113.7:8443",
-        "https://192.168.8.1:8443",
-        "https://100.88.178.129:8443",
+        "tcp://203.0.113.7:8443",
+        "tcp://192.168.8.1:8443",
+        "tcp://100.88.178.129:8443",
     ]
     hosts = [ipaddress.ip_address(url[8:].rsplit(":", 1)[0]) for url in urls]
     assert sorted(
@@ -269,7 +269,7 @@ def test_a_box_with_nothing_exposed_has_no_link_to_give(fingerprinted, live_addr
 
 
 def test_a_link_is_the_compact_json_compressed_at_level_9_in_unpadded_base64url():
-    urls = ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
+    urls = ["tcp://192.168.8.1:9443", "tcp://10.0.0.1:9443"]
     overlays = [{"provider": "netbird", "setup_key": "k"}]  # scan: allow
 
     link = devices_router.enrollment_link(
@@ -294,11 +294,11 @@ def test_a_link_is_the_compact_json_compressed_at_level_9_in_unpadded_base64url(
 
 def test_a_device_link_round_trips_without_overlays():
     link = devices_router.enrollment_link(
-        ["https://192.168.8.1:9443"], "Tk_-9", FINGERPRINT
+        ["tcp://192.168.8.1:9443"], "Tk_-9", FINGERPRINT
     )
 
     assert decoded(link) == {
-        "urls": ["https://192.168.8.1:9443"],
+        "urls": ["tcp://192.168.8.1:9443"],
         "token": "Tk_-9",
         "key": FINGERPRINT,
         "role": "agent",

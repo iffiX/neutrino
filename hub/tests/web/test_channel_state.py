@@ -116,7 +116,7 @@ def overlay(monkeypatch):
 @pytest.fixture(autouse=True)
 def hub_urls(monkeypatch) -> list:
     """The addresses the hub answers the channel on; a test may move them."""
-    urls = ["https://192.168.100.1:8443"]
+    urls = ["tcp://192.168.100.1:8443"]
     monkeypatch.setattr(channel_state, "channel_urls", lambda runtime: list(urls))
     return urls
 
@@ -243,11 +243,11 @@ def test_a_clients_state_names_every_address_the_hub_answers_on(config_dir, hub_
     runtime.client_scope[client_id] = LAN
     first = channel_state.client_state(runtime, client_id)
 
-    hub_urls.append("https://100.64.0.1:8443")
+    hub_urls.append("tcp://100.64.0.1:8443")
     moved = channel_state.client_state(runtime, client_id)
 
-    assert first["urls"] == ["https://192.168.100.1:8443"]
-    assert moved["urls"] == ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
+    assert first["urls"] == ["tcp://192.168.100.1:8443"]
+    assert moved["urls"] == ["tcp://192.168.100.1:8443", "tcp://100.64.0.1:8443"]
     assert moved["hash"] != first["hash"]
 
 
@@ -258,7 +258,7 @@ def test_a_clients_state_names_the_relays_address_while_it_is_on(
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
     runtime.client_scope[client_id] = LAN
-    relay = "https://vps.example.net:18443"
+    relay = "tcp://vps.example.net:18443"
     off = channel_state.client_state(runtime, client_id)
 
     hub_urls.append(relay)
@@ -266,9 +266,9 @@ def test_a_clients_state_names_the_relays_address_while_it_is_on(
     on = channel_state.client_state(runtime, client_id)
 
     assert off["ssh_relay_url"] == ""
-    assert off["urls"] == ["https://192.168.100.1:8443"]
+    assert off["urls"] == ["tcp://192.168.100.1:8443"]
     assert on["ssh_relay_url"] == relay
-    assert on["urls"] == ["https://192.168.100.1:8443", relay]
+    assert on["urls"] == ["tcp://192.168.100.1:8443", relay]
     assert on["hash"] != off["hash"]
 
 
@@ -277,8 +277,8 @@ def test_a_clients_state_names_each_frp_vendors_address(config_dir, hub_urls, hu
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
     runtime.client_scope[client_id] = LAN
-    sakura = "https://frp-a.natfrp.cloud:41234"
-    openfrp = "https://cn-hk.of-7af93c01.shop:51607"
+    sakura = "tcp://frp-a.natfrp.cloud:41234"
+    openfrp = "tcp://cn-hk.of-7af93c01.shop:51607"
     hub_urls += [sakura, openfrp]
     hub_frp.update(sakurafrp=sakura, openfrp=openfrp)
 
@@ -294,7 +294,7 @@ def test_a_relay_address_the_urls_do_not_hold_is_not_named(config_dir, hub_relay
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
     runtime.client_scope[client_id] = LAN
-    hub_relay[0] = "https://vps.example.net:18443"
+    hub_relay[0] = "tcp://vps.example.net:18443"
 
     state = channel_state.client_state(runtime, client_id)
 
@@ -665,7 +665,7 @@ def test_every_live_agent_and_client_is_pushed_its_state_agents_first(
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
     runtime.client_sessions = FakeChannelSessions(online=[client_id])
-    hub_urls[:] = ["https://192.168.100.1:9443"]
+    hub_urls[:] = ["tcp://192.168.100.1:9443"]
 
     unpushed = channel_state.push_every_state(runtime)
 
@@ -673,7 +673,7 @@ def test_every_live_agent_and_client_is_pushed_its_state_agents_first(
     assert [key for key, _, _ in runtime.agent_sessions.pushes] == [DEVICE]
     ((key, _, document),) = runtime.client_sessions.pushes
     assert key == client_id
-    assert document["urls"] == ["https://192.168.100.1:9443"]
+    assert document["urls"] == ["tcp://192.168.100.1:9443"]
 
 
 def test_a_binding_whose_socket_ended_is_named_and_the_others_are_pushed(config_dir):

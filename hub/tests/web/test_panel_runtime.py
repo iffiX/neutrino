@@ -284,10 +284,10 @@ def test_the_hubs_own_device_is_handed_loopback_first(monkeypatch):
     monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
     monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
     monkeypatch.setattr(
-        runtime_module, "own_agent_urls", lambda runtime: ["https://127.0.0.1:8443"]
+        runtime_module, "own_agent_urls", lambda runtime: ["tcp://127.0.0.1:8443"]
     )
 
-    assert panel._device_urls("own") == ["https://127.0.0.1:8443"]
+    assert panel._device_urls("own") == ["tcp://127.0.0.1:8443"]
     assert panel._device_urls("other") == []
     assert panel._device_urls("gone") == []
 

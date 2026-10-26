@@ -57,9 +57,9 @@ def test_the_relay_is_configured_by_a_host_an_account_and_a_key():
 @pytest.mark.parametrize(
     ("host", "url"),
     [
-        ("203.0.113.5", "https://203.0.113.5:18443"),
-        ("vps.example.org", "https://vps.example.org:18443"),
-        ("2001:db8::5", "https://[2001:db8::5]:18443"),
+        ("203.0.113.5", "tcp://203.0.113.5:18443"),
+        ("vps.example.org", "tcp://vps.example.org:18443"),
+        ("2001:db8::5", "tcp://[2001:db8::5]:18443"),
         ("", ""),
     ],
 )

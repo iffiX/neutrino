@@ -198,6 +198,8 @@ SETUP_STEP_WRITE_ANSWERS = "write_answers"
 SETUP_STEP_PANEL_PASSWORD = "panel_password"
 SETUP_STEP_LOCAL_AGENT = "local_agent"
 SETUP_STEP_START_SERVICE = "start_services"
+# The panel's settings, which the transport step renders the agent port from.
+PANEL_SETTINGS_FILE = "web/settings.json"
 # Which agent package a family takes. The hub's package carries one of each
 # for its own machine, so this box is served without a download; a family
 # with no agent build gets none, and the step says so instead of failing the
