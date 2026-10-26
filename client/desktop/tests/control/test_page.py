@@ -2461,6 +2461,15 @@ def test_an_app_row_names_its_machine_its_source_and_every_local_address():
     assert (row["tone"], row["word"], row["reason"]) == ("ok", "", "")
 
 
+def test_an_entry_with_no_number_shows_its_kind_and_no_port():
+    row = run_app_row(GITEA, [GITEA_WEB, dict(GITEA_SSH, local_port=None)])
+
+    assert row["lines"] == [
+        "http://gitea.lab-gpu.localhost:24123/explore?tab=repos",
+        "Port",
+    ]
+
+
 def test_on_a_mac_every_local_address_is_the_loopback():
     row = run_app_row(GITEA, [GITEA_WEB], os_name="darwin")
 

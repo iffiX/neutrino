@@ -31,6 +31,19 @@ def test_list_groups_the_apps_by_machine_with_fixed_addresses(running, capsys):
     assert "build (office)" in out
 
 
+def test_an_entry_with_no_number_is_listed_without_an_address(running, capsys):
+    shell = next(
+        entry
+        for entry in running.state["services"]
+        if entry["id"] == "ssh_server_d1_iffi"
+    )
+    shell["local_port"] = None
+
+    assert app.main_list() == 0
+
+    assert "    iffi  ssh" in capsys.readouterr().out.splitlines()
+
+
 def test_list_of_one_hub_names_no_hub(running, capsys):
     assert app.main_list(hub="office") == 0
 

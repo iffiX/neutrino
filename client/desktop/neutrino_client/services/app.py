@@ -6,10 +6,11 @@ fixed local port, the person's number or else the hub's ``local_port``, and
 opens the system browser at the app's first ``http`` or ``https`` entry, in
 the order the hub lists them, at ``<scheme>://<local name>:<local
 port><path>``; an entry with ``is_token_required`` takes a fresh token from
-the ``service`` frame and opens with ``?tkn=<token>``. On macOS, whose
-browser resolves no ``.localhost`` name, the host is ``127.0.0.1``. A
-failure is the first refusal; the forwards that started stay up. **Stop**
-ends every forward of the app.
+the ``service`` frame and opens with ``?tkn=<token>``. An entry with no
+number, the hub having sent none and the person set none, gets no forward
+until one comes. On macOS, whose browser resolves no ``.localhost`` name,
+the host is ``127.0.0.1``. A failure is the first refusal; the forwards
+that started stay up. **Stop** ends every forward of the app.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -172,6 +173,9 @@ class AppServiceHandler:
         failure: dict = {}
         page = None
         for entry in app_entries(app, entries):
+            key = service_key(hub_id, str(entry.get("id", "")))
+            if not self._forwards.ports.app_port(key, _number(entry.get("local_port"))):
+                continue
             try:
                 port = self._forwards.ensure(
                     hub_id=hub_id,

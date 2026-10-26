@@ -1188,9 +1188,11 @@ function localHost(app) {
 }
 
 // One entry's local address: the page's own url for a web entry, the name
-// and the port for a port entry, ssh before them for an ssh entry.
+// and the port for a port entry, ssh before them for an ssh entry; the
+// entry's kind alone while it has no number.
 function localAddress(app, entry) {
   const port = typeof entry.local_port === 'number' ? entry.local_port : entry.forward;
+  if (typeof port !== 'number' || port <= 0) return t('ui.entry_kind.' + entry.type);
   const where = localHost(app) + ':' + port;
   if (entry.type === 'web') {
     const url = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i.exec((entry.payload || {}).url || '');

@@ -2871,6 +2871,30 @@ def test_use_forwards_every_entry_at_its_number_and_opens_the_first_page(app_hub
     assert entry(resident, "h1", "gitea_d1_ssh")["forward"] == port_port
 
 
+def test_an_app_entry_the_hub_gave_no_number_has_none_and_use_passes_it_by(
+    two_hubs_up,
+):
+    resident, transport = two_hubs_up
+    web_port = free_port()
+    state = app_state(web_port, free_port())
+    del state["services"][1]["local_port"]
+    transport.deliver("c1", {"frame": state})
+    held = []
+    resident._start_thread = held.append
+
+    assert entry(resident, "h1", "gitea_d1_ssh")["local_port"] is None
+    assert resident.open_app("h1", "gitea_d1") == {}
+    held[0]()
+
+    assert [line["open"]["id"] for line in forward_starts(transport)] == [
+        "gitea_d1_web"
+    ]
+    assert resident.platform.opened_urls == [
+        f"http://gitea.lab.localhost:{web_port}/explore?tab=repos"
+    ]
+    assert resident.app_rows()[0]["last_error"] is None
+
+
 def test_use_on_a_mac_opens_the_loopback(app_hub):
     resident, _transport, (web_port, _port_port) = app_hub
     resident.platform.os_name = "darwin"

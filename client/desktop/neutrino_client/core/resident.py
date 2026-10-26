@@ -560,7 +560,8 @@ class ClientResident:
             with ``local_port`` and ``forward``, the loopback port its
             forward listens on or None. An app entry's ``local_port`` is the
             number it forwards on, the person's or the hub's, with
-            ``is_local_port_own`` saying whose; any other's is ``"auto"``. A
+            ``is_local_port_own`` saying whose, or None while neither names
+            one; any other's is ``"auto"``. A
             ``file`` entry also carries ``mount_default`` and
             ``is_declared``.
         """
@@ -589,8 +590,9 @@ class ClientResident:
             if is_forwardable(entry, mount_shape):
                 if is_app_kind(str(entry.get("type", ""))):
                     own = self._ports.setting(key)
-                    row["local_port"] = self._ports.app_port(
-                        key, _port_number(entry.get("local_port"))
+                    row["local_port"] = (
+                        self._ports.app_port(key, _port_number(entry.get("local_port")))
+                        or None
                     )
                     row["is_local_port_own"] = isinstance(own, int)
                 else:

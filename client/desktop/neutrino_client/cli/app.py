@@ -59,7 +59,8 @@ def main_list(*, hub: str = "") -> int:
             kind = wording.line(f"kind_{entry.get('type', '')}")
             address = local_address(state, app, entry)
             tail = f"  ({wording.line('unhealthy')})" if _is_unhealthy(entry) else ""
-            wording.say(f"    {entry.get('name', '')}  {kind}  {address}{tail}")
+            line = f"    {entry.get('name', '')}  {kind}"
+            wording.say(f"{line}  {address}{tail}" if address else f"{line}{tail}")
     return 0
 
 
@@ -92,9 +93,9 @@ def main_open(app_name: str, *, hub: str = "") -> int:
         wording.refuse(failure["code"], failure["params"])
         return 1
     for entry in names.app_entries(fresh, row or app):
-        wording.say(
-            wording.line("opening", address=local_address(fresh, row or app, entry))
-        )
+        address = local_address(fresh, row or app, entry)
+        if address:
+            wording.say(wording.line("opening", address=address))
     return 0
 
 
@@ -167,7 +168,8 @@ def main_set(app_name: str, ports: list, *, hub: str = "") -> int:
     row = _app_row(reply, app) or app
     for entry in names.app_entries(reply, row):
         if entry.get("name") in asked:
-            wording.say(f"{entry.get('name', '')}  {local_address(reply, row, entry)}")
+            address = local_address(reply, row, entry)
+            wording.say(f"{entry.get('name', '')}  {address}".rstrip())
     return 0
 
 
@@ -182,12 +184,15 @@ def local_address(state: dict, app: dict, entry: dict) -> str:
     Returns:
         ``<scheme>://<local name>:<port><path>`` for a ``web`` entry,
         ``<local name>:<port>`` for a ``port`` or ``ssh`` one, ``/udp``
-        after a UDP one; the host is ``127.0.0.1`` on macOS.
+        after a UDP one; the host is ``127.0.0.1`` on macOS. Empty while
+        the entry has no number.
     """
+    port = entry.get("local_port")
+    if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
+        return ""
     host = str(app.get("local_name", "") or "")
     if (state.get("platform") or {}).get("os") == APP_LOOPBACK_OS or not host:
         host = APP_LOOPBACK_HOST
-    port = entry.get("local_port")
     payload = entry.get("payload") or {}
     if entry.get("type") == "web":
         parts = urllib.parse.urlsplit(str(payload.get("url", "")))
