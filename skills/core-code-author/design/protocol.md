@@ -368,6 +368,7 @@ walk theirs. A new code and its wording are one change.
 | `account_not_enabled` | `{account}` | a `shell` or an `exec` naming an account the Terminal module does not enable | added |
 | `account_home_unknown` | `{account}` | the `code` of a `samba` row of `GET /api/agent/module/samba`, an enabled account with no `share_path` whose machine reports no home for it ("The account layer in the state") | added |
 | `samba_hosts_allow_no_loopback`, `samba_interfaces_no_loopback`, `samba_domain_member` | none | the `code` of the `samba` module row on Linux, a `hosts allow` of the person's `[global]` that leaves out the loopback, a `bind interfaces only` whose `interfaces` leaves out `lo`, and a domain member's `security` or `server role`, each a setting of the person's the module never changes ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
+| `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row on Linux, the shares of the hub's own list that admit no enabled account's SMB user and are left out of the module's file ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
@@ -1403,7 +1404,7 @@ from the same facts, whoever installed the software:
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
-| `running` | the hub has configured it and the unit is active |
+| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)) |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its `want` differs from what it reports, and the agent is applying another module first ([agent.md](agent.md), "One module at a time") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |

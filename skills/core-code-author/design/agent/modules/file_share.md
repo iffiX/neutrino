@@ -57,7 +57,10 @@ admits several SMB users and carries no `force user` of its own: it carries
 file there per SMB user, named after the user and holding `force user =
 <account>`, so Samba forces the connected user's own account on that share
 too, and every file in it is the account's. The directory and its files are
-the module's, written at every apply and deleted with the module's file.
+the module's, written at every apply and deleted with the module's file. A
+share the file names itself whose users map to no enabled account's SMB
+user is left out of the module's file, never rendered open to every user,
+and the module row reads `share_users_unknown {shares}` while it is.
 Every share of the module's carries `hosts allow = 127.0.0.1 ::1`: a client
 reaches it through the agent's loopback relay and nothing else does. The
 module writes no `hosts allow` and no `hosts deny` of the whole server, and
