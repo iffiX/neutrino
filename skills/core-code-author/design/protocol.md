@@ -144,7 +144,7 @@ other interface's live IPv4) and its address on each exposed overlay.
 
 While Direct is on, every enabled interface's address follows the exposed
 ones: the firewall opens the agent port alone there, to every sender
-([connection.md](connection.md), "Where the port is reached"). One test
+([transport.md](transport.md), "Where the port is reached"). One test
 asserts that the link's address set equals the hub's addresses in the
 segments the firewall opens the agent port to, with the extra members no
 local interface holds: the public address stated for Direct while Direct is
@@ -153,7 +153,7 @@ relay's address while the relay is on and configured. Enrolling
 a device on a LAN begins with exposing that LAN's segment.
 
 What the port does with a peer before it is admitted, and every limit on it,
-is in [connection.md](connection.md), "Before a peer is admitted".
+is in [transport.md](transport.md), "Before a peer is admitted".
 
 ### The hub's static key
 
@@ -811,7 +811,7 @@ session from a client.
 | `POST /api/channel/key/set` | `{id, token, public_key}` | records the peer's static public key on the binding the token names, once, as an updated agent or client moves its binding to the transport; `{key}`, the hub's static public key; 401 `binding_unknown` |
 
 The agent port's limits, the knock's among them, are in
-[connection.md](connection.md), "What an unadmitted peer can cost the hub".
+[transport.md](transport.md), "What an unadmitted peer can cost the hub".
 None of them is keyed by the peer's address.
 
 ### The router files
@@ -1116,7 +1116,7 @@ The transport's own TCP settings:
 | --- | --- |
 | Every TCP socket the transport holds keeps Go's default, `TCP_NODELAY` on. | A record goes out when it is written, and a keystroke or a small request never waits for an acknowledgement. |
 | The transport never changes the system's TCP settings in 0.6.0: no `sysctl`, no registry value, and no buffer size of its own on a socket. The kernel's own buffers then bound one session's speed on a long path; measured on 2026-10-26 at a 100 ms round trip with Ubuntu 22.04's defaults, one session moved about 27 MB/s, and plain TCP about 30. | The hub could raise only its own side, while a client's or a phone's kernel stays at its default; and a setting the hub changed would be a change to the machine that no page shows. |
-| The hub's transport caps the memory it holds for its streams' bytes: one stream at `StreamWindowMaxBytes`, go-yamux's own largest window, and every stream together at `TransportMemoryMaxBytes`, through go-yamux's memory manager ([connection.md](connection.md), "What an unadmitted peer can cost the hub"). | A peer that reads slowly makes the hub hold up to a full window for each of its streams, in each direction it relays. |
+| The hub's transport caps the memory it holds for its streams' bytes: one stream at `StreamWindowMaxBytes`, go-yamux's own largest window, and every stream together at `TransportMemoryMaxBytes`, through go-yamux's memory manager ([transport.md](transport.md), "What an unadmitted peer can cost the hub"). | A peer that reads slowly makes the hub hold up to a full window for each of its streams, in each direction it relays. |
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |
@@ -1128,7 +1128,7 @@ The transport's own TCP settings:
 The handshake time and the admission time both run: a connection closes
 when either ends first, so the knock, the answer and the `hello` together
 fit in 30 seconds and the knock and its answer alone in 10. The limits on
-connections and sessions are in [connection.md](connection.md), "What an
+connections and sessions are in [transport.md](transport.md), "What an
 unadmitted peer can cost the hub". A peer whose keepalive gets no answer
 within `KeepAliveTimeout` ends the session and starts a round. A refused
 `hello` is retried at the backoff's maximum, the minute named under the
@@ -2509,7 +2509,7 @@ binding holds the `urls` of the last state it took as `gateway_urls`, with
 reconnect as much as the first, tries the name where it resolves, then
 `gateway_urls` in order, then `gateway_url` when the list does not hold it.
 A client's round dials the same addresses and the hub's address on each
-virtual network that is up, all at once ([connection.md](connection.md),
+virtual network that is up, all at once ([transport.md](transport.md),
 "Where the port is reached"). On either, the first whose handshake completes
 under the binding's `hub_key` is written back as `gateway_url`. Another
 network's hub on the name answers the knock with silence, since the knock's

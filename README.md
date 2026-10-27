@@ -158,7 +158,7 @@ The macOS commands and what each step keeps are on the docs site's [Uninstall](h
 - **Keys stay sealed in a vault.** Keys, passwords and tokens are encrypted under the passphrase you set at setup; config files and backups carry only ciphertext, and the panel does not show them again once stored.
 - **Root stays where it is needed.** The hub rewrites the firewall and installs packages, the agent starts services, so both run as root with the unit stripped of what root does not need; the client runs as you.
 
-The details are in [design/connection.md](skills/core-code-author/design/connection.md) and [design/privilege.md](skills/core-code-author/design/privilege.md). The reader's version is the docs site's [Security](https://neutrino.beyond-infinity.top/security.html) page.
+The details are in [design/transport.md](skills/core-code-author/design/transport.md) and [design/privilege.md](skills/core-code-author/design/privilege.md). The reader's version is the docs site's [Security](https://neutrino.beyond-infinity.top/security.html) page.
 
 ## Documentation and license
 

@@ -262,7 +262,7 @@ first connection whose handshake completes under the binding's `hub_key` is
 the round's. At that moment the transport closes every other connection of
 the round, before any `hello` on it, and sends `hello` on the round's
 connection alone. The round ends `connected` when the `welcome`
-follows, and in a code otherwise ([connection.md](connection.md), "Where
+follows, and in a code otherwise ([transport.md](transport.md), "Where
 the port is reached").
 
 | Rule | Reason |
@@ -1046,7 +1046,7 @@ A File Provider extension, the way an app adds a location to the system's
 Files app, runs in a process of its own while the app is suspended, and so
 needs a session of its own to the hub. A binding holds one session: a second
 one replaces the first with `replaced`
-([connection.md](connection.md), "Where the port is reached"). The app
+([transport.md](transport.md), "Where the port is reached"). The app
 therefore has no such extension, and a share is read on the share page
 alone.
 

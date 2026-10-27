@@ -158,7 +158,7 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 - **密钥封在保险库里。** 密钥、密码和令牌用你安装时设的主口令加密；配置文件和备份里只有密文，面板存进去之后也不再显示。
 - **root 只用在该用的地方。** 中枢要改防火墙、装软件，被控端要起服务，所以这两个以 root 运行，服务单元关掉了 root 用不到的能力；客户端跑在你自己的账户下。
 
-细节在 [design/connection.md](skills/core-code-author/design/connection.md) 和 [design/privilege.md](skills/core-code-author/design/privilege.md)。写给读者的版本在文档站的[安全](https://neutrino.beyond-infinity.top/zh-CN/security.html)页。
+细节在 [design/transport.md](skills/core-code-author/design/transport.md) 和 [design/privilege.md](skills/core-code-author/design/privilege.md)。写给读者的版本在文档站的[安全](https://neutrino.beyond-infinity.top/zh-CN/security.html)页。
 
 ## 文档和许可证
 

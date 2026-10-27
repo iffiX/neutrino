@@ -420,12 +420,12 @@ SakuraFrp and OpenFrp. The panel draws them on one page, **Access** (外部访�
 in Chinese), as one card each in that order, three to a row, in both
 editions; the configuration, the routes and the protocol keep the word
 `overlay` ([ui_text.md](../ui_text.md), "Names that are fixed"). Where each way reaches the port is
-[../connection.md](../connection.md), "Where the port is reached".
+[../transport.md](../transport.md), "Where the port is reached".
 
 | Rule | Reason |
 | --- | --- |
 | The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
-| Every way in reaches the one channel: the agent port, or for SakuraFrp and OpenFrp a loopback listener of the same channel ("The loopback listeners" below). The link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one static key, so a way in adds an address and nothing else. |
+| Every way in reaches the one channel: the agent port, or for SakuraFrp and OpenFrp a loopback listener of the same channel ("The loopback listeners" below). The link's and the state's `urls` hold one address per way in. | A peer reaches the set as [transport.md](../transport.md), "Where the port is reached", says and pins one static key, so a way in adds an address and nothing else. |
 | The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
 
 ## Direct
@@ -808,7 +808,7 @@ that vendor's.
 ## The agent port's limits
 
 The agent port's limits, what counts as a failed admission and the pause on
-`join` are in [connection.md](../connection.md), "What an unadmitted peer can
+`join` are in [transport.md](../transport.md), "What an unadmitted peer can
 cost the hub". Each one counts the whole port, the two frp listeners included, and none is
 keyed by a peer's address, because through the relay and the frp nodes every
 peer arrives from loopback.

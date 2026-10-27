@@ -461,7 +461,7 @@ The two constants are the transport's, the same on every machine
 ([protocol.md](protocol.md), "The timings").
 
 A machine's own services stay reachable on its LAN at their own ports, under
-each service's own login ([connection.md](connection.md), "One port, one
+each service's own login ([transport.md](transport.md), "One port, one
 connection"), and each also answers the agent's dial on loopback:
 
 | Service | Where it listens |
