@@ -1109,7 +1109,6 @@ class DesiredStateStore:
         platform: dict,
         *,
         address: str = "",
-        allowed_subnets: "list | tuple" = (),
         is_hub_machine: bool = False,
         account_details: "dict | None" = None,
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
@@ -1128,7 +1127,6 @@ class DesiredStateStore:
             stored: What the module's file holds, or is about to hold.
             platform: The tuple the agent reported.
             address: Where the device is, for the URLs it derives.
-            allowed_subnets: The networks its shares answer.
             is_hub_machine: Whether the device is the hub's own machine, which
                 a container module's composition may read.
             account_details: Account to ``{home, shell}`` as the machine last
@@ -1162,8 +1160,6 @@ class DesiredStateStore:
                 machine_slug=machine_slug,
                 app_slug_of=app_slug_of,
             )
-            if name == DEVICE_SAMBA_MODULE:
-                config["allowed_subnets"] = list(allowed_subnets)
         elif name == DEVICE_GITEA_MODULE:
             config["address"] = address
             config["secrets"] = self.gitea_secrets(key)
@@ -1189,7 +1185,6 @@ class DesiredStateStore:
         platform: dict,
         *,
         address: str = "",
-        allowed_subnets: "list | tuple" = (),
         urls: "list | tuple" = (),
         is_hub_machine: bool = False,
         ai_models: "list | tuple" = (),
@@ -1212,7 +1207,6 @@ class DesiredStateStore:
             key: The device key.
             platform: The tuple the agent reported.
             address: Where the device is, for the URLs it derives.
-            allowed_subnets: The networks its shares answer.
             urls: Every address the hub answers the channel on.
             is_hub_machine: Whether the device is the hub's own machine,
                 whose AI tools reach the gateway itself rather than its
@@ -1238,7 +1232,6 @@ class DesiredStateStore:
         slugs = app_slugs(machine_apps(self, key))
         shared = {
             "address": address,
-            "allowed_subnets": allowed_subnets,
             "is_hub_machine": is_hub_machine,
             "account_details": account_details,
             "machine_slug": machine_slug,

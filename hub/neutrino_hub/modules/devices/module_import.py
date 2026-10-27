@@ -17,47 +17,19 @@ SAMBA_PARAM_YES_VALUES = ("yes", "true", "1")
 
 
 def samba_import_config(details: dict) -> dict:
-    """The configuration the machine's own Samba amounts to.
+    """The configuration a Samba already on the machine amounts to: nothing.
+
+    The module is adopted with an empty configuration; the shares and users
+    the person set up stay theirs, uncopied and unmanaged (agent.md,
+    "Parallel, never take over").
 
     Args:
-        details: What the agent last reported: ``shares`` as ``testparm``
-            prints them, each ``{name, path, params}``, and ``users`` as
-            ``pdbedit`` lists them, each ``{name, is_present,
-            has_password}``.
+        details: What the agent last reported; not read.
 
     Returns:
-        ``{"shares", "users"}`` in the hub's shape. A share without a path
-        exports nothing and is left out; a share's ``valid users`` keeps
-        only names the user list carries.
+        ``{"shares": [], "users": []}``.
     """
-    users = [
-        str(user.get("name", ""))
-        for user in details.get("users") or []
-        if isinstance(user, dict) and user.get("name")
-    ]
-    shares = []
-    for share in details.get("shares") or []:
-        if not isinstance(share, dict) or not share.get("path"):
-            continue
-        params = share.get("params") if isinstance(share.get("params"), dict) else {}
-        valid_users = [
-            name
-            for name in str(params.get(SAMBA_PARAM_VALID_USERS, ""))
-            .replace(",", " ")
-            .split()
-            if name in users
-        ]
-        shares.append(
-            {
-                "name": str(share.get("name", "")),
-                "path": str(share.get("path", "")),
-                "comment": str(params.get(SAMBA_PARAM_COMMENT, "")),
-                "is_read_only": str(params.get(SAMBA_PARAM_READ_ONLY, "")).lower()
-                in SAMBA_PARAM_YES_VALUES,
-                "valid_users": valid_users,
-            }
-        )
-    return {"shares": shares, "users": users}
+    return {"shares": [], "users": []}
 
 
 def gitea_import_config(details: dict) -> dict:

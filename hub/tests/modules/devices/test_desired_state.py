@@ -202,7 +202,6 @@ def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unloc
     desired, _ = store.compose(
         DEVICE,
         PLATFORM,
-        allowed_subnets=["192.168.1.0/24"],
         account_details={"ann": {"home": "/home/ann", "shell": "/bin/bash"}},
     )
 
@@ -230,7 +229,6 @@ def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unloc
     assert config["passwords"]["neutrino-ann"] == store.account_secret(
         DEVICE, "samba", "ann", "password_sealed"
     )
-    assert config["allowed_subnets"] == ["192.168.1.0/24"]
 
 
 def test_a_windows_share_user_is_neutrino_and_the_account_cut_to_twenty(unlocked):

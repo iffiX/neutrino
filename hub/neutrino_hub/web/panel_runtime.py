@@ -76,7 +76,6 @@ from neutrino_hub.modules.router.link_status import (
     device_addresses,
     device_ipv6_addresses,
 )
-from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.router.traffic_history import RouterTrafficHistory
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -939,7 +938,6 @@ class PanelRuntime:
             key,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
-            allowed_subnets=self.share_subnets(),
             urls=self._device_urls(key),
             is_hub_machine=self.is_hub_machine(key),
             ai_models=ai_models,
@@ -980,7 +978,6 @@ class PanelRuntime:
             stored,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
-            allowed_subnets=self.share_subnets(),
             is_hub_machine=self.is_hub_machine(key),
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
@@ -1006,22 +1003,6 @@ class PanelRuntime:
         device = DeviceRegistry().get(key)
         own_machine = machine_id()
         return bool(device and own_machine and device.machine_id == own_machine)
-
-    def share_subnets(self) -> list:
-        """The networks a device's shares answer, from this hub's own fence.
-
-        Returns:
-            Network addresses, served networks first.
-        """
-        links = {
-            link.name: link.ipv4_address or ""
-            for link in RouterLinkStatus().all_links()
-        }
-        return share_subnets(
-            network=self.network(),
-            link_addresses=links,
-            device_addresses=device_addresses(),
-        )
 
     def push_desired_state(self, key: str) -> None:
         """Send one device the state it should hold now.
@@ -1122,9 +1103,9 @@ class PanelRuntime:
     def _push_desired_states(self) -> list[dict]:
         """Hand every online device the state the network now composes.
 
-        The shares' ``allowed_subnets`` and a git server's address derive
-        from the network, so a network change that never reached a device
-        would leave its shares refusing a network that was just opened.
+        A git server's address derives from the network, so a network
+        change that never reached a device would leave it naming an address
+        the network no longer has.
 
         Returns:
             ``devices_pushed {count}`` and ``devices_not_pushed {devices}``,

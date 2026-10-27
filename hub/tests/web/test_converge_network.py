@@ -33,7 +33,6 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
-from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.router.steps import RouterStepResult
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -706,7 +705,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
     monkeypatch.setattr(
         runtime_module.PanelRuntime,
         "desired_state_for",
-        lambda self, device: ("h", {"allowed_subnets": self.share_subnets()}),
+        lambda self, device: ("h", {"pushed_for": device}),
     )
     panel.agent_sessions = _Sessions(["aa:bb:cc:dd:ee:ff"])
 
@@ -725,20 +724,13 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
         fresh = RouterNetworkConfig.from_dict(files["router/network.json"])
         assert seen["ruleset"] == _ruleset(fresh, files["xray/routing.json"])
         assert seen["xray"] == xray_render(panel, files["xray/routing.json"])
-        fence = share_subnets(
-            network=fresh,
-            link_addresses=dict(ADDRESSES),
-            device_addresses=dict(ADDRESSES),
-        )
-        pushed = panel.agent_sessions.pushed[-1][2]
-        assert pushed["allowed_subnets"] == fence
+        assert panel.agent_sessions.pushed[-1][2]["pushed_for"] == "aa:bb:cc:dd:ee:ff"
         assert seen[CHANNEL_ROLE_CLIENT] == enabled_providers(fresh)
         for name in fresh.exposed_overlay_device_names:
             assert f'"{name}"' in seen["ruleset"]
 
     assert seen[CHANNEL_ROLE_CLIENT] == [OVERLAY_NETBIRD]
     assert '"easytier"' not in seen["ruleset"]
-    assert "10.0.0.0/24" not in pushed["allowed_subnets"]
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])

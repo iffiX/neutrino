@@ -326,7 +326,6 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
     monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
     monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
-    monkeypatch.setattr(PanelRuntime, "share_subnets", lambda self: [])
 
     for key in ("own", "other", "gone"):
         panel.desired_state_for(key)

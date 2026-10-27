@@ -20,40 +20,19 @@ from neutrino_hub.modules.devices.module_import import (
 )
 
 
-def test_samba_reads_the_shares_and_users_into_the_hubs_shape():
+def test_samba_copies_nothing_of_what_the_machine_serves():
     details = {
         "shares": [
             {
                 "name": "media",
                 "path": "/srv/media",
-                "params": {
-                    "comment": "films",
-                    "read only": "Yes",
-                    "valid users": "alice, carol bob",
-                },
-            },
-            {"name": "printers", "path": "", "params": {}},
-            "not a share",
-        ],
-        "users": [
-            {"name": "alice", "is_present": True, "has_password": True},
-            {"name": "bob", "is_present": True, "has_password": False},
-            {"is_present": True},
-        ],
-    }
-
-    assert samba_import_config(details) == {
-        "shares": [
-            {
-                "name": "media",
-                "path": "/srv/media",
-                "comment": "films",
-                "is_read_only": True,
-                "valid_users": ["alice", "bob"],
+                "params": {"read only": "Yes", "valid users": "alice, carol bob"},
             }
         ],
-        "users": ["alice", "bob"],
+        "users": [{"name": "alice", "is_present": True, "has_password": True}],
     }
+
+    assert samba_import_config(details) == {"shares": [], "users": []}
 
 
 def test_samba_with_nothing_served_amounts_to_an_empty_list_of_each():
@@ -166,7 +145,7 @@ def test_a_module_is_imported_by_name_and_one_with_no_import_answers_empty():
     assert set(MODULE_IMPORTS) == {"samba", "gitea", "podman"}
     assert import_module_config("samba", {"users": [{"name": "alice"}]}) == {
         "shares": [],
-        "users": ["alice"],
+        "users": [],
     }
     assert import_module_config("zfs", {"pools": [{"name": "tank"}]}) == {}
     assert import_module_config("rustdesk", {}) == {}
