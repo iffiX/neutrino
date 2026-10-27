@@ -28,13 +28,15 @@ import "./services_page.css";
  * What the hub publishes to clients.
  *
  * **Apps** first: one row per app, one program on one machine, its entries
- * each a chip with the local address a client forwards it at and its status
- * dot, and at the row's right the chip of where it comes from. A module the
- * hub manages is one app however many containers it runs; a container the
- * hub does not manage is one app of its own. An app declared here carries
- * Test and Delete. The entries of no app follow in their own sections: the
- * AI gateway, the machines' file shares and the shared desktops. **Declare
- * service** opens the dialog that declares an app with its entries.
+ * each a chip with the local address a client forwards it at, or a declared
+ * share's address, and its status dot, and at the row's right the chip of
+ * where it comes from. A module the hub manages is one app however many
+ * containers it runs; a container the hub does not manage is one app of its
+ * own. An app declared here carries Test and Delete. The entries of no app
+ * follow in their own sections: the AI gateway, the machines' file shares
+ * and the shared desktops. A machine's SSH server is no app, and the hub
+ * sends none of its entries here. **Declare service** opens the dialog that
+ * declares an app with its entries.
  */
 
 /** The sections of the entries that belong to no app, in order. */
@@ -125,8 +127,7 @@ const DESCRIPTION_MODULES: Record<string, string> = {
  * Containers module's and not this page's. */
 const CONTAINER_APP_PREFIX = "podman_";
 
-/** The loopback address a client's forward of a port or ssh entry listens
- * on. */
+/** The loopback address a client's forward of a port entry listens on. */
 const LOOPBACK_HOST = "127.0.0.1";
 /** A web entry's url: its scheme, and its path and query. */
 const WEB_URL_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i;
@@ -337,7 +338,7 @@ function AppRow({ app, onChanged }: AppRowProps) {
           <EntryChip
             key={entry.id}
             entry={entry}
-            address={localAddress(app.local_name, entry)}
+            address={entryAddress(app.local_name, entry)}
             stateWord={isDeclared ? declaredStateWord(entry) : null}
           />
         ))}
@@ -355,13 +356,14 @@ function AppRow({ app, onChanged }: AppRowProps) {
 
 interface EntryChipProps {
   entry: AppEntryView;
-  /** The entry's local address; empty on an entry with no local port. */
+  /** Where the entry is; empty on an entry with no local port and no
+   * share. */
   address: string;
   /** A declared entry's state word; null where the dot says it alone. */
   stateWord: string | null;
 }
 
-/** One entry: its type, its local address, and its health as a dot. */
+/** One entry: its type, where it is, and its health as a dot. */
 function EntryChip({ entry, address, stateWord }: EntryChipProps) {
   return (
     <span
@@ -474,7 +476,7 @@ function describeService(service: PublishedService): string {
       });
 }
 
-/** An entry of no app's payload, spelled the way its type reads. */
+/** A payload, spelled the way its type reads. */
 function payloadLine(
   type: PublishedServiceType,
   payload: PublishedServicePayload,
@@ -488,10 +490,14 @@ function payloadLine(
   return `${payload.host ?? ""}:${payload.port ?? ""}`;
 }
 
-/** The address a client forwards an entry at, as its Apps page shows it:
- * the page's own scheme and path at the local name for a web entry, the
- * loopback for a port or ssh entry; empty with no local port. */
-function localAddress(localName: string, entry: AppEntryView): string {
+/** Where an app's entry is: the address a client forwards it at, as its
+ * Apps page shows it, the page's own scheme and path at the local name for
+ * a web entry and the loopback for a port entry; and the share for a
+ * declared file entry, which has no local port. */
+function entryAddress(localName: string, entry: AppEntryView): string {
+  if (entry.type === "file") {
+    return payloadLine(entry.type, entry.payload);
+  }
   if (entry.local_port <= 0) {
     return "";
   }
