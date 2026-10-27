@@ -95,18 +95,35 @@ class RecordingPlatform(AgentPlatform):
 class FakeApplier:
     applied: list = []
     stops = 0
+    removals = 0
     user_files: dict = {}
 
     def __init__(self, *, unit):
         self.unit = unit
+
+    def plan(self):
+        return "[global]\n   include = /etc/samba/neutrino.conf\n", ""
 
     def apply(self, rendered, *, config, user_files=None):
         FakeApplier.applied.append((self.unit, rendered, config))
         FakeApplier.user_files = dict(user_files or {})
         return "started"
 
+    def remove(self):
+        FakeApplier.removals += 1
+
     def stop(self):
         FakeApplier.stops += 1
+
+
+class FakeReader:
+    persons: tuple = ({}, [])
+
+    def read(self):
+        return {}, []
+
+    def read_persons(self):
+        return FakeReader.persons
 
 
 class FakeUsers:
@@ -138,17 +155,15 @@ class FakeUsers:
 def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.stops = 0
+    FakeApplier.removals = 0
     FakeUsers.converged = []
     FakeUsers.made = []
+    FakeReader.persons = ({}, [])
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
-    monkeypatch.setattr(runner_module, "testparm", lambda rendered: None)
+    monkeypatch.setattr(runner_module, "testparm", lambda smb_conf, rendered: None)
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
-    monkeypatch.setattr(
-        runner_module,
-        "SambaConfigReader",
-        lambda: type("Reader", (), {"read": lambda self: ({}, [])})(),
-    )
+    monkeypatch.setattr(runner_module, "SambaConfigReader", FakeReader)
     held = SambaModuleRunner(
         platform=RecordingPlatform(tmp_path), log=lambda m: None, family="rhel"
     )
@@ -224,13 +239,13 @@ def test_apply_keeps_the_digest_of_each_password_root_only(runner):
     assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
 
 
-def test_removing_the_configuration_forgets_the_digests(runner, monkeypatch, tmp_path):
-    monkeypatch.setattr(runner_module, "SAMBA_CONF_PATH", str(tmp_path / "smb.conf"))
+def test_removing_the_configuration_forgets_the_digests(runner):
     runner.apply(CONFIG)
 
     runner.remove_configuration()
 
     assert not runner.record_path.exists()
+    assert FakeApplier.removals == 1
 
 
 def test_validate_refuses_a_bad_configuration_typed(runner):
@@ -240,15 +255,41 @@ def test_validate_refuses_a_bad_configuration_typed(runner):
     assert refused.value.code == "share_name_reserved"
 
 
-def test_validate_has_samba_check_the_render(runner, monkeypatch):
+def test_validate_has_samba_check_the_render_with_the_planned_smb_conf(
+    runner, monkeypatch
+):
     checked: list = []
-    monkeypatch.setattr(runner_module, "testparm", checked.append)
+    monkeypatch.setattr(
+        runner_module,
+        "testparm",
+        lambda smb_conf, rendered: checked.append((smb_conf, rendered)),
+    )
 
     runner.validate(CONFIG)
 
-    assert "[share]" in checked[0]
-    assert "[share]" in checked[0]
-    assert "hosts allow" not in checked[0]
+    assert checked[0][0] == "[global]\n   include = /etc/samba/neutrino.conf\n"
+    assert "[share]" in checked[0][1]
+    assert "[global]" not in checked[0][1]
+
+
+@pytest.mark.parametrize(
+    "persons, code",
+    [
+        (({}, [{"name": "SHARE", "path": "/p", "params": {}}]), "share_name_taken"),
+        (({"hosts allow": "10.0.0.0/8"}, []), "samba_hosts_allow_no_loopback"),
+    ],
+)
+def test_the_persons_own_samba_refuses_before_anything_is_applied(
+    runner, persons, code
+):
+    FakeReader.persons = persons
+
+    for step in (runner.validate, runner.apply):
+        with pytest.raises(ModuleApplyError) as refused:
+            step(CONFIG)
+        assert refused.value.code == code
+    assert FakeApplier.applied == []
+    assert FakeUsers.made == []
 
 
 def test_apply_renders_applies_and_keeps_the_configuration(runner):
@@ -343,23 +384,11 @@ def test_apply_hands_the_applier_each_users_file(runner):
     }
 
 
-def test_removing_the_configuration_deletes_the_rendered_file(
-    runner, monkeypatch, tmp_path
-):
-    conf = tmp_path / "smb.conf"
-    conf.write_text("[global]")
-    monkeypatch.setattr(runner_module, "SAMBA_CONF_PATH", str(conf))
-    users_dir = tmp_path / "neutrino_users"
-    users_dir.mkdir()
-    (users_dir / "ann.conf").write_text("   force user = ann\n")
-    monkeypatch.setattr(runner_module, "SAMBA_USERS_DIR", str(users_dir))
-
+def test_removing_the_configuration_goes_through_the_applier_each_time(runner):
+    runner.remove_configuration()
     runner.remove_configuration()
 
-    assert not users_dir.exists()
-    runner.remove_configuration()
-
-    assert not conf.exists()
+    assert FakeApplier.removals == 2
 
 
 # --- what a hand-written file share observes as ---
@@ -442,7 +471,7 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
         {"name": "bob", "is_present": False, "has_password": True},
     ]
     assert details["sessions"] == []
-    assert ["testparm", "-s", runner_module.SAMBA_CONF_PATH] in asked
+    assert ["testparm", "-s", applier_module.SAMBA_CONF_PATH] in asked
     assert ["pdbedit", "-L"] in asked
 
 

@@ -1,7 +1,8 @@
-"""Rendering the whole of ``smb.conf`` from the share configuration.
+"""Rendering the module's own configuration file, the shares it serves.
 
-The whole file rather than an include: the stock file ships printer shares
-and password-sync glue a managed machine has no business serving.
+The module writes its shares to a file of its own, which ``smb.conf``
+includes; ``smb.conf`` itself stays the person's or the distribution's, so
+the file renders no ``[global]``.
 
 Pure: text in, text out. Writing, validating and reloading is
 :mod:`neutrino_agent.modules.samba.applier`.
@@ -14,13 +15,14 @@ from __future__ import annotations
 from neutrino_agent.modules.samba.config import SambaConfig, SambaShare
 from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_MARKER,
+    SAMBA_SHARE_HOSTS_ALLOW,
     SAMBA_USERS_FILE_SUFFIX,
     SAMBA_USERS_INCLUDE,
 )
 
 
 class SambaConfigRenderer:
-    """Builds ``smb.conf`` from the parsed configuration."""
+    """Builds the module's own file from the parsed configuration."""
 
     def __init__(self, *, config: SambaConfig):
         """
@@ -30,12 +32,13 @@ class SambaConfigRenderer:
         self._config = config
 
     def render(self) -> str:
-        """Render the configuration file.
+        """Render the module's file: the marker, then every share.
 
         Returns:
-            Text ready to write as ``smb.conf``.
+            Text ready to write as the module's own file, which ``smb.conf``
+            includes.
         """
-        lines = self._render_global()
+        lines = [SAMBA_CONF_MARKER, ""]
         for share in self._config.shares:
             lines += self._render_share(share)
         return "\n".join(lines)
@@ -58,29 +61,6 @@ class SambaConfigRenderer:
                 )
         return files
 
-    def _render_global(self) -> list:
-        return [
-            SAMBA_CONF_MARKER,
-            "",
-            "[global]",
-            "   server role = standalone server",
-            "   server string = Neutrino share",
-            "   disable netbios = yes",
-            "   server min protocol = SMB2",
-            "",
-            "   map to guest = never",
-            "",
-            "   logging = file",
-            "   log file = /var/log/samba/log.%m",
-            "   max log size = 1000",
-            "",
-            "   load printers = no",
-            "   printing = bsd",
-            "   printcap name = /dev/null",
-            "   disable spoolss = yes",
-            "",
-        ]
-
     def _render_share(self, share: SambaShare) -> list:
         # A share limited to named users stays limited to them; one with no
         # list is open to every configured user. An account's share writes
@@ -93,6 +73,7 @@ class SambaConfigRenderer:
             f"   path = {share.path}",
             f"   valid users = {valid}",
             f"   read only = {'yes' if share.is_read_only else 'no'}",
+            f"   hosts allow = {SAMBA_SHARE_HOSTS_ALLOW}",
         ]
         if share.force_user:
             lines.append(f"   force user = {share.force_user}")

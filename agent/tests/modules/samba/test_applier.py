@@ -1,15 +1,20 @@
 """The share applier's effects, with Samba and the system replaced.
 
 What these pin beside the reads: a missing share folder is made and an
-existing one is left as it is; a hand-made ``smb.conf`` is copied to the
-backup once, before the first write, and a file the module wrote, or a
-second apply, copies nothing; each user's Samba password is set from the
-hub's map when it differs from the digest held or Samba holds no
-credential, never otherwise, and a user the module set a password for and
-the configuration dropped loses its credential, and the account too when the module made it; a configured
-user the machine lacks is made as a system account with no home and no
-login shell; an account a share writes as that is no account of the
-machine's is ``account_unknown``.
+existing one is left as it is; ``smb.conf`` stays the person's and gets
+the module's include line once, after its ``[global]`` header; a missing
+``smb.conf`` is the distribution's stock file with the line; a whole
+``smb.conf`` an earlier version rendered gives way to the copy kept before
+it, else to the stock file; the module's shares go to its own file; an
+uninstall deletes that file and takes the line out; the person's own
+configuration refuses a taken share name and the global settings that stop
+the module's shares; each user's Samba password is set from the hub's map
+when it differs from the digest held or Samba holds no credential, never
+otherwise, and a user the module set a password for and the configuration
+dropped loses its credential, and the account too when the module made it;
+a configured user the machine lacks is made as a system account with no
+home and no login shell; an account a share writes as that is no account
+of the machine's is ``account_unknown``.
 """
 
 import os
@@ -21,11 +26,14 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
+    SambaConfigReader,
     SambaStatusReader,
     SambaUserManager,
-    keep_backup,
+    check_person_config,
     password_digest,
+    plan_smb_conf,
     testparm as samba_testparm,
+    without_include_line,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
@@ -57,6 +65,11 @@ SMBSTATUS_4_15_SHARES_LIVE = (
 )
 
 
+STOCK = "[global]\n   workgroup = WORKGROUP\n\n[printers]\n   path = /var/spool/samba\n"
+INCLUDE = "   include = "
+MARKER = applier_module.SAMBA_CONF_MARKER
+
+
 class FakeCommands:
     """Answers scripted commands and records every call."""
 
@@ -86,6 +99,14 @@ def box(monkeypatch, tmp_path):
         applier_module, "SAMBA_CONF_BACKUP_PATH", str(tmp_path / "etc/backup.conf")
     )
     monkeypatch.setattr(
+        applier_module, "SAMBA_MODULE_CONF_PATH", str(tmp_path / "etc/neutrino.conf")
+    )
+    monkeypatch.setattr(
+        applier_module, "SAMBA_STOCK_CONF_PATHS", (str(tmp_path / "stock/smb.conf"),)
+    )
+    (tmp_path / "stock").mkdir()
+    (tmp_path / "stock/smb.conf").write_text(STOCK)
+    monkeypatch.setattr(
         applier_module, "SAMBA_USERS_DIR", str(tmp_path / "etc/neutrino_users")
     )
     monkeypatch.setattr(
@@ -100,7 +121,7 @@ def test_testparm_refuses_typed_with_sambas_own_words(box):
     commands.answers[("testparm", "-s")] = (1, "")
 
     with pytest.raises(ModuleApplyError) as refused:
-        samba_testparm("[global]\n")
+        samba_testparm("[global]\n", "[global]\n")
 
     assert refused.value.code == "samba_config_rejected"
     assert refused.value.params["detail"] == "refused"
@@ -110,12 +131,14 @@ def test_a_missing_testparm_is_samba_missing(box, monkeypatch):
     monkeypatch.setattr(applier_module.shutil, "which", lambda name: None)
 
     with pytest.raises(ModuleApplyError) as refused:
-        samba_testparm("[global]\n")
+        samba_testparm("[global]\n", "[global]\n")
 
     assert refused.value.code == "samba_missing"
 
 
-def test_apply_validates_writes_the_file_and_starts_the_unit(box):
+def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_stock_one(
+    box,
+):
     commands, tmp_path = box
     (tmp_path / "home/ann").mkdir(parents=True)
     os.chmod(tmp_path / "home/ann", 0o700)
@@ -128,11 +151,20 @@ def test_apply_validates_writes_the_file_and_starts_the_unit(box):
             "users": [],
         }
     )
+    rendered = f"{MARKER}\n[s]\n"
 
-    note = SambaConfigApplier(unit="smbd.service").apply("[global]\n", config=config)
+    note = SambaConfigApplier(unit="smbd.service").apply(rendered, config=config)
 
-    assert note == "started"
-    assert (tmp_path / "etc/smb.conf").read_text() == "[global]\n"
+    module_conf = str(tmp_path / "etc/neutrino.conf")
+    assert note == (
+        f"wrote the distribution's {tmp_path / 'stock/smb.conf'}; "
+        "added the include line; started"
+    )
+    assert (tmp_path / "etc/neutrino.conf").read_text() == rendered
+    assert (tmp_path / "etc/smb.conf").read_text() == (
+        f"[global]\n{INCLUDE}{module_conf}\n   workgroup = WORKGROUP\n\n"
+        "[printers]\n   path = /var/spool/samba\n"
+    )
     assert (tmp_path / "srv/s").is_dir()
     assert stat.S_IMODE(os.stat(tmp_path / "home/ann").st_mode) == 0o700
     assert commands.ran("systemctl", "enable") == [
@@ -149,7 +181,7 @@ def test_apply_writes_each_users_file_and_drops_the_rest(box, monkeypatch):
     config = SambaConfig.from_dict({"shares": [], "users": []})
 
     SambaConfigApplier(unit="smbd.service").apply(
-        "[global]\n", config=config, user_files={"ann.conf": "   force user = ann\n"}
+        f"{MARKER}\n", config=config, user_files={"ann.conf": "   force user = ann\n"}
     )
 
     assert sorted(path.name for path in users_dir.iterdir()) == [
@@ -161,51 +193,200 @@ def test_apply_writes_each_users_file_and_drops_the_rest(box, monkeypatch):
     assert stat.S_IMODE(os.stat(users_dir).st_mode) == 0o755
 
 
-def test_a_hand_made_smb_conf_is_kept_aside_once_before_the_first_write(box):
+def test_a_persons_smb_conf_gets_the_include_line_once_and_nothing_else(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    persons = "# mine\n[Global]\n   workgroup = HOME\n\n[media]\n   path = /srv/media\n"
+    (tmp_path / "etc/smb.conf").write_text(persons)
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    first = applier.apply(f"{MARKER}\n", config=SambaConfig())
+    second = applier.apply(f"{MARKER}\n", config=SambaConfig())
+
+    module_conf = str(tmp_path / "etc/neutrino.conf")
+    assert first == "added the include line; started"
+    assert second == "started"
+    assert (tmp_path / "etc/smb.conf").read_text() == (
+        f"# mine\n[Global]\n{INCLUDE}{module_conf}\n   workgroup = HOME\n\n"
+        "[media]\n   path = /srv/media\n"
+    )
+    assert not (tmp_path / "etc/backup.conf").exists()
+
+
+def test_an_earlier_versions_whole_file_gives_way_to_the_copy_kept_before_it(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_text(f"{MARKER}\n[global]\n   hosts deny = 0/0\n")
+    (tmp_path / "etc/backup.conf").write_text("[global]\n   workgroup = HOME\n")
+
+    note = SambaConfigApplier(unit="smbd.service").apply(
+        f"{MARKER}\n", config=SambaConfig()
+    )
+
+    module_conf = str(tmp_path / "etc/neutrino.conf")
+    assert note == "put back smb.conf.before_neutrino; added the include line; started"
+    assert (tmp_path / "etc/smb.conf").read_text() == (
+        f"[global]\n{INCLUDE}{module_conf}\n   workgroup = HOME\n"
+    )
+    assert not (tmp_path / "etc/backup.conf").exists()
+
+
+def test_an_earlier_versions_whole_file_without_a_copy_gives_way_to_the_stock_file(
+    box,
+):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_text(f"{MARKER}\n[global]\n")
+
+    note = SambaConfigApplier(unit="smbd.service").apply(
+        f"{MARKER}\n", config=SambaConfig()
+    )
+
+    assert note.startswith(
+        f"put back the distribution's {tmp_path / 'stock/smb.conf'}; "
+    )
+    assert "workgroup = WORKGROUP" in (tmp_path / "etc/smb.conf").read_text()
+
+
+def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_one():
+    text, note = plan_smb_conf(
+        "[media]\n   path = /srv/media\n", backup=None, stock=("[global]\n", "stock")
+    )
+
+    assert text == (
+        f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n\n"
+        "[media]\n   path = /srv/media\n"
+    )
+    assert note == "added the include line"
+    assert plan_smb_conf(None, backup=None, stock=("[global]\n", "a stock")) == (
+        f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n",
+        "wrote a stock; added the include line",
+    )
+    assert plan_smb_conf(text, backup=None, stock=("", "")) == (text, "")
+    assert without_include_line(text) == "[global]\n\n[media]\n   path = /srv/media\n"
+
+
+def test_a_removal_deletes_the_modules_file_and_takes_the_line_out(box):
     _, tmp_path = box
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/smb.conf").write_text("[global]\n   workgroup = HOME\n")
     applier = SambaConfigApplier(unit="smbd.service")
+    applier.apply(f"{MARKER}\n", config=SambaConfig(), user_files={"a.conf": "x"})
 
-    applier.apply("# Generated by neutrino. x\n", config=SambaConfig())
-    (tmp_path / "etc/smb.conf").write_text("[global]\n   by hand again\n")
-    applier.apply("# Generated by neutrino. y\n", config=SambaConfig())
+    applier.remove()
+    applier.remove()
 
-    assert (tmp_path / "etc/backup.conf").read_text() == (
-        "[global]\n   workgroup = HOME\n"
-    )
-
-
-def test_a_file_the_module_wrote_is_never_kept_aside(box):
-    _, tmp_path = box
-    (tmp_path / "etc").mkdir()
-    marker = applier_module.SAMBA_CONF_MARKER
-    (tmp_path / "etc/smb.conf").write_text(f"{marker}\n[global]\n")
-
-    assert keep_backup() is False
-    assert not (tmp_path / "etc/backup.conf").exists()
+    assert (tmp_path / "etc/smb.conf").read_text() == "[global]\n   workgroup = HOME\n"
+    assert not (tmp_path / "etc/neutrino.conf").exists()
+    assert not (tmp_path / "etc/neutrino_users").exists()
 
 
 def test_apply_reloads_a_running_unit_rather_than_restarting(box, monkeypatch):
-    commands, _ = box
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_text(
+        f"[global]\n{INCLUDE}{tmp_path / 'etc/neutrino.conf'}\n"
+    )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
 
     note = SambaConfigApplier(unit="smb.service").apply(
-        "[global]\n", config=SambaConfig()
+        f"{MARKER}\n", config=SambaConfig()
     )
 
     assert note == "reloaded"
     assert commands.ran("systemctl") == [(["systemctl", "reload", "smb.service"], None)]
 
 
-def test_a_rejected_render_never_reaches_the_live_file(box):
+def test_samba_checks_the_merged_configuration_before_anything_is_written(box):
     commands, tmp_path = box
-    commands.answers[("testparm", "-s")] = (1, "")
+    seen = {}
 
-    with pytest.raises(ModuleApplyError):
+    def refuse(command):
+        seen["smb_conf"] = open(command[2], encoding="utf-8").read()
+        return 1, ""
+
+    commands.answers[("testparm", "-s")] = (refuse, "")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_text("[global]\n   workgroup = HOME\n")
+
+    with pytest.raises(ModuleApplyError) as refused:
         SambaConfigApplier(unit="smbd.service").apply("bad", config=SambaConfig())
 
-    assert not (tmp_path / "etc/smb.conf").exists()
+    assert refused.value.code == "samba_config_rejected"
+    assert seen["smb_conf"].startswith("[global]\n   include = ")
+    assert "neutrino.conf" in seen["smb_conf"]
+    assert not (tmp_path / "etc/neutrino.conf").exists()
+    assert (tmp_path / "etc/smb.conf").read_text() == "[global]\n   workgroup = HOME\n"
+
+
+def test_the_persons_configuration_is_read_without_the_modules_line(box):
+    commands, tmp_path = box
+    seen = {}
+
+    def answer(command):
+        seen["text"] = open(command[2], encoding="utf-8").read()
+        return 0, "[global]\n\thosts allow = 10.0.0.0/8\n[media]\n\tpath = /srv/m\n"
+
+    commands.answers[("testparm", "-s")] = (answer, "")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_text(
+        f"[global]\n{INCLUDE}{tmp_path / 'etc/neutrino.conf'}\n   workgroup = HOME\n"
+    )
+
+    global_section, shares = SambaConfigReader().read_persons()
+
+    assert seen["text"] == "[global]\n   workgroup = HOME\n"
+    assert global_section == {"hosts allow": "10.0.0.0/8"}
+    assert shares == [{"name": "media", "path": "/srv/m", "params": {}}]
+    (tmp_path / "etc/smb.conf").unlink()
+    assert SambaConfigReader().read_persons() == ({}, [])
+
+
+@pytest.mark.parametrize(
+    "global_section, shares, code, params",
+    [
+        (
+            {},
+            [{"name": "Ann", "path": "/x", "params": {}}],
+            "share_name_taken",
+            {"name": "Ann"},
+        ),
+        ({"hosts allow": "192.168.1.0/24"}, [], "samba_hosts_allow_no_loopback", {}),
+        (
+            {"bind interfaces only": "Yes", "interfaces": "eth0"},
+            [],
+            "samba_interfaces_no_loopback",
+            {},
+        ),
+        ({"security": "ADS"}, [], "samba_domain_member", {}),
+        ({"server role": "member server"}, [], "samba_domain_member", {}),
+    ],
+)
+def test_the_persons_configuration_refuses_what_stops_the_modules_shares(
+    global_section, shares, code, params
+):
+    config = SambaConfig.from_dict({"shares": [{"name": "ann", "path": "/a"}]})
+
+    with pytest.raises(ModuleApplyError) as refused:
+        check_person_config(global_section, shares, config)
+
+    assert (refused.value.code, refused.value.params) == (code, params)
+
+
+def test_the_persons_configuration_that_leaves_the_loopback_open_passes():
+    config = SambaConfig.from_dict({"shares": [{"name": "ann", "path": "/a"}]})
+
+    check_person_config(
+        {
+            "hosts allow": "192.168.1., 127.0.0.1",
+            "bind interfaces only": "yes",
+            "interfaces": "eth0 lo",
+            "security": "user",
+            "server role": "standalone server",
+        },
+        [{"name": "media", "path": "/m", "params": {}}],
+        config,
+    )
 
 
 def test_stop_stops_the_unit_and_leaves_it_enabled(box):

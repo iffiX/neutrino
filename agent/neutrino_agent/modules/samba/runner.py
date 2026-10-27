@@ -22,7 +22,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -35,6 +34,7 @@ from neutrino_agent.modules.samba.applier import (
     SambaConfigReader,
     SambaStatusReader,
     SambaUserManager,
+    check_person_config,
     password_digest,
     testparm,
 )
@@ -42,8 +42,6 @@ from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
-    SAMBA_CONF_PATH,
-    SAMBA_USERS_DIR,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
@@ -89,12 +87,16 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         Raises:
             ModuleApplyError: Naming the first problem found;
                 ``account_unknown {account}`` for an account a share writes
-                as that the machine does not have.
+                as that the machine does not have, and the person's own
+                configuration's refusals as :func:`check_person_config`
+                names them.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         SambaUserManager().check_accounts(parsed.forced_users())
-        testparm(SambaConfigRenderer(config=parsed).render())
+        self._check_persons(parsed)
+        smb_conf, _ = SambaConfigApplier(unit=self._unit).plan()
+        testparm(smb_conf, SambaConfigRenderer(config=parsed).render())
 
     def apply(self, config: dict) -> None:
         """Make each SMB user, render the configuration, load it, and set each user's password.
@@ -111,6 +113,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         parsed.validate()
         users = SambaUserManager()
         users.check_accounts(parsed.forced_users())
+        self._check_persons(parsed)
         renderer = SambaConfigRenderer(config=parsed)
         rendered = renderer.render()
         held = read_digests(self._record_path)
@@ -135,13 +138,16 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).stop()
 
     def remove_configuration(self) -> None:
-        """Delete the rendered ``smb.conf``, the users' files and the record; the share directories stay."""
+        """Delete the module's file, its include line, the users' files and the record; the share directories stay."""
         self._config = None
-        with contextlib.suppress(OSError):
-            os.unlink(SAMBA_CONF_PATH)
-        shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
+        SambaConfigApplier(unit=self._unit).remove()
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
+
+    def _check_persons(self, parsed: SambaConfig) -> None:
+        """Refuse what the person's own ``smb.conf`` makes impossible."""
+        global_section, shares = SambaConfigReader().read_persons()
+        check_person_config(global_section, shares, parsed)
 
     def is_active(self) -> bool:
         """Whether this machine's Samba unit is active."""

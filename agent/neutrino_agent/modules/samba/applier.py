@@ -1,8 +1,12 @@
 """Making the share configuration true on the machine.
 
 Three effects, kept apart from the pure renderer: setting each SMB user's
-Samba password, installing a rendered ``smb.conf``, and reading what the
-server is doing right now.
+Samba password, installing the module's own file and the one line of
+``smb.conf`` that includes it, and reading what the server is doing right
+now. ``smb.conf`` itself stays the person's: the module adds that line once
+after the ``[global]`` header and takes it out at uninstall, and a whole
+``smb.conf`` an earlier version rendered gives way to the copy kept before
+it or to the distribution's stock file.
 
 Each SMB user is a system account of the module's own, ``neutrino-`` and
 the person's account, made with no home and no login shell; its share writes
@@ -19,6 +23,7 @@ Not pure: writes ``/etc/samba``, runs Samba's tools and drives the unit.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -34,8 +39,13 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_BACKUP_PATH,
     SAMBA_CONF_MARKER,
     SAMBA_CONF_PATH,
+    SAMBA_DOMAIN_SECURITY_MODES,
+    SAMBA_DOMAIN_SERVER_ROLES,
     SAMBA_LINUX_NOLOGIN_SHELLS,
     SAMBA_LINUX_USER_COMMENT,
+    SAMBA_MINIMAL_CONF,
+    SAMBA_MODULE_CONF_PATH,
+    SAMBA_STOCK_CONF_PATHS,
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
 )
@@ -83,40 +93,112 @@ def password_digest(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def keep_backup(path: str = "", backup: str = "") -> bool:
-    """Copy a hand-made ``smb.conf`` aside, once, before the module replaces it.
-
-    Args:
-        path: The live file; empty is ``smb.conf``'s place.
-        backup: Where its copy goes; empty is the backup's place.
-
-    Returns:
-        True when a copy was made: the file is there, its first line is not
-        the module's marker, and no copy was made before.
-
-    Raises:
-        OSError: When the copy cannot be written.
-    """
-    path = path or SAMBA_CONF_PATH
-    backup = backup or SAMBA_CONF_BACKUP_PATH
-    if os.path.exists(backup) or not os.path.isfile(path):
-        return False
+def read_text(path: str) -> "str | None":
+    """A file's text, or None when it is not there or cannot be read."""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as stream:
-            first = stream.readline().rstrip("\n")
+            return stream.read()
     except OSError:
-        return False
-    if first == SAMBA_CONF_MARKER:
-        return False
-    shutil.copy2(path, backup)
-    return True
+        return None
 
 
-def testparm(rendered: str) -> None:
-    """Have Samba itself check a rendered file.
+def read_stock_conf() -> tuple:
+    """The distribution's stock ``smb.conf``, for a machine that has none to keep.
+
+    Returns:
+        ``(text, source)``: the first of :data:`SAMBA_STOCK_CONF_PATHS` that
+        is there and its path, else a ``[global]`` of one line and its name.
+    """
+    for path in SAMBA_STOCK_CONF_PATHS:
+        text = read_text(path)
+        if text is not None:
+            return text, f"the distribution's {path}"
+    return SAMBA_MINIMAL_CONF, "a one-line [global]"
+
+
+def include_line() -> str:
+    """The one line of ``smb.conf`` that is the module's."""
+    return f"   include = {SAMBA_MODULE_CONF_PATH}"
+
+
+def is_include_line(line: str) -> bool:
+    """Whether a line of ``smb.conf`` is the module's include line."""
+    key, _, value = line.strip().partition("=")
+    return key.strip().lower() == "include" and value.strip() == SAMBA_MODULE_CONF_PATH
+
+
+def has_include_line(text: str) -> bool:
+    """Whether ``smb.conf`` already includes the module's file."""
+    return any(is_include_line(line) for line in text.splitlines())
+
+
+def with_include_line(text: str) -> str:
+    """``smb.conf`` with the module's include line after its ``[global]`` header.
 
     Args:
-        rendered: The full ``smb.conf`` text.
+        text: The file without the line.
+
+    Returns:
+        The file with the line added once; a file with no ``[global]``
+        header gets one, with the line, in front.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().lower() == "[global]":
+            lines.insert(index + 1, include_line())
+            return "\n".join(lines) + "\n"
+    return "[global]\n" + include_line() + "\n\n" + text
+
+
+def without_include_line(text: str) -> str:
+    """``smb.conf`` without the module's include line."""
+    lines = [line for line in text.splitlines() if not is_include_line(line)]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def plan_smb_conf(
+    current: "str | None", *, backup: "str | None", stock: tuple
+) -> tuple:
+    """What ``smb.conf`` is to hold so that it includes the module's file. Pure.
+
+    Args:
+        current: The file as it is, None when the machine has none.
+        backup: The copy an earlier version kept before it replaced the
+            file, None when there is none.
+        stock: ``(text, source)`` as :func:`read_stock_conf` gives them.
+
+    Returns:
+        ``(text, note)``: the file to write, and what changed in words,
+        empty when the file stays as it is. A file an earlier version
+        rendered whole, its first line the marker, gives way to the backup
+        when there is one, else to the stock text; a missing file is the
+        stock text; and the include line is added once to whichever file
+        lacks it.
+    """
+    notes = []
+    text = current
+    if text is None:
+        text, source = stock
+        notes.append(f"wrote {source}")
+    elif text.split("\n", 1)[0].rstrip() == SAMBA_CONF_MARKER:
+        if backup is not None:
+            text = backup
+            notes.append("put back smb.conf.before_neutrino")
+        else:
+            text, source = stock
+            notes.append(f"put back {source}")
+    if not has_include_line(text):
+        text = with_include_line(text)
+        notes.append("added the include line")
+    return text, "; ".join(notes)
+
+
+def testparm(smb_conf: str, rendered: str) -> None:
+    """Have Samba check ``smb.conf`` as it will be with the module's file.
+
+    Args:
+        smb_conf: The ``smb.conf`` text, with the include line.
+        rendered: The module's own file.
 
     Raises:
         ModuleApplyError: ``samba_config_rejected`` with Samba's own words,
@@ -124,17 +206,63 @@ def testparm(rendered: str) -> None:
     """
     if shutil.which("testparm") is None:
         raise ModuleApplyError("samba_missing")
-    handle, path = tempfile.mkstemp(prefix="smb_", suffix=".conf")
+    directory = tempfile.mkdtemp(prefix="smb_")
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+        module_path = os.path.join(directory, "neutrino.conf")
+        conf_path = os.path.join(directory, "smb.conf")
+        with open(module_path, "w", encoding="utf-8") as stream:
             stream.write(rendered)
-        result = run(["testparm", "-s", path], is_checked=False)
+        with open(conf_path, "w", encoding="utf-8") as stream:
+            stream.write(smb_conf.replace(SAMBA_MODULE_CONF_PATH, module_path))
+        result = run(["testparm", "-s", conf_path], is_checked=False)
     finally:
-        os.unlink(path)
+        shutil.rmtree(directory, ignore_errors=True)
     if not result.is_success:
         raise ModuleApplyError(
             "samba_config_rejected", {"detail": result.stderr.strip()[-500:]}
         )
+
+
+def check_person_config(
+    global_section: dict, shares: list, config: SambaConfig
+) -> None:
+    """Refuse what the person's own ``smb.conf`` makes impossible, changing nothing.
+
+    Args:
+        global_section: The person's ``[global]`` as testparm prints it.
+        shares: The person's shares, each ``{"name", "path", "params"}``.
+        config: The module's configuration.
+
+    Raises:
+        ModuleApplyError: ``share_name_taken {name}`` for a share of the
+            person's with the name one of the module's takes;
+            ``samba_hosts_allow_no_loopback`` for a ``hosts allow`` without
+            the loopback; ``samba_interfaces_no_loopback`` for ``bind
+            interfaces only`` whose ``interfaces`` has no ``lo``;
+            ``samba_domain_member`` for a domain member's ``security`` or
+            ``server role``.
+    """
+    ours = {share.name.lower() for share in config.shares}
+    for share in shares:
+        if str(share.get("name", "")).lower() in ours:
+            raise ModuleApplyError("share_name_taken", {"name": share["name"]})
+    allowed = global_section.get("hosts allow", "").replace(",", " ").split()
+    if allowed and not any(_is_loopback_word(word) for word in allowed):
+        raise ModuleApplyError("samba_hosts_allow_no_loopback")
+    if global_section.get("bind interfaces only", "").lower() in ("yes", "true", "1"):
+        interfaces = global_section.get("interfaces", "").replace(",", " ").split()
+        if not any(word == "lo" or _is_loopback_word(word) for word in interfaces):
+            raise ModuleApplyError("samba_interfaces_no_loopback")
+    if (
+        global_section.get("security", "").lower() in SAMBA_DOMAIN_SECURITY_MODES
+        or global_section.get("server role", "").lower() in SAMBA_DOMAIN_SERVER_ROLES
+    ):
+        raise ModuleApplyError("samba_domain_member")
+
+
+def _is_loopback_word(word: str) -> bool:
+    lowered = word.lower()
+    return lowered.startswith(("127.", "::1", "localhost"))
 
 
 def parse_smb_conf(text: str) -> tuple:
@@ -189,13 +317,36 @@ class SambaConfigReader:
         """
         if shutil.which("testparm") is None or not os.path.isfile(SAMBA_CONF_PATH):
             return {}, []
+        return _testparm_output(SAMBA_CONF_PATH)
+
+    def read_persons(self) -> tuple:
+        """The person's own configuration: ``smb.conf`` without the module's line.
+
+        Returns:
+            ``(global, shares)`` of the file with the include line taken
+            out, so the module's shares are not among them; both empty
+            when there is no file or testparm is not there.
+        """
+        text = read_text(SAMBA_CONF_PATH)
+        if text is None or shutil.which("testparm") is None:
+            return {}, []
+        handle, path = tempfile.mkstemp(prefix="smb_", suffix=".conf")
         try:
-            result = run(["testparm", "-s", SAMBA_CONF_PATH], is_checked=False)
-        except (OSError, subprocess.SubprocessError):
-            return {}, []
-        if not result.is_success:
-            return {}, []
-        return parse_smb_conf(result.stdout)
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(without_include_line(text))
+            return _testparm_output(path)
+        finally:
+            os.unlink(path)
+
+
+def _testparm_output(path: str) -> tuple:
+    try:
+        result = run(["testparm", "-s", path], is_checked=False)
+    except (OSError, subprocess.SubprocessError):
+        return {}, []
+    if not result.is_success:
+        return {}, []
+    return parse_smb_conf(result.stdout)
 
 
 def _json_object(text: str) -> "dict | None":
@@ -399,7 +550,7 @@ class SambaUserManager:
 
 
 class SambaConfigApplier:
-    """Installs a rendered ``smb.conf`` and puts it into effect."""
+    """Writes the module's own file, keeps ``smb.conf`` including it, and loads both."""
 
     def __init__(self, *, unit: str):
         """
@@ -408,16 +559,29 @@ class SambaConfigApplier:
         """
         self._unit = unit
 
+    def plan(self) -> tuple:
+        """``smb.conf`` as the next apply leaves it.
+
+        Returns:
+            ``(text, note)`` as :func:`plan_smb_conf` gives them, for the
+            file, the backup and the stock text on this machine.
+        """
+        return plan_smb_conf(
+            read_text(SAMBA_CONF_PATH),
+            backup=read_text(SAMBA_CONF_BACKUP_PATH),
+            stock=read_stock_conf(),
+        )
+
     def apply(
         self, rendered: str, *, config: SambaConfig, user_files: "dict | None" = None
     ) -> str:
-        """Validate, install and load the rendered configuration.
+        """Validate, install and load the module's file.
 
-        Validation runs on a copy before the live file moves, so a bad
-        render never takes the running server's configuration with it.
+        Validation runs on copies before anything moves, so a bad render
+        never takes the running server's configuration with it.
 
         Args:
-            rendered: The full ``smb.conf`` text.
+            rendered: The module's own file.
             config: The configuration it was rendered from, for the share
                 directories to create.
             user_files: The files under :data:`SAMBA_USERS_DIR` by name, as
@@ -430,16 +594,30 @@ class SambaConfigApplier:
             ModuleApplyError: If Samba rejects the configuration.
             subprocess.CalledProcessError: If the unit will not come up.
         """
-        testparm(rendered)
+        smb_conf, note = self.plan()
+        testparm(smb_conf, rendered)
         self._ensure_share_directories(config)
-        keep_backup()
         self._write_user_files(dict(user_files or {}))
-        self._write(rendered)
+        _write_file(SAMBA_MODULE_CONF_PATH, rendered)
+        if smb_conf != read_text(SAMBA_CONF_PATH):
+            _write_file(SAMBA_CONF_PATH, smb_conf)
+            if "smb.conf.before_neutrino" in note:
+                os.unlink(SAMBA_CONF_BACKUP_PATH)
+        notes = [note] if note else []
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
-            return "reloaded"
+            return "; ".join(notes + ["reloaded"])
         run(["systemctl", "enable", "--now", self._unit])
-        return "started"
+        return "; ".join(notes + ["started"])
+
+    def remove(self) -> None:
+        """Delete the module's file and its users' files, and take the include line out of ``smb.conf``."""
+        with contextlib.suppress(OSError):
+            os.unlink(SAMBA_MODULE_CONF_PATH)
+        shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
+        text = read_text(SAMBA_CONF_PATH)
+        if text is not None and has_include_line(text):
+            _write_file(SAMBA_CONF_PATH, without_include_line(text))
 
     def stop(self) -> None:
         """Take the server down until the next apply; the unit stays enabled."""
@@ -463,33 +641,25 @@ class SambaConfigApplier:
             if name.endswith(SAMBA_USERS_FILE_SUFFIX) and name not in user_files:
                 os.unlink(os.path.join(SAMBA_USERS_DIR, name))
         for name, text in user_files.items():
-            path = os.path.join(SAMBA_USERS_DIR, name)
-            handle, temporary = tempfile.mkstemp(dir=SAMBA_USERS_DIR, prefix=".user_")
-            try:
-                with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                    stream.write(text)
-                os.chmod(temporary, 0o644)
-                os.replace(temporary, path)
-            except BaseException:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-                raise
+            _write_file(os.path.join(SAMBA_USERS_DIR, name), text)
 
-    def _write(self, rendered: str) -> None:
-        directory = os.path.dirname(SAMBA_CONF_PATH)
-        os.makedirs(directory, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=directory, prefix=".smb_")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(rendered)
-            os.chmod(temporary, 0o644)
-            if os.path.islink(SAMBA_CONF_PATH):
-                os.unlink(SAMBA_CONF_PATH)
-            os.replace(temporary, SAMBA_CONF_PATH)
-        except BaseException:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-            raise
+
+def _write_file(path: str, text: str) -> None:
+    """Write a world-readable file in one move, in place of a symlink too."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=directory, prefix=".neutrino_")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        os.chmod(temporary, 0o644)
+        if os.path.islink(path):
+            os.unlink(path)
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
 
 
 class SambaStatusReader:
