@@ -6,10 +6,10 @@ line. The module changes only the shares and accounts it made: a share
 whose description starts with the marker and that the module's record
 lists, an account the record lists. Accounts are local, in no group, hidden
 from the sign-in screen and denied the console and RDP. Each share's folder
-is granted to its accounts with ``icacls`` once the host has made it. One
-inbound block rule for TCP 445, covering every address outside the allowed
-subnets, fences the server; it also covers shares the person made
-themselves.
+is granted to its accounts with ``icacls`` once the host has made it, and
+the account's ``.ssh`` folder under it is taken back from them, so OpenSSH
+goes on reading the account's own files. The module fences nothing: the
+block rule an earlier version made goes at the first apply that finds it.
 
 Not pure: drives the PowerShell host, runs icacls and calls the local
 security policy.
@@ -20,15 +20,13 @@ security policy.
 from __future__ import annotations
 
 import ctypes
-import ipaddress
+import os
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
-    SAMBA_LOOPBACK_NETWORKS,
     SAMBA_WINDOWS_DENIED_RIGHTS,
     SAMBA_WINDOWS_FENCE_RULE,
-    SAMBA_WINDOWS_FENCE_TITLE,
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
     SAMBA_WINDOWS_MARKER,
@@ -36,42 +34,11 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_SHARE_CHANGE,
     SAMBA_WINDOWS_SHARE_OWNER,
     SAMBA_WINDOWS_SHARE_READ,
+    SAMBA_WINDOWS_SSH_DIR_NAME,
 )
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.windows_acl import icacls
 from neutrino_agent.platforms import win32
-
-
-def blocked_ranges(allowed_subnets: list) -> list:
-    """Every address outside the allowed subnets, as firewall ranges.
-
-    Args:
-        allowed_subnets: The networks the shares answer, IPv4 or IPv6; an
-            entry that is no network is left out, which blocks more.
-
-    Returns:
-        ``first-last`` ranges, IPv4 before IPv6, empty when the subnets
-        cover every address of both families.
-    """
-    allowed: dict = {4: [], 6: []}
-    for subnet in allowed_subnets:
-        try:
-            network = ipaddress.ip_network(str(subnet).strip(), strict=False)
-        except ValueError:
-            continue
-        allowed[network.version].append(
-            (int(network.network_address), int(network.broadcast_address))
-        )
-    ranges = []
-    for version, highest in ((4, 2**32 - 1), (6, 2**128 - 1)):
-        cursor = 0
-        for first, last in sorted(allowed[version]):
-            if first > cursor:
-                ranges.append(_address_range(version, cursor, first - 1))
-            cursor = max(cursor, last + 1)
-        if cursor <= highest:
-            ranges.append(_address_range(version, cursor, highest))
-    return ranges
 
 
 def deny_interactive_logon(account: str, *, advapi32=None) -> None:
@@ -149,14 +116,6 @@ def _account_sid(advapi32, account: str):
     return sid
 
 
-def _address_range(version: int, first: int, last: int) -> str:
-    """One range as the firewall reads it, a lone address bare."""
-    make = ipaddress.IPv4Address if version == 4 else ipaddress.IPv6Address
-    if first == last:
-        return str(make(first))
-    return f"{make(first)}-{make(last)}"
-
-
 def _share_request(share, config: SambaConfig) -> dict:
     """One share as the host's apply converges it."""
     return {
@@ -215,16 +174,6 @@ def _session_detail(entry) -> dict:
     }
 
 
-def _fence_detail(entry) -> dict:
-    """The block rule as the details report it."""
-    entry = entry if isinstance(entry, dict) else {}
-    return {
-        "is_present": bool(entry.get("is_present")),
-        "is_enabled": bool(entry.get("is_enabled")),
-        "blocked": [str(item) for item in _listed(entry.get("blocked"))],
-    }
-
-
 class SambaWindowsApplier:
     """Converges Windows' SMB server with the module's configuration."""
 
@@ -251,8 +200,8 @@ class SambaWindowsApplier:
             record: The module's record: ``{"shares", "accounts"}``.
 
         Returns:
-            ``{"is_present", "is_running", "shares", "sessions", "users",
-            "fence"}``; ``is_present`` false when the host cannot answer.
+            ``{"is_present", "is_running", "shares", "sessions", "users"}``;
+            ``is_present`` false when the host cannot answer.
         """
         try:
             read = self._powershell.call(
@@ -260,7 +209,6 @@ class SambaWindowsApplier:
                 {
                     "marker": SAMBA_WINDOWS_MARKER,
                     "accounts": list(record.get("accounts") or []),
-                    "rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 },
             )
         except (OSError, ModuleApplyError):
@@ -281,7 +229,6 @@ class SambaWindowsApplier:
                 for entry in _listed(read.get("users"))
                 if isinstance(entry, dict)
             ],
-            "fence": _fence_detail(read.get("fence")),
         }
 
     def apply(self, config: SambaConfig, record: dict) -> list:
@@ -289,9 +236,11 @@ class SambaWindowsApplier:
 
         An account is the module's when the record lists it or its
         description is the marker; a share is the module's when the record
-        lists it and its description starts with the marker. Once the host
-        has converged the server, each share's folder is granted to its
-        accounts and taken from the module's others.
+        lists it and its description starts with the marker. The host also
+        deletes the block rule an earlier version made, when it finds one.
+        Once the host has converged the server, each share's folder is
+        granted to its accounts and taken from the module's others, and
+        the ``.ssh`` folder under it is taken from them all.
 
         Args:
             config: The validated configuration.
@@ -323,11 +272,7 @@ class SambaWindowsApplier:
                 ],
                 "removed_shares": sorted(set(owned_shares) - wanted_shares),
                 "shares": [_share_request(share, config) for share in config.shares],
-                "blocked_addresses": blocked_ranges(
-                    list(config.allowed_subnets) + list(SAMBA_LOOPBACK_NETWORKS)
-                ),
-                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
-                "rule_title": SAMBA_WINDOWS_FENCE_TITLE,
+                "retired_rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
             },
         )
@@ -342,8 +287,8 @@ class SambaWindowsApplier:
 
         Args:
             record: The module's record: ``{"shares", "accounts"}``.
-            is_removed: Also disable the module's accounts and delete the
-                fence, as an uninstall does.
+            is_removed: Also disable the module's accounts, as an uninstall
+                does.
 
         Raises:
             OSError: When the host fails.
@@ -355,12 +300,8 @@ class SambaWindowsApplier:
                 "owned_shares": sorted(record.get("shares") or {}),
                 "owned_accounts": list(record.get("accounts") or []),
                 "is_removed": is_removed,
-                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
             },
         )
-
-    def reload_fence(self) -> None:
-        """Nothing to load: the firewall keeps the rule across a restart."""
 
     def read_server_log(self, lines: int) -> list:
         """The SMB server's latest events from its event log, oldest first.
@@ -395,7 +336,12 @@ class SambaWindowsApplier:
         self._powershell.call("share_password", {"name": name, "password": password})
 
     def _grant_folder(self, share, config: SambaConfig, known_accounts: list) -> None:
-        """Grant one share's folder to its accounts and take it from the others."""
+        """Grant one share's folder to its accounts and take it from the others.
+
+        The ``.ssh`` folder under the share, when there is one, stops
+        inheriting the folder's entries and loses every module account's,
+        so OpenSSH's check of the account's own files passes.
+        """
         accounts = list(share.valid_users or config.users)
         right = (
             SAMBA_WINDOWS_FOLDER_READ
@@ -408,3 +354,10 @@ class SambaWindowsApplier:
         for name in accounts:
             if icacls(self._run, [share.path, "/grant", f"{name}:{right}"]) != 0:
                 raise OSError(f"icacls refused {name} on {share.path}")
+        ssh_dir = os.path.join(share.path, SAMBA_WINDOWS_SSH_DIR_NAME)
+        if not os.path.isdir(ssh_dir):
+            return
+        if icacls(self._run, [ssh_dir, "/inheritance:d"]) != 0:
+            raise OSError(f"icacls could not keep {ssh_dir} the account's own")
+        for name in known_accounts:
+            icacls(self._run, [ssh_dir, "/remove:g", name])

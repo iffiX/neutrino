@@ -48,14 +48,12 @@ SAMBA_NATIVE_STATUS_TTL_S = 30.0
 # Windows: the start of the description of every share the module made,
 # which is also the description of every account it made.
 SAMBA_WINDOWS_MARKER = "neutrino:"
-# The networks the fence never blocks, beside the allowed subnets: the
-# machine's own loopback, where the agent's end of a ``connect`` stream
-# reaches the server.
-SAMBA_LOOPBACK_NETWORKS = ("127.0.0.0/8", "::1/128")
-# The firewall rule that blocks SMB from every address outside the allowed
-# subnets and loopback, by its name and the title the firewall shows.
+# The firewall rule an earlier version blocked SMB with; the module makes
+# no rule now, and deletes this one at the first apply that finds it.
 SAMBA_WINDOWS_FENCE_RULE = "neutrino_smb_fence"
-SAMBA_WINDOWS_FENCE_TITLE = "Neutrino file share fence"
+# The folder under an account's share path that OpenSSH reads the account's
+# own files from; the module's SMB user is granted nothing in it.
+SAMBA_WINDOWS_SSH_DIR_NAME = ".ssh"
 # The event log the SMB server writes its own events to.
 SAMBA_WINDOWS_SERVER_LOG = "Microsoft-Windows-SMBServer/Operational"
 # The rights that keep a share account off the console and off RDP.
@@ -107,11 +105,11 @@ SAMBA_DARWIN_SERVER_LOG_COMMAND = (
     "--style",
     "compact",
 )
-# The pf anchor the fence lives in; /etc/pf.conf evaluates com.apple/*.
+# The pf anchor an earlier version fenced SMB in, and the rules file it
+# kept under the work root; the module fences nothing now, and the first
+# apply that finds the file empties the anchor and deletes the file.
 SAMBA_DARWIN_PF_ANCHOR = "com.apple/neutrino_smb"
-# The fence's rules, kept under the work root and loaded again at start.
 SAMBA_DARWIN_PF_RULES_NAME = "samba_pf.conf"
-SAMBA_DARWIN_PF_TABLE = "neutrino_smb_allowed"
 # The access-control entries a share grants an account.
 SAMBA_DARWIN_ACL_CHANGE = (
     "list,add_file,search,delete,add_subdirectory,delete_child,readattr,"

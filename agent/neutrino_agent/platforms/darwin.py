@@ -570,7 +570,7 @@ class DarwinPlatform(AgentPlatform):
 
     def remove_added(self) -> list:
         """Unload and delete the launchd jobs the agent's modules wrote, and
-        empty the file share's fence.
+        empty the fence an earlier version's file share left.
 
         A job is the modules' when its plist under ``/Library/LaunchDaemons``
         is named as :func:`is_added_name` says. The fence is every
@@ -674,8 +674,8 @@ class DarwinPlatform(AgentPlatform):
         """The applier that drives macOS's own SMB server.
 
         Returns:
-            A :class:`SambaDarwinApplier` keeping its pf rules under the
-            work root.
+            A :class:`SambaDarwinApplier` that finds the rules file an
+            earlier version kept under the work root.
         """
         return SambaDarwinApplier(
             rules_path=os.path.join(self.agent_var_dir(), SAMBA_DARWIN_PF_RULES_NAME)

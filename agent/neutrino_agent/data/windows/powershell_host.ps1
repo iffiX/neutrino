@@ -227,7 +227,7 @@ function Get-NeutrinoThermalZone {
 }
 
 # The SMB server's state, the shares whose description starts with the
-# marker, the sessions, the listed accounts and the fence rule.
+# marker, the sessions and the listed accounts.
 function Get-NeutrinoShare($Request) {
     $svc = Get-Service -Name LanmanServer -ErrorAction SilentlyContinue
     $shares = @()
@@ -262,26 +262,19 @@ function Get-NeutrinoShare($Request) {
             is_enabled = [bool]($held -and $held.Enabled)
         }
     }
-    $fence = @{is_present = $false; is_enabled = $false; blocked = @()}
-    $rule = Get-NetFirewallRule -Name $Request.rule_name -ErrorAction SilentlyContinue
-    if ($rule) {
-        $fence.is_present = $true
-        $fence.is_enabled = "$($rule.Enabled)" -eq 'True'
-        $fence.blocked = @(($rule | Get-NetFirewallAddressFilter).RemoteAddress)
-    }
     return @{
         is_present = [bool]$svc
         is_running = [bool]($svc -and $svc.Status -eq 'Running')
         shares = $shares
         sessions = $sessions
         users = $users
-        fence = $fence
     }
 }
 
 # Refuses a share or an account name the module did not make, then
-# converges the server, the fence, the accounts and the shares; the shares'
-# folders are made here and granted by the agent afterwards.
+# converges the server, the accounts and the shares, and deletes the block
+# rule an earlier version made when it finds one; the shares' folders are
+# made here and granted by the agent afterwards.
 function Set-NeutrinoShare {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
@@ -315,19 +308,10 @@ function Set-NeutrinoShare {
         Start-Service -Name LanmanServer | Out-Null
         $notes += 'started the server'
     }
-    $blocked = @($Request.blocked_addresses)
-    $rule = Get-NetFirewallRule -Name $Request.rule_name -ErrorAction SilentlyContinue
-    if ($blocked.Count -eq 0) {
-        if ($rule) {
-            Set-NetFirewallRule -Name $Request.rule_name -Enabled False | Out-Null
-        }
-    } elseif (-not $rule) {
-        New-NetFirewallRule -Name $Request.rule_name -DisplayName $Request.rule_title `
-            -Direction Inbound -Action Block -Protocol TCP -LocalPort 445 `
-            -RemoteAddress $blocked -Profile Any | Out-Null
-        $notes += 'fenced the server'
-    } else {
-        Set-NetFirewallRule -Name $Request.rule_name -RemoteAddress $blocked -Enabled True | Out-Null
+    $retired = Get-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue
+    if ($retired) {
+        Remove-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue | Out-Null
+        $notes += 'removed the fence'
     }
     $hidden = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'
     if (-not (Test-Path -Path $hidden)) {
@@ -406,7 +390,7 @@ function Set-NeutrinoShare {
 }
 
 # Takes down the marked shares the record lists; with is_removed also
-# disables the listed accounts and deletes the fence.
+# disables the listed accounts.
 function Remove-NeutrinoShare {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
@@ -427,7 +411,6 @@ function Remove-NeutrinoShare {
                 Disable-LocalUser -Name $u | Out-Null
             }
         }
-        Remove-NetFirewallRule -Name $Request.rule_name -ErrorAction SilentlyContinue | Out-Null
     }
     return @{}
 }

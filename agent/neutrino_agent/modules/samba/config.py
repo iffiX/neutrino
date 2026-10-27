@@ -97,14 +97,11 @@ class SambaConfig:
         shares: The exported directories.
         users: Accounts that may connect, by name.
         passwords: Each user's password, as the hub generated it.
-        allowed_subnets: The networks the shares answer, as the hub composed
-            them from where this machine sits.
     """
 
     shares: list = field(default_factory=list)
     users: list = field(default_factory=list)
     passwords: dict = field(default_factory=dict)
-    allowed_subnets: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "SambaConfig":
@@ -117,7 +114,6 @@ class SambaConfig:
                 if isinstance(passwords, dict)
                 else {}
             ),
-            allowed_subnets=[str(net) for net in data.get("allowed_subnets", [])],
         )
 
     def to_dict(self) -> dict:
@@ -125,7 +121,6 @@ class SambaConfig:
             "shares": [share.to_dict() for share in self.shares],
             "users": list(self.users),
             "passwords": dict(self.passwords),
-            "allowed_subnets": list(self.allowed_subnets),
         }
 
     def forced_users(self) -> list:

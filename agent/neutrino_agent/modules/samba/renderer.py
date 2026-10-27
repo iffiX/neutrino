@@ -25,8 +25,7 @@ class SambaConfigRenderer:
     def __init__(self, *, config: SambaConfig):
         """
         Args:
-            config: The parsed share configuration, whose ``allowed_subnets``
-                is the second fence behind the firewall's own.
+            config: The parsed share configuration.
         """
         self._config = config
 
@@ -60,7 +59,6 @@ class SambaConfigRenderer:
         return files
 
     def _render_global(self) -> list:
-        allowed = " ".join(list(self._config.allowed_subnets) + ["127.0.0.1"])
         return [
             SAMBA_CONF_MARKER,
             "",
@@ -71,9 +69,6 @@ class SambaConfigRenderer:
             "   server min protocol = SMB2",
             "",
             "   map to guest = never",
-            "",
-            f"   hosts allow = {allowed}",
-            "   hosts deny = 0.0.0.0/0",
             "",
             "   logging = file",
             "   log file = /var/log/samba/log.%m",

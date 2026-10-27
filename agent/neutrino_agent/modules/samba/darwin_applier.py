@@ -4,9 +4,10 @@ The server is Apple's smbd, enabled through launchd. Share points are made
 with ``sharing``, their record names starting with the module's prefix, SMB
 only, no guest, never encrypted. Accounts are made with ``sysadminctl``,
 without a login shell or a home, hidden, and given an SMB password with the
-NT hash turned on first. Folders are granted with ``chmod +a``. The fence is
-a pf sub-anchor under ``com.apple``, loaded from a file under the work root
-at every apply and again when the agent starts, since pf forgets it at boot.
+NT hash turned on first. Folders are granted with ``chmod +a``. The module
+fences nothing: the pf sub-anchor an earlier version fenced SMB in is
+emptied, and the rules file it kept deleted, at the first apply that finds
+the file.
 
 ``sysadminctl`` and ``dscl`` take a password only on the command line, so a
 password set here is visible in the process list while the command runs.
@@ -19,7 +20,6 @@ pfctl, lsof and log.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import re
@@ -37,8 +37,6 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_ACL_READ,
     SAMBA_DARWIN_HOME,
     SAMBA_DARWIN_PF_ANCHOR,
-    SAMBA_DARWIN_PF_TABLE,
-    SAMBA_LOOPBACK_NETWORKS,
     SAMBA_DARWIN_SERVER_LOG_COMMAND,
     SAMBA_DARWIN_SHARE_PREFIX,
     SAMBA_DARWIN_SHELL,
@@ -53,37 +51,6 @@ LSOF_PEER_PATTERN = re.compile(r":445->(\[?[0-9A-Fa-f:.]+\]?):\d+")
 # The NT hash turned on for an account, as its authentication authority
 # lists the hash types it keeps.
 SMB_NT_HASH = "SMB-NT"
-
-
-def render_pf_rules(allowed_subnets: list) -> str:
-    """The fence's pf rules: SMB from loopback and the allowed subnets, nothing else.
-
-    Args:
-        allowed_subnets: The networks the shares answer; an entry that is
-            no network is left out, which blocks more.
-
-    Returns:
-        The anchor's rules, one per line.
-    """
-    networks = []
-    for subnet in allowed_subnets:
-        try:
-            networks.append(
-                str(ipaddress.ip_network(str(subnet).strip(), strict=False))
-            )
-        except ValueError:
-            continue
-    loopback = ", ".join(SAMBA_LOOPBACK_NETWORKS)
-    lines = [f"pass in quick proto tcp from {{ {loopback} }} to any port 445"]
-    if networks:
-        lines.append(
-            f"table <{SAMBA_DARWIN_PF_TABLE}> const {{ {', '.join(networks)} }}"
-        )
-        lines.append(
-            f"pass in quick proto tcp from <{SAMBA_DARWIN_PF_TABLE}> to any port 445"
-        )
-    lines.append("block drop in quick proto tcp from any to any port 445")
-    return "\n".join(lines) + "\n"
 
 
 def parse_share_points(text: str) -> list:
@@ -180,7 +147,9 @@ class SambaDarwinApplier:
     def __init__(self, *, rules_path: str, run=None):
         """
         Args:
-            rules_path: Where the fence's pf rules are kept between loads.
+            rules_path: Where an earlier version kept the fence's pf rules;
+                the file goes, with the anchor's rules, at the first apply
+                that finds it.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
         """
@@ -194,9 +163,9 @@ class SambaDarwinApplier:
             record: The module's record: ``{"shares", "accounts"}``.
 
         Returns:
-            ``{"is_present", "is_running", "shares", "sessions", "users",
-            "fence"}``; ``is_present`` false without smbd's job or when
-            launchctl cannot run.
+            ``{"is_present", "is_running", "shares", "sessions", "users"}``;
+            ``is_present`` false without smbd's job or when launchctl
+            cannot run.
         """
         if not os.path.isfile(SAMBA_DARWIN_SMBD_PLIST):
             return {"is_present": False, "is_running": False}
@@ -211,8 +180,10 @@ class SambaDarwinApplier:
         An account is the module's when the record lists it or its full name
         is the module's; a record of the account's name that the module did
         not make, a bare one included, is refused. A share point is the
-        module's when the record lists its name and its record name has the module's prefix. Each share
-        keeps one point: a matching one stays, the others of its name go.
+        module's when the record lists its name and its record name has the
+        module's prefix. Each share keeps one point: a matching one stays,
+        the others of its name go. The fence an earlier version kept goes
+        first.
 
         Args:
             config: The validated configuration.
@@ -245,8 +216,8 @@ class SambaDarwinApplier:
                 continue
             if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
-        notes = self._serve()
-        self._load_fence(render_pf_rules(config.allowed_subnets))
+        notes = self._remove_fence()
+        notes += self._serve()
         account_notes, refusals = self._converge_accounts(config, owned_accounts)
         notes += account_notes
         refused = {refusal.params["user"] for refusal in refusals}
@@ -262,8 +233,8 @@ class SambaDarwinApplier:
 
         Args:
             record: The module's record: ``{"shares", "accounts"}``.
-            is_removed: Also disable the module's accounts and empty the
-                fence, as an uninstall does.
+            is_removed: Also disable the module's accounts, as an uninstall
+                does.
 
         Raises:
             OSError: When a command cannot run.
@@ -279,11 +250,6 @@ class SambaDarwinApplier:
             return
         for name in record.get("accounts") or []:
             self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)
-        self._run(
-            ["pfctl", "-a", SAMBA_DARWIN_PF_ANCHOR, "-F", "all"], is_checked=False
-        )
-        if os.path.exists(self._rules_path):
-            os.unlink(self._rules_path)
 
     def set_password(self, name: str, password: str) -> None:
         """Set one of the module's accounts' SMB password and enable it.
@@ -333,15 +299,6 @@ class SambaDarwinApplier:
         ]
         return held[-lines:] if lines > 0 else []
 
-    def reload_fence(self) -> None:
-        """Load the kept fence into pf again, as the agent does at start.
-
-        Raises:
-            OSError: When pfctl cannot run.
-        """
-        if os.path.isfile(self._rules_path):
-            self._load_rules_file()
-
     def _read_status(self, record: dict) -> dict:
         """The status once smbd's job is known to be there.
 
@@ -388,7 +345,6 @@ class SambaDarwinApplier:
                 }
                 for name in record.get("accounts") or []
             ],
-            "fence": self._fence(),
         }
 
     def _serve(self) -> list:
@@ -403,22 +359,19 @@ class SambaDarwinApplier:
         self._run(["launchctl", "kickstart", SAMBA_DARWIN_SMBD_TARGET])
         return ["started the server"]
 
-    def _load_fence(self, rules: str) -> None:
-        """Keep the rules under the work root and load them."""
-        directory = os.path.dirname(self._rules_path)
-        os.makedirs(directory, mode=0o700, exist_ok=True)
-        temporary = self._rules_path + ".new"
-        with open(temporary, "w", encoding="utf-8") as stream:
-            stream.write(rules)
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, self._rules_path)
-        self._load_rules_file()
+    def _remove_fence(self) -> list:
+        """Empty the anchor and delete the rules file an earlier version kept.
 
-    def _load_rules_file(self) -> None:
-        """Load the kept rules into the anchor and turn pf on if it is off."""
-        self._run(["pfctl", "-a", SAMBA_DARWIN_PF_ANCHOR, "-f", self._rules_path])
-        if "Status: Enabled" not in self._read(["pfctl", "-s", "info"]):
-            self._run(["pfctl", "-E"])
+        Returns:
+            One note when the file was there; nothing otherwise.
+        """
+        if not os.path.exists(self._rules_path):
+            return []
+        self._run(
+            ["pfctl", "-a", SAMBA_DARWIN_PF_ANCHOR, "-F", "all"], is_checked=False
+        )
+        os.unlink(self._rules_path)
+        return ["removed the fence"]
 
     def _converge_accounts(self, config: SambaConfig, owned: list) -> tuple:
         """Make every configured account, hidden and in the SMB group.
@@ -648,15 +601,6 @@ class SambaDarwinApplier:
             }
             for address in LSOF_PEER_PATTERN.findall(text)
         ]
-
-    def _fence(self) -> dict:
-        rules = self._read(["pfctl", "-a", SAMBA_DARWIN_PF_ANCHOR, "-s", "rules"])
-        is_enabled = "Status: Enabled" in self._read(["pfctl", "-s", "info"])
-        return {
-            "is_present": bool(rules.strip()),
-            "is_enabled": is_enabled,
-            "blocked": [],
-        }
 
     def _read(self, command: list) -> str:
         """One command's output, empty when it fails or cannot run."""

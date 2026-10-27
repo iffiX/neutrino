@@ -9,8 +9,9 @@ record a failed attempt left made again, hidden and put in the SMB group,
 the account enabled and the NT hash turned on before ``dscl -passwd``, and
 an account the password reaches first made by it; one share point per
 share, kept across applies, the module's duplicates removed and all of a
-name's points withdrawn; folders granted with ``chmod +a``; the fence a pf
-sub-anchor loaded from a kept file and loaded again at start; foreign names
+name's points withdrawn; folders granted with ``chmod +a``; no fence, the
+pf anchor an earlier version kept emptied and its file deleted at the first
+apply that finds the file; foreign names
 refused before anything is touched; and the status read from launchctl,
 the share list and lsof, a password counted only once the record says one
 was set.
@@ -26,7 +27,6 @@ from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.darwin_applier import (
     SambaDarwinApplier,
     parse_share_points,
-    render_pf_rules,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
@@ -42,7 +42,6 @@ CONFIG = SambaConfig.from_dict(
             },
         ],
         "users": ["ann", "bob"],
-        "allowed_subnets": ["192.168.1.0/24", "fd00::/8"],
     }
 )
 
@@ -174,19 +173,6 @@ def applier(tools, tmp_path):
     return SambaDarwinApplier(rules_path=str(tmp_path / "samba_pf.conf"), run=tools)
 
 
-def test_the_fence_passes_the_allowed_subnets_and_blocks_the_rest():
-    assert render_pf_rules(["192.168.1.7/24", "bogus", "fd00::/8"]) == (
-        "pass in quick proto tcp from { 127.0.0.0/8, ::1/128 } to any port 445\n"
-        "table <neutrino_smb_allowed> const { 192.168.1.0/24, fd00::/8 }\n"
-        "pass in quick proto tcp from <neutrino_smb_allowed> to any port 445\n"
-        "block drop in quick proto tcp from any to any port 445\n"
-    )
-    assert render_pf_rules([]) == (
-        "pass in quick proto tcp from { 127.0.0.0/8, ::1/128 } to any port 445\n"
-        "block drop in quick proto tcp from any to any port 445\n"
-    )
-
-
 def test_the_share_list_is_read_in_either_shape():
     keyed = share_list(("neutrino_media", "/m", "media", 1))
     listed = json.dumps([{"name": "Public", "path": "/Users/a/Public"}])
@@ -207,7 +193,7 @@ def test_the_share_list_is_read_in_either_shape():
     assert parse_share_points("List of Share Points") == []
 
 
-def test_an_apply_makes_the_server_the_fence_the_accounts_and_the_shares(
+def test_an_apply_makes_the_server_the_accounts_and_the_shares_and_no_fence(
     applier, tools, tmp_path
 ):
     tools.failing.add(("launchctl", "print"))
@@ -220,12 +206,8 @@ def test_an_apply_makes_the_server_the_fence_the_accounts_and_the_shares(
     assert tools.ran("launchctl", "kickstart") == [
         ["launchctl", "kickstart", "system/com.apple.smbd"]
     ]
-    rules = tmp_path / "samba_pf.conf"
-    assert rules.read_text() == render_pf_rules(CONFIG.allowed_subnets)
-    assert tools.ran("pfctl", "-a") == [
-        ["pfctl", "-a", "com.apple/neutrino_smb", "-f", str(rules)]
-    ]
-    assert tools.ran("pfctl", "-E") == [["pfctl", "-E"]]
+    assert tools.ran("pfctl") == []
+    assert not (tmp_path / "samba_pf.conf").exists()
     (add_ann,) = tools.ran("sysadminctl", "-addUser", "ann")
     assert add_ann[3:9] == [
         "-fullName",
@@ -278,12 +260,9 @@ def test_an_apply_makes_the_server_the_fence_the_accounts_and_the_shares(
     assert "started the server" in notes
 
 
-def test_an_enabled_pf_and_a_loaded_smbd_are_left_as_they_are(applier, tools):
-    tools.answers[("pfctl", "-s", "info")] = "Status: Enabled for 3 days\n"
-
+def test_a_loaded_smbd_is_left_as_it_is(applier, tools):
     applier.apply(CONFIG, {})
 
-    assert tools.ran("pfctl", "-E") == []
     assert tools.ran("launchctl", "kickstart") == []
     assert tools.ran("launchctl", "bootstrap") == []
 
@@ -521,33 +500,31 @@ def test_withdrawing_removes_only_the_module_s_points(applier, tools):
     assert tools.ran("pfctl") == []
 
 
-def test_a_removal_also_disables_the_accounts_and_empties_the_fence(
+def test_a_removal_also_disables_the_accounts_and_touches_no_fence(applier, tools):
+    applier.withdraw({"accounts": ["ann"]}, is_removed=True)
+
+    assert tools.ran("pwpolicy") == [["pwpolicy", "-u", "ann", "-disableuser"]]
+    assert tools.ran("pfctl") == []
+
+
+def test_the_first_apply_after_an_upgrade_empties_the_fence_and_deletes_its_file(
     applier, tools, tmp_path
 ):
     rules = tmp_path / "samba_pf.conf"
     rules.write_text("block drop in quick proto tcp from any to any port 445\n")
 
-    applier.withdraw({"accounts": ["ann"]}, is_removed=True)
+    notes = applier.apply(CONFIG, {})
 
-    assert tools.ran("pwpolicy") == [["pwpolicy", "-u", "ann", "-disableuser"]]
     assert tools.ran("pfctl") == [
         ["pfctl", "-a", "com.apple/neutrino_smb", "-F", "all"]
     ]
     assert not rules.exists()
+    assert notes[0] == "removed the fence"
 
+    tools.calls.clear()
+    applier.apply(CONFIG, {})
 
-def test_the_kept_fence_is_loaded_again_at_start(applier, tools, tmp_path):
-    applier.reload_fence()
-    assert tools.calls == []
-
-    rules = tmp_path / "samba_pf.conf"
-    rules.write_text(render_pf_rules(["10.0.0.0/8"]))
-    applier.reload_fence()
-
-    assert tools.ran("pfctl", "-a") == [
-        ["pfctl", "-a", "com.apple/neutrino_smb", "-f", str(rules)]
-    ]
-    assert tools.ran("pfctl", "-E") == [["pfctl", "-E"]]
+    assert tools.ran("pfctl") == []
 
 
 def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
@@ -559,10 +536,6 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
     tools.answers[("dscl", ".", "-read", "/Users/ann", "AuthenticationAuthority")] = (
         "AuthenticationAuthority: ;ShadowHash;HASHLIST:<SALTED-SHA512-PBKDF2,SMB-NT>\n"
     )
-    tools.answers[("pfctl", "-a", "com.apple/neutrino_smb", "-s", "rules")] = (
-        "block drop in quick proto tcp from any to any port = 445\n"
-    )
-    tools.answers[("pfctl", "-s", "info")] = "Status: Enabled\n"
 
     status = applier.read_status(
         {"shares": {"media": "/m"}, "accounts": ["ann"], "passworded": ["ann"]}
@@ -583,7 +556,8 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
     assert status["users"] == [
         {"name": "ann", "is_present": True, "has_password": True}
     ]
-    assert status["fence"] == {"is_present": True, "is_enabled": True, "blocked": []}
+    assert "fence" not in status
+    assert tools.ran("pfctl") == []
 
 
 def test_a_mac_without_smbd_has_no_server(applier, monkeypatch, tmp_path):

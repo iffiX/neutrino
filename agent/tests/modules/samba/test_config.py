@@ -18,7 +18,6 @@ def config_with(**overrides) -> SambaConfig:
     data = {
         "shares": [{"name": "share", "path": "/srv/share", "valid_users": []}],
         "users": ["ann"],
-        "allowed_subnets": ["192.168.100.0/24"],
     }
     data.update(overrides)
     return SambaConfig.from_dict(data)
@@ -32,7 +31,7 @@ def test_the_parse_survives_a_round_trip():
     config = config_with()
 
     assert SambaConfig.from_dict(config.to_dict()).to_dict() == config.to_dict()
-    assert config.allowed_subnets == ["192.168.100.0/24"]
+    assert "allowed_subnets" not in config.to_dict()
 
 
 @pytest.mark.parametrize(

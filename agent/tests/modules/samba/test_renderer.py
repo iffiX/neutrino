@@ -10,9 +10,7 @@ from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
 
 
 def render(config_data: dict) -> str:
-    config = SambaConfig.from_dict(
-        {"allowed_subnets": ["192.168.100.0/24"], **config_data}
-    )
+    config = SambaConfig.from_dict(config_data)
     config.validate()
     return SambaConfigRenderer(config=config).render()
 
@@ -44,19 +42,11 @@ def test_samba_itself_accepts_the_render(tmp_path):
     validate_smb_conf(render(BASIC), tmp_path)
 
 
-def test_the_allowed_subnets_are_the_only_place_a_share_answers():
+def test_the_global_section_fences_no_host():
     rendered = without_comments(render(BASIC))
 
-    assert "hosts allow = 192.168.100.0/24 127.0.0.1" in rendered
-    assert "hosts deny = 0.0.0.0/0" in rendered
-
-
-def test_two_subnets_are_both_allowed():
-    rendered = without_comments(
-        render({**BASIC, "allowed_subnets": ["192.168.100.0/24", "100.88.0.0/16"]})
-    )
-
-    assert "hosts allow = 192.168.100.0/24 100.88.0.0/16 127.0.0.1" in rendered
+    assert "hosts allow" not in rendered
+    assert "hosts deny" not in rendered
 
 
 def test_nothing_of_the_stock_configuration_survives():
@@ -118,7 +108,6 @@ def test_each_smb_user_has_a_file_forcing_its_account_for_the_named_shares():
                 {"name": "pool", "path": "/pool", "valid_users": ["neutrino-ann"]},
             ],
             "users": ["neutrino-ann"],
-            "allowed_subnets": ["192.168.100.0/24"],
         }
     )
 

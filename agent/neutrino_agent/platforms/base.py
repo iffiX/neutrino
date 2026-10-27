@@ -477,8 +477,8 @@ class AgentPlatform:
         """The applier that drives the SMB server the system itself carries.
 
         Returns:
-            An applier with ``read_status``, ``apply``, ``withdraw``,
-            ``set_password`` and ``reload_fence``.
+            An applier with ``read_status``, ``apply``, ``withdraw`` and
+            ``set_password``.
 
         Raises:
             PlatformUnsupportedError: When the system carries no SMB server
@@ -526,10 +526,10 @@ class AgentPlatform:
         raise PlatformUnsupportedError("cannot remove system packages here")
 
     def remove_added(self) -> list:
-        """Stop and delete what the agent's modules added in order to run and
-        to fence: their units, launchd jobs, scheduled tasks and firewall
-        rules, found by name, and the file share's fence. Shares, accounts
-        and the modules' data stay.
+        """Stop and delete what the agent's modules added in order to run:
+        their units, launchd jobs, scheduled tasks and firewall rules, found
+        by name, and the fence an earlier version's file share left. Shares,
+        accounts and the modules' data stay.
 
         Returns:
             What was removed, one line each.

@@ -235,8 +235,8 @@ class SambaNativeServerRunner(ModuleRunner):
     """Keeps the system's own SMB server serving what the hub says.
 
     Windows and macOS carry the server, so there is nothing to install or
-    uninstall; the platform's applier converges the shares, the accounts
-    and the fence, and loads the fence again when the runner is built. Each
+    uninstall; the platform's applier converges the shares and the accounts
+    and fences nothing. Each
     account's password is set from the configuration's ``passwords``
     whenever it differs from the one the module set last. A root-only
     record under the agent's work root lists what the module made and the
@@ -268,11 +268,6 @@ class SambaNativeServerRunner(ModuleRunner):
         self._lock = threading.Lock()
         self._status: "dict | None" = None
         self._status_at = 0.0
-        try:
-            self._applier.reload_fence()
-        except (OSError, subprocess.SubprocessError) as error:
-            said = str(getattr(error, "stderr", "") or "").strip()
-            self._log(f"samba: the fence did not load: {error} {said}".rstrip())
 
     def verify(self, recipe: dict) -> bool:
         """Whether the system's SMB server is there.
@@ -398,7 +393,7 @@ class SambaNativeServerRunner(ModuleRunner):
         return kept
 
     def stop(self) -> None:
-        """Take the module's shares off the server; accounts and fence stay.
+        """Take the module's shares off the server; the accounts stay.
 
         Raises:
             OSError: When the server will not let them go.
@@ -411,7 +406,7 @@ class SambaNativeServerRunner(ModuleRunner):
         self._write_record(dict(record, shares={}, is_served=False))
 
     def remove_configuration(self) -> None:
-        """Take the shares and the fence away and disable the accounts.
+        """Take the shares away and disable the accounts.
 
         Raises:
             OSError: When the server will not let them go.
@@ -437,9 +432,8 @@ class SambaNativeServerRunner(ModuleRunner):
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
-            "disk_usage", "fence"}`` in the shapes the Linux module
-            reports, ``global`` empty and ``fence`` ``{"is_present",
-            "is_enabled", "blocked"}``.
+            "disk_usage"}`` in the shapes the Linux module reports,
+            ``global`` empty.
         """
         status = self._read_status()
         return {
@@ -449,7 +443,6 @@ class SambaNativeServerRunner(ModuleRunner):
             "users": list(status.get("users") or []),
             "sessions": list(status.get("sessions") or []),
             "disk_usage": SambaStatusReader().disk_usage(self._config or SambaConfig()),
-            "fence": dict(status.get("fence") or {}),
         }
 
     def journal_text(self, lines: int) -> list:

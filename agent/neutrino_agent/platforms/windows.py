@@ -826,8 +826,8 @@ class WindowsPlatform(AgentPlatform):
 
     def remove_added(self) -> list:
         """Delete the services, unregister the scheduled tasks and remove the
-        firewall rules the agent's modules added, the file share's fence
-        among them.
+        firewall rules the agent's modules added, the fence an earlier
+        version's file share left among them.
 
         A service, a task or a rule is the modules' when
         :func:`is_added_name` says so; the agent's own service, the hub's

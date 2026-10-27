@@ -74,7 +74,6 @@ CONFIG = {
     "shares": [{"name": "share", "path": "/srv/share"}],
     "users": ["ann"],
     "passwords": {"ann": "generated"},
-    "allowed_subnets": ["192.168.100.0/24"],
 }
 
 
@@ -248,7 +247,8 @@ def test_validate_has_samba_check_the_render(runner, monkeypatch):
     runner.validate(CONFIG)
 
     assert "[share]" in checked[0]
-    assert "hosts allow = 192.168.100.0/24 127.0.0.1" in checked[0]
+    assert "[share]" in checked[0]
+    assert "hosts allow" not in checked[0]
 
 
 def test_apply_renders_applies_and_keeps_the_configuration(runner):
@@ -493,9 +493,6 @@ class FakeNativeApplier:
     def set_password(self, name, password):
         self.calls.append(("set_password", name, password))
 
-    def reload_fence(self):
-        self.calls.append(("reload_fence",))
-
     def read_server_log(self, lines):
         return ["10:00 1001 A client connected.", "10:05 1002 A client left."]
 
@@ -522,7 +519,6 @@ WINDOWS_CONFIG = {
     "shares": [{"name": "share", "path": "D:\\share"}],
     "users": ["ann"],
     "passwords": {"ann": "pw"},
-    "allowed_subnets": ["192.168.100.0/24"],
 }
 
 
@@ -541,8 +537,7 @@ def native(tmp_path):
     held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
     held.applier = platform.applier
     held.clock = clock
-    assert platform.applier.calls == [("reload_fence",)]
-    platform.applier.calls.clear()
+    assert platform.applier.calls == []
     return held
 
 
@@ -721,14 +716,13 @@ def test_the_server_is_read_once_per_half_minute_and_after_each_change(native):
     assert native.applier.reads == 3
 
 
-def test_the_details_have_the_linux_shape_and_the_fence(native):
+def test_the_details_have_the_linux_shape_and_no_fence(native):
     native.applier.status = {
         "is_present": True,
         "is_running": True,
         "shares": [{"name": "share", "path": "D:\\share", "params": {}}],
         "users": [{"name": "ann", "is_present": True, "has_password": True}],
         "sessions": [],
-        "fence": {"is_present": True, "is_enabled": True, "blocked": []},
     }
 
     details = observed(native)["details"]
@@ -740,10 +734,8 @@ def test_the_details_have_the_linux_shape_and_the_fence(native):
         "users",
         "sessions",
         "disk_usage",
-        "fence",
     }
     assert details["global"] == {}
-    assert details["fence"]["is_present"] is True
 
 
 def test_the_native_log_is_the_server_s_then_the_agent_s_lines(native, tmp_path):

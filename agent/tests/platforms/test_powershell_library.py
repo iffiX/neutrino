@@ -152,10 +152,9 @@ def test_the_file_share_refuses_foreign_names_and_never_grants_everyone():
     assert "-NoPassword -Disabled" in apply
     assert "Add-LocalGroupMember" not in LIBRARY
     assert "SpecialAccounts\\UserList" in apply
-    assert "-Action Block -Protocol TCP -LocalPort 445" in apply
-    assert "Set-NetFirewallRule -Name $Request.rule_name -RemoteAddress" in apply
-    assert apply.index("New-NetFirewallRule") < apply.index("New-SmbShare")
-    assert apply.index("New-NetFirewallRule") < apply.index("New-LocalUser")
+    assert "New-NetFirewallRule" not in apply
+    assert "Set-NetFirewallRule" not in apply
+    assert "Remove-NetFirewallRule -Name $Request.retired_rule_name" in apply
     assert apply.index("share_name_taken") < apply.index("Start-Service")
 
 
@@ -165,7 +164,8 @@ def test_the_share_s_other_operations_keep_what_their_scripts_did():
 
     assert "Remove-SmbShare -Name $name -Force" in withdraw
     assert "if ($Request.is_removed)" in withdraw
-    assert "Remove-NetFirewallRule -Name $Request.rule_name" in withdraw
+    assert "NetFirewallRule" not in withdraw
+    assert "NetFirewallRule" not in body("share_status")
     assert "Get-WinEvent -LogName $Request.log_name -MaxEvents $Request.lines" in body(
         "share_log"
     )

@@ -1,10 +1,12 @@
 """The file share on Windows' own SMB server, with the PowerShell host and icacls faked.
 
 What these pin: the request an apply sends the host names only what the
-module made, the fence as ranges outside the allowed subnets, each share's
-right, and the accounts to retire; once the host has converged the server
-each share's folder is granted to its accounts and taken from the module's
-others through icacls, a grant icacls refuses failing the apply; each
+module made, each share's right, the accounts to retire and the block rule
+an earlier version made for the host to delete; once the host has converged
+the server each share's folder is granted to its accounts and taken from
+the module's others through icacls, a grant icacls refuses failing the
+apply, and the ``.ssh`` folder under a share stops inheriting and loses
+every module account; each
 configured account is denied the console and RDP through the local policy;
 a refusal stops before any folder or policy; the withdrawal, the server's
 log and a password are one request each, the password in the request alone;
@@ -19,13 +21,10 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.windows_applier import (
     SambaWindowsApplier,
-    blocked_ranges,
     deny_interactive_logon,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from tests.conftest import RecordingHost
-
-ALL_IPV6 = "::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
 
 CONFIG = SambaConfig.from_dict(
     {
@@ -39,7 +38,6 @@ CONFIG = SambaConfig.from_dict(
             },
         ],
         "users": ["ann", "bob"],
-        "allowed_subnets": ["192.168.1.0/24"],
     }
 )
 
@@ -63,31 +61,6 @@ def applier_with(host, *, run=None, denied=None) -> SambaWindowsApplier:
         deny_logon=denied.append if denied is not None else None,
         run=run if run is not None else Icacls(),
     )
-
-
-def test_the_fence_blocks_every_address_outside_the_allowed_subnets():
-    assert blocked_ranges(["192.168.1.0/24"]) == [
-        "0.0.0.0-192.168.0.255",
-        "192.168.2.0-255.255.255.255",
-        ALL_IPV6,
-    ]
-    assert blocked_ranges(["10.0.0.0/8", "10.1.0.0/16", "fd00::/8"]) == [
-        "0.0.0.0-9.255.255.255",  # scan: allow
-        "11.0.0.0-255.255.255.255",
-        "::-fcff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-        "fe00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-    ]
-
-
-def test_no_subnet_blocks_everything_and_every_address_blocks_nothing():
-    assert blocked_ranges([]) == ["0.0.0.0-255.255.255.255", ALL_IPV6]
-    assert blocked_ranges(["not a network"]) == blocked_ranges([])
-    assert blocked_ranges(["0.0.0.0/0", "::/0"]) == []
-    assert blocked_ranges(["192.168.1.7/32", "0.0.0.0/1"]) == [
-        "128.0.0.0-192.168.1.6",  # scan: allow
-        "192.168.1.8-255.255.255.255",
-        ALL_IPV6,
-    ]
 
 
 def test_an_apply_names_only_what_the_module_made():
@@ -126,15 +99,7 @@ def test_an_apply_names_only_what_the_module_made():
                         "share_right": "Read",
                     },
                 ],
-                "blocked_addresses": [
-                    "0.0.0.0-126.255.255.255",  # scan: allow
-                    "128.0.0.0-192.168.0.255",  # scan: allow
-                    "192.168.2.0-255.255.255.255",
-                    "::",
-                    "::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-                ],
-                "rule_name": "neutrino_smb_fence",
-                "rule_title": "Neutrino file share fence",
+                "retired_rule_name": "neutrino_smb_fence",
                 "share_owner": "BUILTIN\\Administrators",
             },
         )
@@ -148,6 +113,42 @@ def test_an_apply_names_only_what_the_module_made():
         ["icacls.exe", "D:\\docs", "/grant", "ann:(OI)(CI)RX"],
     ]
     assert denied == ["ann", "bob"]
+
+
+def test_the_ssh_folder_under_a_share_is_taken_from_every_module_account(
+    tmp_path,
+):
+    (tmp_path / ".ssh").mkdir()
+    config = SambaConfig.from_dict(
+        {"shares": [{"name": "ann", "path": str(tmp_path)}], "users": ["ann", "bob"]}
+    )
+    icacls = Icacls()
+    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+
+    applier.apply(config, {"shares": {}, "accounts": ["eve"]})
+
+    ssh_dir = str(tmp_path / ".ssh")
+    assert icacls.calls == [
+        ["icacls.exe", str(tmp_path), "/remove:g", "eve"],
+        ["icacls.exe", str(tmp_path), "/grant", "ann:(OI)(CI)M"],
+        ["icacls.exe", str(tmp_path), "/grant", "bob:(OI)(CI)M"],
+        ["icacls.exe", ssh_dir, "/inheritance:d"],
+        ["icacls.exe", ssh_dir, "/remove:g", "eve"],
+        ["icacls.exe", ssh_dir, "/remove:g", "ann"],
+        ["icacls.exe", ssh_dir, "/remove:g", "bob"],
+    ]
+
+
+def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
+    (tmp_path / ".ssh").mkdir()
+    config = SambaConfig.from_dict(
+        {"shares": [{"name": "ann", "path": str(tmp_path)}], "users": ["ann"]}
+    )
+    icacls = Icacls(refused=[("/inheritance:d",)])
+    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+
+    with pytest.raises(OSError, match="could not keep"):
+        applier.apply(config, {})
 
 
 def test_a_folder_icacls_refuses_fails_the_apply_and_denies_nobody():
@@ -188,7 +189,6 @@ def test_withdrawing_names_the_shares_and_says_whether_it_is_a_removal():
                 "owned_shares": ["media"],
                 "owned_accounts": ["ann"],
                 "is_removed": True,
-                "rule_name": "neutrino_smb_fence",
             },
         )
     ]
@@ -219,11 +219,6 @@ def test_the_status_is_shaped_the_way_the_linux_module_reports():
         ],
         "sessions": [{"user": "XENON\\ann", "address": "192.168.1.20"}],
         "users": [{"name": "ann", "is_present": True, "is_enabled": False}],
-        "fence": {
-            "is_present": True,
-            "is_enabled": True,
-            "blocked": ["0.0.0.0-9.9.9.9"],
-        },
     }
     host = RecordingHost({"share_status": read})
 
@@ -232,11 +227,7 @@ def test_the_status_is_shaped_the_way_the_linux_module_reports():
     assert host.calls == [
         (
             "share_status",
-            {
-                "marker": "neutrino:",
-                "accounts": ["ann"],
-                "rule_name": "neutrino_smb_fence",
-            },
+            {"marker": "neutrino:", "accounts": ["ann"]},
         )
     ]
     assert status["is_present"] and status["is_running"]
@@ -262,11 +253,7 @@ def test_the_status_is_shaped_the_way_the_linux_module_reports():
     assert status["users"] == [
         {"name": "ann", "is_present": True, "has_password": False}
     ]
-    assert status["fence"] == {
-        "is_present": True,
-        "is_enabled": True,
-        "blocked": ["0.0.0.0-9.9.9.9"],
-    }
+    assert "fence" not in status
 
 
 def test_a_share_granted_to_the_owner_alone_lists_no_user():
