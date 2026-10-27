@@ -22,6 +22,7 @@ and the keys named here are the same in all three catalogs.
 | Every change to the document is pushed whole to the page; the page keeps no timers, no remembered presses and no guessed outcomes. | A guess on the page outlives the fact it was guessed from. |
 | A route that starts a job writes the job into the document and pushes it before it returns. | The person sees the in-progress form in the same frame as their press, and there is no gap for a second press. |
 | A field a platform cannot act on is still present in the document with the same name. | The three implementations read one shape; the page decides what to draw, the document does not. |
+| A client judges no permission. The hub's state already holds only the entries, apps, machines and overlays the client's permission allows, and `is_panel_allowed`; a `permission_denied {kind}` on a stream or a `service` ask is the hub's answer at that moment ([protocol.md](protocol.md), `/api/hub/client`). | One function in the hub judges every use, so a permission changed on the Clients page reaches the client in its next state, the same on the three clients. |
 
 The document has these parts:
 

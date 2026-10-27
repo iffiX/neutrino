@@ -530,14 +530,14 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default) and `permission_devices`, and the list's `default_permission`, `default_permission_devices` and `permission_kinds` |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices` and `permission_entries`, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps |
 | `POST /api/hub/client/enrollment/create` | `{name}` | a client link |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
 | `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown` |
-| `POST /api/hub/client/default_permission/set` | `{kinds, devices}`, `devices` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
-| `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
+| `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
+| `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ssh`, `ai`,
 `file`, `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS`
@@ -554,32 +554,78 @@ machine and runs one command there through an `exec` stream ("The exec
 stream"). `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
 the `service` frame `{is_panel: true}` ("The panel ports"); it is off unless a
-permission names it, since it manages the hub without the panel password. A permission may narrow each
-kind but `overlay` and `panel` to the entries some devices provide: `devices` maps a kind to a list
-of device ids, and a kind with no list, or an empty one, allows every device.
-`config/clients/clients.json` holds `default_permission: {kinds, devices}`
-beside `clients`, and each client a `permission` that is null or `{kinds,
-devices}`, `devices` written only when it names a list; a file with no
-default allows every kind but `panel` on every device, and the default a
-fresh hub copies from `clients.example.json` names every kind but `panel`.
-The device providing an entry is
-the device that hosts it; the hub's own modules belong to the hub's own
-device when it has one; a declared app belongs to the device at its
-address, and one at no device's address passes only a kind with no list. A
-client's `services` section holds only the entries whose type and device it
-is allowed, and its `terminals` only the machines its `terminal` list
-allows. A `shell` or an `exec` on a machine outside that list is refused
-`permission_denied {kind: terminal}`. A `connect` is judged as the `service` frame is, and a panel
-`connect` or `service` without `panel` is refused `permission_denied {kind:
-panel}`. Switching a client off, removing it, its leave, and taking `panel`
-from it, through its own permission or the default it follows, end the
-panel sessions it opened.
-Taking `ai` away revokes its gateway key. Deleting a device takes
-its id out of every list, the default's and each client's, turns off each kind
-whose list named only that device, and pushes every client its state. A kind
-outside the set, or `overlay` or `panel` given a list, is
-refused 400 `permission_kind_unknown {kind}`, and a device id no stored device
-has is refused 400 `permission_device_unknown {device_id}`.
+permission names it, since it manages the hub without the panel password.
+
+Every kind has two positions, off and on. On, the hub hands the client what
+the kind reaches and signs it in: the `service` frame gives the credential
+an entry takes, and the panel opens signed in. Off, the client's state names
+none of it, and a stream or a `service` ask for it is refused
+`permission_denied {kind}`. No position has the person type a password.
+
+A permission is `{kinds, devices, entries}`, edited in one of two modes
+([ui_behavior.md](ui_behavior.md), "The Clients page"):
+
+| Mode | The person sets | Stored as |
+| --- | --- | --- |
+| coarse, the default | each kind on or off, and for each kind but `overlay` and `panel` the machines it is narrowed to | `kinds`, the kinds that are on; `devices`, a list of device ids per kind, where a kind with no list, or an empty one, allows every machine |
+| fine | the kinds and their machines as in the coarse mode, and under each kind that has rows, each row on or off | `entries` beside the two, a map from a row's id to `true` or `false`; a row absent from it follows its kind |
+
+A row is one thing a client reaches under one kind:
+
+| Kind | A row | The row's id |
+| --- | --- | --- |
+| `web`, `port` | an app with an entry of that kind ("Apps") | the app's id |
+| `ssh` | a machine's SSH server | its app's id, `ssh_server_<device id>` |
+| `file` | a machine's share, one per enabled account of its file share; a declared app with a `file` entry | the share's entry id, `samba_<device id>_<share>`; the app's id |
+| `rdp` | a machine's desktop | its entry's id, `rdp_<device id>` |
+| `terminal` | a managed machine | `terminal_<device id>` |
+| `ai`, `overlay`, `panel` | none | |
+
+One function, `is_permitted` in `modules/clients/permissions.py`, judges
+every use against the client's permission, or against the default while
+the client has none of its own. It takes the kind, the device that provides
+the thing, and the thing's row id: the app's id for an entry of an app, the
+entry's own id for an entry of no app, `terminal_<device id>` for a shell or
+a command, and none for `ai`, `overlay` and `panel`.
+
+1. A row id that `entries` names is allowed or refused by its value.
+1. Otherwise the kind is allowed when it is in `kinds` and, where the kind
+   has a `devices` list, the device is in it.
+
+The function answers the `service` frame, `connect`, `shell` and `exec`, and
+composes the client's `services`, `apps`, `terminals`, `overlays` and
+`is_panel_allowed`. The device providing an entry is the device that hosts
+it; the hub's own modules belong to the hub's own device when it has one; a
+declared app belongs to the device at its address, and one at no device's
+address passes only a kind with no list, or its own row.
+
+| Rule | Reason |
+| --- | --- |
+| A row in `entries` wins over its kind both ways: a row set on is allowed while its kind is off, and a row set off is refused while its kind is on. | A person gives one app to a client that has nothing else, or keeps one app from a client that has the rest. |
+| A row is one app whatever its entries' kinds. An app with entries of two kinds, Gitea's `web` and its SSH `port`, is a row under each, and both read and write its one id. | An app is one thing to the person ("Apps"). |
+| A row absent from `entries` follows its kind, so an app published later is allowed or refused by its kind and its machines alone. | The coarse setting stays the rule, and the fine one names its exceptions. |
+| `entries` keeps a row whose app or entry is not published now, and the function reads it again when the app comes back. Forgetting a device takes the rows its id names out of every permission, and removing a declared app takes its row out. | A module stopped for a while comes back with the setting the person made, and a row of something gone for good is not kept. |
+| A new permission, a fresh hub's default among them, has `entries` empty. | The coarse mode is the one a person meets first. |
+
+`config/clients/clients.json` holds `default_permission: {kinds, devices,
+entries}` beside `clients`, and each client a `permission` that is null or
+`{kinds, devices, entries}`, `devices` and `entries` written only when they
+name something; a file with no default allows every kind but `panel` on
+every device, and the default a fresh hub copies from
+`clients.example.json` names every kind but `panel`. A
+`shell` or an `exec` the function refuses is refused `permission_denied
+{kind: terminal}`. A `connect` is judged as the `service` frame is, and a
+panel `connect` or `service` without `panel` is refused `permission_denied
+{kind: panel}`. Switching a client off, removing it, its leave, and taking
+`panel` from it, through its own permission or the default it follows, end
+the panel sessions it opened. Taking `ai` away revokes its gateway key.
+Deleting a device takes its id out of every list, the default's and each
+client's, turns off each kind whose list named only that device, takes its
+rows out of every `entries`, and pushes every client its state. A kind
+outside the set, or `overlay` or `panel` given a list, is refused 400
+`permission_kind_unknown {kind}`, and a device id no stored device has is
+refused 400 `permission_device_unknown {device_id}`; an `entries` value that
+is not `true` or `false` is refused `body_invalid`.
 
 #### `/api/hub/service`
 
@@ -945,7 +991,7 @@ and platform, which change between releases.
 | `urls` | `["tcp://<address>:<port>", ...]` | | the same list | |
 | `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, accounts, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the Terminal module's enabled accounts, the first being the default, and the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, accounts, sessions}]`: the managed machines its permission allows under `terminal`, where it opens a `shell` or an `exec`, each with the Terminal module's enabled accounts, the first being the default, and the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's session reached the hub | |
 | `error` | | `{code, params}` | | |
@@ -1586,7 +1632,10 @@ what the entry's `payload` names:
 
 The six types are closed, `SERVICES_TYPES` in
 `modules/services/constants.py`; a seventh is a row here in the same change.
-The `ai` entry's id is `ai` on every hub.
+The `ai` entry's id is `ai` on every hub, an `rdp` entry's `rdp_<device id>`
+of the machine sharing its desktop, and a machine's `file` entry's
+`samba_<device id>_<share>`; each is its row's id in a permission
+(`/api/hub/client`).
 Every `host`, `port`, `url` and `endpoint` in a payload is where the
 service is on the hub's networks, resolved for the client's scope ("The
 address a caller is given"). A client shows it to the person and dials none
@@ -1678,7 +1727,7 @@ source, device_id, device_name, local_name}`:
 | Rule | Reason |
 | --- | --- |
 | A module the hub manages is one app however many containers it runs, and its source is `module`. A container the hub does not manage is one app of its own, `declared` when the Containers module's configuration names it and `manual` when a person started it by hand, the owners the Containers tab's chips name ([agent/modules/containers.md](agent/modules/containers.md), "Hub containers"). | The person thinks of Hermes WebUI as one thing and of each container they run as one thing, and the chip says who answers for it. |
-| An app's entries are in the list only while the entry kind is allowed to the client on that machine; an app none of whose entries is allowed is not in `apps`. | The permission stays per kind and per machine, as on every other entry. |
+| An app's entries are in the list only while the client's permission allows them, by kind and machine or by the app's own row (`/api/hub/client`); an app none of whose entries is allowed is not in `apps`. | One judging function decides every entry, an app's as any other. |
 | The SSH server is in `apps` and on no page: no client's Apps page and not the panel's Services page shows its row or an `ssh` entry. Its row gives the `ssh` entries their ids and their local ports, and gives a desktop client the machine part of the host its SSH configuration names ([client.md](client.md), "SSH for other programs"). | The SSH server is a function of every machine, as the terminal and the remote desktop are, used by the programs on a desktop that speak SSH; a phone reaches a shell on its Terminals page. |
 | A declared app's `file` entry is mounted on the Files page as a machine's share is, at a port the client picks, and with the login the person types there ([client.md](client.md), "The Files page"). The hub generates no password for it. | A NAS's share has its own users, which the hub neither makes nor knows. |
 | `app_id` and `name` are added fields and keep `PROTOCOL`; `apps` is an added section. | A reader that predates them reads each entry as before. |
@@ -1731,8 +1780,8 @@ the transport gives whole to the Python on its side.
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as `data` line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
-| client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows, account}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols`, `rows` and `account`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows, account}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols`, `rows` and `account`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` frame takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Relayed to an agent's `connect`, or dialled by the hub's transport itself; closed with a refusal's code before its `accept`. "The connect stream" has the checks, the far ends and the codes |
 | agent, to the hub | `connect` | `{id: ai}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub's transport dials the gateway on `127.0.0.1` at its `listen_port` and relays the bytes; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off and no module that uses the gateway, a container module or SiYuan, is installed there; no `connect_limit` holds on an agent's session; `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; the agent's transport asks the agent's Python whether the port is published and dials it itself; refused `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
@@ -1807,7 +1856,7 @@ first that fails gives the reply its code; the panel's are
 | `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `service_unknown` | the id names no entry in the list resolved for this client |
-| `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
+| `permission_denied` | the client's permission does not allow the entry: `is_permitted` refuses its type, its device and its row (`/api/hub/client`) |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
 | `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI, Codeg or SiYuan instance, Hermes WebUI or Ayakaleaf whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
@@ -1862,7 +1911,7 @@ check that fails closes the stream with its code:
 | `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `service_unknown {service_id}` | the id names no entry in the list resolved for this client |
-| `permission_denied {kind}` | the entry's type, or `panel` for the panel, is not among this client's kinds, or the device providing the entry is not in that kind's device list |
+| `permission_denied {kind}` | the client's permission does not allow the entry, or `panel` for the panel: `is_permitted` refuses its type, its device and its row (`/api/hub/client`) |
 | `rdp_not_shared {service_id}` | the entry is an `rdp` one and its machine has stopped reporting the share |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
@@ -1928,7 +1977,7 @@ order, and the first check that fails closes the stream with its code:
 | --- | --- |
 | `binding_unknown` | no client row has the id this session is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
-| `permission_denied {kind: terminal}` | the client's kinds lack `terminal`, or the machine is not in the `terminal` kind's device list |
+| `permission_denied {kind: terminal}` | the client's permission does not allow `terminal` on the machine, its row being `terminal_<device id>` (`/api/hub/client`) |
 | `agent_offline {device}` | the machine has no session, and the same code when its session ends under an open stream |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 

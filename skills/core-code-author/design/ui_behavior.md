@@ -607,6 +607,33 @@ such as VS Code listens on its machine's loopback alone. It shows no `ssh`
 entry and no row for a machine's SSH server, which is no app
 ([protocol.md](protocol.md), "Apps").
 
+## The Clients page
+
+The **Clients** page, at `/clients`, is the clients enrolled with the hub,
+one row each, with what each is allowed.
+
+**The permission form.** One form, `client_permission_form.tsx`, edits
+every permission ([protocol.md](protocol.md), `/api/hub/client`): the
+default's dialog, a client's row, and the client link dialog. It reads
+`permission_kinds` and `permission_rows` from `GET /api/hub/client` and
+works out no row itself.
+
+| Part | What it holds |
+| --- | --- |
+| **Follow the default** | in a client's row and in the link dialog: a switch that, while on, shows the default's values and sends none of its own |
+| a kind | one line per kind in `permission_kinds` order: its switch, and for every kind but **Virtual network** and the panel the chip **All agents**, which opens the machine checklist under the line |
+| **Choose per app** | a switch at the form's foot, the fine mode of [protocol.md](protocol.md), `/api/hub/client`; off, the form is the coarse mode. While it is on, each kind with rows lists them under its line, one line per row: the row's title, its machine's name and a switch |
+| a row's switch | shows what the judging function gives the row now. A press stores the row with the value it then shows, and a stored row has **Follow the kind**, a ghost button that takes it out again |
+
+| Rule | Reason |
+| --- | --- |
+| Every kind has the same two positions, and a row has the same two. | On is the hub handing the credential and signing the client in; nothing in between asks for a password. |
+| The form opens with **Choose per app** on when the permission's `entries` holds a row, and off otherwise. | The coarse mode is what most permissions need, and a permission with exceptions shows them at once. |
+| Turning **Choose per app** off takes every stored row out at the apply, and the apply bar's warning says so while it is off with rows stored. | A row the mode hides still decides its app. |
+| A kind lists every app of its kind on every machine, whatever its chip names. | A row is how one app on a machine the kind leaves out is given. |
+| An app with entries of two kinds is a row under both, and a press on either switches both. | The two lines are one id ([protocol.md](protocol.md), `/api/hub/client`). |
+| A kind with no rows yet shows `ui.clients.rows_empty` under its line while **Choose per app** is on. | A kind with nothing published reads as empty, and its line keeps its place. |
+
 ## The machine page
 
 The machine page, `/agents/<id>`, is one managed machine: what it does now,

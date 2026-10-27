@@ -749,13 +749,13 @@ answered `control_unavailable`.
 | --- | --- | --- | --- |
 | `peer` | after a bound peer's knock opened, before the transport answers it | `{public_key, role, protocol, address, listener}`, `listener` being `main`, `sakurafrp` or `openfrp` | `{binding_id, role, psk}` to admit, `role` being the table the key is in, which the session takes; or `{code, params}`, which the transport writes after a handshake under the zero psk: `binding_unknown` for a key no binding holds, `role_mismatch` for a knock whose role is not the key's, and the admission codes |
 | `ticket` | at a `join` frame | `{ticket, role, protocol, public_key, machine_id, name, software, platform, address, listener}` | `{binding_id, token}`, the ticket spent and the binding made with `public_key`, which the transport writes as `joined {id, token}`; or `{code, params}`. `id` on an answer line is the question's own, so the binding's id is `binding_id` here as in `peer`'s answer |
-| `entry` | when a client opens `connect`, `shell` or `exec`, or an agent opens `connect` | `{session, binding_id, open}` | `{kind, device_id, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under and `device_id` the machine it reaches, kept with the stream for `streams_close`; or `{code, params}` |
+| `entry` | when a client opens `connect`, `shell` or `exec`, or an agent opens `connect` | `{session, binding_id, open}` | `{kind, device_id, key, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under, `device_id` the machine it reaches and `key` its row id in a permission ([protocol.md](protocol.md), `/api/hub/client`), empty for `ai` and the panel, each kept with the stream for `streams_close`; or `{code, params}` |
 | `token` | at a client's `service` frame | `{session, binding_id, frame}` | `{params}`, the material, or `{code, params}`; the transport sends it as the `reply` |
 
 | Command | Fields | The transport |
 | --- | --- | --- |
 | `session_close` | `{session, code, params}` | sends `refused {code, params}` on the session's control stream and ends the session |
-| `streams_close` | `{binding_id, kind, device_id, session_id, code, params}`, `device_id` and `session_id` empty for every machine and every kept shell | closes every stream of that binding it holds under `kind`, on that machine and that kept shell where they are named, with `close {code, params}`, a raw TCP `connect` with a reset: `permission_denied {kind}` when a permission changes, `session_not_owned {session_id}` when an owner stops sharing a shell, closing the other clients' streams on it |
+| `streams_close` | `{binding_id, kind, device_id, key, session_id, code, params}`, `device_id`, `key` and `session_id` empty for every machine, every row and every kept shell | closes every stream of that binding it holds under `kind`, on that machine, under that row and on that kept shell where they are named, with `close {code, params}`, a raw TCP `connect` with a reset: `permission_denied {kind}` when a permission changes, a kind, a machine or a row taken away, `session_not_owned {session_id}` when an owner stops sharing a shell, closing the other clients' streams on it |
 | `keys_reload` | `{}` | reads its static key again, makes a new pair when the file is missing, writes `public_key`, and ends every session |
 
 These three are the commands. Besides them the Python sends frames: `welcome`,
@@ -828,7 +828,10 @@ binding's id, and the client writes every frame of each, `hello` first.
 ## Streams on the connection
 
 A client names an entry by its id. The hub takes the host and the port from
-the entry, and reads the secret a service needs from its own store.
+the entry, and reads the secret a service needs from its own store. The
+hub checks each stream against the client's permission: the kind and the
+machine the table names, or the entry's row where the permission sets one
+([protocol.md](protocol.md), `/api/hub/client`).
 
 | Kind | The client opens on its own machine | On the connection | The hub checks | The service is reached by |
 | --- | --- | --- | --- | --- |
@@ -847,9 +850,9 @@ the entry, and reads the secret a service needs from its own store.
 | Rule | Reason |
 | --- | --- |
 | A stream names an entry id, the panel, or a machine for a shell or a command. The host and the port come from the hub's own records. | A stolen client binding reaches what the hub publishes to that client. |
-| The hub's transport asks the hub's Python about every `open`, which judges it against the client's kinds and each kind's machines; the transport then dials. | A permission changed on the **Clients** page holds for the next stream without a reconnect. |
+| The hub's transport asks the hub's Python about every `open`, which judges it against the client's permission, its kinds, each kind's machines and its rows ([protocol.md](protocol.md), `/api/hub/client`); the transport then dials. | A permission changed on the **Clients** page holds for the next stream without a reconnect. |
 | An agent dials a port only while its machine publishes that port, and closes any other with `port_not_published {port}`. | The agent makes the check itself, so a fault in the hub's check opens no port the machine does not publish. |
-| Switching a client off, deleting it, or taking a kind or a machine from it immediately closes what the change covers: the session, through `session_close`, or the shells, the commands and the `connect` streams of that kind, through `streams_close`, and the panel sessions of that kind ("The local channel"). | A person switches a client off because the device is lost. A shell that stays open is the access they meant to end. |
+| Switching a client off, deleting it, or taking a kind, a machine or a row from it immediately closes what the change covers: the session, through `session_close`, or the shells, the commands and the `connect` streams of that kind, through `streams_close`, and the panel sessions of that kind ("The local channel"). | A person switches a client off because the device is lost. A shell that stays open is the access they meant to end. |
 | The panel is a kind like the others: the **Clients** page sets it in the default and for each client. A new hub's default has it off. A client with it receives a sign-in token of 32 random bytes that holds 60 seconds for one use. | The panel changes the hub itself, so a person turns it on for the devices that are their own. |
 | A client joins a terminal session that is its own or is shared, on a machine its `terminal` kind includes. A `shell` or a `persist` on any other session is refused `session_not_owned {session_id}`. | A session is a shell as one of the machine's accounts, with its output on screen. A session that stops being shared closes to every viewer but its owner. |
 | A session holds at most `ConnectStreamsMax`, 256, `connect` streams, and each stream is sent under the receiver's yamux window. | One client cannot exhaust the hub's sockets or its memory. |

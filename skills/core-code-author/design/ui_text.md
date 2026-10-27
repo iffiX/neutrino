@@ -240,6 +240,21 @@ sources: an app's source is `ui.app_source.module`, `ui.app_source.declared`
 or `ui.app_source.manual`. `ui.device_chip_strip.label` goes with the
 Terminals and Files pages, the only pages that drew the strip.
 
+## The Clients page's words
+
+[ui_behavior.md](ui_behavior.md), "The Clients page", places them. The keys
+are in `locales/<language>/devices.json` beside the page's other
+`ui.clients.*` keys. A kind's name is its `ui.clients.kind_<kind>`, and in
+Chinese a kind is 权限, as in 默认权限.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.clients.fine_mode` | Choose per app | 逐个应用选择 |
+| `ui.clients.fine_mode_description` | Whether each app, share, desktop and machine has a switch of its own under its kind. A switch set here wins over its kind. | 是否在每种权限下给每个应用、共享、桌面和机器单独一个开关。这里设的开关优先于所属权限。 |
+| `ui.clients.follow_kind` | Follow the kind | 跟随所属权限 |
+| `ui.clients.fine_mode_clear_warning` | The switches set per app are cleared. | 逐个应用设的开关会全部清除。 |
+| `ui.clients.rows_empty` | None yet | 暂时没有 |
+
 ## The machine page's words
 
 The machine page's sections, the available accounts, the catalog and a
