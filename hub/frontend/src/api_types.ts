@@ -1332,8 +1332,8 @@ export interface AppEntryView {
   payload: PublishedServicePayload;
   /** Null on an entry no probe has reached, and on a UDP port. */
   is_healthy: boolean | null;
-  /** The port a client forwards it on; null on a file entry. */
-  local_port: number | null;
+  /** The port a client forwards it on; 0 on a file entry. */
+  local_port: number;
   /** What a declared entry's last probe measured, null when it answered. */
   detail_code: string | null;
 }

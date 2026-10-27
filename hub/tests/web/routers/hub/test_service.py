@@ -2,8 +2,8 @@
 
 What these pin: ``GET /api/hub/service`` answers ``apps``, a module's first,
 then the declared, then the manual, each by title, with each entry's
-``local_port`` and ``detail_code``, and ``services``, the entries of no
-app; declaring an app with its entries answers the list with it, a bad
+``local_port``, 0 on an entry with none, and ``detail_code``, and
+``services``, the entries of no app; declaring an app with its entries answers the list with it, a bad
 field ``declared_service_invalid {field}``; removing and probing name the
 app by ``app_id``, an unknown one ``declared_service_unknown``.
 """
@@ -164,6 +164,43 @@ def test_the_list_is_the_apps_in_order_and_the_entries_of_no_app(api):
     assert body["apps"][0]["local_name"] == "gitea.argon.localhost"
     assert [entry["id"] for entry in body["services"]] == ["ai"]
     assert body["services"][0]["app_id"] == ""
+
+
+def test_an_entry_with_no_local_port_answers_0(api):
+    client, runtime = api
+    runtime.published_services.held_apps.append(
+        {
+            "id": "nas",
+            "title": "NAS",
+            "source": "declared",
+            "device_id": "",
+            "device_name": "",
+            "local_name": "nas.hub.localhost",
+            "description": "",
+        }
+    )
+    runtime.published_services.held_entries.append(
+        {
+            "id": "nas_file_media",
+            "type": "file",
+            "title": "NAS",
+            "payload": {"protocol": "smb", "host": "192.168.100.50", "share": "media"},
+            "is_healthy": None,
+            "source": "declared",
+            "description": "",
+            "description_code": "declared",
+            "description_params": {},
+            "detail_code": None,
+            "device_id": "",
+            "app_id": "nas",
+            "name": "file_media",
+        }
+    )
+
+    body = client.get("/api/hub/service").json()
+
+    (nas,) = [app for app in body["apps"] if app["id"] == "nas"]
+    assert [entry["local_port"] for entry in nas["entries"]] == [0]
 
 
 def test_declaring_an_app_stores_it_and_answers_the_list(api):

@@ -127,7 +127,7 @@
   max-width: 100%;
 }
 
-.app_entry_payload {
+.app_entry_address {
   overflow: hidden;
   min-width: 0;
   text-overflow: ellipsis;

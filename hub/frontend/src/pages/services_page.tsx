@@ -28,8 +28,8 @@ import "./services_page.css";
  * What the hub publishes to clients.
  *
  * **Apps** first: one row per app, one program on one machine, its entries
- * each a chip with its status dot, and at the row's right the chip of where
- * it comes from. A module the hub manages is one app however many containers
+ * each a chip with the local address a client forwards it at and its status
+ * dot, and at the row's right the chip of where it comes from. A module the hub manages is one app however many containers
  * it runs; a container the hub does not manage is one app of its own. An
  * app declared here carries Test and Delete. The entries of no app follow
  * in their own sections: the AI gateway, the machines' file shares and the
@@ -124,6 +124,14 @@ const DESCRIPTION_MODULES: Record<string, string> = {
 /** The id every container app starts with, whose declaration is the
  * Containers module's and not this page's. */
 const CONTAINER_APP_PREFIX = "podman_";
+
+/** The loopback address a client's forward of a port or ssh entry listens
+ * on. */
+const LOOPBACK_HOST = "127.0.0.1";
+/** A web entry's url: its scheme, and its path and query. */
+const WEB_URL_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i;
+/** A url's host, an IPv6 address in its brackets. */
+const URL_HOST_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i;
 
 /** The declared apps' errors the page words itself. */
 const DECLARED_ERROR_KEYS: Record<string, string> = {
@@ -329,6 +337,7 @@ function AppRow({ app, onChanged }: AppRowProps) {
           <EntryChip
             key={entry.id}
             entry={entry}
+            address={localAddress(app.local_name, entry)}
             stateWord={isDeclared ? declaredStateWord(entry) : null}
           />
         ))}
@@ -346,18 +355,24 @@ function AppRow({ app, onChanged }: AppRowProps) {
 
 interface EntryChipProps {
   entry: AppEntryView;
+  /** The entry's local address; empty on an entry with no local port. */
+  address: string;
   /** A declared entry's state word; null where the dot says it alone. */
   stateWord: string | null;
 }
 
-/** One entry: its type, where it is, and its health as a dot. */
-function EntryChip({ entry, stateWord }: EntryChipProps) {
-  const payload = payloadLine(entry.type, entry.payload);
+/** One entry: its type, its local address, and its health as a dot. */
+function EntryChip({ entry, address, stateWord }: EntryChipProps) {
   return (
-    <span className="badge app_entry" title={payload}>
+    <span
+      className="badge app_entry"
+      title={address === "" ? undefined : address}
+    >
       <StatusDot tone={toneOf(entry.is_healthy)} isPulsing={false} />
       <span>{t(ENTRY_TYPE_KEYS[entry.type])}</span>
-      <span className="app_entry_payload mono">{payload}</span>
+      {address !== "" && (
+        <span className="app_entry_address mono">{address}</span>
+      )}
       {stateWord !== null && <span className="faint">{stateWord}</span>}
     </span>
   );
@@ -459,32 +474,46 @@ function describeService(service: PublishedService): string {
       });
 }
 
-/** A payload, spelled the way its type reads. */
+/** An entry of no app's payload, spelled the way its type reads. */
 function payloadLine(
   type: PublishedServiceType,
   payload: PublishedServicePayload,
 ): string {
-  if (type === "web") {
-    return payload.url ?? "";
-  }
   if (type === "ai") {
     return payload.endpoint ?? "";
   }
   if (type === "file") {
     return `//${payload.host ?? ""}/${payload.share ?? ""}`;
   }
-  const address = `${payload.host ?? ""}:${payload.port ?? ""}`;
-  if (type === "ssh") {
-    return `${payload.account ?? ""}@${address}`;
+  return `${payload.host ?? ""}:${payload.port ?? ""}`;
+}
+
+/** The address a client forwards an entry at, as its Apps page shows it:
+ * the page's own scheme and path at the local name for a web entry, the
+ * loopback for a port or ssh entry; empty with no local port. */
+function localAddress(localName: string, entry: AppEntryView): string {
+  if (entry.local_port <= 0) {
+    return "";
   }
-  return type === "port" && payload.protocol === "udp"
+  if (entry.type === "web") {
+    const url = WEB_URL_PATTERN.exec(entry.payload.url ?? "");
+    const scheme = url?.[1]?.toLowerCase() ?? "http";
+    const path = url?.[2] || "/";
+    return `${scheme}://${localName}:${entry.local_port}${path}`;
+  }
+  const address = `${LOOPBACK_HOST}:${entry.local_port}`;
+  return entry.type === "port" && entry.payload.protocol === "udp"
     ? `${address}/udp`
     : address;
 }
 
 /** The host an app with no machine the hub knows is at. */
 function hostOf(app: AppView): string {
-  return app.entries[0]?.payload.host ?? "";
+  const payload = app.entries[0]?.payload;
+  if (payload?.url === undefined) {
+    return payload?.host ?? "";
+  }
+  return URL_HOST_PATTERN.exec(payload.url)?.[1] ?? payload.url;
 }
 
 /** Wording for a failed call on a declared app, coded refusals spelled out. */
