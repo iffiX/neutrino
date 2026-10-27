@@ -39,7 +39,7 @@ password and is turned on for one client at a time.
 | `config/web/settings.json` | `settings.example.json` | yes — password hash |
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/web/panel_tls/` | none | yes: the panel's certificate authority, `authority.pem` in the clear and `authority_key.sealed` under the vault's data key, generated at setup |
-| `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the transport generates both, and the backup carries the private half sealed ([../design/transport.md](../design/transport.md), "The hub's static key") |
+| `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the guest path's DTLS certificate, `dtls_certificate.pem`, its key `dtls_key.pem` in the clear with the static key's mode, and `dtls_fingerprint`; the transport generates them, and the backup carries both private keys sealed ([../design/transport.md](../design/transport.md), "The hub's static key" and "The DTLS certificate") |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds; each row's `client` keeps the token's hash, the agent's static `public_key` and its `agent_version` |
 | `config/clients/clients.json` | `clients.example.json` | yes: each client's token hash, its static `public_key` and its gateway key's id, and the permissions, the default's and each client's own, each `{kinds, devices, entries}` ([../design/protocol.md](../design/protocol.md), `/api/hub/client`) |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
@@ -148,16 +148,18 @@ and your edit will be lost.
 - The Settings tab exports one plain `.tar.gz`: a manifest naming what it is,
   a `SHA256SUMS` digest list, then the `config/` tree. Safe to store as it
   stands: the vault's data key travels only wrapped under the master
-  passphrase, and the hub's static key only as
-  `config/transport/static_key.sealed`, sealed under that data key; the
+  passphrase, and the hub's static key and the DTLS certificate's key only
+  as `config/transport/static_key.sealed` and
+  `config/transport/dtls_key.pem.sealed`, sealed under that data key; the
   export is refused `vault_locked` while the vault is locked.
 - Restore uploads it on the Settings tab and always asks for the vault
   passphrase: everything is verified in memory — manifest, every digest, the
   wrapped key opening — before a byte lands, and the unwrapped data key is
-  written to `/var/lib/neutrino/hub/vault.key` last. The static key is
-  unsealed into `config/transport/static_key`, owned by the transport's
-  account, and the transport reads it again, so the restored hub answers
-  every binding the backup holds.
+  written to `/var/lib/neutrino/hub/vault.key` last. The static key and the
+  DTLS certificate's key are unsealed into `config/transport/static_key`
+  and `config/transport/dtls_key.pem`, owned by the transport's account,
+  and the transport reads them again, so the restored hub answers every
+  binding and every share link the backup holds.
 
 ## Field reference
 

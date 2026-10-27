@@ -135,7 +135,8 @@ agent/
   tests/
 transport/            The Go module of the channel the hub, the agent and
                       the clients carry: the knock, the Noise handshake,
-                      the yamux sessions, the relay, the local channel.
+                      the yamux sessions, the relay, the local channel,
+                      and the WebRTC gate of a Web share's guests.
 client/
   desktop/
     neutrino_client/  The client: a person's session on Linux, Windows or

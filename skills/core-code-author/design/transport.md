@@ -56,7 +56,7 @@ included.
 | The transport closes a connection at the first byte that fits no door, and writes nothing to it. | The cheapest test runs first, before any crypto, and a scan of the port reads silence on every connection. |
 | The magic's first byte is never `0x00` or `0x16`. | The first byte alone then tells the doors apart, so no connection fits two of them. |
 | The TLS door tests two bytes, `0x16` and `0x03`. | Every TLS handshake record starts with both, and the second byte closes a stray `0x16` before the legacy listener spends anything on it. |
-| A connection that has sent no byte within `KnockFirstByteTimeout`, 3 seconds from the accept, is closed, whichever door it is bound for. | A connection held open and silent is the cheapest way to fill the port. |
+| A connection that has not sent its first 4 bytes within `KnockFirstByteTimeout`, 3 seconds from the accept, is closed, whichever door it is bound for. | Four bytes pick the door, and a connection held open and silent is the cheapest way to fill the port. |
 
 ## The member path
 
@@ -87,10 +87,12 @@ same 8 bytes: the peer's knock, the hub's answer and the hub's cookie reply.
 | 7 | reserved | u8: sent as 0, ignored on receipt |
 
 The magic is 4 bytes derived from the hub's static public key, so each hub
-has its own. Its first byte is never `0x00` or `0x16`: when a derivation
-gives either, it runs again with a counter until it gives neither. The
-derivation's label and the counter's encoding are the prototype's, on branch
-`r28-webshare`, and this sentence holds their place.
+has its own, and its first byte is never `0x00` or `0x16`. For a counter
+`c` of one byte, from 0 up, the derivation takes BLAKE2s-256 of the 8 ASCII
+bytes `magic---`, the public key's 32 bytes and the byte `c`, in that order;
+the magic is the first 4 bytes of the first digest whose first byte is
+neither `0x00` nor `0x16`. A peer derives it from the link's `key`, and the
+hub from its own public half, by `knock.Magic`.
 
 | Rule | Reason |
 | --- | --- |
@@ -149,29 +151,60 @@ The guest path is the door of a Web share: a person who holds a Web share
 link opens one shared app in a browser. The page in the browser is plain
 JavaScript, and it reaches the port through the browser's WebRTC, which dials
 an address and a port the page names and trusts a certificate by the
-fingerprint the page gives it. The guest door is the hub's transport's alone.
+fingerprint the page gives it. The guest door is the hub's transport's alone,
+in the package `transport/gate/`, built on pion's `stun`, `dtls`, `sctp` and
+`datachannel` packages and on no ICE agent
+([../coding_style/go_style.md](../coding_style/go_style.md)).
 
 | Step | What crosses the connection | Rule |
 | --- | --- | --- |
-| STUN | the browser's Binding Requests in RFC 4571 framing, and the hub's Binding Responses | The hub is ICE-lite with one candidate, TCP and passive, at the agent port. It writes a response only after every check of the cut-off order that follows passes, and a response to every later consent check on the same connection. |
-| DTLS | one DTLS handshake on the same connection, the hub its server | The browser authenticates the hub by the certificate fingerprint the link holds. The hub's certificate is self-signed and long-lived, kept in `config/transport/` beside the static key. |
-| Data channel | one data channel, negotiated in advance on both sides with id 0 | Both sides create it from the link's terms, which saves the round trip of an in-band open. |
-| First message | one record in the layout of "The stream layer", its payload JSON `{protocol, ticket}` | `protocol` is the member header's version, 4, and `ticket` the share's ticket from the link. The hub writes back an acceptance, or a refusal `{code, params}`. |
-| yamux | a yamux session inside the data channel | The guest opens streams to the one shared entry alone. |
+| STUN | the browser's Binding Requests in RFC 4571 framing, each after its 2-byte length, and the hub's Binding Success responses | The hub is ICE-lite with one candidate, TCP and passive, at the agent port. It writes its first response only after every check of the cut-off order that follows passes, and then answers every later consent check on the connection under the same share's pwd, with MESSAGE-INTEGRITY and FINGERPRINT. |
+| DTLS | one DTLS handshake on the same connection, the hub its server | The browser authenticates the hub by the certificate fingerprint the link holds ("The DTLS certificate"). The hub's server requests no client certificate, requires the extended master secret, offers the SRTP profiles `SRTP_AEAD_AES_128_GCM` and `SRTP_AES128_CM_HMAC_SHA1_80` and uses neither, and writes records of at most `GateMTU`, 1200 bytes. |
+| SCTP | one association over the DTLS connection | Its packets fit a DTLS record, `GateMTU` less 28 bytes, and its receive buffer is `GateReceiveBufferBytes`, 8 MiB. |
+| Data channel | one reliable data channel, id 0, label `neutrino`, negotiated in advance on both sides | Both sides create it from the link's terms, which saves the round trip of an in-band open, and the hub closes every other stream the browser opens on the association. A message the hub writes is at most `GateMessageBytesMax`, 64 KiB, and one it reads at most `GateReadBytesMax`, 256 KiB, the size the page's session description states. |
+| First message | one `open` record, type 1, in the layout of "The stream layer", its payload JSON `{protocol, ticket}`, at most `GateGuestOpenBytesMax`, 1024 bytes | `protocol` is the member header's version, 4, and `ticket` the share's ticket from the link. The transport asks the hub's Python `guest` ("The hub's local channel") and writes one `accept` record, type 2, whose payload is `{id}`, the share's id, or one `close` record, type 8, `{code, params}`, after which it closes the connection. |
+| yamux | a yamux session inside the data channel, the hub its server and the page its client | The page opens the control stream first and sends `hello {protocol, role: guest, id, name, software}`, `id` the share's id from the `accept`. The hub's Python answers `welcome` and sends no `state`. |
 
 The hub checks a guest's first bytes in this order, and closes the
 connection with nothing written at the first check that fails:
 
-1. The RFC 4571 frame's 2-byte length, its first byte `0x00`.
-1. The STUN message type, `0x0001`, a Binding Request.
+1. The RFC 4571 frame's 2-byte length: its first byte `0x00`, and a length
+   of at least 20, a STUN header's.
+1. The STUN message type, `0x0001`, a Binding Request, and the STUN message
+   length, the frame's length less the 20 bytes of the header.
 1. The STUN magic cookie, `0x2112A442`.
 1. The ufrag, the part of the USERNAME attribute before the colon, looked up
    among the live shares with no crypto.
-1. MESSAGE-INTEGRITY, checked with the pwd of the share that ufrag names.
+1. MESSAGE-INTEGRITY, checked with the pwd of the share that ufrag names,
+   and FINGERPRINT.
 
 The hub writes its first byte only after the last two checks pass. While no
 share is live the guest door is shut: a first byte of `0x00` meets silence,
-and the connection closes.
+and the connection closes. A browser's first Binding Request is 118 bytes
+with a 24-character ufrag, and its USERNAME ends at byte 55 in Chrome,
+Chromium and Safari and at byte 59 in Firefox, so a sender without a live
+share's ufrag is cut there, before any hash.
+
+An admitted guest session carries the frames and streams of one shared app
+and nothing else:
+
+| On the session | The hub |
+| --- | --- |
+| the control stream's frames | takes `hello`, `ping` and `service` up, and sends `welcome`, `pong`, `reply` and `refused` down; a first frame of `join` or `leave` is refused `hello_invalid` |
+| `connect {id}` | relays it after the hub's Python allows it (`entry`): the share's entry alone, any other id refused `permission_denied {kind}`, and `{is_panel: true}` refused `permission_denied {kind: panel}` |
+| `shell`, `exec`, `file`, `log`, `package` | closes it `kind_unknown` |
+
+A share admits any number of guest sessions, and one never replaces
+another. Each counts among the admitted sessions of `SessionsMax`, and holds
+at most `ConnectStreamsMax`, 256, `connect` streams.
+
+| Limit | On the guest path |
+| --- | --- |
+| the first 4 bytes | `KnockFirstByteTimeout`, 3 seconds from the accept |
+| the first check, DTLS, SCTP, the data channel and the open record | `HandshakeTimeout`, 10 seconds from the accept |
+| the `hello` | `HelloTimeout`, 10 seconds from the `accept` record |
+| admission, from the accept to an admitted `hello` | `AdmissionTimeout`, 30 seconds |
+| connections not yet admitted | a guest's counts in `UnadmittedMax` from its accept, and in `HandshakesInFlightMax` from its first check until its open record is answered |
 
 | Rule | Reason |
 | --- | --- |
@@ -179,17 +212,15 @@ and the connection closes.
 | A guest sends no knock and runs no Noise handshake: DTLS authenticates the hub and encrypts the connection, and the share's ticket proves the guest's right to the app. | The page is plain JavaScript and loads at once, where the knock, Noise and yamux built for WebAssembly measured 1.7 MB compressed. For a share's page, loading fast comes first, security is required, and throughput comes second. |
 | The hub's one candidate is TCP and passive, at the agent port, and the link names the hub by its IP address. | Networks that drop UDP still carry a share, as do the SSH relay and the frp tunnels, which carry TCP alone. Chromium dials a candidate only at an IP address. |
 | The page writes the hub's side of the session description from the link, and the browser's own description stays in the page. | The hub reads nothing from it: ICE-lite verifies checks signed with its own pwd, and the hub's DTLS server takes the browser's certificate unchecked. The link is the whole of the signalling. |
-| Each share has its own ufrag, about 96 random bits, and its own pwd, at least 128, made with its ticket and void when the share is revoked. | The ufrag is looked up with no crypto, so its size alone stops a guess before the first hash. The pwd keys MESSAGE-INTEGRITY, the first check that costs a hash. |
+| The DTLS server offers the two SRTP profiles and uses neither. | Every browser's ClientHello asks for `use_srtp`, a data channel's included, and a server that names no profile refuses the handshake. |
+| Each share has its own ufrag, 24 hex characters, 96 random bits, and its own pwd, 32 hex characters, 128 random bits, made with its ticket and void when the share ends. | The ufrag is looked up with no crypto, so its size alone stops a guess before the first hash. The pwd keys MESSAGE-INTEGRITY, the first check that costs a hash. |
 | The hub responds to every consent check on a live guest connection. | A browser checks consent every 2.5 to 5 seconds and drops the connection after 15 to 30 seconds without a response. |
 | The hub's DTLS certificate is self-signed and long-lived. | The browser trusts it by the link's fingerprint, so no certificate authority or domain takes part, and a link holds for as long as its share. |
-| The first message is one record in the layout every stream uses, and its `protocol` is the member header's number. | One record layout and one version number serve both paths. |
+| The first message is one record in the layout every stream uses, and its `protocol` is the member header's number. Its `accept` carries the share's id, the one `accept` with a payload. | One record layout and one version number serve both paths, and the page's `hello` names the share it was admitted to. |
 | A yamux session runs inside the data channel. | An app makes many requests at once, and each is a stream of its own. |
 | A guest opens streams to the shared entry alone. | A share link reaches one app and nothing else behind the hub. |
-
-The first-byte time holds on the guest path. The other limits in "What an
-unadmitted peer can cost the hub" count knocks, handshakes and `hello`, which
-belong to the member path alone; the guest path's own limits are the
-prototype's, on branch `r28-webshare`.
+| A refused guest counts as no failed admission, and the guest path has no cookie reply. | A guest's first check costs a lookup and one HMAC before any answer, and only the holder of a live link passes it; a pause of joins for a share's visitors stops a member's enrolment too. |
+| A share that ends closes its sessions: the hub's Python sends `shares_set` without it, then `session_close {session, code: share_unknown}` for each of its sessions. | A revoked or expired share leaves no page open on it. |
 
 ## The links
 
@@ -253,6 +284,34 @@ The two links hold different facts and open different doors:
 | --- | --- |
 | A Web share link holds no Noise public key. | The magic follows from that key alone, so a share link neither reveals the member door nor knocks on it. A leaked share link reaches one app. |
 
+A Web share link is `<site>/__neutrino/#<base64url>`, `<site>` being the
+address of the static page the share names. After `#` is one JSON object,
+written with no spaces, in base64url without padding and not compressed; a
+browser sends nothing after `#` to the site:
+
+```json
+{"v": 1, "hub": {"ip": "203.0.113.7", "port": 8443, "fp": "AB:CD:..."}, "ice": {"ufrag": "...", "pwd": "..."}, "ticket": "...", "app": {"entry": "<entry-id>", "title": "Ayakaleaf", "path": "/project"}}
+```
+
+`v` is the link's form, 1. `hub.fp` is the certificate's fingerprint as
+`dtls_fingerprint` holds it ("The DTLS certificate"). `ticket` is the
+share's ticket, 18 random bytes as `secrets.token_urlsafe` gives them.
+`app.entry` is the shared entry's id, `app.title` its app's title, and
+`app.path`, optional, the path the app opens at.
+
+The link holds one address, chosen when the share is made: the first public
+address in `urls` order, Direct's public address, then SakuraFrp's,
+OpenFrp's and the relay's while each is a member of `urls`; else the hub's
+address in its first exposed IPv4 segment, the first member of `urls`
+([hub_components/network.md](hub_components/network.md), "Direct"). The hub
+resolves a host name to its IP address at that moment and writes the
+address's port beside it.
+
+| Rule | Reason |
+| --- | --- |
+| A share link holds one address, a public one where the hub has one. | A visitor is most often outside the home, and the page offers the browser one candidate. Several candidates in one offer have not been measured. |
+| The address is an IP address resolved when the share is made, and it stays the link's for the share's life. | Chromium dials a candidate at an IP address alone. A public address that changes later leaves the link pointing at the old one, and a new share gives a new link. |
+
 ## TCP first
 
 Every door of the agent port is on TCP, and every address in a link or a
@@ -280,7 +339,7 @@ questions to the hub's Python ("The local channel").
 | `type` | Record | Payload |
 | --- | --- | --- |
 | 1 | `open` | JSON `{kind, ...args}` |
-| 2 | `accept` | empty |
+| 2 | `accept` | empty, but JSON `{id}`, the share's id, answering a guest's first message ("The guest path") |
 | 3 | `data` | bytes: a terminal's both ways, a process's stdin up and its stdout down, a file listing, a log's lines, a package's bytes, the control stream's frames |
 | 4 | `stderr` | the bytes a process wrote to stderr, on an `exec` stream opened without `is_tty` |
 | 5 | `eof` | empty: no more input follows from this side, on an `exec` stream alone |
@@ -383,7 +442,7 @@ Python is a local question.
 | Step | What the transport does | Why it comes before admission |
 | --- | --- | --- |
 | Accept | Counts the connection among the unadmitted ones and reads nothing from it yet. | The count is the bound on what unadmitted peers hold open. |
-| Door | Reads the first bytes and takes the member path at the hub's magic ("The doors"). | Four bytes compared cost nothing, and a sender without the link meets silence. |
+| Door | Reads the first bytes and takes the member path at the hub's magic ("The doors"); a browser's connection takes the guest path, whose steps are its own ("The guest path"). | Four bytes compared cost nothing, and a sender without the link meets silence. |
 | Knock | Reads the knock and checks its version, its message type, its length and `mac1`, one keyed hash, then, while under load, `mac2` ("Under load"). A knock that fails is answered with nothing and the connection closes. | A knock costs the peer the hub's public key, which only a link carries, and costs the hub one hash before any Diffie-Hellman. A port that answers nothing to a scan is a port a scan does not find. |
 | Message 1 | Opens message 1, which costs two Diffie-Hellman operations, and checks `time` against the replay window. | The peer's static key and its intent are inside it. |
 | Question | Asks the hub's Python whose the static key is (`peer`), or, for a join, nothing until the `join` frame (`ticket`). | The Python holds every binding. |
@@ -406,7 +465,7 @@ which the hub's Python counts in `modules/channel/constants.py`.
 
 | Limit | Constant | At the limit | Reason |
 | --- | --- | --- | --- |
-| a connection that has sent no byte, on any door | `KnockFirstByteTimeout` 3 s | the connection is closed | A peer sends its knock within a round trip. A connection held open and silent is the cheapest way to fill the port. |
+| a connection that has not sent its first 4 bytes, on any door | `KnockFirstByteTimeout` 3 s | the connection is closed | A peer sends its knock, and a browser its Binding Request, within a round trip. A connection held open and silent is the cheapest way to fill the port. |
 | the knock and the answer | `HandshakeTimeout` 10 s | the connection is closed | A handshake over the slowest way in completes in under a second. |
 | the time from accept to an admitted `hello` | `AdmissionTimeout` 30 s | the connection is closed; a `join` or a `leave` in flight counts toward that time | It bounds how long one unadmitted connection holds a place. |
 | connections that have not passed `hello` | `UnadmittedMax` 128 | one of them is closed to make room: the oldest that has not finished its handshake, and the oldest of all when every one has | A peer that has finished its handshake has done work a flood of bare connections has not, so it keeps its place longest. |
@@ -445,7 +504,7 @@ are in [protocol.md](protocol.md), "The timings".
 
 | What it bounds | The transport's constant |
 | --- | --- |
-| a connection's first byte, from the accept | `KnockFirstByteTimeout` 3 s |
+| a connection's first 4 bytes, from the accept | `KnockFirstByteTimeout` 3 s |
 | the knock and the hub's answer, from the accept | `HandshakeTimeout` 10 s |
 | a session's first frame, from the answer | `HelloTimeout` 10 s |
 | a connection's admission, from the accept to an admitted `hello` | `AdmissionTimeout` 30 s |
@@ -492,7 +551,7 @@ and the binding is what a successful `join` leaves on both sides.
 | Credential | What it is | How long it holds | How the hub keeps it |
 | --- | --- | --- | --- |
 | The hub's static key | a Curve25519 key pair, its public half inside the link | as long as the hub keeps it | the transport keeps the private half; every binding keeps the public half |
-| The hub's DTLS certificate | a self-signed certificate, its fingerprint inside a Web share link | long-lived | the transport keeps it in `config/transport/` beside the static key |
+| The hub's DTLS certificate | a self-signed certificate, its fingerprint inside a Web share link | ten years, until a reset makes a new one | the transport keeps it in `config/transport/` beside the static key ("The DTLS certificate") |
 | The ticket | 18 random bytes inside an enrolment link | 30 minutes, one use, one open ticket for each role | its SHA-256, on disk, so an unused link holds across a hub restart |
 | The peer's static key | a Curve25519 key pair the peer makes when it first reads a link | until the peer leaves or the binding is removed | the peer keeps the private half in its binding; the hub keeps the public half on the binding's row |
 | The token | 24 random bytes returned in `joined` | as long as the binding | its SHA-256, which is the psk of every later handshake ("The handshake") |
@@ -516,7 +575,7 @@ SYSTEM on macOS and Windows ([files.md](files.md)), and the public half is
 transport is the one program that uses the private half. The hub's Python
 reads the public half to compose a link, and opens the private half only to
 seal it into a backup and to put it back at a restore. The guest path's DTLS
-certificate is kept beside them ("The guest path").
+certificate is kept beside them ("The DTLS certificate").
 
 | Rule | Reason |
 | --- | --- |
@@ -524,6 +583,29 @@ certificate is kept beside them ("The guest path").
 | A peer's handshake proves the hub holds the private half before any frame of the peer's is sent ("The handshake"). A handshake that fails on a link's address ends the whole enrolment; on a bound peer's address the round goes on with the other addresses. | A wrong key on a link's own address is an attack, and another network's hub on a stored address is only the wrong hub. |
 | The transport keeps an existing pair. `nhub reset all` deletes it and sends `keys_reload` ("The local channel"), which makes a new pair. | Every binding pins the public half. |
 | The pair is part of `config/`, so a backup of `config/` restored on another box keeps the hub's identity, and every agent and client goes on with its binding there. The Settings tab's backup carries the private half sealed under the vault's data key, as `config/transport/static_key.sealed` in the archive, and is refused `vault_locked` while the vault is locked; a restore unseals it into `config/transport/static_key`, owned by the transport's account, and sends `keys_reload`. | A hub moved to new hardware keeps every agent and client, and the archive still holds no secret in the clear ([../misc/config.md](../misc/config.md), "Backup and migrate"). |
+
+### The DTLS certificate
+
+The DTLS certificate is what a browser knows the hub by on the guest path.
+The transport makes it at its first start when either of its files is
+missing, and keeps it in `config/transport/` beside the static key:
+
+| File | Mode | Holds |
+| --- | --- | --- |
+| `dtls_certificate.pem` | 0644 | the certificate: ECDSA P-256, self-signed, common name `neutrino-hub`, valid from one day before it was made to ten years after, with a random 128-bit serial |
+| `dtls_key.pem` | 0600, the transport's account's | its private key |
+| `dtls_fingerprint` | 0644 | the SHA-256 of the certificate's DER as uppercase hex pairs joined by colons, the form a session description carries, written again at every start |
+
+The transport is the one program that uses the private key. The hub's
+Python reads `dtls_fingerprint` to compose a share link, and opens
+`dtls_key.pem` only to seal it into a backup and to put it back at a
+restore.
+
+| Rule | Reason |
+| --- | --- |
+| The transport keeps an existing pair at every start, and `keys_reload` reads it again, making a new one when a file is missing. `nhub reset all` deletes the three files with the static key and sends `keys_reload`. Nothing else makes a new certificate, and nothing renews it before its ten years. | Every share link holds the fingerprint, so a new certificate ends every link at once, and that is a step the person takes. |
+| The certificate's validity starts a day before it was made. | A browser whose clock runs behind still accepts it. |
+| The Settings tab's backup carries the private key sealed under the vault's data key, as `config/transport/dtls_key.pem.sealed`, beside the certificate and the fingerprint as they are, and is refused `vault_locked` while the vault is locked; a restore unseals it into `dtls_key.pem`, owned by the transport's account, and sends `keys_reload`. | A hub restored on new hardware keeps every share link working, as it keeps every binding ([../misc/config.md](../misc/config.md), "Backup and migrate"). |
 
 ### The binding
 
@@ -749,22 +831,24 @@ answered `control_unavailable`.
 | --- | --- | --- | --- |
 | `peer` | after a bound peer's knock opened, before the transport answers it | `{public_key, role, protocol, address, listener}`, `listener` being `main`, `sakurafrp` or `openfrp` | `{binding_id, role, psk}` to admit, `role` being the table the key is in, which the session takes; or `{code, params}`, which the transport writes after a handshake under the zero psk: `binding_unknown` for a key no binding holds, `role_mismatch` for a knock whose role is not the key's, and the admission codes |
 | `ticket` | at a `join` frame | `{ticket, role, protocol, public_key, machine_id, name, software, platform, address, listener}` | `{binding_id, token}`, the ticket spent and the binding made with `public_key`, which the transport writes as `joined {id, token}`; or `{code, params}`. `id` on an answer line is the question's own, so the binding's id is `binding_id` here as in `peer`'s answer |
-| `entry` | when a client opens `connect`, `shell` or `exec`, or an agent opens `connect` | `{session, binding_id, open}` | `{kind, device_id, key, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under, `device_id` the machine it reaches and `key` its row id in a permission ([protocol.md](protocol.md), `/api/hub/client`), empty for `ai` and the panel, each kept with the stream for `streams_close`; or `{code, params}` |
-| `token` | at a client's `service` frame | `{session, binding_id, frame}` | `{params}`, the material, or `{code, params}`; the transport sends it as the `reply` |
+| `entry` | when a client opens `connect`, `shell` or `exec`, a guest opens `connect`, or an agent opens `connect` | `{session, binding_id, open}`, a guest's `binding_id` being its share's id | `{kind, device_id, key, target}`: `target` is `{session, open}`, a stream to open on that agent session with the open record given, the hub's stamps written in, or `{address, port, protocol}`, a far end the transport dials itself; `kind` is the permission kind the stream falls under, `device_id` the machine it reaches and `key` its row id in a permission ([protocol.md](protocol.md), `/api/hub/client`), empty for `ai` and the panel, each kept with the stream for `streams_close`; or `{code, params}` |
+| `token` | at a client's or a guest's `service` frame | `{session, binding_id, frame}` | `{params}`, the material, or `{code, params}`; the transport sends it as the `reply` |
+| `guest` | at a guest's open record, after the gate opened the data channel under a live share's ufrag | `{ticket, share, protocol, address, listener}`, `share` being that ufrag | `{binding_id}`, the share's id, which the transport writes in the `accept` record and which the guest's session and its `hello` take; or `{code, params}`, which it writes in the `close` record: `share_unknown` when no share holds that ufrag or the ticket is not that share's, and `protocol_too_old` or `protocol_too_new {peer, hub, min}` by "The numbers". Nothing is spent, and a refusal counts as no failed admission |
 
 | Command | Fields | The transport |
 | --- | --- | --- |
 | `session_close` | `{session, code, params}` | sends `refused {code, params}` on the session's control stream and ends the session |
 | `streams_close` | `{binding_id, kind, device_id, key, session_id, code, params}`, `device_id`, `key` and `session_id` empty for every machine, every row and every kept shell | closes every stream of that binding it holds under `kind`, on that machine, under that row and on that kept shell where they are named, with `close {code, params}`, a raw TCP `connect` with a reset: `permission_denied {kind}` when a permission changes, a kind, a machine or a row taken away, `session_not_owned {session_id}` when an owner stops sharing a shell, closing the other clients' streams on it |
-| `keys_reload` | `{}` | reads its static key again, makes a new pair when the file is missing, writes `public_key`, and ends every session |
+| `keys_reload` | `{}` | reads its static key and its DTLS certificate again, makes a new one of either when its file is missing, writes `public_key` and `dtls_fingerprint`, and ends every session |
+| `shares_set` | `{shares: [{ufrag, pwd}]}`, every live share | replaces its table of live shares with the list; the guest door answers the ufrags it names alone, and stays shut while it is empty. The Python sends it at every change of a share and first on each new control connection |
 
-These three are the commands. Besides them the Python sends frames: `welcome`,
+These four are the commands. Besides them the Python sends frames: `welcome`,
 `refused`, `state`, `left` with `is_last`, a `reply` to a `persist` or a
 `stop_session`, and the `persist` and `stop_session` it sends an agent.
 
 | Event | Fields | When |
 | --- | --- | --- |
-| `session_open` | `{session, binding_id, role, address, local_address, listener}` | a handshake completed for a key `peer` admitted, `local_address` being the hub's own address the peer's connection reached; the session's frames follow. On a new control connection it comes once for every live session, followed by that session's `hello`; the Python then sends no second `welcome`, and pushes the state at the session's next report as on a first report |
+| `session_open` | `{session, binding_id, role, address, local_address, listener}`, `role` `guest` for a guest | a handshake completed for a key `peer` admitted, or a guest's open record was accepted, `local_address` being the hub's own address the peer's connection reached; the session's frames follow. On a new control connection it comes once for every live session, followed by that session's `hello`; the Python then sends no second `welcome`, and pushes the state at the session's next report as on a first report |
 | `session_end` | `{session, reason}` | the session ended |
 | a frame | `{frame, session}` | each frame of a session `session_open` named, but `ping` and a client's `service`: `hello`, `report`, `leave`, a client's `persist` and `stop_session`, an agent's `reply` |
 | `stream` | `{stream, session, open}` | an agent opened `log` or `package`, which the Python takes with `attach` |

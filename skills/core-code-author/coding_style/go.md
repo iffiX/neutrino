@@ -2,8 +2,8 @@
 
 The transport (`transport/`) is one Go module shared by the hub, the agent
 and the clients: the knock, the Noise handshake, the yamux sessions, the
-relay between streams, and the local control channel the Python side talks
-to. The hub, the agent and the desktop client carry it as a binary; the
+relay between streams, the WebRTC gate a Web share's guests come through,
+and the local control channel the Python side talks to. The hub, the agent and the desktop client carry it as a binary; the
 Android and iOS apps embed it as a gomobile library. This file is its
 language surface. The shared intent is set by
 [naming.md](naming.md), [comment.md](comment.md) and
@@ -70,8 +70,15 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
   `github.com/flynn/noise` for the Noise handshake,
   `github.com/libp2p/go-yamux/v4` for the sessions, `golang.org/x/crypto`
   for the primitives and, in the SSH server, its `ssh` package,
-  `github.com/pkg/sftp` for the SSH server's sftp subsystem, and
-  `golang.org/x/mobile` for the Android and iOS bindings. Adding one is a decision for the user
+  `github.com/pkg/sftp` for the SSH server's sftp subsystem,
+  `golang.org/x/mobile` for the Android and iOS bindings, and for the
+  guest path's gate four of pion's packages: `github.com/pion/stun/v3` for
+  the Binding Requests and their answers, `github.com/pion/dtls/v3` for the
+  DTLS server, and `github.com/pion/sctp` and `github.com/pion/datachannel`
+  for the data channel, with `github.com/pion/logging`, the logger the four
+  take, which the gate sets to discard
+  ([../design/transport.md](../design/transport.md), "The guest path");
+  `pion/ice` and `pion/webrtc` stay out of the module. Adding one is a decision for the user
   ([../design/min_support.md](../design/min_support.md)).
 - `CGO_ENABLED=0` for every binary, so one static file per platform;
   `packaging/build` cross-compiles them and stamps the version with
@@ -81,7 +88,8 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
 
 - A directory is one Go package, named in lowercase with no underscore, as
   Go asks: `transport/knock/`, `transport/handshake/`, `transport/session/`,
-  `transport/relay/`, `transport/control/`, `transport/cmd/neutrino_transport/`,
+  `transport/relay/`, `transport/control/`, `transport/gate/`,
+  `transport/cmd/neutrino_transport/`,
   `transport/mobile/`, and `transport/tests/` for what crosses packages, a
   hub's and a peer's transports talking over loopback with the Python sides
   faked on their local channels. This is the one place the repository departs from

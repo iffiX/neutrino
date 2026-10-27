@@ -32,7 +32,8 @@ client/
   ios/               The iOS app, in Swift, its Xcode project generated
                      by XcodeGen.
 transport/           The Go module of the channel: knock/, handshake/,
-                     session/, relay/, control/ the local channel,
+                     session/, relay/, control/ the local channel, gate/
+                     the guest path of a Web share,
                      cmd/neutrino_transport/ the binary, mobile/ the
                      library the phones embed, tests/ what crosses
                      packages. Style: ../coding_style/go.md.
