@@ -96,12 +96,14 @@ class FakeApplier:
     applied: list = []
     stops = 0
     removals = 0
+    served: list = []
     user_files: dict = {}
 
     def __init__(self, *, unit):
         self.unit = unit
 
-    def plan(self):
+    def plan(self, *, is_served):
+        FakeApplier.served.append(is_served)
         return "[global]\n   include = /etc/samba/neutrino.conf\n", ""
 
     def apply(self, rendered, *, config, user_files=None):
@@ -158,6 +160,7 @@ def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.stops = 0
     FakeApplier.removals = 0
+    FakeApplier.served = []
     FakeUsers.converged = []
     FakeUsers.made = []
     FakeReader.persons = ({}, [])

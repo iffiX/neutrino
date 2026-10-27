@@ -157,27 +157,31 @@ def without_include_line(text: str) -> str:
 
 
 def plan_smb_conf(
-    current: "str | None", *, backup: "str | None", stock: tuple
+    current: "str | None", *, backup: "str | None", stock: tuple, is_served: bool
 ) -> tuple:
-    """What ``smb.conf`` is to hold so that it includes the module's file. Pure.
+    """What ``smb.conf`` is to hold beside the module's file. Pure.
 
     Args:
         current: The file as it is, None when the machine has none.
         backup: The copy an earlier version kept before it replaced the
             file, None when there is none.
         stock: ``(text, source)`` as :func:`read_stock_conf` gives them.
+        is_served: Whether the module serves at least one share of its own.
 
     Returns:
         ``(text, note)``: the file to write, and what changed in words,
         empty when the file stays as it is. A file an earlier version
         rendered whole, its first line the marker, gives way to the backup
-        when there is one, else to the stock text; a missing file is the
-        stock text; and the include line is added once to whichever file
-        lacks it.
+        when there is one, else to the stock text, and a missing file is
+        the stock text. While the module serves a share the include line is
+        added once to whichever file lacks it; while it serves none the
+        line is taken out, and a file without it is left byte for byte.
     """
     notes = []
     text = current
     if text is None:
+        if not is_served:
+            return "", ""
         text, source = stock
         notes.append(f"wrote {source}")
     elif text.split("\n", 1)[0].rstrip() == SAMBA_CONF_MARKER:
@@ -187,9 +191,12 @@ def plan_smb_conf(
         else:
             text, source = stock
             notes.append(f"put back {source}")
-    if not has_include_line(text):
+    if is_served and not has_include_line(text):
         text = with_include_line(text)
         notes.append("added the include line")
+    elif not is_served and has_include_line(text):
+        text = without_include_line(text)
+        notes.append("took the include line out")
     return text, "; ".join(notes)
 
 
@@ -563,26 +570,33 @@ class SambaConfigApplier:
         """
         self._unit = unit
 
-    def plan(self) -> tuple:
+    def plan(self, *, is_served: bool) -> tuple:
         """``smb.conf`` as the next apply leaves it.
+
+        Args:
+            is_served: Whether the module serves at least one share of its own.
 
         Returns:
             ``(text, note)`` as :func:`plan_smb_conf` gives them, for the
-            file, the backup and the stock text on this machine.
+            file, the backup and the stock text on this machine; an empty
+            text when the machine has no file and the module serves nothing.
         """
         return plan_smb_conf(
             read_text(SAMBA_CONF_PATH),
             backup=read_text(SAMBA_CONF_BACKUP_PATH),
             stock=read_stock_conf(),
+            is_served=is_served,
         )
 
     def apply(
         self, rendered: str, *, config: SambaConfig, user_files: "dict | None" = None
     ) -> str:
-        """Validate, install and load the module's file.
+        """Validate, install and load the module's file, or take it away.
 
         Validation runs on copies before anything moves, so a bad render
-        never takes the running server's configuration with it.
+        never takes the running server's configuration with it. A
+        configuration with no share leaves no file and no include line
+        behind: the person's ``smb.conf`` stays as it is.
 
         Args:
             rendered: The module's own file.
@@ -598,16 +612,26 @@ class SambaConfigApplier:
             ModuleApplyError: If Samba rejects the configuration.
             subprocess.CalledProcessError: If the unit will not come up.
         """
-        smb_conf, note = self.plan()
+        is_served = bool(config.shares)
+        smb_conf, note = self.plan(is_served=is_served)
+        notes = [note] if note else []
+        current = read_text(SAMBA_CONF_PATH)
+        if not is_served:
+            self._remove_own()
+            if smb_conf != (current or ""):
+                _write_file(SAMBA_CONF_PATH, smb_conf)
+                self._forget_backup(note)
+            if notes and unit_state(self._unit) == "active":
+                run(["systemctl", "reload", self._unit])
+                notes.append("reloaded")
+            return "; ".join(notes or ["unchanged"])
         testparm(smb_conf, rendered)
         self._ensure_share_directories(config)
         self._write_user_files(dict(user_files or {}))
         _write_file(SAMBA_MODULE_CONF_PATH, rendered)
-        if smb_conf != read_text(SAMBA_CONF_PATH):
+        if smb_conf != current:
             _write_file(SAMBA_CONF_PATH, smb_conf)
-            if "smb.conf.before_neutrino" in note:
-                os.unlink(SAMBA_CONF_BACKUP_PATH)
-        notes = [note] if note else []
+            self._forget_backup(note)
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
             return "; ".join(notes + ["reloaded"])
@@ -616,12 +640,19 @@ class SambaConfigApplier:
 
     def remove(self) -> None:
         """Delete the module's file and its users' files, and take the include line out of ``smb.conf``."""
-        with contextlib.suppress(OSError):
-            os.unlink(SAMBA_MODULE_CONF_PATH)
-        shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
+        self._remove_own()
         text = read_text(SAMBA_CONF_PATH)
         if text is not None and has_include_line(text):
             _write_file(SAMBA_CONF_PATH, without_include_line(text))
+
+    def _remove_own(self) -> None:
+        with contextlib.suppress(OSError):
+            os.unlink(SAMBA_MODULE_CONF_PATH)
+        shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
+
+    def _forget_backup(self, note: str) -> None:
+        if "smb.conf.before_neutrino" in note:
+            os.unlink(SAMBA_CONF_BACKUP_PATH)
 
     def stop(self) -> None:
         """Take the server down until the next apply; the unit stays enabled."""

@@ -66,6 +66,14 @@ SMBSTATUS_4_15_SHARES_LIVE = (
 
 
 STOCK = "[global]\n   workgroup = WORKGROUP\n\n[printers]\n   path = /var/spool/samba\n"
+
+
+def one_share(tmp_path) -> SambaConfig:
+    return SambaConfig.from_dict(
+        {"shares": [{"name": "s", "path": str(tmp_path / "srv/s")}], "users": []}
+    )
+
+
 INCLUDE = "   include = "
 MARKER = applier_module.SAMBA_CONF_MARKER
 
@@ -178,7 +186,7 @@ def test_apply_writes_each_users_file_and_drops_the_rest(box, monkeypatch):
     users_dir.mkdir(parents=True)
     (users_dir / "old.conf").write_text("   force user = old\n")
     (users_dir / "notes.txt").write_text("kept")
-    config = SambaConfig.from_dict({"shares": [], "users": []})
+    config = one_share(tmp_path)
 
     SambaConfigApplier(unit="smbd.service").apply(
         f"{MARKER}\n", config=config, user_files={"ann.conf": "   force user = ann\n"}
@@ -200,8 +208,8 @@ def test_a_persons_smb_conf_gets_the_include_line_once_and_nothing_else(box):
     (tmp_path / "etc/smb.conf").write_text(persons)
     applier = SambaConfigApplier(unit="smbd.service")
 
-    first = applier.apply(f"{MARKER}\n", config=SambaConfig())
-    second = applier.apply(f"{MARKER}\n", config=SambaConfig())
+    first = applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    second = applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
 
     module_conf = str(tmp_path / "etc/neutrino.conf")
     assert first == "added the include line; started"
@@ -220,7 +228,7 @@ def test_an_earlier_versions_whole_file_gives_way_to_the_copy_kept_before_it(box
     (tmp_path / "etc/backup.conf").write_text("[global]\n   workgroup = HOME\n")
 
     note = SambaConfigApplier(unit="smbd.service").apply(
-        f"{MARKER}\n", config=SambaConfig()
+        f"{MARKER}\n", config=one_share(tmp_path)
     )
 
     module_conf = str(tmp_path / "etc/neutrino.conf")
@@ -239,7 +247,7 @@ def test_an_earlier_versions_whole_file_without_a_copy_gives_way_to_the_stock_fi
     (tmp_path / "etc/smb.conf").write_text(f"{MARKER}\n[global]\n")
 
     note = SambaConfigApplier(unit="smbd.service").apply(
-        f"{MARKER}\n", config=SambaConfig()
+        f"{MARKER}\n", config=one_share(tmp_path)
     )
 
     assert note.startswith(
@@ -250,7 +258,10 @@ def test_an_earlier_versions_whole_file_without_a_copy_gives_way_to_the_stock_fi
 
 def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_one():
     text, note = plan_smb_conf(
-        "[media]\n   path = /srv/media\n", backup=None, stock=("[global]\n", "stock")
+        "[media]\n   path = /srv/media\n",
+        backup=None,
+        stock=("[global]\n", "stock"),
+        is_served=True,
     )
 
     assert text == (
@@ -258,11 +269,29 @@ def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_on
         "[media]\n   path = /srv/media\n"
     )
     assert note == "added the include line"
-    assert plan_smb_conf(None, backup=None, stock=("[global]\n", "a stock")) == (
+    assert plan_smb_conf(
+        None, backup=None, stock=("[global]\n", "a stock"), is_served=True
+    ) == (
         f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n",
         "wrote a stock; added the include line",
     )
-    assert plan_smb_conf(text, backup=None, stock=("", "")) == (text, "")
+    assert plan_smb_conf(text, backup=None, stock=("", ""), is_served=True) == (
+        text,
+        "",
+    )
+    assert plan_smb_conf(text, backup=None, stock=("", ""), is_served=False) == (
+        "[global]\n\n[media]\n   path = /srv/media\n",
+        "took the include line out",
+    )
+    assert plan_smb_conf(None, backup=None, stock=("x", "s"), is_served=False) == (
+        "",
+        "",
+    )
+    persons = "[global]\n   workgroup = HOME\n"
+    assert plan_smb_conf(persons, backup=None, stock=("", ""), is_served=False) == (
+        persons,
+        "",
+    )
     assert without_include_line(text) == "[global]\n\n[media]\n   path = /srv/media\n"
 
 
@@ -271,12 +300,47 @@ def test_a_removal_deletes_the_modules_file_and_takes_the_line_out(box):
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/smb.conf").write_text("[global]\n   workgroup = HOME\n")
     applier = SambaConfigApplier(unit="smbd.service")
-    applier.apply(f"{MARKER}\n", config=SambaConfig(), user_files={"a.conf": "x"})
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path), user_files={"a.conf": "x"})
 
     applier.remove()
     applier.remove()
 
     assert (tmp_path / "etc/smb.conf").read_text() == "[global]\n   workgroup = HOME\n"
+    assert not (tmp_path / "etc/neutrino.conf").exists()
+    assert not (tmp_path / "etc/neutrino_users").exists()
+
+
+def test_a_configuration_with_no_share_leaves_the_persons_file_byte_for_byte(box):
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    persons = "# mine\n[global]\n   workgroup = HOME\n"
+    (tmp_path / "etc/smb.conf").write_text(persons)
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    note = applier.apply(f"{MARKER}\n", config=SambaConfig())
+
+    assert note == "unchanged"
+    assert (tmp_path / "etc/smb.conf").read_text() == persons
+    assert not (tmp_path / "etc/neutrino.conf").exists()
+    assert commands.ran("systemctl") == []
+    assert commands.ran("testparm") == []
+
+
+def test_the_last_share_going_takes_the_file_and_the_line_away(box, monkeypatch):
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    persons = "[global]\n   workgroup = HOME\n"
+    (tmp_path / "etc/smb.conf").write_text(persons)
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    applier = SambaConfigApplier(unit="smbd.service")
+    applier.apply(
+        f"{MARKER}\n[s]\n", config=one_share(tmp_path), user_files={"a.conf": "x"}
+    )
+
+    note = applier.apply(f"{MARKER}\n", config=SambaConfig())
+
+    assert note == "took the include line out; reloaded"
+    assert (tmp_path / "etc/smb.conf").read_text() == persons
     assert not (tmp_path / "etc/neutrino.conf").exists()
     assert not (tmp_path / "etc/neutrino_users").exists()
 
@@ -290,7 +354,7 @@ def test_apply_reloads_a_running_unit_rather_than_restarting(box, monkeypatch):
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
 
     note = SambaConfigApplier(unit="smb.service").apply(
-        f"{MARKER}\n", config=SambaConfig()
+        f"{MARKER}\n", config=one_share(tmp_path)
     )
 
     assert note == "reloaded"
@@ -310,7 +374,7 @@ def test_samba_checks_the_merged_configuration_before_anything_is_written(box):
     (tmp_path / "etc/smb.conf").write_text("[global]\n   workgroup = HOME\n")
 
     with pytest.raises(ModuleApplyError) as refused:
-        SambaConfigApplier(unit="smbd.service").apply("bad", config=SambaConfig())
+        SambaConfigApplier(unit="smbd.service").apply("bad", config=one_share(tmp_path))
 
     assert refused.value.code == "samba_config_rejected"
     assert seen["smb_conf"].startswith("[global]\n   include = ")
