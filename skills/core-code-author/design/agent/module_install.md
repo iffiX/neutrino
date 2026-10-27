@@ -22,6 +22,7 @@ is the module's identity, the same on every platform:
 | `license` | the licence the publisher gives the software |
 | `corresponding_source` | the address of the source the licence asks for, with `{version}` where the version goes |
 | `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does; absent is false ("Module versions") |
+| `uninstall_data` | `{is_deleted, text}`: what an uninstall does to the module's data, the line the uninstall dialog shows ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `is_deleted` is true when the data goes with the module, and `text` is the line in each language of the panel, keyed `en` and `zh-CN` |
 | `platforms` | one entry per platform the module runs on |
 
 A platform entry is `{runner, min_version, install}`:
@@ -39,6 +40,8 @@ A platform entry is `{runner, min_version, install}`:
 | A machine whose platform has no entry, or whose system version is below the entry's `min_version`, cannot run the module. The machine page's catalog greys it out, and a press on it is refused `no_platform_build {module}` ([protocol.md](../protocol.md), "The modules section, one entry per module"). | A machine that reports no system version is not ruled out, since its floor is unknown. |
 | The catalog shows the licence and the source address for a `hub` or a `container` entry alone. | The other methods install the system's own software or the agent's. |
 | The loader refuses a manifest whose keys or `params` fall outside the shapes on this page, so a wrong file fails the suite. | The hub acts on a manifest as root on every managed machine. |
+| Every manifest of a module a person can uninstall names `uninstall_data`, with a line in both languages; a module whose entries name the method `agent` names none. The loader refuses a manifest without it, and one whose `is_deleted` disagrees with its entries: true beside a `system` or `builtin` entry or a `hub` entry whose `is_data_kept` is true, false beside a `container` entry or a `hub` entry whose `is_data_kept` is false. | Every module's uninstall shows one dialog, and the line in it is the one place a person reads what happens to their data before it happens. |
+| A line names the data by what the person keeps in it, and where it stays when it stays. `{data_dir}` in a line is the module's per-account data directory on the machine's system ([module_template.md](module_template.md), "Disk layout"), which the hub writes in before it sends the row. | A path is the answer to "where are my notes now"; the hub knows the machine's system, and one line serves all three. |
 
 `cc_switch.json` describes a tool and no module: it names `is_module: false`,
 its version at the top level, and `artifacts` alone in each platform entry,

@@ -322,6 +322,36 @@ refuses with:
 | --- | --- | --- |
 | `ui.reason.ai_managed`, `code.ai_tools_managed` | This is an agent's machine: set its AI tools on the hub's panel, in the account's form on its machine page. | 这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。 |
 
+## The uninstall dialog's words
+
+Every module's **Uninstall** opens one dialog ([ui_behavior.md](ui_behavior.md),
+"The machine page"). Its title, body and button are catalog keys in
+`locales/<language>/modules.json`; `ui.modules.uninstall_body_data` goes.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.uninstall_title` | Uninstall {module} from {device} | 从 {device} 卸载 {module} |
+| `ui.modules.uninstall_body` | The module's programs, its services and the configuration the hub wrote are removed. | 模块的程序、服务和中枢写下的配置都会移除。 |
+| `ui.modules.uninstall` | Uninstall | 卸载 |
+
+The line under the body is the module's own, kept in `uninstall_data` of
+its manifest and not in the catalog
+([agent/module_install.md](agent/module_install.md), "The manifest").
+`{data_dir}` is the per-account data directory the hub writes in for the
+machine's system.
+
+| Module | Deleted | English | Chinese |
+| --- | --- | --- | --- |
+| `samba` | no | The shared folders and the files in them stay where they are. | 共享的文件夹和里面的文件都原样保留。 |
+| `podman` | no | The declared containers' volumes stay, and on Windows and macOS so does the Podman machine. | 声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。 |
+| `zfs` | no | The pools and their datasets stay on their disks. | 存储池和其中的数据集都留在磁盘上。 |
+| `gitea` | no | The repositories, Gitea's accounts and its database stay in its data directory. | 仓库、Gitea 的账户和数据库都留在它的数据目录里。 |
+| `vscode` | no | Each account's settings and extensions stay in its home folder. | 每个账户的设置和扩展都留在它的主目录里。 |
+| `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |
+| `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
+| `codeg` | no | Each account's Codeg data stays in {data_dir}. | 每个账户的 Codeg 数据留在 {data_dir}。 |
+| `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
+
 ## The Terminal and Remote desktop tabs' words
 
 The tabs' names are the module titles of "Names that are fixed":

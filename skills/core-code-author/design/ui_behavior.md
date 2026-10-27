@@ -221,11 +221,15 @@ the API returns.
 
 The confirming button is `button--primary` and wears the action's verb; the red
 is spent on the button that opened the dialog, not on the one that closes it.
+A module's **Uninstall** whose data goes with it is the one exception: its
+line is red and its confirming button is `button--danger` ("The machine
+page").
 
 Settings are not confirmed here. A group of them ends in an apply bar, and the
 bar's `warning` is where its cost is stated. Deleting data that cannot be
 re-derived asks for more than a press: the name typed back, in a red-bordered
-box inside the card rather than in this dialog ([visual.md](visual.md)).
+box inside the card rather than in this dialog ([visual.md](visual.md)). A
+module's uninstall asks in the dialog alone, the same dialog for every module.
 
 ## Modals, and where a record's detail lives
 
@@ -722,6 +726,21 @@ the code's words as the same notice, and its buttons are those of any
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
 the install goes on after the restart with no press ([agent.md](agent.md),
 "Status is typed").
+
+**Uninstall** asks through `useConfirm`, one dialog for every module: the
+title `ui.modules.uninstall_title`, the body `ui.modules.uninstall_body`, and
+under it the module's own line, the row's `uninstall_data` text in the
+panel's language ([agent/module_install.md](agent/module_install.md), "The
+manifest"):
+
+| The row's `uninstall_data` | The line | The confirming button |
+| --- | --- | --- |
+| `is_deleted` true | in the error tone | `button--danger`, `ui.modules.uninstall` |
+| `is_deleted` false | body text | `button--primary`, `ui.modules.uninstall` |
+
+The line is the manifest's words, never composed on the page, so the dialog
+says the same thing for a module on every machine of its system. A module
+the agent carries has no **Uninstall** and no line.
 
 A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
