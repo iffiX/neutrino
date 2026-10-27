@@ -402,10 +402,13 @@ A row per app ([protocol.md](protocol.md), "Apps"): the app's title, the
 machine and the app's source word (`ui.app_source.module`,
 `ui.app_source.declared`, `ui.app_source.manual`) as the provider line, and
 one mono line per entry, its kind and its local address: `<scheme>://<local
-name>:<local port><path>` for a `web` entry, `<local name>:<local port>` for
-a `port` entry, with `/udp` after it for a UDP one, and `ssh` and the local
-address for an `ssh` entry. The local addresses are fixed, so the row shows
-them before the app is used. The controls:
+name>:<local port><path>` for a `web` entry, `127.0.0.1:<local port>` for a
+`port` entry, with `/udp` after it for a UDP one, and `ssh 127.0.0.1:<local
+port>` for an `ssh` entry. A browser resolves the local name; the system
+resolver does not on Windows, and on Linux gives `::1` first, which no
+forward listens on, so a port or ssh entry names the loopback address the
+forward listens on, the address a program is given. The local addresses are
+fixed, so the row shows them before the app is used. The controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
