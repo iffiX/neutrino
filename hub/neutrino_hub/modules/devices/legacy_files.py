@@ -3,18 +3,21 @@
 A hub of 0.5 kept one machine's accounts inside each module's file: the
 Terminal module's one ``account`` and ``shell_path``, every other program's
 ``instances``, each ``{account, port, login_id, <sealed fields>}``, the
-Podman machine's ``login_id``, the file share's ``users``, Hermes WebUI's
-``port`` and the machine's AI tools setting in ``ai_tools.json``. 0.6.0
-keeps the accounts in ``accounts.json`` and each module's enabled accounts
-under ``accounts``, and the ports are the agent's (protocol.md, "The account
-layer in the state"). The move runs at the panel's start, once per machine
-directory, and leaves a file already of the new shape alone.
+Podman machine's ``login_id``, the file share's ``users`` and ``shares``,
+Hermes WebUI's ``port`` and the machine's AI tools setting in
+``ai_tools.json``. 0.6.0 keeps the accounts in ``accounts.json`` and each
+module's enabled accounts under ``accounts``, and the ports are the agent's
+(protocol.md, "The account layer in the state"). The file share's 0.5
+shares and users are dropped, not carried: they are the person's own on the
+machine (file_share.md, "Linux"). The move runs at the panel's start, once
+per machine directory, and leaves a file already of the new shape alone.
 """
 
 import logging
 
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_SAMBA_SHARES_KEY,
     DEVICE_AI_TOOLS_FILE,
     DEVICE_ENABLED_ACCOUNTS_KEY,
     DEVICE_HERMES_WEBUI_MODULE,
@@ -116,15 +119,9 @@ def _move_one(store, key: str) -> bool:
 
     samba = store.read(key, DEVICE_SAMBA_MODULE)
     if LEGACY_SAMBA_USERS_KEY in samba:
-        store.write(
-            key,
-            DEVICE_SAMBA_MODULE,
-            {
-                name: value
-                for name, value in samba.items()
-                if name != LEGACY_SAMBA_USERS_KEY
-            },
-        )
+        # The 0.5 shares and users are the person's own on the machine now,
+        # neither carried nor managed (file_share.md, "Linux").
+        store.write(key, DEVICE_SAMBA_MODULE, {DEVICE_SAMBA_SHARES_KEY: []})
         is_moved = True
 
     podman = store.read(key, DEVICE_PODMAN_MODULE)

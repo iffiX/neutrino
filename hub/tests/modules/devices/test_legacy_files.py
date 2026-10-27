@@ -4,7 +4,8 @@ What these pin: a program's ``instances`` become the module's ``accounts``
 with their sealed fields and without ``port`` and ``login_id``; every account
 they named is an available account, a Windows login going with it; the
 Terminal module's one account becomes its enabled list and its shell the
-account's; the file share drops ``users`` and keeps its shares; the Podman
+account's; the file share drops ``users`` and its 0.5 shares, which stay the
+person's own on the machine; the Podman
 machine drops ``login_id``; Hermes WebUI drops ``port``; the machine's AI
 tools setting turns into each account's switch and the file is gone; a
 directory already of the new shape is left alone; and the move names the
@@ -112,9 +113,7 @@ def test_the_terminal_the_share_the_machine_and_hermes_take_the_new_shape(config
     move_legacy_device_files(store, [DEVICE])
 
     assert store.read(DEVICE, "terminal") == {"accounts": [{"account": "ann"}]}
-    assert store.read(DEVICE, "samba") == {
-        "shares": [{"name": "media", "path": "/tank/media"}]
-    }
+    assert store.read(DEVICE, "samba") == {"shares": []}
     assert store.read(DEVICE, "podman")["machine"] == {"account": "lab", "cpus": 2}
     assert store.read(DEVICE, "hermes_webui") == {"secret_sealed": SEALED}
 
