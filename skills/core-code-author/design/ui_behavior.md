@@ -678,7 +678,7 @@ has no manifest of yet is drawn with no check. The dialog's foot holds
 **Close** alone.
 
 A tab of the account layer, File share, Terminal, the SSH server, VS Code,
-code-server, CloudCLI and Codeg, holds **Enabled accounts**
+code-server, CloudCLI, Codeg and SiYuan, holds **Enabled accounts**
 (`ui.modules.enabled_accounts`) in its panel: one check row per available
 account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
@@ -776,8 +776,8 @@ old version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, the SSH server, Remote
-desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, Containers, Hermes
-WebUI, Ayakaleaf, ZFS storage. The seven modules of the account layer are drawn by one
+desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
+WebUI, Ayakaleaf, ZFS storage. The eight modules of the account layer are drawn by one
 `instances_panel.tsx` from the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").

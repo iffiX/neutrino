@@ -5,7 +5,7 @@ machine: one root service with one session open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
 machine's desktop when told. It draws no window. Every port it listens on
 is on `127.0.0.1`: the forwarders in front of the programs run as an
-account, CloudCLI, code-server and Codeg
+account, CloudCLI, code-server, Codeg and SiYuan
 ([module_template.md](agent/module_template.md), "The run"), and the AI
 gateway forward, 8317, on every machine but the hub's own ("The AI gateway
 forward"). For the machine's containers it opens the same ports on the
@@ -136,7 +136,7 @@ is told the machine is away, and asks again when it is back.
 **One module at a time.** The agent applies the modules a state mentions one
 after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
 Terminal, the SSH server, Gitea, Containers, Hermes WebUI, Ayakaleaf,
-VS Code, code-server, CloudCLI, Codeg, Remote desktop.
+VS Code, code-server, CloudCLI, Codeg, SiYuan, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
 reported state reports `queued`, until the agent reaches it. The module it
 installs reads `installing`, and a read of every module taken meanwhile
@@ -324,7 +324,7 @@ linked from the table.
 | carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer, and the [SSH server](agent/modules/ssh_server.md), the agent's own Go program run once per enabled account | `agent`, on every system | the module's own applier per system; the SSH server's instances through the account service layer |
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
-| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
+| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
 Terminal, Remote desktop and the SSH server install nothing: their platform
@@ -359,7 +359,7 @@ runs as root, SYSTEM on Windows: installs, system services, Containers, the
 SMB server and the remote desktop service. The account layer runs as one of
 the machine's own accounts, each process being that account and nothing
 more: the terminal, the SSH server, VS Code, code-server, CloudCLI, Codeg,
-the AI tools and the account's file share.
+SiYuan, the AI tools and the account's file share.
 
 An available account is one of the machine's accounts the person added on
 the machine page, with what every feature of the account layer needs to know
@@ -431,7 +431,7 @@ protocol:
 | the file share reports a share | 445, the SMB port |
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port, and `ssh_listen_port`, its own SSH server's |
-| a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
+| a VS Code, code-server, CloudCLI, Codeg or SiYuan instance is configured | the instance's port |
 | an instance of the SSH server runs | the instance's port |
 | a container module with a page, Hermes WebUI or Ayakaleaf, is configured | its forwarder's port |
 | a running Podman container publishes a host port, other than a hub container's `page_port` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
@@ -474,7 +474,8 @@ connection"), and each also answers the agent's dial on loopback:
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
-| the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
+| the CloudCLI, code-server, Codeg and SiYuan forwarders | `127.0.0.1` alone, in front of CloudCLI, Codeg and SiYuan on loopback and code-server on its account's socket |
+| SiYuan's kernel | `127.0.0.1` alone, at the port the agent picks and at 6806 while that is free, both behind its access code ([modules/siyuan.md](agent/modules/siyuan.md)) |
 | the Hermes WebUI and Ayakaleaf forwarders | `127.0.0.1` alone, each in front of its page's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md), [modules/ayakaleaf.md](agent/modules/ayakaleaf.md)) |
 
 ## The AI gateway forward
@@ -494,10 +495,10 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 | --- | --- |
 | The forward listens on `127.0.0.1`, and for the machine's containers on the Podman bridges on Linux and on WSL's vEthernet adapter on Windows, each relay with the firewall rule it needs there ("The listeners a container reaches"). It closes when its `is_forwarded` turns false. | The gateway serves the hub's own machine, its clients, its managed machines and their containers, and no other host on the LAN; a port on a LAN address opens it to the LAN. |
 | While the agent has no channel to the hub, the forward stops accepting new connections and stays bound; the connections waiting in its listen queue are served once the channel is back. | A client's forward does the same ([client.md](client.md), "The local port table"), for the same reason: a connection accepted with no channel can only be closed at once. |
-| The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there. | The setting and the container modules are the machine's permissions for the gateway. |
+| The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off and no module that uses the gateway, a container module or SiYuan, is installed there. | The setting and those modules are the machine's permissions for the gateway. |
 | The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
 | The hub sends `is_forwarded` false to the agent on its own machine, which opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, the port a forward there takes. The hub knows which device is its own machine by the machine id; the agent is told, and reads it from nothing else. |
-| On a managed machine `is_forwarded` is true while the machine's AI tools setting is on, or while a container module that uses the gateway is installed. | A container module's key works whatever the AI tools setting says ([modules/containers.md](agent/modules/containers.md), "Reaching the machine"), and the gateway's key check is the one gate on every request. |
+| On a managed machine `is_forwarded` is true while the machine's AI tools setting is on, or while a module that uses the gateway, a container module or SiYuan, is installed. | A module's key works whatever the AI tools setting says ([modules/containers.md](agent/modules/containers.md), "Reaching the machine", [modules/siyuan.md](agent/modules/siyuan.md), "The gateway"), and the gateway's key check is the one gate on every request. |
 | A port the agent cannot listen on is one line in its log, and the agent tries it again every report interval while the section asks for the forward. | Another program can hold 8317 for a while, and the forward is there once it lets go. |
 | Bytes go both ways under yamux's window, and either side's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
@@ -571,7 +572,7 @@ The agent is root, so reaching down to an account is `runuser -u <account>
 that follow and in no other. One is the seat
 whose desktop is shared, whose RustDesk configuration lives in that
 account's own session. Another is the programs run as an account, VS Code,
-code-server, CloudCLI and Codeg, whose instances the account service layer,
+code-server, CloudCLI, Codeg and SiYuan, whose instances the account service layer,
 `modules/shared/account_service/`, starts through the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
@@ -626,7 +627,7 @@ system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
 Terminal, Remote desktop and SSH server rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
-CloudCLI and Codeg, and macOS code-server beside them, and Containers as
+CloudCLI, Codeg and SiYuan, and macOS code-server beside them, and Containers as
 `PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
 a Podman machine of one account; on Linux all of them are among the runners
 `packages` builds, Containers as `PodmanModuleRunner`, runner `podman`, by
@@ -641,7 +642,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, `podman/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `ai_tools/`, `podman/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -728,6 +729,7 @@ module a system cannot run is left out on that system.
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
+| [SiYuan](agent/modules/siyuan.md) | amd64 and arm64 | amd64, a build whose `tar.exe` reads the installer | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Ayakaleaf](agent/modules/ayakaleaf.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Terminal](agent/modules/terminal.md) | yes | yes | yes |
@@ -748,6 +750,7 @@ page: [file_share.md](agent/modules/file_share.md),
 [code_server.md](agent/modules/code_server.md),
 [cloudcli.md](agent/modules/cloudcli.md),
 [codeg.md](agent/modules/codeg.md),
+[siyuan.md](agent/modules/siyuan.md),
 [hermes_webui.md](agent/modules/hermes_webui.md) and
 [ayakaleaf.md](agent/modules/ayakaleaf.md).
 A source that cannot be read leaves one line in the agent's log naming it,
@@ -1013,15 +1016,19 @@ each relay with a firewall rule scoped to that interface; anything inside
 WSL on the computer reaches the adapter's address as a container does. On
 macOS gvproxy gives every container in the Podman machine every port on the
 Mac's loopback, the agent's listeners and every other program's loopback
-service alike. The CloudCLI, code-server, Codeg, Hermes WebUI and Ayakaleaf
-forwarders answer 401 to a request holding neither a token the hub
+service alike. The CloudCLI, code-server, Codeg, SiYuan, Hermes WebUI and
+Ayakaleaf forwarders answer 401 to a request holding neither a token the hub
 generated nor a login the forwarder set, so neither the account, nor a
 website in their browser, nor a process in a container reaches an instance
 through them. Hermes WebUI's own password and Ayakaleaf's own login guard
-the port each page is published at behind its forwarder. The AI gateway forward passes a request to the gateway, which
+the port each page is published at behind its forwarder, and SiYuan's access
+code guards its kernel's two ports; any account on the machine can still end
+a SiYuan instance, which its service starts again
+([modules/siyuan.md](agent/modules/siyuan.md), "The service"). The AI gateway forward passes a request to the gateway, which
 answers it only with a key it knows: the device's, held in the tool files of
-the accounts the setting names, or a container module's, held in that
-module's containers.
+the accounts the setting names, a container module's, held in that
+module's containers, or a SiYuan instance's, held in its account's SiYuan
+settings.
 
 **Rooting the hub box** is outside the model: the static key, the vault and
 the panel all live there. Owning the transport's account alone gives the

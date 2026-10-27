@@ -55,7 +55,7 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share, ZFS storage and Containers on Linux |
-| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, Containers on Windows and macOS |
+| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
@@ -80,8 +80,9 @@ page's picker, always a tab, and the four presses on them are refused
 ## Artifacts
 
 An artifact is one file a `hub` or `container` entry installs:
-`{name, kind, digest, sources}`, with `file` where its sources name it and
-`directory` where its kind needs one. An artifact whose sources are an
+`{name, kind, digest, sources}`, with `file` where its sources name it,
+`directory` where its kind needs one, and `member`, the folder a `dmg` holds
+the program in. An artifact whose sources are an
 ecosystem's names `source_set`, the set's name, in place of `sources`
 ("Source sets").
 
@@ -93,6 +94,8 @@ ecosystem's names `source_set`, the set's name, in place of `sources`
 | `pkg` | a macOS installer package | kept under `agent/<module>/<directory>/`, then installed with `installers.install_pkg` |
 | `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `raw_zst` | a zstd-compressed disk image, such as Podman's machine image for applehv | kept under `agent/<module>/<directory>/`, its path given to the module's program |
+| `dmg` | a macOS disk image, such as SiYuan's desktop build | attached with `hdiutil attach -nobrowse -readonly` at a temporary mount point; the folder `member` names is copied with `ditto` to `agent/<module>/<directory>/` and sealed, and the image is detached |
+| `nsis` | a Windows installer made with NSIS that holds a 7z archive, such as SiYuan's | unpacked under `agent/<module>/<directory>/` by the system's `%SystemRoot%\System32\tar.exe`, which reads the 7z archive inside the installer, and sealed; nothing in the installer runs |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
 | `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, as the module's own page says |
 
@@ -100,7 +103,7 @@ ecosystem's names `source_set`, the set's name, in place of `sources`
 | --- | --- |
 | A digest is `sha256:<hex>`, and an `npm` artifact's digest is npm's `integrity` as the registry gives it, `sha512-<base64>`. | The digest pins the bytes on every source; npm checks its own integrity format. |
 | The digest is the publisher's: the sha256 file it publishes, the `digest` GitHub's API gives a release asset, Microsoft's `sha256hash`, an OCI manifest digest, or npm's `integrity`. A mirror serves bytes and names no digest. | A mirror that names its own digest can serve anything. |
-| The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, and the two zstd kinds by `28 b5 2f fd`. | A source that answers with an error page passes no head check. |
+| The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, the two zstd kinds by `28 b5 2f fd`, `nsis` by the PE header, and `dmg` by `koly` at the start of its last 512 bytes. | A source that answers with an error page passes no head check. |
 | An archive whose members all sit under one top directory is unpacked without it, so its files sit directly under `<directory>`. | A path in `verify` and in a service definition stays the same for every version. |
 | The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. | Every account runs the program, and none can change it. |
 | The recipe the state holds for a `hub` entry drops each artifact's `sources`, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
@@ -122,6 +125,7 @@ it.
 | --- | --- | --- |
 | a `hub` artifact | the hub's cache | the publisher's address first, then each mirror that serves the same file, such as the USTC mirror of code-server and npmmirror's copy of Node.js; `{release}` last, where the project's release holds the file |
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
+| SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
 | VS Code's CLI | the hub's cache | Microsoft's address alone, a list of one |
 | Podman, its machine image and WSL | the hub's cache | each publisher's GitHub release |
 | cc-switch | the hub's cache | its publisher's GitHub release, then `{release}` |

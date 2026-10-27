@@ -17,7 +17,7 @@ a module the agent has no runner for reads `unsupported`.
 | Carried by the agent | Terminal, `terminal`; Remote desktop, `remote_desktop`, which also detects a person's own AnyDesk and TeamViewer; the SSH server, `ssh_server` | runs the module's applier; the four presses are refused `module_not_optional` | its configuration file, its runner, one applier per system where the systems differ ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md), [modules/ssh_server.md](modules/ssh_server.md)) |
 | Software the module configures | File share, `samba` on Linux and `samba_native` on Windows and macOS; Containers, `podman` on Linux and `podman_machine` on Windows and macOS; ZFS storage, `zfs` | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md), [modules/zfs.md](modules/zfs.md)) |
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
-| A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md)) |
+| A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg`; SiYuan, `siyuan` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md), [modules/siyuan.md](modules/siyuan.md)) |
 | Container images | Hermes WebUI and Ayakaleaf, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
@@ -81,6 +81,7 @@ browser loads can send it requests:
 | A request whose `Host`, its port aside, is not `127.0.0.1`, `[::1]`, `localhost` or the instance's `local_name`, its app's local name the state carries with the instance, is answered 421 and passed to nobody. | A page whose own domain resolves to `127.0.0.1` sends its own name as `Host`, so no other site reaches an instance through an open forward. |
 | A request whose `Origin` is present and names another scheme, host or port than its own `Host` is answered 403. A WebSocket upgrade always carries `Origin`. | A browser sends every cookie of `127.0.0.1` to every port of it, so on macOS and iOS a page of one app could otherwise act with another app's login. |
 | The forwarder's login cookie is named per entry, `cookie_name`, which the state carries with the instance: `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id. | Cookies on `127.0.0.1` are kept by name alone, and two instances' cookies of one name sign each other out. |
+| A page whose login is a cookie of its own with a fixed name, SiYuan's `siyuan`, gets it renamed by the forwarder both ways: `cookie_name` toward the browser, in every `Set-Cookie` the page returns, and the page's own name toward the page, in every request, a cookie the browser holds under the page's name dropped ([modules/siyuan.md](modules/siyuan.md)). | The page's cookie then has the entry's own name on the browser, as the forwarder's own login cookie has, and the page reads the name it set. |
 | A token on the address, `?tkn=`, is traded for the login at the first request and answered with a redirect to the same path without it. | The token leaves the address bar and the browser's history at once. |
 | A forwarder keeps the browser's connection open across requests: it passes each request on over a connection to the instance that it keeps for that browser connection, and never puts `Connection: close` in place of the request's own. Each request on a kept connection goes through the checks above, as the first did. | Every connection the browser opens is a new stream through the hub, and a stream costs at least one round trip before its first byte; measured on 2026-10-26 at a 100 ms round trip, code-server's first screen took 5.85 s through 0.5's channel, where every request closed its connection. |
 | Both of a forwarder's sockets, the one the agent's transport dialled and the one to the instance, set `TCP_NODELAY`. | A small response is sent at once and never waits for the acknowledgement of the one before it. |
@@ -111,14 +112,14 @@ The hub describes every module once, in the description table
 `modules/devices/module_table.py`: its kind, its configuration file name under
 `config/devices/<id>/`, the fields the vault seals in it, the published
 entry's `description_code`, and the panel kind the machine page draws. The
-four programs run as an account share one router,
+five programs run as an account share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
 each from that table; VS Code's terms acceptance stays in
-`module_vscode_terms.py`. Their secrets, each enabled account's token secret
-and CloudCLI's password, are generated the first time the account is enabled
+`module_vscode_terms.py`. Their secrets, each enabled account's token secret,
+CloudCLI's password and SiYuan's access code, are generated the first time the account is enabled
 and kept sealed under the vault's data key in
-`config/devices/<id>/<module>.json`, and the state carries them opened. The panel draws the four with one `instances_panel.tsx`
+`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). The panel draws the five with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The machine page").
 
 ## What a module owns
@@ -142,7 +143,7 @@ under `modules/<module>/`, which the `container` runner calls.
 | --- | --- |
 | `base.py` | what a module runner is: the contract every module's runner meets |
 | `package.py` | installing, removing and verifying one `hub` module, and switching it to another version |
-| `unpacked_tree.py` | an archive from the hub, unpacked under the module's own directory and sealed |
+| `unpacked_tree.py` | an archive from the hub, unpacked under the module's own directory and sealed: a `tar_gz` or a `zip` by the standard library, an `nsis` installer by the system's `tar.exe`, and a `dmg` by copying its `member` out of the attached image |
 | `system_package.py` | installing and uninstalling the packages of a `system` entry with the machine's package manager |
 | `installers.py` | installing a downloaded package the way this machine installs things, one function per artifact kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
 | `source_fetch.py` | probing and ranking the sources of an image, an npm registry or a host an npm setting names ([module_install.md](module_install.md), "Choosing a source") |

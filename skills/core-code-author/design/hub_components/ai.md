@@ -52,6 +52,16 @@ containers receive it in their environment
 "Reaching the machine"). Its usage is a row of its own, under the device and
 the module.
 
+SiYuan, a program run as each enabled account, has a key of its own for each
+account it enables. The hub generates it when the account is enabled, seals
+it in `config/devices/<id>/siyuan.json`, registers it under the device, the
+module and the account, and voids it when the account is disabled or removed
+and at the module's uninstall; the renderer writes it into `api-keys` as it
+writes a container module's. The agent writes it into the account's own
+SiYuan settings, and it does not follow the device's AI tools setting
+([../agent/modules/siyuan.md](../agent/modules/siyuan.md), "The gateway").
+Its usage is a row of its own under the device, the module and the account.
+
 ## How a request routes
 
 1. **The model name picks the upstream family.** A name only one family

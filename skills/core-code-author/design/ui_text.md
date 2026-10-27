@@ -169,7 +169,7 @@ A docs page follows this table where the term list in
 A module's title on the panel is the catalog's `ui.module_title.<name>`
 when the catalog has it, and the manifest's `title` otherwise. A module
 named after its product has no catalog entry and reads the same in both
-languages.
+languages, unless its publisher names it in Chinese: SiYuan is 思源笔记.
 
 | Manifest name | English | Chinese |
 | --- | --- | --- |
@@ -185,20 +185,21 @@ languages.
 | `codeg` | Codeg | Codeg |
 | `hermes_webui` | Hermes WebUI | Hermes WebUI |
 | `ayakaleaf` | Ayakaleaf | Ayakaleaf |
+| `siyuan` | SiYuan | 思源笔记 |
 | `cc_switch` | cc-switch | cc-switch |
 
 ## Software the owner installs
 
-Gitea, VS Code, code-server, CloudCLI, Codeg, Hermes WebUI and Ayakaleaf are
-programs the machine's owner installs on their own machine through a module. The text
+Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI and
+Ayakaleaf are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
 | Rule | Example |
 | --- | --- |
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
-| A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's and Codeg's pages carry no licence line. | |
+| A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, Hermes WebUI and Ayakaleaf are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI and Ayakaleaf are never on it. | |
 
 The VS Code notice and its button:
 
@@ -351,6 +352,7 @@ machine's system.
 | `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |
 | `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
 | `codeg` | no | Each account's Codeg data stays in {data_dir}. | 每个账户的 Codeg 数据留在 {data_dir}。 |
+| `siyuan` | no | Each account's notes stay in {data_dir}. | 每个账户的笔记留在 {data_dir}。 |
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
 | `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
 

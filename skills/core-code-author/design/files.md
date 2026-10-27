@@ -44,6 +44,7 @@ What a user's own account holds, one tree per user with the same three names:
 | the client's control socket | `$XDG_RUNTIME_DIR/neutrino/client.sock` | `~/Library/Application Support/Neutrino/client/client.sock` | the pipe `neutrino_client_<user>` |
 | what the agent installs for the account (CloudCLI's app, its npm cache and database) | `~/.local/share/neutrino/agent/cloudcli` | `~/Library/Application Support/Neutrino/agent/cloudcli` | `%LOCALAPPDATA%\Neutrino\agent\cloudcli` |
 | what Codeg writes for the account (its database, uploads and logs, and the prefix and cache of the npm packages it installs) | `~/.local/share/neutrino/agent/codeg` | `~/Library/Application Support/Neutrino/agent/codeg` | `%LOCALAPPDATA%\Neutrino\agent\codeg` |
+| SiYuan's workspace, the account's notes, under `workspace/`, and the kernel's own files under `.config/siyuan/` | `~/.local/share/neutrino/agent/siyuan` | `~/Library/Application Support/Neutrino/agent/siyuan` | `%LOCALAPPDATA%\Neutrino\agent\siyuan` |
 | the input of one cc-switch call, there only during that call | `~/.local/share/neutrino/agent/ai_tools/payload` | `~/Library/Application Support/Neutrino/agent/ai_tools/payload` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\payload` |
 | cc-switch's store for the agent's runs, mode 700, there while a tool of the account stands on the hub | `~/.local/share/neutrino/agent/ai_tools/cc_switch` | `~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` |
 | the client's transport socket | `$XDG_RUNTIME_DIR/neutrino/transport.sock` | `~/Library/Application Support/Neutrino/client/transport.sock` | the pipe `neutrino_client_transport_<user>` |
@@ -234,6 +235,8 @@ overrides both, which is what makes a second instance testable. Details of the f
         codeg/              Codeg's two artifacts, one subdirectory each:
                             server/ the server bundle and node/ its
                             Node.js, read and run by every account
+        siyuan/             SiYuan's desktop build under app/, read and
+                            run by every account
         podman/env/         each declared and hub container's environment,
                             one file per container that its unit reads,
                             mode 0600 under 0700, root only
@@ -335,8 +338,8 @@ account writes: its ACL grants that account modify, so the account's
 one-shot task can read its script and input and write its output and exit
 code, and every file in it goes when the task ends.
 
-`agent/vscode/`, `agent/code_server/`, `agent/cloudcli/` and `agent/codeg/`
-hold programs the accounts of the machine run, so those directories alone
+`agent/vscode/`, `agent/code_server/`, `agent/cloudcli/`, `agent/codeg/` and
+`agent/siyuan/` hold programs the accounts of the machine run, so those directories alone
 are readable and executable by
 every account (mode 755; on Windows the Users group gets read and execute),
 while the rest of the agent's state stays root's. Where SELinux is
@@ -367,7 +370,7 @@ installer resets each access list under its folder on every install, upgrade
 and repair. On macOS the postinstall creates `config` and `state`
 owned by root:wheel with mode 0700, and the `chmod 0600` on each secret holds
 as on Linux. The agent's `state` alone is mode 755, so every account reaches
-`vscode/`, `code_server/`, `cloudcli/` and `codeg/` under it.
+`vscode/`, `code_server/`, `cloudcli/`, `codeg/` and `siyuan/` under it.
 
 ## /var/log/neutrino: what happened
 
