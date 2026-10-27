@@ -820,8 +820,9 @@ jobs:
           mkdir dist
           for artifact in artifacts/*/; do
             case "$(basename "$artifact")" in
-              # A check's evidence is no release file.
-              check_*) continue ;;
+              # A check's evidence is no release file, and the Go programs
+              # ride inside the packages, named alike for every target.
+              check_* | go_*) continue ;;
             esac
             for file in "$artifact"*; do
               if [ -e "dist/$(basename "$file")" ]; then
