@@ -29,12 +29,12 @@ import "./services_page.css";
  *
  * **Apps** first: one row per app, one program on one machine, its entries
  * each a chip with the local address a client forwards it at and its status
- * dot, and at the row's right the chip of where it comes from. A module the hub manages is one app however many containers
- * it runs; a container the hub does not manage is one app of its own. An
- * app declared here carries Test and Delete. The entries of no app follow
- * in their own sections: the AI gateway, the machines' file shares and the
- * shared desktops. **Declare service** opens the dialog that declares an
- * app with its entries.
+ * dot, and at the row's right the chip of where it comes from. A module the
+ * hub manages is one app however many containers it runs; a container the
+ * hub does not manage is one app of its own. An app declared here carries
+ * Test and Delete. The entries of no app follow in their own sections: the
+ * AI gateway, the machines' file shares and the shared desktops. **Declare
+ * service** opens the dialog that declares an app with its entries.
  */
 
 /** The sections of the entries that belong to no app, in order. */
