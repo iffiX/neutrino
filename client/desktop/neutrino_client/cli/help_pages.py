@@ -156,9 +156,9 @@ List the apps by machine: name, source, each entry's kind and local address,
 and whether it is in use.""",
         "app use": """Usage: nclient app use <app>
 
-Use an app: forward each of its entries and print their local addresses. The
-local address is <app>.<machine>.localhost:<port>, and the port does not change
-after it is first given.
+Use an app: forward each of its entries and print their local addresses. A web
+entry's local address is <app>.<machine>.localhost:<port>, a port or ssh entry's
+is 127.0.0.1:<port>, and the port does not change after it is first given.
 
   app          the app's name; <machine>/<app> when two machines have one name""",
         "app open": """Usage: nclient app open <app>
@@ -426,7 +426,8 @@ Change one setting. The names and the values they take are in nclient settings s
         "app use": """用法：nclient app use <应用>
 
 使用一个应用：给它的每个入口开转发，并列出本机地址。
-本机地址是 <应用>.<机器>.localhost:<端口>，端口第一次分配后不再变。
+网页入口的本机地址是 <应用>.<机器>.localhost:<端口>，端口和 ssh 入口的是
+127.0.0.1:<端口>，端口第一次分配后不再变。
 
   应用         应用名；同名时写 <机器>/<应用>""",
         "app open": """用法：nclient app open <应用>

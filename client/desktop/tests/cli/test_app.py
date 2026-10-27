@@ -24,11 +24,11 @@ def test_list_groups_the_apps_by_machine_with_fixed_addresses(running, capsys):
         "lab-gpu (home)",
         "  gitea  module  in use",
         "    web  web  http://gitea.lab-gpu.localhost:25101/explore",
-        "    ssh  port  gitea.lab-gpu.localhost:26022",
+        "    ssh  port  127.0.0.1:26022",
         "  ssh  module  not in use",
-        "    iffi  ssh  ssh.lab-gpu.localhost:27001",
+        "    iffi  ssh  127.0.0.1:27001",
     ]
-    assert "    port_53_udp  port  dns.home.localhost:24053/udp" in out
+    assert "    port_53_udp  port  127.0.0.1:24053/udp" in out
     assert "build (office)" in out
 
 
@@ -90,7 +90,7 @@ def test_use_posts_use_waits_and_prints_the_addresses(running, capsys):
     assert running.posts("/api/app/open") == []
     assert capsys.readouterr().out.splitlines() == [
         "forwarding http://gitea.lab-gpu.localhost:25101/explore",
-        "forwarding gitea.lab-gpu.localhost:26022",
+        "forwarding 127.0.0.1:26022",
     ]
 
 

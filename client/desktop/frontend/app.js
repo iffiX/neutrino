@@ -1124,8 +1124,8 @@ const APP_SOURCES = ['module', 'declared', 'manual'];
 // The numbers a local port may take.
 const PORT_FIRST = 1024;
 const PORT_LAST = 65535;
-// The loopback every forward listens on, which macOS's browser and a share
-// mounted there name.
+// The loopback every forward listens on, which every port and ssh entry's
+// address, macOS's browser and a share mounted there name.
 const LOOPBACK_SERVER = '127.0.0.1';
 
 function drawApps(state) {
@@ -1184,25 +1184,25 @@ function appProviderLine(hub, app, entries) {
   return t('ui.app_provided_by', { hub: hubName(hub), machine: machine, source: source });
 }
 
-// The host an app's local addresses name: its local name, or the loopback
+// The host an app's web addresses name: its local name, or the loopback
 // on macOS, whose browser resolves no .localhost name.
 function localHost(app) {
   return isMac() ? LOOPBACK_SERVER : app.local_name;
 }
 
-// One entry's local address: the page's own url for a web entry, the name
-// and the port for a port entry, ssh before them for an ssh entry; the
-// entry's kind alone while it has no number.
+// One entry's local address: the page's own url at the local name for a
+// web entry, the loopback and the port for a port entry, ssh before them
+// for an ssh entry; the entry's kind alone while it has no number.
 function localAddress(app, entry) {
   const port = typeof entry.local_port === 'number' ? entry.local_port : entry.forward;
   if (typeof port !== 'number' || port <= 0) return t('ui.entry_kind.' + entry.type);
-  const where = localHost(app) + ':' + port;
   if (entry.type === 'web') {
     const url = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i.exec((entry.payload || {}).url || '');
     const scheme = url ? url[1].toLowerCase() : 'http';
     const path = url && url[2] ? url[2] : '/';
-    return scheme + '://' + where + path;
+    return scheme + '://' + localHost(app) + ':' + port + path;
   }
+  const where = LOOPBACK_SERVER + ':' + port;
   if (entry.type === 'ssh') return 'ssh ' + where;
   return where + protocolSuffix(entry);
 }

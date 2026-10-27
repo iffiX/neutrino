@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
  * @property source `module`, `declared` or `manual`, worded as `ui.app_source.<source>`.
  * @property deviceId The machine that provides it, empty when no managed machine does.
  * @property deviceName That machine's name, empty when the hub knows none.
- * @property localName The name its entries open under on the loopback, `<app>.<machine>.localhost`.
+ * @property localName The name its web entries open under on the loopback, `<app>.<machine>.localhost`.
  */
 @Serializable
 data class ChannelApp(

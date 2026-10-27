@@ -2463,9 +2463,9 @@ def test_an_app_row_names_its_machine_its_source_and_every_local_address():
     assert row["provider"] == "from home:lab-gpu · module"
     assert row["lines"] == [
         "http://gitea.lab-gpu.localhost:24123/explore?tab=repos",
-        "gitea.lab-gpu.localhost:27001",
-        "gitea.lab-gpu.localhost:25053/udp",
-        "ssh gitea.lab-gpu.localhost:26001",
+        "127.0.0.1:27001",
+        "127.0.0.1:25053/udp",
+        "ssh 127.0.0.1:26001",
     ]
     assert row["actions"] == [["Use", False, ""], ["Configure", False, "ghost"]]
     assert (row["tone"], row["word"], row["reason"]) == ("ok", "", "")
@@ -2526,7 +2526,7 @@ def test_an_unhealthy_entry_says_so_on_its_line_and_use_waits_for_one_healthy():
     sick = dict(GITEA_SSH, is_healthy=False)
 
     row = run_app_row(GITEA, [GITEA_WEB, sick])
-    assert row["lines"][1] == "gitea.lab-gpu.localhost:27001 · Not reachable now"
+    assert row["lines"][1] == "127.0.0.1:27001 · Not reachable now"
     assert row["actions"][0][1] is False
 
     row = run_app_row(GITEA, [dict(GITEA_WEB, is_healthy=False), sick])

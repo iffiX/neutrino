@@ -15,8 +15,8 @@ import urllib.parse
 
 from neutrino_client.cli import names, wording
 
-# The host every local address opens on where the browser resolves no
-# ``.localhost`` name.
+# The host every port and ssh entry's address names, and every web entry's
+# where the browser resolves no ``.localhost`` name.
 APP_LOOPBACK_HOST = "127.0.0.1"
 APP_LOOPBACK_OS = "darwin"
 # The separator of ``--port``'s entry and number.
@@ -224,19 +224,20 @@ def local_address(state: dict, app: dict, entry: dict) -> str:
         entry: The entry.
 
     Returns:
-        ``<scheme>://<local name>:<port><path>`` for a ``web`` entry,
-        ``<local name>:<port>`` for a ``port`` or ``ssh`` one, ``/udp``
-        after a UDP one; the host is ``127.0.0.1`` on macOS. Empty while
-        the entry has no number.
+        ``<scheme>://<local name>:<port><path>`` for a ``web`` entry, the
+        host ``127.0.0.1`` on macOS; ``127.0.0.1:<port>`` for a ``port`` or
+        ``ssh`` one, ``/udp`` after a UDP one. Empty while the entry has no
+        number.
     """
     port = entry.get("local_port")
     if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
         return ""
-    host = str(app.get("local_name", "") or "")
-    if (state.get("platform") or {}).get("os") == APP_LOOPBACK_OS or not host:
-        host = APP_LOOPBACK_HOST
+    host = APP_LOOPBACK_HOST
     payload = entry.get("payload") or {}
     if entry.get("type") == "web":
+        name = str(app.get("local_name", "") or "")
+        if (state.get("platform") or {}).get("os") != APP_LOOPBACK_OS and name:
+            host = name
         parts = urllib.parse.urlsplit(str(payload.get("url", "")))
         path = parts.path or "/"
         if parts.query:

@@ -181,21 +181,21 @@ internal fun entriesOf(hub: HubView, app: ChannelApp): List<ChannelServiceEntry>
 
 /**
  * An entry's local address as the Apps page shows it: `<scheme>://<local name>:<port><path>` for a
- * `web` entry, `<local name>:<port>` for a `port` entry with `/udp` after a UDP one.
+ * `web` entry, `127.0.0.1:<port>` for a `port` entry with `/udp` after a UDP one.
  *
- * @param app The app, whose local name the address carries.
+ * @param app The app, whose local name a web address carries.
  * @param entry The entry.
  * @param port The local port it listens on.
- * @param host The host the phone opens apps under, or null for the app's own local name.
+ * @param host The host the phone opens web pages under, or null for the app's own local name.
  * @return The address.
  */
 internal fun localAddressOf(app: ChannelApp, entry: ChannelServiceEntry, port: Int, host: String? = null): String {
-    val name = host ?: app.localName.ifEmpty { FORWARD_BIND_HOST }
     if (entry.type == "web") {
+        val name = host ?: app.localName.ifEmpty { FORWARD_BIND_HOST }
         val target = PortForwards.targetOf(entry.text("url"))
         if (target != null) return "${target.first}://$name:$port${target.second}"
     }
-    return if (entry.protocol == "udp") "$name:$port/udp" else "$name:$port"
+    return if (entry.protocol == "udp") "$FORWARD_BIND_HOST:$port/udp" else "$FORWARD_BIND_HOST:$port"
 }
 
 /**

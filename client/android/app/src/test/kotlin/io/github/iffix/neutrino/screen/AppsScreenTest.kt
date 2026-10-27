@@ -45,9 +45,12 @@ class AppsScreenTest {
     @Test
     fun eachEntryShowsItsFixedLocalAddress() {
         assertEquals("https://gitea.lab.localhost:27311/user/login?next=%2F", localAddressOf(app, web, 27311))
-        assertEquals("gitea.lab.localhost:30418", localAddressOf(app, ssh, 30418))
-        assertEquals("gitea.lab.localhost:25001/udp", localAddressOf(app, udp, 25001))
-        assertEquals("127.0.0.1:30418", localAddressOf(app, ssh, 30418, host = "127.0.0.1"))
+        assertEquals("127.0.0.1:30418", localAddressOf(app, ssh, 30418))
+        assertEquals("127.0.0.1:25001/udp", localAddressOf(app, udp, 25001))
+        assertEquals(
+            "https://127.0.0.1:27311/user/login?next=%2F",
+            localAddressOf(app, web, 27311, host = "127.0.0.1"),
+        )
     }
 
     private val words = WordCatalog(
