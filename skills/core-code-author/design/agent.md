@@ -193,14 +193,16 @@ press asks again while an account's result is `failed`. A press on a module
 that reads its `want`, or is in transit, writes no mark and asks for
 nothing new.
 
-Software somebody installs or removes by hand is displayed, never fought. A
-hand-installed Samba reports `installed` and is not imported, since the file
-share serves the enabled accounts alone
+Software somebody installs or removes by hand is displayed, never fought
+("Parallel, never take over"). A hand-installed Samba reports `installed` or
+`running` and is adopted as the file share module with an empty
+configuration: its shares and users stay the person's and are not copied
 ([modules/file_share.md](agent/modules/file_share.md)). For a module with an
-import, what the machine has becomes the hub's configuration at the
-machine's first report on a session, and the first **Configure** imports it
-when that report found none ([protocol.md](protocol.md), "The modules
-section, one entry per module"). A failure is
+import, Gitea's and the containers', what the machine has becomes the hub's
+configuration at the machine's first report on a session, and the first
+**Configure** imports it when that report found none
+([protocol.md](protocol.md), "The modules section, one entry per module"). A
+failure is
 in the machine's report and in the agent's record of it, and a hub restart
 loses nothing, because `want` is in `config/`. Machinery whose only purpose
 is surviving a restart, beyond that record and the tried hash, is removed on
@@ -285,6 +287,26 @@ drawn:
   two minutes; then the machine's own report, or its silence, takes over.
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
+
+## Parallel, never take over
+
+The agent runs beside what the person set up on a machine, never in its
+place. It manages the accounts, shares, services, units, tasks and files it
+made itself, and it changes, blocks or takes over nothing the person made:
+no server configuration of theirs is rewritten, no share or account of theirs
+is removed or renamed, no firewall rule is put in front of anything, and
+nothing of theirs is copied into the hub's configuration. What the agent
+made is told from the rest by a mark of its own, the marker line of a file,
+the comment of an account, the record under its state root, and only a thing
+that carries the mark is ever changed or removed.
+
+| Rule | Reason |
+| --- | --- |
+| A thing of the person's that stands where the agent needs to put its own, a share with the name an account's share takes, an account with the name an SMB user takes, is left as it is, and the apply refuses with a code that names it, `share_name_taken {name}` or `user_name_taken {user}`, worded so the person renames or removes their own thing. | The person decides what gives way; the agent never does it for them. |
+| A setting of the person's that stops the agent's own things from working is reported on the module row by a code that names the setting, and is never changed. | The person sees why and keeps their setting. |
+| A program the person installed by hand that a module drives, a Samba on Linux among them, reads `installed` and `running` as the module's and is adopted as the module with an empty configuration; what it already serves stays the person's, is not copied into `config/`, and the panel does not manage it. | Adoption gives the person the module's switch without taking their setup. |
+| A module adds its own things through a seam the program offers for exactly that, an `include` line, a share of the system's SMB server, a unit of its own, and takes them away through the same seam at uninstall, leaving the person's things as they were. | The person's configuration is theirs before, during and after. |
+| No module fences the machine: no `hosts allow` of the whole server, no firewall rule, no pf anchor. A module's own share answers the loopback alone, since every client reaches it through the agent's relay. | A fence around the person's shares would block what the person opened on purpose. |
 
 ## The kinds of module
 
