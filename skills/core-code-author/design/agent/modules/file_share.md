@@ -24,11 +24,14 @@ none of them, and the panel does not manage them.
 The module's shares live in a file of the module's own,
 `/etc/samba/neutrino.conf`, whose first line is the module's generated
 marker. `smb.conf` stays the person's, or the distribution's stock file
-when the machine had none: the module adds one line to it, `include =
-/etc/samba/neutrino.conf`, right after the `[global]` header, once, and
-changes nothing else in it, not its `[global]`, not the person's shares,
-not the person's Samba users. At uninstall the module deletes its file and
-takes that one line out again. An `smb.conf` whose first line is the
+when the machine had none: while the module serves at least one share of
+its own it adds one line to it, `include = /etc/samba/neutrino.conf`,
+right after the `[global]` header, once, and changes nothing else in it,
+not its `[global]`, not the person's shares, not the person's Samba users.
+When the last share of the module's goes, at a disable as at uninstall,
+the module deletes its file and takes that one line out again; a machine
+adopted with no enabled account keeps its `smb.conf` byte for byte, and
+the module starts no server there. An `smb.conf` whose first line is the
 module's marker is the module's own from an earlier version, which rendered
 the whole file: the first apply puts `/etc/samba/smb.conf.before_neutrino`
 back in its place when that copy exists and deletes the copy, else the
@@ -36,7 +39,7 @@ distribution's stock file, the first of `/usr/share/samba/smb.conf`,
 `/etc/samba/smb.conf.example` and
 `/usr/share/doc/samba-common/examples/smb.conf.default` that is there, else
 a `[global]` of one line, `server role = standalone server`; then it adds
-the include line. The apply's note says which. The stock file's settings
+the include line when it serves a share. The apply's note says which. The stock file's settings
 reach none of the module's users: `unix password sync` acts only on a
 password change made through SMB, the module's users never make one, the
 printer shares and `[homes]` serve nothing to a user with no home and no
