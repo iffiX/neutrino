@@ -94,8 +94,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         SambaUserManager().check_accounts(parsed.forced_users())
-        self._check_persons(parsed)
-        smb_conf, _ = SambaConfigApplier(unit=self._unit).plan()
+        smb_conf = self._check_persons(parsed)
         testparm(smb_conf, SambaConfigRenderer(config=parsed).render())
 
     def apply(self, config: dict) -> None:
@@ -144,10 +143,16 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
 
-    def _check_persons(self, parsed: SambaConfig) -> None:
-        """Refuse what the person's own ``smb.conf`` makes impossible."""
-        global_section, shares = SambaConfigReader().read_persons()
+    def _check_persons(self, parsed: SambaConfig) -> str:
+        """Refuse what the person's own ``smb.conf`` makes impossible.
+
+        Returns:
+            ``smb.conf`` as the next apply leaves it, which the check read.
+        """
+        smb_conf, _ = SambaConfigApplier(unit=self._unit).plan()
+        global_section, shares = SambaConfigReader().read_persons(smb_conf)
         check_person_config(global_section, shares, parsed)
+        return smb_conf
 
     def is_active(self) -> bool:
         """Whether this machine's Samba unit is active."""

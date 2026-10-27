@@ -328,18 +328,15 @@ def test_the_persons_configuration_is_read_without_the_modules_line(box):
         return 0, "[global]\n\thosts allow = 10.0.0.0/8\n[media]\n\tpath = /srv/m\n"
 
     commands.answers[("testparm", "-s")] = (answer, "")
-    (tmp_path / "etc").mkdir()
-    (tmp_path / "etc/smb.conf").write_text(
+    planned = (
         f"[global]\n{INCLUDE}{tmp_path / 'etc/neutrino.conf'}\n   workgroup = HOME\n"
     )
 
-    global_section, shares = SambaConfigReader().read_persons()
+    global_section, shares = SambaConfigReader().read_persons(planned)
 
     assert seen["text"] == "[global]\n   workgroup = HOME\n"
     assert global_section == {"hosts allow": "10.0.0.0/8"}
     assert shares == [{"name": "media", "path": "/srv/m", "params": {}}]
-    (tmp_path / "etc/smb.conf").unlink()
-    assert SambaConfigReader().read_persons() == ({}, [])
 
 
 @pytest.mark.parametrize(

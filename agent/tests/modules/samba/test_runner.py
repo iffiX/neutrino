@@ -118,11 +118,13 @@ class FakeApplier:
 
 class FakeReader:
     persons: tuple = ({}, [])
+    judged = ""
 
     def read(self):
         return {}, []
 
-    def read_persons(self):
+    def read_persons(self, text):
+        FakeReader.judged = text
         return FakeReader.persons
 
 
@@ -290,6 +292,7 @@ def test_the_persons_own_samba_refuses_before_anything_is_applied(
         assert refused.value.code == code
     assert FakeApplier.applied == []
     assert FakeUsers.made == []
+    assert FakeReader.judged == "[global]\n   include = /etc/samba/neutrino.conf\n"
 
 
 def test_apply_renders_applies_and_keeps_the_configuration(runner):

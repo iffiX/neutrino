@@ -319,16 +319,20 @@ class SambaConfigReader:
             return {}, []
         return _testparm_output(SAMBA_CONF_PATH)
 
-    def read_persons(self) -> tuple:
+    def read_persons(self, text: str) -> tuple:
         """The person's own configuration: ``smb.conf`` without the module's line.
 
+        Args:
+            text: ``smb.conf`` as the next apply leaves it
+                (:meth:`SambaConfigApplier.plan`), so a whole file an
+                earlier version rendered is not mistaken for the person's.
+
         Returns:
-            ``(global, shares)`` of the file with the include line taken
+            ``(global, shares)`` of the text with the include line taken
             out, so the module's shares are not among them; both empty
-            when there is no file or testparm is not there.
+            when testparm is not there.
         """
-        text = read_text(SAMBA_CONF_PATH)
-        if text is None or shutil.which("testparm") is None:
+        if shutil.which("testparm") is None:
             return {}, []
         handle, path = tempfile.mkstemp(prefix="smb_", suffix=".conf")
         try:
