@@ -23,6 +23,7 @@ is the module's identity, the same on every platform:
 | `corresponding_source` | the address of the source the licence asks for, with `{version}` where the version goes |
 | `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does; absent is false ("Module versions") |
 | `uninstall_data` | `{is_deleted, text}`: what an uninstall does to the module's data, the line the uninstall dialog shows ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `is_deleted` is true when the data goes with the module, and `text` is the line in each language of the panel, keyed `en` and `zh-CN` |
+| `web_share` | `{guest_login}`, present for a module whose page a Web share can offer and absent for every other: `guest_login` is how the share's visitor is signed in, `app` for the app's own login page and `guest_account` for one account of the app per share, which the forwarder signs every visitor of that share in as ([module_template.md](module_template.md), "The run") |
 | `platforms` | one entry per platform the module runs on |
 
 A platform entry is `{runner, min_version, install}`:
@@ -42,6 +43,10 @@ A platform entry is `{runner, min_version, install}`:
 | The loader refuses a manifest whose keys or `params` fall outside the shapes on this page, so a wrong file fails the suite. | The hub acts on a manifest as root on every managed machine. |
 | Every manifest of a module a person can uninstall names `uninstall_data`, with a line in both languages; a module whose entries name the method `agent` names none. The loader refuses a manifest without it, and one whose `is_deleted` disagrees with its entries: true beside a `system` or `builtin` entry or a `hub` entry whose `is_data_kept` is true, false beside a `container` entry or a `hub` entry whose `is_data_kept` is false. | Every module's uninstall shows one dialog, and the line in it is the one place a person reads what happens to their data before it happens. |
 | A line names the data by what the person keeps in it, and where it stays when it stays. `{data_dir}` in a line is the module's per-account data directory on the machine's system ([module_template.md](module_template.md), "Disk layout"), which the hub writes in before it sends the row. | A path is the answer to "where are my notes now"; the hub knows the machine's system, and one line serves all three. |
+| A module names `web_share` only where its page hands a visitor the app and nothing more. code-server, VS Code, Codeg, CloudCLI, Hermes WebUI and SiYuan name none, and neither does any module without a page. | Each of those six signs its browser in as the machine's account or as the owner, so a share of one hands a visitor the owner's shell, files or notes. |
+| Ayakaleaf names `{guest_login: guest_account}` ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The guest account"). | The app has accounts of its own and shares a project with an account, so a visitor works in what the owner shares with that account and sees nothing else. |
+| A declared app's `web` entry and a container's, declared or started by hand, are offered as they are, with `guest_login` `app`, and have no manifest. | The hub holds no login of theirs, so the visitor meets the app's own login page, the guard the person already set. |
+| The loader refuses a `web_share` of another shape, and a `guest_login` outside the two. | A manifest decides what a visitor holds, so a wrong one fails the suite. |
 
 `cc_switch.json` describes a tool and no module: it names `is_module: false`,
 its version at the top level, and `artifacts` alone in each platform entry,

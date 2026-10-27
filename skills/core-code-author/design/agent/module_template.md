@@ -72,6 +72,18 @@ where it first gives a session and the CSRF token that session's login
 needs, as Ayakaleaf's does ([modules/ayakaleaf.md](modules/ayakaleaf.md),
 "The page").
 
+A Web share's visitor reaches a module's page through the same forwarder,
+and only a module whose manifest names `web_share`
+([module_install.md](module_install.md), "The manifest"). A module whose
+`guest_login` is `guest_account` takes a second kind of token: the hub mints
+it in the same form with the secret of the share's guest account, which the
+state carries with the module, and the forwarder that verifies a token
+under a guest's secret signs that browser in as that guest's account. A
+token under the module's own secret signs the browser in as the owner, as
+for the owner's clients. The forwarder's checks below hold for a visitor
+as for a client: the share's page sends every request with `Host`
+`127.0.0.1` and an `Origin` of the same host, or none.
+
 Every forwarder holds the same checks before its module's rule, because a
 client opens every app on its own loopback, where any page the person's
 browser loads can send it requests:

@@ -1893,6 +1893,16 @@ first that fails gives the reply its code; the panel's are
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
+A Web share's visitor sends the `service` frame too, for the one entry its
+share offers ("Web shares"), and its material follows from the entry's
+`guest_login` ([agent/module_install.md](agent/module_install.md), "The
+manifest"):
+
+| `guest_login` | The material a visitor gets |
+| --- | --- |
+| `app`, a declared app's or a container's `web` entry | empty: the visitor signs in on the app's own page |
+| `guest_account`, a module's `web` entry whose manifest names it | `{token}`: minted as for a client, `expiry` 60 seconds ahead and spent once, with `secret` the share's guest account's own, so the forwarder signs the visitor in as that account and never as the owner ([agent/module_template.md](agent/module_template.md), "The run") |
+
 A client opens every `web` entry with `is_token_required` at its forward's
 own address with `?tkn=<token>` added ([client.md](client.md), "The Apps
 page"), and never at the entry's address.
