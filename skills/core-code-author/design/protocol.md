@@ -525,19 +525,35 @@ carries, and the entry with that hash leaves the file and the memory in one
 step before it is judged; an expired entry leaves both whenever a ticket is
 made or spent. Making a ticket replaces the open ticket of its kind, and
 a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
+A client ticket's row waits to join for as long as its ticket lives
+(`/api/hub/client`).
 
 #### `/api/hub/client`
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices` and `permission_entries`, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps |
-| `POST /api/hub/client/enrollment/create` | `{name}` | a client link |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps |
+| `POST /api/hub/client/enrollment/create` | `{name, permission}`, `permission` null to follow the default, else `{kinds, devices, entries}` as `permission/set` takes them | makes the client's row at once, waiting to join with that name and permission, and its link, which works for `ENROLLMENT_TTL_S`, 30 minutes; `ClientEnrollmentView`, `{link, client_id, expires_at, expires_in_s}`; a client link still open from before stops working, and its waiting row goes; 400 as `permission/set`, 409 `transport_key_missing` |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
 | `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
-| `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown` |
+| `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
+
+One client link adds one device. Its row is made when the link is, and
+waits to join: it holds the name and the permission the link was made with,
+no token and no static key, and the Clients page shows how long the link
+still works ([ui_behavior.md](ui_behavior.md), "The Clients page"). The
+`join` that spends its ticket binds that row, which keeps the permission. A
+row whose ticket expires unused is removed by the hub within
+`ENROLLMENT_SWEEP_INTERVAL_S`, 60 seconds, of its expiry, and so is the row
+of a ticket that a newer client link replaced.
+
+| Rule | Reason |
+| --- | --- |
+| The permission is chosen with the link, before the device joins. | The device has what it is allowed from its first `state`, and nothing is open between the join and the person's next visit to the page. |
+| A waiting row is removed with its ticket. | A link that can no longer join leaves no row behind it to tidy by hand. |
 
 A permission kind is a published service type (`web`, `port`, `ssh`, `ai`,
 `file`, `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS`
@@ -873,8 +889,8 @@ An agent's id is the operating system's, so a machine joining with a blank
 link is matched to the row it already had. A client's is one installation's,
 so the same person on two machines is two clients, and a client joining again
 from an installation the hub has a row for lands back on that row: the link's
-fresh row goes, and the old row takes the link's name and keeps its key, its
-switch and everything it last reported. The hub reads `family` to pick a
+waiting row goes, and the old row takes the link's name and permission and
+keeps its key, its switch and everything it last reported. The hub reads `family` to pick a
 package family and `arch` to pick the package itself, and an architecture
 outside the normalized set is the machine's own word and matches no platform
 entry. The hub compares a manifest entry's floor with an agent's `version`.

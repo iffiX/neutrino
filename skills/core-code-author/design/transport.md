@@ -205,9 +205,9 @@ parses:
 
 `token` is the ticket, and `key` the hub's static public key ("The hub's
 static key"). A client link has `overlays`, the list of the same name in the
-client's `state`, taken for the default permission when the link is created:
-empty when that permission does not allow `overlay` or there is nothing to
-join. A device link has no `overlays`. A peer that does not know a member
+client's `state`, taken for the permission the link is made with
+([protocol.md](protocol.md), `/api/hub/client`): empty when that permission
+does not allow `overlay` or there is nothing to join. A device link has no `overlays`. A peer that does not know a member
 ignores it.
 
 Every address in `urls`, in a link and in a state, is

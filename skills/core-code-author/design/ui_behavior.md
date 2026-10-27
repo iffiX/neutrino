@@ -491,8 +491,11 @@ the `metrics` event and ask for nothing.
 
 The page has no filter chips, no legend, no search box, no scan and no drawer.
 Its title carries `<n> agents, <m> online`, and its header holds two primary
-buttons, both dialogs: **Add by link** (用链接添加), which shows the enrolment
-link and its QR for a machine that joins on its own, and **Add over SSH** (用
+buttons, both dialogs: **Add by link** (用链接添加), for a machine that joins
+on its own, which asks **Name**, the machine's host name when it is left
+empty, and whose **Generate link** shows the enrolment link and its QR in
+the same dialog, as **New client link** does on the Clients page with no
+permission, since an agent's binding has none; and **Add over SSH** (用
 SSH 添加), the install dialog with **Host**, **Port**, **User name**,
 **Credential**, **SSH key** and **Sudo password**. That dialog's button creates
 the machine's row, named by its host until it reports, and starts the install
@@ -611,6 +614,23 @@ entry and no row for a machine's SSH server, which is no app
 
 The **Clients** page, at `/clients`, is the clients enrolled with the hub,
 one row each, with what each is allowed.
+
+**New client link** (新建客户端链接), in the page's header, opens a dialog in
+the install dialog's style that adds one device. It asks **Name** and the
+permission, the permission form below with **Follow the default** on, and
+its foot is **Generate link** (生成链接), disabled while the name is empty.
+The press creates the client's row and its link ([protocol.md](protocol.md),
+`/api/hub/client`), and the same dialog then shows the link in mono with a
+copy button, its QR under it, and `ui.clients.enrollment_hint`, which says
+the link works for 30 minutes; the form goes, and the foot becomes **Done**.
+
+A row whose device has not joined waits: in place of its host name, its
+system and its version it reads `ui.clients.waiting {minutes}`, the minutes
+`link_expires_in_s` leaves, counted down between the page's reads of the
+list. Its actions are **Permissions** and **Delete**, whose dialog says
+that the link stops working. The hub removes the row when the link expires
+unused, and the page's next read drops it; a join makes it an ordinary row
+with the permission it waited with.
 
 **The permission form.** One form, `client_permission_form.tsx`, edits
 every permission ([protocol.md](protocol.md), `/api/hub/client`): the

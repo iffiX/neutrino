@@ -254,6 +254,12 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.clients.follow_kind` | Follow the kind | 跟随所属权限 |
 | `ui.clients.fine_mode_clear_warning` | The switches set per app are cleared. | 逐个应用设的开关会全部清除。 |
 | `ui.clients.rows_empty` | None yet | 暂时没有 |
+| `ui.clients.generate_link`, the link dialog's foot, in place of `ui.clients.create_link` | Generate link | 生成链接 |
+| `ui.clients.done` | Done | 完成 |
+| `ui.clients.waiting` | Waiting to join ({minutes} min left) | 等待加入（还剩 {minutes} 分钟） |
+| `ui.clients.waiting_delete_body` | Its link stops working. | 它的链接随即失效。 |
+| `ui.devices.generate_link`, the **Add by link** dialog's foot | Generate link | 生成链接 |
+| `ui.devices.link_name_hint` | Left empty, the machine's host name names it. | 留空时用机器的主机名。 |
 
 ## The machine page's words
 
