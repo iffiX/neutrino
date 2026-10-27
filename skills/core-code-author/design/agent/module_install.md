@@ -56,7 +56,7 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share, ZFS storage and Containers on Linux |
 | `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, Containers on Windows and macOS |
-| `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)) |
+| `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
 manager installs, such as a repository to add. A `hub` entry's `packages` is
@@ -129,6 +129,7 @@ it.
 | a container image | the agent, for Podman to pull | each image reference the artifact names, the publisher's registry first |
 | CloudCLI's npm package | the agent, for npm to install | the `npm` set |
 | the packages a container's own tools fetch | the agent, into the container's environment | each set the module lists: Hermes WebUI's `pypi` |
+| the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its fastest source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
 | a module's version list | the hub, once a day | the publisher's API ("Module versions") |
 | the hub's own update | the hub | the release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
@@ -161,6 +162,11 @@ ecosystem's packages, such as PyPI's, for the whole system.
     "probe": "/openai-community/gpt2/resolve/main/config.json",
     "sources": ["https://huggingface.co", "https://hf-mirror.com"],
     "variables": ["HF_ENDPOINT"]
+  },
+  "ctan": {
+    "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.sha512",
+    "sources": ["https://mirror.ctan.org", "https://mirrors.mit.edu/CTAN", "https://mirrors.tuna.tsinghua.edu.cn/CTAN", "https://mirrors.ustc.edu.cn/CTAN", "https://mirrors.aliyun.com/CTAN", "https://mirrors.cloud.tencent.com/CTAN", "https://mirrors.sjtug.sjtu.edu.cn/ctan", "https://mirror.nju.edu.cn/CTAN"],
+    "variables": []
   }
 }
 ```
@@ -169,7 +175,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | --- | --- |
 | `probe` | the path the probe fetches under each source: a small document every source of the set serves |
 | `sources` | the addresses, the publisher's first |
-| `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface` |
+| `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface`; none for `ctan`, since `tlmgr` reads its repository from its command line |
 
 | Rule | Reason |
 | --- | --- |
@@ -182,6 +188,8 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | The hub sends the sets the machine's recipes name in the state's `source_sets` section, and the agent probes them; nothing remembers a past result. | Only the machine measures its own network, and a network changes. |
 | The loader rejects a `source_set`, a `source_sets` item or a placeholder that names a set the file does not define, and a placeholder that names a set its module does not list. | A wrong name fails the suite, and the agent resolves only the sets the state sends. |
 | A set exists for an ecosystem a module fetches from. Go's module proxy, crates.io, conda channels and Ollama's library have none. | A set no module names is a list nobody keeps true. |
+| A set with no `variables` is ranked when a module's hook asks for it, and the hook gives the fastest source to its tool on the tool's command line: Ayakaleaf's `tlmgr --repository`. | A tool that reads no variable for its address takes it where it reads it. |
+| The `ctan` set's first source is CTAN's own redirector, then the MIT mirror and the mirrors at Tsinghua, USTC, Aliyun, Tencent, SJTU and Nanjing. Its sources can hold snapshots of TeX Live a day apart, and `tlmgr` checks every package it installs against the signed package database of the one source it reads. | In the lab the eight sources served two `texlive.tlpdb.sha512` a day apart, so no digest names the same bytes on every source, and the signature makes each source safe alone. |
 
 better-sqlite3's prebuilt binary host serves that one package alone, so it
 stays in CloudCLI's artifact as `hosts` ([modules/cloudcli.md](modules/cloudcli.md)).
@@ -319,6 +327,7 @@ version list can be read.
 | A `system` entry has one version, the system's, locked. An `agent` module follows the agent, and a `builtin` one the system. | Their software comes from outside the hub's cache. |
 | A `container` entry that names no `releases` has one version, its tested one, locked as a `system` entry's is. | Hermes WebUI's two images run as one tested pair, and its publishers state no pairs ([modules/hermes_webui.md](modules/hermes_webui.md)). |
 | A `container` version is a tag, which the `oci` feed resolves to the image's digest. | A digest pins the bytes, and the person chooses a tag. |
+| In a `container` entry that names `releases`, the image whose `sources` name the `oci` feed's repository takes each version's digest from the feed, and every other image keeps its own digest for every version. | Ayakaleaf's MongoDB and Redis stay the same beside every version of its app, as WSL's msi and Node.js stay beside every version of their programs ([modules/ayakaleaf.md](modules/ayakaleaf.md)). |
 | A module whose manifest says `is_data_forward_only` asks before it installs a version older than the one installed ([../ui_behavior.md](../ui_behavior.md), "The machine page"). | Gitea migrates its database forward at its first start, and an older Gitea cannot read it. |
 
 | Feed `kind` | Its keys | The versions | A version's digest |

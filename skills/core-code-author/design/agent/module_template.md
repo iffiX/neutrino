@@ -18,7 +18,7 @@ a module the agent has no runner for reads `unsupported`.
 | Software the module configures | File share, `samba` on Linux and `samba_native` on Windows and macOS; Containers, `podman` on Linux and `podman_machine` on Windows and macOS; ZFS storage, `zfs` | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md), [modules/zfs.md](modules/zfs.md)) |
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md)) |
-| Container images | Hermes WebUI, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md)) |
+| Container images | Hermes WebUI and Ayakaleaf, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
 name reports the module `unsupported`. Where a module's software comes
@@ -65,7 +65,12 @@ token into a login, a cookie of the forwarder's own, the page's own login
 state or a value in the browser's storage, is its hook, and every module's
 forwarder answers 401 to a request carrying neither a token nor the login.
 A module whose page admits the browser by a token of its own, VS Code,
-names no rule, and its server takes the token itself.
+names no rule, and its server takes the token itself. A hook that signs in
+to the page's own login sends the page what a program sends: one request
+where the page takes the password alone, as Hermes WebUI's does, and two
+where it first gives a session and the CSRF token that session's login
+needs, as Ayakaleaf's does ([modules/ayakaleaf.md](modules/ayakaleaf.md),
+"The page").
 
 Every forwarder holds the same checks before its module's rule, because a
 client opens every app on its own loopback, where any page the person's

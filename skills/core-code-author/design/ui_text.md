@@ -184,12 +184,13 @@ languages.
 | `cloudcli` | CloudCLI | CloudCLI |
 | `codeg` | Codeg | Codeg |
 | `hermes_webui` | Hermes WebUI | Hermes WebUI |
+| `ayakaleaf` | Ayakaleaf | Ayakaleaf |
 | `cc_switch` | cc-switch | cc-switch |
 
 ## Software the owner installs
 
-Gitea, VS Code, code-server, CloudCLI, Codeg and Hermes WebUI are programs the
-machine's owner installs on their own machine through a module. The text
+Gitea, VS Code, code-server, CloudCLI, Codeg, Hermes WebUI and Ayakaleaf are
+programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
 | Rule | Example |
@@ -197,7 +198,7 @@ rules follow from that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's and Codeg's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg and Hermes WebUI are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, Hermes WebUI and Ayakaleaf are never on it. | |
 
 The VS Code notice and its button:
 
@@ -351,6 +352,7 @@ machine's system.
 | `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
 | `codeg` | no | Each account's Codeg data stays in {data_dir}. | 每个账户的 Codeg 数据留在 {data_dir}。 |
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
+| `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
 
 ## The Terminal and Remote desktop tabs' words
 
@@ -384,6 +386,20 @@ agent takes its port, so `ui.hermes_webui.port`, `port_hint`, `apply` and
 | --- | --- | --- |
 | `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
 | `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
+
+## The Ayakaleaf tab's words
+
+[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
+are in `locales/<language>/modules.json`, and the code's in `codes.json`.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.ayakaleaf.owner_notice` | You install Ayakaleaf, MongoDB and Redis on this machine, each under its publisher's license. | 你在这台机器上安装 Ayakaleaf、MongoDB 和 Redis，各自遵循发布者的许可证。 |
+| `ui.ayakaleaf.model` | AI model | AI 模型 |
+| `ui.ayakaleaf.model_hint` | The model the editor's AI assistant uses. | 编辑器里的 AI 助手用这个模型。 |
+| `ui.ayakaleaf.apply` | Apply Ayakaleaf | 应用 Ayakaleaf 设置 |
+| `ui.ayakaleaf.apply_warning` | Ayakaleaf restarts, and open editors connect again. | Ayakaleaf 会重启，打开着的编辑器会重新连接。 |
+| `code.ayakaleaf_setup_failed` | Ayakaleaf's first start stopped at {step}: {detail} | Ayakaleaf 首次启动停在 {step} 这一步：{detail} |
 
 ## The Containers tab's words
 

@@ -135,8 +135,8 @@ is told the machine is away, and asks again when it is back.
 
 **One module at a time.** The agent applies the modules a state mentions one
 after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
-Terminal, the SSH server, Gitea, Containers, Hermes WebUI, VS Code,
-code-server, CloudCLI, Codeg, Remote desktop.
+Terminal, the SSH server, Gitea, Containers, Hermes WebUI, Ayakaleaf,
+VS Code, code-server, CloudCLI, Codeg, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
 reported state reports `queued`, until the agent reaches it. The module it
 installs reads `installing`, and a read of every module taken meanwhile
@@ -325,7 +325,7 @@ linked from the table.
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
-| container images | [Hermes WebUI](agent/modules/hermes_webui.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
+| container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
 Terminal, Remote desktop and the SSH server install nothing: their platform
 entries name the method `agent`, they are locked checked in the machine page's catalog,
@@ -433,7 +433,7 @@ protocol:
 | the Gitea module reports its URL | that URL's port, and `ssh_listen_port`, its own SSH server's |
 | a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
 | an instance of the SSH server runs | the instance's port |
-| the Hermes WebUI module is configured | its forwarder's port |
+| a container module with a page, Hermes WebUI or Ayakaleaf, is configured | its forwarder's port |
 | a running Podman container publishes a host port, other than a hub container's `page_port` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
@@ -475,7 +475,7 @@ connection"), and each also answers the agent's dial on loopback:
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
 | the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
-| the Hermes WebUI forwarder | `127.0.0.1` alone, in front of the webui's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md)) |
+| the Hermes WebUI and Ayakaleaf forwarders | `127.0.0.1` alone, each in front of its page's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md), [modules/ayakaleaf.md](agent/modules/ayakaleaf.md)) |
 
 ## The AI gateway forward
 
@@ -729,6 +729,7 @@ module a system cannot run is left out on that system.
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
+| [Ayakaleaf](agent/modules/ayakaleaf.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Terminal](agent/modules/terminal.md) | yes | yes | yes |
 | [SSH server](agent/modules/ssh_server.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk; the detection of a person's own AnyDesk or TeamViewer runs on every system) | yes | amd64 | yes |
@@ -746,8 +747,9 @@ page: [file_share.md](agent/modules/file_share.md),
 [containers.md](agent/modules/containers.md), [vscode.md](agent/modules/vscode.md),
 [code_server.md](agent/modules/code_server.md),
 [cloudcli.md](agent/modules/cloudcli.md),
-[codeg.md](agent/modules/codeg.md) and
-[hermes_webui.md](agent/modules/hermes_webui.md).
+[codeg.md](agent/modules/codeg.md),
+[hermes_webui.md](agent/modules/hermes_webui.md) and
+[ayakaleaf.md](agent/modules/ayakaleaf.md).
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
@@ -1011,12 +1013,12 @@ each relay with a firewall rule scoped to that interface; anything inside
 WSL on the computer reaches the adapter's address as a container does. On
 macOS gvproxy gives every container in the Podman machine every port on the
 Mac's loopback, the agent's listeners and every other program's loopback
-service alike. The CloudCLI, code-server, Codeg and Hermes WebUI
+service alike. The CloudCLI, code-server, Codeg, Hermes WebUI and Ayakaleaf
 forwarders answer 401 to a request holding neither a token the hub
 generated nor a login the forwarder set, so neither the account, nor a
 website in their browser, nor a process in a container reaches an instance
-through them. Hermes WebUI's own password guards the port the webui is
-published at behind its forwarder. The AI gateway forward passes a request to the gateway, which
+through them. Hermes WebUI's own password and Ayakaleaf's own login guard
+the port each page is published at behind its forwarder. The AI gateway forward passes a request to the gateway, which
 answers it only with a key it knows: the device's, held in the tool files of
 the accounts the setting names, or a container module's, held in that
 module's containers.

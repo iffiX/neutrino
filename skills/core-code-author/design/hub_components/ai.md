@@ -41,8 +41,8 @@ turns it off and when the device is removed; every account of the device
 holds the same key. No module's state holds it: the device's `ai_tools`
 section does ("How a managed machine's tools are pointed at the gateway").
 
-A container module that uses the gateway has a key of its own on each
-device. The hub generates it, seals it in that module's
+A container module that uses the gateway, Hermes WebUI or Ayakaleaf, has a
+key of its own on each device. The hub generates it, seals it in that module's
 `config/devices/<id>/<module>.json`, registers it under the device and the
 module, and voids it at the module's uninstall. The renderer writes it into
 `api-keys` beside the keys of `cliproxyapi.json`, reading every such module

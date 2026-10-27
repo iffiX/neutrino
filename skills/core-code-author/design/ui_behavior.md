@@ -777,7 +777,7 @@ old version on the version line.
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, the SSH server, Remote
 desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, Containers, Hermes
-WebUI, ZFS storage. The seven modules of the account layer are drawn by one
+WebUI, Ayakaleaf, ZFS storage. The seven modules of the account layer are drawn by one
 `instances_panel.tsx` from the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").
@@ -802,6 +802,20 @@ takes its port.
 The tab holds no link to the page: a client opens it from its **Apps** page
 with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
 "The page").
+
+The Ayakaleaf tab draws the line `ui.ayakaleaf.owner_notice` over its state,
+its log and its buttons, and holds no link to its page either. Its panel is
+one configurable `settings_group` with its own apply bar,
+`ui.ayakaleaf.apply`, around one field
+([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The model"):
+
+| Control | Idiom |
+| --- | --- |
+| **AI model** (`ui.ayakaleaf.model`) | the panel's picker over the view's `models`, its first row `ui.ai_tools.gateway_default`, with `ui.ayakaleaf.model_hint` under it; while `is_gateway_serving` is false the picker is disabled and `code.gateway_not_serving`'s words take the hint's place |
+
+While the group is dirty the bar's warning is `ui.ayakaleaf.apply_warning`,
+and the bar stays busy after its press until the machine reports the module
+`running` again, at most two minutes.
 
 The path window is the one the account form's **Browse…** opens
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or

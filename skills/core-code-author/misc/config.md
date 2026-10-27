@@ -49,6 +49,7 @@ password and is turned on for one client at a time.
 | `config/devices/<id>/modules.json` | none | no: each module's `want`, `is_settled` and chosen `version`, an empty `version` following the tested one |
 | `config/devices/<id>/<module>.json` of a container module that uses the AI gateway | none | yes: the module's gateway key on that device, sealed under the vault's data key |
 | `config/devices/<id>/hermes_webui.json` | none | yes: the Hermes WebUI module's token secret, the webui's password and its gateway key, each sealed under the vault's data key; its port is the agent's ([../design/agent/modules/hermes_webui.md](../design/agent/modules/hermes_webui.md)) |
+| `config/devices/<id>/ayakaleaf.json` | none | yes: the Ayakaleaf module's token secret, its administrator's password, the app's session and invitation secrets and its gateway key, each sealed under the vault's data key, and `model`, the tab's AI model, empty for the gateway's first; its port is the agent's ([../design/agent/modules/ayakaleaf.md](../design/agent/modules/ayakaleaf.md)) |
 | `config/devices/<id>/vscode.json` | none | yes: the VS Code module's enabled accounts, each with its connection token sealed under the vault's data key, and `terms_accepted_at` |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
 | `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |

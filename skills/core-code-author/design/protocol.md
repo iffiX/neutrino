@@ -323,6 +323,7 @@ walk theirs. A new code and its wording are one change.
 | `samba_hosts_allow_no_loopback`, `samba_interfaces_no_loopback`, `samba_domain_member` | none | the `code` of the `samba` module row on Linux, a `hosts allow` of the person's `[global]` that leaves out the loopback, a `bind interfaces only` whose `interfaces` leaves out `lo`, and a domain member's `security` or `server role`, each a setting of the person's the module never changes ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row on Linux, the shares of the hub's own list that admit no enabled account's SMB user and are left out of the module's file ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
+| `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
@@ -355,7 +356,7 @@ listener.
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
-| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, `codeg`, `hermes_webui`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
+| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, `codeg`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | The legacy listener's two routes, `/api/channel/socket` for a 0.5 agent updating itself and `/api/channel/key/set` for a binding moving to the transport ([transport.md](transport.md), "An agent of 0.5"); every other agent and client speaks the channel of the transport, which has no HTTP route |
 
@@ -689,6 +690,8 @@ to pick one.
 | `GET /api/agent/module/remote_desktop` | `?device_id=` | `RemoteDesktopDeviceView`: the fields of every module view, `state` being the module's as last reported; `is_enabled`, the switch; `platform_os`, the machine's `linux`, `windows` or `darwin`; and `rdp`, the share as the machine last declared it, `{is_shared, account, port, attention, connected_count, is_available}`, the last true unless the machine's agent package reports the host absent |
 | `POST /api/agent/module/remote_desktop/set` | `{device_id, is_enabled}` | stores `config/devices/<id>/remote_desktop.json` and pushes; turning it on generates the seat password when the device has none; 409 `agent_offline`; `RemoteDesktopDeviceView` |
 | `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
+| `GET /api/agent/module/ayakaleaf` | `?device_id=` | `AyakaleafDeviceView`: `port`, the forwarder's port as the machine reports it; `model`, the stored one, empty for the gateway's first; `models`, the names the gateway serves, for the picker; `is_gateway_serving`; and `state`, `version` and `details` as last reported |
+| `POST /api/agent/module/ayakaleaf/set` | `{device_id, model}`, `model` empty for the gateway's first | stores `model` in `config/devices/<id>/ayakaleaf.json` and pushes the state, whose new environment restarts the app; `AyakaleafDeviceView`; 409 `agent_offline` |
 | `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings, the machine as last reported (`details.machine`), and the machine's available accounts |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
@@ -728,8 +731,9 @@ activity it serves, in the order of the catalog's dialog, `{categories:
 has no manifest of yet listed with them. Checking a card adds its module to
 `shown_module` and unchecking takes it out; a module that is not `absent` on
 the machine, and a carried one, stays checked. A module of the `container`
-method has no `GET /api/agent/module/<name>` of its own: its tab draws its
-state, its log and its buttons from `GET /api/agent/module`.
+method draws its tab's state, its log and its buttons from `GET
+/api/agent/module`; Ayakaleaf's model field reads and writes its own pair
+of routes.
 
 The panel's routes of 0.5 that served the pages this version removed are
 gone: the Files page's `file/download`, `file/directory/download`,
@@ -772,7 +776,7 @@ None of them is keyed by the peer's address.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI and Codeg) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py` and `module_hermes_webui.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI and Codeg) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
 | `web/routers/` | `channel.py`, on the legacy listener's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -1394,11 +1398,12 @@ macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
 configuration is `{containers, hub_containers, mirrors, machine}`.
 `hub_containers` is the list the hub composes from the `container` modules,
 each `{module, name, image, ports, volumes, environment, command,
-is_autostart, services, source_sets, after, page_port}` with `image` as
-`{digest, sources}`, and empty while no such module is installed:
+is_autostart, services, source_sets, after, page_port, stop_timeout_s}` with
+`image` as `{digest, sources}`, and empty while no such module is installed:
 `source_sets` names the sets whose fastest source the agent writes into the
 container's environment, `after` the module's containers it starts after,
-and `page_port` the container port the module's forwarder serves
+`page_port` the container port the module's forwarder serves, and
+`stop_timeout_s` the seconds its stop waits before SIGKILL, 10 when absent
 ([agent/modules/containers.md](agent/modules/containers.md), "Hub
 containers"). Each container is
 `{name, image, ports, volumes, environment, command, is_autostart,
@@ -1479,6 +1484,25 @@ the webui's `/health` returns 200, and `installing` from the install, or a
 version change, until the first such read. `details` is `{version, port}`,
 `port` the forwarder's.
 
+The `ayakaleaf` module runs Ayakaleaf as three hub containers, the app,
+MongoDB and Redis ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md)).
+Its configuration is `{secret, password, cookie_name, local_name}`: the token
+secret; the password of the administrator the module makes; the name of the
+app's session cookie, `ayakaleaf_sid_` and the first 12 characters of the
+device id, which the hub also sets in the app's `COOKIE_NAME`; and the app's
+local name. The agent takes the forwarder's port itself, from 8900 up. The
+hub generates the secret, the password and the app's session and invitation
+secrets the first time the module is installed, keeps them sealed in
+`config/devices/<id>/ayakaleaf.json` beside the module's gateway key and the
+tab's `model`, and sends the first two opened inside the state and the other
+two in the app's environment. Its manifest names three `image` artifacts,
+`app`, `mongo` and `redis`, one `oci` feed in `releases`, `source_sets:
+["ctan"]` and `is_data_forward_only`. It reads `running` while the three
+containers run and the app's `/status` returns 200, and `installing` from the
+install, or a version change, until its first start's steps are done and the
+first such read; a step that fails ends the install `ayakaleaf_setup_failed
+{step, detail}`. `details` is `{version, port}`, `port` the forwarder's.
+
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes
 wanted, the same stream that serves its own upgrade. A package asked
@@ -1521,7 +1545,7 @@ the hub generated for each, sealed under the vault's data key:
 | --- | --- |
 | The share's `path` is the account row's `share_path`, and the hub writes the account's `home` from the machine's `account_details` for an empty one. An enabled account whose `share_path` is empty while the machine reports an empty `home` for it is left out of `shares`, `users` and `passwords` until a report brings its home, and its row on the module's page carries `account_home_unknown {account}`; the hub composes no path from a home it has not been told. `shell_path` goes as the row holds it, and the agent starts the account's login shell, PowerShell on Windows, for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ("The two layers and the accounts" there), and each side fills in the default it knows. An account that never signed in on Windows has no profile folder; a folder the hub makes under the expected name first makes Windows put the profile beside it under another name. |
 | The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
-| Every instance with a forwarder in front of it, code-server's, CloudCLI's and Codeg's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); Hermes WebUI's module carries `local_name` beside its own `cookie_name`. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
+| Every instance with a forwarder in front of it, code-server's, CloudCLI's and Codeg's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); the Hermes WebUI and Ayakaleaf modules carry `local_name` beside their own `cookie_name`. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
 | No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's root-only record under its state root, across a disable and an enable, and reports it in `details`, the port a `connect` reaches, the forwarder's where the module has one; the hub publishes the entry at the reported port. A kept port another program holds at a start is replaced by the next free one and reported. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
 | An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
 
@@ -1535,7 +1559,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance and on Hermes WebUI and Ayakaleaf, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Hermes WebUI or Ayakaleaf module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, and `host_key_fingerprint` the machine's host key as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
@@ -1583,6 +1607,7 @@ its own language:
 | `code_server_module` | `{host, account}`; the same |
 | `codeg_module` | `{host, account}`; the same |
 | `hermes_webui_module` | `{host}`; the entry exists only while the device reports the module `running` |
+| `ayakaleaf_module` | `{host}`; the same |
 | `ssh_server_module` | `{host, account}`; the entry exists while the module enables the account |
 
 A declared app whose person wrote a line of their own gets that line on each
@@ -1626,7 +1651,7 @@ source, device_id, device_name, local_name}`:
 | an instance of VS Code, code-server, CloudCLI or Codeg | `<module>_<device id>_<account>` | `<module title> (<account>)` | `module` | `web` |
 | Gitea | `gitea_<device id>` | `Gitea` | `module` | `web`, and `ssh`, a TCP `port` entry for Gitea's own SSH server ([agent/modules/gitea.md](agent/modules/gitea.md)) |
 | the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per account the module enables, named by its account |
-| a container module, Hermes WebUI among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
+| a container module, Hermes WebUI and Ayakaleaf among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
 | a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
 | an app declared on the Services page | the declaration's `id` | its `name` | `declared` | `web_<port>` for a `web` entry, `port_<port>` for a TCP `port` entry, `port_<port>_udp` for a UDP one, `file_<slug of the share>` for a `file` entry |
@@ -1765,7 +1790,7 @@ first that fails gives the reply its code; the panel's are
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI or Codeg instance or Hermes WebUI whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI or Codeg instance, Hermes WebUI or Ayakaleaf whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
@@ -1778,7 +1803,7 @@ first that fails gives the reply its code; the panel's are
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module` or `hermes_webui_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or Hermes WebUI's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
+| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module`, `hermes_webui_module` or `ayakaleaf_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or the container module's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
 | `ssh` | `{account, private_key, host_key}`: the private half of the key the hub made for that account on that machine, in OpenSSH form, and the machine's host public key in OpenSSH form, which the client writes into Neutrino's own known_hosts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md), "Keys") |
 | `file` of a device's Samba module | `{user, password}`: the share's SMB user and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
