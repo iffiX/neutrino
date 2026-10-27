@@ -70,7 +70,12 @@ STOCK = "[global]\n   workgroup = WORKGROUP\n\n[printers]\n   path = /var/spool/
 
 def one_share(tmp_path) -> SambaConfig:
     return SambaConfig.from_dict(
-        {"shares": [{"name": "s", "path": str(tmp_path / "srv/s")}], "users": ["u"]}
+        {
+            "shares": [
+                {"name": "s", "path": str(tmp_path / "srv/s"), "valid_users": ["u"]}
+            ],
+            "users": ["u"],
+        }
     )
 
 
@@ -121,6 +126,7 @@ def box(monkeypatch, tmp_path):
         applier_module.shutil, "which", lambda name: "/usr/bin/testparm"
     )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
+    monkeypatch.setattr(applier_module, "pwd", None)
     return commands, tmp_path
 
 
@@ -153,8 +159,12 @@ def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_
     config = SambaConfig.from_dict(
         {
             "shares": [
-                {"name": "s", "path": str(tmp_path / "srv/s")},
-                {"name": "ann", "path": str(tmp_path / "home/ann")},
+                {"name": "s", "path": str(tmp_path / "srv/s"), "valid_users": ["u"]},
+                {
+                    "name": "ann",
+                    "path": str(tmp_path / "home/ann"),
+                    "valid_users": ["u"],
+                },
             ],
             "users": ["u"],
         }

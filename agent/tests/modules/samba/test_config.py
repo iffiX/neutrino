@@ -199,6 +199,6 @@ def test_served_shares_are_the_ones_that_admit_a_user():
         }
     )
 
-    assert [share.name for share in config.served_shares()] == ["a", "b"]
-    assert config.users_of(config.shares[1]) == ["u"]
+    assert [share.name for share in config.served_shares()] == ["a"]
+    assert config.users_of(config.shares[1]) == []
     assert [share.name for share in SambaConfig().served_shares()] == []

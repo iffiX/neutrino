@@ -124,8 +124,8 @@ class SambaConfig:
         }
 
     def users_of(self, share: SambaShare) -> list:
-        """The SMB users one share admits: its own list, else every configured user."""
-        return list(share.valid_users or self.users)
+        """The SMB users one share admits: the ones its list names."""
+        return list(share.valid_users)
 
     def served_shares(self) -> list:
         """The shares that admit a user, the only ones the module serves."""

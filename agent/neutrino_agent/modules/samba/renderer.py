@@ -40,19 +40,14 @@ class SambaConfigRenderer:
             (:meth:`left_out`), never rendered open.
         """
         lines = [SAMBA_CONF_MARKER, ""]
-        for share in self._config.shares:
-            if self._users_of(share):
-                lines += self._render_share(share)
+        for share in self._config.served_shares():
+            lines += self._render_share(share)
         return "\n".join(lines)
 
     def left_out(self) -> list:
         """The names of the shares the file leaves out, admitting no user."""
-        return [
-            share.name for share in self._config.shares if not self._users_of(share)
-        ]
-
-    def _users_of(self, share: SambaShare) -> list:
-        return list(share.valid_users or self._config.users)
+        served = self._config.served_shares()
+        return [share.name for share in self._config.shares if share not in served]
 
     def render_user_files(self) -> dict:
         """Render the file each SMB user's connection includes on a named share.
@@ -73,12 +68,11 @@ class SambaConfigRenderer:
         return files
 
     def _render_share(self, share: SambaShare) -> list:
-        # A share limited to named users stays limited to them; one with no
-        # list is open to every configured user. An account's share writes
-        # every file as the account, its primary group with it; a share the
-        # file names itself includes the connected user's file, which forces
-        # that user's account the same way.
-        valid = " ".join(self._users_of(share))
+        # A share admits the users its list names and no other. An account's
+        # share writes every file as the account, its primary group with it;
+        # a share the file names itself includes the connected user's file,
+        # which forces that user's account the same way.
+        valid = " ".join(self._config.users_of(share))
         lines = [
             f"[{share.name}]",
             f"   path = {share.path}",

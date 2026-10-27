@@ -71,7 +71,7 @@ TESTPARM_OUTPUT = """# Global parameters
 PDBEDIT_OUTPUT = "ann:1001:Ann Example\nbob:1002:\n"
 
 CONFIG = {
-    "shares": [{"name": "share", "path": "/srv/share"}],
+    "shares": [{"name": "share", "path": "/srv/share", "valid_users": ["ann"]}],
     "users": ["ann"],
     "passwords": {"ann": "generated"},
 }
@@ -849,15 +849,14 @@ def test_a_share_left_out_is_named_on_the_row_until_an_apply_serves_every_share(
         {
             **CONFIG,
             "shares": [
-                {"name": "share", "path": "/srv/share"},
+                {"name": "share", "path": "/srv/share", "valid_users": ["ann"]},
                 {"name": "carried", "path": "/srv/c", "valid_users": []},
             ],
-            "users": [],
         }
     )
     assert runner.notice() == {
         "code": "share_users_unknown",
-        "params": {"shares": "share, carried"},
+        "params": {"shares": "carried"},
     }
     assert "[carried]" not in FakeApplier.applied[-1][1]
     assert FakeApplier.served[-1] is True

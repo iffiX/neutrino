@@ -33,7 +33,14 @@ def validate_smb_conf(rendered: str, tmp_path) -> None:
 
 
 BASIC = {
-    "shares": [{"name": "share", "path": "/srv/share", "comment": "Shared space"}],
+    "shares": [
+        {
+            "name": "share",
+            "path": "/srv/share",
+            "comment": "Shared space",
+            "valid_users": ["ann", "bob"],
+        }
+    ],
     "users": ["ann", "bob"],
 }
 
@@ -116,14 +123,14 @@ def test_each_smb_user_has_a_file_forcing_its_account_for_the_named_shares():
     }
 
 
-def test_a_share_naming_no_user_admits_every_configured_user():
-    rendered = without_comments(
-        render(
-            {"shares": [{"name": "open", "path": "/srv/open"}], "users": ["ann", "bob"]}
-        )
+def test_a_share_naming_no_user_is_left_out_whatever_users_are_configured():
+    config = SambaConfig.from_dict(
+        {"shares": [{"name": "open", "path": "/srv/open"}], "users": ["ann", "bob"]}
     )
+    renderer = SambaConfigRenderer(config=config)
 
-    assert "valid users = ann bob" in rendered
+    assert "[open]" not in renderer.render()
+    assert renderer.left_out() == ["open"]
 
 
 def test_the_first_line_is_the_modules_marker():
@@ -134,7 +141,14 @@ def test_the_first_line_is_the_modules_marker():
 
 def test_a_read_only_share_says_so():
     data = {
-        "shares": [{"name": "archive", "path": "/srv/a", "is_read_only": True}],
+        "shares": [
+            {
+                "name": "archive",
+                "path": "/srv/a",
+                "is_read_only": True,
+                "valid_users": ["ann"],
+            }
+        ],
         "users": ["ann"],
     }
 
