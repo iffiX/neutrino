@@ -339,7 +339,7 @@ under its mono line; the AI page sets it.
 The join row is an input for the link and a **Join** button. On a phone the
 row opens the Join page: a camera view that scans the hub's QR, and under it
 the same input. The QR carries the whole link ([transport.md](transport.md),
-"The link"), the same compressed form a person
+"The links"), the same compressed form a person
 pastes, so a scan and a paste are one path: the app inflates it, stores the
 binding at once with every address and the overlays' material, and the
 channel's rounds do the rest. The button shows `ui.job.joining` while the

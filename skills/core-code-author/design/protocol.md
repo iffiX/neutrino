@@ -17,12 +17,15 @@ the Python beside it.
 The hub listens for two audiences, which verify it differently. A browser
 trusts a password on a local network, and reaches the panel on two ports, one
 per scheme; an agent or a client trusts the hub's static key on any network.
+A browser opening a Web share reaches the agent port too, and trusts the
+certificate fingerprint its link holds ([transport.md](transport.md), "The
+guest path").
 
 | Port | Transport | Serves | Authenticated by |
 | --- | --- | --- | --- |
 | `listen_port`, default 8080 | HTTP | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket; while `is_https_enabled` is on, a 301 to the HTTPS port for every path but the authority's download | the session cookie |
 | `https_listen_port`, default 443 | TLS with the hub's own certificate, whatever `is_https_enabled` says | the same panel | the session cookie |
-| `agent_listen_port`, default 8443 | TCP: the transport's knock, Noise handshake and go-yamux session ([transport.md](transport.md)) | the channel and nothing else | the hub's static key and the peer's own, the ticket in `join`, then the binding's key |
+| `agent_listen_port`, default 8443 | TCP: the transport's knock, Noise handshake and go-yamux session, or a Web share's WebRTC ([transport.md](transport.md)) | the channel, and a Web share's one app | the hub's static key and the peer's own, the ticket in `join`, then the binding's key; for a guest, the certificate fingerprint and the share's ticket |
 
 The two panel ports are uvicorn servers in the one `nhub run --only-web`
 process. The agent port is the transport's: `neutrino_transport`, the Go
@@ -2035,7 +2038,7 @@ and joins.
 the Noise handshake under the hub's static key, go-yamux streams with their
 records, and the control stream, in place of TLS pinned by a certificate's
 fingerprint and one WebSocket of JSON and binary frames
-([transport.md](transport.md), "The session"). Every address is `tcp://`,
+([transport.md](transport.md), "The member path"). Every address is `tcp://`,
 the link carries `key` in place of `fp`, `join` and `leave` are frames, and
 `service`, `persist` and `stop_session` are frames answered by `reply`. A
 `terminals` entry lists a machine with no flag beside it, and an `exec`

@@ -104,9 +104,10 @@ conventions explicit so nobody drifts.
      `{code, params}`, every route, the channel's frames, sections and
      kinds, and versioning by protocol number.
    - [design/transport.md](design/transport.md) — the agent port and the Go
-     program that holds it: the link, the knock and the handshake, the
-     stream layer, the ways in, what an unadmitted peer can cost the hub and
-     the limits on it, admission and the binding, the local channel to the
+     program that holds it, each design with its reason: the doors, the
+     member path's header, magic, knock and handshake, a Web share's guest
+     path, the links, the stream layer, the ways in, what an unadmitted peer
+     can cost the hub, admission and the binding, the local channel to the
      Python beside each transport, what an admitted client reaches.
    - [design/hub_components/ai.md](design/hub_components/ai.md) — the AI gateway's behavior:
      how a request routes, the gateway-owned model namespace, what each AI

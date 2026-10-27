@@ -850,7 +850,7 @@ entries past their expiry.
 
 The link is `neutrino://enroll/<base64url payload>`, the payload one JSON
 object written with no spaces, compressed with zlib and encoded base64url
-without padding ([transport.md](transport.md), "The link");
+without padding ([transport.md](transport.md), "The links");
 `nagent join` inflates it before it reads:
 
 ```json

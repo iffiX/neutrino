@@ -153,7 +153,7 @@ Each segment is one chip under the **Network** page's **Exposure**
 | The rules are rendered again whenever an exposed interface's addresses change, on every system: on Linux by the router service, which applies on every link, address, route and rule event ("Three engines, uniform everywhere" below); on macOS and Windows by the routing pass the address sampler runs. | A rule that names a prefix the interface no longer holds opens the hub to nobody, or to another network. |
 | The segments are the ones the hub holds addresses in, and nobody types one in. | A network the hub has no address in is not a network its ports answer on. |
 | An interface's two chips start the same, from the interface's default: on Linux an interface the configuration does not name is closed until it is turned on ("An interface the configuration does not name" below); in `router` a served network is exposed and an uplink is closed; in `server` and `side_gateway` every interface `nhub setup` found is exposed; on macOS and Windows every interface is exposed. | A Linux hub opens nothing its person did not choose, a router serves its own networks, and a person's own computer stays reachable on the network it is on. |
-| Opening the agent port to every sender is Direct's alone, on the **Access** page ("Direct" below). | The agent port answers only a knock made with the hub's static key and admits a peer by its own key and binding; the panel admits a browser by a password. |
+| Opening the agent port to every sender is Direct's alone, on the **Access** page ("Direct" below). | The agent port writes nothing until a knock made with the hub's static key, or a Binding Request signed with a live share's pwd, arrives; it admits a peer by its own key and binding, and a guest to one app by its share's ticket. The panel admits a browser by a password. |
 
 The ports that open with no switch:
 
@@ -566,7 +566,7 @@ seconds after the process starts, and every `OVERLAY_RELAY_CHECK_INTERVAL_S`
 60 seconds after that, it runs `neutrino_transport probe` against
 `<host>:<public-port>` with its own static public key, which completes a
 handshake within `OVERLAY_RELAY_CHECK_TIMEOUT_S` 10 seconds when the address
-reaches this hub ([../transport.md](../transport.md), "The session"). The
+reaches this hub ([../transport.md](../transport.md), "The handshake"). The
 check closes after the handshake and sends no frame. The three constants
 are in `modules/overlay/constants.py`.
 
