@@ -367,6 +367,7 @@ walk theirs. A new code and its wording are one change.
 | `terminal_account_missing` | none | a `shell` or an `exec` on a machine whose Terminal module enables no account | added |
 | `account_not_enabled` | `{account}` | a `shell` or an `exec` naming an account the Terminal module does not enable | added |
 | `account_home_unknown` | `{account}` | the `code` of a `samba` row of `GET /api/agent/module/samba`, an enabled account with no `share_path` whose machine reports no home for it ("The account layer in the state") | added |
+| `samba_hosts_allow_no_loopback`, `samba_interfaces_no_loopback`, `samba_domain_member` | none | the `code` of the `samba` module row on Linux, a `hosts allow` of the person's `[global]` that leaves out the loopback, a `bind interfaces only` whose `interfaces` leaves out `lo`, and a domain member's `security` or `server role`, each a setting of the person's the module never changes ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
@@ -1501,8 +1502,8 @@ nothing, and the module reports `installed`, `stopped` or `running` like any
 other. The configuration is the Linux one; `validate` wants a share path
 absolute from a drive on Windows and from `/` on macOS, and an account name
 of at most 20 characters on Windows. `stopped` takes the module's shares off
-the server and keeps its accounts and its fence. An apply refuses a name the
-machine already has for something the module did not make: a share with
+the server and keeps its accounts. An apply refuses a name the
+machine already has for something the module did not make, on Linux too: a share with
 `share_name_taken {name}`, an account with `user_name_taken {user}`. An
 account the system will not make is refused with `user_create_failed {user,
 detail}`, `detail` being the tool's own line, and a record of the name that is
