@@ -2350,6 +2350,7 @@ the agent port set to 18445 is refused `port_already_in_use {value}`.
 | --- | --- |
 | The switch is `is_legacy_channel_enabled` in `config/web/settings.json`, rendered into `transport.json` as `legacy_tls_port`, 0 while it is off. An upgrade from 0.5 finds device rows and turns it on; a new hub has it off. | A 0.5 agent knows only `https` addresses on the agent port, and a hub with no 0.5 agent has nothing to keep it for. |
 | The hub turns the switch off by itself once no device row names an agent version below 0.6.0. | Each 0.5 machine that updates itself takes one row off the list, and the listener closes after the last. |
+| The hub's first 0.6.0 start moves each machine's 0.5 files into the account layer once ("The account layer in the state"). The file share's 0.5 `shares` and `users` are dropped from `samba.json`, not carried: they are the person's own on the machine, served as they are and managed by nothing ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux"). The ports 0.5 kept for VS Code, code-server and CloudCLI are not carried; the agent takes fresh ones. | What an earlier version made on a machine is the person's now, and the module runs beside it. |
 | While the switch is off, a TLS first byte is silence like any other wrong knock. | The port then answers nothing but a knock. |
 
 On the legacy listener the hub admits the 0.5 agent's `hello` for its update

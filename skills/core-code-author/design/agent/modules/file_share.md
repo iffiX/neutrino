@@ -23,28 +23,47 @@ none of them, and the panel does not manage them.
 
 The module's shares live in a file of the module's own,
 `/etc/samba/neutrino.conf`, whose first line is the module's generated
-marker. `smb.conf` stays the person's, or the distribution's stock file
-when the machine had none: while the module serves at least one share of
-its own it adds one line to it, `include = /etc/samba/neutrino.conf`,
-right after the `[global]` header, once, and changes nothing else in it,
-not its `[global]`, not the person's shares, not the person's Samba users.
-When the last share of the module's goes, at a disable as at uninstall,
-the module deletes its file and takes that one line out again; a machine
-adopted with no enabled account keeps its `smb.conf` byte for byte, and
-the module starts no server there. An `smb.conf` whose first line is the
-module's marker is the module's own from an earlier version, which rendered
-the whole file: the first apply puts `/etc/samba/smb.conf.before_neutrino`
-back in its place when that copy exists and deletes the copy, else the
-distribution's stock file, the first of `/usr/share/samba/smb.conf`,
-`/etc/samba/smb.conf.example` and
+marker. `smb.conf` is the person's, whoever wrote it, an earlier version of
+this module included: a file an earlier version rendered whole, its first
+line the marker, is the person's file now, left as it is. While the module
+serves at least one share of its own it adds one line to `smb.conf`,
+`include = /etc/samba/neutrino.conf`, right after the `[global]` header,
+once, and changes nothing else in it, not its `[global]`, not the person's
+shares, not the person's Samba users. When the last share of the module's
+goes, at a disable as at uninstall, the module deletes its file and takes
+that one line out again; a machine adopted with no enabled account keeps
+its `smb.conf` byte for byte, and the module starts no server there. A
+machine with no `smb.conf` at all gets the distribution's stock file first,
+the first of `/usr/share/samba/smb.conf`, `/etc/samba/smb.conf.example` and
 `/usr/share/doc/samba-common/examples/smb.conf.default` that is there, else
-a `[global]` of one line, `server role = standalone server`; then it adds
-the include line when it serves a share. The apply's note says which. The stock file's settings
-reach none of the module's users: `unix password sync` acts only on a
-password change made through SMB, the module's users never make one, the
-printer shares and `[homes]` serve nothing to a user with no home and no
-login shell, and `map to guest = bad user` reaches no share whose `valid
-users` names one user.
+a `[global]` of one line, `server role = standalone server`. The apply's
+note says which. The stock file's settings reach none of the module's
+users: `unix password sync` acts only on a password change made through
+SMB, the module's users never make one, the printer shares and `[homes]`
+serve nothing to a user with no home and no login shell, and `map to guest
+= bad user` reaches no share whose `valid users` names one user.
+
+What a hub of 0.5 had the module make, its shares and its Samba logins, is
+the person's own after the upgrade: the hub's move of the 0.5 files drops
+them from `samba.json`, so the hub neither carries nor manages them, and
+the machine goes on serving them as they are, to the logins they had. A
+0.5 share named after an account then refuses that account's share with
+`share_name_taken {name}`, as any share of the person's does, until the
+person renames or removes it. The ports a hub of 0.5 kept for VS Code,
+code-server and CloudCLI are not carried either; the agent takes fresh
+ones ([../../protocol.md](../../protocol.md), "The account layer in the
+state").
+
+Everything named `neutrino-` is the module's. At the first apply after the
+module is installed or adopted, the apply before the configured mark is
+written, the module deletes every `neutrino-*` SMB user and Unix account it
+finds on the machine, with its Samba credential, and every share of its
+own, its file and its users' files on Linux, then makes the wanted ones
+anew from the configuration; later applies manage them as usual. On Windows
+the same apply deletes every share whose description carries the module's
+marker and every account the marker names or whose name carries the
+prefix, and on macOS every share point under the `neutrino_` prefix and
+every account the module's full name or the prefix marks.
 
 The module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"` and sets
