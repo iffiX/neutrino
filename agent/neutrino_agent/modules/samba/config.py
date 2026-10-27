@@ -123,6 +123,14 @@ class SambaConfig:
             "passwords": dict(self.passwords),
         }
 
+    def users_of(self, share: SambaShare) -> list:
+        """The SMB users one share admits: its own list, else every configured user."""
+        return list(share.valid_users or self.users)
+
+    def served_shares(self) -> list:
+        """The shares that admit a user, the only ones the module serves."""
+        return [share for share in self.shares if self.users_of(share)]
+
     def forced_users(self) -> list:
         """The machine's accounts the shares write their files as.
 

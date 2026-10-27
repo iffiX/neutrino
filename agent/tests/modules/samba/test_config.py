@@ -185,3 +185,20 @@ def test_two_users_of_one_name_are_refused(os_name, code):
         config_with(shares=shares, users=users).validate(os_name=os_name)
 
     assert (refused.value.code, refused.value.params) == (code, {"user": "smb_ann"})
+
+
+def test_served_shares_are_the_ones_that_admit_a_user():
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "a", "path": "/a", "valid_users": ["u"]},
+                {"name": "b", "path": "/b"},
+                {"name": "c", "path": "/c", "valid_users": []},
+            ],
+            "users": ["u"],
+        }
+    )
+
+    assert [share.name for share in config.served_shares()] == ["a", "b"]
+    assert config.users_of(config.shares[1]) == ["u"]
+    assert [share.name for share in SambaConfig().served_shares()] == []

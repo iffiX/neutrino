@@ -96,7 +96,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         parsed.validate()
         SambaUserManager().check_accounts(parsed.forced_users())
         smb_conf = self._check_persons(parsed)
-        if parsed.shares:
+        if parsed.served_shares():
             testparm(smb_conf, SambaConfigRenderer(config=parsed).render())
 
     def apply(self, config: dict) -> None:
@@ -165,7 +165,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             ``smb.conf`` as the next apply leaves it, which the check read.
         """
         smb_conf, _ = SambaConfigApplier(unit=self._unit).plan(
-            is_served=bool(parsed.shares)
+            is_served=bool(parsed.served_shares())
         )
         global_section, shares = SambaConfigReader().read_persons(smb_conf)
         check_person_config(global_section, shares, parsed)

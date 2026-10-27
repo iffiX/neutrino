@@ -860,7 +860,15 @@ def test_a_share_left_out_is_named_on_the_row_until_an_apply_serves_every_share(
         "params": {"shares": "share, carried"},
     }
     assert "[carried]" not in FakeApplier.applied[-1][1]
+    assert FakeApplier.served[-1] is True
 
     runner.apply(CONFIG)
 
     assert runner.notice() == {}
+
+
+def test_a_configuration_with_no_served_share_plans_an_unserved_smb_conf(runner):
+    runner.apply({"shares": [{"name": "carried", "path": "/srv/c", "valid_users": []}]})
+
+    assert FakeApplier.served == [False]
+    assert runner.notice()["params"] == {"shares": "carried"}

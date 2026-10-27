@@ -70,7 +70,7 @@ STOCK = "[global]\n   workgroup = WORKGROUP\n\n[printers]\n   path = /var/spool/
 
 def one_share(tmp_path) -> SambaConfig:
     return SambaConfig.from_dict(
-        {"shares": [{"name": "s", "path": str(tmp_path / "srv/s")}], "users": []}
+        {"shares": [{"name": "s", "path": str(tmp_path / "srv/s")}], "users": ["u"]}
     )
 
 
@@ -156,7 +156,7 @@ def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_
                 {"name": "s", "path": str(tmp_path / "srv/s")},
                 {"name": "ann", "path": str(tmp_path / "home/ann")},
             ],
-            "users": [],
+            "users": ["u"],
         }
     )
     rendered = f"{MARKER}\n[s]\n"
@@ -695,3 +695,22 @@ def test_a_down_server_has_no_sessions(box):
 
     assert SambaStatusReader().sessions() == []
     assert commands.ran("smbstatus", "-S") == []
+
+
+def test_a_configuration_whose_only_share_admits_no_user_serves_nothing(box):
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    persons = "[global]\n   workgroup = HOME\n"
+    (tmp_path / "etc/smb.conf").write_text(persons)
+    config = SambaConfig.from_dict(
+        {
+            "shares": [{"name": "carried", "path": "/srv/c", "valid_users": []}],
+            "users": [],
+        }
+    )
+
+    note = SambaConfigApplier(unit="smbd.service").apply(f"{MARKER}\n", config=config)
+
+    assert note == "unchanged"
+    assert (tmp_path / "etc/smb.conf").read_text() == persons
+    assert not (tmp_path / "etc/neutrino.conf").exists()

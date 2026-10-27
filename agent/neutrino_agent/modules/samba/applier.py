@@ -595,8 +595,8 @@ class SambaConfigApplier:
 
         Validation runs on copies before anything moves, so a bad render
         never takes the running server's configuration with it. A
-        configuration with no share leaves no file and no include line
-        behind: the person's ``smb.conf`` stays as it is.
+        configuration with no share that admits a user leaves no file and
+        no include line behind: the person's ``smb.conf`` stays as it is.
 
         Args:
             rendered: The module's own file.
@@ -612,7 +612,7 @@ class SambaConfigApplier:
             ModuleApplyError: If Samba rejects the configuration.
             subprocess.CalledProcessError: If the unit will not come up.
         """
-        is_served = bool(config.shares)
+        is_served = bool(config.served_shares())
         smb_conf, note = self.plan(is_served=is_served)
         notes = [note] if note else []
         current = read_text(SAMBA_CONF_PATH)
