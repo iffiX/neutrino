@@ -672,3 +672,21 @@ def test_a_password_for_a_bare_record_macos_keeps_is_refused_with_its_words(
 
     assert refused.value.code == "user_record_unusable"
     assert tools.ran("dscl", ".", "-passwd") == []
+
+
+def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
+    applier, tools
+):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_old", "/srv/old", "old", False)
+    )
+    tools.answers[("dscl", ".", "-list")] = (
+        "neutrino-old  neutrino file share\nbob  Bob Example\n_smb  SMB Server\n"
+    )
+
+    notes = applier.apply(CONFIG, {}, is_sweep=True)
+
+    assert ["sharing", "-r", "neutrino_old"] in tools.calls
+    assert ["dscl", ".", "-delete", "/Users/neutrino-old"] in tools.calls
+    assert ["dscl", ".", "-delete", "/Users/bob"] not in tools.calls
+    assert notes[:2] == ["swept share old", "swept account neutrino-old"]

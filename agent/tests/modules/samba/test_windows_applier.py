@@ -101,6 +101,8 @@ def test_an_apply_names_only_what_the_module_made():
                 ],
                 "retired_rule_name": "neutrino_smb_fence",
                 "share_owner": "BUILTIN\\Administrators",
+                "is_sweep": False,
+                "user_prefix": "neutrino-",
             },
         )
     ]
@@ -373,3 +375,16 @@ def test_a_server_log_the_host_cannot_give_is_an_os_error():
 
     with pytest.raises(OSError):
         applier_with(host).read_server_log(50)
+
+
+def test_the_first_apply_asks_the_host_to_sweep_what_the_marker_names():
+    host = RecordingHost({"share_apply": {"notes": ["swept share old"]}})
+
+    notes = applier_with(host, denied=[]).apply(CONFIG, {}, is_sweep=True)
+    applier_with(host, denied=[]).apply(CONFIG, {})
+
+    first, second = [call for call in host.calls if call[0] == "share_apply"]
+    assert first[1]["is_sweep"] is True
+    assert first[1]["user_prefix"] == "neutrino-"
+    assert second[1]["is_sweep"] is False
+    assert notes == ["swept share old"]

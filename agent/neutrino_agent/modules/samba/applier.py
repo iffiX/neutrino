@@ -3,10 +3,11 @@
 Three effects, kept apart from the pure renderer: setting each SMB user's
 Samba password, installing the module's own file and the one line of
 ``smb.conf`` that includes it, and reading what the server is doing right
-now. ``smb.conf`` itself stays the person's: the module adds that line once
-after the ``[global]`` header and takes it out at uninstall, and a whole
-``smb.conf`` an earlier version rendered gives way to the copy kept before
-it or to the distribution's stock file.
+now. ``smb.conf`` itself stays the person's, a whole file an earlier version
+rendered included: the module adds that line once after the ``[global]``
+header and takes it out at uninstall. At its first apply after an install
+or an adoption the module sweeps every ``neutrino-`` user and credential
+from the machine and makes the wanted ones anew.
 
 Each SMB user is a system account of the module's own, ``neutrino-`` and
 the person's account, made with no home and no login shell; its share writes
@@ -36,13 +37,13 @@ from dataclasses import dataclass
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
-    SAMBA_CONF_BACKUP_PATH,
     SAMBA_CONF_MARKER,
     SAMBA_CONF_PATH,
     SAMBA_DOMAIN_SECURITY_MODES,
     SAMBA_DOMAIN_SERVER_ROLES,
     SAMBA_LINUX_NOLOGIN_SHELLS,
     SAMBA_LINUX_USER_COMMENT,
+    SAMBA_LINUX_USER_PREFIX,
     SAMBA_MINIMAL_CONF,
     SAMBA_MODULE_CONF_PATH,
     SAMBA_STOCK_CONF_PATHS,
@@ -156,26 +157,22 @@ def without_include_line(text: str) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def plan_smb_conf(
-    current: "str | None", *, backup: "str | None", stock: tuple, is_served: bool
-) -> tuple:
+def plan_smb_conf(current: "str | None", *, stock: tuple, is_served: bool) -> tuple:
     """What ``smb.conf`` is to hold beside the module's file. Pure.
 
     Args:
         current: The file as it is, None when the machine has none.
-        backup: The copy an earlier version kept before it replaced the
-            file, None when there is none.
         stock: ``(text, source)`` as :func:`read_stock_conf` gives them.
         is_served: Whether the module serves at least one share of its own.
 
     Returns:
         ``(text, note)``: the file to write, and what changed in words,
-        empty when the file stays as it is. A file an earlier version
-        rendered whole, its first line the marker, gives way to the backup
-        when there is one, else to the stock text, and a missing file is
-        the stock text. While the module serves a share the include line is
-        added once to whichever file lacks it; while it serves none the
-        line is taken out, and a file without it is left byte for byte.
+        empty when the file stays as it is. The file is the person's,
+        whoever wrote it, an earlier version of this module included, and
+        is left as it is; a missing file is the stock text. While the
+        module serves a share the include line is added once to a file that
+        lacks it; while it serves none the line is taken out, and a file
+        without it is left byte for byte.
     """
     notes = []
     text = current
@@ -184,13 +181,6 @@ def plan_smb_conf(
             return "", ""
         text, source = stock
         notes.append(f"wrote {source}")
-    elif text.split("\n", 1)[0].rstrip() == SAMBA_CONF_MARKER:
-        if backup is not None:
-            text = backup
-            notes.append("put back smb.conf.before_neutrino")
-        else:
-            text, source = stock
-            notes.append(f"put back {source}")
     if is_served and not has_include_line(text):
         text = with_include_line(text)
         notes.append("added the include line")
@@ -515,6 +505,25 @@ class SambaUserManager:
             changes.append(f"retired {name}")
         return changes, kept
 
+    def sweep(self) -> list:
+        """Delete every ``neutrino-`` SMB user of the machine, credential and account.
+
+        Returns:
+            One note per credential and per account removed.
+
+        Raises:
+            subprocess.CalledProcessError: If Samba or ``userdel`` refuses.
+        """
+        notes = []
+        for name in self.credentialed_users():
+            if name.startswith(SAMBA_LINUX_USER_PREFIX):
+                run(["smbpasswd", "-x", name])
+                notes.append(f"swept the credential of {name}")
+        for name in self._module_accounts():
+            run(["userdel", name])
+            notes.append(f"swept the account {name}")
+        return notes
+
     def set_password(self, name: str, password: str) -> None:
         """Set one user's share password.
 
@@ -559,6 +568,16 @@ class SambaUserManager:
     def _credentialed_users(self) -> set:
         return set(self.credentialed_users())
 
+    def _module_accounts(self) -> list:
+        result = run(["getent", "passwd"], is_checked=False)
+        if not result.is_success:
+            return []
+        return [
+            line.split(":", 1)[0]
+            for line in result.stdout.splitlines()
+            if line.startswith(SAMBA_LINUX_USER_PREFIX)
+        ]
+
 
 class SambaConfigApplier:
     """Writes the module's own file, keeps ``smb.conf`` including it, and loads both."""
@@ -582,10 +601,7 @@ class SambaConfigApplier:
             text when the machine has no file and the module serves nothing.
         """
         return plan_smb_conf(
-            read_text(SAMBA_CONF_PATH),
-            backup=read_text(SAMBA_CONF_BACKUP_PATH),
-            stock=read_stock_conf(),
-            is_served=is_served,
+            read_text(SAMBA_CONF_PATH), stock=read_stock_conf(), is_served=is_served
         )
 
     def apply(
@@ -620,7 +636,6 @@ class SambaConfigApplier:
             self._remove_own()
             if smb_conf != (current or ""):
                 _write_file(SAMBA_CONF_PATH, smb_conf)
-                self._forget_backup(note)
             if notes and unit_state(self._unit) == "active":
                 run(["systemctl", "reload", self._unit])
                 notes.append("reloaded")
@@ -631,7 +646,6 @@ class SambaConfigApplier:
         _write_file(SAMBA_MODULE_CONF_PATH, rendered)
         if smb_conf != current:
             _write_file(SAMBA_CONF_PATH, smb_conf)
-            self._forget_backup(note)
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
             return "; ".join(notes + ["reloaded"])
@@ -649,10 +663,6 @@ class SambaConfigApplier:
         with contextlib.suppress(OSError):
             os.unlink(SAMBA_MODULE_CONF_PATH)
         shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
-
-    def _forget_backup(self, note: str) -> None:
-        if "smb.conf.before_neutrino" in note:
-            os.unlink(SAMBA_CONF_BACKUP_PATH)
 
     def stop(self) -> None:
         """Take the server down until the next apply; the unit stays enabled."""

@@ -283,6 +283,23 @@ function Set-NeutrinoShare {
         return @{notes = @()}
     }
     $computer = $env:COMPUTERNAME
+    $notes = @()
+    if ($Request.is_sweep) {
+        foreach ($share in @(Get-SmbShare -ErrorAction SilentlyContinue)) {
+            if ("$($share.Description)".StartsWith($Request.marker)) {
+                Remove-SmbShare -Name $share.Name -Force | Out-Null
+                $notes += "swept share $($share.Name)"
+            }
+        }
+        foreach ($user in @(Get-LocalUser -ErrorAction SilentlyContinue)) {
+            $is_marked = ("$($user.Description)" -eq $Request.marker) -or
+                "$($user.Name)".StartsWith($Request.user_prefix)
+            if ($is_marked) {
+                Remove-LocalUser -Name $user.Name | Out-Null
+                $notes += "swept account $($user.Name)"
+            }
+        }
+    }
     foreach ($s in @($Request.shares)) {
         $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
         $is_ours = (@($Request.owned_shares) -contains $s.name) -and
@@ -299,7 +316,6 @@ function Set-NeutrinoShare {
             return @{refusal = @{code = 'user_name_taken'; params = @{user = $u}}}
         }
     }
-    $notes = @()
     $svc = Get-Service -Name LanmanServer
     if ("$($svc.StartType)" -eq 'Disabled') {
         Set-Service -Name LanmanServer -StartupType Automatic | Out-Null

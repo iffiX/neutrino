@@ -133,6 +133,11 @@ class FakeReader:
 class FakeUsers:
     converged: list = []
     made: list = []
+    sweeps = 0
+
+    def sweep(self):
+        FakeUsers.sweeps += 1
+        return ["swept the account neutrino-old"]
 
     def check_accounts(self, accounts):
         for name in accounts:
@@ -163,7 +168,10 @@ def runner(monkeypatch, tmp_path):
     FakeApplier.served = []
     FakeUsers.converged = []
     FakeUsers.made = []
+    FakeUsers.sweeps = 0
     FakeReader.persons = ({}, [])
+    (tmp_path / "configured").mkdir()
+    (tmp_path / "configured" / "samba").write_text("")
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
     monkeypatch.setattr(runner_module, "testparm", lambda smb_conf, rendered: None)
@@ -508,6 +516,7 @@ class FakeNativeApplier:
 
     def __init__(self):
         self.calls: list = []
+        self.sweeps: list = []
         self.status = {"is_present": True, "is_running": True, "shares": []}
         self.reads = 0
         self.error = None
@@ -516,8 +525,9 @@ class FakeNativeApplier:
         self.reads += 1
         return dict(self.status)
 
-    def apply(self, config, record):
+    def apply(self, config, record, *, is_sweep=False):
         self.calls.append(("apply", config.to_dict(), record))
+        self.sweeps.append(is_sweep)
         if self.error is not None:
             raise self.error
         return ["created share share"]
@@ -567,6 +577,8 @@ class Clock:
 
 @pytest.fixture
 def native(tmp_path):
+    (tmp_path / "configured").mkdir()
+    (tmp_path / "configured" / "samba").write_text("")
     platform = NativeServerPlatform(tmp_path)
     clock = Clock()
     held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
@@ -871,3 +883,33 @@ def test_a_configuration_with_no_served_share_plans_an_unserved_smb_conf(runner)
 
     assert FakeApplier.served == [False]
     assert runner.notice()["params"] == {"shares": "carried"}
+
+
+def test_the_first_apply_sweeps_the_modules_users_and_files_and_a_later_one_does_not(
+    runner, tmp_path
+):
+    (tmp_path / "configured" / "samba").unlink()
+
+    runner.apply(CONFIG)
+    (tmp_path / "configured" / "samba").write_text("")
+    runner.apply(CONFIG)
+
+    assert FakeUsers.sweeps == 1
+    assert FakeApplier.removals == 1
+    assert FakeUsers.made == [["ann"], ["ann"]]
+    assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
+
+
+def test_the_native_first_apply_sweeps_and_starts_from_an_empty_record(
+    native, tmp_path
+):
+    native.apply(WINDOWS_CONFIG)
+    (tmp_path / "configured" / "samba").unlink()
+
+    native.apply(WINDOWS_CONFIG)
+
+    assert native.applier.sweeps == [False, True]
+    first, second = [call for call in native.applier.calls if call[0] == "apply"]
+    assert first[2]["accounts"] == []
+    assert second[2]["accounts"] == [] and second[2]["shares"] == {"share": "D:\\share"}
+    assert record_of(native)["accounts"] == ["ann"]

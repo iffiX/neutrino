@@ -26,6 +26,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_DENIED_RIGHTS,
+    SAMBA_LINUX_USER_PREFIX,
     SAMBA_WINDOWS_FENCE_RULE,
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
@@ -231,7 +232,9 @@ class SambaWindowsApplier:
             ],
         }
 
-    def apply(self, config: SambaConfig, record: dict) -> list:
+    def apply(
+        self, config: SambaConfig, record: dict, *, is_sweep: bool = False
+    ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
         An account is the module's when the record lists it or its
@@ -274,6 +277,8 @@ class SambaWindowsApplier:
                 "shares": [_share_request(share, config) for share in config.shares],
                 "retired_rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
+                "is_sweep": is_sweep,
+                "user_prefix": SAMBA_LINUX_USER_PREFIX,
             },
         )
         for share in config.shares:

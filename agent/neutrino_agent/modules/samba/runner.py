@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 
+from neutrino_agent.constants import AGENT_CONFIGURED_DIR_NAME
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.samba.applier import (
@@ -70,7 +71,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._unit = samba_unit(family or platform_tuple().get("family", ""))
-        self._record_path = os.path.join(platform.agent_var_dir(), SAMBA_RECORD_NAME)
+        self._var_dir = platform.agent_var_dir()
+        self._record_path = os.path.join(self._var_dir, SAMBA_RECORD_NAME)
         self._config: "SambaConfig | None" = None
         self._left_out: list = []
 
@@ -119,7 +121,12 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         rendered = renderer.render()
         held = read_digests(self._record_path)
         try:
-            changes = users.converge_accounts(parsed)
+            changes = []
+            if self._is_first_apply():
+                changes += users.sweep()
+                SambaConfigApplier(unit=self._unit).remove()
+                held = {}
+            changes += users.converge_accounts(parsed)
             note = SambaConfigApplier(unit=self._unit).apply(
                 rendered, config=parsed, user_files=renderer.render_user_files()
             )
@@ -157,6 +164,12 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).remove()
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
+
+    def _is_first_apply(self) -> bool:
+        """Whether no apply of the hub's configuration has succeeded here yet."""
+        return not os.path.exists(
+            os.path.join(self._var_dir, AGENT_CONFIGURED_DIR_NAME, self.name)
+        )
 
     def _check_persons(self, parsed: SambaConfig) -> str:
         """Refuse what the person's own ``smb.conf`` makes impossible.
@@ -338,7 +351,9 @@ class SambaNativeServerRunner(ModuleRunner):
 
         The record lists the configured shares before the server is
         touched, so a share made by an apply that then failed is still the
-        module's to change.
+        module's to change. The first apply after an install or an adoption
+        sweeps every share and account the module's marker names and starts
+        from an empty record.
 
         Args:
             config: The desired configuration.
@@ -350,12 +365,21 @@ class SambaNativeServerRunner(ModuleRunner):
         parsed = SambaConfig.from_dict(config)
         parsed.validate(os_name=self._platform.os_name)
         record = self._read_record()
+        is_sweep = not os.path.exists(
+            os.path.join(
+                self._platform.agent_var_dir(), AGENT_CONFIGURED_DIR_NAME, self.name
+            )
+        )
+        if is_sweep:
+            record = dict(record, shares={}, accounts=[], passwords={})
         shares = dict(record["shares"])
         shares.update({share.name: share.path for share in parsed.shares})
         self._write_record(dict(record, shares=shares))
         refusal = None
         try:
-            notes = self._applier.apply(parsed, dict(record, shares=shares))
+            notes = self._applier.apply(
+                parsed, dict(record, shares=shares), is_sweep=is_sweep
+            )
         except ModuleApplyError as error:
             if error.code not in SAMBA_ACCOUNT_REFUSALS:
                 raise

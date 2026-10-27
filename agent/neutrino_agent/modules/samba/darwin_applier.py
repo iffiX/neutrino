@@ -39,6 +39,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_PF_ANCHOR,
     SAMBA_DARWIN_SERVER_LOG_COMMAND,
     SAMBA_DARWIN_SHARE_PREFIX,
+    SAMBA_LINUX_USER_PREFIX,
     SAMBA_DARWIN_SHELL,
     SAMBA_DARWIN_SMBD_PLIST,
     SAMBA_DARWIN_SMBD_TARGET,
@@ -174,7 +175,9 @@ class SambaDarwinApplier:
         except (OSError, subprocess.SubprocessError):
             return {"is_present": False, "is_running": False}
 
-    def apply(self, config: SambaConfig, record: dict) -> list:
+    def apply(
+        self, config: SambaConfig, record: dict, *, is_sweep: bool = False
+    ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
         An account is the module's when the record lists it or its full name
@@ -204,6 +207,11 @@ class SambaDarwinApplier:
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
         points = self._share_points()
+        swept = []
+        if is_sweep:
+            swept = self._sweep(points)
+            owned_shares, owned_accounts = {}, []
+            points = self._share_points()
         for share in config.shares:
             held = [point for point in points if point["smb_name"] == share.name]
             is_ours = share.name in owned_shares and all(
@@ -216,7 +224,7 @@ class SambaDarwinApplier:
                 continue
             if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
-        notes = self._remove_fence()
+        notes = swept + self._remove_fence()
         notes += self._serve()
         account_notes, refusals = self._converge_accounts(config, owned_accounts)
         notes += account_notes
@@ -226,6 +234,30 @@ class SambaDarwinApplier:
         )
         if refusals:
             raise refusals[0]
+        return notes
+
+    def _sweep(self, points: list) -> list:
+        """Delete every share point and account the module's marks name.
+
+        Returns:
+            One note per point and per account removed.
+        """
+        notes = []
+        for point in points:
+            if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX):
+                self._run(["sharing", "-r", point["record"]], is_checked=False)
+                notes.append(f"swept share {point['smb_name']}")
+        listing = self._read(["dscl", ".", "-list", "/Users", "RealName"])
+        for line in listing.splitlines():
+            name, _, full_name = line.partition(" ")
+            full_name = " ".join(full_name.split())
+            if not name:
+                continue
+            if name.startswith(SAMBA_LINUX_USER_PREFIX) or is_module_full_name(
+                full_name
+            ):
+                self._run(["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False)
+                notes.append(f"swept account {name}")
         return notes
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:

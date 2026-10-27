@@ -4,9 +4,10 @@ What these pin beside the reads: a missing share folder is made and an
 existing one is left as it is; ``smb.conf`` stays the person's and gets
 the module's include line once, after its ``[global]`` header; a missing
 ``smb.conf`` is the distribution's stock file with the line; a whole
-``smb.conf`` an earlier version rendered gives way to the copy kept before
-it, else to the stock file; the module's shares go to its own file; an
-uninstall deletes that file and takes the line out; the person's own
+``smb.conf`` an earlier version rendered is the person's and only gets the
+line; the module's shares go to its own file; an uninstall deletes that
+file and takes the line out; the sweep takes every ``neutrino-`` user and
+credential off the machine; the person's own
 configuration refuses a taken share name and the global settings that stop
 the module's shares; each user's Samba password is set from the hub's map
 when it differs from the digest held or Samba holds no credential, never
@@ -107,9 +108,6 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(applier_module, "run", commands)
     monkeypatch.setattr(
         applier_module, "SAMBA_CONF_PATH", str(tmp_path / "etc/smb.conf")
-    )
-    monkeypatch.setattr(
-        applier_module, "SAMBA_CONF_BACKUP_PATH", str(tmp_path / "etc/backup.conf")
     )
     monkeypatch.setattr(
         applier_module, "SAMBA_MODULE_CONF_PATH", str(tmp_path / "etc/neutrino.conf")
@@ -231,10 +229,13 @@ def test_a_persons_smb_conf_gets_the_include_line_once_and_nothing_else(box):
     assert not (tmp_path / "etc/backup.conf").exists()
 
 
-def test_an_earlier_versions_whole_file_gives_way_to_the_copy_kept_before_it(box):
+def test_an_earlier_versions_whole_file_is_the_persons_and_only_gets_the_line(box):
     _, tmp_path = box
     (tmp_path / "etc").mkdir()
-    (tmp_path / "etc/smb.conf").write_text(f"{MARKER}\n[global]\n   hosts deny = 0/0\n")
+    earlier = (
+        f"{MARKER}\n\n[global]\n   hosts deny = 0/0\n\n[lab]\n   path = /home/lab\n"
+    )
+    (tmp_path / "etc/smb.conf").write_text(earlier)
     (tmp_path / "etc/backup.conf").write_text("[global]\n   workgroup = HOME\n")
 
     note = SambaConfigApplier(unit="smbd.service").apply(
@@ -242,34 +243,42 @@ def test_an_earlier_versions_whole_file_gives_way_to_the_copy_kept_before_it(box
     )
 
     module_conf = str(tmp_path / "etc/neutrino.conf")
-    assert note == "put back smb.conf.before_neutrino; added the include line; started"
+    assert note == "added the include line; started"
     assert (tmp_path / "etc/smb.conf").read_text() == (
-        f"[global]\n{INCLUDE}{module_conf}\n   workgroup = HOME\n"
+        f"{MARKER}\n\n[global]\n{INCLUDE}{module_conf}\n   hosts deny = 0/0\n\n"
+        "[lab]\n   path = /home/lab\n"
     )
-    assert not (tmp_path / "etc/backup.conf").exists()
+    assert (tmp_path / "etc/backup.conf").exists()
 
 
-def test_an_earlier_versions_whole_file_without_a_copy_gives_way_to_the_stock_file(
-    box,
-):
-    _, tmp_path = box
-    (tmp_path / "etc").mkdir()
-    (tmp_path / "etc/smb.conf").write_text(f"{MARKER}\n[global]\n")
-
-    note = SambaConfigApplier(unit="smbd.service").apply(
-        f"{MARKER}\n", config=one_share(tmp_path)
+def test_the_sweep_takes_every_neutrino_user_and_credential_and_no_other(box):
+    commands, _ = box
+    commands.answers[("pdbedit", "-L")] = (0, "neutrino-ann:1001:\nbob:1002:\n")
+    commands.answers[("getent", "passwd")] = (
+        0,
+        "root:x:0:0:root:/root:/bin/bash\n"
+        "neutrino-ann:x:997:997:neutrino file share:/home/neutrino-ann:/usr/sbin/nologin\n"
+        "neutrino-old:x:996:996:neutrino file share:/nonexistent:/usr/sbin/nologin\n"
+        "bob:x:1002:1002::/home/bob:/bin/bash\n",
     )
 
-    assert note.startswith(
-        f"put back the distribution's {tmp_path / 'stock/smb.conf'}; "
-    )
-    assert "workgroup = WORKGROUP" in (tmp_path / "etc/smb.conf").read_text()
+    notes = SambaUserManager().sweep()
+
+    assert commands.ran("smbpasswd") == [(["smbpasswd", "-x", "neutrino-ann"], None)]
+    assert commands.ran("userdel") == [
+        (["userdel", "neutrino-ann"], None),
+        (["userdel", "neutrino-old"], None),
+    ]
+    assert notes == [
+        "swept the credential of neutrino-ann",
+        "swept the account neutrino-ann",
+        "swept the account neutrino-old",
+    ]
 
 
 def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_one():
     text, note = plan_smb_conf(
         "[media]\n   path = /srv/media\n",
-        backup=None,
         stock=("[global]\n", "stock"),
         is_served=True,
     )
@@ -279,29 +288,18 @@ def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_on
         "[media]\n   path = /srv/media\n"
     )
     assert note == "added the include line"
-    assert plan_smb_conf(
-        None, backup=None, stock=("[global]\n", "a stock"), is_served=True
-    ) == (
+    assert plan_smb_conf(None, stock=("[global]\n", "a stock"), is_served=True) == (
         f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n",
         "wrote a stock; added the include line",
     )
-    assert plan_smb_conf(text, backup=None, stock=("", ""), is_served=True) == (
-        text,
-        "",
-    )
-    assert plan_smb_conf(text, backup=None, stock=("", ""), is_served=False) == (
+    assert plan_smb_conf(text, stock=("", ""), is_served=True) == (text, "")
+    assert plan_smb_conf(text, stock=("", ""), is_served=False) == (
         "[global]\n\n[media]\n   path = /srv/media\n",
         "took the include line out",
     )
-    assert plan_smb_conf(None, backup=None, stock=("x", "s"), is_served=False) == (
-        "",
-        "",
-    )
+    assert plan_smb_conf(None, stock=("x", "s"), is_served=False) == ("", "")
     persons = "[global]\n   workgroup = HOME\n"
-    assert plan_smb_conf(persons, backup=None, stock=("", ""), is_served=False) == (
-        persons,
-        "",
-    )
+    assert plan_smb_conf(persons, stock=("", ""), is_served=False) == (persons, "")
     assert without_include_line(text) == "[global]\n\n[media]\n   path = /srv/media\n"
 
 
