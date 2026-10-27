@@ -8,7 +8,7 @@ is handed (``token``). The transport raises an event when a session opens
 or ends and when an agent opens a stream the Python takes, ``log`` or
 ``package``, and it passes every other frame of an admitted session here:
 ``hello``, ``report``, ``leave``, a client's ``persist`` and
-``stop_session``, an agent's ``reply`` (protocol.md, "The hub's local
+``stop_session``, an agent's ``reply`` (transport.md, "The hub's local
 channel").
 
 An agent's reports are recorded and its state offered once per connection;

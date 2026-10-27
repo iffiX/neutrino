@@ -164,7 +164,8 @@ enum Client {
     static let bindingsAccount = "bindings"
 }
 
-/// The channel: the link, the paths, the frames' numbers and the timings of `design/protocol.md`.
+/// The channel: the link, the paths and the timings of `design/transport.md`, and the frames' numbers
+/// of `design/protocol.md`.
 enum Channel {
     // swift-format-ignore: AlwaysUseLowerCamelCase
     /// The protocol number this build speaks, under the one name it has in every package.

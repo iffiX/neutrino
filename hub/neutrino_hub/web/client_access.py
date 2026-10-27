@@ -5,7 +5,7 @@ A change on the Clients page holds for the next stream by itself, since every
 transport: the session of a client switched off or deleted, with
 ``session_close``; otherwise its streams of each kind it lost, and of each
 machine it lost under a kind, with ``streams_close``, the panel's forward
-among them; and its panel sessions once ``panel`` goes (protocol.md, "The
+among them; and its panel sessions once ``panel`` goes (transport.md, "The
 hub's local channel"). A stream closed this way ends with the refusal its
 next ``open`` would get. A persistent or shared shell stays on its machine;
 only this client's stream to it closes.

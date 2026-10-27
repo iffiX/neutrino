@@ -7,7 +7,7 @@ its TLS handshake under ``CHANNEL_TLS_HANDSHAKE_TIMEOUT_S`` from its first
 byte and its admission under ``CHANNEL_ADMISSION_TIMEOUT_S``, and only then
 handed to uvicorn's own HTTP protocol on the TLS transport. The transport
 relays an agent of 0.5 to it while ``is_legacy_channel_enabled`` is on
-(protocol.md, "An agent of 0.5"). The counts are the runtime's
+(transport.md, "An agent of 0.5"). The counts are the runtime's
 :class:`neutrino_hub.modules.channel.port_guard.ChannelPortGuard`. The
 middleware here refuses a body past ``CHANNEL_REQUEST_BYTES_MAX`` before the
 application reads it.

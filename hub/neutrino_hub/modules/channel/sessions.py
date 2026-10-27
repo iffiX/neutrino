@@ -4,7 +4,7 @@ The transport holds every peer's session and relays every stream's bytes;
 the hub's Python keeps, for each admitted session, what the rest of the hub
 asks: whether a binding is online, what software it runs, when its last
 session ended, its latest report, and the way to push its state, send it a
-frame or open a stream on it (protocol.md, "The local channel"). Presence
+frame or open a stream on it (transport.md, "The local channel"). Presence
 is memory alone. Routes on the hub's loop await the session directly;
 threadpool routes and worker threads go through the ``*_from_thread``
 methods.

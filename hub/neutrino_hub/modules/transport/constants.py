@@ -23,7 +23,7 @@ TRANSPORT_SERVICE_NAME = "transport"
 
 # The static key: the one directory of the configuration the hub's Python
 # does not write, the private half readable by the transport's account alone,
-# the public half beside it (protocol.md, "The hub's static key").
+# the public half beside it (transport.md, "The hub's static key").
 TRANSPORT_KEY_DIR = UTILS_CONFIG_DIR / "transport"
 TRANSPORT_KEY_DIR_MODE = 0o700
 # The configuration root above it lets the transport's account pass and read

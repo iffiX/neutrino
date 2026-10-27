@@ -4,7 +4,7 @@ A client's ``connect`` names a published entry or the panel, its ``shell``
 or ``exec`` a managed machine; an agent's ``connect`` names the ``ai``
 entry. The hub's Python judges each against the binding's permission and
 names the far end: a stream to open on the agent's session with the hub's
-stamps written in, or an address the transport dials itself (protocol.md,
+stamps written in, or an address the transport dials itself (transport.md,
 "The hub's local channel").
 """
 

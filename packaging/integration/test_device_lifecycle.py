@@ -4,7 +4,7 @@ Scan finds a stranger; naming it mints the id everything after addresses it
 by; one install delivers the native package and joins it over the channel;
 forgetting it on the hub is the one refusal that unbinds an agent; a link
 brings it back; leaving from the device side empties the hub's binding at
-once. Every transition of the state table in protocol.md, walked once.
+once. Every transition of the state table in transport.md, walked once.
 
 The box is wired here — a router serving the spare port — so nothing depends
 on what an earlier test left behind. It needs the CI/CD pipeline's client VM on the

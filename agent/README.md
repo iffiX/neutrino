@@ -73,8 +73,10 @@ The verbs a `command` names for the agent itself are the closed set
 `reinstall`, `resize`, `kill`, `remote_desktop_read` and
 `remote_desktop_password_set`. No verb runs a shell string. Every other module's
 verbs are its runner's, spelled without the module's name, because the `module`
-field is the prefix. The frames, the credit window and the close codes are in
-[the protocol design page](../skills/core-code-author/design/protocol.md).
+field is the prefix. The frames and the close codes are in
+[the protocol design page](../skills/core-code-author/design/protocol.md), and
+the stream windows in
+[the transport design page](../skills/core-code-author/design/transport.md).
 
 Installing a module follows from the `want` the state gives it, one of
 `absent`, `installed`, `stopped` and `running`. The agent makes each mentioned

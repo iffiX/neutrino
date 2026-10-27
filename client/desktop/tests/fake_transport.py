@@ -1,7 +1,7 @@
 """A stand-in for the client's transport: its local channel, scripted by a test.
 
 It listens on a Unix socket under a short temporary directory and speaks
-the client's local channel as protocol.md "The local channel" gives it: a
+the client's local channel as transport.md "The local channel" gives it: a
 first line with the secret and an ``op``, then on the control connection
 the client's commands, answered by the line naming the command's ``id``,
 the events and frames the test emits, and the frames the client writes; on

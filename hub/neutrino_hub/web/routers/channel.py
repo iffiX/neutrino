@@ -5,7 +5,7 @@ the agent TLS pair on ``127.0.0.1`` alone, behind the
 ``is_legacy_channel_enabled`` switch: the PROTOCOL 3 channel of a 0.5 agent,
 admitted for its own update and nothing else, and ``POST
 /api/channel/key/set``, through which an updated agent or client records its
-static public key on its binding and takes the hub's (protocol.md, "An
+static public key on its binding and takes the hub's (transport.md, "An
 agent of 0.5").
 """
 

@@ -44,7 +44,7 @@ CHANNEL_CLOSE_REPLACED = 4010
 
 # The local channel between the hub's Python and its transport: the first
 # line's operations, the questions the transport asks, the commands the
-# Python sends and the events the transport raises (protocol.md, "The local
+# Python sends and the events the transport raises (transport.md, "The local
 # channel").
 CHANNEL_LOCAL_OP_CONTROL = "control"
 CHANNEL_LOCAL_OP_ATTACH = "attach"
@@ -222,7 +222,7 @@ CHANNEL_UDP_SOURCE_BYTES = 2
 # The loopback address the hub dials its own gateway and panel on.
 CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
 # The legacy listener's limits, each over the whole listener and never per
-# peer address (connection.md, "What an unadmitted peer can cost the hub"):
+# peer address (transport.md, "What an unadmitted peer can cost the hub"):
 # a socket's time to its first byte, a TLS handshake's time from that byte,
 # the time from accept to an admitted hello, the connections not yet past
 # hello, the sockets past it, and the failed admissions within the window

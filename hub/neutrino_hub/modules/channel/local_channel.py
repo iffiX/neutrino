@@ -5,7 +5,7 @@ hub's Python connects. One control connection carries the transport's
 questions, the Python's commands and the events and frames of every
 session as JSON lines; every stream the Python takes or opens is one more
 connection, ``attach`` for a stream a peer opened and ``open`` for one the
-hub opens (protocol.md, "The local channel"). Every connection opens with
+hub opens (transport.md, "The local channel"). Every connection opens with
 one line holding the secret the transport received at its start.
 
 A transport that is not there yet, or that restarted, is dialled again

@@ -1,7 +1,7 @@
 """A client's shells and commands on managed machines, as the hub judges them.
 
 The transport relays a client's ``shell`` and ``exec`` streams to the agent
-once the hub's Python admitted the open (protocol.md, "The hub's local
+once the hub's Python admitted the open (transport.md, "The hub's local
 channel"); the Python's part is the judgment, the stamps the agent's open
 carries, and the two frames on a kept shell, ``persist`` and
 ``stop_session``, which the hub relays to the machine holding the session

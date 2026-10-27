@@ -5,7 +5,7 @@ transport, which copies the stream's records both ways unchanged. Each
 record is ``<u8 type><u32 length, big-endian><payload>``: the opener's
 ``open``, the other side's ``accept`` or refusing ``close``, then ``data``,
 ``stderr``, ``eof``, ``resize`` and ``datagram`` as the kind takes them,
-and a ``close`` whose ``params`` are the result (protocol.md, "The stream
+and a ``close`` whose ``params`` are the result (transport.md, "The stream
 layer"). What arrives queues up in order and ``None`` follows the end.
 """
 

@@ -1,6 +1,6 @@
 """The hub's side of the local channel, against a fake transport on a socket.
 
-What these pin, line by line of protocol.md's "The hub's local channel": the
+What these pin, line by line of transport.md's "The hub's local channel": the
 control connection opens with the secret and a wrong one is refused; the
 ``peer`` question is answered from the bindings' static keys with the
 binding, the role and the psk, or ``binding_unknown`` and ``role_mismatch``;

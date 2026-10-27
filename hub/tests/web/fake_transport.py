@@ -4,7 +4,7 @@ It listens on a Unix socket as ``neutrino_transport`` does, takes the
 control connection, the ``attach`` and ``open`` connections, and lets a test
 raise the events a real transport would (``session_open``, a frame,
 ``session_end``, ``stream``), ask the four questions and read what the hub's
-Python wrote: its answers, its commands and its frames (protocol.md, "The
+Python wrote: its answers, its commands and its frames (transport.md, "The
 local channel"). It judges nothing itself.
 """
 

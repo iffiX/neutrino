@@ -1,6 +1,6 @@
 [Unit]
 Description=Neutrino Hub transport: the agent port
-Documentation=file://@REPO_ROOT@/skills/core-code-author/design/protocol.md
+Documentation=file://@REPO_ROOT@/skills/core-code-author/design/transport.md
 After=network.target
 
 [Service]

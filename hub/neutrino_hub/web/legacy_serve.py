@@ -5,7 +5,7 @@ package, and ``package {}`` down; ``protocol_too_old`` closes every other
 stream it opens, and the hub pushes it no state. Its session is in
 ``agent_update_sessions``, never in ``agent_sessions``, and stays there
 after its socket ends until the updated agent knocks on the transport
-(protocol.md, "An agent of 0.5").
+(transport.md, "An agent of 0.5").
 """
 
 import asyncio

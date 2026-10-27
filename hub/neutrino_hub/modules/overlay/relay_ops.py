@@ -291,7 +291,7 @@ def check_public_address(host: str, port: int, *, timeout_s: float) -> bool:
 
     Returns:
         True when ``neutrino_transport probe`` completed a handshake there
-        under the hub's own key in time (protocol.md, "The session").
+        under the hub's own key in time (transport.md, "The handshake").
     """
     return transport_probe(host, port, timeout_s=timeout_s)
 

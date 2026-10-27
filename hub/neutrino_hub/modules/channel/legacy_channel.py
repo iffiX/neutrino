@@ -2,7 +2,7 @@
 
 An upgrade from 0.5 finds device rows and turns the switch on; the hub
 turns it off by itself once no device row names an agent version below
-0.6.0 (protocol.md, "An agent of 0.5"). The switch is rendered into
+0.6.0 (transport.md, "An agent of 0.5"). The switch is rendered into
 ``transport.json`` as ``legacy_tls_port``.
 """
 

@@ -6,7 +6,7 @@ bytes for that stream. Either side opens a stream with ``open``, the hub
 on even ids and the peer on odd ones, and ends it with ``close``, whose
 ``params`` are its result. Bytes travel under ``credit``: the receiving
 side grants as it consumes. The hub serves such a session for the agent's
-own package alone (protocol.md, "An agent of 0.5"); every other peer is on
+own package alone (transport.md, "An agent of 0.5"); every other peer is on
 the transport.
 """
 
