@@ -588,10 +588,12 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 A permission kind is a published service type (`web`, `port`, `ssh`, `ai`,
 `file`, `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS`
 in `modules/clients/constants.py`. `ssh` reaches the machines' SSH servers,
-for `nclient ssh` and for the `ssh` entries of the Apps page. The first
-start of a 0.6.0 hub on a `clients.json` without `is_ssh_granted` adds `ssh`
-once to each stored permission that names `terminal`, the default and each
-client's own, with `terminal`'s device list when it has one, and writes
+on a desktop client alone: `nclient ssh`, its SSH configuration and the
+`ssh` entries' local ports ([client.md](client.md), "SSH for other
+programs"). The first start of a 0.6.0 hub on a `clients.json` without
+`is_ssh_granted` adds `ssh` once to each stored permission that names
+`terminal`, the default and each client's own, with `terminal`'s device
+list when it has one, and writes
 `is_ssh_granted: true`; `clients.example.json` carries it true, and a
 person who takes `ssh` away later keeps it away. `terminal` opens a `shell` on a managed
 machine and runs one command there through an `exec` stream ("The exec
@@ -1838,7 +1840,7 @@ source, device_id, device_name, local_name}`:
 | --- | --- | --- | --- | --- |
 | an instance of VS Code, code-server, CloudCLI or Codeg | `<module>_<device id>_<account>` | `<module title> (<account>)` | `module` | `web` |
 | Gitea | `gitea_<device id>` | `Gitea` | `module` | `web`, and `ssh`, a TCP `port` entry for Gitea's own SSH server ([agent/modules/gitea.md](agent/modules/gitea.md)) |
-| the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per running instance, named by its account |
+| the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per account the module enables, named by its account |
 | a container module, Hermes WebUI among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
 | a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
@@ -1848,6 +1850,7 @@ source, device_id, device_name, local_name}`:
 | --- | --- |
 | A module the hub manages is one app however many containers it runs, and its source is `module`. A container the hub does not manage is one app of its own, `declared` when the Containers module's configuration names it and `manual` when a person started it by hand, the owners the Containers tab's chips name ([agent/modules/containers.md](agent/modules/containers.md), "Hub containers"). | The person thinks of Hermes WebUI as one thing and of each container they run as one thing, and the chip says who answers for it. |
 | An app's entries are in the list only while the entry kind is allowed to the client on that machine; an app none of whose entries is allowed is not in `apps`. | The permission stays per kind and per machine, as on every other entry. |
+| The SSH server is in `apps` and on no page: no client's Apps page and not the panel's Services page shows its row or an `ssh` entry. Its row gives the `ssh` entries their ids and their local ports, and gives a desktop client the machine part of the host its SSH configuration names ([client.md](client.md), "SSH for other programs"). | The SSH server is a function of every machine, as the terminal and the remote desktop are, used by the programs on a desktop that speak SSH; a phone reaches a shell on its Terminals page. |
 | A declared app's `file` entry is mounted on the Files page as a machine's share is, at a port the client picks, and with the login the person types there ([client.md](client.md), "The Files page"). The hub generates no password for it. | A NAS's share has its own users, which the hub neither makes nor knows. |
 | `app_id` and `name` are added fields and keep `PROTOCOL`; `apps` is an added section. | A reader that predates them reads each entry as before. |
 

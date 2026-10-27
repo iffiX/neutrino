@@ -4,9 +4,11 @@ The `ssh_server` module is the agent's own SSH server, carried in the
 agent's package beside Terminal and Remote desktop: one instance per enabled
 account, each running as that account on `127.0.0.1`, admitting the one key
 the hub made for that account on that machine. Through it every program that
-speaks SSH reaches the machine through a client, `ssh`, `scp`, `sftp`,
-`rsync`, `git` and VS Code's Remote-SSH among them, beside the machine's own
-sshd, which keeps the configuration its person gave it.
+speaks SSH reaches the machine through a desktop client, `ssh`, `scp`,
+`sftp`, `rsync`, `git` and VS Code's Remote-SSH among them, beside the
+machine's own sshd, which keeps the configuration its person gave it. It is
+no app: it is a function of every machine, as Terminal and Remote desktop
+are, and no client's Apps page and not the panel's Services page shows it.
 
 ## What runs
 
@@ -65,11 +67,13 @@ its `SHA256:<base64>`. An apply refuses `account_invalid`,
 `account_unknown {account}`; on Windows `credential_missing {account}` and
 `credential_invalid {account}`.
 
-The machine's SSH servers are one app, `ssh_server_<device id>`, titled
-`SSH`, and each running instance is one of its `ssh` entries, named by its
-account ([../../protocol.md](../../protocol.md), "Apps"). The `ssh` permission
-kind reaches it, and a client takes the private key and the host key with the
-`service` frame.
+Each account the module enables is one `ssh` entry, named by its account,
+of the row `ssh_server_<device id>` in `apps`, which no page shows
+([../../protocol.md](../../protocol.md), "Apps"). The `ssh` permission kind
+reaches it. A desktop client forwards each entry at its local port while it
+runs and takes the private key and the host key with the `service` frame
+([../../client.md](../../client.md), "SSH for other programs"); a phone uses
+none of it.
 
 Its journal on Linux is the units' journal; on macOS each LaunchDaemon's
 output names `/Library/Logs/Neutrino/agent/ssh_server_<account>.log`, and on

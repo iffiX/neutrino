@@ -402,13 +402,13 @@ A row per app ([protocol.md](protocol.md), "Apps"): the app's title, the
 machine and the app's source word (`ui.app_source.module`,
 `ui.app_source.declared`, `ui.app_source.manual`) as the provider line, and
 one mono line per entry, its kind and its local address: `<scheme>://<local
-name>:<local port><path>` for a `web` entry, `127.0.0.1:<local port>` for a
-`port` entry, with `/udp` after it for a UDP one, and `ssh 127.0.0.1:<local
-port>` for an `ssh` entry. A browser resolves the local name; the system
-resolver does not on Windows, and on Linux gives `::1` first, which no
-forward listens on, so a port or ssh entry names the loopback address the
-forward listens on, the address a program is given. The local addresses are
-fixed, so the row shows them before the app is used. The controls:
+name>:<local port><path>` for a `web` entry, and `127.0.0.1:<local port>`
+for a `port` entry, with `/udp` after it for a UDP one. A browser resolves
+the local name; the system resolver does not on Windows, and on Linux gives
+`::1` first, which no forward listens on, so a port entry names the loopback
+address the forward listens on, the address a program is given. The local
+addresses are fixed, so the row shows them before the app is used. The
+controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
@@ -426,7 +426,8 @@ hub's leave, or the client's quit.
 | A token is read at every **Open**. | The token of code-server, CloudCLI, Codeg and Hermes WebUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
 | An entry the hub reports unhealthy keeps its forward and shows `ui.unhealthy` on its line. | The forward stays where the person put it; the service behind it can come back. |
 | A declared app's `file` entries are on the Files page and not here, and an app whose entries are all `file` entries has no row. | A share is mounted, not opened in a browser, and the Files page holds every mount. |
-| A phone's Apps page is this page, with the same entries but the `ssh` ones: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other, and an `ssh` entry needs the key a phone does not write. |
+| No Apps page shows an `ssh` entry, so the machine's SSH server, whose entries are all `ssh` entries, has no row ([protocol.md](protocol.md), "Apps"). A desktop forwards each `ssh` entry by itself ("The local port table") and reaches it with `nclient ssh` ("SSH for other programs"). | The SSH server is a function of every machine, as the terminal and the remote desktop are, and no program a person opens; a phone reaches a shell on its Terminals page. |
+| A phone's Apps page is this page: Android forwards each entry in its foreground service, and iOS while the app is in front ("The iOS app"). | One page on every client; the ports the phones lacked are an app's entries like any other. |
 
 A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
 while the app is in use, and one `connect` stream:
@@ -451,7 +452,8 @@ agent port is the one address a client dials.
 
 | Entry | The forward listens |
 | --- | --- |
-| an app's `web`, `port` or `ssh` entry | from the app's **Use** until its **Stop** |
+| an app's `web` or `port` entry | from the app's **Use** until its **Stop** |
+| an `ssh` entry, on a desktop | while the client runs and the hub lists the entry, which it does while it grants this client `ssh` on that machine and the SSH server enables the account |
 | `ai` | while the client runs and the hub is the exit of any tool |
 | `rdp` | from **Connect** until the viewer ends |
 | `file`, on Linux and macOS | from **Mount** until the share is unmounted |
@@ -476,6 +478,7 @@ The local port is the client's to manage:
 | Rule | Reason |
 | --- | --- |
 | An app entry's local port is the hub's `local_port` for it ([protocol.md](protocol.md), "The local name and the local port"), the same on every client. **Configure** opens a dialog of one line per entry: its name, its kind and a number field that starts at the hub's number, with **Save** and **Cancel**; a number of the person's, from 1024 to 65535, replaces the hub's on this client alone, and an empty field goes back to the hub's. **Configure** is disabled while the app is in use, with no line under it. | The port a tool is told to use must not change under it, and a number every client shares holds a saved address on all of them. |
+| An `ssh` entry's forward listens at the hub's `local_port` for it, the address `nclient ssh list` prints, and has no **Configure**. A number another program or entry holds fails the forward `port_taken {port}`; the client writes the code to its log and tries again at the hub's next state. | A program given a host and a port keeps them, and every program that reads the SSH configuration needs no port at all. |
 | A forward with no hub number, `ai`, `rdp`, every `file` entry, a declared app's among them, and the panel's, takes the first free port from 20000 to 23999, and the client keeps the pick for it and gives it the same port on every later forward and after a restart. | Those forwards are reached by the client's own programs, which read the port from the client. |
 | A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it; a TCP entry's probe binds TCP sockets and a UDP entry's binds UDP sockets. On Windows a UDP number is not bound at all: it is looked up in the system's own table of UDP endpoints (`GetExtendedUdpTable`, IPv4 and IPv6), and is free only when no endpoint on any address holds it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. A UDP socket bound to a wildcard address makes the Windows firewall ask the person whether to let the client reach their networks. |
 | A number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. An app entry's number another program listens on, or another entry of the same protocol holds, is not listened on: that forward fails `port_taken {port}` on the app's error line, and the number never moves by itself. A kept pick of no app that another program now holds is picked again from 20000 to 23999. | A port moved silently breaks a saved address, a clone address or a tool's setting; the person moves it, in **Configure**. |
@@ -836,8 +839,11 @@ SSH servers ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)):
 `ssh`, `scp`, `sftp`, `rsync`, `git`, VS Code's Remote-SSH and JetBrains
 Gateway through an SSH configuration of the client's own, and a program that
 takes only a host and a port, such as FileZilla, WinSCP or Termius, through
-an `ssh` entry's fixed local port on the Apps page. A phone has no such
-configuration; its Apps page forwards the `ssh` entries.
+the fixed local address of the account's `ssh` entry, `127.0.0.1:<local
+port>`, which `nclient ssh list` prints and the client forwards while it
+runs ("The local port table"). The SSH server is no app, and no Apps page
+shows it ([protocol.md](protocol.md), "Apps"). A phone has none of this; it
+reaches a shell on its Terminals page.
 
 The client writes `~/.ssh/neutrino_config` again whenever the machines it
 reaches by `ssh` change: one block for each machine that has an entry of the
@@ -873,7 +879,7 @@ follow the window's pages, with the program itself and `ssh` above them:
 | --- | --- | --- |
 | `gui` | runs the client and its window, or brings a running client's window to the front | 0 |
 | `quit` | stops the running client: closes the window, and ends every forward and mount | 0 |
-| `ssh list` | prints each machine with an `ssh` entry and its accounts, the default first | 0 |
+| `ssh list` | prints each machine with an `ssh` entry and its accounts, the default first, each account followed by its entry's local address `127.0.0.1:<local port>` | 0 |
 | `ssh open [<account>@]<machine> [-- <command>]` | runs the system's `ssh` with `-F ~/.ssh/neutrino_config` against `<account>@<machine>.nt`, the first account when none is named; with `--` it runs the command alone and exits with its code | `ssh`'s own |
 | `ssh config show` | prints the path and the text of `~/.ssh/neutrino_config` | 0 |
 | `ssh config install`, `ssh config uninstall` | adds or takes out the `Include` line ("SSH for other programs") | 0 |
@@ -950,7 +956,7 @@ else.
 | join | paste the link | scan the QR, or paste the link; either adds the hub at once |
 | app | **Use** forwards every entry; **Open** opens the system browser at the first web entry, with the token for an entry with `is_token_required` | the same: the app forwards in its core, and **Open** opens the system browser, the in-app browser on iOS |
 | file entry | mount the forward, or the files adapter's address on Windows, with the share's user and password from the hub | a location in the system's Files app on Android and the share page on iOS, their sockets `connect` streams, with the user and password from the hub |
-| SSH for other programs | `~/.ssh/neutrino_config` and `nclient ssh` | none; the `ssh` entries are forwarded on the Apps page |
+| SSH for other programs | `~/.ssh/neutrino_config`, `nclient ssh` and each `ssh` entry's local port | none; a shell is on the Terminals page |
 | AI entry | point the tools at the forward, configure them | none: no **AI** page |
 | remote desktop | the viewer process, at the forward | the viewer page, at the forward |
 | hub's panel | **Panel** on the hub row | the same |
@@ -984,7 +990,7 @@ the release's unsigned `.ipa` with their own Apple ID
 | join | scan the QR, or paste the link | the same |
 | virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
 | an app's web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
-| an app's port and ssh entries | forwarded at their local ports in the foreground service | forwarded at their local ports while the app is in front, and closed with every other forward when it leaves the screen ("In the background") |
+| an app's port entries | forwarded at their local ports in the foreground service | forwarded at their local ports while the app is in front, and closed with every other forward when it leaves the screen ("In the background") |
 | file entry | a location in the system's Files app | the share page inside the app ("The share page") |
 | remote desktop | the viewer page | the same, with the RustDesk core linked into a device build ("The remote desktop viewer") |
 | terminal | the key row and the long-press menu | the same, drawn by SwiftTerm |

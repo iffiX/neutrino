@@ -596,10 +596,11 @@ entry's host when no machine the hub knows is there. Each entry shows its
 kind and the local address a client's Apps page shows for it
 ([client.md](client.md), "The Apps page"): `<scheme>://<local
 name>:<local port><path>` for a `web` entry, and `127.0.0.1:<local port>`
-for a `port` or `ssh` entry, with `/udp` after a UDP one. An entry with no
-local port, a declared app's `file` entry, shows its kind alone. The page
-leaves out an app entry's payload address, since a program such as VS Code
-listens on its machine's loopback alone.
+for a `port` entry, with `/udp` after a UDP one. An entry with no local
+port, a declared app's `file` entry, shows its kind alone. The page leaves
+out an app entry's payload address, since a program such as VS Code listens
+on its machine's loopback alone. It shows no `ssh` entry and no row for a
+machine's SSH server, which is no app ([protocol.md](protocol.md), "Apps").
 
 ## The machine page
 
