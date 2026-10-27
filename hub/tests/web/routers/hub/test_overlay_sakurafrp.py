@@ -97,7 +97,7 @@ def test_the_view_reads_the_file_and_calls_nobody(api):
         "tunnel_id": "114514",
         "node_name": "宁波电信",
         "local_port": 8443,
-        "url": "https://frp-a.natfrp.cloud:41234",
+        "url": "tcp://frp-a.natfrp.cloud:41234",
         "state": "no_tunnel",
         "last_error": "",
         "checked_at": "",
@@ -255,7 +255,7 @@ def test_picking_writes_the_file_stores_the_tunnel_and_restarts_frpc(api):
         8443,
     )
     assert (stored.public_host, stored.public_port) == ("frp-a.natfrp.cloud", 41234)
-    assert view["url"] == "https://frp-a.natfrp.cloud:41234"
+    assert view["url"] == "tcp://frp-a.natfrp.cloud:41234"
     path = frp_file(FRP_SAKURAFRP)
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert "localPort = 18443" in path.read_text()

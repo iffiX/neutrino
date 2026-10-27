@@ -206,7 +206,7 @@ def test_the_links_address_set_is_the_firewalls_open_set(fingerprinted, live_add
         "tcp://192.168.8.1:8443",
         "tcp://100.88.178.129:8443",
     ]
-    hosts = [ipaddress.ip_address(url[8:].rsplit(":", 1)[0]) for url in urls]
+    hosts = [ipaddress.ip_address(url[6:].rsplit(":", 1)[0]) for url in urls]
     assert sorted(
         network
         for network in opened

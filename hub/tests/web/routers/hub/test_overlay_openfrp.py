@@ -211,7 +211,7 @@ def test_picking_takes_the_tunnels_proxy_from_its_nodes_config(api):
         "/api/hub/overlay/openfrp/tunnel/set", json={"tunnel_id": "120623"}
     ).json()
 
-    assert view["url"] == "https://cn-cq-plc-1.of-7af93c01.shop:51607"
+    assert view["url"] == "tcp://cn-cq-plc-1.of-7af93c01.shop:51607"
     assert view["tunnel_id"] == "120623"
     text = frp_file(FRP_OPENFRP).read_text()
     assert 'name = "neutrino"' in text and 'name = "mc"' not in text
