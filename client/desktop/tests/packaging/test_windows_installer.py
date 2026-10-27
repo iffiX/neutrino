@@ -760,7 +760,7 @@ def test_no_check_evidence_reaches_a_release():
         / "release.yml"
     ).read_text(encoding="utf-8")
 
-    assert "              check_*) continue ;;" in workflow
+    assert "              check_* | go_*) continue ;;" in workflow
     for job in windows_client_jobs().values():
         lines = job.splitlines()
         uploads = [
