@@ -27,8 +27,9 @@ runs there is an `exec` stream bridged the same way; and every other
 connection it makes to a service on a machine is a `connect` stream
 the hub relays to that machine's agent. This page is
 the agent's own design: who commands it, how state moves, how the machine's
-root reaches it, and where the platform seam runs. The session itself, its
-frames, sections, kinds and admission, is [protocol.md](protocol.md).
+root reaches it, and where the platform seam runs. The session itself and
+admission are [transport.md](transport.md); the frames, sections and kinds
+the session carries are [protocol.md](protocol.md).
 
 ## Who may tell the agent what
 
@@ -76,7 +77,7 @@ The agent holds one session to the hub, under the hub's static key the link
 named, and reconnects when it drops. The session is its transport's: the
 agent starts `neutrino_transport` as its child, gives it the binding with
 `dial`, and talks to it over the local channel, a root-only socket of the
-transport's ([protocol.md](protocol.md), "The local channel"). The hub never
+transport's ([transport.md](transport.md), "The local channel"). The hub never
 dials a machine; SSH exists only to install or reinstall an agent from the
 Agents page. Frames on the control stream are JSON lines, and every other
 stream carries records. The frames, the sections and the kinds are in
@@ -154,7 +155,7 @@ pulled, so Containers read `stopped`.
 receives are already resolved for its platform; it has no manifest logic and
 no version table. A module it has no runner for is `unsupported`, which is an
 older agent meeting a newer hub. The `software` in `welcome` names the newer
-package, and the agent installs it over itself ([protocol.md](protocol.md),
+package, and the agent installs it over itself ([transport.md](transport.md),
 "Admission and the binding").
 
 **A press writes `want`, and the machine's report is the answer.** Pressing
@@ -421,7 +422,7 @@ datagram of one UDP entry ([protocol.md](protocol.md), "The connect
 stream"); `protocol` absent means `tcp`. The agent's transport asks the
 agent `port` whether the port is published, and for TCP dials
 `127.0.0.1:<port>`, within `ConnectDialTimeout`, and relays bytes both ways
-until either side ends ([protocol.md](protocol.md), "The local channel"). It
+until either side ends ([transport.md](transport.md), "The local channel"). It
 serves only a port the machine publishes at that moment on the stream's
 protocol:
 
@@ -458,7 +459,7 @@ it reads only the target's replies:
 | the stream's end | none while idle; it ends with the hub's close, the session, or `port_not_published {port}` once the port is no longer published |
 
 The two constants are the transport's, the same on every machine
-([protocol.md](protocol.md), "The timings").
+([transport.md](transport.md), "The timings").
 
 A machine's own services stay reachable on its LAN at their own ports, under
 each service's own login ([transport.md](transport.md), "One port, one
@@ -817,8 +818,9 @@ The hub's panel answers HTTP on one port and HTTPS under the hub's own
 certificate authority on another, behind a session, and both are uvicorn
 servers in one process. The agent port is the transport's: a process of its
 own, under an account of its own, that holds the hub's static key and every
-session. The ports, the static key and the hub's own identity are in
-[protocol.md](protocol.md), "Three ports, two audiences".
+session. The ports and the hub's own identity are in
+[protocol.md](protocol.md), "Three ports, two audiences", and the static key
+in [transport.md](transport.md), "The hub's static key".
 
 Exposure is the only control plane for the hub's ports. The agent port
 answers a sender inside every exposed segment, an uplink's included, and on
@@ -848,7 +850,7 @@ entries past their expiry.
 
 The link is `neutrino://enroll/<base64url payload>`, the payload one JSON
 object written with no spaces, compressed with zlib and encoded base64url
-without padding ([protocol.md](protocol.md), "The link and the binding");
+without padding ([transport.md](transport.md), "The link");
 `nagent join` inflates it before it reads:
 
 ```json
@@ -870,7 +872,7 @@ The agent tries each address in turn, at enrolment and on every reconnect,
 from the start: the name `hub.neutrino.internal` where the network resolves
 it, then the set in the hub's order, `RotateDelay` apart. The address that
 answered last is not preferred, and while the session is up nothing moves it
-([protocol.md](protocol.md), "The address a caller is given"). **Its
+([transport.md](transport.md), "Where the port is reached"). **Its
 transport knocks under the link's `key`, and no frame leaves the machine
 before message 2 opens**, which only the holder of the hub's private key can
 make ("The session" there). An address whose scheme the agent does not know
@@ -940,9 +942,9 @@ is the hub's order") and is bound again by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes and the upgrade an agent
 performs when `welcome` names a newer `software` are in
-[protocol.md](protocol.md), "Admission and the binding". An agent of 0.5,
+[transport.md](transport.md), "Admission and the binding". An agent of 0.5,
 one number behind, is admitted on the legacy listener for that upgrade alone
-and knocks with the new number after it ([protocol.md](protocol.md), "An
+and knocks with the new number after it ([transport.md](transport.md), "An
 agent of 0.5").
 
 ## The agent's packages come from the hub

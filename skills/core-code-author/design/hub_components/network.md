@@ -566,7 +566,7 @@ seconds after the process starts, and every `OVERLAY_RELAY_CHECK_INTERVAL_S`
 60 seconds after that, it runs `neutrino_transport probe` against
 `<host>:<public-port>` with its own static public key, which completes a
 handshake within `OVERLAY_RELAY_CHECK_TIMEOUT_S` 10 seconds when the address
-reaches this hub ([../protocol.md](../protocol.md), "The session"). The
+reaches this hub ([../transport.md](../transport.md), "The session"). The
 check closes after the handshake and sends no frame. The three constants
 are in `modules/overlay/constants.py`.
 
@@ -735,7 +735,7 @@ The hub serves the channel on one more listener per vendor, on IPv4 loopback
 alone: `127.0.0.1:18443` for SakuraFrp (`FRP_SAKURAFRP_LOOPBACK_PORT`) and
 `127.0.0.1:18444` for OpenFrp (`FRP_OPENFRP_LOOPBACK_PORT`). Each is a
 listener of the transport, open whether its way in is on or off
-([../protocol.md](../protocol.md), "Three ports, two audiences"), so turning
+([../transport.md](../transport.md), "Where the port is reached"), so turning
 a way in on or off restarts nothing; only frpc on the hub reaches it. Neither is in the firewall's table, since only the hub itself
 reaches loopback. A connection port or a panel port set to either number is
 refused with `port_already_in_use {value}`, open or not. A listener another

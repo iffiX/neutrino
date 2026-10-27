@@ -234,7 +234,7 @@ owner:
    refuses a file larger than 2 GiB with `module_fetch_too_large`.
 1. The agent opens `package {module, artifact, digest}` for each artifact,
    and the hub streams the cached file with that digest down
-   ([protocol.md](../protocol.md), "The stream layer"), writing `hub:
+   ([transport.md](../transport.md), "The stream layer"), writing `hub:
    sending <title>, <sent> / <total> MB to <device>` into the module's output
    as it goes.
 1. The agent installs each artifact as its kind says, and the system packages

@@ -39,7 +39,7 @@ password and is turned on for one client at a time.
 | `config/web/settings.json` | `settings.example.json` | yes — password hash |
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/web/panel_tls/` | none | yes: the panel's certificate authority, `authority.pem` in the clear and `authority_key.sealed` under the vault's data key, generated at setup |
-| `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the transport generates both, and the backup carries the private half sealed ([../design/protocol.md](../design/protocol.md), "The hub's static key") |
+| `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the transport generates both, and the backup carries the private half sealed ([../design/transport.md](../design/transport.md), "The hub's static key") |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds; each row's `client` keeps the token's hash, the agent's static `public_key` and its `agent_version` |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |

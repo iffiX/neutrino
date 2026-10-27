@@ -20,7 +20,7 @@ is the one exception: the hub admits it to update itself.
 
 An agent whose hub names a newer `software` upgrades itself from the package
 the hub keeps, an agent one protocol number behind included
-([../design/protocol.md](../design/protocol.md), "An agent of 0.5"); a
+([../design/transport.md](../design/transport.md), "An agent of 0.5"); a
 client, on a computer or a phone, is upgraded when its person installs the
 new package.
 

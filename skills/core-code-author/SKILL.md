@@ -102,11 +102,12 @@ conventions explicit so nobody drifts.
    - [design/protocol.md](design/protocol.md) — everything the hub speaks:
      the three ports, how a path is grouped and named, refusals as
      `{code, params}`, every route, the channel's frames, sections and
-     kinds, admission and versioning by protocol number.
-   - [design/transport.md](design/transport.md) — the one socket to the
-     agent port: what an unadmitted peer can cost the hub and the limits on
-     it, the ways in, what an admitted client reaches, what a client opens on
-     its own machine.
+     kinds, and versioning by protocol number.
+   - [design/transport.md](design/transport.md) — the agent port and the Go
+     program that holds it: the link, the knock and the handshake, the
+     stream layer, the ways in, what an unadmitted peer can cost the hub and
+     the limits on it, admission and the binding, the local channel to the
+     Python beside each transport, what an admitted client reaches.
    - [design/hub_components/ai.md](design/hub_components/ai.md) — the AI gateway's behavior:
      how a request routes, the gateway-owned model namespace, what each AI
      panel surface owns, and how usage is metered.

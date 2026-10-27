@@ -134,7 +134,7 @@ as its own child:
 
 | Child | Started as |
 | --- | --- |
-| the transport | `neutrino_transport` with `generated/transport.json`, the local channel's secret on its standard input ([protocol.md](protocol.md), "The local channel") |
+| the transport | `neutrino_transport` with `generated/transport.json`, the local channel's secret on its standard input ([transport.md](transport.md), "The local channel") |
 | xray | the rendered configuration, with no service account and no capabilities |
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
@@ -435,7 +435,7 @@ that exist:
   one refusal that unbinds. The agent deletes its binding, goes back to
   waiting for a link, and says why in `nagent status`. Every other refusal
   keeps the binding: the agent records it and sends `hello` again a minute
-  later ([protocol.md](protocol.md), "Admission and the binding").
+  later ([transport.md](transport.md), "Admission and the binding").
 - **The device lets go by leaving** — `nagent leave` or the package's
   own removal — which tells the hub first; the hub drops
   the token and keeps the row with everything the owner typed, the module
@@ -554,7 +554,7 @@ installs a CA and no name has to match.
 The transport carries every byte and decides nothing: every permission, and
 every ticket, token and secret, stays with the hub's Python, which the
 transport asks over the local channel at a session's start and at each
-stream's open ([protocol.md](protocol.md), "The local channel"). One record
+stream's open ([transport.md](transport.md), "The local channel"). One record
 of who can do what is kept, and it is in `config/`.
 
 The panel a browser reads speaks plain HTTP on its own port until somebody
@@ -565,10 +565,11 @@ constraints permit private and CGNAT addresses and a few private names only,
 so installing it trusts nothing public. Two audiences, two transports,
 because they verify differently.
 
-The wire itself is [protocol.md](protocol.md): which port serves what, the
-frames, admission by protocol number, and, in "Admission and the binding",
-what each refusal does to the binding. The enrolment ticket and what an
-attacker in each position gets are [agent.md](agent.md).
+Which port serves what and the frames are in [protocol.md](protocol.md).
+The wire under the channel is [transport.md](transport.md), with admission
+by protocol number and, in "Admission and the binding", what each refusal
+does to the binding. The enrolment ticket and what an attacker in each
+position gets are [agent.md](agent.md).
 
 ## The credential vault
 

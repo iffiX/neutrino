@@ -50,7 +50,7 @@ does not carry it. While the section is on and names an account, the agent
 needs a copy of the version the section's `cc_switch_version` names. When it
 has none, or one of another version, it opens `package {module: cc_switch,
 artifact, digest}` with the section's `cc_switch_artifact`
-([protocol.md](../protocol.md), "The stream layer"), checks the bytes
+([transport.md](../transport.md), "The stream layer"), checks the bytes
 against the digest, unpacks the `cc-switch` at the
 archive's top
 (`cc-switch.exe` on Windows) into `ai_tools/bin/` under the state root, and

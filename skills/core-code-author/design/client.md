@@ -256,7 +256,7 @@ A connect round, a reconnect after the session ended as much as the
 first, dials every candidate address of the hub at once: the hub's address
 on each of its virtual networks that is up, the hub's name, and the
 binding's `urls`. The client's transport runs the round, from the candidates
-the client gives it with `dial` ([protocol.md](protocol.md), "The local
+the client gives it with `dial` ([transport.md](transport.md), "The local
 channel"). Each address keeps its own connect time, `DialTimeout`. The
 first connection whose handshake completes under the binding's `hub_key` is
 the round's. At that moment the transport closes every other connection of
@@ -338,8 +338,8 @@ under its mono line; the AI page sets it.
 
 The join row is an input for the link and a **Join** button. On a phone the
 row opens the Join page: a camera view that scans the hub's QR, and under it
-the same input. The QR carries the whole link ([protocol.md](protocol.md),
-"The link and the binding"), the same compressed form a person
+the same input. The QR carries the whole link ([transport.md](transport.md),
+"The link"), the same compressed form a person
 pastes, so a scan and a paste are one path: the app inflates it, stores the
 binding at once with every address and the overlays' material, and the
 channel's rounds do the rest. The button shows `ui.job.joining` while the
@@ -355,7 +355,7 @@ table gives, with its ticket unspent.
 | --- | --- |
 | A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state line reads `ui.state.connecting` as its first round starts, the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. The link carries the network's material at once. |
 | The channel's rounds run as for any hub, each knock a join's while the binding holds no token. The first time a handshake completes under the link's key, the client spends the ticket there with the `join` frame, keeps the token, and only then knocks again as a bound peer and sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
-| A client holds at most one binding per hub id, and a join to a hub ends the binding held before for that hub as at a leave: its row goes, and what it held (forwards, mounts, viewers, its virtual network) stops. Right after the ticket is spent and before the `hello`, the client ends a binding holding the binding id the hub returned, as the hub returns for a client joining again from the same installation ([protocol.md](protocol.md), "The link and the binding"), and the hub is not told. When a `welcome` names a hub id another binding holds, the client ends that binding before it takes the first `state`. If that binding holds a token, the client tells the hub it leaves as **Leave** does, in the background, and a refusal or an unreachable hub changes nothing. The Hubs page then has one row for the hub. | The hub id reaches the client only in the `welcome`, and before it the binding id the hub returned is the one sign of the same hub. A binding with the same id lost its token to the join, and its open session would read the new `hello` as `replaced` by another client. A binding with another id names a row the hub forgot, or a row the hub keeps until the client leaves it. |
+| A client holds at most one binding per hub id, and a join to a hub ends the binding held before for that hub as at a leave: its row goes, and what it held (forwards, mounts, viewers, its virtual network) stops. Right after the ticket is spent and before the `hello`, the client ends a binding holding the binding id the hub returned, as the hub returns for a client joining again from the same installation ([protocol.md](protocol.md), "Joining and leaving"), and the hub is not told. When a `welcome` names a hub id another binding holds, the client ends that binding before it takes the first `state`. If that binding holds a token, the client tells the hub it leaves as **Leave** does, in the background, and a refusal or an unreachable hub changes nothing. The Hubs page then has one row for the hub. | The hub id reaches the client only in the `welcome`, and before it the binding id the hub returned is the one sign of the same hub. A binding with the same id lost its token to the join, and its open session would read the new `hello` as `replaced` by another client. A binding with another id names a row the hub forgot, or a row the hub keeps until the client leaves it. |
 | A client that starts with two or more bindings holding one hub id, as an older version left them, keeps the one joined last and ends each other one as a `welcome` ends it, telling the hub for each one that holds a token. | One binding per hub id holds from the start, so every lookup by hub id, the Hubs page's among them, finds one binding. |
 | A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row on the `join_refused` line with that code's wording, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
 | `admission_paused {retry_after_s}` is the one transient refusal of the join: the client keeps the ticket, the row reads the `admission_paused` line counting down `retry_after_s`, and the client joins again when it reaches 0. | The hub paused new enrolments after too many failures; the ticket behind the pause is still valid. |
@@ -446,7 +446,7 @@ A forward is a listener on `127.0.0.1:<local-port>` that opens one
 bytes both ways, or, for a UDP `port` entry, one UDP socket with one stream
 for every datagram it carries ([protocol.md](protocol.md), "The connect
 stream"). The client's transport holds every forward, which the client
-starts with `forward_start` ([protocol.md](protocol.md), "The local
+starts with `forward_start` ([transport.md](transport.md), "The local
 channel"). No page of any client dials a service's own address; the hub's
 agent port is the one address a client dials.
 
