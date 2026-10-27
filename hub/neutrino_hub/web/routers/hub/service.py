@@ -1,7 +1,9 @@
 """The Services page: the apps the hub publishes, and the entries of no app.
 
 Module apps are read-only rows; declared apps are created and deleted here,
-and every write answers with the whole refreshed list. Every payload host is
+and every write answers with the whole refreshed list. The page holds no
+``ssh`` entry and no row for a machine's SSH server, which is no app
+(protocol.md, "Apps"). Every payload host is
 resolved for the scope the asking browser's address falls in, the same
 resolution a client gets; a browser on no served network, or one the
 transport names no address for, is in the ``link`` scope with the panel
@@ -21,6 +23,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_ERROR_INVALID,
     SERVICES_ERROR_SHARE_SCAN,
     SERVICES_ERROR_UNKNOWN,
+    SERVICES_TYPE_SSH,
 )
 from neutrino_hub.modules.services.host_scope import scope_of
 from neutrino_hub.modules.services.ops import list_shares
@@ -54,7 +57,8 @@ def list_services(
 
     Returns:
         The apps, a module's first, then the declared, then the manual,
-        each group by title; and the entries of no app.
+        each group by title; and the entries of no app. No ``ssh`` entry is
+        in either.
     """
     return _list_view(request, runtime)
 
@@ -191,6 +195,8 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
     by_app: dict = {}
     loose = []
     for entry in entries:
+        if entry.get("type") == SERVICES_TYPE_SSH:
+            continue
         if entry.get("app_id"):
             by_app.setdefault(entry["app_id"], []).append(entry)
         else:

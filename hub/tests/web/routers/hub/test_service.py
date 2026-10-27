@@ -3,9 +3,11 @@
 What these pin: ``GET /api/hub/service`` answers ``apps``, a module's first,
 then the declared, then the manual, each by title, with each entry's
 ``local_port``, 0 on an entry with none, and ``detail_code``, and
-``services``, the entries of no app; declaring an app with its entries answers the list with it, a bad
-field ``declared_service_invalid {field}``; removing and probing name the
-app by ``app_id``, an unknown one ``declared_service_unknown``.
+``services``, the entries of no app; no ``ssh`` entry and no row for a
+machine's SSH server; declaring an app with its entries answers the list
+with it, a bad field ``declared_service_invalid {field}``; removing and
+probing name the app by ``app_id``, an unknown one
+``declared_service_unknown``.
 """
 
 import pytest
@@ -201,6 +203,49 @@ def test_an_entry_with_no_local_port_answers_0(api):
 
     (nas,) = [app for app in body["apps"] if app["id"] == "nas"]
     assert [entry["local_port"] for entry in nas["entries"]] == [0]
+
+
+def test_the_ssh_server_and_its_ssh_entries_are_not_on_the_page(api):
+    client, runtime = api
+    runtime.published_services.held_apps.append(
+        {
+            "id": "ssh_server_d1",
+            "title": "SSH",
+            "source": "module",
+            "device_id": DEVICE,
+            "device_name": "argon",
+            "local_name": "ssh.argon.localhost",
+            "description": "",
+        }
+    )
+    runtime.published_services.held_entries.append(
+        {
+            "id": "ssh_server_d1_iffi",
+            "type": "ssh",
+            "title": "SSH (iffi)",
+            "payload": {
+                "host": "192.168.100.7",
+                "port": 22000,
+                "account": "iffi",
+                "host_key_fingerprint": "SHA256:abc",
+            },
+            "is_healthy": True,
+            "source": "module",
+            "description": "",
+            "description_code": "ssh_server_module",
+            "description_params": {},
+            "detail_code": None,
+            "device_id": DEVICE,
+            "app_id": "ssh_server_d1",
+            "name": "iffi",
+            "local_port": 26001,
+        }
+    )
+
+    body = client.get("/api/hub/service").json()
+
+    assert [app["id"] for app in body["apps"]] == ["gitea_d1", "zzz"]
+    assert [entry["id"] for entry in body["services"]] == ["ai"]
 
 
 def test_declaring_an_app_stores_it_and_answers_the_list(api):
