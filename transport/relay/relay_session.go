@@ -348,7 +348,7 @@ func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 		}
 		if protocol == session.ProtocolUDP {
 			isClosePassed, isFarEnded := RelayRecords(record, farStream, true)
-			rs.endRelayed(relayed, far, isClosePassed, isFarEnded)
+			rs.endRelayed(relayed, isClosePassed, isFarEnded)
 			return
 		}
 		relayed.markRaw()
@@ -407,13 +407,16 @@ func (rs *RelaySession) relayRecords(record *RecordStream, open []byte) {
 	}
 	relayed.setFar(farStream.Stream)
 	isClosePassed, isFarEnded := RelayRecords(record, farStream, false)
-	rs.endRelayed(relayed, far, isClosePassed, isFarEnded)
+	rs.endRelayed(relayed, isClosePassed, isFarEnded)
 }
 
 // endRelayed closes a relayed record stream after the relay ended: with
-// agent_offline when the far session is gone with no close of its own.
-func (rs *RelaySession) endRelayed(relayed *relayStream, far *RelaySession, isClosePassed, isFarEnded bool) {
-	if !isClosePassed && isFarEnded && far.IsEnded() {
+// agent_offline when the far side ended the stream with no close of its
+// own. A peer closes every stream it serves with a close record, so a far
+// end without one is the agent gone, whether or not its session has been
+// marked ended yet.
+func (rs *RelaySession) endRelayed(relayed *relayStream, isClosePassed, isFarEnded bool) {
+	if !isClosePassed && isFarEnded {
 		relayed.closeWith(session.NewRefusal(session.CodeAgentOffline, map[string]any{"device": relayed.deviceID}))
 		return
 	}
