@@ -372,11 +372,15 @@ def _store_login(key: str, account: str, password: str) -> str:
         VaultLockedError: When the vault has no data key to seal under.
     """
     try:
-        return SecretVault().add(
-            kind=LOGIN_KIND,
-            name=LOGIN_NAME.format(device=key[:8], account=account),
-            secret={LOGIN_PASSWORD_FIELD: password},
-        ).id
+        return (
+            SecretVault()
+            .add(
+                kind=LOGIN_KIND,
+                name=LOGIN_NAME.format(device=key[:8], account=account),
+                secret={LOGIN_PASSWORD_FIELD: password},
+            )
+            .id
+        )
     except (OSError, ValueError) as error:
         raise VaultLockedError() from error
 
