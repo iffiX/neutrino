@@ -2276,3 +2276,23 @@ def test_every_module_runner_the_engine_builds_is_in_the_apply_order(tmp_path):
     for platform in (FakePlatform(), NoPackagesPlatform()):
         engine = ModuleEngine(platform=platform, configured_dir=str(tmp_path))
         assert set(engine.module_runners) <= set(APPLY_ORDER)
+
+
+def test_a_runners_notice_is_the_steady_rows_code_and_nothing_else_changes():
+    class Noticing:
+        def notice(self):
+            return {"code": "share_users_unknown", "params": {"shares": "a"}}
+
+    class Quiet:
+        def notice(self):
+            return {}
+
+    told = engine_module._with_notice(Noticing(), engine_module._typed("running"))
+    quiet = engine_module._with_notice(Quiet(), engine_module._typed("running"))
+
+    assert (told["state"], told["code"], told["params"]) == (
+        "running",
+        "share_users_unknown",
+        {"shares": "a"},
+    )
+    assert (quiet["code"], quiet["params"]) == ("", {})

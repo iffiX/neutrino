@@ -72,6 +72,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         self._unit = samba_unit(family or platform_tuple().get("family", ""))
         self._record_path = os.path.join(platform.agent_var_dir(), SAMBA_RECORD_NAME)
         self._config: "SambaConfig | None" = None
+        self._left_out: list = []
 
     @property
     def unit(self) -> str:
@@ -131,7 +132,19 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         if kept != held:
             write_record(self._record_path, {"passwords": kept})
         self._config = parsed
+        self._left_out = renderer.left_out()
+        if self._left_out:
+            changes.append("left out " + ", ".join(self._left_out))
         self._log("samba: " + "; ".join([note] + changes))
+
+    def notice(self) -> dict:
+        """``share_users_unknown {shares}`` while the last apply left shares out."""
+        if not self._left_out:
+            return {}
+        return {
+            "code": "share_users_unknown",
+            "params": {"shares": ", ".join(self._left_out)},
+        }
 
     def stop(self) -> None:
         """Take the server down, leaving the shares' files in place."""
@@ -140,6 +153,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
     def remove_configuration(self) -> None:
         """Delete the module's file, its include line, the users' files and the record; the share directories stay."""
         self._config = None
+        self._left_out = []
         SambaConfigApplier(unit=self._unit).remove()
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)

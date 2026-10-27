@@ -303,6 +303,16 @@ class ModuleRunner:
         """
         return False
 
+    def notice(self) -> dict:
+        """What a present module wants its row to say beside its state.
+
+        Returns:
+            ``{"code", "params"}`` while the last apply left something out
+            that the person should know of; empty otherwise. A failure's
+            code takes its place.
+        """
+        return {}
+
     def install_wait(self) -> dict:
         """What holds up the install :meth:`is_installing` reports.
 

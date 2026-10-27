@@ -840,3 +840,27 @@ def test_an_account_passed_over_keeps_the_rest_recorded_and_says_why(native):
     assert record["accounts"] == ["ann", "bob"]
     assert record["shares"] == {"share": "D:\\share"}
     assert lines == ["samba: passed over account ann"]
+
+
+def test_a_share_left_out_is_named_on_the_row_until_an_apply_serves_every_share(
+    runner,
+):
+    runner.apply(
+        {
+            **CONFIG,
+            "shares": [
+                {"name": "share", "path": "/srv/share"},
+                {"name": "carried", "path": "/srv/c", "valid_users": []},
+            ],
+            "users": [],
+        }
+    )
+    assert runner.notice() == {
+        "code": "share_users_unknown",
+        "params": {"shares": "share, carried"},
+    }
+    assert "[carried]" not in FakeApplier.applied[-1][1]
+
+    runner.apply(CONFIG)
+
+    assert runner.notice() == {}

@@ -1130,6 +1130,8 @@ class ModuleEngine(ReconcileWorker):
                 wait = runner.install_wait()
                 status["code"] = str(wait.get("code", "") or "")
                 status["params"] = dict(wait.get("params") or {})
+            else:
+                status = _with_notice(runner, status)
             details = runner.details(recipe)
             status["details"] = dict(details) if isinstance(details, dict) else {}
         except PlatformUnsupportedError:
@@ -1330,6 +1332,27 @@ def _steady_state(*, is_active: bool, is_configured: bool) -> str:
     if not is_configured:
         return AGENT_MODULE_STATE_INSTALLED
     return AGENT_MODULE_STATE_RUNNING if is_active else AGENT_MODULE_STATE_STOPPED
+
+
+def _with_notice(runner, status: dict) -> dict:
+    """A steady row with the runner's notice as its code, where it has one.
+
+    Args:
+        runner: The module's runner.
+        status: The row, with no code of its own.
+
+    Returns:
+        The row, carrying the notice's ``code`` and ``params`` when the
+        runner names one; a failure recorded for the module is put on
+        afterwards and wins.
+    """
+    notice = runner.notice()
+    code = str((notice or {}).get("code", "") or "")
+    if not code:
+        return status
+    status["code"] = code
+    status["params"] = dict(notice.get("params") or {})
+    return status
 
 
 def _typed(state: str, code: str = "", *, is_active: bool = False, **params) -> dict:

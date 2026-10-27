@@ -32,16 +32,27 @@ class SambaConfigRenderer:
         self._config = config
 
     def render(self) -> str:
-        """Render the module's file: the marker, then every share.
+        """Render the module's file: the marker, then every share with a user.
 
         Returns:
             Text ready to write as the module's own file, which ``smb.conf``
-            includes.
+            includes. A share that admits no user is left out
+            (:meth:`left_out`), never rendered open.
         """
         lines = [SAMBA_CONF_MARKER, ""]
         for share in self._config.shares:
-            lines += self._render_share(share)
+            if self._users_of(share):
+                lines += self._render_share(share)
         return "\n".join(lines)
+
+    def left_out(self) -> list:
+        """The names of the shares the file leaves out, admitting no user."""
+        return [
+            share.name for share in self._config.shares if not self._users_of(share)
+        ]
+
+    def _users_of(self, share: SambaShare) -> list:
+        return list(share.valid_users or self._config.users)
 
     def render_user_files(self) -> dict:
         """Render the file each SMB user's connection includes on a named share.
@@ -67,7 +78,7 @@ class SambaConfigRenderer:
         # every file as the account, its primary group with it; a share the
         # file names itself includes the connected user's file, which forces
         # that user's account the same way.
-        valid = " ".join(share.valid_users or self._config.users)
+        valid = " ".join(self._users_of(share))
         lines = [
             f"[{share.name}]",
             f"   path = {share.path}",

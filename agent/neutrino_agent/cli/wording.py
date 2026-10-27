@@ -126,6 +126,7 @@ CLI_CODE_WORDS = {
     "share_name_duplicate": "two shares are both named {name}",
     "share_path_relative": "share {name} needs an absolute path",
     "share_user_unknown": "share {name} names {user}, which is not a configured user",
+    "share_users_unknown": "the shares {shares} admit no user of the module's and are not served",
     "user_name_invalid": "user name {user} is not a unix name",
     "user_name_duplicate": "user {user} is listed twice",
     "user_unknown": "{user} is not a configured user",
