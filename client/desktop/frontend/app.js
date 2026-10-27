@@ -1124,8 +1124,8 @@ const APP_SOURCES = ['module', 'declared', 'manual'];
 // The numbers a local port may take.
 const PORT_FIRST = 1024;
 const PORT_LAST = 65535;
-// The loopback every forward listens on, which every port and ssh entry's
-// address, macOS's browser and a share mounted there name.
+// The loopback every forward listens on, which every port entry's address,
+// macOS's browser and a share mounted there name.
 const LOOPBACK_SERVER = '127.0.0.1';
 
 function drawApps(state) {
@@ -1139,6 +1139,7 @@ function drawApps(state) {
       continue;
     }
     for (const app of appsOf(state, hub)) {
+      if (appEntries(state, app).length === 0) continue;
       card.appendChild(appRow(state, hub, app));
       count += 1;
     }
@@ -1151,11 +1152,12 @@ function appsOf(state, hub) {
   return (state.apps || []).filter((app) => app.hub_id === hub.hub_id);
 }
 
-// An app's entries in the order the hub lists them, but its shares, which
-// the Files page mounts.
+// An app's web and port entries in the order the hub lists them: its shares
+// are the Files page's, and an ssh entry is on no Apps page, so the
+// machine's SSH server has no row.
 function appEntries(state, app) {
   return (state.services || []).filter((entry) => entry.hub_id === app.hub_id
-    && entry.app_id === app.id && entry.type !== 'file');
+    && entry.app_id === app.id && (entry.type === 'web' || entry.type === 'port'));
 }
 
 // The work on an app: its own job, else its hub's refresh.
@@ -1191,8 +1193,8 @@ function localHost(app) {
 }
 
 // One entry's local address: the page's own url at the local name for a
-// web entry, the loopback and the port for a port entry, ssh before them
-// for an ssh entry; the entry's kind alone while it has no number.
+// web entry, the loopback and the port for a port entry; the entry's kind
+// alone while it has no number.
 function localAddress(app, entry) {
   const port = typeof entry.local_port === 'number' ? entry.local_port : entry.forward;
   if (typeof port !== 'number' || port <= 0) return t('ui.entry_kind.' + entry.type);
@@ -1202,9 +1204,7 @@ function localAddress(app, entry) {
     const path = url && url[2] ? url[2] : '/';
     return scheme + '://' + localHost(app) + ':' + port + path;
   }
-  const where = LOOPBACK_SERVER + ':' + port;
-  if (entry.type === 'ssh') return 'ssh ' + where;
-  return where + protocolSuffix(entry);
+  return LOOPBACK_SERVER + ':' + port + protocolSuffix(entry);
 }
 
 // One entry's mono line under its app: its local address, and the health

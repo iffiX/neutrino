@@ -2,7 +2,8 @@
 
 ``list`` groups the apps by machine, with each entry's kind and its fixed
 local address before the app is used, ``/udp`` after a UDP one, and the
-loopback host on macOS. An app is named by its name, its title, or
+loopback host on macOS; the machine's SSH server is no app there, and no
+command names it. An app is named by its name, its title, or
 ``<machine>/<app>`` where two machines hold one name. ``use`` posts
 **Use**, waits for its job and prints the addresses or the failure;
 ``open`` posts **Open** and prints the page it opens; ``set``
@@ -20,29 +21,45 @@ def test_list_groups_the_apps_by_machine_with_fixed_addresses(running, capsys):
     assert app.main_list() == 0
 
     out = capsys.readouterr().out.splitlines()
-    assert out[:6] == [
+    assert out[:4] == [
         "lab-gpu (home)",
         "  gitea  module  in use",
         "    web  web  http://gitea.lab-gpu.localhost:25101/explore",
         "    ssh  port  127.0.0.1:26022",
-        "  ssh  module  not in use",
-        "    iffi  ssh  127.0.0.1:27001",
     ]
     assert "    port_53_udp  port  127.0.0.1:24053/udp" in out
     assert "build (office)" in out
 
 
-def test_an_entry_with_no_number_is_listed_without_an_address(running, capsys):
-    shell = next(
-        entry
-        for entry in running.state["services"]
-        if entry["id"] == "ssh_server_d1_iffi"
+def test_the_ssh_server_and_an_app_of_shares_alone_are_not_listed(running, capsys):
+    running.state["apps"].append(
+        {"hub_id": "h1", "id": "nas", "title": "NAS", "source": "declared"}
     )
-    shell["local_port"] = None
 
     assert app.main_list() == 0
 
-    assert "    iffi  ssh" in capsys.readouterr().out.splitlines()
+    out = capsys.readouterr().out
+    assert "  ssh  module" not in out
+    assert "127.0.0.1:27001" not in out
+    assert "  nas  " not in out
+
+
+def test_the_ssh_server_is_no_app_a_command_names(running, capsys):
+    assert app.main_use("SSH") == 1
+
+    assert running.posts("/api/app/use") == []
+    assert capsys.readouterr().err.strip().startswith("no app named SSH; there are: ")
+
+
+def test_an_entry_with_no_number_is_listed_without_an_address(running, capsys):
+    port = next(
+        entry for entry in running.state["services"] if entry["id"] == "gitea_d1_ssh"
+    )
+    port["local_port"] = None
+
+    assert app.main_list() == 0
+
+    assert "    ssh  port" in capsys.readouterr().out.splitlines()
 
 
 def test_list_of_one_hub_names_no_hub(running, capsys):
@@ -109,7 +126,7 @@ def test_open_posts_open_and_prints_the_page_it_opens(running, capsys):
 def test_open_refused_prints_the_code_and_exits_1(running, capsys, code):
     running.answers["/api/app/open"] = lambda body: (409, {"code": code, "params": {}})
 
-    assert app.main_open("ssh") == 1
+    assert app.main_open("lab-gpu/gitea") == 1
     assert capsys.readouterr().err.strip() == wording.word_code(code)
 
 
@@ -128,8 +145,10 @@ def test_hub_narrows_a_name_two_machines_hold(running):
 
 
 def test_an_app_is_named_by_its_title_too(running):
-    assert app.main_use("SSH") == 0
-    assert running.posts("/api/app/use")[0]["app_id"] == "ssh_server_d1"
+    running.state["apps"][-1]["title"] = "Name server"
+
+    assert app.main_use("Name server") == 0
+    assert running.posts("/api/app/use")[0]["app_id"] == "decl_dns"
 
 
 def test_a_name_that_matches_nothing_prints_the_apps(running, capsys):
@@ -158,17 +177,15 @@ def test_a_use_refused_at_once_exits_1(running, capsys):
         {"code": "client_disabled", "params": {}},
     )
 
-    assert app.main_use("ssh") == 1
+    assert app.main_use("lab-gpu/gitea") == 1
     assert capsys.readouterr().err.strip() == wording.word_code("client_disabled")
 
 
 def test_stop_posts_stop(running, capsys):
-    assert app.main_stop("ssh") == 0
+    assert app.main_stop("dns") == 0
 
-    assert running.posts("/api/app/stop") == [
-        {"hub_id": "h1", "app_id": "ssh_server_d1"}
-    ]
-    assert capsys.readouterr().out.strip() == "stopped ssh"
+    assert running.posts("/api/app/stop") == [{"hub_id": "h1", "app_id": "decl_dns"}]
+    assert capsys.readouterr().out.strip() == "stopped dns"
 
 
 def test_set_sends_each_entry_and_an_empty_one_as_the_hubs(running, capsys):

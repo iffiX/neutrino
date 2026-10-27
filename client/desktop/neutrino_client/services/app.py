@@ -1,17 +1,18 @@
 """The apps: what a person uses as one thing, each entry forwarded at its fixed number.
 
-An app is one program on one machine, with one or more ``web``, ``port`` and
-``ssh`` entries. **Use** forwards every entry the app has not got at its
-fixed local port, the person's number or else the hub's ``local_port``, and
-opens nothing; an entry with no number, the hub having sent none and the
-person set none, gets no forward until one comes. A failure is the first
-refusal; the forwards that started stay up. **Open**, on an app in use,
-opens the system browser at the app's first ``http`` or ``https`` entry, in
-the order the hub lists them, at ``<scheme>://<local name>:<local
-port><path>``; an entry with ``is_token_required`` takes a fresh token from
-the ``service`` frame and opens with ``?tkn=<token>``. On macOS, whose
-browser resolves no ``.localhost`` name, the host is ``127.0.0.1``.
-**Stop** ends every forward of the app.
+An app is one program on one machine, with one or more ``web`` and ``port``
+entries; the machine's SSH server, whose entries are all ``ssh`` ones, has
+no row (protocol.md, "Apps"). **Use** forwards every entry the app has not
+got at its fixed local port, the person's number or else the hub's
+``local_port``, and opens nothing; an entry with no number, the hub having
+sent none and the person set none, gets no forward until one comes. A
+failure is the first refusal; the forwards that started stay up. **Open**,
+on an app in use, opens the system browser at the app's first ``http`` or
+``https`` entry, in the order the hub lists them, at ``<scheme>://<local
+name>:<local port><path>``; an entry with ``is_token_required`` takes a
+fresh token from the ``service`` frame and opens with ``?tkn=<token>``. On
+macOS, whose browser resolves no ``.localhost`` name, the host is
+``127.0.0.1``. **Stop** ends every forward of the app.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -26,7 +27,6 @@ from neutrino_client.services.forward import (
     FORWARD_PROTOCOL_TCP,
     FORWARD_PROTOCOL_UDP,
     forward_refusal,
-    is_app_kind,
 )
 
 # The query parameter a token page takes its token in.
@@ -35,6 +35,8 @@ APP_TOKEN_PARAMETER = "tkn"
 APP_NO_LOCALHOST_NAMES_OS = "darwin"
 # The schemes a browser opens.
 APP_BROWSER_SCHEMES = ("http", "https")
+# The kinds of an app's entries the Apps page shows and Use forwards.
+APP_ENTRY_KINDS = ("web", "port")
 # The host the hub's panel opens on, before the hub's id.
 APP_PANEL_HOST_PREFIX = "panel-"
 APP_LOCALHOST_SUFFIX = ".localhost"
@@ -117,21 +119,21 @@ def panel_url(hub_id: str, port: int, token: str, os_name: str) -> str:
 
 
 def app_entries(app: dict, entries: list) -> list:
-    """One app's entries the client forwards, in the hub's order.
+    """One app's entries the Apps page shows and Use forwards, in the hub's order.
 
     Args:
         app: The app, stamped with its ``hub_id``.
         entries: The merged service list.
 
     Returns:
-        Its ``web``, ``port`` and ``ssh`` entries.
+        Its ``web`` and ``port`` entries.
     """
     return [
         entry
         for entry in entries
         if entry.get("hub_id") == app.get("hub_id")
         and entry.get("app_id") == app.get("id")
-        and is_app_kind(str(entry.get("type", "")))
+        and entry.get("type") in APP_ENTRY_KINDS
     ]
 
 

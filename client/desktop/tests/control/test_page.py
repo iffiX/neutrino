@@ -267,7 +267,7 @@ def test_every_key_the_page_asks_for_is_in_the_catalog():
     built |= {f"ui.language_name.{language}" for language in CLIENT_LANGUAGES}
     built |= {f"ui.theme_name.{theme}" for theme in CLIENT_THEMES}
     built |= {f"ui.app_source.{source}" for source in ("module", "declared", "manual")}
-    built |= {f"ui.entry_kind.{kind}" for kind in ("web", "port", "ssh")}
+    built |= {f"ui.entry_kind.{kind}" for kind in ("web", "port")}
 
     missing = (asked_keys() | built) - set(EN_WORDS)
 
@@ -2450,25 +2450,56 @@ def test_an_app_row_names_its_machine_its_source_and_every_local_address():
         payload={"host": "10.0.0.5", "port": 53, "protocol": "udp"},
         local_port=25053,
     )
-    shell = dict(
-        GITEA_SSH,
-        name="lab",
-        type="ssh",
-        payload={"host": "10.0.0.5", "port": 22001, "account": "lab"},
-        local_port=26001,
-    )
 
-    row = run_app_row(GITEA, [GITEA_WEB, GITEA_SSH, dns, shell])
+    row = run_app_row(GITEA, [GITEA_WEB, GITEA_SSH, dns])
 
     assert row["provider"] == "from home:lab-gpu · module"
     assert row["lines"] == [
         "http://gitea.lab-gpu.localhost:24123/explore?tab=repos",
         "127.0.0.1:27001",
         "127.0.0.1:25053/udp",
-        "ssh 127.0.0.1:26001",
     ]
     assert row["actions"] == [["Use", False, ""], ["Configure", False, "ghost"]]
     assert (row["tone"], row["word"], row["reason"]) == ("ok", "", "")
+
+
+def test_an_app_shows_its_web_and_port_entries_and_the_ssh_server_has_no_row():
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    shell = dict(
+        GITEA_SSH,
+        id="ssh_server_d1_lab",
+        app_id="ssh_server_d1",
+        name="lab",
+        type="ssh",
+        payload={"host": "10.0.0.5", "port": 22001, "account": "lab"},
+        local_port=26001,
+    )
+    share = dict(GITEA_SSH, id="gitea_d1_file_media", name="file_media", type="file")
+    ssh_server = dict(GITEA, id="ssh_server_d1", title="SSH")
+    script = "\n".join(
+        [
+            body_of("appEntries"),
+            "const state = {services: "
+            + json.dumps([GITEA_WEB, GITEA_SSH, shell, share])
+            + "};",
+            "console.log(JSON.stringify([",
+            "  appEntries(state, " + json.dumps(GITEA) + ").map((e) => e.id),",
+            "  appEntries(state, " + json.dumps(ssh_server) + ").map((e) => e.id)]));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert json.loads(result.stdout) == [["gitea_d1_web", "gitea_d1_ssh"], []]
+    assert "if (appEntries(state, app).length === 0) continue;" in body_of("drawApps")
 
 
 def test_an_app_in_use_with_no_page_has_no_open():
@@ -2559,7 +2590,7 @@ def test_a_disabled_hub_holds_every_app_still():
     assert row["reason"] == EN_WORDS["ui.reason.disabled"]
 
 
-def test_the_apps_page_lists_every_hubs_apps_and_their_entries_but_shares():
+def test_the_apps_page_lists_every_hubs_apps_and_their_web_and_port_entries():
     page_body = body_of("drawApps")
     assert "if (hubs.length === 0) return waitCard();" in page_body
     assert "card.appendChild(downRow(hub));" in page_body
@@ -2567,7 +2598,7 @@ def test_the_apps_page_lists_every_hubs_apps_and_their_entries_but_shares():
         page_body
     )
     entries = body_of("appEntries")
-    assert "entry.app_id === app.id && entry.type !== 'file'" in entries
+    assert "(entry.type === 'web' || entry.type === 'port')" in entries
     assert "} else if (openTab === 'apps') {" in body_of("draw")
     assert "if (tab === 'apps') return t('ui.panel_apps');" in body_of("tabTitle")
 

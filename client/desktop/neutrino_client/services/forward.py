@@ -7,10 +7,11 @@ connection it accepts as one ``connect`` stream, or a UDP entry's datagrams
 on one stream. The hub alone dials the service. While a hub has no session
 the transport's listener accepts nothing new and stays bound.
 
-An app entry, ``web``, ``port`` or ``ssh``, forwards at its fixed number:
-the person's own from the table, else the hub's ``local_port``. Another
-program listening on it, or another entry of the same protocol holding it,
-refuses the forward ``port_taken`` and the number never moves by itself.
+An app's ``web`` or ``port`` entry, and an ``ssh`` entry, forwards at its
+fixed number: the person's own from the table, else the hub's
+``local_port``. Another program listening on it, or another entry of the
+same protocol holding it, refuses the forward ``port_taken`` and the number
+never moves by itself.
 A forward of no app, ``ai``, ``rdp``, a ``file`` and the panel, takes the
 first free port from ``FORWARD_AUTO_FIRST_PORT`` to ``FORWARD_AUTO_LAST_PORT``
 and keeps the pick, picked again when another program holds it. The
@@ -49,9 +50,9 @@ FORWARD_FIXED_PORT_MIN = 1024
 # The entry id the hub's panel is forwarded under; no published entry has it.
 FORWARD_PANEL_ID = ":panel"
 FORWARD_KIND_PANEL = "panel"
-# The kinds an app's entry has: each forwards at its fixed number, and ends
-# when its entry leaves the hub's list.
-FORWARD_APP_KINDS = ("web", "port", "ssh")
+# The kinds that forward at a fixed number, an app's entries and the ssh
+# entries, each ending when its entry leaves the hub's list.
+FORWARD_FIXED_PORT_KINDS = ("web", "port", "ssh")
 # How long one wait for the hub's bytes lasts before the stream is looked at
 # again.
 FORWARD_STREAM_WAIT_S = 0.5
@@ -161,8 +162,8 @@ def forward_refusal(error: OSError) -> dict:
     return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
 
 
-def is_app_kind(kind: str) -> bool:
-    """Whether a forward of this kind is an app's entry, at its fixed number.
+def is_fixed_port_kind(kind: str) -> bool:
+    """Whether a forward of this kind listens at its entry's fixed number.
 
     Args:
         kind: The entry's type, or ``panel``.
@@ -170,7 +171,7 @@ def is_app_kind(kind: str) -> bool:
     Returns:
         True for ``web``, ``port`` and ``ssh``.
     """
-    return kind in FORWARD_APP_KINDS
+    return kind in FORWARD_FIXED_PORT_KINDS
 
 
 class ConnectStreamSocket:
@@ -266,7 +267,7 @@ class PortLocalTable:
         return record["setting"] if record else None
 
     def app_port(self, key: str, hub_port: int) -> int:
-        """The number an app entry forwards on.
+        """The number an app's entry or an ``ssh`` entry forwards on.
 
         Args:
             key: The entry's service key.
@@ -484,8 +485,8 @@ class ForwardListenerRegistry:
             hub_id: The hub the entry came from.
             entry_id: The entry's id, or ``FORWARD_PANEL_ID`` for the panel.
             kind: The entry's type, or ``panel``.
-            own_port: For an app entry, the hub's ``local_port``; ignored
-                for a forward of no app.
+            own_port: For an app's entry or an ``ssh`` entry, the hub's
+                ``local_port``; ignored for any other forward.
             protocol: ``tcp`` for a listener whose every connection is a
                 stream, ``udp`` for one UDP socket on one stream.
 
@@ -493,8 +494,8 @@ class ForwardListenerRegistry:
             The loopback port the forward listens on.
 
         Raises:
-            LocalPortTakenError: When an app entry's number is held by
-                another program or another entry of the same protocol.
+            LocalPortTakenError: When a fixed number is held by another
+                program or another entry of the same protocol.
             GatewayUnreachable: When the transport cannot be asked, or the
                 hub is not joined.
             OSError: When no port is to be had, or the transport cannot
@@ -651,7 +652,7 @@ class ForwardListenerRegistry:
         )
 
     def drop_withdrawn(self, *, hub_id: str, entries: list) -> int:
-        """End the app entries' forwards of one hub whose entry its list no longer has.
+        """End the fixed-number forwards of one hub whose entry its list no longer has.
 
         Args:
             hub_id: The hub whose list arrived.
@@ -663,7 +664,7 @@ class ForwardListenerRegistry:
         listed = {service_key(hub_id, str(entry.get("id", ""))) for entry in entries}
         return self._end(
             lambda key, record: hub_of_key(key) == hub_id
-            and is_app_kind(record["kind"])
+            and is_fixed_port_kind(record["kind"])
             and key not in listed
         )
 
@@ -671,10 +672,10 @@ class ForwardListenerRegistry:
         """The number a new forward listens on; the lock is held.
 
         Raises:
-            LocalPortTakenError: When an app entry's number is held.
+            LocalPortTakenError: When a fixed number is held.
             OSError: When no pick of the range is free.
         """
-        if not is_app_kind(kind):
+        if not is_fixed_port_kind(kind):
             return self.ports.take_auto(key, protocol)
         port = self.ports.app_port(key, own_port)
         if not 0 < port <= FORWARD_PORT_MAX:

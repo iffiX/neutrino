@@ -52,7 +52,7 @@ Stop the running client: close the window, and end every forward and mount.""",
 Log in to a machine with ssh. The agent carries its own SSH server, which takes
 only the key the hub made for you and no password.
 
-  list         the machines with ssh and the accounts each enables
+  list         the machines with ssh, the accounts each enables and their local addresses
   open         log in to a machine
   config       the ssh configuration for other programs
   proxy        for ProxyCommand; not typed by hand
@@ -61,11 +61,13 @@ Example: nclient ssh open lab-gpu""",
         "ssh list": """Usage: nclient ssh list
 
 List the machines with ssh: one line per machine, then its enabled accounts,
-the first being the default.
+the first being the default, each followed by its local address for a program
+that takes only a host and a port, such as FileZilla. The client forwards it
+while it runs.
 
 Example: nclient ssh list
-  lab-gpu     iffi lab
-  iffi-mac    iffi""",
+  lab-gpu     iffi 127.0.0.1:26017  lab 127.0.0.1:29443
+  iffi-mac    iffi 127.0.0.1:24802""",
         "ssh open": """Usage: nclient ssh open [<account>@]<machine> [-- <command>]
 
 Log in to a machine. With no account the first enabled one is used; with --
@@ -157,8 +159,8 @@ and whether it is in use.""",
         "app use": """Usage: nclient app use <app>
 
 Use an app: forward each of its entries and print their local addresses. A web
-entry's local address is <app>.<machine>.localhost:<port>, a port or ssh entry's
-is 127.0.0.1:<port>, and the port does not change after it is first given.
+entry's local address is <app>.<machine>.localhost:<port>, a port entry's is
+127.0.0.1:<port>, and the port does not change after it is first given.
 
   app          the app's name; <machine>/<app> when two machines have one name""",
         "app open": """Usage: nclient app open <app>
@@ -328,7 +330,7 @@ Change one setting. The names and the values they take are in nclient settings s
 
 用 ssh 登录被控端。被控端自带 SSH 服务器，只认中枢发给你的钥匙，不用密码。
 
-  list         开了 ssh 的机器和各自启用的账户
+  list         开了 ssh 的机器、各自启用的账户和本机地址
   open         登录一台机器
   config       给别的软件用的 ssh 配置
   proxy        给 ProxyCommand 用，不直接敲
@@ -337,10 +339,12 @@ Change one setting. The names and the values they take are in nclient settings s
         "ssh list": """用法：nclient ssh list
 
 列出开了 ssh 的机器：每台机器一行，后面是启用的账户，第一个是默认账户。
+每个账户后面是它的本机地址，给 FileZilla 这类只认主机和端口的软件用；
+客户端运行时一直转发着。
 
 例子：nclient ssh list
-  lab-gpu     iffi lab
-  iffi-mac    iffi""",
+  lab-gpu     iffi 127.0.0.1:26017  lab 127.0.0.1:29443
+  iffi-mac    iffi 127.0.0.1:24802""",
         "ssh open": """用法：nclient ssh open [<账户>@]<机器> [-- <命令>]
 
 登录一台机器。不写账户就用第一个启用的；写了 -- 就只跑那条命令然后退出。
@@ -426,7 +430,7 @@ Change one setting. The names and the values they take are in nclient settings s
         "app use": """用法：nclient app use <应用>
 
 使用一个应用：给它的每个入口开转发，并列出本机地址。
-网页入口的本机地址是 <应用>.<机器>.localhost:<端口>，端口和 ssh 入口的是
+网页入口的本机地址是 <应用>.<机器>.localhost:<端口>，端口入口的是
 127.0.0.1:<端口>，端口第一次分配后不再变。
 
   应用         应用名；同名时写 <机器>/<应用>""",

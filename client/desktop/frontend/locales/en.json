@@ -157,7 +157,6 @@
   "ui.empty_files": "No shares yet",
   "ui.empty_terminals": "No terminals yet",
   "ui.entry_kind.port": "Port",
-  "ui.entry_kind.ssh": "SSH",
   "ui.entry_kind.web": "Web",
   "ui.forwarding_to": "127.0.0.1:{port}",
   "ui.gateway_default": "gateway default",

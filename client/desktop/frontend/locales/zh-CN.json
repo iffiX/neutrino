@@ -157,7 +157,6 @@
   "ui.empty_files": "还没有共享",
   "ui.empty_terminals": "还没有终端",
   "ui.entry_kind.port": "端口",
-  "ui.entry_kind.ssh": "SSH",
   "ui.entry_kind.web": "网页",
   "ui.forwarding_to": "127.0.0.1:{port}",
   "ui.gateway_default": "网关默认",

@@ -3,10 +3,13 @@
 The running client writes ``~/.ssh/neutrino_config``: one ``Host
 <machine>.nt`` per machine with an ``ssh`` entry, its ``ProxyCommand`` this
 command's ``proxy``. ``list`` prints the machines and their accounts, the
-default first; ``open`` runs the system's ``ssh`` against that file;
-``config`` shows it and adds or takes out the ``Include`` line in
-``~/.ssh/config``, as the Settings switch does; ``proxy`` joins its
-standard input and output to the account's SSH server through the client.
+default first, each account with its entry's fixed local address
+``127.0.0.1:<local port>``, where the running client forwards it for a
+program that takes only a host and a port; ``open`` runs the system's
+``ssh`` against that file; ``config`` shows it and adds or takes out the
+``Include`` line in ``~/.ssh/config``, as the Settings switch does;
+``proxy`` joins its standard input and output to the account's SSH server
+through the client.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -22,6 +25,7 @@ import threading
 from neutrino_client.cli import names, terminal, wording
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
+from neutrino_client.services.forward import FORWARD_BIND_HOST
 
 SSH_PROGRAM = "ssh"
 SSH_PROXY_ROUTE = "/api/ssh/proxy"
@@ -35,6 +39,9 @@ EXIT_REFUSED = 1
 
 def main_list(*, hub: str = "") -> int:
     """Print each machine with an ``ssh`` entry and its accounts, the default first.
+
+    Each account is followed by its entry's local address, left out while
+    the entry has no number.
 
     Args:
         hub: What ``--hub`` named; empty lists every hub's.
@@ -53,7 +60,11 @@ def main_list(*, hub: str = "") -> int:
     ]
     width = max((len(row["host"]) for row in machines), default=0)
     for row in machines:
-        wording.say(f"{row['host']:<{width}}  {' '.join(row['accounts'])}")
+        accounts = "  ".join(
+            _account_address(account, entry)
+            for account, entry in zip(row["accounts"], row["entries"])
+        )
+        wording.say(f"{row['host']:<{width}}  {accounts}")
     return EXIT_CLOSED
 
 
@@ -179,6 +190,14 @@ def main_proxy(target: str, *, hub: str = "", stdin=None, stdout=None) -> int:
     if outcome is None or outcome.get("code"):
         return EXIT_REFUSED
     return EXIT_CLOSED
+
+
+def _account_address(account: str, entry: dict) -> str:
+    """One account and its entry's local address, as ``list`` prints them."""
+    port = entry.get("local_port")
+    if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
+        return account
+    return f"{account} {FORWARD_BIND_HOST}:{port}"
 
 
 def _relay(stdin, stdout, up, down) -> None:

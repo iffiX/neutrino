@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 from neutrino_client.cli import wording
+from neutrino_client.services.app import APP_ENTRY_KINDS
 from neutrino_client.services.ssh import ssh_machines
 
 # The suffix of every local name, and of the host ssh is given.
@@ -84,7 +85,7 @@ def entries(state: dict, kind: str = "", hub_id: str = "") -> list:
 
 
 def apps(state: dict, hub_id: str = "") -> list:
-    """The apps the state lists, in its order.
+    """The apps the state lists, in its order, the machine's SSH server among them.
 
     Args:
         state: The state payload.
@@ -99,20 +100,34 @@ def apps(state: dict, hub_id: str = "") -> list:
     return rows
 
 
+def shown_apps(state: dict, hub_id: str = "") -> list:
+    """The apps the Apps page shows, in the state's order.
+
+    Args:
+        state: The state payload.
+        hub_id: Keep only one hub's apps; empty keeps every hub's.
+
+    Returns:
+        The apps with a ``web`` or ``port`` entry; the machine's SSH server
+        and an app of ``file`` entries alone are not among them.
+    """
+    return [app for app in apps(state, hub_id) if app_entries(state, app)]
+
+
 def app_entries(state: dict, app: dict) -> list:
-    """One app's entries, in the hub's order; a ``file`` entry is not one.
+    """One app's entries the Apps page shows, in the hub's order.
 
     Args:
         state: The state payload.
         app: The app.
 
     Returns:
-        The entries.
+        Its ``web`` and ``port`` entries.
     """
     return [
         row
         for row in entries(state, hub_id=str(app.get("hub_id", "")))
-        if row.get("app_id") == app.get("id") and row.get("type") != "file"
+        if row.get("app_id") == app.get("id") and row.get("type") in APP_ENTRY_KINDS
     ]
 
 
@@ -211,7 +226,7 @@ def choose_app(state: dict, needle: str, hub: str = "") -> "dict | None":
     if not is_known:
         return None
     candidates = []
-    for app in apps(state, hub_id):
+    for app in shown_apps(state, hub_id):
         name = app_name(app)
         machines = {app_machine(app), str(app.get("device_name", "") or "")}
         full = f"{app_machine(app)}/{name}"

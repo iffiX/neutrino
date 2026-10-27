@@ -3,7 +3,7 @@
 A machine's host is the machine part of its apps' local names, ``.nt``
 after it in ssh's eyes, and ``<machine>.<hub>`` where two hubs hold a
 machine of one slug; its accounts come in the hub's order, the default
-first. ``open`` runs the system's ssh with ``-F`` the client's file;
+first, each with its entry's local address. ``open`` runs the system's ssh with ``-F`` the client's file;
 ``config install`` and ``uninstall`` are the Settings switch; ``proxy``
 carries stdin up and the stream down, exits 0 when it ends and 1 for a
 refusal, and writes nothing but the stream to stdout.
@@ -26,7 +26,16 @@ def config(running):
 
 def test_list_prints_each_machine_and_its_accounts_default_first(running, capsys):
     assert ssh.main_list() == 0
-    assert capsys.readouterr().out.strip() == "lab-gpu  iffi lab"
+    assert capsys.readouterr().out.strip() == (
+        "lab-gpu  iffi 127.0.0.1:27001  lab 127.0.0.1:27002"
+    )
+
+
+def test_list_prints_an_account_with_no_number_alone(running, capsys):
+    running.state["services"][3]["local_port"] = None
+
+    assert ssh.main_list() == 0
+    assert capsys.readouterr().out.strip() == "lab-gpu  iffi 127.0.0.1:27001  lab"
 
 
 def test_two_hubs_holding_one_machine_slug_name_each_by_its_hub(running):

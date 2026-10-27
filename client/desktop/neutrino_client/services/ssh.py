@@ -13,6 +13,11 @@ to Neutrino's own known_hosts. The client never edits ``~/.ssh/config`` by
 itself; installing adds ``Include ~/.ssh/neutrino_config`` as its first
 line, once, and uninstalling takes that line out and nothing else. When
 the last hub is left, the configuration, the keys and the known_hosts go.
+
+For a program that takes only a host and a port, each ``ssh`` entry is
+forwarded at its fixed local port, ``127.0.0.1:<local port>``, for as long
+as its hub lists it; the machine's SSH server is no app, and no Apps page
+shows it.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -30,7 +35,10 @@ from neutrino_client.exceptions import (
     GatewayUnreachable,
     PlatformUnsupportedError,
 )
+from neutrino_client.services.forward import forward_refusal
 
+# The type of the entries this file serves.
+SSH_ENTRY_KIND = "ssh"
 SSH_DIR_NAME = ".ssh"
 SSH_CONFIG_NAME = "neutrino_config"
 SSH_USER_CONFIG_NAME = "config"
@@ -97,7 +105,7 @@ def ssh_machines(entries: list, apps: list, hub_names: dict) -> list:
     by_app = {(app.get("hub_id"), app.get("id")): app for app in apps}
     machines: list = []
     for entry in entries:
-        if entry.get("type") != "ssh":
+        if entry.get("type") != SSH_ENTRY_KIND:
             continue
         key = (entry.get("hub_id"), entry.get("device_id") or entry.get("app_id"))
         found = next((row for row in machines if row["key"] == key), None)
@@ -129,6 +137,43 @@ def ssh_machines(entries: list, apps: list, hub_names: dict) -> list:
         row["host"] = host
         row.pop("key")
     return machines
+
+
+def keep_forwards(forwards, *, hub_id: str, entries: list) -> dict:
+    """Forward every ``ssh`` entry of one hub at its fixed local port.
+
+    An entry forwarded already keeps its forward; an entry the hub gave no
+    number gets none.
+
+    Args:
+        forwards: The
+            :class:`~neutrino_client.services.forward.ForwardListenerRegistry`
+            the forwards live in.
+        hub_id: The hub whose list arrived.
+        entries: That hub's service list as it stands now.
+
+    Returns:
+        ``{entry id: refusal}`` for each ``ssh`` entry with a number: empty
+        while its forward listens, else the code it failed with,
+        ``port_taken {port}`` among them.
+    """
+    outcomes = {}
+    for entry in entries:
+        if entry.get("type") != SSH_ENTRY_KIND:
+            continue
+        port = entry.get("local_port")
+        if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
+            continue
+        entry_id = str(entry.get("id", ""))
+        try:
+            forwards.ensure(
+                hub_id=hub_id, entry_id=entry_id, kind=SSH_ENTRY_KIND, own_port=port
+            )
+        except OSError as error:
+            outcomes[entry_id] = forward_refusal(error)
+            continue
+        outcomes[entry_id] = {}
+    return outcomes
 
 
 def config_block(host: str, user: str, proxy_program: str) -> str:

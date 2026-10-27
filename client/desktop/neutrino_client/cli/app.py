@@ -1,7 +1,9 @@
 """``nclient app``: the apps the hubs publish, from a terminal.
 
 ``list`` prints each machine's apps with every entry's kind and local
-address, which are fixed, so they show before the app is used. ``use`` is
+address, which are fixed, so they show before the app is used; the
+machine's SSH server is no app here, and ``nclient ssh list`` prints its
+addresses. ``use`` is
 the Apps page's **Use**, ``open`` its **Open**, ``stop`` its **Stop** and
 ``set`` its **Configure**; ``use`` and ``open`` wait for the job they start
 and print how it ended.
@@ -15,8 +17,8 @@ import urllib.parse
 
 from neutrino_client.cli import names, wording
 
-# The host every port and ssh entry's address names, and every web entry's
-# where the browser resolves no ``.localhost`` name.
+# The host every port entry's address names, and every web entry's where
+# the browser resolves no ``.localhost`` name.
 APP_LOOPBACK_HOST = "127.0.0.1"
 APP_LOOPBACK_OS = "darwin"
 # The separator of ``--port``'s entry and number.
@@ -45,7 +47,7 @@ def main_list(*, hub: str = "") -> int:
         row.get("hub_id"): wording.hub_name(row) for row in names.hub_rows(state)
     }
     heading = None
-    for app in names.apps(state, hub_id):
+    for app in names.shown_apps(state, hub_id):
         machine = names.machine_label(app)
         if is_several_hubs:
             machine = f"{machine} ({hub_names.get(app.get('hub_id'), '')})"
@@ -225,9 +227,8 @@ def local_address(state: dict, app: dict, entry: dict) -> str:
 
     Returns:
         ``<scheme>://<local name>:<port><path>`` for a ``web`` entry, the
-        host ``127.0.0.1`` on macOS; ``127.0.0.1:<port>`` for a ``port`` or
-        ``ssh`` one, ``/udp`` after a UDP one. Empty while the entry has no
-        number.
+        host ``127.0.0.1`` on macOS; ``127.0.0.1:<port>`` for a ``port``
+        one, ``/udp`` after a UDP one. Empty while the entry has no number.
     """
     port = entry.get("local_port")
     if isinstance(port, bool) or not isinstance(port, int) or port <= 0:

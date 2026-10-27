@@ -2430,6 +2430,84 @@ def test_an_ssh_proxy_carries_its_bytes_on_a_connect_stream_raw(two_hubs_up):
     assert resident.terminal_result(outcome["terminal_id"]) == {"exit_code": None}
 
 
+def test_an_ssh_entry_is_forwarded_at_its_local_port_while_its_hub_lists_it(
+    two_hubs_up,
+):
+    resident, transport = two_hubs_up
+    port = free_port()
+    shell = dict(SSH_ENTRY, local_port=port)
+
+    transport.deliver("c1", {"frame": dict(HOME_STATE, hash="sh", services=[shell])})
+    transport.deliver("c1", {"frame": dict(HOME_STATE, hash="si", services=[shell])})
+
+    assert transport.commands_of("forward_start") == [
+        {
+            "binding": "c1",
+            "listen": f"127.0.0.1:{port}",
+            "protocol": "tcp",
+            "open": {"kind": "connect", "id": "ssh_server_d1_lab"},
+        }
+    ]
+    row = entry(resident, "h1", "ssh_server_d1_lab")
+    assert (row["local_port"], row["forward"], row["last_error"]) == (port, port, None)
+
+    transport.deliver("c1", {"frame": dict(HOME_STATE, hash="sj", services=[])})
+
+    assert transport.commands_of("forward_stop") == [
+        {"listen": f"127.0.0.1:{port}", "protocol": "tcp"}
+    ]
+    assert resident._forwards.forwards() == {}
+
+
+def test_an_ssh_entry_whose_port_is_taken_says_so_on_its_row(two_hubs_up):
+    resident, transport = two_hubs_up
+    holder = socket.create_server(("127.0.0.1", 0))
+    port = holder.getsockname()[1]
+    try:
+        shell = dict(SSH_ENTRY, local_port=port)
+        transport.deliver(
+            "c1", {"frame": dict(HOME_STATE, hash="sh", services=[shell])}
+        )
+    finally:
+        holder.close()
+
+    assert transport.commands_of("forward_start") == []
+    assert entry(resident, "h1", "ssh_server_d1_lab")["last_error"] == {
+        "code": "port_taken",
+        "params": {"port": port},
+    }
+
+
+def test_the_ssh_servers_row_is_in_the_document_and_use_forwards_none_of_it(
+    two_hubs_up,
+):
+    resident, transport = two_hubs_up
+    port = free_port()
+    ssh_server = {
+        "id": "ssh_server_d1",
+        "title": "SSH",
+        "source": "module",
+        "device_id": "d1",
+        "device_name": "lab-gpu",
+        "local_name": "ssh.lab-gpu.localhost",
+    }
+    transport.deliver(
+        "c1",
+        {
+            "frame": dict(
+                HOME_STATE,
+                hash="sh",
+                services=[dict(SSH_ENTRY, local_port=port)],
+                apps=[ssh_server],
+            )
+        },
+    )
+
+    assert resident.open_app("h1", "ssh_server_d1") == {}
+    assert len(transport.commands_of("forward_start")) == 1
+    assert resident.app_rows()[0]["is_in_use"] is False
+
+
 def test_an_ssh_proxy_names_an_ssh_entry_of_a_hub_joined(two_hubs_up):
     resident, transport = two_hubs_up
 
@@ -2812,9 +2890,10 @@ def forward_starts(transport) -> list:
 def test_an_app_row_is_listed_with_its_job_and_whether_it_is_in_use(app_hub):
     resident, _transport, _ports = app_hub
 
-    (row,) = resident.app_rows()
+    rows = resident.app_rows()
 
-    assert row == {
+    assert [row["id"] for row in rows] == ["gitea_d1", "nas"]
+    assert rows[0] == {
         "id": "gitea_d1",
         "title": "Gitea",
         "source": "module",

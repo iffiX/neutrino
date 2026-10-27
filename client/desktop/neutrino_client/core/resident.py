@@ -96,10 +96,10 @@ from neutrino_client.services.forward import (
     ForwardListenerRegistry,
     PortLocalTable,
     forward_refusal,
-    is_app_kind,
+    is_fixed_port_kind,
 )
 from neutrino_client.services.rdp import RdpViewerHandler
-from neutrino_client.services.ssh import SshConfigWriter
+from neutrino_client.services.ssh import SshConfigWriter, keep_forwards
 from neutrino_client.services.store import ClientServiceStore
 
 # How long a shutdown waits for the watch thread to come back.
@@ -562,10 +562,10 @@ class ClientResident:
             step at work on it or empty, and ``last_error``, the failure the
             last one ended in or None; every entry the client forwards also
             with ``local_port`` and ``forward``, the loopback port its
-            forward listens on or None. An app entry's ``local_port`` is the
-            number it forwards on, the person's or the hub's, with
-            ``is_local_port_own`` saying whose, or None while neither names
-            one; any other's is ``"auto"``. A
+            forward listens on or None. An app's entry's and an ``ssh``
+            entry's ``local_port`` is the number it forwards on, the
+            person's or the hub's, with ``is_local_port_own`` saying whose,
+            or None while neither names one; any other's is ``"auto"``. A
             ``file`` entry also carries ``mount_default`` and
             ``is_declared``.
         """
@@ -592,7 +592,7 @@ class ClientResident:
             error = errors.get(key)
             row = dict(entry, job=job, last_error=dict(error) if error else None)
             if is_forwardable(entry, mount_shape):
-                if is_app_kind(str(entry.get("type", ""))):
+                if is_fixed_port_kind(str(entry.get("type", ""))):
                     own = self._ports.setting(key)
                     row["local_port"] = (
                         self._ports.app_port(key, _port_number(entry.get("local_port")))
@@ -610,10 +610,13 @@ class ClientResident:
     def app_rows(self) -> list:
         """The apps of every connected hub, each with its job and whether it is in use.
 
+        Every app the hub publishes is here, the machine's SSH server
+        among them, whose local name names the machine of its ``ssh``
+        entries; the page draws an app that has a ``web`` or ``port`` entry.
+
         Returns:
             ``[{hub_id, id, title, source, device_id, device_name,
             local_name, job, last_error, is_in_use}]``, hub order; an app
-            whose entries are all ``file`` entries is left out, and an app
             is not in use while its Use runs.
         """
         entries = self.service_entries()
@@ -627,8 +630,6 @@ class ClientResident:
             hub_id = session.hub_id()
             for app in session.app_entries():
                 app = dict(app, hub_id=hub_id)
-                if not app_entries(app, entries):
-                    continue
                 key = service_key(hub_id, app["id"])
                 error = errors.get(key)
                 rows.append(
@@ -1643,7 +1644,7 @@ class ClientResident:
                 entry_protocol(entry),
             )
             for entry in entries
-            if is_app_kind(str(entry.get("type", "")))
+            if is_fixed_port_kind(str(entry.get("type", "")))
             and service_key(entry.get("hub_id", ""), entry.get("id", "")) not in changes
         }
         taken: dict = {}
@@ -2105,6 +2106,7 @@ class ClientResident:
         self._forwards.drop_withdrawn(
             hub_id=session.hub_id(), entries=session.service_entries()
         )
+        self._keep_ssh_forwards(session)
         self._services["file"].drop_withdrawn(
             hub_id=session.hub_id(), entries=session.service_entries()
         )
@@ -2112,6 +2114,23 @@ class ClientResident:
         self._services["ai"].refresh(entries=self.service_entries())
         self._refresh_ssh()
         self._overlay.refresh()
+
+    def _keep_ssh_forwards(self, session: ClientHubSession) -> None:
+        """Forward every ``ssh`` entry of one hub; a failure is its entry's error."""
+        hub_id = session.hub_id()
+        outcomes = keep_forwards(
+            self._forwards, hub_id=hub_id, entries=session.service_entries()
+        )
+        with self._lock:
+            for entry_id, refusal in outcomes.items():
+                key = service_key(hub_id, entry_id)
+                if refusal:
+                    self._entry_errors[key] = dict(refusal)
+                else:
+                    self._entry_errors.pop(key, None)
+        for entry_id, refusal in outcomes.items():
+            if refusal:
+                self._log(f"the ssh forward of {entry_id} failed: {refusal['code']}")
 
     def _hub_joined(self, session: ClientHubSession, binding: dict) -> None:
         """A pending join was completed: keep it where the binding file is read.
