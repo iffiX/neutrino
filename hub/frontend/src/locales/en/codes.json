@@ -198,6 +198,7 @@
   "code.share_scan_failed": "This box could not list that server's shares: {reason}",
   "code.share_unverified": "The server answers, but the share name could not be checked.",
   "code.share_user_unknown": "There is no user {user} to share with.",
+  "code.share_users_unknown": "The shares {shares} admit no user of the module's and are not served; enable an account they name, or remove them.",
   "code.shell_failed": "The shell could not be opened: {detail}",
   "code.socks_ports_share_a_port": "Two listeners cannot share a port.",
   "code.split_needs_wired_port": "Only a wired port can be split into VLANs.",

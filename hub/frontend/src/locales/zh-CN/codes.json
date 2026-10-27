@@ -198,6 +198,7 @@
   "code.share_scan_failed": "这台机器列不出该服务器的共享：{reason}",
   "code.share_unverified": "服务器有响应，但无法核实这个共享名。",
   "code.share_user_unknown": "没有 {user} 这个用户可以共享给。",
+  "code.share_users_unknown": "共享 {shares} 没有本模块的任何用户可以访问，所以没有提供；请启用它们所列的账户，或删掉它们。",
   "code.shell_failed": "打不开 shell：{detail}",
   "code.socks_ports_share_a_port": "两个监听端口不能相同。",
   "code.split_needs_wired_port": "只有有线网口能拆分成 VLAN。",
