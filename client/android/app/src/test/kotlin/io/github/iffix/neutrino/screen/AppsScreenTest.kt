@@ -43,6 +43,13 @@ class AppsScreenTest {
     }
 
     @Test
+    fun theSshServerHasNoEntryToShowAndSoNoRow() {
+        val server = ChannelApp("ssh_server_d1", "SSH", "module", "d1", "lab", "ssh.lab.localhost")
+        val shells = hub.copy(services = listOf(key.copy(appId = "ssh_server_d1")), apps = listOf(server))
+        assertEquals(emptyList<ChannelServiceEntry>(), entriesOf(shells, server))
+    }
+
+    @Test
     fun eachEntryShowsItsFixedLocalAddress() {
         assertEquals("https://gitea.lab.localhost:27311/user/login?next=%2F", localAddressOf(app, web, 27311))
         assertEquals("127.0.0.1:30418", localAddressOf(app, ssh, 30418))

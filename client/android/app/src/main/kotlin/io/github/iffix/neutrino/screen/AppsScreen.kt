@@ -33,8 +33,8 @@ import java.net.URISyntaxException
 
 /**
  * The apps the joined hubs publish, one row each: the title, the hub, the machine and the source,
- * and one mono line per `web` and `port` entry with its fixed local address, the `ssh` entries left
- * out on a phone. Use starts the app's forwards and Stop takes its place while the app is in use;
+ * and one mono line per `web` and `port` entry with its fixed local address; the machine's SSH server
+ * is no app and has no row. Use starts the app's forwards and Stop takes its place while the app is in use;
  * Configure opens the local port dialog while the app is not in use; Open, shown while an app with
  * an `http` or `https` entry is in use, opens the browser there.
  *
@@ -170,7 +170,8 @@ private fun AppRow(
 }
 
 /**
- * An app's `web` and `port` entries, in the hub's order; a phone leaves the `ssh` ones out.
+ * An app's `web` and `port` entries, in the hub's order. No Apps page shows an `ssh` entry, so the machine's SSH
+ * server, whose entries are all `ssh` ones, has no row.
  *
  * @param hub The hub that publishes the app.
  * @param app The app.

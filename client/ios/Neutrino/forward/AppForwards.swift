@@ -439,7 +439,8 @@ final class AppForwards {
         entries(of: hub, app: app).first { $0.type == "web" && ForwardWebTarget($0.payload.text("url")) != nil }
     }
 
-    /// An app's `web` and `port` entries, in the hub's order; a phone leaves the `ssh` ones out.
+    /// An app's `web` and `port` entries, in the hub's order. No Apps page shows an `ssh` entry, so the machine's SSH
+    /// server, whose entries are all `ssh` ones, has no row.
     ///
     /// - Parameters:
     ///   - hub: The hub that publishes the app.

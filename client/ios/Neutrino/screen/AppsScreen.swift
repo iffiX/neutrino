@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The apps the joined hubs publish, one row each: the title, the hub, the machine and the source, and one mono line
-/// per `web` and `port` entry with its fixed local address, the `ssh` entries left out on a phone. Use starts the
-/// app's forwards and Stop takes its place while the app is in use; Configure opens the local port dialog while the
-/// app is not in use; Open, shown while an app with an `http` or `https` entry is in use, opens the in-app browser
-/// there.
+/// per `web` and `port` entry with its fixed local address; the machine's SSH server is no app and has no row. Use
+/// starts the app's forwards and Stop takes its place while the app is in use; Configure opens the local port dialog
+/// while the app is not in use; Open, shown while an app with an `http` or `https` entry is in use, opens the in-app
+/// browser there.
 struct AppsScreen: View {
     @ObservedObject var core: ClientCore
 

@@ -68,6 +68,16 @@ final class AppForwardsTests: XCTestCase {
         ]
     }
 
+    func testTheSshServerHasNoEntryToShowAndSoNoRow() {
+        let server = ChannelApp(
+            id: "ssh_server_d1", title: "SSH", source: "module", deviceId: "d1", deviceName: "lab",
+            localName: "ssh.lab.localhost")
+        let shell = entry("ssh_server_d1_iffi", "ssh", ["port": .int(2201)], port: 24555, appId: "ssh_server_d1")
+        var shells = hub([shell])
+        shells.apps = [server]
+        XCTAssertTrue(AppForwards.entries(of: shells, app: server).isEmpty)
+    }
+
     func testUseForwardsEveryEntryAndOpensNothing() throws {
         let forwards = try XCTUnwrap(self.forwards)
         forwards.use(hub: hub(gitea), app: app)
