@@ -267,6 +267,7 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.web_shares.expires_1d`, `expires_7d`, `expires_30d`, `until_revoked` | 1 day, 7 days, 30 days, Until revoked | 1 天、7 天、30 天、直到撤销 |
 | `ui.web_shares.site_other`, `site_other_hint` | Another site; The https:// address of your own copy of the page. | 其他站点；你自己托管的那份页面的 https:// 地址。 |
 | `ui.web_shares.link_once` | Anyone with this link opens this app until the share ends. Copy it now: the hub cannot show it again. | 拿到这个链接的人都能打开这个应用，直到分享结束。现在就复制：中枢之后无法再显示它。 |
+| `ui.web_shares.run_account_warning`, under **App** for an app that signs visitors in as the account it runs as | Visitors use this app as {account}: they can do whatever the app lets that account do, until the link expires or is revoked. | 访客会以 {account} 的身份使用这个应用：在链接过期或撤销前，能做这个应用允许该账户做的一切。 |
 | `ui.web_shares.guest_hint` | Visitors sign in as this account. Invite this address inside the app to give them a project. | 访客以这个账户登录。在应用里邀请这个地址，访客就能看到对应的项目。 |
 | `ui.web_shares.expires_in` | Expires in {days} d | {days} 天后到期 |
 | `ui.web_shares.online`, the share's open pages | {count} online | 在线 {count} |

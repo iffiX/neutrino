@@ -537,7 +537,7 @@ A client ticket's row waits to join for as long as its ticket lives
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps; and `web_shares`, each `{id, name, app_id, entry_id, app_title, device_name, expires_at, expires_in_s, state, code, params, online_count, guest_email}`, `expires_at` null for a share that lasts until it is revoked; `web_share_entries`, the entries a share can offer now, each `{entry_id, app_id, title, device_name, guest_login}`; and `web_share_sites`, each `{url, title}` |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps; and `web_shares`, each `{id, name, app_id, entry_id, app_title, device_name, expires_at, expires_in_s, state, code, params, online_count, guest_email}`, `expires_at` null for a share that lasts until it is revoked; `web_share_entries`, the entries a share can offer now, each `{entry_id, app_id, title, device_name, guest_login, visitor_account}`, `visitor_account` the account a visitor uses the app as, for an entry whose `guest_login` is `run_account`, and empty for the others ("Web shares"); and `web_share_sites`, each `{url, title}` |
 | `POST /api/hub/client/enrollment/create` | `{name, permission}`, `permission` null to follow the default, else `{kinds, devices, entries}` as `permission/set` takes them | makes the client's row at once, waiting to join with that name and permission, and its link, which works for `ENROLLMENT_TTL_S`, 30 minutes; `ClientEnrollmentView`, `{link, client_id, expires_at, expires_in_s}`; a client link still open from before stops working, and its waiting row goes; 400 as `permission/set`, 409 `transport_key_missing` |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
@@ -545,7 +545,7 @@ A client ticket's row waits to join for as long as its ticket lives
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
-| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no shareable `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`; 409 `vault_locked` |
+| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`; 409 `vault_locked` |
 | `POST /api/hub/client/web_share/revoke` | `{share_id}` | ends the share at once: its link stops working, every page open on it closes, and a guest account it made is removed ("Web shares"); the list; 404 `web_share_unknown` |
 
 One client link adds one device. Its row is made when the link is, and
@@ -655,7 +655,7 @@ is not `true` or `false` is refused `body_invalid`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how a Web share's visitor signs in to a `web` entry a share can offer, `app` or `guest_account`, and empty for every other entry ("Web shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how a Web share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("Web shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
 | `GET /api/hub/service/share` | | the shares devices declared |
 | `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
 | `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
@@ -1940,6 +1940,7 @@ manifest"):
 | --- | --- |
 | `app`, a declared app's or a container's `web` entry | empty: the visitor signs in on the app's own page |
 | `guest_account`, a module's `web` entry whose manifest names it | `{token}`: minted as for a client, `expiry` 60 seconds ahead and spent once, with `secret` the share's guest account's own, so the forwarder signs the visitor in as that account and never as the owner ([agent/module_template.md](agent/module_template.md), "The run") |
+| `run_account`, a module's `web` entry whose manifest names it | the material a client gets for the entry above: VS Code's connection token, or a `{token}` minted with the instance's own secret or the container module's, so the visitor is signed in as the account the app runs as, as the owner's clients are |
 
 A client opens every `web` entry with `is_token_required` at its forward's
 own address with `?tkn=<token>` added ([client.md](client.md), "The Apps
@@ -2087,10 +2088,16 @@ the app, for an entry whose `guest_login` is `guest_account` and absent for
 any other ([agent/module_install.md](agent/module_install.md), "The
 manifest").
 
-A share can offer an app's `web` entry when the entry's `guest_login` is not
-empty. `guest_login` is `app` for a declared app's or a container's `web`
-entry, the value the manifest's `web_share` names for a module's `web`
-entry, and empty for every other entry. No share offers a
+Every `web` entry has a `guest_login`, so a share can offer the `web` entry
+of any app: `guest_login` is `app` for a declared app's or a container's
+`web` entry and the value the manifest's `web_share` names for a module's
+([agent/module_install.md](agent/module_install.md), "The manifest"), and
+an entry of another type has none. For `run_account` the entry's
+`visitor_account` in `web_share_entries` is the account the app runs as: the
+instance's account for code-server, VS Code, Codeg, CloudCLI and SiYuan, and
+`hermeswebui`, the user its webui runs as, for Hermes WebUI, which runs as
+no account of the machine ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
+"The containers"). No share offers a
 terminal, a file share, an SSH server, a remote desktop, a port, the AI
 gateway or the panel; a file is shared as an app whose page serves it.
 
@@ -2117,7 +2124,7 @@ reply or the close its code:
 | `permission_denied {kind}` | the id is not the share's entry; for `{is_panel: true}`, `kind` is `panel` |
 | `agent_offline {device}` | the machine providing the entry has no session |
 | `service_unknown {service_id}` | the entry is not published now, or the share is `preparing` or `failed` |
-| `vault_locked` | on a `service` alone, the share's guest secret does not open |
+| `vault_locked` | on a `service` alone, the secret the visitor's material comes from does not open: the share's guest secret, or the instance's own secret or token for `run_account` |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 | Rule | Reason |

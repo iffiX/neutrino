@@ -612,10 +612,9 @@ such as VS Code listens on its machine's loopback alone. It shows no `ssh`
 entry and no row for a machine's SSH server, which is no app
 ([protocol.md](protocol.md), "Apps").
 
-An app's row whose `web` entry has a `guest_login` carries **Share** (分享),
-a ghost button that opens the Clients page's Web share dialog with that
-entry chosen ("The Clients page"). An app no share can offer has no
-**Share**.
+An app's row with a `web` entry carries **Share** (分享), a ghost button
+that opens the Clients page's Web share dialog with that entry chosen ("The
+Clients page"). An app with no `web` entry has no **Share**.
 
 ## The Clients page
 
@@ -654,6 +653,16 @@ entry chosen ("The Services page").
 | **App** | the panel's picker over `web_share_entries`, each the app's title and its machine's name; a share offers nothing else |
 | **Expires** | **1 day**, **7 days**, **30 days** or **Until revoked**, one choice of four, **7 days** chosen at the start |
 | **Site** | the picker over `web_share_sites`, the first chosen at the start, and **Another site**, which shows a field for an `https://` address |
+
+While the chosen app's `guest_login` is `run_account`, the dialog shows
+`ui.web_shares.run_account_warning {account}` under **App** in the warn tone
+([visual.md](visual.md), "Colour carries one meaning each"), `{account}`
+being the entry's `visitor_account` ([protocol.md](protocol.md), "Web
+shares"); no other app shows a line there.
+
+| Rule | Reason |
+| --- | --- |
+| The warning stays under **App** while that app is chosen, and **Generate link** stays live. | A visitor of such an app is signed in as the account the app runs as, and the owner reads that before the link exists; the choice is the owner's. |
 
 Its foot is **Generate link**, disabled while the name or the app is empty.
 The press makes the share, and the same dialog then shows the link in mono

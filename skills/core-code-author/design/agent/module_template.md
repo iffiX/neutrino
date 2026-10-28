@@ -73,9 +73,14 @@ needs, as Ayakaleaf's does ([modules/ayakaleaf.md](modules/ayakaleaf.md),
 "The page").
 
 A Web share's visitor reaches a module's page through the same forwarder,
-and only a module whose manifest names `web_share`
-([module_install.md](module_install.md), "The manifest"). A module whose
-`guest_login` is `guest_account` takes a second kind of token: the hub mints
+and every module with a page names `web_share`
+([module_install.md](module_install.md), "The manifest"). With
+`guest_login` `run_account` the hub hands a visitor the material it hands a
+client for the entry, VS Code's connection token or a token under the
+instance's own secret ([../protocol.md](../protocol.md), "The service
+frame"), so the forwarder, or VS Code's own server, signs the visitor in as
+the account the app runs as, the way it signs in the owner's clients. A
+module whose `guest_login` is `guest_account` takes a second kind of token: the hub mints
 it in the same form with the secret of the share's guest account, which the
 state carries with the module, and the forwarder that verifies a token
 under a guest's secret signs that browser in as that guest's account. A
