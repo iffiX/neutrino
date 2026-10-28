@@ -1,12 +1,7 @@
 # Commits
 
 Rules for every commit in this repository, whoever or whatever wrote the
-change. The message text follows two wording rules: state the fact with no
-narrated reasoning, from
-[../coding_style/comment_style.md](../coding_style/comment_style.md), and
-the English register of
-[../../doc-author/english.md](../../doc-author/english.md), the same one
-release notes are written in.
+change.
 
 ## The author is the person answerable for the code
 
@@ -20,38 +15,41 @@ An agent cannot hold that responsibility, so putting one in the author list
 blurs the only thing the field is for. Whoever pressed the button owns the
 change, including the parts an agent wrote.
 
-## One sentence, thirty words at most
+## The message
 
-The message is `<Title>: <what was done>.` — what the change is about, a
-colon, then one sentence naming the feature added or the change made. Thirty
-words is the ceiling; most commits need far fewer.
+One line, `Section: text`, and at most twenty words after the colon. Ten is
+usually enough.
 
-The title is the area of the change, as a reader of the history would look
-for it: a module (`Devices`, `Podman`), a layer (`Hub`, `Agent`, `CLI`), or
-the thing itself (`Images`, `Commits`). One word wherever one will do.
+- `Section` is the part of the repo the change is about, named the way the
+  code names it: `Hub`, `Agent`, `CLI`, `Panel`, `Devices`, `Clients`,
+  `Skills`.
+- The text is a verb phrase: an imperative verb, its object, and a short
+  phrase after it. The verb is `Fix`, `Add`, `Remove`, `Rename`, `Move`,
+  `Test`, `Document`, `Restore` or similar. A fix names the wrong behavior it
+  removes.
+- Avoid clauses. Words such as `that`, `which`, `who`, `when`, `if`,
+  `because`, `so` and `while` usually open one, and a phrase can almost always
+  replace it.
+- One change per commit. A second change is a second commit, never an `, and`
+  clause.
+- The object is a thing in the code. Never write a verb that makes it act like
+  a person, such as `knows`, `answers`, `says`, `pins` or `calls it`.
+- No `X, not Y`, no `rather than`, no semicolon. The line ends with a period.
 
-The sentence uses the verbs a component performs: is, has, includes, installs,
-returns, rejects with a code. A component that carries, owns, lives, earns,
-lands, asks, refuses or decides is the figurative register
-`doc-author/english.md` bans, and the same list of banned words and sentence
-shapes applies to a commit message as to a page. A message that needs a
-`rather than` or a `never` is describing the old behaviour; describe the new
-one.
+```text
+BAD   Clients: a test on each phone pins that the machine's SSH server has no row on the Apps page, and the comments call it no app.
+GOOD  Clients: test SSH server absence on the Apps page.
 
-Good:
+BAD   Panel: the Services page shows a declared app's file entry as //<host>/<share> again.
+GOOD  Panel: restore the //<host>/<share> file entry on the Services page.
 
-```
-Devices: GPU and process monitoring, SFTP transfers with folder archives, sudo kill.
-Login: escalating lockout with a red laser countdown, and fail2ban guarding SSH.
-Images: the notes describing the artwork are removed.
-```
+BAD   Hub: the Services page's list holds no ssh entry and no row for a machine's SSH server.
+GOOD  Hub: remove ssh entries and SSH server rows from the Services list.
 
-Bad — no title, so the history reads as a list of sentences with nothing to
-scan down:
-
-```
-Added GPU and process monitoring to the device page.
-The notes describing the artwork are removed.
+BAD   Desktop client: each ssh entry is forwarded at its local port while its hub lists it, nclient ssh list prints each account's address, and the Apps page shows no ssh entry.
+GOOD  Desktop client: forward each ssh entry at its local port.
+GOOD  CLI: add account addresses to nclient ssh list.
+GOOD  Apps: hide ssh entries.
 ```
 
 Bad — a paragraph explaining the reasoning:
@@ -65,8 +63,6 @@ decided to add a resource monitor. While doing that I also noticed that ...
 No body paragraphs, no bullet list of everything touched, no explanation of
 why one approach was chosen over another. That belongs in the code's comments
 and in `docs/`, where it is read; a commit message is an index entry.
-
-A change too large to name in one sentence is two commits.
 
 ## Only the user decides that a commit happens
 
