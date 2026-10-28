@@ -39,7 +39,9 @@ const WORDS = {
   },
 };
 // The codes that show the machine-offline screen, and those that end the share.
+// A connect close names one of APP_DOWN_CODES while the shared app itself is down.
 const MACHINE_CODES = ["agent_offline", "service_unknown"];
+const APP_DOWN_CODES = ["connect_failed", "port_not_published"];
 const SHARE_CODES = ["share_unknown"];
 // Refusals of a hello that a later try can pass.
 const PASSING_CODES = ["channel_full", "control_unavailable"];
@@ -99,7 +101,7 @@ class Refusal extends Error {
 // The screen for a refusal code from the hub.
 function screenOf(code) {
   if (SHARE_CODES.includes(code)) return "link";
-  if (MACHINE_CODES.includes(code)) return "machine";
+  if (MACHINE_CODES.includes(code) || APP_DOWN_CODES.includes(code)) return "machine";
   return "hub";
 }
 
@@ -905,6 +907,26 @@ class Session {
     if (reply.type !== "reply") throw new Refusal("hub", "ended");
     return reply;
   }
+  // Opens a connect stream to the entry and resets it once the hub accepts or closes it.
+  // The code is empty when the hub accepted the stream, else its close's code.
+  probe(deadline) {
+    const stream = this.mux.open();
+    const records = new RecordReader();
+    const answer = new Promise((resolve) => {
+      stream.handlers = {
+        data: (u8) => {
+          for (const record of records.feed(u8)) {
+            if (record.type === RECORD.accept) { resolve(""); return; }
+            if (record.type === RECORD.close) { resolve(parseRefusal(record.payload).code || "ended"); return; }
+          }
+        },
+        end: () => resolve("ended"),
+        error: () => resolve("ended"),
+      };
+    });
+    stream.write(encodeRecord(RECORD.open, json({ kind: "connect", id: this.entry })));
+    return within(answer, deadline).finally(() => stream.reset());
+  }
   ping() {
     const nonce = "p" + (++this.nonce);
     if (this.pingSentAt <= this.pongAt) this.pingSentAt = performance.now();
@@ -1021,6 +1043,9 @@ const page = {
   waiting: [],
   connecting: null,
   machineTimer: 0,
+  // Whether the shared app is down: a connect close named one of APP_DOWN_CODES,
+  // and no connect to the entry was accepted since.
+  isAppDown: false,
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
@@ -1068,37 +1093,42 @@ const page = {
   },
 
   // Asks for the share's entry and shows the app, the machine-offline screen or the link screen.
+  // After the shared app was down, a connect to the entry must be accepted too, and the frame loads again.
   async check(deadline) {
     const session = this.session;
     if (!session || this.isEnded) return;
-    let reply;
+    const serial = screen.serial;
+    const wasAppDown = this.isAppDown;
+    let reply, code;
     try {
       reply = await session.service(deadline);
+      code = reply.code || (wasAppDown ? await session.probe(deadline) : "");
     } catch (error) {
       if (error.screen === "link") { this.endShare(); return; }
       this.drop(session);
       return;
     }
     if (this.session !== session) return;
-    const serial = screen.serial;
-    if (reply.code) {
-      const kind = screenOf(reply.code);
+    if (code) {
+      const kind = screenOf(code);
       if (kind === "link") { this.endShare(); return; }
       if (kind === "hub") { screen.refuse("hub"); this.drop(session, true); return; }
-      screen.refuse("machine");
-      clearTimeout(this.machineTimer);
-      this.machineTimer = setTimeout(() => this.check(performance.now() + TIMING.open), TIMING.retry);
+      this.showMachine(code);
       return;
     }
+    if (screen.serial !== serial) return;
+    this.isAppDown = false;
     if (!this.isFrameLoaded) {
       try {
         await this.load(session, reply.params && reply.params.token);
       } catch (error) {
         if (error.screen === "link") { this.endShare(); return; }
-        if (error.screen === "machine") { this.onCode("agent_offline"); return; }
+        if (error.screen === "machine") { this.onCode(error.code); return; }
         this.drop(session);
         return;
       }
+    } else if (wasAppDown) {
+      await this.reload(deadline);
     }
     if (this.session === session && screen.serial === serial) screen.app();
   },
@@ -1121,18 +1151,37 @@ const page = {
     await loaded;
   },
 
+  // Loads the frame's page again as a refresh does, and waits for it until the deadline.
+  async reload(deadline) {
+    const frame = document.getElementById("app");
+    const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+    try {
+      frame.contentWindow.location.reload();
+    } catch (e) {
+      return;
+    }
+    await within(loaded, deadline).catch(() => {});
+  },
+
   // A close code from a connect stream.
   onCode(code) {
     const kind = screenOf(code);
     if (kind === "link") { this.endShare(); return; }
-    if (kind === "machine") {
-      if (screen.kind === "machine") return;
-      screen.refuse("machine");
-      clearTimeout(this.machineTimer);
-      this.machineTimer = setTimeout(() => this.check(performance.now() + TIMING.open), TIMING.retry);
-      return;
-    }
+    if (kind === "machine") { this.showMachine(code); return; }
     if (this.session) { screen.refuse("hub"); this.drop(this.session, true); }
+  },
+
+  // Shows the machine-offline screen. The page asks for the entry again after
+  // TIMING.retry, unless that ask is already scheduled.
+  showMachine(code) {
+    if (this.isEnded) return;
+    if (APP_DOWN_CODES.includes(code)) this.isAppDown = true;
+    screen.refuse("machine");
+    if (this.machineTimer) return;
+    this.machineTimer = setTimeout(() => {
+      this.machineTimer = 0;
+      this.check(performance.now() + TIMING.open);
+    }, TIMING.retry);
   },
 
   // The live session ended. The page tries again quietly, then shows the hub-offline screen.
@@ -1141,6 +1190,7 @@ const page = {
     this.session = null;
     clearInterval(this.watcher);
     clearTimeout(this.machineTimer);
+    this.machineTimer = 0;
     session.close();
     stats.drops = (stats.drops || 0) + 1;
     this.reconnect(!isShown);
@@ -1181,6 +1231,7 @@ const page = {
     this.isEnded = true;
     clearInterval(this.watcher);
     clearTimeout(this.machineTimer);
+    this.machineTimer = 0;
     if (this.session) { this.session.close(); this.session = null; }
     screen.refuse("link");
     this.failWaiting();
