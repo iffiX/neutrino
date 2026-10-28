@@ -569,7 +569,7 @@ share's own address:
 | --- | --- |
 | Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options and deletes the credentials file once the mount answered; a machine with no `pkexec` refuses the mount `pkexec_missing`, a `failed` the timer does not retry |
 | macOS | the entry's forward, mounted by the system as below, with the place a symbolic link to the volume |
-| Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
+| Windows | the files adapter's address for the share's machine and SMB user, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
 
 On macOS the client does not mount the share itself: it asks the system to
 mount the volume through `osascript`, with the one-line script on its
@@ -616,16 +616,22 @@ streams naming the file entry.
 
 The Windows SMB client dials port 445 alone, and the system holds the
 machine's own 445, so a forward on a loopback port cannot carry a share.
-The Windows client gives every machine that provides a share an address of
-its own on a virtual adapter, and sends the adapter's SMB connections to
-the hub.
+The Windows client puts every machine that provides a share on a virtual
+adapter, at an address of its own for each SMB user it mounts the machine's
+shares as, and sends the adapter's SMB connections to the hub.
 
 | Part | What it is |
 | --- | --- |
 | The adapter | `neutrino_files`, a wintun adapter at `198.19.255.1/24`, with no gateway and no DNS server, connected to no network <!-- scan: allow --> |
-| The fake addresses | one per machine other than the client's own that provides a `file` entry, from `198.19.255.2` to `198.19.255.253`, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
+| The fake addresses | one per pair of a machine other than the client's own that provides a `file` entry and an SMB user a mount logs in to it as, from `198.19.255.2` to `198.19.255.253`, kept per hub, machine and user in the client's store, so a drive letter keeps naming the same pair; the machine is the entry's `device_id`, or its host for a declared record, and the user is the `user` the hub gives for a machine's share, or the user name of a declared share's login <!-- scan: allow --> |
 | tun2socks | the MIT-licensed executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
-| The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a machine it knows and opens a `connect` stream naming a `file` entry of that machine, and refuses any other address or port |
+| The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a pair it knows and opens a `connect` stream naming a `file` entry the client mounts from that machine as that user, and refuses any other address or port |
+
+Windows connects to one server as one SMB user at a time, and refuses a
+mount as a second user name to the same server with error 1219. Two
+accounts' Home shares of one machine, or a folder share's entries for two
+accounts, are two pairs, and so two servers to Windows, each mounted at
+its own fake address.
 
 The adapter and tun2socks need administrator rights, and the resident has
 none. The privileged part is a service the `.msi` installs beside the
