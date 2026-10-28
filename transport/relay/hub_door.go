@@ -252,8 +252,8 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName st
 	// The guest counts among the handshakes in flight from its first check
 	// until its open record is answered.
 	defer endHandshake()
-	_ = conn.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
-	ctx, cancel := context.WithDeadline(context.Background(), d.acceptedAt.Add(knock.HandshakeTimeout))
+	_ = conn.SetReadDeadline(d.acceptedAt.Add(gate.GateHandshakeTimeout))
+	ctx, cancel := context.WithDeadline(context.Background(), d.acceptedAt.Add(gate.GateHandshakeTimeout))
 	channel, share, decision, err := h.gate.Open(ctx, conn)
 	cancel()
 	if err != nil {
@@ -263,7 +263,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName st
 	h.log("gate_open", "address", peerAddress, "listener", listenerName, "share", share,
 		"frame_bytes", strconv.Itoa(decision.FrameBytes), "decided_at_byte", strconv.Itoa(decision.UsernameEndByte))
 	d.closer.set(channel)
-	_ = channel.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
+	_ = channel.SetReadDeadline(d.acceptedAt.Add(gate.GateHandshakeTimeout))
 	message := make([]byte, gate.GateGuestOpenBytesMax)
 	n, err := channel.ReadMessage(message)
 	if err != nil {

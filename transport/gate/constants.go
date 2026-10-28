@@ -62,6 +62,9 @@ const (
 	GateClientUfrag = "guest"
 	// GateDialTimeout bounds a dial of the gate and the handshakes on it.
 	GateDialTimeout = 10 * time.Second
+	// GateHandshakeTimeout bounds a guest's first check, DTLS, SCTP, the
+	// data channel and its open record, from the accept.
+	GateHandshakeTimeout = 20 * time.Second
 )
 
 // The DTLS certificate's files under the hub's configuration, beside the
