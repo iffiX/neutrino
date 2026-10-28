@@ -256,8 +256,8 @@ interface MovingOverlayProps {
  *
  * Polling the new origin rather than counting seconds: a restart takes as long
  * as it takes, and the panel answering is the only thing that means it is
- * over. The session cookie is named after the port, so the new origin is
- * arrived at signed out and its login page is what answers.
+ * over. The restart ends every session, so the new origin opens on its login
+ * page.
  */
 function MovingOverlay({ destination }: MovingOverlayProps) {
   // Redrawn when the panel's language changes.
