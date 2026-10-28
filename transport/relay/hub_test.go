@@ -501,6 +501,19 @@ func TestLegacyHandOff(t *testing.T) {
 	if _, err := io.ReadFull(conn, buffer); err != nil || string(buffer) != "tls:\x16\x03\x01\x00\x01" {
 		t.Fatalf("legacy answer %q %v", buffer, err)
 	}
+
+	stray, err := net.Dial("tcp", hostPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stray.Close()
+	_, _ = stray.Write([]byte{22, 4, 1, 0, 1})
+	_ = stray.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := stray.Read(buffer)
+	var netError net.Error
+	if n != 0 || err == nil || (errors.As(err, &netError) && netError.Timeout()) {
+		t.Fatalf("a stray 0x16 was not closed at the door: %q %v", buffer[:n], err)
+	}
 }
 
 func TestReplacedByASecondSession(t *testing.T) {

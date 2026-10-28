@@ -86,8 +86,9 @@ type peerFacts struct {
 // admission or its end: the legacy hand-off, the knock or the gate, the
 // control stream and the first frame. The first four bytes pick the path:
 // the hub's magic is a member's, a frame length's zero byte is a browser's
-// while a share is live, a TLS handshake's byte is a 0.5 peer's while the
-// legacy listener is on, and anything else is closed with no byte written.
+// while a share is live, a TLS handshake record's two bytes are a 0.5
+// peer's while the legacy listener is on, and anything else is closed with
+// no byte written.
 func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	acceptedAt := h.now()
 	entry, victim := h.ledger.Accept(acceptedAt)
@@ -123,7 +124,7 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	switch {
 	case bytes.Equal(head, knock.Magic(key.Public)):
 		h.serveKnock(d, conn, reader, key, jar, address, listenerName)
-	case head[0] == knock.KnockLegacyTLSByte && h.legacy != 0:
+	case head[0] == knock.KnockLegacyTLSByte && head[1] == knock.KnockLegacyTLSVersionByte && h.legacy != 0:
 		h.ledger.Leave(entry)
 		d.admission.Stop()
 		closer.disarm()

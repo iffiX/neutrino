@@ -45,9 +45,11 @@ const (
 	// KnockRoleAgent and KnockRoleClient are the two roles a knock names.
 	KnockRoleAgent  = "agent"
 	KnockRoleClient = "client"
-	// KnockLegacyTLSByte is the first byte of a TLS handshake, which a 0.5
-	// peer sends and the hub hands to its legacy listener.
-	KnockLegacyTLSByte = KnockMagicForbiddenTLS
+	// KnockLegacyTLSByte and KnockLegacyTLSVersionByte are the first two
+	// bytes of every TLS handshake record, which a 0.5 peer sends and the
+	// hub hands to its legacy listener.
+	KnockLegacyTLSByte        = KnockMagicForbiddenTLS
+	KnockLegacyTLSVersionByte = 0x03
 )
 
 const (
