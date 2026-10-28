@@ -329,15 +329,16 @@ func (h *Hub) SessionClose(sessionID, code string, params map[string]any) error 
 	return nil
 }
 
-// StreamsClose closes every stream of a binding under kind, on the device
-// and the kept shell named when they are not empty, with close {code,
-// params}; a raw TCP connect is reset.
-func (h *Hub) StreamsClose(bindingID, kind, deviceID, shellSessionID, code string, params map[string]any) {
+// StreamsClose closes every stream of a binding under kind, on the device,
+// under the row and on the kept shell named when they are not empty, with
+// close {code, params}; a raw TCP connect is reset.
+func (h *Hub) StreamsClose(bindingID, kind, deviceID, key, shellSessionID, code string, params map[string]any) {
+	filter := streamTags{kind: kind, deviceID: deviceID, key: key, shellSessionID: shellSessionID}
 	for _, rs := range h.LiveSessions() {
 		if rs.BindingID != bindingID {
 			continue
 		}
-		for _, stream := range rs.streamsOf(kind, deviceID, shellSessionID) {
+		for _, stream := range rs.streamsOf(filter) {
 			stream.closeWith(session.NewRefusal(code, params))
 		}
 	}

@@ -277,6 +277,7 @@ func (rs *RelaySession) handleStream(stream *yamux.Stream) {
 type entryTarget struct {
 	Kind     string `json:"kind"`
 	DeviceID string `json:"device_id"`
+	Key      string `json:"key"`
 	Target   struct {
 		Session  string          `json:"session"`
 		Open     json.RawMessage `json:"open"`
@@ -325,7 +326,7 @@ func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 	if protocol == "" {
 		protocol = openProtocol(target.Target.Open)
 	}
-	relayed := rs.addStream(target.Kind, target.DeviceID, "", target.Target.Session, stream)
+	relayed := rs.addStream(streamTags{kind: target.Kind, deviceID: target.DeviceID, key: target.Key}, target.Target.Session, stream)
 	defer rs.removeStream(relayed)
 	if target.Target.Session != "" {
 		far, err := rs.hub.Session(target.Target.Session)
@@ -399,7 +400,7 @@ func (rs *RelaySession) relayRecords(record *RecordStream, open []byte) {
 		stream.Close()
 		return
 	}
-	relayed := rs.addStream(target.Kind, target.DeviceID, openSessionID(open), target.Target.Session, stream)
+	relayed := rs.addStream(streamTags{kind: target.Kind, deviceID: target.DeviceID, key: target.Key, shellSessionID: openSessionID(open)}, target.Target.Session, stream)
 	defer rs.removeStream(relayed)
 	far, err := rs.hub.Session(target.Target.Session)
 	if err != nil {
@@ -468,8 +469,8 @@ func (rs *RelaySession) ConnectCount() int {
 	return rs.connects
 }
 
-func (rs *RelaySession) addStream(kind, deviceID, shellSessionID, farSession string, peer io.ReadWriteCloser) *relayStream {
-	stream := &relayStream{kind: kind, deviceID: deviceID, shellSessionID: shellSessionID, farSession: farSession, peer: peer}
+func (rs *RelaySession) addStream(tags streamTags, farSession string, peer io.ReadWriteCloser) *relayStream {
+	stream := &relayStream{streamTags: tags, farSession: farSession, peer: peer}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	rs.streams[stream] = struct{}{}
@@ -482,20 +483,23 @@ func (rs *RelaySession) removeStream(stream *relayStream) {
 	delete(rs.streams, stream)
 }
 
-// streamsOf are the relayed streams under kind, on the device and the kept
-// shell when named.
-func (rs *RelaySession) streamsOf(kind, deviceID, shellSessionID string) []*relayStream {
+// streamsOf are the relayed streams under the filter's kind, on its device,
+// under its row and on its kept shell where each is named.
+func (rs *RelaySession) streamsOf(filter streamTags) []*relayStream {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	var matched []*relayStream
 	for stream := range rs.streams {
-		if stream.kind != kind {
+		if stream.kind != filter.kind {
 			continue
 		}
-		if deviceID != "" && stream.deviceID != deviceID {
+		if filter.deviceID != "" && stream.deviceID != filter.deviceID {
 			continue
 		}
-		if shellSessionID != "" && stream.shellSessionID != shellSessionID {
+		if filter.key != "" && stream.key != filter.key {
+			continue
+		}
+		if filter.shellSessionID != "" && stream.shellSessionID != filter.shellSessionID {
 			continue
 		}
 		matched = append(matched, stream)
@@ -523,14 +527,22 @@ func (rs *RelaySession) StreamCount() int {
 	return len(rs.streams)
 }
 
+// streamTags is what streams_close picks a relayed stream by: the
+// permission kind it falls under, the machine it reaches, its row in a
+// permission and the kept shell it is attached to.
+type streamTags struct {
+	kind           string
+	deviceID       string
+	key            string
+	shellSessionID string
+}
+
 // relayStream is one stream the hub relays for a client or an agent, kept
 // for streams_close and for the end of the session it rides.
 type relayStream struct {
-	kind           string
-	deviceID       string
-	shellSessionID string
-	farSession     string
-	peer           io.ReadWriteCloser
+	streamTags
+	farSession string
+	peer       io.ReadWriteCloser
 
 	// mu guards far and isRaw.
 	mu    sync.Mutex

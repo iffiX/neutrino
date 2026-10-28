@@ -144,6 +144,7 @@ type controlLine struct {
 	BindingID string          `json:"binding_id"`
 	Kind      string          `json:"kind"`
 	DeviceID  string          `json:"device_id"`
+	Key       string          `json:"key"`
 	SessionID string          `json:"session_id"`
 	Shares    []gate.Share    `json:"shares"`
 }
@@ -183,7 +184,7 @@ func (c *HubControl) runCommand(parsed controlLine) *session.Refusal {
 			return session.NewRefusal(CodeSessionUnknown, map[string]any{"session": parsed.Session})
 		}
 	case CommandStreamsClose:
-		c.hub.StreamsClose(parsed.BindingID, parsed.Kind, parsed.DeviceID, parsed.SessionID, parsed.Code, parsed.Params)
+		c.hub.StreamsClose(parsed.BindingID, parsed.Kind, parsed.DeviceID, parsed.Key, parsed.SessionID, parsed.Code, parsed.Params)
 	case CommandKeysReload:
 		if err := c.hub.KeysReload(c.keyDir); err != nil {
 			return session.NewRefusal("keys_unreadable", map[string]any{"detail": err.Error()})

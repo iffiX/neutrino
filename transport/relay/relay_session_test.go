@@ -244,7 +244,7 @@ func TestStreamsCloseAndAgentOffline(t *testing.T) {
 		t.Fatalf("files refused %v", refusal)
 	}
 
-	hub.hub.StreamsClose("cli", "terminal", "dev", "sh1", "session_not_owned", map[string]any{"session_id": "sh1"})
+	hub.hub.StreamsClose("cli", "terminal", "dev", "", "sh1", "session_not_owned", map[string]any{"session_id": "sh1"})
 	rec, err = session.ReadRecord(shell.Reader)
 	if err != nil || rec.Type != session.RecordClose {
 		t.Fatalf("closed shell read %v %v", rec, err)
@@ -320,4 +320,41 @@ func TestUdpConnectDialledByTheHub(t *testing.T) {
 	}
 	_, _ = record.Stream.Write(session.EncodeRecord(session.RecordDatagram, []byte{1}))
 	record.Stream.Close()
+}
+
+func TestStreamsCloseByRow(t *testing.T) {
+	hub := newTestHub(t, 0)
+	address := hub.listen(t)
+	client := newPeer(t, hub, "cli", "client")
+	clientConn, _ := client.admit(t, hub, address, "cli")
+	port := echoServer(t)
+	hub.python.mu.Lock()
+	for _, row := range []string{"row-a", "row-b"} {
+		hub.python.entries["connect:"+row] = entryAnswer{answer: map[string]any{
+			"kind": "web", "device_id": "dev", "key": row,
+			"target": map[string]any{"address": "127.0.0.1", "port": port, "protocol": "tcp"},
+		}}
+	}
+	hub.python.mu.Unlock()
+
+	first, refusal := openStream(t, clientConn, session.KindConnect, map[string]any{"id": "row-a"})
+	if refusal != nil {
+		t.Fatalf("row-a refused %v", refusal)
+	}
+	second, refusal := openStream(t, clientConn, session.KindConnect, map[string]any{"id": "row-b"})
+	if refusal != nil {
+		t.Fatalf("row-b refused %v", refusal)
+	}
+
+	hub.hub.StreamsClose("cli", "web", "dev", "row-a", "", "permission_denied", map[string]any{"kind": "web"})
+	_ = first.Stream.(*yamux.Stream).SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := first.Reader.ReadByte(); err == nil {
+		t.Fatal("the stream of the row switched off stayed open")
+	}
+	_, _ = second.Stream.Write([]byte("ping"))
+	buffer := make([]byte, 4)
+	_ = second.Stream.(*yamux.Stream).SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadFull(second.Reader, buffer); err != nil || string(buffer) != "ping" {
+		t.Fatalf("the other row's stream was touched: %q %v", buffer, err)
+	}
 }
