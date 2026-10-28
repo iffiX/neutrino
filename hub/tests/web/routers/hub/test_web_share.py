@@ -464,6 +464,18 @@ def test_the_sweep_ends_the_expired_shares(api):
     assert WebShareRegistry().all() == []
 
 
+def test_an_expired_share_leaves_the_list_before_the_sweep(api):
+    client, runtime = api
+    share_id = create(client, days=1).json()["share"]["id"]
+    expires_at = WebShareRegistry().get(share_id).expires_at
+
+    before = web_share_access.share_views(runtime, now=expires_at - 1)
+    after = web_share_access.share_views(runtime, now=expires_at)
+
+    assert [view["id"] for view in before] == [share_id]
+    assert after == []
+
+
 def test_the_link_names_direct_first_then_the_frp_vendors_then_the_relay(
     api, monkeypatch
 ):
