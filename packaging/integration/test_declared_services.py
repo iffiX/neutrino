@@ -1,9 +1,9 @@
 """Manual declarations against a live box, with real listeners to point at.
 
 These run on the box itself, so a listener this test opens on loopback is one
-the panel's probes can reach. One declaration of each type is made against
-those listeners, the published list is watched until health turns green, and
-records are probed against a dead port and deleted.
+the panel's probes can reach. An app with an entry of each type is declared
+against those listeners, the published list is watched until health turns
+green, and apps are probed against a dead port and removed.
 """
 
 import secrets
@@ -62,116 +62,99 @@ def _closed_port() -> int:
         return server.getsockname()[1]
 
 
-def _declared(services: list) -> list:
-    return [entry for entry in services if entry["source"] == "declared"]
+def _declared(listed: dict) -> list:
+    """The declared apps of a service list."""
+    return [app for app in listed["apps"] if app["source"] == "declared"]
 
 
 def _declare(panel, body: dict) -> dict:
-    """Create one declaration and return its published row."""
-    before = {
-        entry["record_id"]
-        for entry in _declared(panel.read("/hub/service")["services"])
-    }
+    """Declare one app and return its published row."""
+    before = {app["id"] for app in _declared(panel.read("/hub/service"))}
     status, listed = panel.call("POST", "/hub/service/declaration/add", body)
     assert status == 200, listed
-    fresh = [
-        entry
-        for entry in _declared(listed["services"])
-        if entry["record_id"] not in before
-    ]
+    fresh = [app for app in _declared(listed) if app["id"] not in before]
     assert len(fresh) == 1, (body["name"], fresh)
     return fresh[0]
 
 
-def _delete(panel, record_id: str) -> None:
-    panel.call("POST", "/hub/service/declaration/remove", {"service_id": record_id})
+def _delete(panel, app_id: str) -> None:
+    panel.call("POST", "/hub/service/declaration/remove", {"app_id": app_id})
 
 
-def _wait_until_healthy(panel, record_ids: list) -> dict:
-    """Poll the published list until every id reads healthy, or fail."""
+def _entries(panel) -> dict:
+    """Every entry of every declared app, by entry id."""
+    return {
+        entry["id"]: entry
+        for app in _declared(panel.read("/hub/service"))
+        for entry in app["entries"]
+    }
+
+
+def _wait_until_healthy(panel, entry_ids: list) -> dict:
+    """Poll the published list until every entry reads healthy, or fail."""
     waited = 0.0
     rows: dict = {}
     while waited <= HEALTH_DEADLINE_S:
-        rows = {
-            entry["record_id"]: entry
-            for entry in _declared(panel.read("/hub/service")["services"])
-        }
-        if all(rows.get(rid, {}).get("is_healthy") is True for rid in record_ids):
+        rows = _entries(panel)
+        if all(rows.get(rid, {}).get("is_healthy") is True for rid in entry_ids):
             return rows
         time.sleep(HEALTH_POLL_S)
         waited += HEALTH_POLL_S
-    states = {rid: rows.get(rid, {}).get("is_healthy") for rid in record_ids}
+    states = {rid: rows.get(rid, {}).get("is_healthy") for rid in entry_ids}
     raise AssertionError(f"not healthy within {HEALTH_DEADLINE_S}s: {states}")
 
 
 def test_the_published_list_answers_typed(panel):
-    services = panel.read("/hub/service")["services"]
-    for entry in services:
-        assert entry["type"] in ("web", "port", "ai", "file"), entry
-        assert entry["source"] in ("module", "declared"), entry
+    listed = panel.read("/hub/service")
+    for app in listed["apps"]:
+        assert app["source"] in ("module", "declared", "manual"), app
+        for entry in app["entries"]:
+            assert entry["type"] in ("web", "port", "file"), entry
+            assert "payload" in entry and "is_healthy" in entry, entry
+    for entry in listed["services"]:
+        assert entry["type"] in ("web", "port", "ai", "file", "rdp"), entry
         assert "payload" in entry and "is_healthy" in entry, entry
 
 
 def test_web_and_port_turn_healthy_against_real_listeners(panel, tcp_port, http_port):
-    run = _suffix()
-    created = []
+    app = _declare(
+        panel,
+        {
+            "name": f"itest web {_suffix()}",
+            "host": "127.0.0.1",
+            "entries": [
+                {"type": "web", "port": http_port, "scheme": "http", "path": "/"},
+                {"type": "port", "port": tcp_port},
+            ],
+        },
+    )
     try:
-        created.append(
-            _declare(
-                panel,
-                {
-                    "name": f"itest web {run}",
-                    "kind": "web",
-                    "host": "127.0.0.1",
-                    "port": http_port,
-                    "scheme": "http",
-                    "path": "/",
-                },
-            )
-        )
-        created.append(
-            _declare(
-                panel,
-                {
-                    "name": f"itest tcp {run}",
-                    "kind": "port",
-                    "host": "127.0.0.1",
-                    "port": tcp_port,
-                },
-            )
-        )
-
-        rows = _wait_until_healthy(panel, [entry["record_id"] for entry in created])
-        for entry in created:
-            assert rows[entry["record_id"]]["type"] == entry["type"]
+        rows = _wait_until_healthy(panel, [entry["id"] for entry in app["entries"]])
+        assert sorted(rows[entry["id"]]["type"] for entry in app["entries"]) == [
+            "port",
+            "web",
+        ]
     finally:
-        for entry in created:
-            _delete(panel, entry["record_id"])
+        _delete(panel, app["id"])
 
 
 def test_a_file_service_is_judged_by_the_server_not_the_port(panel, tcp_port):
     """A share is healthy only when the server exports it. A port that
     answers proves nothing: the old probe called this green."""
-    run = _suffix()
-    record = _declare(
+    app = _declare(
         panel,
         {
-            "name": f"itest nas {run}",
-            "kind": "file",
+            "name": f"itest nas {_suffix()}",
             "host": "127.0.0.1",
-            "port": tcp_port,
-            "shares": ["media"],
+            "entries": [{"type": "file", "port": tcp_port, "share": "media"}],
         },
     )
+    entry_id = app["entries"][0]["id"]
     try:
         waited = 0.0
         row = {}
         while waited <= HEALTH_DEADLINE_S:
-            rows = {
-                entry["record_id"]: entry
-                for entry in _declared(panel.read("/hub/service")["services"])
-            }
-            row = rows.get(record["record_id"], {})
+            row = _entries(panel).get(entry_id, {})
             if row.get("is_healthy") is not None:
                 break
             time.sleep(HEALTH_POLL_S)
@@ -180,7 +163,7 @@ def test_a_file_service_is_judged_by_the_server_not_the_port(panel, tcp_port):
         assert row.get("is_healthy") is False, row
         assert row.get("detail_code") in ("connect_failed", "share_missing"), row
     finally:
-        _delete(panel, record["record_id"])
+        _delete(panel, app["id"])
 
 
 def test_scanning_a_host_that_answers_nothing_is_refused_with_a_code(panel):
@@ -190,85 +173,64 @@ def test_scanning_a_host_that_answers_nothing_is_refused_with_a_code(panel):
     assert answer["detail"]["code"] == "share_scan_failed"
 
 
-def test_probe_and_delete_walk_one_record(panel, tcp_port):
-    run = _suffix()
-    record = _declare(
+def test_probe_and_delete_walk_one_app(panel, tcp_port):
+    live = _declare(
         panel,
         {
-            "name": f"itest probe {run}",
-            "kind": "port",
+            "name": f"itest probe {_suffix()}",
             "host": "127.0.0.1",
-            "port": tcp_port,
+            "entries": [{"type": "port", "port": tcp_port}],
         },
     )
     dead = _declare(
         panel,
         {
-            "name": f"itest dead {run}",
-            "kind": "port",
+            "name": f"itest dead {_suffix()}",
             "host": "127.0.0.1",
-            "port": _closed_port(),
+            "entries": [{"type": "port", "port": _closed_port()}],
         },
     )
     try:
-        status, listed = panel.call(
-            "POST",
-            "/hub/service/declaration/probe",
-            {"service_id": record["record_id"]},
-        )
-        assert status == 200, listed
-        rows = {e["record_id"]: e for e in _declared(listed["services"])}
-        assert rows[record["record_id"]]["is_healthy"] is True
-
-        status, listed = panel.call(
-            "POST",
-            "/hub/service/declaration/probe",
-            {"service_id": dead["record_id"]},
-        )
-        assert status == 200, listed
-        rows = {e["record_id"]: e for e in _declared(listed["services"])}
-        assert rows[dead["record_id"]]["is_healthy"] is False
+        for app, is_healthy in ((live, True), (dead, False)):
+            status, listed = panel.call(
+                "POST", "/hub/service/declaration/probe", {"app_id": app["id"]}
+            )
+            assert status == 200, listed
+            rows = {
+                entry["id"]: entry
+                for row in _declared(listed)
+                for entry in row["entries"]
+            }
+            assert rows[app["entries"][0]["id"]]["is_healthy"] is is_healthy
     finally:
-        assert (
-            panel.status(
-                "POST",
-                "/hub/service/declaration/remove",
-                {"service_id": record["record_id"]},
+        for app in (live, dead):
+            assert (
+                panel.status(
+                    "POST", "/hub/service/declaration/remove", {"app_id": app["id"]}
+                )
+                == 200
             )
-            == 200
-        )
-        assert (
-            panel.status(
-                "POST",
-                "/hub/service/declaration/remove",
-                {"service_id": dead["record_id"]},
-            )
-            == 200
-        )
 
-    remaining = {
-        entry["record_id"]
-        for entry in _declared(panel.read("/hub/service")["services"])
-    }
-    assert record["record_id"] not in remaining
+    remaining = {app["id"] for app in _declared(panel.read("/hub/service"))}
+    assert live["id"] not in remaining
     assert (
-        panel.status(
-            "POST",
-            "/hub/service/declaration/remove",
-            {"service_id": record["record_id"]},
-        )
+        panel.status("POST", "/hub/service/declaration/remove", {"app_id": live["id"]})
         == 404
     )
 
 
-def test_a_bad_record_is_refused_with_a_code(panel):
+def test_an_entry_of_an_unknown_type_is_refused_with_a_code(panel):
     status, answer = panel.call(
         "POST",
         "/hub/service/declaration/add",
-        {"name": "itest bad", "kind": "ai_endpoint", "host": "h", "port": 1},
+        {
+            "name": "itest bad",
+            "host": "h",
+            "entries": [{"type": "ai_endpoint", "port": 1}],
+        },
     )
     assert status == 400, answer
     assert answer["detail"] == {
         "code": "declared_service_invalid",
-        "params": {"field": "kind"},
+        "params": {"field": "entries.0.type"},
     }
