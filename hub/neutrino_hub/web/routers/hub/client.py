@@ -59,6 +59,7 @@ from neutrino_hub.web.models import (
 )
 from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.web_share_access import web_share_fields
 from neutrino_hub.web.routers.hub.device import (
     enrollment_link,
 )
@@ -434,6 +435,7 @@ def _list_view(runtime: PanelRuntime) -> ClientListView:
             kind: [PermissionRowView(**row) for row in rows]
             for kind, rows in permission_rows(runtime).items()
         },
+        **web_share_fields(runtime),
     )
 
 

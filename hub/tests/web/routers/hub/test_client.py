@@ -102,6 +102,7 @@ def api(monkeypatch, tmp_path):
         lambda runtime: ["tcp://192.168.100.1:8443"],
     )
     monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
+    monkeypatch.setattr(clients_router, "web_share_fields", lambda runtime: {})
     runtime = FakeRuntime()
     monkeypatch.setattr(
         "neutrino_hub.web.channel_overlay.overlay_materials",

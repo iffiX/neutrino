@@ -71,6 +71,7 @@ from neutrino_hub.web.routers.hub import (
     setting,
 )
 from neutrino_hub.web.routers.hub import client as hub_client
+from neutrino_hub.web.routers.hub import web_share as hub_web_share
 
 # The hub group in sidebar order, then the agent group. The proxy's routers
 # come from the edition table.
@@ -91,6 +92,7 @@ API_ROUTERS = (
     ai_gateway.router,
     device.router,
     hub_client.router,
+    hub_web_share.router,
     service.router,
     credential.router,
     setting.router,
@@ -333,6 +335,7 @@ def _start_samplers() -> None:
     runtime.address_sampler.start()
     runtime.release_sampler.start()
     runtime.enrollment_sweeper.start()
+    runtime.web_share_sweeper.start()
     runtime.traffic_history.start()
     if runtime.proxy is not None:
         runtime.proxy.start()

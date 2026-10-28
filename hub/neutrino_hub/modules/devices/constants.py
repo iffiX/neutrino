@@ -393,6 +393,8 @@ DEVICE_HERMES_WEBUI_WEBUI_VOLUMES = (
     "neutrino_hermes_webui_app:/app",
 )
 DEVICE_HERMES_WEBUI_STATE_DIR = "/home/hermeswebui/.hermes/webui"
+# The user Hermes WebUI's webui runs as inside its container.
+DEVICE_HERMES_WEBUI_USER = "hermeswebui"
 # The webui's login cookie: its name on each device is this prefix and the
 # first characters of the device id, so the pages of two devices open in one
 # browser keep their own logins.

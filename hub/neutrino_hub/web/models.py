@@ -1311,6 +1311,9 @@ class AppEntryView(BaseModel):
     is_healthy: bool | None = None
     local_port: int = 0
     detail_code: str | None = None
+    # How a Web share's visitor signs in to a web entry: app, guest_account
+    # or run_account. Empty on an entry of another type.
+    guest_login: str = ""
 
 
 class AppView(BaseModel):
@@ -1645,8 +1648,48 @@ class PermissionRowView(BaseModel):
     device_name: str = ""
 
 
+class WebShareView(BaseModel):
+    """A Web share on the Clients page."""
+
+    id: str
+    name: str
+    app_id: str
+    entry_id: str
+    app_title: str = ""
+    device_name: str = ""
+    # ISO stamp of its end; None for a share that lasts until it is revoked.
+    expires_at: str | None = None
+    expires_in_s: int | None = None
+    # active, preparing, unavailable or failed.
+    state: str
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+    online_count: int = 0
+    # The guest account's e-mail, empty for an entry with no guest account.
+    guest_email: str = ""
+
+
+class WebShareEntryView(BaseModel):
+    """A web entry a new share can offer now."""
+
+    entry_id: str
+    app_id: str
+    title: str
+    device_name: str = ""
+    guest_login: str
+    # The account a visitor uses the app as, for run_account; else empty.
+    visitor_account: str = ""
+
+
+class WebShareSiteView(BaseModel):
+    """A site that serves the share page."""
+
+    url: str
+    title: str
+
+
 class ClientListView(BaseModel):
-    """Every enrolled client, the default permission, and every kind."""
+    """Every enrolled client, the default permission, every kind, and the Web shares."""
 
     clients: list[ClientView] = Field(default_factory=list)
     default_permission: list[str] = Field(default_factory=list)
@@ -1657,6 +1700,10 @@ class ClientListView(BaseModel):
     permission_kinds: list[str] = Field(default_factory=list)
     # The rows the fine mode lists, by kind, in the Services page's order.
     permission_rows: dict[str, list[PermissionRowView]] = Field(default_factory=dict)
+    # Newest first.
+    web_shares: list[WebShareView] = Field(default_factory=list)
+    web_share_entries: list[WebShareEntryView] = Field(default_factory=list)
+    web_share_sites: list[WebShareSiteView] = Field(default_factory=list)
 
 
 class ClientPermissionFields(BaseModel):
@@ -1667,6 +1714,28 @@ class ClientPermissionFields(BaseModel):
     devices: dict[str, list[str]] | None = None
     # Row id to on or off; a row not named follows its kind.
     entries: dict[str, StrictBool] | None = None
+
+
+class WebShareCreateRequest(BaseModel):
+    """A new Web share; ``days`` None lasts until it is revoked."""
+
+    name: str
+    entry_id: str
+    days: int | None = None
+    site: str
+
+
+class WebShareCreatedView(BaseModel):
+    """A new share and its link, which the hub returns this once."""
+
+    link: str
+    share: WebShareView
+
+
+class WebShareRevokeRequest(BaseModel):
+    """A request naming one Web share."""
+
+    share_id: str
 
 
 class ClientEnrollmentRequest(BaseModel):
