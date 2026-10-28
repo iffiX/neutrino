@@ -19,6 +19,9 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
+
 SHARE_PAGE_DIR = REPO_ROOT / "share_page"
 # The directory of the site the page is served from.
 SHARE_PAGE_PREFIX = "__neutrino"
@@ -34,12 +37,14 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument(
         "--output-dir",
         default="dist/share_page",
         help="the directory the tree is written into, emptied first",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     built = assemble((REPO_ROOT / arguments.output_dir).resolve())
     for path in sorted(built.rglob("*")):
         if path.is_file():
