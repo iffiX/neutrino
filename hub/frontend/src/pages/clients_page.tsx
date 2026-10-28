@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 
 import { ClientLinkModal } from "../components/client_link_modal";
+import { WebShareModal } from "../components/web_share_modal";
+import { WebSharesPanel } from "../components/web_shares_panel";
 import { ClientPermissionForm } from "../components/client_permission_form";
 import type {
   PermissionDeviceChoice,
@@ -93,6 +95,7 @@ export function ClientsPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLinkOpen, setIsLinkOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
   const [isDefaultOpen, setIsDefaultOpen] = useState(false);
   // The client whose name is being edited in its row, and the name typed.
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -266,6 +269,15 @@ export function ClientsPage() {
             <Icon name="link" size={14} />
             {t("ui.clients.new_link")}
           </button>
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={listView === null}
+            onClick={() => setIsShareOpen(true)}
+          >
+            <Icon name="link" size={14} />
+            {t("ui.web_shares.new_link")}
+          </button>
         </div>
       </div>
 
@@ -371,6 +383,14 @@ export function ClientsPage() {
           </div>
         )}
       </section>
+      <WebSharesPanel listView={listView} onChanged={resource.setData} />
+      {listView !== null && isShareOpen && (
+        <WebShareModal
+          listView={listView}
+          onCreated={resource.reload}
+          onClose={() => setIsShareOpen(false)}
+        />
+      )}
       {listView !== null && isLinkOpen && (
         <ClientLinkModal
           listView={listView}
