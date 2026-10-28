@@ -217,6 +217,58 @@ def test_status_says_why_a_running_service_was_unbound(running_service, capsys):
     assert "service    running" in out
 
 
+LEGACY_WORDS = (
+    "hub        this binding is from 0.5 and the hub no longer moves it; join the "
+    "hub again with a new link\n"
+    "           run nagent join with a new link from the hub's Agents page\n"
+)
+
+
+def legacy_binding(path) -> None:
+    """Write the binding file an agent of 0.5 left: a fingerprint, no hub key."""
+    path.write_text(
+        json.dumps(
+            {
+                "gateway_url": GATEWAY_URL,
+                "id": BINDING_ID,
+                "token": "t" * 32,
+                "fingerprint": "ff" * 32,
+                "machine_id": "m",
+            }
+        )
+    )
+
+
+def test_status_words_a_binding_of_0_5_with_the_service_stopped(
+    tmp_path, config_path, monkeypatch, capsys
+):
+    legacy_binding(config_path)
+    serve_nothing(monkeypatch, tmp_path, unit_state="inactive")
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert LEGACY_WORDS + "service    inactive" in out
+    assert "joined no hub" not in out
+    assert "heartbeat" not in out
+
+
+def test_status_words_a_binding_of_0_5_the_running_service_reports(
+    running_service, monkeypatch, capsys
+):
+    server, _ = running_service
+    monkeypatch.setattr(
+        server._agent, "error", {"code": "hub_key_missing", "params": {}}
+    )
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert LEGACY_WORDS + "service    running" in out
+    assert "joined no hub" not in out
+    assert "heartbeat" not in out
+
+
 def test_status_says_a_replaced_service_waits_for_a_person(
     running_service, config_path, capsys
 ):

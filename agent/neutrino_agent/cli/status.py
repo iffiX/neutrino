@@ -15,6 +15,7 @@ import time
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.cli.wording import word_code, word_reinstall
+from neutrino_agent.constants import AGENT_CODE_HUB_KEY_MISSING
 from neutrino_agent.control import client
 from neutrino_agent.core import enrollment, self_update
 from neutrino_agent.core.loop import Agent
@@ -63,7 +64,7 @@ ERROR_ADVICE = {
     "replaced": "restart the service, or join again with a fresh link",
     "protocol_too_old": "update this agent from the hub's Agents page",
     "protocol_too_new": "update the hub, then this machine reports again",
-    "hub_key_missing": "join again with a fresh link from the hub's Agents page",
+    "hub_key_missing": "run nagent join with a new link from the hub's Agents page",
     "transport_unavailable": "reinstall the agent; its transport is missing or broken",
 }
 
@@ -83,7 +84,10 @@ def main() -> int:
         return _status_from_service(state)
     binding = enrollment.load_binding()
     if not binding:
-        print(f"hub        {STATUS_UNBOUND}")
+        error = None
+        if enrollment.has_legacy_binding():
+            error = {"code": AGENT_CODE_HUB_KEY_MISSING, "params": {}}
+        _print_unbound(error)
         print(f"service    {service_state()}")
         return 1
     _print_binding(binding)
@@ -176,6 +180,17 @@ def _print_binding(binding: dict) -> None:
     print(f"binding    {binding.get('id', '')}")
 
 
+def _print_unbound(error: "dict | None") -> None:
+    """The hub line of an unbound machine, and the error that unbound it."""
+    if error is not None and error.get("code") == AGENT_CODE_HUB_KEY_MISSING:
+        print(f"hub        {word_error(error)}")
+        print(f"           {ERROR_ADVICE[AGENT_CODE_HUB_KEY_MISSING]}")
+        return
+    print(f"hub        {STATUS_UNBOUND}")
+    if error is not None:
+        _print_error(error)
+
+
 def _print_error(error: dict) -> None:
     """The heartbeat line for one error, and its advice when there is some."""
     print(f"heartbeat  {word_error(error)}")
@@ -243,9 +258,7 @@ def _status_from_service(state: dict) -> int:
     if not isinstance(error, dict) or not error.get("code"):
         error = None
     if not state.get("is_connected"):
-        print(f"hub        {STATUS_UNBOUND}")
-        if error is not None:
-            _print_error(error)
+        _print_unbound(error)
         print("service    running")
         return 1
     binding = state.get("binding")

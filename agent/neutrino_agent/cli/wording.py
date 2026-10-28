@@ -59,8 +59,8 @@ CLI_CODE_WORDS = {
         "the hub's Agents page"
     ),
     "hub_key_missing": (
-        "the hub gave this machine no key; join again with a fresh link from "
-        "the hub's Agents page"
+        "this binding is from 0.5 and the hub no longer moves it; join the hub "
+        "again with a new link"
     ),
     "transport_unavailable": "the agent's transport did not start: {detail}",
     "control_unavailable": "the agent did not answer its transport in time",
