@@ -71,7 +71,7 @@ never the same word for two different actions on one page.
 ## The rules that apply to everything
 
 **No narrated reasoning.** The panel says what is, not why the code does it.
-Rationale belongs in `docs/`. This is the same rule the comments obey
+Rationale belongs in the design pages. This is the same rule the comments obey
 ([../coding_style/comment.md](../coding_style/comment.md)), and it
 is broken most often in descriptions that start explaining the implementation.
 
@@ -105,8 +105,8 @@ the answer, and no `done` sentence follows it.
 
 **Never announce what the product does not do.** `The password stays on this
 machine; the hub is never told it` explains an implementation boundary
-nobody asked about. Security properties live in `docs/`; the surface shows
-the controls that exist and omits the reassurance. The same rule covers a
+nobody asked about. Security properties live in the design pages. The surface
+shows the controls that exist and omits the reassurance. The same rule covers a
 mode or an option: `Server: routes nothing, answers on the port it is
 reached on` tells the reader two things it does not do. `Server: serves on
 the networks it is connected to` tells them what it does.

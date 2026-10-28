@@ -182,7 +182,8 @@ examples in the document named beside it.
   Pydantic fields, `config/` JSON keys and TypeScript fields alike.
   ([coding_style/naming.md](skills/core-code-author/coding_style/naming.md))
 - **No narrated reasoning.** Not in comments, docstrings, UI copy, or error
-  messages. Rationale goes in `docs/`.
+  messages. Rationale goes in the design pages, under
+  `skills/core-code-author/design/`.
   ([coding_style/comment.md](skills/core-code-author/coding_style/comment.md))
 - **One exceptions table per package.** A raise site uses Python's own kind
   when one says it; a kind of the package's own is declared in
