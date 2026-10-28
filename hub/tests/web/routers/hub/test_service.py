@@ -161,6 +161,7 @@ def test_the_list_is_the_apps_in_order_and_the_entries_of_no_app(api):
             "is_healthy": True,
             "local_port": 25000,
             "detail_code": None,
+            "guest_login": "app",
         }
     ]
     assert body["apps"][0]["local_name"] == "gitea.argon.localhost"

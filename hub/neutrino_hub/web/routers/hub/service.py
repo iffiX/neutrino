@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from neutrino_hub.exceptions import ServiceFieldInvalidError
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import (
@@ -39,6 +40,7 @@ from neutrino_hub.web.models import (
     ServiceShareListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.web_share_access import entry_guest_login
 
 router = APIRouter(
     prefix="/api/hub/service", tags=["service"], dependencies=[Depends(require_session)]
@@ -195,6 +197,7 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
     )
     entries = runtime.published_services.entries_for(scope)
     names = runtime.device_names()
+    manifests = load_module_manifests()
     by_app: dict = {}
     loose = []
     for entry in entries:
@@ -227,6 +230,7 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
                         is_healthy=entry["is_healthy"],
                         local_port=int(entry.get("local_port") or 0),
                         detail_code=entry.get("detail_code"),
+                        guest_login=entry_guest_login(entry, manifests)[0],
                     )
                     for entry in held
                 ],
