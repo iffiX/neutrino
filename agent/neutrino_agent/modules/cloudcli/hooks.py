@@ -1175,17 +1175,25 @@ class CloudcliHooks(InstanceHooks):
         write_text(log_file, "")
         for path in (script, log_file):
             grant_account_alone(self.machine.run, path, account, "M", is_tree=False)
-        self.machine.powershell.call(
-            "task_run_once",
-            {
-                "task": name,
-                "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
-                "arguments": task_arguments(script, [], log_file),
-                "account": account,
-                "password": instance.password,
-                "timeout_s": CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
-            },
-        )
+        batch_logon = self.machine.batch_logon
+        if batch_logon is not None:
+            batch_logon.hold(account, name, instance.password)
+        try:
+            self.machine.powershell.call(
+                "task_run_once",
+                {
+                    "task": name,
+                    "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
+                    "arguments": task_arguments(script, [], log_file),
+                    "account": account,
+                    "password": instance.password,
+                    "timeout_s": CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
+                },
+            )
+        except (OSError, ModuleApplyError):
+            if batch_logon is not None:
+                batch_logon.release(account, name)
+            raise
         self._log(f"{self.name}: installing CloudCLI for {account}")
         return INSTALL_RUNNING
 
@@ -1194,6 +1202,8 @@ class CloudcliHooks(InstanceHooks):
     ) -> None:
         """Unregister an ended install task and raise the step it failed at."""
         self.machine.powershell.call("task_remove", {"task": name})
+        if self.machine.batch_logon is not None:
+            self.machine.batch_logon.release(account, name)
         remove_path(script)
         output = install_output(log_file)
         result = int(task.get("last_result", 0) or 0) & 0xFFFFFFFF

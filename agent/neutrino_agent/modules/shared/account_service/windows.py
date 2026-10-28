@@ -14,12 +14,13 @@ reads are reachable by their account, SYSTEM and the administrators alone.
 An instance's processes are the ones whose command line names its log file,
 or its script where the output is discarded, and every process they
 started; a stop ends all of them, and an instance with a port runs while
-one of them listens on it. The task goes through the agent's PowerShell
-host, the password on its standard input; the files, their access lists and
-the processes are the agent's own work.
+one of them listens on it. The account holds the batch logon right from
+its first task's write until its last task is removed. The task goes
+through the agent's PowerShell host, the password on its standard input;
+the files, their access lists and the processes are the agent's own work.
 
-Not pure: writes files, runs icacls, drives the Task Scheduler and ends
-processes.
+Not pure: writes files, runs icacls, drives the Task Scheduler, changes
+the local security policy and ends processes.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -190,6 +191,7 @@ def arguments_of(service, machine) -> str:
 def write(service, machine) -> bool:
     """Write the account's files and its log, and register the task when it changed.
 
+    The account is granted the batch logon right first where it needs it.
     Every firewall rule an older build opened for an instance's port goes.
 
     Returns:
@@ -212,6 +214,8 @@ def write(service, machine) -> bool:
     arguments = arguments_of(service, machine)
     description = task_description(arguments, service, [file["text"] for file in files])
     task = task_name(service.name, service.account)
+    if machine.batch_logon is not None:
+        machine.batch_logon.hold(service.account, task, service.password)
     held = machine.powershell.call("task_read", {"task": task})
     is_registered = False
     if not held.get("is_present") or held.get("description") != description:
@@ -253,10 +257,16 @@ def stop(service, machine) -> None:
 
 
 def remove(service, machine) -> None:
-    """Stop the instance, unregister its task and delete what it ran from."""
+    """Stop the instance, unregister its task and delete what it ran from.
+
+    The account's batch logon right goes with its last task, where the
+    agent granted it.
+    """
     task = task_name(service.name, service.account)
     _stop_instance(task, output_mark(service, machine), machine)
     machine.powershell.call("task_remove", {"task": task})
+    if machine.batch_logon is not None:
+        machine.batch_logon.release(service.account, task)
     paths = [path for path, _text in service.files]
     paths.append(script_path(service, machine))
     if not service.is_output_discarded:

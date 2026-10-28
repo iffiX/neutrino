@@ -156,9 +156,6 @@ def account_home(account: str, *, advapi32=None, kernel32=None) -> str:
 def account_sid(account: str, *, advapi32=None, kernel32=None) -> str:
     """One local account's SID, as ``S-1-5-21-...``.
 
-    The name is looked up as ``<this computer>\\<account>``, so a domain's
-    account or a well-known one of the same name is not taken for it.
-
     Args:
         account: The account's name on this computer.
         advapi32: The bound advapi32; None binds the real one.
@@ -176,6 +173,34 @@ def account_sid(account: str, *, advapi32=None, kernel32=None) -> str:
         libraries = win32.libraries()
     advapi32 = advapi32 or libraries.advapi32
     kernel32 = kernel32 or libraries.kernel32
+    sid = account_sid_buffer(account, advapi32=advapi32, kernel32=kernel32)
+    text = ctypes.c_void_p()
+    if not advapi32.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+        raise win32.last_error()
+    try:
+        return ctypes.wstring_at(text.value)
+    finally:
+        kernel32.LocalFree(text)
+
+
+def account_sid_buffer(account: str, *, advapi32, kernel32):
+    """One local account's SID, in a buffer the caller keeps alive.
+
+    The name is looked up as ``<this computer>\\<account>``, so a domain's
+    account or a well-known one of the same name is not taken for it.
+
+    Args:
+        account: The account's name on this computer.
+        advapi32: The bound advapi32.
+        kernel32: The bound kernel32.
+
+    Returns:
+        The SID's bytes, as a ctypes buffer.
+
+    Raises:
+        KeyError: When this computer has no account of that name.
+        OSError: When the name cannot be read.
+    """
     qualified = _computer_name(kernel32) + "\\" + account
     sid_size = win32.DWORD(0)
     domain_size = win32.DWORD(0)
@@ -208,13 +233,7 @@ def account_sid(account: str, *, advapi32=None, kernel32=None) -> str:
         raise win32.last_error()
     if use.value != win32.SID_TYPE_USER:
         raise KeyError(account)
-    text = ctypes.c_void_p()
-    if not advapi32.ConvertSidToStringSidW(sid, ctypes.byref(text)):
-        raise win32.last_error()
-    try:
-        return ctypes.wstring_at(text.value)
-    finally:
-        kernel32.LocalFree(text)
+    return sid
 
 
 @contextlib.contextmanager

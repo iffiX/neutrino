@@ -13,9 +13,11 @@ forget remove the rules an older build opened; a stop takes the instance's
 process tree before the task stops and ends it after; a start first ends
 what is left of the instance; an instance whose service names a port runs
 only while a process of its tree listens on it, any other while its task
-runs; a task Windows cannot sign in reads ``credential_invalid``; and a
-remove unregisters the task and deletes what it ran from. Every request the
-host is sent is pinned whole.
+runs; a task Windows cannot sign in reads ``credential_invalid``; a
+remove unregisters the task and deletes what it ran from; and every write
+holds the account's batch logon right before the task is read, and a
+remove releases it after the task is unregistered. Every request the host
+is sent is pinned whole.
 """
 
 import pytest
@@ -32,7 +34,7 @@ from neutrino_agent.modules.shared.account_service.windows import (
     task_description,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
-from tests.conftest import FakeProcessTable, RecordingHost
+from tests.conftest import FakeBatchLogon, FakeProcessTable, RecordingHost
 
 SYSTEM = "*S-1-5-18"
 ADMINISTRATORS = "*S-1-5-32-544"
@@ -97,7 +99,9 @@ def service_with(module_dir, **changes) -> AccountService:
     return AccountService(**fields)
 
 
-def machine_with(module_dir, host, table=None, run=None) -> ServiceMachine:
+def machine_with(
+    module_dir, host, table=None, run=None, batch_logon=None
+) -> ServiceMachine:
     return ServiceMachine(
         os_name="windows",
         module_dir=module_dir,
@@ -106,6 +110,7 @@ def machine_with(module_dir, host, table=None, run=None) -> ServiceMachine:
         run=run if run is not None else Icacls(),
         powershell=host,
         processes=table if table is not None else FakeProcessTable(),
+        batch_logon=batch_logon,
     )
 
 
@@ -327,6 +332,48 @@ def test_a_refused_login_is_credential_invalid(module_dir):
         account_service.write(service_with(module_dir), machine_with(module_dir, host))
 
     assert refused.value.code == "credential_invalid"
+
+
+def test_a_write_holds_the_batch_logon_right_before_the_task_is_read(module_dir):
+    host = RecordingHost({"task_read": {"is_present": False}})
+    machine = machine_with(module_dir, host, batch_logon=FakeBatchLogon(host.calls))
+
+    account_service.write(service_with(module_dir), machine)
+
+    assert host.ops() == ["batch_logon_hold", "task_read", "task_write", "rules_forget"]
+    assert host.args_of("batch_logon_hold") == [
+        {"account": "hanha", "task": "neutrino_demo_hanha"}
+    ]
+
+
+def test_a_write_the_batch_logon_right_refuses_registers_no_task(module_dir):
+    host = RecordingHost({"task_read": {"is_present": False}})
+    batch_logon = FakeBatchLogon(host.calls)
+
+    def refuse(account, task, password):
+        raise ModuleApplyError("credential_invalid", {"account": account})
+
+    batch_logon.hold = refuse
+
+    with pytest.raises(ModuleApplyError):
+        account_service.write(
+            service_with(module_dir),
+            machine_with(module_dir, host, batch_logon=batch_logon),
+        )
+
+    assert host.calls == []
+
+
+def test_a_remove_releases_the_batch_logon_right_after_the_task_goes(module_dir):
+    host = RecordingHost()
+    machine = machine_with(module_dir, host, batch_logon=FakeBatchLogon(host.calls))
+
+    account_service.remove(service_with(module_dir), machine)
+
+    assert host.ops() == ["task_stop", "task_remove", "batch_logon_release"]
+    assert host.args_of("batch_logon_release") == [
+        {"account": "hanha", "task": "neutrino_demo_hanha"}
+    ]
 
 
 def test_a_path_with_spaces_is_quoted_inside_the_command():

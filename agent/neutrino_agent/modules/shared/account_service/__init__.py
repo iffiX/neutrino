@@ -137,6 +137,8 @@ class ServiceMachine:
             :meth:`WindowsPowerShellHost.call` is; None elsewhere.
         processes: Windows: the machine's processes, read and ended as
             :class:`WindowsProcessTable` does; None elsewhere.
+        batch_logon: Windows: the batch logon right of the accounts, held
+            and released as :class:`WindowsBatchLogonRight` does; None elsewhere.
         systemd_dir: Where the template unit is written.
         launchd_dir: Where the plists are written.
         log_dir: Where the macOS log files are.
@@ -150,6 +152,7 @@ class ServiceMachine:
     chown: object = getattr(os, "chown", _no_chown)
     powershell: object = None
     processes: object = None
+    batch_logon: object = None
     systemd_dir: str = ACCOUNT_SERVICE_SYSTEMD_DIR
     launchd_dir: str = ACCOUNT_SERVICE_LAUNCHD_DIR
     log_dir: str = ACCOUNT_SERVICE_DARWIN_LOG_DIR
@@ -273,7 +276,8 @@ def write(service: AccountService, machine: ServiceMachine) -> bool:
         ModuleApplyError: ``credential_invalid`` when Windows refuses the
             account's login.
         KeyError: When the machine does not have the account.
-        OSError: When a file cannot be written, or the PowerShell host fails.
+        OSError: When a file cannot be written, the PowerShell host fails,
+            or Windows will not grant the account the batch logon right.
     """
     return _system(machine).write(service, machine)
 
@@ -319,7 +323,8 @@ def remove(service: AccountService, machine: ServiceMachine) -> None:
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
-        OSError: When the PowerShell host fails.
+        OSError: When the PowerShell host fails, or Windows will not take
+            the batch logon right away.
     """
     _system(machine).remove(service, machine)
 

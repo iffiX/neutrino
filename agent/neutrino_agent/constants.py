@@ -238,6 +238,10 @@ AGENT_RUN_AS_TASK_PREFIX = "neutrino_run_as_"
 AGENT_RUN_AS_DIR_NAME = "run_as"
 AGENT_RUN_AS_POLL_S = 0.5
 AGENT_ANSWER_VERB = "answer"
+# The right a task under an account's login signs in with on Windows, and
+# the record under the state root of the accounts the agent granted it.
+AGENT_BATCH_LOGON_RIGHT = "SeBatchLogonRight"
+AGENT_BATCH_LOGON_RECORD_NAME = "batch_logon.json"
 AGENT_WINDOWS_PROGRAM_SUBDIR = ("Neutrino", "agent")
 AGENT_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
 AGENT_WINDOWS_BINARY_NAME = "nagent.exe"

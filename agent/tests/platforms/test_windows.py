@@ -6,8 +6,9 @@ host is a recording one, ``sc`` and icacls are faked at ``subprocess.run``
 or as the injected runner, the iphlpapi and netapi32 reads are replaced at
 their seam, and the registry is a fake ``winreg``. What is pinned is what
 each source is turned into, every request the host is sent, the
-one-shot tasks of one account taking turns, and the relays on WSL's adapter
-with their firewall rules read and written through the host.
+one-shot tasks of one account taking turns with the account's batch logon
+right held for each run, and the relays on WSL's adapter with their
+firewall rules read and written through the host.
 """
 
 import contextlib
@@ -29,7 +30,7 @@ from neutrino_agent.platforms.windows import (
     WindowsHostMetricsReader,
     WindowsPlatform,
 )
-from tests.conftest import FakeProcessTable, RecordingHost
+from tests.conftest import FakeBatchLogon, FakeProcessTable, RecordingHost
 
 
 @pytest.fixture(autouse=True)
@@ -1150,9 +1151,10 @@ ADDED = {
 def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
     monkeypatch, tmp_path
 ):
-    """The fence is one of the rules; the hub's own rules stay, and every
+    """The fence is one of the rules; the hub's own rules stay, every
     process under the state root is ended with the tasks, a child with its
-    parent, without regard to case."""
+    parent, without regard to case, and every batch logon right the agent
+    granted is taken away last."""
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     host = RecordingHost({"added_list": ADDED})
     state = f"{tmp_path}/Neutrino\\agent\\state"
@@ -1170,7 +1172,12 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
     run_as.mkdir()
     (run_as / "left.txt").write_text("x")
 
-    removed = WindowsPlatform(powershell=host, processes=table).remove_added()
+    batch_logon = FakeBatchLogon(host.calls)
+    batch_logon.taken = ["bob"]
+
+    removed = WindowsPlatform(
+        powershell=host, processes=table, batch_logon=batch_logon
+    ).remove_added()
 
     assert host.calls == [
         ("added_list", {"prefix": "neutrino_"}),
@@ -1182,6 +1189,7 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
                 "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
             },
         ),
+        ("batch_logon_release_all", {}),
     ]
     assert table.ended == [30, 40, 31]
     assert not run_as.exists()
@@ -1191,6 +1199,7 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
         "task neutrino_vscode_ann",
         "firewall rule neutrino_smb_fence",
         "firewall rule neutrino_vscode_port_ann",
+        "batch logon right of bob",
     ]
 
 
@@ -1252,12 +1261,13 @@ class OneShotTask:
         return {}
 
 
-def run_as_platform(task, icacls=None):
+def run_as_platform(task, icacls=None, batch_logon=None):
     return WindowsPlatform(
         kernel32=FakeKernel32(),
         powershell=task.host,
         run=icacls if icacls is not None else Icacls(),
         sleep=lambda seconds: None,
+        batch_logon=batch_logon if batch_logon is not None else FakeBatchLogon(),
     )
 
 
@@ -1267,7 +1277,7 @@ def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     task = OneShotTask()
     icacls = Icacls()
-    platform = run_as_platform(task, icacls)
+    platform = run_as_platform(task, icacls, FakeBatchLogon(task.host.calls))
 
     done = platform.run_as_account(
         "ann",
@@ -1280,6 +1290,7 @@ def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(
     assert (done.returncode, done.stdout) == (3, "drawn")
     directory = f"{tmp_path}/Neutrino\\agent\\state\\run_as\\ann"
     assert task.host.calls == [
+        ("batch_logon_hold", {"account": "ann", "task": "neutrino_run_as_ann"}),
         (
             "task_run_once",
             {
@@ -1292,6 +1303,7 @@ def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(
             },
         ),
         ("task_remove", {"task": "neutrino_run_as_ann"}),
+        ("batch_logon_release", {"account": "ann", "task": "neutrino_run_as_ann"}),
     ]
     assert icacls.calls == [
         [
@@ -1329,7 +1341,11 @@ def test_a_command_that_never_wrote_its_end_reads_minus_one(monkeypatch, tmp_pat
         clock[0] += seconds
 
     platform = WindowsPlatform(
-        powershell=task.host, run=Icacls(), sleep=sleep, kernel32=FakeKernel32()
+        powershell=task.host,
+        run=Icacls(),
+        sleep=sleep,
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(),
     )
 
     done = platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=3)
@@ -1343,13 +1359,23 @@ def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_pat
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     refusal = ModuleApplyError("credential_invalid", {"account": "ann"})
     host = RecordingHost({"task_run_once": refusal})
-    platform = WindowsPlatform(powershell=host, run=Icacls(), kernel32=FakeKernel32())
+    platform = WindowsPlatform(
+        powershell=host,
+        run=Icacls(),
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(host.calls),
+    )
 
     with pytest.raises(ModuleApplyError) as caught:
         platform.run_as_account("ann", ["cc.exe"], stdin="secret", password="old")
 
     assert caught.value.code == "credential_invalid"
-    assert host.ops() == ["task_run_once", "task_remove"]
+    assert host.ops() == [
+        "batch_logon_hold",
+        "task_run_once",
+        "task_remove",
+        "batch_logon_release",
+    ]
     assert sorted(path.name for path in tmp_path.iterdir()) == [
         "Neutrino\\agent\\state\\run_as\\ann"
     ]
@@ -1358,7 +1384,12 @@ def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_pat
 def test_a_run_folder_icacls_refuses_starts_no_task(monkeypatch, tmp_path):
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     host = RecordingHost()
-    platform = WindowsPlatform(powershell=host, run=Icacls(5), kernel32=FakeKernel32())
+    platform = WindowsPlatform(
+        powershell=host,
+        run=Icacls(5),
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(host.calls),
+    )
 
     with pytest.raises(OSError, match="icacls refused"):
         platform.run_as_account("ann", ["cc.exe"], password="pw")

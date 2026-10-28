@@ -78,6 +78,8 @@ PI_NOUI = 0x00000001
 POLICY_CREATE_ACCOUNT = 0x00000010
 POLICY_LOOKUP_NAMES = 0x00000800
 ERROR_INSUFFICIENT_BUFFER = 122
+# The status a right's removal gets for an account that holds no right.
+STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034
 
 # Job objects: every process of a shell dies with the job's last handle, and
 # a process opened by its pid is put into one with this access.
@@ -948,6 +950,14 @@ class Win32Libraries:
         self.advapi32.LsaAddAccountRights.argtypes = [
             ctypes.c_void_p,
             ctypes.c_void_p,
+            ctypes.POINTER(LsaUnicodeString),
+            DWORD,
+        ]
+        self.advapi32.LsaRemoveAccountRights.restype = DWORD
+        self.advapi32.LsaRemoveAccountRights.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ubyte,
             ctypes.POINTER(LsaUnicodeString),
             DWORD,
         ]

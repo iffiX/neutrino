@@ -132,12 +132,16 @@ class AgentPlatform:
             elsewhere.
         process_table: Windows: the machine's processes, read and ended as
             :class:`WindowsProcessTable` does; None elsewhere.
+        batch_logon: Windows: the batch logon right of the accounts a task
+            runs as, held as :class:`WindowsBatchLogonRight` holds it; None
+            elsewhere.
     """
 
     os_name = ""
     capabilities: frozenset = frozenset()
     powershell_host = None
     process_table = None
+    batch_logon = None
 
     def agent_data_dir(self) -> str:
         """Where the agent keeps what the hub decided on this platform.

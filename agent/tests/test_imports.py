@@ -217,6 +217,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.platforms.win32",
     "neutrino_agent.platforms.windows",
     "neutrino_agent.platforms.windows_accounts",
+    "neutrino_agent.platforms.windows_batch_logon",
     "neutrino_agent.platforms.windows_logon",
     "neutrino_agent.platforms.windows_net",
     "neutrino_agent.platforms.windows_processes",

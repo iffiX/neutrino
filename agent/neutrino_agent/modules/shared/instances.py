@@ -94,7 +94,8 @@ def machine_for(platform, name: str) -> ServiceMachine:
 
     Returns:
         The machine, with the account lookup the platform answers, and on
-        Windows its PowerShell host and its process table.
+        Windows its PowerShell host, its process table and its batch logon
+        right.
     """
     join = ntpath.join if platform.os_name == "windows" else os.path.join
     module_dir = join(platform.agent_var_dir(), name)
@@ -105,6 +106,7 @@ def machine_for(platform, name: str) -> ServiceMachine:
         lookup_account=functools.partial(_lookup_account, platform),
         powershell=platform.powershell_host,
         processes=platform.process_table,
+        batch_logon=platform.batch_logon,
     )
 
 

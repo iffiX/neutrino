@@ -28,6 +28,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_ADDED_NAME_PREFIX,
     AGENT_ANSWER_VERB,
+    AGENT_BATCH_LOGON_RECORD_NAME,
     AGENT_BIN_DIR_NAME,
     AGENT_RELAY_RULE_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
@@ -79,6 +80,7 @@ from neutrino_agent.platforms.windows_accounts import (
     impersonated,
     read_users,
 )
+from neutrino_agent.platforms.windows_batch_logon import WindowsBatchLogonRight
 from neutrino_agent.platforms.windows_net import read_interfaces
 from neutrino_agent.platforms.windows_relay import rule_changes, wsl_addresses_from
 from neutrino_agent.platforms.windows_processes import (
@@ -298,6 +300,8 @@ class WindowsPlatform(AgentPlatform):
             :meth:`WindowsPowerShellHost.call` is.
         process_table: The machine's processes, as
             :class:`WindowsProcessTable` reads and ends them.
+        batch_logon: The batch logon right of the accounts a task runs as,
+            as :class:`WindowsBatchLogonRight` holds it.
     """
 
     os_name = "windows"
@@ -332,6 +336,7 @@ class WindowsPlatform(AgentPlatform):
         run=None,
         seat=None,
         sleep=time.sleep,
+        batch_logon=None,
     ):
         """
         Args:
@@ -357,6 +362,9 @@ class WindowsPlatform(AgentPlatform):
                 the console session.
             sleep: Waits a number of seconds, between looks at a one-shot
                 task's end.
+            batch_logon: The batch logon right of the accounts, as
+                :class:`WindowsBatchLogonRight` holds it; None keeps its record
+                under the state root.
         """
         self._kernel32 = kernel32
         self._shell32 = shell32
@@ -379,6 +387,17 @@ class WindowsPlatform(AgentPlatform):
         )
         self._metrics_reader = WindowsHostMetricsReader(
             kernel32=kernel32, powershell=self.powershell_host
+        )
+        self.batch_logon = (
+            batch_logon
+            if batch_logon is not None
+            else WindowsBatchLogonRight(
+                record_path=ntpath.join(
+                    self.agent_var_dir(), AGENT_BATCH_LOGON_RECORD_NAME
+                ),
+                advapi32=advapi32,
+                kernel32=kernel32,
+            )
         )
 
     def agent_data_dir(self) -> str:
@@ -471,7 +490,8 @@ class WindowsPlatform(AgentPlatform):
         The task runs with a limited token in the account's profile; its
         script, its standard input, its output and its exit code are files
         in a directory only the account, SYSTEM and the administrators
-        reach, all removed with the task once the exit code is read. Two
+        reach, all removed with the task once the exit code is read. The
+        account holds the batch logon right while the task runs. Two
         runs for one account take turns, the second waiting until the
         first's task and files are removed; runs for two accounts do not
         wait on each other.
@@ -492,8 +512,9 @@ class WindowsPlatform(AgentPlatform):
         Raises:
             ModuleApplyError: ``credential_invalid {account}`` when Windows
                 refuses the login.
-            OSError: When the files cannot be written, or the host cannot
-                register or start the task.
+            OSError: When the files cannot be written, the account cannot
+                be granted the batch logon right, or the host cannot register
+                or start the task.
         """
         with self._run_as_lock(account):
             directory = ntpath.join(
@@ -520,6 +541,7 @@ class WindowsPlatform(AgentPlatform):
                     ),
                 )
                 write_text(paths["input"], stdin)
+                self.batch_logon.hold(account, task, password)
                 self.powershell_host.call(
                     "task_run_once",
                     {
@@ -540,6 +562,10 @@ class WindowsPlatform(AgentPlatform):
                 try:
                     self.powershell_host.call("task_remove", {"task": task})
                 except (OSError, ModuleApplyError):
+                    pass
+                try:
+                    self.batch_logon.release(account, task)
+                except OSError:
                     pass
                 for path in paths.values():
                     remove_path(path)
@@ -833,14 +859,16 @@ class WindowsPlatform(AgentPlatform):
         :func:`is_added_name` says so; the agent's own service, the hub's
         and the client's are not touched. Every process running from under
         the state root is ended with its descendants, so no instance
-        outlives its task, and the one-shot tasks' files go. Shares and
-        accounts stay.
+        outlives its task, and the one-shot tasks' files go. Every batch
+        logon right the agent granted is taken away. Shares and accounts
+        stay.
 
         Returns:
             What was removed, one line each.
 
         Raises:
-            OSError: When the host or the process table fails.
+            OSError: When the host, the process table or the local security
+                policy fails.
         """
         found = self.powershell_host.call(
             "added_list", {"prefix": AGENT_ADDED_NAME_PREFIX}
@@ -861,10 +889,12 @@ class WindowsPlatform(AgentPlatform):
         shutil.rmtree(
             ntpath.join(state_root, AGENT_RUN_AS_DIR_NAME), ignore_errors=True
         )
+        taken = self.batch_logon.release_all()
         return (
             [f"service {name}" for name in services]
             + [f"task {name}" for name in tasks]
             + [f"firewall rule {name}" for name in rules]
+            + [f"batch logon right of {account}" for account in taken]
         )
 
     def smb_server_applier(self) -> SambaWindowsApplier:

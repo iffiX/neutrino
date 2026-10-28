@@ -13,7 +13,8 @@ account's configuration, as a transient service that may take
 ``OOMPolicy=stop`` on Linux and as the account's own process on a Mac, and a
 failure names its step; on Windows an install runs as a task left running,
 the account reads installing with the install's log meanwhile, and an
-ended task is judged by its result and the app directory; each instance's
+ended task is judged by its result and the app directory, the account's
+batch logon right held from the task's start until then; each instance's
 service runs Node.js with the account's server script from an environment
 written from scratch whose ``PATH`` lists Node's directory, the account's
 usual command directories and the system's and names no gateway, root-only
@@ -68,7 +69,7 @@ from neutrino_agent.modules.shared.package import unpack_artifact
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
-from tests.conftest import RecordingHost
+from tests.conftest import FakeBatchLogon, RecordingHost
 
 SECRET = "instance-secret"  # scan: allow
 PASSWORD = "hub-password-1"  # scan: allow
@@ -183,7 +184,11 @@ def land_package(app: str) -> None:
 
 
 def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
-    tools = {key: kwargs.pop(key) for key in ("run", "powershell") if key in kwargs}
+    tools = {
+        key: kwargs.pop(key)
+        for key in ("run", "powershell", "batch_logon")
+        if key in kwargs
+    }
     kwargs.setdefault("probe", Probe())
     hooks = CloudcliHooks(platform=Platform(os_name), log=lambda line: None, **kwargs)
     held = held if held is not None else recipe()
@@ -776,6 +781,7 @@ def windows(tmp_path, ready):
         with_node(tmp_path, "windows"),
         powershell=host,
         run=granted,
+        batch_logon=FakeBatchLogon(host.calls),
     )
     return hooks, host, AccountEntry(0, 0, "C:\\Users\\ann", "")
 
@@ -787,7 +793,10 @@ def test_an_install_is_started_as_a_task_and_left_to_run(windows):
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     assert notes == []
-    assert host.ops() == ["task_states", "task_run_once"]
+    assert host.ops() == ["task_states", "batch_logon_hold", "task_run_once"]
+    assert host.args_of("batch_logon_hold") == [
+        {"account": "ann", "task": "neutrino_cloudcli_install_ann"}
+    ]
     assert host.args_of("task_states") == [{"prefix": "neutrino_cloudcli_install_"}]
     (started,) = host.args_of("task_run_once")
     script = hooks.machine.module_dir + "\\run\\install_ann.cmd"
@@ -839,8 +848,11 @@ def test_an_ended_install_is_unregistered_and_judged(windows, ready):
     hooks.prepare_module()
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
-    assert host.ops() == ["task_states", "task_remove"]
+    assert host.ops() == ["task_states", "task_remove", "batch_logon_release"]
     assert host.args_of("task_remove") == [{"task": "neutrino_cloudcli_install_ann"}]
+    assert host.args_of("batch_logon_release") == [
+        {"account": "ann", "task": "neutrino_cloudcli_install_ann"}
+    ]
     assert not os.path.exists(script)
     assert notes == ["installed CloudCLI for ann"]
     assert hooks.installing == frozenset()
@@ -915,6 +927,7 @@ def test_a_refused_login_is_credential_invalid(windows):
         hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     assert caught.value.code == "credential_invalid"
+    assert host.ops()[-2:] == ["task_run_once", "batch_logon_release"]
 
 
 # --- the record and the service ---

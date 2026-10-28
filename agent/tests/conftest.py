@@ -549,6 +549,29 @@ def service_manager(request, monkeypatch):
     return manager
 
 
+class FakeBatchLogon:
+    """The batch logon right: each hold and release recorded as ``(op,
+    args)``, nothing granted.
+
+    A test that hands it the host's ``calls`` list reads both in one order.
+    """
+
+    def __init__(self, calls=None):
+        self.calls: list = calls if calls is not None else []
+        self.taken: list = []
+
+    def hold(self, account, task, password):
+        self.calls.append(("batch_logon_hold", {"account": account, "task": task}))
+
+    def release(self, account, task):
+        self.calls.append(("batch_logon_release", {"account": account, "task": task}))
+        return False
+
+    def release_all(self):
+        self.calls.append(("batch_logon_release_all", {}))
+        return list(self.taken)
+
+
 class RecordingHost:
     """The PowerShell host: each operation and its arguments recorded, a canned
     answer given.
