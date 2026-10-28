@@ -139,7 +139,9 @@ agent/
                      windows_service.py the service control manager's side,
                      windows_net.py the network iphlpapi reports,
                      windows_accounts.py the local accounts through netapi32
-                     and the impersonation of one, windows_processes.py the
+                     and the impersonation of one, windows_batch_logon.py
+                     the batch logon right the agent grants an account
+                     while a task runs as it, windows_processes.py the
                      process table with command lines and trees,
                      linux_relay.py the Podman bridges and the relays'
                      rules in ufw and firewalld, windows_relay.py WSL's

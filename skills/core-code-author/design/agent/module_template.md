@@ -40,6 +40,15 @@ the service definition, starts, stops, removes and queries it:
 | macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says, and `AbandonProcessGroup` where the module asks for it, so the processes the program started keep running when the job stops |
 | Windows | a scheduled task under the account's login, the one the account's row on the machine page holds, started at boot with no time limit and a limited token; a stop ends the task's whole process tree |
 
+A task under an account's login signs the account in with a batch logon,
+and Windows admits that logon only for an account with "Log on as a batch
+job", `SeBatchLogonRight`:
+
+| Rule | Reason |
+| --- | --- |
+| The agent grants the account the right when it registers a task under the account's login, and takes it away when it removes the account's last such task. The tasks are an instance's, a one-shot task of `run_as_account` and CloudCLI's install task alike. | An administrator has the right through its group, and a standard account does not. On Windows 11 a task registered under a standard account's login read "has not yet run" after its start, and with the grant that account's SiYuan instance ran and the right was gone after the module's uninstall. The right is granted when a task needs it and taken away when none does. |
+| An account that passes a batch logon before the agent registers its first task, an administrator or an account the person granted the right, is never granted it. `batch_logon.json` under the state root lists each account with a task, its tasks and whether its right is the agent's grant. The agent takes away only its own grants, at the last task's removal and at the uninstall's cleanup. | The right an account had before the agent is the person's ([agent.md](../agent.md), "Parallel, never take over"). |
+
 The service's environment is written from scratch, with nothing inherited
 from a login profile or a version manager, and the module's `hooks.py`
 composes it: the command line, the variables, the `umask` the module asks
