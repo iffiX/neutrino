@@ -357,7 +357,7 @@ where they fit.
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
 | `ui.modules.no_accounts` | Add an account under Available accounts first. | 先在“可用账户”里添加账户。 |
 | `ui.samba.replace_notice` | Applying replaces this machine's smb.conf. The old file is kept as /etc/samba/smb.conf.before_neutrino. | 应用会替换这台机器的 smb.conf，原文件保存为 /etc/samba/smb.conf.before_neutrino。 |
-| `ui.samba.home_shares`, `ui.samba.folder_shares`, the File share tab's two panels | Home shares, Folder shares | Home 共享、文件夹共享 |
+| `ui.samba.home_shares`, `ui.samba.folder_shares`, the File share tab's two panels | Home shares, Folder shares | 主目录共享、文件夹共享 |
 | `ui.samba.home_shares_hint` | One share for each checked account, named after it, at its share path. | 每个勾选的账户一个共享，以账户命名，位置是它的文件共享路径。 |
 | `ui.samba.folder_shares_hint` | A folder you name, shared with the accounts you check. Each account's files are written as that account. | 你命名的一个文件夹，共享给勾选的账户。每个账户写入的文件都归它自己。 |
 | `ui.samba.folder_add` | Add | 添加 |
@@ -366,7 +366,7 @@ where they fit.
 | `ui.samba.folder_remove_title` | Remove {name} | 移除 {name} |
 | `ui.samba.folder_remove_body` | The share goes away. The folder {path} and its files stay. | 共享会移除，文件夹 {path} 和里面的文件都保留。 |
 | `ui.samba.folder_empty` | No folder shares yet. | 还没有文件夹共享。 |
-| `ui.samba.folder_no_accounts` | Enable an account under Home shares first. | 先在“Home 共享”里启用账户。 |
+| `ui.samba.folder_no_accounts` | Enable an account under Home shares first. | 先在“主目录共享”里启用账户。 |
 | `code.share_name_invalid` | {name} cannot name a share: use 1 to 64 letters, digits, -, _ and ., other than global, homes and printers. | {name} 不能用作共享名：只能用 1 到 64 个字母、数字、-、_ 和 .，也不能是 global、homes 或 printers。 |
 | `code.share_account_not_enabled` | {account} is not enabled for this machine's file share. | 这台机器的文件共享没有启用 {account}。 |
 | `code.folder_share_unknown` | This machine has no folder share named {name}. | 这台机器没有叫 {name} 的文件夹共享。 |

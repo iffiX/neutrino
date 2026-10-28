@@ -12,7 +12,7 @@ page"):
 
 | Kind | What it is |
 | --- | --- |
-| Home share (Home 共享) | one per enabled account, named after the account, at the account's share path, its home by default |
+| Home share (主目录共享) | one per enabled account, named after the account, at the account's share path, its home by default |
 | Folder share (文件夹共享) | a share the person names, at a folder chosen on the machine, open to the enabled accounts the person checks for it |
 
 Every account logs in to either kind with its one SMB user,
