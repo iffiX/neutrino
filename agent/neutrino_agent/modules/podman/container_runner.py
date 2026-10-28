@@ -63,6 +63,28 @@ def recipe_images(recipe: dict) -> list:
     return images
 
 
+def module_references(images: list, references: set) -> list:
+    """The store's references of a module's images, at every digest.
+
+    Args:
+        images: The recipe's images, as :func:`recipe_images` gives them.
+        references: ``<repository>@<digest>`` of every image in the store.
+
+    Returns:
+        The references whose repository is a source of one of the images,
+        the images in their order and each one's references sorted, each
+        reference once.
+    """
+    found: list = []
+    for image in images:
+        sources = set(image["sources"])
+        for reference in sorted(references):
+            repository = reference.rsplit("@", 1)[0]
+            if repository in sources and reference not in found:
+                found.append(reference)
+    return found
+
+
 class ContainerHooks:
     """What one container module adds to the ``container`` runner.
 
@@ -239,6 +261,9 @@ class ContainerModuleRunner(ModuleRunner):
     def uninstall(self, recipe: dict) -> None:
         """Remove the module's containers, units, network, named volumes and unused images.
 
+        Every image the store holds under a source of the recipe's images
+        goes, an earlier version's among them; one a container uses stays.
+
         Args:
             recipe: The module's recipe.
         """
@@ -251,12 +276,8 @@ class ContainerModuleRunner(ModuleRunner):
             for volume in self._volumes(command):
                 self._quietly([*command, "volume", "rm", "-f", volume])
             references = image_references(podman=command)
-            for image in recipe_images(recipe):
-                reference = stored_reference(
-                    image["digest"], image["sources"], references
-                )
-                if reference:
-                    self._quietly([*command, "rmi", reference])
+            for reference in module_references(recipe_images(recipe), references):
+                self._quietly([*command, "rmi", reference])
         self._hooks.remove()
 
     def take_recipe(self, recipe: dict) -> None:

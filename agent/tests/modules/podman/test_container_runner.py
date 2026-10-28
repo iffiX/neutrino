@@ -318,6 +318,27 @@ def test_the_uninstall_removes_containers_units_network_volumes_and_images(store
     ]
 
 
+def test_the_uninstall_removes_an_earlier_version_s_image_and_no_other(store):
+    older = "sha256:" + "e" * 64
+    store.update(
+        {
+            "ghcr.io/acme/webui@" + WEB,
+            "ghcr.nju.edu.cn/acme/webui@" + older,
+            "docker.io/acme/agent@" + AGENT,
+            "docker.io/someone/webui@" + older,
+        }
+    )
+    podman = FakePodman()
+
+    runner_for(FakeContainers(), podman).uninstall(RECIPE)
+
+    assert [call[1:] for call in podman.calls if call[1] == "rmi"] == [
+        ["rmi", "ghcr.io/acme/webui@" + WEB],
+        ["rmi", "ghcr.nju.edu.cn/acme/webui@" + older],
+        ["rmi", "docker.io/acme/agent@" + AGENT],
+    ]
+
+
 def test_the_details_name_the_version_and_the_journal_is_the_containers(store):
     containers = FakeContainers(
         hub_names={"demo": ["neutrino_demo_agent", "neutrino_demo"]}
