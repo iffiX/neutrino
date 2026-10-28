@@ -294,6 +294,7 @@
   "ui.services.description_cloudcli_module": "published by the CloudCLI module on {host} for {account}",
   "ui.services.description_code_server_module": "published by the code-server module on {host} for {account}",
   "ui.services.description_codeg_module": "published by the Codeg module on {host} for {account}",
+  "ui.services.description_siyuan_module": "published by the SiYuan module on {host} for {account}",
   "ui.services.description_container": "published by container {image}",
   "ui.services.description_declared": "declared by hand",
   "ui.services.description_device_share": "shared from {device}",

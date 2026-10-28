@@ -70,4 +70,10 @@ export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
     applyHint: "ui.codeg.apply_hint",
     field: null,
   },
+  siyuan: {
+    name: "siyuan",
+    apply: "ui.siyuan.apply",
+    applyHint: "ui.siyuan.apply_hint",
+    field: null,
+  },
 };

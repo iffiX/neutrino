@@ -134,6 +134,7 @@ const TAB_ORDER = [
   "code_server",
   "cloudcli",
   "codeg",
+  "siyuan",
   "podman",
   "hermes_webui",
 ];
