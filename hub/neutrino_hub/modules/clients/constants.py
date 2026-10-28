@@ -1,3 +1,5 @@
+import string
+
 from neutrino_hub.modules.services.constants import (
     SERVICES_TYPE_AI,
     SERVICES_TYPE_SSH,
@@ -62,3 +64,48 @@ CLIENT_PERMISSION_ROW_KINDS = tuple(
     kind for kind in CLIENT_PERMISSION_FILTERED_KINDS if kind != SERVICES_TYPE_AI
 )
 CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"
+
+# --- Web shares ---
+# Where the Web shares live under config/. Real file gitignored.
+WEB_SHARES_CONFIG_PATH = "clients/web_shares.json"
+# The sites that serve the share page, each {url, title}: Cloudflare Pages
+# first, EdgeOne Pages second.
+WEB_SHARE_SITES = (
+    {"url": "https://neutrino-share.pages.dev", "title": "Cloudflare Pages"},
+    {"url": "https://neutrino-share.edgeone.app", "title": "EdgeOne Pages"},
+)
+# The path of the share page under its site.
+WEB_SHARE_PAGE_PATH = "/__neutrino/"
+# The link's form, the ``v`` of its JSON.
+WEB_SHARE_LINK_VERSION = 1
+# The lives a share may have, in days; None lasts until it is revoked.
+WEB_SHARE_DAYS = (1, 7, 30)
+WEB_SHARE_DAY_S = 24 * 60 * 60
+# Seconds between two sweeps of the expired shares.
+WEB_SHARE_SWEEP_INTERVAL_S = 60
+# A share's ticket as secrets.token_urlsafe makes it, its ufrag and pwd as
+# hex, each in random bytes.
+WEB_SHARE_TICKET_BYTES = 18
+WEB_SHARE_UFRAG_BYTES = 12
+WEB_SHARE_PWD_BYTES = 16
+WEB_SHARE_PWD_AAD = b"web_share:pwd"
+# A share's guest account: guest- and 4 characters, an e-mail on a domain no
+# mail reaches, its password and its token secret, each in random bytes.
+WEB_SHARE_GUEST_PREFIX = "guest-"
+WEB_SHARE_GUEST_ALPHABET = string.ascii_lowercase + string.digits
+WEB_SHARE_GUEST_CHARS = 4
+WEB_SHARE_GUEST_DOMAIN = "share.neutrino"
+WEB_SHARE_GUEST_PASSWORD_BYTES = 18
+WEB_SHARE_GUEST_SECRET_BYTES = 32
+WEB_SHARE_GUEST_PASSWORD_AAD = b"web_share:guest_password"
+WEB_SHARE_GUEST_SECRET_AAD = b"web_share:guest_secret"
+# The states a share is in.
+WEB_SHARE_STATE_ACTIVE = "active"
+WEB_SHARE_STATE_PREPARING = "preparing"
+WEB_SHARE_STATE_UNAVAILABLE = "unavailable"
+WEB_SHARE_STATE_FAILED = "failed"
+# The codes a share's routes and a visitor are answered with.
+WEB_SHARE_CODE_SHARE_UNKNOWN = "share_unknown"
+WEB_SHARE_CODE_ENTRY_INVALID = "web_share_entry_invalid"
+WEB_SHARE_CODE_SITE_INVALID = "web_share_site_invalid"
+WEB_SHARE_CODE_UNKNOWN = "web_share_unknown"

@@ -1,0 +1,4 @@
+{
+  "_comment": "The Web shares of this hub, each offering one app's web entry to anyone who holds its link, in the order made. Written by the panel, never by hand. Each share is {id, name, app_id, entry_id, device_id, module, created_at, expires_at, ticket_sha256, ufrag, pwd_sealed, guest}: id a uuid4 hex; device_id the machine providing the entry and module the module whose page it is, each empty where none is; created_at and expires_at Unix seconds, expires_at null for a share that lasts until it is revoked; ticket_sha256 the SHA-256 of the share's ticket, the one thing the hub keeps of it; ufrag in the clear and pwd_sealed sealed under the vault's data key, the share's pair for the guest door; and guest, {account, email, password_sealed, secret_sealed}, the share's account in the app for an entry whose guest_login is guest_account, absent for any other.",
+  "shares": []
+}

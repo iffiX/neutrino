@@ -9,6 +9,7 @@ config/web/identity.json
 config/devices/*/
 config/devices/devices.json
 config/clients/clients.json
+config/clients/web_shares.json
 config/ai/providers.json
 config/credentials/vault.json
 config/netbird/netbird.json
