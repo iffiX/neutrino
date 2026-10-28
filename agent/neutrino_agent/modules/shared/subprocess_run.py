@@ -1,7 +1,7 @@
 """Running one command for a module applier, with its output kept.
 
 Every module applier drives the machine through ``systemctl``, ``smbpasswd``,
-``zpool`` and the like. One helper runs them all: checked by default, so a
+``podman`` and the like. One helper runs them all: checked by default, so a
 non-zero exit raises ``subprocess.CalledProcessError`` carrying the
 command's own complaint, and unchecked where the caller reads the exit
 status itself.

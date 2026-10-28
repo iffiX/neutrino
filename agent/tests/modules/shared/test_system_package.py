@@ -46,17 +46,17 @@ def test_pre_install_steps_run_before_the_packages(steps):
 
     runner.install(
         {
-            "runner": "zfs",
+            "runner": "podman",
             "method": "system",
             "params": {
                 "pre_install": ["enable contrib", "apt-get update"],
-                "packages": ["zfsutils-linux"],
+                "packages": ["podman"],
             },
         }
     )
 
     assert steps == ["enable contrib", "apt-get update"]
-    assert platform.installed == [["zfsutils-linux"]]
+    assert platform.installed == [["podman"]]
     assert "stepped" in logged
 
 

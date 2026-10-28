@@ -629,15 +629,15 @@ def test_the_hash_moves_only_when_every_mentioned_module_applied(tmp_path):
 
 def test_the_state_error_names_the_first_failure(tmp_path):
     runners = {
-        "zfs": FakeRunner(failure=RuntimeError("disk on fire")),
+        "samba": FakeRunner(failure=RuntimeError("disk on fire")),
         "podman": FakeRunner(failure=ModuleApplyError("mirror_invalid")),
     }
     held, _ = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(zfs="running", podman="running"))
+    held.apply(state(samba="running", podman="running"))
 
     assert held.state_error["code"] == "apply_failed"
-    assert held.state_error["params"]["module"] == "zfs"
+    assert held.state_error["params"]["module"] == "samba"
     assert "disk on fire" in held.state_error["params"]["detail"]
 
 
@@ -1306,8 +1306,8 @@ class BlockingInstallEngine(FakeEngine):
 
 
 def test_the_modules_behind_a_long_install_are_queued_until_reached(tmp_path):
-    runners = {name: FakeRunner() for name in ("zfs", "samba", "gitea", "podman")}
-    engine = BlockingInstallEngine(runners, blocked="samba", absent=("samba",))
+    runners = {name: FakeRunner() for name in ("samba", "terminal", "gitea", "podman")}
+    engine = BlockingInstallEngine(runners, blocked="terminal", absent=("terminal",))
     held = DesiredStateApplier(
         engine=engine,
         runners=runners,
@@ -1316,11 +1316,13 @@ def test_the_modules_behind_a_long_install_are_queued_until_reached(tmp_path):
     )
 
     held.take(
-        state(zfs="running", samba="installed", gitea="running", podman="installed")
+        state(
+            samba="running", terminal="installed", gitea="running", podman="installed"
+        )
     )
     assert engine.is_blocking.wait(5.0)
 
-    assert engine.queued == [["samba", "gitea"], ["gitea"]]
+    assert engine.queued == [["terminal", "gitea"], ["gitea"]]
     engine.release.set()
     assert held.settle(5.0)
     assert engine.queued[-2:] == [[], []]
@@ -1401,17 +1403,17 @@ class ContainerEngine(FakeEngine):
 
 
 def test_a_container_module_the_order_does_not_name_applies_right_after_containers():
-    runners = {name: object() for name in ("zfs", "podman", "vscode", "demo", "box")}
+    runners = {name: object() for name in ("samba", "podman", "vscode", "demo", "box")}
     modules = {
         "vscode": {"install": {"method": "hub"}},
-        "zfs": {"install": {"method": "system"}},
+        "samba": {"install": {"method": "system"}},
         "box": {"install": {"method": "container"}},
         "podman": {"install": {"method": "system"}},
         "demo": {"install": {"method": "container"}},
         "stray": {"install": {"method": "container"}},
     }
 
-    assert apply_order(modules, runners) == ["zfs", "podman", "box", "demo", "vscode"]
+    assert apply_order(modules, runners) == ["samba", "podman", "box", "demo", "vscode"]
     assert apply_order(
         {"demo": modules["demo"], "vscode": modules["vscode"]}, runners
     ) == [
@@ -1425,10 +1427,13 @@ def test_running_starts_the_unit_after_the_configuration_and_stopped_stops_it(
     tmp_path,
 ):
     journal: list = []
-    runners = {"samba": FakeRunner(journal=journal), "zfs": FakeRunner(journal=journal)}
+    runners = {
+        "samba": FakeRunner(journal=journal),
+        "gitea": FakeRunner(journal=journal),
+    }
     held, _engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running", zfs="stopped"))
+    held.apply(state(samba="stopped", gitea="running"))
 
     assert [entry[0] for entry in journal] == ["apply", "stop", "apply", "start"]
 

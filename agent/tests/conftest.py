@@ -207,7 +207,7 @@ def _moduleless_platform():
     """This system's platform without the capabilities that build package runners.
 
     An agent a test builds on its own platform then observes no module of
-    the machine the suite runs on: no Samba, no Podman, no ZFS.
+    the machine the suite runs on: no Samba, no Podman.
     """
     platform = detect_module.detect_platform()
     platform.capabilities = frozenset(

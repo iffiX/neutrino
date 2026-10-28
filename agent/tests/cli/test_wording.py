@@ -118,15 +118,6 @@ MODULE_CODES = (
     "machine_init_failed",
     "machine_set_failed",
     "machine_unreachable",
-    "pool_name_invalid",
-    "pool_name_reserved",
-    "layout_unknown",
-    "layout_disk_count",
-    "dataset_name_invalid",
-    "compression_unknown",
-    "recordsize_unknown",
-    "mountpoint_invalid",
-    "mountpoint_forbidden",
 )
 
 # What the self-update raises, worded by the surface that shows last_error.

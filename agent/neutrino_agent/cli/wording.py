@@ -216,18 +216,6 @@ CLI_CODE_WORDS = {
     "machine_init_failed": "the Podman machine could not be made: {detail}",
     "machine_set_failed": "the Podman machine could not be changed: {detail}",
     "machine_unreachable": "the Podman machine does not answer: {detail}",
-    "pool_name_invalid": "pool name {name} is not usable",
-    "pool_name_reserved": "{name} means something to zpool itself",
-    "layout_unknown": "unknown vdev layout {layout}",
-    "layout_disk_count": "{layout} needs at least {minimum} disks",
-    "dataset_name_invalid": "dataset path {name} is not usable",
-    "compression_unknown": "compression {compression} is not offered",
-    "recordsize_unknown": "recordsize {recordsize} is not offered",
-    "mountpoint_invalid": "the mountpoint must be an absolute path",
-    "mountpoint_forbidden": "{mountpoint} would sit over the operating system",
-    "zfs_kernel_module_missing": (
-        "the running kernel {kernel} has no ZFS module; install ZFS storage again"
-    ),
 }
 
 # Where a shared desktop stands, plus the word for a machine that has not

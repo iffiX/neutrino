@@ -78,11 +78,9 @@ from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
 from neutrino_agent.streams.log import LogStream
 from neutrino_agent.streams.package import PackageStream
 
-# The order modules apply in: storage first, then what serves from it. A
-# container module the list does not name applies right after Containers,
-# whose Podman runs it.
+# The order modules apply in. A container module the list does not name
+# applies right after Containers, whose Podman runs it.
 APPLY_ORDER = (
-    "zfs",
     "samba",
     "terminal",
     "ssh_server",

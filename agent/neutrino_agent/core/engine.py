@@ -102,7 +102,6 @@ from neutrino_agent.modules.shared.package import (
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
-from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes
@@ -292,7 +291,6 @@ class ModuleEngine(ReconcileWorker):
                 SambaModuleRunner,
                 GiteaModuleRunner,
                 PodmanModuleRunner,
-                ZfsModuleRunner,
                 VscodeModuleRunner,
                 CodeServerModuleRunner,
                 CloudcliModuleRunner,
@@ -1092,8 +1090,7 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             ``{"state", "is_active", "code", "params", "details"}``; an
             ``installing`` row carries the runner's install wait as its
-            code and params, an ``absent`` row the part the runner names
-            missing, and a module whose last install failed reads
+            code and params, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
             whatever is on the machine.
         """
@@ -1112,12 +1109,9 @@ class ModuleEngine(ReconcileWorker):
             return status
         try:
             if not self._is_present(runner, recipe):
-                reason = runner.absent_reason(recipe)
-                status = _typed(
-                    AGENT_MODULE_STATE_ABSENT, str(reason.get("code", "") or "")
+                return self._with_failure(
+                    name, _typed(AGENT_MODULE_STATE_ABSENT), is_present=False
                 )
-                status["params"] = dict(reason.get("params") or {})
-                return self._with_failure(name, status, is_present=False)
             is_active = bool(runner.is_active())
             status = _typed(
                 _steady_state(
