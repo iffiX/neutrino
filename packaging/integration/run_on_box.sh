@@ -236,11 +236,11 @@ ran $?
 
 # The three walks below rewire the box into a router serving the spare wire
 # and drive a second machine, so nothing may still be asking about this one.
-# The channel walk proves the pinned transport, the lifecycle walk the state
+# The channel walk proves the transport, the lifecycle walk the state
 # machine that rides it, and the module walk what the two carry. All three
 # reach the second machine with id_lab beside them, and all three fail naming
 # it when it is not there.
-phase "the agent channel, pinned end to end"
+phase "the agent channel, end to end"
 python3 -m pytest "$HERE/test_agent_channel.py" -q
 ran $?
 
