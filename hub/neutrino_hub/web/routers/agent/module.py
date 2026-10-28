@@ -683,21 +683,23 @@ def module_status(
 
     Returns:
         ``{"state", "is_active", "version", "code", "params", "details"}``, the details
-        as the agent sent them; the state is ``unknown`` until the agent has
+        as the agent sent them and the version the one they name; the state
+        is ``unknown`` until the agent has
         said, and ``absent`` for a ``container`` module a report from the
         device leaves out, since the agent observes one only once a state
         names it.
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
     details = reported.get("details")
+    details = details if isinstance(details, dict) else {}
     state = str(reported.get("state", "") or "")
     return {
         "state": state or _unreported_state(runtime, key, module, manifest),
         "is_active": bool(reported.get("is_active", False)),
-        "version": str(reported.get("version") or ""),
+        "version": str(reported.get("version") or details.get("version") or ""),
         "code": str(reported.get("code") or ""),
         "params": dict(reported.get("params") or {}),
-        "details": dict(details) if isinstance(details, dict) else {},
+        "details": dict(details),
     }
 
 

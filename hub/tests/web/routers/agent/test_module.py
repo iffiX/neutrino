@@ -147,6 +147,18 @@ def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     assert row["task_id"] == ""
 
 
+def test_a_row_s_version_is_the_one_its_reported_details_name(api):
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "running", "details": {"version": "6.3.1"}}
+    }
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["version"] == "6.3.1"
+
+
 def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):
     """The row after an uninstall the machine carried out: what was asked
     and what the machine reports are the same word, which is how a page or
