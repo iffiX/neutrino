@@ -827,6 +827,19 @@ def test_each_set_names_its_fastest_source_and_its_variables():
     assert variables == {"pypi": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"]}
 
 
+def test_a_set_with_no_variables_is_left_unprobed():
+    probed: list = []
+
+    def probe_one(url, *, source=""):
+        probed.append(source)
+        return SourceProbe(source=source, is_answered=True, speed=1.0)
+
+    sets = {"ctan": {"probe": "/x", "sources": ["https://a.example"], "variables": []}}
+
+    assert fastest_sources(["ctan"], sets, probe_one=probe_one) == ({}, {})
+    assert probed == []
+
+
 def test_drive_and_remove_reach_only_the_generated_files(commands, dirs):
     dirs.units.mkdir()
     dirs.envs.mkdir(parents=True)

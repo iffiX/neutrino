@@ -294,13 +294,17 @@ def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -
 
     Returns:
         ``(sources, variables)``, each by set name, for every named set the
-        section holds; a set none of whose sources answers names its first.
+        section holds with variables; a set none of whose sources answers
+        names its first. A set with no variables is left unprobed, for the
+        module's own step to rank.
     """
     sources = {}
     variables = {}
     for name in names:
         held = source_sets.get(name)
         if not isinstance(held, dict) or not held.get("sources"):
+            continue
+        if not held.get("variables"):
             continue
         order = source_fetch.rank_set(
             [str(source) for source in held["sources"]],
