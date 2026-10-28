@@ -1,0 +1,17 @@
+{
+  "headers": [
+    {
+      "source": "/*",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Robots-Tag", "value": "noindex" }
+      ]
+    },
+    {
+      "source": "/__neutrino/sw.js",
+      "headers": [{ "key": "Service-Worker-Allowed", "value": "/" }]
+    }
+  ],
+  "rewrites": [{ "source": "/*", "destination": "/index.html" }]
+}

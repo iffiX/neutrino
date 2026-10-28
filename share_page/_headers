@@ -1,0 +1,7 @@
+/*
+  Cache-Control: no-cache
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex
+
+/__neutrino/sw.js
+  Service-Worker-Allowed: /
