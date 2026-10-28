@@ -303,3 +303,64 @@ def test_a_document_no_source_serves_names_each_source(serve):
         "digest_mismatch",
         "http_503",
     ]
+
+
+class _Answer:
+    """A response the fake opener hands back."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+        self.status = 200
+        self.headers = {}
+
+    def read(self, limit=-1):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_a_document_is_asked_with_the_headers_given():
+    asked: list = []
+
+    def opener(request, timeout):
+        asked.append(dict(request.header_items()))
+        return _Answer(b'{"tags": []}')
+
+    document, _ = SourceFetcher(opener=opener).fetch_document(
+        file="tags",
+        sources=["https://registry.example/v2/a/b/tags/list"],
+        parse=json.loads,
+        headers={"Authorization": "Bearer t", "Accept": "application/json"},
+    )
+
+    assert document == {"tags": []}
+    (headers,) = asked
+    assert headers["Authorization"] == "Bearer t"
+    assert headers["Accept"] == "application/json"
+
+
+def test_a_bearer_challenge_is_read_from_a_401_alone():
+    import email.message
+    import urllib.error
+
+    def challenged(request, timeout):
+        said = email.message.Message()
+        said["WWW-Authenticate"] = 'Bearer realm="https://r.example/token"'
+        raise urllib.error.HTTPError(request.full_url, 401, "no", said, None)
+
+    def open_door(request, timeout):
+        return _Answer(b"{}")
+
+    def refusing(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 404, "no", None, None)
+
+    url = "https://r.example/v2/"
+    assert SourceFetcher(opener=challenged).bearer_challenge(url) == (
+        'Bearer realm="https://r.example/token"'
+    )
+    assert SourceFetcher(opener=open_door).bearer_challenge(url) == ""
+    assert SourceFetcher(opener=refusing).bearer_challenge(url) == ""

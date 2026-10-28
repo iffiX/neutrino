@@ -3,7 +3,9 @@
 A ``hub`` or ``container`` entry names ``releases``, the feeds the hub reads
 once a day (module_install.md, "Module versions"): the first lists the
 versions, each read as a dotted number, newest first, and each artifact takes
-its digest from the feed whose release holds its file. What was read is kept
+its digest from the feed whose release holds its file. An ``oci`` feed gives
+the digest the registry names for each tag to the image whose sources name
+the feed's repository, and every other image keeps its own. What was read is kept
 in ``module_releases.json`` under the state root, ``{read_at, modules:
 {<module>: {<platform key>: [{version, artifacts: {<name>: {digest,
 sources}}}]}}}``, and a version is listed for a platform only when every
@@ -15,9 +17,11 @@ The parsers are pure functions of a feed's answer; the store reads and
 writes the file; the reader drives the fetcher over every manifest.
 """
 
+import hashlib
 import json
 import logging
 import re
+import urllib.parse
 from datetime import datetime, timezone
 
 from neutrino_hub.exceptions import DownloadFailedError
@@ -56,10 +60,22 @@ GITHUB_RELEASES_PATH = "/repos/{repository}/releases?per_page=100"
 VSCODE_RELEASES_PATH = "/api/releases/stable"
 VSCODE_VERSION_PATH = "/api/versions/{version}/{platform}/stable"
 OCI_TAGS_PATH = "/v2/{repository}/tags/list"
+OCI_MANIFEST_PATH = "/v2/{repository}/manifests/{tag}"
+OCI_BASE_PATH = "/v2/"
+# The manifests an image's tag names: an index of every architecture, as
+# OCI and Docker each write it.
+OCI_INDEX_TYPES = (
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+)
+# A registry's bearer challenge: ``Bearer realm="…",service="…"``.
+BEARER_FIELD_PATTERN = re.compile(r'(\w+)="([^"]*)"')
 NPM_PACKAGE_PATH = "/{package}"
-# How many of Microsoft's newest releases are read for their hash, since each
-# one is a document of its own.
+# How many of Microsoft's newest releases are read for their hash, and of a
+# registry's newest tags for their digest, since each one is a document of
+# its own.
 VSCODE_VERSIONS_READ = 10
+OCI_VERSIONS_READ = 10
 # The methods whose version is locked at the tested one.
 LOCKED_METHODS = (DEVICE_METHOD_AGENT, DEVICE_METHOD_BUILTIN, DEVICE_METHOD_SYSTEM)
 
@@ -177,6 +193,51 @@ def parse_oci_tags(document, template: str) -> list:
         if match is not None and VERSION_PATTERN.match(match.group(1)):
             versions.append(match.group(1))
     return versions
+
+
+def oci_index_digest(body: bytes) -> str:
+    """The digest of an image index as a registry served it.
+
+    Args:
+        body: The manifest's bytes, as the registry sent them.
+
+    Returns:
+        ``sha256:`` and the SHA-256 of the bytes.
+
+    Raises:
+        ValueError: When the bytes are not an index of every architecture.
+    """
+    try:
+        document = json.loads(body)
+    except ValueError as error:
+        raise ValueError(f"a manifest is JSON: {error}") from error
+    if (
+        not isinstance(document, dict)
+        or document.get("mediaType") not in OCI_INDEX_TYPES
+    ):
+        raise ValueError("a tag names an index of every architecture")
+    return "sha256:" + hashlib.sha256(body).hexdigest()
+
+
+def bearer_token_address(challenge: str, repository: str) -> str:
+    """Where a registry hands an anonymous token for pulling one repository.
+
+    Args:
+        challenge: The ``WWW-Authenticate`` of the registry's 401.
+        repository: The repository, such as ``ayaka-notes/overleaf-pro``.
+
+    Returns:
+        The realm with ``service`` and ``scope`` in its query; empty for a
+        challenge that is no bearer one or names no realm.
+    """
+    if not challenge.lower().startswith("bearer "):
+        return ""
+    fields = dict(BEARER_FIELD_PATTERN.findall(challenge))
+    realm = fields.pop("realm", "")
+    if not realm.startswith("https://"):
+        return ""
+    fields["scope"] = f"repository:{repository}:pull"
+    return f"{realm}?{urllib.parse.urlencode(fields)}"
 
 
 def parse_npm_package(document) -> dict:
@@ -417,6 +478,8 @@ class ModuleReleaseReader:
         """
         self._fetcher = fetcher
         self._store = store if store is not None else ModuleReleaseStore()
+        # Each feed's answer in the read now, by the feed's JSON.
+        self._answers: dict = {}
 
     def read(self) -> dict:
         """Read every feed once and write what it listed.
@@ -428,6 +491,7 @@ class ModuleReleaseReader:
             Module to platform key to its version list, as written.
         """
         previous = self._store._read().get("modules") or {}
+        self._answers = {}
         modules: dict = {}
         for name, manifest in load_module_manifests().items():
             for platform_key, entry in (manifest.get("platforms") or {}).items():
@@ -471,6 +535,21 @@ class ModuleReleaseReader:
             found = {}
             is_whole = True
             for artifact in artifacts:
+                repository = _feed_repository(artifact, feeds)
+                if repository:
+                    held = next(
+                        (
+                            answer[version][repository]
+                            for answer in answers
+                            if repository in answer.get(version, {})
+                        ),
+                        None,
+                    )
+                    if held is None:
+                        is_whole = False
+                        break
+                    found[artifact["name"]] = dict(held)
+                    continue
                 if not _is_versioned(artifact):
                     continue
                 file = artifact_file(artifact, version)
@@ -496,7 +575,13 @@ class ModuleReleaseReader:
         return listed
 
     def _read_feed(self, feed: dict) -> dict:
-        """One feed's answer as version to ``{file or name: {digest, sources?}}``."""
+        """One feed's answer as version to ``{file, name or repository: {digest, sources?}}``, each feed read once per read."""
+        held = json.dumps(feed, sort_keys=True)
+        if held not in self._answers:
+            self._answers[held] = self._read_feed_now(feed)
+        return self._answers[held]
+
+    def _read_feed_now(self, feed: dict) -> dict:
         kind = feed["kind"]
         sources = [str(source).rstrip("/") for source in feed["sources"]]
         if kind == FEED_GITHUB:
@@ -531,15 +616,7 @@ class ModuleReleaseReader:
                 versions[version] = {_VSCODE_ANY_FILE: parse_vscode_version(found)}
             return versions
         if kind == FEED_OCI:
-            document, _ = self._fetcher.fetch_document(
-                file=f"{feed['repository']} tags",
-                sources=[
-                    source + OCI_TAGS_PATH.format(repository=feed["repository"])
-                    for source in sources
-                ],
-                parse=json.loads,
-            )
-            return {version: {} for version in parse_oci_tags(document, feed["tag"])}
+            return self._read_oci(feed, sources)
         if kind == FEED_NPM:
             document, _ = self._fetcher.fetch_document(
                 file=f"{feed['package']} package",
@@ -554,6 +631,73 @@ class ModuleReleaseReader:
                 for version, integrity in parse_npm_package(document).items()
             }
         raise ValueError(f"no feed of kind {kind!r}")
+
+    def _read_oci(self, feed: dict, sources: list) -> dict:
+        """A registry's newest tags, each with the digest of the index it names.
+
+        A registry that wants a token is asked its token service for an
+        anonymous one first. A tag whose manifest cannot be read is left
+        out.
+        """
+        repository = feed["repository"]
+        headers = {"Accept": ", ".join(OCI_INDEX_TYPES)}
+        for source in sources:
+            address = bearer_token_address(
+                self._fetcher.bearer_challenge(source + OCI_BASE_PATH), repository
+            )
+            if not address:
+                continue
+            document, _ = self._fetcher.fetch_document(
+                file=f"{repository} token", sources=[address], parse=json.loads
+            )
+            token = document.get("token") or document.get("access_token")
+            if isinstance(token, str) and token:
+                headers["Authorization"] = f"Bearer {token}"
+            break
+        document, _ = self._fetcher.fetch_document(
+            file=f"{repository} tags",
+            sources=[
+                source + OCI_TAGS_PATH.format(repository=repository)
+                for source in sources
+            ],
+            parse=json.loads,
+            headers=headers,
+        )
+        versions = {}
+        newest = sorted_versions(parse_oci_tags(document, feed["tag"]))
+        for version in newest[:OCI_VERSIONS_READ]:
+            tag = feed["tag"].replace(UTILS_SOURCE_VERSION, version)
+            try:
+                digest, _ = self._fetcher.fetch_document(
+                    file=f"{repository}:{tag}",
+                    sources=[
+                        source
+                        + OCI_MANIFEST_PATH.format(repository=repository, tag=tag)
+                        for source in sources
+                    ],
+                    parse=oci_index_digest,
+                    headers=headers,
+                )
+            except DownloadFailedError:
+                continue
+            versions[version] = {repository: {"digest": digest}}
+        return versions
+
+
+def _feed_repository(artifact: dict, feeds: list) -> str:
+    """The ``oci`` feed repository an image artifact's sources name, empty for none."""
+    if artifact.get("kind") != "image":
+        return ""
+    for feed in feeds:
+        if feed.get("kind") != FEED_OCI:
+            continue
+        repository = str(feed.get("repository", "") or "")
+        if any(
+            str(source).endswith("/" + repository)
+            for source in artifact.get("sources") or []
+        ):
+            return repository
+    return ""
 
 
 # The one artifact a vscode_update or an npm feed answers for, whatever its

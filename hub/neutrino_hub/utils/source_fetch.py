@@ -447,6 +447,7 @@ class SourceFetcher:
         sources: list,
         parse: Callable[[bytes], object],
         limit: int = UTILS_FETCH_DOCUMENT_LIMIT_BYTES,
+        headers: "dict | None" = None,
     ) -> tuple:
         """Read one document from every source at once; the first valid answer wins.
 
@@ -456,6 +457,8 @@ class SourceFetcher:
             parse: Turns the bytes into the document; raises ``ValueError``
                 for an answer that is not one.
             limit: The largest answer read.
+            headers: More request headers, such as a registry's ``Accept``
+                and its token.
 
         Returns:
             ``(document, source)``.
@@ -471,7 +474,7 @@ class SourceFetcher:
         for source in listed:
             threading.Thread(
                 target=self._read_document,
-                args=(source, parse, limit, answers, arrived),
+                args=(source, parse, limit, answers, arrived, dict(headers or {})),
                 daemon=True,
             ).start()
         failures = {}
@@ -485,11 +488,38 @@ class SourceFetcher:
                 failures[source] = failure
         raise DownloadFailedError(file, [failures[source] for source in listed])
 
-    def _read_document(self, source, parse, limit, answers, arrived) -> None:
+    def bearer_challenge(self, url: str) -> str:
+        """The bearer challenge one address answers a request with no token with.
+
+        Args:
+            url: The address, such as a registry's ``/v2/``.
+
+        Returns:
+            The ``WWW-Authenticate`` of a 401 answer; empty for any other
+            answer or none.
+        """
+        try:
+            with self._open(
+                urllib.request.Request(url, headers=dict(UTILS_FETCH_HEADERS)),
+                self._probe_timeout_s,
+            ):
+                return ""
+        except urllib.error.HTTPError as error:
+            if error.code != 401:
+                return ""
+            return str(error.headers.get("WWW-Authenticate", "") or "")
+        except (OSError, http.client.HTTPException):
+            return ""
+
+    def _read_document(
+        self, source, parse, limit, answers, arrived, headers=None
+    ) -> None:
         """Read one source's answer and hand it to the waiting reader."""
         try:
             with self._open(
-                urllib.request.Request(source, headers=dict(UTILS_FETCH_HEADERS)),
+                urllib.request.Request(
+                    source, headers={**UTILS_FETCH_HEADERS, **(headers or {})}
+                ),
                 self._probe_timeout_s,
             ) as response:
                 body = response.read(limit + 1)
