@@ -54,7 +54,7 @@ the proxy out:
 `cn` keeps NetBird in the hub, the desktop client and the Android app, and
 keeps EasyTier, the SSH relay, SakuraFrp and OpenFrp with the frpc they
 run, the client's files adapter, VS Code,
-code-server, CloudCLI, Codeg, Gitea, Samba, Podman, ZFS and the AI gateway.
+code-server, CloudCLI, Codeg, Gitea, Samba, Podman and the AI gateway.
 
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
 beside the version in `neutrino_hub/_version.py`,

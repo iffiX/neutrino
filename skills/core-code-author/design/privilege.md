@@ -66,8 +66,7 @@ the same list so nobody adds one back without reading this.
 | `ProtectSystem` | Installing binaries into `/usr/local/bin`; writing a dozen files under `/etc` |
 | `ProtectHome` | `config/` still lives in the checkout under a home directory |
 | `ProtectKernelTunables` | Setting `net.ipv4.ip_forward` |
-| `ProtectKernelModules` | Loading the ZFS module on demand |
-| `RestrictNamespaces`, `ProtectControlGroups`, `PrivateDevices` | podman and ZFS |
+| `RestrictNamespaces`, `ProtectControlGroups`, `PrivateDevices` | podman |
 
 `ProtectSystem=strict` with an explicit `ReadWritePaths` is the one worth
 having — it would have contained that path traversal — and it needs package
@@ -92,7 +91,7 @@ E: seteuid 42 failed - seteuid (1: Operation not permitted)
 E: Method http has died unexpectedly!
 ```
 
-Measured as netbird, podman and zfs all failing to install from the panel
+Measured as netbird and podman both failing to install from the panel
 while the same installs from a shell succeeded. A vendor's installer piped to
 `sh` hits the same wall one level further down, where no flag of ours reaches
 its package manager at all.

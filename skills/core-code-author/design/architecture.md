@@ -367,7 +367,7 @@ modules/services split exists to prevent
 ([agent.md](agent.md), "Who may tell the agent what").
 
 - **A module** is software a managed machine hosts. The hub administers it:
-  the panel's Samba, Gitea, Containers and ZFS pages pick the devices, the
+  the panel's Samba, Gitea and Containers pages pick the devices, the
   hub fetches and installs, the agent executes. Nothing about a module is the
   machine's own choice.
 - **A service** is something the hub publishes for a person to use from

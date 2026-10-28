@@ -42,7 +42,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS, VS Code, code-server, CloudCLI, Codeg, and the two the
+  Podman, VS Code, code-server, CloudCLI, Codeg, and the two the
   agent's own package carries, Terminal, Remote desktop and the SSH server, of the kinds
   in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
@@ -101,7 +101,7 @@ streams the hub opens.
 The hub opens `shell`, `exec`, `file`, `command` and `connect` streams to an agent;
 the agent opens `log`, `package` and, for the AI gateway forward, `connect`
 streams to the hub. A `command` names a
-module and a verb (`{agent, reboot}`, `{samba, reload}`, `{zfs,
+module and a verb (`{agent, reboot}`, `{samba, reload}`, `{podman,
 validate}`). Every stream sits behind yamux's window, so a long transfer
 never starves the reader, and a stream's result is its close.
 
@@ -134,7 +134,7 @@ offline device is rejected with `agent_offline`, never queued**: the person
 is told the machine is away, and asks again when it is back.
 
 **One module at a time.** The agent applies the modules a state mentions one
-after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
+after another, in the fixed order `APPLY_ORDER` names: the file share,
 Terminal, the SSH server, Gitea, Containers, Hermes WebUI, Ayakaleaf,
 VS Code, code-server, CloudCLI, Codeg, SiYuan, Remote desktop.
 While it applies one, each other module whose `want` differs from its last
@@ -245,11 +245,8 @@ features of Containers asked for. The agent never restarts the machine; a
 person does, from the module's tab or the device, and the same 30-second
 apply goes on with the install after it
 ([modules/containers.md](agent/modules/containers.md)). An `absent` row
-can hold `{code, params}` naming the part missing while the rest of the
-software is there: `zfs_kernel_module_missing {kernel}` while the ZFS tools
-are installed and the running kernel has no ZFS module
-([modules/zfs.md](agent/modules/zfs.md)); a kept failure's code takes its
-place ("A failure outlives a restart"). `queued` is a
+can hold a kept failure's `{code, params}` ("A failure outlives a
+restart"). `queued` is a
 module the agent reaches after the one it is applying ("One module at a
 time").
 
@@ -322,7 +319,7 @@ linked from the table.
 | Kind | Modules | Install method | Run |
 | --- | --- | --- | --- |
 | carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer, and the [SSH server](agent/modules/ssh_server.md), the agent's own Go program run once per enabled account | `agent`, on every system | the module's own applier per system; the SSH server's instances through the account service layer |
-| software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
+| software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
@@ -731,7 +728,6 @@ module a system cannot run is left out on that system.
 | [File share](agent/modules/file_share.md) | Samba | the system's own SMB server | the system's own SMB server |
 | [Gitea](agent/modules/gitea.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Containers](agent/modules/containers.md) (Podman) | yes | amd64, build 19041 or later, on WSL 2 | arm64 with Podman 6.x and amd64 with Podman 5.8.x, macOS 13 or later |
-| [ZFS storage](agent/modules/zfs.md) | yes | no | no |
 | [VS Code](agent/modules/vscode.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |

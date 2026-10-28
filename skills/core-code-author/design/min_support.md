@@ -210,7 +210,6 @@ releases a supported family provides.
 | macOS, for Containers | 13 | the Podman machine on applehv; the macOS entries' `min_version` | `hub/neutrino_hub/data/manifests/podman.json` |
 | The Podman machine's memory, for Ayakaleaf | 2 GiB, Podman's default | Ayakaleaf's three containers, about 1.6 GB idle; in the default 2 GiB machine on Windows the app started and compiled with about 0.7 GB left, so a second container module beside it needs more memory in the Containers tab's Run settings ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "Memory and disk") | `hub/neutrino_hub/data/manifests/ayakaleaf.json` |
 | Samba | 4.15 | the session list; `smbstatus --json` exists from 4.16, and below it the text tables of `-p` and `-S` are parsed | `agent/neutrino_agent/modules/samba/applier.py:356` |
-| ZFS | 2.1 | `zpool status` and `zpool import` are read as text, because neither has a machine format on this release | `agent/neutrino_agent/modules/zfs/applier.py:4` |
 | systemd | 236 | `systemd-run --collect` for the transient unit a self-update runs in | `agent/neutrino_agent/core/self_update.py:216` |
 | systemd | 243 | `OOMPolicy=` on the transient service a CloudCLI install runs as; systemd 249 refuses it on a scope | `agent/neutrino_agent/modules/cloudcli/linux_applier.py` |
 | util-linux | any | `runuser` for stepping down to an account | `agent/neutrino_agent/platforms/linux.py:211` |

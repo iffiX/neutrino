@@ -177,7 +177,6 @@ languages, unless its publisher names it in Chinese: SiYuan is 思源笔记.
 | `terminal` | Terminal | 终端 |
 | `remote_desktop` | Remote desktop | 远程桌面 |
 | `podman` | Containers | 容器 |
-| `zfs` | ZFS storage | ZFS 存储 |
 | `gitea` | Gitea | Gitea |
 | `vscode` | VS Code | VS Code |
 | `code_server` | code-server | code-server |
@@ -229,9 +228,8 @@ that page, its count or its sidebar entry as a device changes with it:
 | `ui.clients.filter_no_devices` | No agents yet. | 还没有被控端。 |
 | `ui.nav.services_description` | What the hub publishes to clients | 中枢向客户端发布的内容 |
 
-`ui.zfs.detail_device` names a disk's device and stays 设备. The keys of the
-LAN scan and of unmanaged devices, `ui.devices.scan`, `ui.devices.scanning`,
-`ui.devices.add_by_address`, `ui.devices.search_placeholder`,
+The keys of the LAN scan and of unmanaged devices, `ui.devices.scan`,
+`ui.devices.scanning`, `ui.devices.add_by_address`, `ui.devices.search_placeholder`,
 `ui.devices.none_title`, `ui.devices.none_hint`, `ui.devices.managed_*`,
 `ui.devices.unmanaged_*` and `ui.devices.filtered_*`, go with the scan; the
 **Add over SSH** button is `ui.devices.add_by_ssh`, **Add over SSH** / **用
@@ -387,7 +385,6 @@ where they fit.
 | `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
 | `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
 | `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
-| `code.zfs_kernel_module_missing`, on an `absent` ZFS storage tab | The running kernel {kernel} has no ZFS module; install the module again. | 正在运行的内核 {kernel} 没有 ZFS 模块，重新安装这个模块。 |
 | `ui.modules.version_installed` | Installed {version} | 已安装 {version} |
 | `ui.modules.version_newest` | newest {version} | 最新 {version} |
 | `ui.modules.update` | Update | 更新 |
@@ -437,7 +434,6 @@ machine's system.
 | --- | --- | --- | --- |
 | `samba` | no | The shared folders and the files in them stay where they are. | 共享的文件夹和里面的文件都原样保留。 |
 | `podman` | no | The declared containers' volumes stay, and on Windows and macOS so does the Podman machine. | 声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。 |
-| `zfs` | no | The pools and their datasets stay on their disks. | 存储池和其中的数据集都留在磁盘上。 |
 | `gitea` | no | The repositories, Gitea's accounts and its database stay in its data directory. | 仓库、Gitea 的账户和数据库都留在它的数据目录里。 |
 | `vscode` | no | Each account's settings and extensions stay in its home folder. | 每个账户的设置和扩展都留在它的主目录里。 |
 | `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |

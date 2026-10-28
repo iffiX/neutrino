@@ -210,7 +210,7 @@ once.
 `useConfirm` is the only way the panel asks. Never `window.confirm`.
 
 The dialog has three parts: a title naming what is about to happen
-(`Delete the pool tank`), a body of one or two sentences saying what it costs
+(`Delete the container web`), a body of one or two sentences saying what it costs
 with the mechanism first, and the action's own verb on the button. Escape and
 the backdrop cancel.
 
@@ -378,7 +378,7 @@ nobody anything.
 | Interval | For |
 | --- | --- |
 | 15 s (`DEFAULT_POLL_INTERVAL_MS`) | Anything with no reason to be faster |
-| 5–10 s | A list or a badge that changes on its own — services, devices, pools |
+| 5–10 s | A list or a badge that changes on its own — services, devices |
 | 1–3 s | Something a person is watching change right now |
 | 500–700 ms | A step in flight with an end: a port move, the setup wizard |
 | socket | Where the reading is the point: stats, DNS log, a terminal |
@@ -938,7 +938,7 @@ old version on the version line.
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, the SSH server, Remote
 desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
-WebUI, Ayakaleaf, ZFS storage. The eight modules of the account layer are drawn by one
+WebUI, Ayakaleaf. The eight modules of the account layer are drawn by one
 `instances_panel.tsx` from the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").

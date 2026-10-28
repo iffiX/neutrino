@@ -60,7 +60,7 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 | --- | --- | --- | --- | --- |
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
-| `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share, ZFS storage and Containers on Linux |
+| `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share and Containers on Linux |
 | `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
@@ -278,7 +278,7 @@ owner:
 | The agent installs and removes the named packages with the system's package manager, one operation at a time, in `modules/shared/system_package.py`. | One package manager holds a machine-wide lock. |
 | An entry names the packages the module runs and leaves out a package that adds a convenience. | `podman-docker` adds a `docker` command and conflicts with Docker CE over `/usr/bin/docker`, so naming it failed the install on a machine with Docker. |
 | A unit a distribution installs disabled is enabled and started at the install and at every apply while the module's `want` is `running`, and the module's **Stop** disables it. Containers' `podman.socket` is that unit ([modules/containers.md](modules/containers.md)). | The software starts with the machine from its install on, on every distribution, and a stopped module stays stopped after a restart. |
-| An uninstall removes the named packages and keeps the data: pools, share directories and declared containers' volumes stay. | The data is the person's, and the packages are the module's. |
+| An uninstall removes the named packages and keeps the data: share directories and declared containers' volumes stay. | The data is the person's, and the packages are the module's. |
 | The version of a `system` entry is the system's, and no other can be installed. | The system's package manager updates its own packages. |
 
 A `builtin` entry names software the system holds, such as the SMB server of

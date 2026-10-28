@@ -171,7 +171,7 @@ segment of a write, which is a verb.
 | An identifier names the member in the body or the query, never in the path: `?device_id=...` on a GET, `{device_id}` in a POST body. A path has no `{id}` in it. | A path is a fixed string a reader can grep, and an id is data. |
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
 | A verb comes from the verb table, an opposite is added with its pair, and paths of paired verbs have the same depth: `channel/join` and `channel/leave`, `module/install` and `module/uninstall`, `module/start` and `module/stop`. A new verb enters the table before it enters a path. | The table is closed, so the route test checks every path against it. |
-| A word with a fixed meaning inside a domain (`scrub`, `import`, `backup`) can be a noun in the middle of a path: `pool/scrub/stop`. | The domain's own word is the one a reader searches for. |
+| A word with a fixed meaning inside a domain (`login`, `import`, `backup`) can be a noun in the middle of a path: `openfrp/login/start`. | The domain's own word is the one a reader searches for. |
 | `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display`, `GET /api/hub/setting/https/authority` and `GET /api/hub/setting/https/probe` take no session dependency. `GET /api/hub/display` returns `{language, theme, update}` in one response; the language and the theme change through `POST /api/hub/setting/set`, and `update` is the hub's own update while it runs and for 30 minutes after it ends. | The login page reads them before there is a session, a page follows the hub's update across the restart that ends its session, a browser installs the authority before it trusts the panel, and a page on HTTP probes the HTTPS port before it offers HTTPS. |
 | The router file is named after its page; the library package under `modules/` keeps its own name, so `modules/router` serves `/api/hub/network` and `modules/xray` serves `/api/hub/proxy`. | A page is what a person sees; a package is what the code does. |
 
@@ -181,7 +181,7 @@ segment of a write, which is a verb.
 | --- | --- | --- |
 | `set` | none; a GET reads it | the settings of the thing named |
 | `add` | `remove` | a member into or out of a list |
-| `create` | `destroy` | a thing that exists on a machine afterwards: a pool, a dataset, a directory, a link |
+| `create` | `destroy` | a thing that exists on a machine afterwards: a directory, a link |
 | `join` | `leave` | a membership |
 | `start` | `stop` | a unit, a task, a login flow |
 | `enable` | `disable` | whether a thing is in force |
@@ -189,7 +189,6 @@ segment of a write, which is a verb.
 | `install` | `uninstall` | a package |
 | `login` | `logout` | a session |
 | `backup` | `restore` | an archive of `config/` |
-| `online` | `offline` | a pool member |
 | `download` | `upload` | the bytes of a file |
 | `import` | none | the hub's copy of what a machine already has |
 | `update` | none | the thing named, replaced with its own newest release |
@@ -204,16 +203,14 @@ segment of a write, which is a verb.
 | `restart` | none | a container stopped and started |
 | `kill` | none | a process |
 | `rename` | none | a name |
-| `expand`, `replace` | none | a pool's members |
-| `scrub` | none | a pool scrub started; `scrub/stop` ends it |
 
 The whole design is symmetric where a thing has an opposite and single where
 it has none:
 
 | Layer | Paired | Single, and why |
 | --- | --- | --- |
-| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `online`/`offline`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `expand`, `replace`, `scrub`: none has a reverse operation |
-| Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
+| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`: none has a reverse operation |
+| Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `podman/container/start`/`stop` | |
 | Channel frames and records | `hello`/`welcome`; `join`/`joined`; `leave`/`left`; `state`/`report`; `ping`/`pong`; a question frame and its `reply`; the `open` and `close` records, `accept` between them | `refused`; the records `data`, `stderr`, `eof`, `resize`, `datagram` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `control`, `shell`, `exec`, `file`, `command`, `package`, `log`, `connect` |
 | CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient hub join`/`leave`, `nclient file mount`/`unmount`, `nclient app open`/`stop`, `nclient ssh config install`/`uninstall` | `status`, `sync`, `run`, `gui`, `quit`, and `list`, `show`, `set`, `attach`, `exec`, `connect`, `proxy` on `nclient` |
@@ -361,7 +358,7 @@ listener.
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
-| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
+| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | The legacy listener's two routes, `/api/channel/socket` for a 0.5 agent updating itself and `/api/channel/key/set` for a binding moving to the transport ([transport.md](transport.md), "An agent of 0.5"); every other agent and client speaks the channel of the transport, which has no HTTP route |
 
@@ -777,16 +774,6 @@ to pick one.
 | `GET /api/agent/module/podman/tag` | `?device_id=` | the tags an image has |
 | `GET /api/agent/module/podman/container/journal` | `?device_id=&name=` | |
 | `POST /api/agent/module/podman/container/start`, `.../stop`, `.../restart` | `{device_id, name}` | 409 `container_hub_owned {name}` for a hub container |
-| `GET /api/agent/module/zfs` | `?device_id=` | pools, datasets and disks as reported |
-| `POST /api/agent/module/zfs/scan` | `{device_id}` | a fresh reading of the disks |
-| `POST /api/agent/module/zfs/pool/create` | `{device_id, ...}` | |
-| `POST /api/agent/module/zfs/pool/destroy` | `{device_id, name}` | |
-| `POST /api/agent/module/zfs/pool/scrub` | `{device_id, name}` | starts a scrub |
-| `POST /api/agent/module/zfs/pool/scrub/stop` | `{device_id, name}` | |
-| `POST /api/agent/module/zfs/pool/expand`, `.../replace`, `.../offline`, `.../online` | `{device_id, name, ...}` | |
-| `POST /api/agent/module/zfs/pool/import` | `{device_id, name}` | |
-| `POST /api/agent/module/zfs/dataset/create`, `.../destroy` | `{device_id, ...}` | |
-| `POST /api/agent/module/zfs/dataset/share`, `.../unshare` | `{device_id, ...}` | |
 
 The eight account-layer modules share one router,
 `routers/agent/module_instances.py`, which reads each module's row of the
@@ -864,7 +851,7 @@ None of them is keyed by the peer's address.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
 | `web/routers/` | `channel.py`, on the legacy listener's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -1280,7 +1267,7 @@ from the same facts, whoever installed the software:
 
 | `state` | Meaning |
 | --- | --- |
-| `absent` | the software is missing; the row can hold `{code, params}` naming the part missing while the rest is there, `zfs_kernel_module_missing {kernel}` ([agent/modules/zfs.md](agent/modules/zfs.md)) |
+| `absent` | the software is missing; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
@@ -1313,7 +1300,7 @@ writes it directly:
 | **Install** | `installed` | installs the package only; writes no configuration, and starts nothing but Containers' `podman.socket`, which a Linux install enables |
 | **Configure** or **Start** | `running` | ensures the package, applies the configuration, starts the unit |
 | **Stop** | `stopped` | ensures the package, applies the configuration, stops the unit |
-| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation shows the row's `uninstall_data` line ([ui_behavior.md](ui_behavior.md), "The machine page"); every shipped `hub` and `system` entry keeps the data, so pools, share directories, repositories and declared containers' volumes stay, and a `container` module is removed with its volumes ([agent/module_install.md](agent/module_install.md), "From container images") |
+| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation shows the row's `uninstall_data` line ([ui_behavior.md](ui_behavior.md), "The machine page"); every shipped `hub` and `system` entry keeps the data, so share directories, repositories and declared containers' volumes stay, and a `container` module is removed with its volumes ([agent/module_install.md](agent/module_install.md), "From container images") |
 
 Once the machine reports a module wanted `absent` as `absent`, that want is
 settled (`is_settled` in `modules.json`): the row keeps `absent`, the state
@@ -1332,8 +1319,8 @@ Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
 
 Taking over a machine happens at its first report on a session, for each
-module that has an import (`gitea`, `podman`; `zfs` and the account layer's
-modules have none) and no `want` in `modules.json`. A module reporting `stopped` or `running` gets that
+module that has an import (`gitea`, `podman`; the account layer's modules
+have none) and no `want` in `modules.json`. A module reporting `stopped` or `running` gets that
 state as its `want`, and its configuration is imported from the report's
 `details` when the hub holds no file for it. A module reporting `installed`
 is imported, and gets `running` or `stopped` as its `want` by `is_active`,
@@ -1363,7 +1350,6 @@ the whole file back.
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts and the folder shares |
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
-| ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
 | code-server | each instance's account, port and whether it runs; nothing is imported |
@@ -1832,7 +1818,7 @@ the transport gives whole to the Python on its side.
 | hub, to an agent | `exec` | `{argv, is_tty, cols, rows, account}`: one run of `argv`, a list of strings run as given with no shell between, as `account`, chosen as a `shell`'s is; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused as a `shell` is, and `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
 | hub, to an agent | `file` | `{op: list, path}`: one directory listing, every path absolute in the machine's own form, for the panel's path window ([ui_behavior.md](ui_behavior.md), "Modals, and where a record's detail lives"). It closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. Any other `op` is closed `op_unknown {op}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as `data` line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
-| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
+| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{podman, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
 | client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
 | client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows, account}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols`, `rows` and `account`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
@@ -1847,7 +1833,7 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 | `module` | Verbs |
 | --- | --- |
 | `agent` | `reboot`, `shutdown`, `reinstall`, `kill {pid}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs |
-| `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
+| `gitea`, `podman` | the module's own, spelled without a module prefix because the `module` field is the prefix: `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman` |
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved, `config`
