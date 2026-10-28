@@ -82,7 +82,6 @@ SURVIVING_MODULES = {
     "neutrino_agent.control.server",
     "neutrino_agent.control.windows_pipe",
     "neutrino_agent.core",
-    "neutrino_agent.core.channel",
     "neutrino_agent.core.commands",
     "neutrino_agent.core.container_relay",
     "neutrino_agent.core.desired_state",

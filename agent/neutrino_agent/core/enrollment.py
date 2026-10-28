@@ -20,9 +20,9 @@ is every address the hub answers on, from the link and then from each
 ``state`` frame; ``gateway_url`` is the one that last answered. A file
 missing any other field is an unbound agent.
 
-A binding an agent of 0.5 left, pinned by a certificate ``fingerprint`` with
-no ``hub_key``, asks the hub's legacy listener for its key once, and is then
-rewritten in the shape above.
+A binding an agent of 0.5 left holds a certificate ``fingerprint`` and no
+``hub_key``. The agent dials nothing for it and records ``hub_key_missing``
+until ``nagent join`` binds the machine again.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -41,21 +41,16 @@ import zlib
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
-    AGENT_CODE_BINDING_UNKNOWN,
-    AGENT_CODE_HUB_KEY_MISSING,
     AGENT_CONFIG_NAME,
     AGENT_HUB_NAME,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     PROTOCOL,
 )
-from neutrino_agent.core.channel import HubKeyHttpClient
-from neutrino_agent.core.static_key import make_private_key, public_key_of
+from neutrino_agent.core.static_key import make_private_key
 from neutrino_agent.exceptions import (
     EnrollmentError,
-    GatewayRefusedDetail,
     GatewayUnreachable,
-    GatewayUntrusted,
     PlatformUnsupportedError,
 )
 from neutrino_agent.platforms.detect import detect_platform, platform_tuple
@@ -80,10 +75,8 @@ BINDING_KEYS = (
 BINDING_URLS_KEY = "gateway_urls"
 # What a binding of 0.5 holds in place of the hub's key.
 LEGACY_FINGERPRINT_KEY = "fingerprint"
-# The scheme of the transport's addresses, and the 0.5 TLS one a 0.5
-# binding holds.
+# The scheme of the transport's addresses.
 ADDRESS_SCHEME = "tcp"
-LEGACY_SCHEME = "https"
 HEX_DIGITS = "0123456789abcdef"
 KEY_HEX_LENGTH = 64
 
@@ -210,24 +203,14 @@ def load_binding() -> dict:
     return binding
 
 
-def load_legacy_binding() -> dict:
-    """A binding an agent of 0.5 left, which names no hub key yet.
+def has_legacy_binding() -> bool:
+    """Whether the binding file holds a binding an agent of 0.5 left.
 
     Returns:
-        ``{gateway_url, gateway_urls, id, token, fingerprint, machine_id}``,
-        or an empty object when the file holds no such binding.
+        True when the file holds a ``fingerprint`` and no ``hub_key``.
     """
     config = load_config()
-    if not config.get(LEGACY_FINGERPRINT_KEY) or config.get("hub_key"):
-        return {}
-    binding = {
-        key: str(config.get(key, "") or "")
-        for key in ("gateway_url", "id", "token", LEGACY_FINGERPRINT_KEY, "machine_id")
-    }
-    binding[BINDING_URLS_KEY] = clean_urls(config.get(BINDING_URLS_KEY))
-    if not (binding["gateway_url"] and binding["id"] and binding["token"]):
-        return {}
-    return binding
+    return bool(config.get(LEGACY_FINGERPRINT_KEY)) and not config.get("hub_key")
 
 
 def save_config(config: dict) -> None:
@@ -595,80 +578,6 @@ def dial_fields(binding: dict) -> dict:
         "protocol": PROTOCOL,
         "addresses": dial_addresses(binding),
     }
-
-
-def take_hub_key(*, client_class=HubKeyHttpClient) -> dict:
-    """Move a 0.5 binding to the hub's static key, asking its legacy listener.
-
-    Makes this agent's static key, sends its public half with the binding's
-    id and token to each of the binding's ``https`` addresses in turn over
-    the pinned TLS, and on the first ``{key}`` rewrites the binding: the
-    hub's key and this agent's, no fingerprint, and every ``https`` address
-    as ``tcp`` with the same host and port.
-
-    Args:
-        client_class: The HTTP client, which a test replaces.
-
-    Returns:
-        Empty when the binding moved or there was none to move;
-        ``{"code", "params"}`` otherwise: ``binding_unknown`` when the hub
-        no longer knows the binding, which is then deleted, and
-        ``hub_key_missing`` when no address gave a key.
-    """
-    legacy = load_legacy_binding()
-    if not legacy:
-        return {}
-    private_key = make_private_key()
-    public_key = public_key_of(private_key)
-    for url in stored_urls(legacy):
-        if urllib.parse.urlsplit(url).scheme != LEGACY_SCHEME:
-            continue
-        client = client_class(
-            gateway_url=url, fingerprint=legacy[LEGACY_FINGERPRINT_KEY]
-        )
-        try:
-            hub_key = client.set_key(legacy["id"], legacy["token"], public_key)
-        except GatewayRefusedDetail as error:
-            if error.code == AGENT_CODE_BINDING_UNKNOWN:
-                remove_binding()
-                return {"code": error.code, "params": dict(error.params)}
-            continue
-        except (GatewayUntrusted, GatewayUnreachable):
-            continue
-        if not is_key(hub_key):
-            continue
-        save_config(
-            {
-                "gateway_url": transport_url(url),
-                "gateway_urls": [transport_url(each) for each in stored_urls(legacy)],
-                "id": legacy["id"],
-                "token": legacy["token"],
-                "hub_key": hub_key,
-                "private_key": private_key,
-                "machine_id": legacy["machine_id"],
-            }
-        )
-        return {}
-    return {"code": AGENT_CODE_HUB_KEY_MISSING, "params": {}}
-
-
-def transport_url(url: str) -> str:
-    """A 0.5 ``https`` address as the transport dials it.
-
-    Args:
-        url: ``https://<host>:<port>``.
-
-    Returns:
-        ``tcp://<host>:<port>``, the port 443 when the address names none;
-        any other address as it is.
-    """
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme != LEGACY_SCHEME:
-        return url
-    host = parts.hostname or ""
-    if ":" in host:
-        host = f"[{host}]"
-    return f"{ADDRESS_SCHEME}://{host}:{parts.port or 443}"
 
 
 def _is_stored(config) -> bool:

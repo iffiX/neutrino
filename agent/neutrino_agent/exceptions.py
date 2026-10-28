@@ -34,14 +34,6 @@ class GatewayRefusedDetail(GatewayUnreachable):
         self.params = params
 
 
-class GatewayUntrusted(ConnectionError):
-    """Raised when the peer's certificate does not match the pinned one.
-
-    Nothing was sent: the check runs on the peer certificate before any
-    request bytes leave the machine.
-    """
-
-
 class StreamClosed(ConnectionError):
     """Raised when a stream ended under its handler, by the hub or its connection."""
 

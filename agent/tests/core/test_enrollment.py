@@ -402,7 +402,16 @@ def test_a_binding_of_0_5_is_no_binding_but_a_legacy_one(config_path):
     )
 
     assert enrollment.load_binding() == {}
-    assert enrollment.load_legacy_binding()["fingerprint"] == "ff" * 32
+    assert enrollment.has_legacy_binding()
+
+
+def test_a_binding_with_a_hub_key_is_no_legacy_one(config_path):
+    bind(config_path)
+    held = json.loads(config_path.read_text())
+    held["fingerprint"] = "ff" * 32
+    config_path.write_text(json.dumps(held))
+
+    assert not enrollment.has_legacy_binding()
 
 
 @pytest.mark.parametrize("text", ["", "not json", "[]", "42"])
@@ -410,7 +419,7 @@ def test_an_unreadable_file_is_unbound(config_path, text):
     config_path.write_text(text)
 
     assert enrollment.load_binding() == {}
-    assert enrollment.load_legacy_binding() == {}
+    assert not enrollment.has_legacy_binding()
 
 
 def test_no_file_is_unbound_and_stamps_zero():

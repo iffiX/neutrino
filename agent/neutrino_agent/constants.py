@@ -35,9 +35,6 @@ AGENT_HUB_ROLE = "hub"
 AGENT_SOFTWARE_PREFIX = "neutrino_agent/"
 AGENT_HUB_SOFTWARE_PREFIX = "neutrino_hub/"
 
-# The legacy listener's route a binding of 0.5 asks the hub's static key
-# on, over its pinned TLS, once.
-CHANNEL_KEY_SET_PATH = "/api/channel/key/set"
 # The largest piece of bytes a container relay moves at once.
 AGENT_RELAY_CHUNK_BYTES = 64 * 1024
 # How long a ``status`` probe waits for the hub's welcome.
@@ -100,8 +97,8 @@ AGENT_RELAY_FIREWALLD_RULE_WORDS = (
 AGENT_RELAY_COMMAND_LOCALE = "C"
 # The codes the channel itself gives: a refusal that named no code, a
 # session replaced by a second one for the same binding, the one refusal
-# that unbinds, which only the hub's key can say, a binding of 0.5 whose
-# hub gave no key, and a frame this build cannot read.
+# that unbinds, which only the hub's key can say, a binding of 0.5 with no
+# hub key, and a frame this build cannot read.
 AGENT_CODE_CHANNEL_REFUSED = "channel_refused"
 AGENT_CODE_REPLACED = "replaced"
 AGENT_CODE_BINDING_UNKNOWN = "binding_unknown"
@@ -188,11 +185,8 @@ AGENT_TRANSPORT_BIN_VARIABLE = "NEUTRINO_TRANSPORT_BIN"
 # the machine's metrics, which the panel draws live, so this is the rate
 # those readings arrive at.
 AGENT_REPORT_INTERVAL_S = 5
-# How long a request to the hub's legacy listener may take.
-AGENT_REQUEST_TIMEOUT_S = 10
 # Backoff bounds: how long the agent waits before it starts a transport
-# that would not start, doubling to a minute, and how long a binding of 0.5
-# waits before it asks its hub for the hub's key again.
+# that would not start, doubling to a minute.
 AGENT_BACKOFF_MIN_S = 5
 AGENT_BACKOFF_MAX_S = 60
 # The name every network the hub serves resolves to the hub's address on that

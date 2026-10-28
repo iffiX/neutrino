@@ -41,6 +41,7 @@ from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_CODE_BINDING_UNKNOWN,
+    AGENT_CODE_HUB_KEY_MISSING,
     AGENT_CODE_PORT_NOT_PUBLISHED,
     AGENT_CODE_REPLACED,
     AGENT_CONFIGURED_DIR_NAME,
@@ -72,7 +73,6 @@ from neutrino_agent.core.version import parse_version
 from neutrino_agent.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
-    GatewayUntrusted,
     PlatformUnsupportedError,
     SelfUpdateError,
 )
@@ -137,8 +137,6 @@ def channel_error(error: Exception) -> dict:
     """
     if isinstance(error, GatewayRefusedDetail):
         return {"code": error.code, "params": dict(error.params)}
-    if isinstance(error, GatewayUntrusted):
-        return {"code": "hub_untrusted", "params": {}}
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
 
 
@@ -317,8 +315,6 @@ class Agent:
         # Set by a ``replaced`` refusal: another session holds this binding,
         # and this one dials again only once a person acts.
         self._is_replaced = False
-        # When a 0.5 binding last asked its hub for the hub's key.
-        self._key_asked_at: "float | None" = None
         # The hub version last acted on and how the attempt went, so a target
         # that failed is not retried on every session.
         self._update_target = ""
@@ -500,7 +496,7 @@ class Agent:
             transport cannot start, and a short poll otherwise.
         """
         self._adopt_external_binding()
-        self._take_hub_key()
+        self._note_hub_key_missing()
         if not self._is_bound_and_wanted():
             self._undial()
             return IDLE_POLL_INTERVAL_S
@@ -892,24 +888,16 @@ class Agent:
             self._last_error = dict(error)
         self._news.set()
 
-    def _take_hub_key(self) -> None:
-        """Move a 0.5 binding to the hub's key, at most once a backoff's maximum."""
-        if self._binding or not enrollment.load_legacy_binding():
+    def _note_hub_key_missing(self) -> None:
+        """Record ``hub_key_missing`` once while the binding file is of 0.5."""
+        if self._binding or not enrollment.has_legacy_binding():
             return
-        now = time.monotonic()
+        missing = {"code": AGENT_CODE_HUB_KEY_MISSING, "params": {}}
         with self._lock:
-            asked = self._key_asked_at
-            if asked is not None and now - asked < AGENT_BACKOFF_MAX_S:
+            if self._last_error == missing:
                 return
-            self._key_asked_at = now
-        outcome = enrollment.take_hub_key()
-        if outcome:
-            with self._lock:
-                self._last_error = dict(outcome)
-            self._log(f"the hub's key was not taken: {outcome['code']}")
-            return
-        self._log("took the hub's key for the binding of 0.5")
-        self._load_connection()
+            self._last_error = missing
+        self._log("the binding of 0.5 holds no hub key; join again with a new link")
 
     def _stream_kinds(self) -> dict:
         """The stream kinds the hub opens, bound to this agent's parts."""

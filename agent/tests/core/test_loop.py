@@ -1095,42 +1095,23 @@ def legacy_binding(path) -> None:
     )
 
 
-def test_a_binding_of_0_5_takes_the_hubs_key_and_then_dials(
-    fake, config_path, monkeypatch
-):
+def test_a_binding_of_0_5_says_hub_key_missing_and_dials_nothing(fake, config_path):
     legacy_binding(config_path)
-
-    def take_hub_key():
-        bind(config_path, url=LAN_URL)
-        return {}
-
-    monkeypatch.setattr(enrollment_module, "take_hub_key", take_hub_key)
-    agent = agent_on(fake, config=config_path, is_bound=False)
-
-    agent.run_once()
-
-    assert fake.wait_command("dial")["hub_key"] == HUB_KEY
-
-
-def test_a_binding_of_0_5_whose_hub_gives_no_key_says_hub_key_missing(
-    fake, config_path, monkeypatch
-):
-    legacy_binding(config_path)
-    asked: list = []
-
-    def take_hub_key():
-        asked.append(True)
-        return {"code": "hub_key_missing", "params": {}}
-
-    monkeypatch.setattr(enrollment_module, "take_hub_key", take_hub_key)
-    agent = agent_on(fake, config=config_path, is_bound=False)
+    lines: list = []
+    agent = Agent(
+        log=lines.append,
+        platform=default_platform(),
+        transport_starter=starter_for(fake),
+        one_shot=one_shot_for(fake),
+    )
 
     agent.run_once()
     agent.run_once()
 
-    assert asked == [True]
     assert agent.last_error() == {"code": "hub_key_missing", "params": {}}
     assert fake.starts == 0
+    assert fake.commands == []
+    assert len([line for line in lines if "no hub key" in line]) == 1
 
 
 # --- the report's error ---
