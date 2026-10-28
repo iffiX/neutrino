@@ -27,7 +27,7 @@ UNKNOWN_MODULE = "nosuchmodule"
 # order.
 HUB_MODULE_ARTIFACTS = {"codeg": ["server", "node"], "cloudcli": ["node"]}
 # The modules the agent's own package carries: no press is offered on them.
-AGENT_MODULES = ["terminal", "remote_desktop"]
+AGENT_MODULES = ["terminal", "remote_desktop", "ssh_server"]
 # A page the shared instances router serves.
 INSTANCE_MODULE = "codeg"
 # How a row is installed: the closed set of methods, as the manifests name it.
@@ -132,12 +132,17 @@ def test_a_persons_own_remote_desktop_product_is_no_row(modules):
 
 def test_a_device_that_never_joined_asks_only_the_agents_own_modules(modules):
     """``want`` is what the hub asks. Of a device it has asked nothing of, it
-    asks only the two modules the agent's package carries: the terminal is
-    always wanted running, and the remote desktop stopped while its switch
-    is off (protocol.md)."""
+    asks only the three modules the agent's package carries: the terminal is
+    always wanted running, the remote desktop stopped while its switch is
+    off, and the SSH server stopped while it enables no account
+    (protocol.md, ssh_server.md)."""
     wants = {entry["name"]: entry["want"] for entry in modules if entry["want"]}
 
-    assert wants == {"terminal": "running", "remote_desktop": "stopped"}
+    assert wants == {
+        "terminal": "running",
+        "remote_desktop": "stopped",
+        "ssh_server": "stopped",
+    }
 
 
 @pytest.mark.parametrize("verb", MODULE_VERBS)
@@ -161,8 +166,8 @@ def test_a_module_the_catalog_lacks_is_a_404(panel, device_id, verb):
 @pytest.mark.parametrize("verb", MODULE_VERBS)
 @pytest.mark.parametrize("name", AGENT_MODULES)
 def test_a_module_the_agent_carries_refuses_every_press(panel, device_id, name, verb):
-    """The agent's own package holds these two, so the row offers none of the
-    four presses, and a press sent anyway is refused before the device is
+    """The agent's own package holds these three, so the row offers none of
+    the four presses, and a press sent anyway is refused before the device is
     looked up."""
     body = {"device_id": device_id, "module": name}
 
