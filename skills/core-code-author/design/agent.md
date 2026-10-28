@@ -732,7 +732,7 @@ module a system cannot run is left out on that system.
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
-| [SiYuan](agent/modules/siyuan.md) | amd64 and arm64 | amd64, a build whose `tar.exe` reads the installer | arm64 and amd64 |
+| [SiYuan](agent/modules/siyuan.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Ayakaleaf](agent/modules/ayakaleaf.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Terminal](agent/modules/terminal.md) | yes | yes | yes |

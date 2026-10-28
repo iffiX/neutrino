@@ -34,8 +34,9 @@ and runs, none writes, and no `PATH` names ([module_install.md](../module_instal
 | Each file's sources are the GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}`. | The publisher's mirror, which its download page links, serves every desktop file with the same SHA-256 and answers Range requests. It holds no `SHA256SUMS.txt`, so the digest is GitHub's ([module_install.md](../module_install.md), "Sources"). |
 | The unpack is the whole build, 741 MB on Linux and 841 MB on Windows, and the kernel's working directory is its `resources`: the page's files, the guide and pandoc. | 280 MB of the Linux build are Electron, which the kernel never opens; the publisher's layout unpacks every version by one rule. |
 | The Linux kernel is a static-pie ELF, so the Linux entries name no `min_version`. | It needs no glibc of the machine. |
-| The Windows file is the publisher's NSIS installer, which the agent unpacks with the system's `tar.exe`, and the entry's `min_version` is the oldest build whose `tar.exe` reads it ([../../min_support.md](../../min_support.md), "What the agent drives"). | The installer holds the app as a 7z archive with LZMA2 inside. Build 26100's `tar.exe`, bsdtar 3.8.9 with liblzma, found the archive inside the installer by itself and unpacked it in 11.8 seconds. |
-| On macOS the agent attaches the dmg read-only, copies `SiYuan.app/Contents/Resources` into the unpack and detaches it. | The kernel there is `Contents/Resources/kernel/SiYuan-Kernel`, a Mach-O signed with the publisher's Developer ID, beside the same resources as on Linux. In the lab the dmg was read, and its kernel was not run. |
+| The Windows file is the publisher's NSIS installer, whose 7z archive the agent reads itself ([../module_install.md](../module_install.md), "Artifacts"), so the entry names no `min_version`. | The installer stores `app-64.7z` whole, one folder per file of LZMA2 behind BCJ, a filter for x86 code. The agent's reader unpacked 3.8.8's 1,433 files in 11.6 seconds with 25 MB of memory, each byte equal to 7-Zip's unpack. The system's `tar.exe` read the archive on build 26100, bsdtar 3.8.9 with liblzma; no older build was in the lab, and the agent runs from Windows 10 1809 up. |
+| The four copies of one guide video the installer carries outside its 7z archive are left out. | The installer's own script writes them beside the archive's files, and the kernel ran without them in the lab. |
+| On macOS the agent attaches the dmg read-only, copies `SiYuan.app/Contents/Resources` into the unpack and detaches it. | The kernel there is `Contents/Resources/kernel/SiYuan-Kernel`, a Mach-O signed with the publisher's Developer ID, beside the same resources as on Linux. In the lab, on macOS 15 on Intel, the image attached in 2.7 seconds, the copy took 2.4 seconds and carried no quarantine attribute, and the kernel ran as the account under a LaunchDaemon, answering 3.4 seconds after its first start. |
 
 On Linux the unpack is labelled `bin_t` where SELinux enforces, as every
 module's unpack is ([module_install.md](../module_install.md), "From the
@@ -56,13 +57,16 @@ workspace is `<data>/workspace`: the notes in `data/`, the settings in
 | --- | --- |
 | The workspace is in Neutrino's own directory, never the person's `~/SiYuan`. | The kernel holds a `.lock` in its workspace, one kernel per workspace, so a desktop SiYuan of the same account cannot open a workspace an instance runs on. |
 | The kernel runs with `--home-dir=<data>`. | Its own files go to `~/.config/siyuan` without it, which a desktop SiYuan of the same account shares. |
-| The service runs under `umask 077`. | The kernel writes `cookie.key` with mode 0644, and `conf.json` holds the access code as plain text. With `UMask=0077` the key was 0600. |
+| The service runs under `umask 077`, and the hook makes `<data>/workspace` as the account, mode 700 with the directories above it, before the first start. | The kernel writes `cookie.key` with mode 0644, and with `UMask=0077` it was 0600. The kernel writes `conf.json` and `workspace.json` with mode 0644 under any umask, and `conf.json` holds the access code as plain text, so the 0700 directories above them keep other accounts out. A kernel whose `--workspace` names no directory takes `SiYuan` under `--home-dir` in its place. |
 | An uninstall keeps `<data>` and every file in it, as `is_data_kept` says, and its line in the uninstall dialog names it ([../../ui_text.md](../../ui_text.md), "The uninstall dialog's words"). | The workspace is the person's notes, and the module removes no file of the account's ([module_template.md](../module_template.md), "The run"). |
 
 ## The service
 
 The account service layer runs each instance as its account
-([module_template.md](../module_template.md), "The run"):
+([module_template.md](../module_template.md), "The run"); on Linux the
+template unit's command line reads the workspace, the home directory and the
+port from the instance's environment as `${NEUTRINO_SIYUAN_WORKSPACE}`,
+`${NEUTRINO_SIYUAN_DATA}` and `${NEUTRINO_SIYUAN_PORT}`:
 
 ```text
 <kernel> serve --wd=<resources> --workspace=<data>/workspace --home-dir=<data> --port=<kernel port>
@@ -71,9 +75,11 @@ The account service layer runs each instance as its account
 `<resources>` is `app/resources` under the module's directory on Linux and
 Windows and `app` on macOS. `<kernel port>` is a free loopback port the agent
 picks at the instance's first start and keeps in the instance's record; the instance's port is the
-forwarder's. The one variable is `SIYUAN_ACCESS_AUTH_CODE`, the instance's
-access code, in the service's environment, which the layer writes root-only
-as it writes Codeg's token. In the lab a kernel was ready 0.64 seconds after
+forwarder's. The kernel reads one variable, `SIYUAN_ACCESS_AUTH_CODE`, the
+instance's access code, from the service's environment, which the layer
+writes root-only as it writes Codeg's token. The entry's `verify` is the
+kernel with `--version`, which prints `SiYuan-Kernel version <version>` and
+writes no file. In the lab a kernel was ready 0.64 seconds after
 its start on Linux and in under a second on Windows, held 120 to 132 MB on
 Linux and 76 MB on Windows, and stopped in 0.58 seconds with exit 0.
 
@@ -138,7 +144,7 @@ The hook writes into the workspace's `conf/conf.json`, as the account:
 | --- | --- |
 | The hook writes the file after the instance's first start, and again whenever the key, `gateway_url` or `models` differ from what the instance's record holds, with the instance stopped and started again after. | The kernel makes `conf.json` at its first start, reads it at each start and writes it back from what it holds. `SIYUAN_OPENAI_API_BASE_URL`, `_KEY` and `_MODEL` fill one provider at the first start alone. |
 | The provider's id and each model's id have the form of SiYuan's own ids, `20000101000000-` and seven hex characters, from the SHA-256 of `neutrino` for the provider and of `neutrino/<name>` for a model. | A fixed id finds the module's provider again among the person's own, and the kernel gives its AI entries ids of that form. |
-| The key is written as it is, and the kernel encrypts it with a key built into SiYuan when it next saves the file. The hub's keys are 32 characters of base64url. | The kernel decrypts every stored key that reads as hex: a key of 48 hex characters stopped the kernel at its first start with `crypto/cipher: input not full blocks`, and a key that reads as no hex is taken as written. |
+| The key is written as it is, and the kernel encrypts it with a key built into SiYuan when it next saves the file, within seconds of its start. The hub's keys are 32 characters of base64url. | The kernel decrypts every stored key that reads as hex: keys of 32, 48 and 64 hex characters stopped the kernel at every start while the file held them, with `crypto/cipher: input not full blocks`, and a key that reads as no hex is taken as written. |
 | The key is in the person's file, not only in the service's environment as Hermes WebUI's is. | SiYuan reads its providers from `conf.json` alone. |
 | `system.downloadInstallPkg` is false. | The kernel downloads each new desktop installer in the background by default, and the module's version moves in the hub. |
 

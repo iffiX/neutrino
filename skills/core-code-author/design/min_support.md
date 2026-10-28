@@ -220,7 +220,6 @@ releases a supported family provides.
 | glibc | 2.28, below the agent's floor | the VS Code server Microsoft's CLI downloads for `serve-web`, the Node.js build CloudCLI runs on, and code-server's standalone release builds (with `GLIBCXX_3.4.21`); the agent's own 2.34 covers them, so their Linux entries name no `min_version` | `hub/neutrino_hub/data/manifests/vscode.json`, `cloudcli.json`, `code_server.json` |
 | glibc | 2.34, the agent's floor | Codeg's `codeg-server`, `codeg-mcp` and `codeg-computer-helper`, x64 and arm64 | `hub/neutrino_hub/data/manifests/codeg.json`, which names no `min_version` since the floor is the same |
 | glibc | none | SiYuan's kernel, a static-pie ELF on amd64 and arm64 | `hub/neutrino_hub/data/manifests/siyuan.json`, whose Linux entries name no `min_version` |
-| `tar.exe` on Windows | the build whose `tar.exe` reads LZMA inside a 7z archive; build 26100's, bsdtar 3.8.9 with liblzma, does | SiYuan's Windows installer, which the agent unpacks with it ([agent/modules/siyuan.md](agent/modules/siyuan.md)) | the Windows entry's `min_version` in `hub/neutrino_hub/data/manifests/siyuan.json` |
 
 Containers on Windows was proven on build 26100 alone. Build 19041 is what
 both msi files accept: Podman's refuses an older build with a launch

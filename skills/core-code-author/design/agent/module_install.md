@@ -101,7 +101,7 @@ ecosystem's names `source_set`, the set's name, in place of `sources`
 | `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `raw_zst` | a zstd-compressed disk image, such as Podman's machine image for applehv | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `dmg` | a macOS disk image, such as SiYuan's desktop build | attached with `hdiutil attach -nobrowse -readonly` at a temporary mount point; the folder `member` names is copied with `ditto` to `agent/<module>/<directory>/` and sealed, and the image is detached |
-| `nsis` | a Windows installer made with NSIS that holds a 7z archive, such as SiYuan's | unpacked under `agent/<module>/<directory>/` by the system's `%SystemRoot%\System32\tar.exe`, which reads the 7z archive inside the installer, and sealed; nothing in the installer runs |
+| `nsis` | a Windows installer made with NSIS that holds a 7z archive stored whole, such as SiYuan's | the 7z archive found inside the installer by its signature and read by the agent's own reader with Python's `lzma`, its files unpacked under `agent/<module>/<directory>/` and sealed; nothing in the installer runs |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
 | `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, as the module's own page says |
 

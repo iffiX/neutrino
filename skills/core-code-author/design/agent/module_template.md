@@ -160,7 +160,8 @@ under `modules/<module>/`, which the `container` runner calls.
 | --- | --- |
 | `base.py` | what a module runner is: the contract every module's runner meets |
 | `package.py` | installing, removing and verifying one `hub` module, and switching it to another version |
-| `unpacked_tree.py` | an archive from the hub, unpacked under the module's own directory and sealed: a `tar_gz` or a `zip` by the standard library, an `nsis` installer by the system's `tar.exe`, and a `dmg` by copying its `member` out of the attached image |
+| `unpacked_tree.py` | an archive from the hub, unpacked under the module's own directory and sealed: a `tar_gz` or a `zip` by the standard library, an `nsis` installer by `seven_zip.py`, and a `dmg` by copying its `member` out of the attached image |
+| `seven_zip.py` | the 7z archive an NSIS installer carries whole, found by its signature and read with Python's `lzma`: its header, then each folder of LZMA, LZMA2, a copy, or 7-Zip's BCJ for x86 before one of them, each file checked against its CRC |
 | `system_package.py` | installing and uninstalling the packages of a `system` entry with the machine's package manager |
 | `installers.py` | installing a downloaded package the way this machine installs things, one function per artifact kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
 | `source_fetch.py` | probing and ranking the sources of an image, an npm registry or a host an npm setting names ([module_install.md](module_install.md), "Choosing a source") |
