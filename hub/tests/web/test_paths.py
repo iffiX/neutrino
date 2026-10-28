@@ -215,6 +215,7 @@ MODULE_NAMES = (
     "codeg",
     "siyuan",
     "hermes_webui",
+    "ayakaleaf",
 )
 
 
