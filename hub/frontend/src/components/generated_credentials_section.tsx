@@ -37,8 +37,8 @@ const COPIED_CLEAR_MS = 1600;
 
 /** The body of the Rotate dialog, by kind. */
 const ROTATE_BODY_KEYS: Record<string, string> = {
-  smb_password: "ui.credentials.rotate_smb_body",
-  seat_password: "ui.credentials.rotate_seat_body",
+  smb_password: "ui.credentials.rotate_smb_body", // scan: allow
+  seat_password: "ui.credentials.rotate_seat_body", // scan: allow
   ssh_key: "ui.credentials.rotate_ssh_body",
 };
 
