@@ -981,10 +981,11 @@ class PanelRuntime:
             machine_slug=self.machine_slug(key),
             app_slug_of=app_slugs(machine_apps(self.desired_states, key)),
             ai_models=self._gateway_models_for(key),
+            releases=self.module_releases,
         )
 
     def _gateway_models_for(self, key: str) -> list:
-        """The names the gateway serves, for a device whose AI tools or SiYuan accounts call it.
+        """The names the gateway serves, for a device whose AI tools, SiYuan accounts or Ayakaleaf call it.
 
         Args:
             key: The device.

@@ -1249,6 +1249,7 @@ class DesiredStateStore:
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         app_slug_of: "dict | None" = None,
         ai_models: "list | tuple" = (),
+        releases: "ModuleReleaseStore | None" = None,
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -1271,7 +1272,11 @@ class DesiredStateStore:
             app_slug_of: App id to its slug for this machine; None slugs each
                 title alone.
             ai_models: The names the gateway serves now, which a module that
-                holds a gateway key per account is sent.
+                holds a gateway key per account is sent, and which pick
+                Ayakaleaf's model.
+            releases: The publishers' feeds as last read, which name the
+                digest of a hub container's image at the version the machine
+                chose; None takes the tested digests.
 
         Returns:
             The configuration: an account-layer module as
@@ -1313,7 +1318,12 @@ class DesiredStateStore:
         elif name == DEVICE_PODMAN_MODULE:
             config = podman_agent_config(config, platform, available)
             config[DEVICE_HUB_CONTAINERS_KEY] = compose_hub_containers(
-                self, key, platform, is_hub_machine=is_hub_machine
+                self,
+                key,
+                platform,
+                is_hub_machine=is_hub_machine,
+                models=ai_models,
+                releases=releases,
             )
         elif name == DEVICE_HERMES_WEBUI_MODULE:
             app_id = f"{SERVICES_HERMES_WEBUI_ID}_{key}"
@@ -1381,6 +1391,7 @@ class DesiredStateStore:
             "machine_slug": machine_slug,
             "app_slug_of": slugs,
             "ai_models": tuple(ai_models),
+            "releases": releases,
         }
         modules = {}
         for name, entry in self.modules(key).items():

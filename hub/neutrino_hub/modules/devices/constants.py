@@ -339,6 +339,10 @@ DEVICE_PODMAN_MACHINE_KEY = "machine"
 DEVICE_PODMAN_MODULE = "podman"
 DEVICE_HUB_CONTAINERS_KEY = "hub_containers"
 DEVICE_HUB_CONTAINER_PREFIX = "neutrino_"
+# The longest stop timeout a hub container may name, as the agent takes it,
+# and the highest exit code there is.
+DEVICE_HUB_CONTAINER_STOP_MAX_S = 3600
+DEVICE_HUB_CONTAINER_EXIT_CODE_MAX = 255
 DEVICE_PODMAN_CONTAINERS_KEY = "containers"
 # The key a container module that uses the AI gateway keeps its own gateway
 # key under, in its file under the device's directory: the key's record,
