@@ -644,7 +644,7 @@ panel starts the flow through the same management API, hands the person the
 URL to open, passes the code back, and the gateway writes a token file into
 `/var/lib/neutrino/hub/cliproxyapi/auth/` and serves with it without a restart.
 
-**Auth files are the one deliberate exception to "backing up `config/`
+**Auth files are a deliberate exception to "backing up `config/`
 reproduces the appliance."** They are live provider credentials that no render
 produces and no apply installs, so they sit in the state root and a downloaded
 backup does not carry them: a restored box signs in again. Putting them in

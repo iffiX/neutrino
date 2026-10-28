@@ -147,7 +147,8 @@ and your edit will be lost.
 ## Backup and migrate
 
 - The Settings tab exports one plain `.tar.gz`: a manifest naming what it is,
-  a `SHA256SUMS` digest list, then the `config/` tree. Safe to store as it
+  a `SHA256SUMS` digest list, then the `config/` tree without
+  `config/clients/web_shares.json`. Safe to store as it
   stands: the vault's data key travels only wrapped under the master
   passphrase, and the hub's static key and the DTLS certificate's key only
   as `config/transport/static_key.sealed` and
@@ -160,7 +161,11 @@ and your edit will be lost.
   DTLS certificate's key are unsealed into `config/transport/static_key`
   and `config/transport/dtls_key.pem`, owned by the transport's account,
   and the transport reads them again, so the restored hub answers every
-  binding and every share link the backup holds.
+  binding the backup holds.
+- A restore leaves the hub with no Web share. It removes
+  `config/clients/web_shares.json` once the archive is unpacked, a copy in
+  the archive included, and ends each share the box stored as a revoke ends
+  it ([../design/protocol.md](../design/protocol.md), "Web shares").
 
 ## Field reference
 
@@ -239,8 +244,8 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   pwd_sealed, guest}`, `expires_at` null for a share that lasts until it is
   revoked and `guest` present for an app shared with a guest account; a
   share past its `expires_at` is removed by the hub, so the file holds the
-  live shares alone ([../design/protocol.md](../design/protocol.md), "Web
-  shares").
+  live shares alone; a backup leaves the file out, and a restore removes it
+  ([../design/protocol.md](../design/protocol.md), "Web shares").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`
   frame carries both, and `nhub reset all` deletes the file.
