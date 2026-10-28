@@ -104,8 +104,9 @@ phones' tests in the same commit that fails the hub's. A golden that more
 than one package or app reads is always data like this schema, and no test
 compares two code files ([layout.md](../coding_style/layout.md)).
 What else each pins:
-enrollment from a scanned or pasted link with the fingerprint checked first,
-the binding stored in the Keystore or the Keychain, the overlay switch per
+enrollment from a scanned or pasted link with the hub's key read from it,
+a link of 0.5 with a fingerprint and no key refused `link_incomplete`, a
+binding of 0.5 read as `join_refused` with `hub_key_missing`, the binding stored in the Keystore or the Keychain, the overlay switch per
 hub on Android, every refusal read as its `{code, params}`, the local listeners and
 the in-app SMB client opening one `connect` stream per connection through a
 fake socket, the redial of a refused address within a round and a forward
