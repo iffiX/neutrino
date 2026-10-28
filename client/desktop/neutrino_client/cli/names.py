@@ -248,7 +248,7 @@ def share_name(entry: dict) -> str:
 
 
 def share_account(entry: dict) -> str:
-    """The account a folder share's entry logs in as; empty for any other share."""
+    """The account a folder share's entry logs in as. Empty for any other share."""
     payload = entry.get("payload") or {}
     return str(payload.get("account", "") or "")
 

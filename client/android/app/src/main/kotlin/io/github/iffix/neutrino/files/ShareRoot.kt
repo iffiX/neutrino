@@ -21,7 +21,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @property isDeclared Whether a declared app names the share, a NAS's share opened with the
  *   person's own login; a machine's share opens with the login the hub hands at every connect.
  * @property isReconnecting Whether its hub's channel dropped less than a minute ago and is not back yet.
- * @property account The account a folder share's entry logs in as; empty for any other share. The
+ * @property account The account a folder share's entry logs in as. Empty for any other share. The
  *   hub hands that account's login at every connect.
  */
 data class ShareRoot(

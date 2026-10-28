@@ -19,8 +19,8 @@ export interface ModuleDescriptor {
   applyHint: string;
   /** The account's field each row shows; none for most modules. */
   field: AccountField | null;
-  /** The panel's title and the line under it; **Enabled accounts** and
-   * none where a module names neither. */
+  /** The panel's title and the line under it. **Enabled accounts** and no
+   * line where a module names neither. */
   title?: string;
   titleHint?: string;
   /** The line above the accounts saying the owner installs the software,

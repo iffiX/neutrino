@@ -597,7 +597,7 @@ def test_two_users_of_one_machine_take_two_addresses(store, plan):
 
 
 def test_each_address_reaches_the_entry_of_its_user(plan, connector):
-    """A folder share's two entries on one machine: the pair of each user
+    """Of a folder share's two entries on one machine, the pair of each user
     opens the stream of that user's entry."""
     folder = {
         **SHARE_ENTRY,

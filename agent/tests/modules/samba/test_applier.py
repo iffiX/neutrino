@@ -726,8 +726,8 @@ def test_a_configuration_whose_only_share_admits_no_user_serves_nothing(box):
 
 
 def test_a_missing_folder_is_made_for_the_account_it_writes_as():
-    """A Home share's folder is its account's; a folder share's of one SMB
-    user is that user's account's; a folder share of two users stays root's."""
+    """A Home share's folder is its account's. A folder share's of one SMB
+    user is that user's account's. A folder share of two users stays root's."""
     config = SambaConfig.from_dict(
         {
             "shares": [

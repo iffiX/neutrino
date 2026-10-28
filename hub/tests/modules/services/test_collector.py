@@ -315,7 +315,7 @@ def test_a_declared_apps_entries_are_named_by_their_type_and_port():
 
 
 def test_a_folder_share_has_an_entry_per_account_each_logging_in_as_it():
-    """A Home share's entry names no account; a folder share's entries are
+    """A Home share's entry names no account. A folder share's entries are
     ``samba_folder_<device>_<share>_<account>``, each with its account's SMB
     user, and its row in a permission is the folder share's id."""
     held = collector(

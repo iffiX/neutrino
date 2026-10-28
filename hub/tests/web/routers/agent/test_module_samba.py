@@ -117,7 +117,7 @@ def test_an_add_is_refused_before_anything_is_written(
 
     answer = client.post(f"{PATH}/add", json=body)
 
-    # The models refuse an empty list, which the panel's app words body_invalid.
+    # The models refuse an empty list. The panel's app words it body_invalid.
     assert answer.status_code == (400 if code else 422)
     if params is not None:
         assert answer.json()["detail"] == {"code": code, "params": params}

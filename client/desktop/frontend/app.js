@@ -1088,7 +1088,7 @@ function isEntryFree(hub, entry) {
   return !entryWork(hub, entry) && hub.connection !== 'disabled';
 }
 
-// A row of one entry; `title` replaces the entry's own where a page names
+// A row of one entry. `title` replaces the entry's own where a page names
 // the entry otherwise.
 function entryRow(hub, entry, mono, standing, actions, reason, extras, title) {
   return rowElement({

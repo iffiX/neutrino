@@ -1346,7 +1346,7 @@ export interface EnabledAccountsUpdate {
   accounts: string[];
 }
 
-/** A folder share: a named share at a folder, open to the accounts checked. */
+/** A named share at a folder, open to the accounts checked. */
 export interface FolderShareView {
   name: string;
   path: string;
@@ -1396,7 +1396,7 @@ export interface PublishedServicePayload {
   attention?: string;
   /** rdp: the sharing machine's `linux`, `windows` or `darwin`. */
   platform_os?: string;
-  /** ssh: the account the instance runs as; file: the account a folder
+  /** ssh: the account the instance runs as. file: the account a folder
    * share's entry logs in as, empty on any other share. */
   account?: string;
   /** ssh: the machine's host key, `SHA256:<base64>`. */

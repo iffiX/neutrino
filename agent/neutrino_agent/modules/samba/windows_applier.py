@@ -393,7 +393,7 @@ def folder_grants(shares: list) -> dict:
 
 
 def _folder_key(path: str, grants: dict) -> str:
-    """A folder as :func:`folder_grants` keys it: a spelling it already holds."""
+    """The spelling :func:`folder_grants` already keys a folder by, else the path."""
     for held in grants:
         if _is_same_folder(held, path):
             return held

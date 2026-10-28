@@ -22,7 +22,7 @@ struct ShareTarget: Equatable, Identifiable {
     /// opens with the login the hub hands at every connect.
     var isDeclared = false
 
-    /// The account a folder share's entry logs in as; empty for any other share. The hub hands that account's login
+    /// The account a folder share's entry logs in as. Empty for any other share. The hub hands that account's login
     /// at every connect.
     var account = ""
 

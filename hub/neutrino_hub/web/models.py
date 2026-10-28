@@ -2523,7 +2523,7 @@ class SambaStatusView(BaseModel):
 
 
 class FolderShareView(BaseModel):
-    """A folder share: a named share at a folder, open to the accounts checked."""
+    """A named share at a folder, open to the accounts checked."""
 
     name: str
     path: str
