@@ -316,3 +316,16 @@ def test_an_installer_lands_whole_under_the_artifacts_directory(tmp_path):
     assert (target / "top.txt").read_bytes() == b"top level\n"
     assert (target / "dir" / "sub" / "notes.md").exists()
     assert stat.S_IMODE(os.stat(target / "top.txt").st_mode) & 0o222 == 0
+
+
+def test_the_staging_directory_takes_the_default_mode_and_a_new_name(tmp_path):
+    old = os.umask(0o022)
+    try:
+        first = unpacked_tree.make_staging(str(tmp_path))
+        second = unpacked_tree.make_staging(str(tmp_path))
+    finally:
+        os.umask(old)
+
+    assert first != second
+    assert os.path.basename(first).startswith(".unpack_")
+    assert stat.S_IMODE(os.stat(first).st_mode) == 0o755

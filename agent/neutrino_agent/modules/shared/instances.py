@@ -46,6 +46,7 @@ from neutrino_agent.modules.shared.package import joiner, unpacked_paths
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
+from neutrino_agent.modules.shared.windows_acl import leave_to_system
 
 try:
     import pwd
@@ -447,7 +448,13 @@ class InstancesModuleRunner(ModuleRunner):
         )
         self._hooks.bind(self._machine, self._reapply)
         self._records = InstanceRecordStore(
-            directory=self._machine.record_dir, fields=self._hooks.record_fields
+            directory=self._machine.record_dir,
+            fields=self._hooks.record_fields,
+            seal=(
+                functools.partial(leave_to_system, self._machine.run)
+                if self._machine.os_name == "windows"
+                else None
+            ),
         )
         self._forwarder_factory = (
             forwarder_factory if forwarder_factory is not None else InstanceForwarder

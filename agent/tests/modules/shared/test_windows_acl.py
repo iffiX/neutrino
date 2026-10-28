@@ -15,6 +15,7 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.windows_acl import (
     grant_account_alone,
     icacls,
+    leave_to_system,
     open_to_users,
 )
 
@@ -73,6 +74,25 @@ def test_the_users_group_reads_and_runs_a_tree():
     assert run.calls == [
         ["icacls.exe", "D:\\state\\vscode", "/grant", "*S-1-5-32-545:(OI)(CI)RX"]
     ]
+
+
+def test_a_record_is_left_to_system_and_the_administrators_alone():
+    run = Icacls()
+
+    leave_to_system(run, "D:\\state\\siyuan\\.record_x")
+
+    assert run.calls == [
+        [
+            "icacls.exe",
+            "D:\\state\\siyuan\\.record_x",
+            "/inheritance:r",
+            "/grant:r",
+            "*S-1-5-18:F",
+            "*S-1-5-32-544:F",
+        ]
+    ]
+    with pytest.raises(OSError, match="icacls refused"):
+        leave_to_system(Icacls(5), "D:\\x")
 
 
 def test_a_refusal_or_a_tool_that_does_not_finish_is_an_os_error():

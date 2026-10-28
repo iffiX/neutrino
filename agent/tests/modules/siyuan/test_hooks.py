@@ -68,7 +68,7 @@ class Platform(AgentPlatform):
 
     def as_account(self, account, step, *arguments, password=""):
         self.as_account_calls.append((account, step.__name__, password))
-        return ""
+        return None if step.__name__ == "_step_read" else ""
 
 
 class Recorder:
@@ -284,6 +284,22 @@ def test_on_windows_the_workspace_is_made_acting_as_the_account(tmp_path):
     hooks.prepare(config(), instance, entry)
 
     assert platform.as_account_calls == [("ann", "_step_make_dir", "login-pw")]
+
+
+def test_on_windows_the_settings_wait_for_a_login_and_never_try_one_empty(tmp_path):
+    hooks, entry, _recorder, platform, _ = hooks_for(tmp_path, "windows")
+    listener, record = started_kernel(tmp_path, hooks, entry)
+    with listener:
+        with pytest.raises(OSError, match="no settings"):
+            hooks.on_first_start(record)
+        assert platform.as_account_calls == []
+
+        parsed = config(password="login-pw")
+        hooks.record(parsed, parsed.instances[0], {"port": 6810})
+        with pytest.raises(OSError, match="no settings"):
+            hooks.on_first_start(record)
+
+    assert platform.as_account_calls == [("ann", "_step_read", "login-pw")]
 
 
 def test_the_record_keeps_the_kernels_port_and_what_was_written(tmp_path):

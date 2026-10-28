@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import secrets
 import shutil
 import stat
 import subprocess
@@ -37,6 +38,8 @@ from neutrino_agent.modules.shared.seven_zip import extract_embedded
 
 # How long attaching, copying out of and detaching a disk image may take.
 DMG_STEP_TIMEOUT_S = 600
+# What a directory an archive is unpacked into before it moves is named after.
+STAGING_PREFIX = ".unpack_"
 
 
 def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -> None:
@@ -145,7 +148,7 @@ def unpack_into(path: str, kind: str, directory: str, *, member: str = "") -> No
     """
     parent = os.path.dirname(directory) or "."
     os.makedirs(parent, mode=0o755, exist_ok=True)
-    staging = tempfile.mkdtemp(prefix=".unpack_", dir=parent)
+    staging = make_staging(parent)
     try:
         source = _unpacked_top(path, kind, staging, member)
         remove_tree(directory)
@@ -179,7 +182,7 @@ def unpack_beside(path: str, kind: str, directory: str, *, member: str = "") -> 
     """
     os.makedirs(directory, mode=0o755, exist_ok=True)
     os.chmod(directory, 0o755)
-    staging = tempfile.mkdtemp(prefix=".unpack_", dir=directory)
+    staging = make_staging(directory)
     placed = []
     try:
         source = _unpacked_top(path, kind, staging, member)
@@ -200,6 +203,30 @@ def unpack_beside(path: str, kind: str, directory: str, *, member: str = "") -> 
         else:
             _seal_file(target)
     return placed
+
+
+def make_staging(parent: str) -> str:
+    """A new directory to unpack into, beside where the files go.
+
+    It is made with the default mode, so on Windows it takes the access list
+    its parent passes down to what is moved out of it.
+
+    Args:
+        parent: The directory it is made in.
+
+    Returns:
+        Its path.
+
+    Raises:
+        OSError: When it cannot be made.
+    """
+    while True:
+        staging = os.path.join(parent, STAGING_PREFIX + secrets.token_hex(8))
+        try:
+            os.mkdir(staging)
+        except FileExistsError:
+            continue
+        return staging
 
 
 def _unpacked_top(path: str, kind: str, staging: str, member: str = "") -> str:

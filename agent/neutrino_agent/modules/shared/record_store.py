@@ -4,7 +4,9 @@ The hub stops naming a module in its state once the machine has settled
 it, so the forwarder of a running instance starts again after the agent
 restarts from what is kept here: one file per account holding the fields
 the module names, mode 0600 in a directory only the agent's own account
-reads. An instance whose account is no longer enabled keeps a retired
+reads; on Windows, where the module's directory is open to every account,
+each file is left to SYSTEM and the administrators alone before anything is
+written into it. An instance whose account is no longer enabled keeps a retired
 record of its port alone, so the account takes the same port when it is
 enabled again.
 
@@ -30,14 +32,18 @@ RECORD_RETIRED_FIELD = "is_retired"
 class InstanceRecordStore:
     """One root-only file per instance, by account."""
 
-    def __init__(self, *, directory: str, fields: tuple):
+    def __init__(self, *, directory: str, fields: tuple, seal=None):
         """
         Args:
             directory: Where the records live.
             fields: The fields one record holds; ``account`` names its file.
+            seal: Called with a new file's path before anything is written
+                into it, to leave it to the agent's own account; None leaves
+                it to its mode.
         """
         self.directory = directory
         self._fields = tuple(fields)
+        self._seal = seal
 
     def read_all(self) -> list:
         """Every record held, by account; a retired one left out.
@@ -154,6 +160,8 @@ class InstanceRecordStore:
         os.makedirs(self.directory, mode=0o700, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=self.directory, prefix=".record_")
         try:
+            if self._seal is not None:
+                self._seal(temporary)
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
                 json.dump(content, stream)
             os.chmod(temporary, 0o600)

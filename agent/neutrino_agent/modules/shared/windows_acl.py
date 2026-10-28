@@ -88,3 +88,27 @@ def open_to_users(run, directory: str) -> None:
     )
     if code != 0:
         raise OSError(f"icacls exited {code}")
+
+
+def leave_to_system(run, path: str) -> None:
+    """Leave one file to SYSTEM and the administrators alone, nothing inherited.
+
+    Args:
+        run: Runs one command as :func:`subprocess_run.run` does.
+        path: The file.
+
+    Raises:
+        OSError: When icacls refuses or cannot run.
+    """
+    code = icacls(
+        run,
+        [
+            path,
+            "/inheritance:r",
+            "/grant:r",
+            f"{WINDOWS_ACL_SYSTEM}:F",
+            f"{WINDOWS_ACL_ADMINISTRATORS}:F",
+        ],
+    )
+    if code != 0:
+        raise OSError(f"icacls refused {path}")

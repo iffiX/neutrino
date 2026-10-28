@@ -313,6 +313,9 @@ class SiyuanHooks(InstanceHooks):
         # Account to the settings this agent last wrote for it, so a
         # forwarder that started from an older record writes them once.
         self._written: dict = {}
+        # Account to its Windows login, as the last apply named it; a record
+        # holds none.
+        self._passwords: dict = {}
 
     @property
     def resources_dir(self) -> str:
@@ -405,6 +408,7 @@ class SiyuanHooks(InstanceHooks):
         Returns:
             The record.
         """
+        self._passwords[instance.account] = instance.password
         return {
             "account": instance.account,
             "port": int(held.get("port") or 0),
@@ -668,13 +672,18 @@ class SiyuanHooks(InstanceHooks):
         """Run one file step on this thread acting as the account, on Windows.
 
         Raises:
-            ModuleApplyError: ``credential_invalid`` when Windows refuses the
-                login, ``apply_failed {detail}`` when the thread cannot act
-                as the account.
+            ModuleApplyError: ``credential_missing`` while no apply named the
+                account's login, which is never tried empty;
+                ``credential_invalid`` when Windows refuses the login,
+                ``apply_failed {detail}`` when the thread cannot act as the
+                account.
         """
+        password = instance.password or self._passwords.get(instance.account, "")
+        if not password:
+            raise ModuleApplyError("credential_missing", {"account": instance.account})
         try:
             return self._platform.as_account(
-                instance.account, step, *arguments, password=instance.password
+                instance.account, step, *arguments, password=password
             )
         except (PlatformUnsupportedError, OSError) as error:
             raise ModuleApplyError(

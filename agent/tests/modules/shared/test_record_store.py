@@ -79,3 +79,21 @@ def test_a_record_with_no_port_is_forgotten_whole_when_retired(tmp_path):
     store.retire("ann")
 
     assert os.listdir(tmp_path) == []
+
+
+def test_a_sealed_store_seals_each_file_before_writing_into_it(tmp_path):
+    sealed: list = []
+
+    def seal(path):
+        sealed.append((os.path.basename(path), os.path.getsize(path)))
+
+    store = InstanceRecordStore(
+        directory=str(tmp_path), fields=("account", "port", "secret"), seal=seal
+    )
+
+    store.write({"account": "ann", "port": 6810, "secret": "s"})
+
+    assert len(sealed) == 1
+    assert sealed[0][0].startswith(".record_")
+    assert sealed[0][1] == 0
+    assert store.read("ann") == {"account": "ann", "port": 6810, "secret": "s"}
