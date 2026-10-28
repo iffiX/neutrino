@@ -951,10 +951,9 @@ is the hub's order") and is bound again by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes and the upgrade an agent
 performs when `welcome` names a newer `software` are in
-[transport.md](transport.md), "Admission and the binding". An agent of 0.5,
-one number behind, is admitted on the legacy listener for that upgrade alone
-and knocks with the new number after it ([transport.md](transport.md), "An
-agent of 0.5").
+[transport.md](transport.md), "Admission and the binding". An agent of 0.5
+speaks TLS, which a hub of 0.6 refuses. Its machine is reinstalled with the
+0.6 agent and joins again ([transport.md](transport.md), "A peer of 0.5").
 
 ## The agent's packages come from the hub
 

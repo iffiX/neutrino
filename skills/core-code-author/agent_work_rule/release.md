@@ -15,14 +15,13 @@ at one version. Whether an agent or a client works with a hub is decided by `PRO
 package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
 ([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
 that range is rejected at the door with `protocol_too_old` or
-`protocol_too_new` and keeps its binding. An agent of 0.5 under a hub of 0.6
-is the one exception: the hub admits it to update itself.
+`protocol_too_new` and keeps its binding. A peer of 0.5 speaks TLS, which a
+hub of 0.6 refuses. Its machine is installed again with 0.6 and joins again
+([../design/transport.md](../design/transport.md), "A peer of 0.5").
 
 An agent whose hub names a newer `software` upgrades itself from the package
-the hub keeps, an agent one protocol number behind included
-([../design/transport.md](../design/transport.md), "An agent of 0.5"); a
-client, on a computer or a phone, is upgraded when its person installs the
-new package.
+the hub keeps; a client, on a computer or a phone, is upgraded when its
+person installs the new package.
 
 Every package reads its version from package metadata. It is never written
 into the source twice.

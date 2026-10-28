@@ -166,7 +166,7 @@ segment of a write, which is a verb.
 
 | Rule | Reason |
 | --- | --- |
-| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` the page of a managed device, the machine page, whose prefix is `module`, with `file` beside it for its path window. One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. The agent port serves no HTTP route; `/api/channel` is the legacy listener's alone and is in no group ([transport.md](transport.md), "An agent of 0.5"). | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
+| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` the page of a managed device, the machine page, whose prefix is `module`, with `file` beside it for its path window. One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. The agent port serves no HTTP route. | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
 | Every segment is a singular `under_score` noun, with an adjective in front where one is needed: `wifi_network`, `ssh_key`, `seat_password`. The panel shows plurals; a path has none. | One spelling per thing across paths, models and config keys. |
 | An identifier names the member in the body or the query, never in the path: `?device_id=...` on a GET, `{device_id}` in a POST body. A path has no `{id}` in it. | A path is a fixed string a reader can grep, and an id is data. |
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
@@ -283,17 +283,15 @@ wherever it appears.
 | a frame that asks | `reply {request, code, params}`; a reply without a code is the answer |
 | a local question | the Python's `{id, code, params}`; the transport's own `control_unavailable` when none comes |
 
-The codes of the channel take no HTTP status: the class a table below gives
-one is its class on the legacy listener alone.
+The codes of the channel take no HTTP status.
 
 The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `declared_service_invalid {field}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}`, `share_name_taken {name}`, `share_name_invalid {name}`, `share_account_not_enabled {account}` |
-| 401 | a missing session, or on the legacy listener a token that names no binding | `binding_unknown` |
+| 401 | a missing session | `not_authenticated` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown`, `folder_share_unknown {name}` |
-| 413 | a body past the legacy listener's limit, `CHANNEL_REQUEST_BYTES_MAX` 64 KiB | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `transport_key_missing` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `download_failed {file, sources}`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
@@ -331,7 +329,7 @@ walk theirs. A new code and its wording are one change.
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
-| `hub_key_missing` | none | an agent's or a client's `last_error` for a binding of the 0.5 shape it cannot move while the legacy listener is off | added |
+| `hub_key_missing` | none | an agent's or a client's `last_error` for a binding of the 0.5 shape, which holds no hub key | added |
 | `port_taken` | `{port}` | a client's forward of an app entry whose number another program or entry holds | kept, now for the hub's numbers too |
 | `declared_service_invalid` | `{field}` | `declaration/add`, `field` being `name`, `host`, `entries` or `entries.<n>.<field>` | kept, for apps |
 | `shell_unknown` | `{shell}` | a client's `command {resize}`, gone with resizes as records | removed |
@@ -341,8 +339,7 @@ walk theirs. A new code and its wording are one change.
 ## What exists
 
 The pages of the hub group come first, in sidebar order. The machine page of
-the agent group follows, then the panel's live sockets, then the legacy
-listener.
+the agent group follows, then the panel's live sockets.
 
 | Prefix | Serves |
 | --- | --- |
@@ -362,7 +359,6 @@ listener.
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
 | `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
-| `/api/channel` | The legacy listener's two routes, `/api/channel/socket` for a 0.5 agent updating itself and `/api/channel/key/set` for a binding moving to the transport ([transport.md](transport.md), "An agent of 0.5"); every other agent and client speaks the channel of the transport, which has no HTTP route |
 
 The machine page `/agents/<id>` reads `/api/agent/module?device_id=...`
 and what "The agent group" lists, the path window reads
@@ -498,7 +494,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/device` | | every managed machine, one row each, as the **Agents** page draws it: `{id, name, icon, ipv4_address, link_mac, is_agent_online, client}`, `client` holding `version`, `platform_os`, `platform_arch`, `hostname`, `last_report_at`, `last_seen`, when its last session ended, `is_version_mismatched` and `metrics`, the readings the status cell's rings draw, CPU, memory, disk, each GPU and the temperature; and `count`, `{total, online}` for the title's badge. The stored row behind it, in `config/devices/devices.json`, keeps under `client` the token's hash, the agent's static `public_key` and its `agent_version` as its last hello named it, which the legacy listener's switch reads before the agent is online ([transport.md](transport.md), "An agent of 0.5") |
+| `GET /api/hub/device` | | every managed machine, one row each, as the **Agents** page draws it: `{id, name, icon, ipv4_address, link_mac, is_agent_online, client}`, `client` holding `version`, `platform_os`, `platform_arch`, `hostname`, `last_report_at`, `last_seen`, when its last session ended, `is_version_mismatched` and `metrics`, the readings the status cell's rings draw, CPU, memory, disk, each GPU and the temperature; and `count`, `{total, online}` for the title's badge. The stored row behind it, in `config/devices/devices.json`, keeps under `client` the token's hash and the agent's static `public_key` |
 | `GET /api/hub/device/online` | | the devices with a session open |
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address`; 409 `transport_key_missing` while the transport has written no public key, which a client link is refused the same way |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, `device_id` and any of the others | the name, written by **Rename**, not empty; the icon, one of the panel's device icons, written by the icon picker at once; the stored SSH credential the hub reaches it with; and `shown_module`, the whole list of the modules whose tabs the machine page shows, written by the catalog's cards, the carried modules and every module that is not `absent` shown whatever it holds; the device list |
@@ -837,13 +833,6 @@ session from a client.
 | `/ws/hub/task` | `?task_id=` | one task's output |
 | `/ws/agent/terminal` | `?device_id=&container=` | a shell inside one of a machine's containers, from the Containers tab's **Shell**; closed `container_hub_owned {name}` for a hub container. The browser sends `{type: input, data}` and `{type: resize, cols, rows}`, each resize a `resize` record on the agent's `shell` stream, and receives `{type: output, data}` and `{type: exit, code}`. A refusal sends `{type: closing, code, params}` and then closes the socket 1011 with the code as its reason; a close reason holds 123 bytes and a param can be longer, so the page fills the code's words from the frame's params |
 
-### The legacy listener
-
-| Route | Parameters | Does |
-| --- | --- | --- |
-| `WS /api/channel/socket` | | the PROTOCOL 3 channel of a 0.5 agent, on the legacy listener alone, for that agent's own update ([transport.md](transport.md), "An agent of 0.5"); a `hello` past the cap on channel sockets is refused `channel_full {limit}` |
-| `POST /api/channel/key/set` | `{id, token, public_key}` | records the peer's static public key on the binding the token names, once, as an updated agent or client moves its binding to the transport; `{key}`, the hub's static public key; 401 `binding_unknown` |
-
 The agent port's limits, the knock's among them, are in
 [transport.md](transport.md), "What an unadmitted peer can cost the hub".
 None of them is keyed by the peer's address.
@@ -854,7 +843,6 @@ None of them is keyed by the peer's address.
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
 | `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
-| `web/routers/` | `channel.py`, on the legacy listener's app |
 | `web/` | `ws.py`, both socket groups |
 
 Each router's test is `hub/tests/web/routers/{hub,agent}/test_<page>.py`
@@ -2250,10 +2238,7 @@ more or one fewer fails. Changing a channel model fails that test until
 3 renamed the link's and the client state's `overlay`, one object or null,
 to `overlays`, a list. A 0.3 or 0.4 agent or client is refused
 `protocol_too_old` and does not update itself from the hub; such an agent is
-reinstalled from the Agents page or by hand. A bound 0.5 agent updates
-itself from a 0.6 hub ([transport.md](transport.md), "An agent of 0.5"); an
-unbound one is refused at `join`, and a 0.6 agent is installed in its place
-and joins.
+reinstalled from the Agents page or by hand.
 
 4 changes what a peer of 3 reads. The channel is the transport's: the knock,
 the Noise handshake under the hub's static key, go-yamux streams with their
@@ -2269,6 +2254,6 @@ gateway forward on `127.0.0.1`, and the agent opens a `connect` stream to
 the hub for each connection made to it ("The connect stream"). A module's
 recipe is `{runner, method, params}`, and a `package` stream names `{module,
 artifact, digest}` ("The modules section, one entry per module").
-`PROTOCOL_MIN` is 4: a client of 0.5 is refused `protocol_too_old`, and an
-agent of 0.5 is admitted for its own update alone and connects with 4 after
-it ([transport.md](transport.md), "An agent of 0.5").
+`PROTOCOL_MIN` is 4. An agent or a client of 0.5 speaks TLS, which the
+port refuses, and is installed again with 0.6 and joins again
+([transport.md](transport.md), "A peer of 0.5").

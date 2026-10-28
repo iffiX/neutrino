@@ -241,7 +241,7 @@ after the ` · ` is what ends the wait:
 | `ui.state.unknown_device`, The hub does not know this device | 中枢不认识本机 | `binding_unknown` | nothing; **Leave** is the row's only action |
 | `ui.state.too_old` · `ui.action.update_client`, Version too old · update the client | 版本太旧 · 更新客户端 | `protocol_too_old` | nothing automatic: the person installs the new client, which keeps this state and its bindings, and the next round connects |
 | `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_new` | nothing automatic; a refresh after an upgrade |
-| `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join) | nothing; **Leave** |
+| `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join), or the binding is of the 0.5 shape, with no hub key (`hub_key_missing`), and the client dials nothing for it ([transport.md](transport.md), "A peer of 0.5") | nothing; **Leave** |
 | `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
 | `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled | the frame says enabled |
 

@@ -81,7 +81,7 @@ to dpkg, one to the hub.
 | upgrade / reinstall | replaced whole | untouched, byte for byte | kept; the next render rewrites what it derives |
 | `apt remove` | deleted | **kept** | kept |
 | `apt purge` | deleted | **deleted** | deleted |
-| `nhub reset all` | kept (still installed) | replaced from the examples; the vault key, the agent TLS identity, the panel's certificate authority and the transport's static key go with it | cleared of everything the hub wrote |
+| `nhub reset all` | kept (still installed) | replaced from the examples; the vault key, the panel's certificate authority and the transport's static key go with it | cleared of everything the hub wrote |
 | update from the panel or `nhub update` | replaced whole by the package manager, from a file under `/var/lib/neutrino/hub/hub_update/` | untouched, byte for byte | kept; the record of the update lands in `hub_update/state.json` |
 
 `remove` keeps the decisions because that is dpkg's own convention: a package
