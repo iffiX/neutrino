@@ -314,7 +314,7 @@ link's `app.title`.
 | Loading, after 10 seconds | The line is slow, still connecting… | 线路较慢，仍在连接… |
 | The link no longer works | This link is no longer valid. / Ask the person who shared it for a new one. | 这个链接已失效。/ 请向分享给你的人要一个新链接。 |
 | The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
-| The machine is offline | This machine is offline. / The app's machine is not connected to its hub right now. | 这台机器已离线。/ 这个应用所在的机器现在没有连上它的中枢。 |
+| The app is unavailable | The app cannot be opened right now. / It opens by itself once it is back. | 应用暂时打不开。/ 恢复后会自动打开。 |
 
 ## The machine page's words
 
