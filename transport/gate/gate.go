@@ -101,10 +101,11 @@ func (g *Gate) HasShares() bool {
 }
 
 // Open runs the gate on one accepted connection whose first byte is a
-// frame length's: it reads the first connectivity check and closes at the
-// first byte that does not fit a Binding Request for a live share, answers
-// it once its integrity verifies, then runs the DTLS handshake, the SCTP
-// association and data channel 0. It returns the channel as a connection,
+// frame length's: it reads the first connectivity check under the read
+// deadline the caller set and closes at the first byte that does not fit a
+// Binding Request for a live share, answers it once its integrity verifies,
+// clears the connection's deadline, then runs the DTLS handshake, the SCTP
+// association and data channel 0 under ctx. It returns the channel as a connection,
 // the ufrag of the share it was opened under and where the check was
 // decided. It returns ErrNotStun, ErrShareUnknown or ErrStunRefused for the
 // first check, the handshake's error, or ctx's error when ctx ends first;
@@ -116,6 +117,7 @@ func (g *Gate) Open(ctx context.Context, conn net.Conn) (*ChannelConn, string, D
 		conn.Close()
 		return nil, "", Decision{}, err
 	}
+	_ = conn.SetReadDeadline(time.Time{})
 	answerer := &stunAnswerer{ufrag: check.ufrag, password: check.password, peer: tcpAddr(conn.RemoteAddr())}
 	framed := newFramedConn(&readerConn{Conn: conn, reader: reader}, answerer.handle)
 	answerer.write = framed.WriteFrame

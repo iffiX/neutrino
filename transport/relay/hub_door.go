@@ -241,6 +241,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName st
 	if !h.ledger.BeginHandshake() {
 		return
 	}
+	_ = conn.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
 	ctx, cancel := context.WithDeadline(context.Background(), d.acceptedAt.Add(knock.HandshakeTimeout))
 	channel, share, decision, err := h.gate.Open(ctx, conn)
 	cancel()

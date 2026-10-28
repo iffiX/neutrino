@@ -885,13 +885,13 @@ async function main() {
   bridge = new WebSocketBridge(mux, payload.app.entry, jar);
   for (const [message, port] of pendingRequests.splice(0)) serveRequest(pool, message, port);
 
-  let startPath = location.pathname.startsWith("/__neutrino") ? "/" : location.pathname + location.search;
+  let startPath = location.pathname.startsWith("/__neutrino") ? (payload.app.path || "/") : location.pathname + location.search;
   if (token) {
     try {
       const first = await pool.fetchWhole("GET", "/?tkn=" + encodeURIComponent(token));
       stats.loginStatus = first.status;
       const where = first.headers.find(([name]) => name.toLowerCase() === "location");
-      if (where && startPath === "/") startPath = where[1];
+      if (where && startPath === "/" && !payload.app.path) startPath = where[1];
     } catch (refusal) {
       screen.refuse(refusal.code === "agent_offline" ? "machine" : "hub");
       return;
@@ -913,6 +913,20 @@ async function main() {
   screen.app();
   stats.appStartMs = performance.now() - stats.t0;
   setInterval(() => { mux.ping().then((rtt) => { stats.rttMs = rtt; }); }, 20000);
+  if (payload.report) reportTo(payload.report, frame);
+}
+
+// reportTo posts the shell's measurements to a same-origin test endpoint every
+// two seconds for a minute; a test host reads them where no driver can.
+function reportTo(path, frame) {
+  let sent = 0;
+  const timer = setInterval(() => {
+    let bench = null, frameTitle = "", frameURL = "";
+    try { bench = frame.contentWindow.__bench || null; frameTitle = frame.contentDocument.title; frameURL = frame.contentWindow.location.href; } catch (e) { /* not readable yet */ }
+    const body = JSON.stringify({ at: Date.now(), userAgent: navigator.userAgent, stats: { ...stats, wsTrace: stats.wsTrace.length }, bench, frameTitle, frameURL });
+    fetch(path, { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {});
+    if (++sent >= 30) clearInterval(timer);
+  }, 2000);
 }
 
 main().catch((error) => { stats.error = String(error); screen.refuse("hub"); });

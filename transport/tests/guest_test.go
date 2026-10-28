@@ -190,6 +190,8 @@ func TestGuestThroughTheGate(t *testing.T) {
 	}
 	second.echo(t)
 	first.echo(t)
+	time.Sleep(knock.KnockFirstByteTimeout + 500*time.Millisecond)
+	first.echo(t)
 
 	if _, _, refusal := first.open(t, session.KindConnect, map[string]any{"id": "other"}); refusal == nil || refusal.Code != "permission_denied" {
 		t.Fatalf("another entry: %v", refusal)
