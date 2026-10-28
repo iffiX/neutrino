@@ -7,9 +7,10 @@ a make refuses an empty name, a ``days`` outside the four, a site that is
 not listed or an ``https://`` origin, an entry no share can offer, a hub
 with no certificate or no address, and a locked vault; it returns the link
 once and stores no copy of it; the link names the public address first; a
-guest account's app gets a guest; the list draws each share's state and
-count; a revoke ends the share and closes its pages; and each end pushes a
-guest's machine its state.
+guest account's app gets a guest, and its module's state holds the guest;
+the machine's ``details.guests`` moves the share from preparing to failed or
+active; the list draws each share's state and count; a revoke ends the share
+and closes its pages; and each end pushes a guest's machine its state.
 """
 
 import base64
@@ -28,6 +29,8 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients import web_shares
 from neutrino_hub.modules.clients.web_shares import WebShareRegistry
+from neutrino_hub.modules.devices import desired_state as desired_state_module
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.module_table import (
     DEVICE_MODULE_ROWS,
     DeviceModuleRow,
@@ -45,6 +48,7 @@ from tests.conftest import unlock_vault
 
 FINGERPRINT = ":".join(["AB"] * 32)
 DEVICE = "d" * 32
+PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 APPS = [
     {
         "id": f"ayakaleaf_{DEVICE}",
@@ -383,6 +387,37 @@ def test_the_list_draws_a_shares_state_and_its_visitors(api):
 
     shown = client.get("/api/hub/client").json()["web_shares"][0]
     assert shown["state"] == "unavailable" and shown["app_title"] == "Ayakaleaf"
+
+
+def test_a_guest_account_share_puts_its_guest_in_the_module_s_state(
+    api, monkeypatch, tmp_path
+):
+    client, runtime = api
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    share_id = create(client).json()["share"]["id"]
+    guest = WebShareRegistry().get(share_id).guest
+
+    config = DesiredStateStore().agent_config(DEVICE, "ayakaleaf", {}, PLATFORM)
+
+    assert config["guests"] == [guest.opened()]
+    assert config["guests"][0]["email"] == f"{guest.account}@share.neutrino"
+    assert config["guests"][0]["password"] and config["guests"][0]["secret"]
+
+    def drawn(reported: list) -> tuple:
+        runtime.agent_sessions.reported = {
+            DEVICE: {"modules": {"ayakaleaf": {"details": {"guests": reported}}}}
+        }
+        shown = client.get("/api/hub/client").json()["web_shares"][0]
+        return shown["state"], shown["code"], shown["params"]
+
+    failure = {"step": "register", "detail": "500"}
+    made = {"account": guest.account, "code": "", "params": {}}
+    other = {**made, "account": "guest-other"}
+    failed = {**made, "code": "ayakaleaf_guest_failed", "params": failure}
+    assert drawn([]) == ("preparing", "", {})
+    assert drawn([other]) == ("preparing", "", {})
+    assert drawn([failed]) == ("failed", "ayakaleaf_guest_failed", failure)
+    assert drawn([made]) == ("active", "", {})
 
 
 def test_a_revoke_ends_the_share_and_closes_its_pages(api, monkeypatch):
