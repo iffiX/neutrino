@@ -65,7 +65,6 @@ from neutrino_hub.modules.devices.manifests import (
     resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_SAMBA_SHARES_KEY,
     DEVICE_ACCOUNTS_NAME,
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
@@ -106,6 +105,10 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices import hermes_webui
 from neutrino_hub.modules.devices.accounts import DeviceAccount
+from neutrino_hub.modules.devices.folder_shares import (
+    folder_shares,
+    with_accounts_only,
+)
 from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
 from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.source_sets import state_source_sets
@@ -339,11 +342,14 @@ def _samba_config(
     details: dict,
     stored: "dict | None" = None,
 ) -> dict:
-    """The file share's section: one share and one user per enabled account,
-    the share's files written as the account, then the shares the file names
-    itself, each open to the enabled accounts' users it names, by the SMB
-    user's name or by the account's. An enabled account with no share path
-    whose home the machine has not reported is left out."""
+    """The file share's section: a Home share and an SMB user per enabled
+    account, then each folder share open to its accounts' SMB users.
+
+    A Home share writes its files as its account. An enabled account with no
+    share path whose home the machine has not reported is left out, its user
+    with it. A folder share whose accounts have no user is sent with empty
+    ``valid_users``, and the agent leaves it off the server.
+    """
     sealed = row.sealed_fields[0]
     shares = []
     users = []
@@ -370,21 +376,18 @@ def _samba_config(
         users.append(user)
         user_of_account[account] = user
         passwords[user] = _unsealed_text(record.get(sealed.key), sealed.aad)
-    for share in (stored or {}).get(DEVICE_SAMBA_SHARES_KEY) or []:
-        if not isinstance(share, dict) or not share.get("name"):
-            continue
-        valid_users = []
-        for named in share.get("valid_users") or []:
-            user = user_of_account.get(str(named), str(named))
-            if user in users and user not in valid_users:
-                valid_users.append(user)
+    for share in folder_shares(stored or {}):
         shares.append(
             {
-                "name": str(share["name"]),
-                "path": str(share.get("path", "") or ""),
-                "comment": str(share.get("comment", "") or ""),
-                "is_read_only": bool(share.get("is_read_only", False)),
-                "valid_users": valid_users,
+                "name": share["name"],
+                "path": share["path"],
+                "comment": "",
+                "is_read_only": False,
+                "valid_users": [
+                    user_of_account[account]
+                    for account in share["accounts"]
+                    if account in user_of_account
+                ],
             }
         )
     return {"shares": shares, "users": users, "passwords": passwords}
@@ -887,7 +890,8 @@ class DesiredStateStore:
 
         A newly enabled account gets each field the row seals, made once; an
         account disabled keeps its record under ``disabled``, so enabling it
-        again gives it the same secrets.
+        again gives it the same secrets. On the file share an account
+        disabled leaves every folder share in the same write.
 
         Args:
             key: The device key.
@@ -931,11 +935,15 @@ class DesiredStateStore:
             disabled = [record for record in kept.values() if row.sealed_fields]
             if disabled:
                 written[DEVICE_DISABLED_ACCOUNTS_KEY] = disabled
+            if module == DEVICE_SAMBA_MODULE:
+                written = with_accounts_only(written, list(accounts))
             write_config(self._path(key, row.config_file), written)
         return written
 
     def forget_account(self, key: str, account: str) -> list:
         """Take one account out of every account-layer module on one device.
+
+        The file share's folder shares lose it in the same write.
 
         Args:
             key: The device key.
@@ -981,6 +989,14 @@ class DesiredStateStore:
                 left = [record for record in disabled if record["account"] != account]
                 if left:
                     written[DEVICE_DISABLED_ACCOUNTS_KEY] = left
+                if row.name == DEVICE_SAMBA_MODULE:
+                    written = with_accounts_only(
+                        written,
+                        [
+                            record["account"]
+                            for record in written[DEVICE_ENABLED_ACCOUNTS_KEY]
+                        ],
+                    )
                 write_config(self._path(key, row.config_file), written)
         return was_enabled
 

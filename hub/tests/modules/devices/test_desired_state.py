@@ -273,30 +273,69 @@ def test_an_enabled_account_with_no_share_path_and_no_reported_home_is_left_out(
     assert smb_user("ann", PLATFORM) == "neutrino-ann"
 
 
-def test_a_dataset_share_the_file_names_rides_beside_the_accounts_shares(unlocked):
+def test_a_folder_share_admits_its_accounts_users_with_no_forced_account(unlocked):
+    """A folder share follows the Home shares, open to the SMB users of its
+    accounts in the file share's order, and forces no account of its own."""
     store = DesiredStateStore()
-    with_accounts(store, "ann", share_path="/home/ann")
-    store.set_enabled_accounts(DEVICE, "samba", ["ann"])
+    with_accounts(store, "ann", "bob", share_path="/home/x")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
     stored = store.read(DEVICE, "samba")
     stored["shares"] = [
-        {
-            "name": "media",
-            "path": "/tank/media",
-            "valid_users": ["ann", "neutrino-ann", "neutrino-gone"],
-        }
+        {"name": "lab", "path": "/srv/lab", "accounts": ["ann", "bob"]},
+        {"name": "empty", "path": "/srv/empty", "accounts": []},
     ]
     store.write(DEVICE, "samba", stored)
     store.set_want(DEVICE, "samba", "running")
 
     desired, _ = store.compose(DEVICE, PLATFORM)
 
-    assert desired["modules"]["samba"]["config"]["shares"][1] == {
-        "name": "media",
-        "path": "/tank/media",
+    shares = desired["modules"]["samba"]["config"]["shares"]
+    assert [share["name"] for share in shares] == ["ann", "bob", "lab", "empty"]
+    assert shares[2] == {
+        "name": "lab",
+        "path": "/srv/lab",
         "comment": "",
         "is_read_only": False,
-        "valid_users": ["neutrino-ann"],
+        "valid_users": ["neutrino-ann", "neutrino-bob"],
     }
+    assert shares[3]["valid_users"] == []
+
+
+def test_disabling_an_account_takes_it_out_of_every_folder_share(unlocked):
+    """The share stays, with no account left, and enabling the account again
+    puts it back in no share."""
+    store = DesiredStateStore()
+    with_accounts(store, "ann", "bob", share_path="/home/x")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
+    stored = store.read(DEVICE, "samba")
+    stored["shares"] = [
+        {"name": "lab", "path": "/srv/lab", "accounts": ["ann", "bob"]},
+        {"name": "bobs", "path": "/srv/b", "accounts": ["bob"]},
+    ]
+    store.write(DEVICE, "samba", stored)
+
+    store.set_enabled_accounts(DEVICE, "samba", ["ann"])
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
+
+    assert store.read(DEVICE, "samba")["shares"] == [
+        {"name": "lab", "path": "/srv/lab", "accounts": ["ann"]},
+        {"name": "bobs", "path": "/srv/b", "accounts": []},
+    ]
+
+
+def test_removing_an_available_account_takes_it_out_of_every_folder_share(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "ann", "bob", share_path="/home/x")
+    store.set_enabled_accounts(DEVICE, "samba", ["ann", "bob"])
+    stored = store.read(DEVICE, "samba")
+    stored["shares"] = [{"name": "lab", "path": "/srv/lab", "accounts": ["ann", "bob"]}]
+    store.write(DEVICE, "samba", stored)
+
+    assert store.forget_account(DEVICE, "bob") == ["samba"]
+
+    assert store.read(DEVICE, "samba")["shares"] == [
+        {"name": "lab", "path": "/srv/lab", "accounts": ["ann"]}
+    ]
 
 
 def test_the_ssh_server_sends_each_accounts_public_key_and_shell(unlocked):

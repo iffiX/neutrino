@@ -1,5 +1,5 @@
 {
-  "_comment": "One device's file share, under config/devices/<id>/. accounts are the available accounts the share is enabled for, in the order they were enabled, each with its SMB password sealed under the vault's data key; the hub makes one share and one user per account and fills in the share's path from the machine's account_details when the account row names none. shares are the shares the file names itself, each open to the enabled accounts' users it names. The hub adds allowed_subnets when it composes the desired state.",
+  "_comment": "One device's file share, under config/devices/<id>/. accounts are the available accounts the share is enabled for, in the order they were enabled, each with its SMB password sealed under the vault's data key; the hub makes one Home share and one SMB user per account and fills in the share's path from the machine's account_details when the account row names none. shares are the folder shares in the order they were added, each a name, a folder on the machine and the enabled accounts checked for it.",
   "accounts": [
     {
       "account": "ann",
@@ -10,9 +10,7 @@
     {
       "name": "media",
       "path": "/srv/media",
-      "comment": "Shared space",
-      "is_read_only": false,
-      "valid_users": ["ann"]
+      "accounts": ["ann"]
     }
   ]
 }

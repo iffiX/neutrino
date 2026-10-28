@@ -205,6 +205,13 @@ SERVICES_LIST_TTL_S = 10.0
 # The English sentence still travels for a page too old to know the codes.
 SERVICES_GITEA_DESCRIPTION = "published by the gitea module on {host}"
 SERVICES_SAMBA_DESCRIPTION = "published by the samba module on {host}"
+# The ids of a machine's file entries (protocol.md, "The services section,
+# one entry per published service"). A Home share's entry is
+# ``samba_<device id>_<share>``. A folder share is
+# ``samba_folder_<device id>_<share>``, its row in a permission, and its
+# entry for each account appends ``_<account>``.
+SERVICES_HOME_SHARE_ID_PREFIX = "samba_"
+SERVICES_FOLDER_SHARE_ID_PREFIX = "samba_folder_"
 SERVICES_AI_DESCRIPTION = "published by the AI gateway"
 SERVICES_PODMAN_DESCRIPTION = "published by container {name} ({image}) on {host}"
 SERVICES_RDP_DESCRIPTION = "shared from {hostname}"

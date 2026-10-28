@@ -307,9 +307,13 @@ DEVICE_SAMBA_MODULE = "samba"
 DEVICE_SAMBA_USER_PREFIX = "neutrino-"
 DEVICE_SAMBA_USER_CHARS_MAX = 20
 DEVICE_SAMBA_USER_CUT_OS = ("windows",)
-# The shares the file names beside the accounts', each with its valid_users
-# among the enabled accounts' SMB users.
+# The folder shares in samba.json, each ``{name, path, accounts}``, the
+# accounts among the enabled ones (file_share.md). A name is 1 to 64
+# letters, digits, ``-``, ``_`` and ``.``, none of smb.conf's own sections,
+# compared without case.
 DEVICE_SAMBA_SHARES_KEY = "shares"
+DEVICE_FOLDER_SHARE_NAME_PATTERN = r"[A-Za-z0-9._-]{1,64}"
+DEVICE_FOLDER_SHARE_RESERVED_NAMES = ("global", "homes", "printers")
 DEVICE_SAMBA_PASSWORD_KEY = "password_sealed"  # scan: allow
 DEVICE_SAMBA_PASSWORD_AAD = b"device_samba:password"
 DEVICE_SAMBA_PASSWORD_BYTES = 24
