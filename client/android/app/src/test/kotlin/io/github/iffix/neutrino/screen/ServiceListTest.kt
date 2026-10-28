@@ -15,6 +15,7 @@ class ServiceListTest {
         mapOf(
             "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
             "ui.module_title.samba" to "文件共享",
+            "ui.module_title.siyuan" to "思源笔记",
             "ui.module_title.remote_desktop" to "远程桌面",
         ),
     )
@@ -40,6 +41,10 @@ class ServiceListTest {
         assertEquals("由 nmxhub:Argon:文件共享 提供", providerLine(hub, entry("Argon", "samba_module"), "", words))
         assertEquals("由 nmxhub:studio:远程桌面 提供", providerLine(hub, entry("studio", "device_share"), "", words))
         assertEquals("由 nmxhub:Argon:Gitea 提供", providerLine(hub, entry("Argon", "gitea_module"), "", words))
+        assertEquals(
+            "由 nmxhub:Argon:思源笔记 提供",
+            providerLine(hub, entry("Argon", "siyuan_module", title = "SiYuan (alice)"), "", words),
+        )
         assertEquals(
             "由 nmxhub:Argon:VS Code 提供",
             providerLine(hub, entry("Argon", "vscode_module", title = "VS Code (alice)"), "", words),

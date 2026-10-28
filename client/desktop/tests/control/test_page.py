@@ -846,6 +846,7 @@ def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
     assert dict(re.findall(r"([a-z_]+): '([a-z_.]+)'", keys)) == {
         "ai_gateway": "ui.module_ai_gateway",
         "samba_module": "ui.module_title.samba",
+        "siyuan_module": "ui.module_title.siyuan",
         "device_share": "ui.module_title.remote_desktop",
     }
     assert "if (ENTRY_MODULE_KEYS[code]) return t(ENTRY_MODULE_KEYS[code]);" in body
@@ -856,11 +857,13 @@ def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
         for key in (
             "ui.module_ai_gateway",
             "ui.module_title.samba",
+            "ui.module_title.siyuan",
             "ui.module_title.remote_desktop",
         )
     ] == [
         ("AI gateway", "AI 网关"),
         ("File share", "文件共享"),
+        ("SiYuan", "思源笔记"),
         ("Remote desktop", "远程桌面"),
     ]
     assert catalog_keys("ui.description.") == set()
@@ -2233,6 +2236,7 @@ def provider_lines(entries: list, language: str = "en") -> list:
             "ui.provided_by",
             "ui.module_ai_gateway",
             "ui.module_title.samba",
+            "ui.module_title.siyuan",
             "ui.module_title.remote_desktop",
         )
     }

@@ -15,6 +15,7 @@ enum EntryText {
     static let moduleKeys = [
         "ai_gateway": "ui.module_ai_gateway",
         "samba_module": "ui.module_title.samba",
+        "siyuan_module": "ui.module_title.siyuan",
         "device_share": "ui.module_title.remote_desktop",
     ]
 
