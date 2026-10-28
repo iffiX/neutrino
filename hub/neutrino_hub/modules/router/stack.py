@@ -16,9 +16,14 @@ Not pure: probes and drives systemd.
 import json
 
 from neutrino_hub.modules.router.constants import ROUTER_STACK_RECORD_PATH
+from neutrino_hub.system.package_manager import package_choices
 from neutrino_hub.utils.subprocess_run import run
 
 # --- config ---
+# The machine's own dhcpcd unit. The maintainer script of `dhcpcd5`, the hub's
+# dhcpcd dependency on Ubuntu 22.04, enables it.
+STACK_LEASE_CLIENT_UNIT = "dhcpcd.service"
+
 # Every manager that configures an interface, and the units each one is. A
 # machine trips none of these, or one, or several; nothing here keys off the
 # distribution, because a Raspberry Pi trips `dhcpcd` on one release and
@@ -33,7 +38,7 @@ STACK_MANAGERS = {
     # after a takeover that reported success.
     "systemd-networkd": ("systemd-networkd.service", "systemd-networkd.socket"),
     "ifupdown": ("networking.service",),
-    "dhcpcd": ("dhcpcd.service",),
+    "dhcpcd": (STACK_LEASE_CLIENT_UNIT,),
     "connman": ("connman.service",),
     "netctl": ("netctl.service",),
     # It and `wpa_supplicant` cannot share a radio.
@@ -106,8 +111,11 @@ def stand_up() -> list[str]:
     way, and starting everything present would leave it running something
     nobody asked for.
 
+    The system's dhcpcd unit the hub's own dependency installed is unmasked
+    and disabled, and never started.
+
     Returns:
-        One line per manager started.
+        One line per manager started or left disabled.
     """
     stopped = _recorded()
     if not stopped:
@@ -116,10 +124,45 @@ def stand_up() -> list[str]:
         # Unmasking comes first: a masked unit can be neither enabled nor
         # started, and the error for trying says nothing useful.
         run(["systemctl", "unmask", unit], is_checked=False)
+    changes = []
     for unit in stopped:
+        if is_from_hub_dependency(unit):
+            run(["systemctl", "disable", unit], is_checked=False)
+            changes.append(f"left {unit} disabled")
+            continue
         run(["systemctl", "enable", "--now", unit], is_checked=False)
+        changes.append(f"started {unit}")
     ROUTER_STACK_RECORD_PATH.unlink(missing_ok=True)
-    return [f"started {unit}" for unit in stopped]
+    return changes
+
+
+def is_from_hub_dependency(unit: str) -> bool:
+    """Whether the hub's own dhcpcd dependency installed this unit.
+
+    A package of the hub's Debian names for dhcpcd ships the unit, and apt
+    marks that package automatically installed.
+
+    Args:
+        unit: A unit name.
+
+    Returns:
+        True for the system's dhcpcd unit when both hold. False for every
+        other unit, and on a machine without apt.
+
+    Raises:
+        subprocess.TimeoutExpired: If apt-mark or dpkg-query runs past its
+            timeout.
+    """
+    if unit != STACK_LEASE_CLIENT_UNIT:
+        return False
+    for package in package_choices("debian", ("dhcpcd",))[0]:
+        marked = run(["apt-mark", "showauto", package], is_checked=False)
+        if package not in marked.stdout.split():
+            continue
+        listed = run(["dpkg-query", "-L", package], is_checked=False)
+        if any(path.endswith(f"/{unit}") for path in listed.stdout.splitlines()):
+            return True
+    return False
 
 
 def _is_active(unit: str) -> bool:
