@@ -7,7 +7,8 @@ has an ``ssh`` entry this client is allowed, across every hub, whose
 part of its apps' local names, followed by ``.nt``; two hubs holding a
 machine of one slug give each ``<machine>.<hub>.nt``. ``User`` is the
 machine's first ``ssh`` entry's account. Each account's key is read with
-the entry's ``service`` frame when the entries change, written to
+the entry's ``service`` frame when the entries change, the entry's
+``account_key_fingerprint`` among them, written to
 ``~/.ssh/neutrino/<host>_<account>`` at 0600, and each machine's host key
 to Neutrino's own known_hosts. The client never edits ``~/.ssh/config`` by
 itself; installing adds ``Include ~/.ssh/neutrino_config`` as its first
@@ -271,7 +272,8 @@ class SshConfigWriter:
         return os.path.join(self._home, SSH_DIR_NAME, SSH_USER_CONFIG_NAME)
 
     def refresh(self, *, entries: list, apps: list, hub_names: dict) -> None:
-        """Rewrite the configuration when the machines reached by ssh changed.
+        """Rewrite the configuration when the machines reached by ssh changed,
+        or a host key or an account's key did.
 
         Args:
             entries: The published entries of every connected hub, stamped
@@ -289,6 +291,11 @@ class SshConfigWriter:
                         entry.get("id"),
                         str(
                             (entry.get("payload") or {}).get("host_key_fingerprint", "")
+                        ),
+                        str(
+                            (entry.get("payload") or {}).get(
+                                "account_key_fingerprint", ""
+                            )
                         ),
                     )
                     for entry in row["entries"]
