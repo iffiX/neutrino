@@ -127,11 +127,12 @@ def test_a_container_with_no_environment_has_a_file_with_the_marker_alone():
     }
 
 
-def test_no_autostart_means_no_install_section():
-    text = render([{**FULL, "is_autostart": False}])["webdav.service"]
+def test_a_stopped_container_has_the_unit_of_a_running_one():
+    running = render([FULL])["webdav.service"]
+    stopped = render([{**FULL, "is_autostart": False}])["webdav.service"]
 
-    assert "[Install]" not in text
-    assert "WantedBy=" not in text
+    assert stopped == running
+    assert running.endswith("[Install]\nWantedBy=multi-user.target\n")
 
 
 def test_every_file_carries_the_marker_that_makes_removal_safe():

@@ -584,10 +584,11 @@ class PodmanUnitRenderer:
             f"ExecStop={PODMAN_BINARY} stop --ignore -t {held.stop_timeout_s} "
             f"--cidfile={cid}",
             f"ExecStopPost=-{PODMAN_BINARY} rm -f --ignore --cidfile={cid}",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+            "",
         ]
-        if container.is_autostart:
-            lines += ["", "[Install]", "WantedBy=multi-user.target"]
-        lines.append("")
         return "\n".join(lines)
 
     def _run_command(self, held: _RenderedContainer, volumes: list) -> list:

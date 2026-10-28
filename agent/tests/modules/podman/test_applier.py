@@ -229,6 +229,29 @@ def test_a_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply(
     assert ["systemctl", "disable", "--no-reload", "tool.service"] in commands.calls
 
 
+def test_a_module_s_stop_and_start_only_disable_and_enable_its_unit(
+    commands, dirs, monkeypatch
+):
+    applier = dirs.applier()
+    units, envs = files("web")
+    applier.apply(units, envs, autostart_names=["web"])
+    commands.calls.clear()
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+
+    applier.apply(units, envs, autostart_names=[])
+
+    assert ["systemctl", "disable", "--no-reload", "web.service"] in commands.calls
+    assert not any(call[1] in ("start", "restart", "stop") for call in commands.calls)
+    commands.calls.clear()
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
+
+    applier.apply(units, envs, autostart_names=["web"])
+
+    assert ["systemctl", "enable", "--no-reload", "web.service"] in commands.calls
+    assert ["systemctl", "start", "web.service"] in commands.calls
+    assert not any(call[1] in ("restart", "stop") for call in commands.calls)
+
+
 def test_an_earlier_build_s_quadlet_files_are_stopped_and_removed_first(
     commands, dirs, monkeypatch
 ):
