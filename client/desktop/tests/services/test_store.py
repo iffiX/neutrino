@@ -272,6 +272,8 @@ def test_the_terminal_font_size_round_trips_held_to_its_range(store, tmp_path):
 
 
 def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_path):
+    """A record an earlier client kept names no user and reads with an empty
+    one; a user of another type drops the record."""
     path = tmp_path / "state.json"
     path.write_text(
         json.dumps(
@@ -281,6 +283,16 @@ def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_pa
                     "198.19.255.3": {"hub_id": "h1"},  # scan: allow
                     "198.19.255.4": {"hub_id": "", "machine": "d2"},  # scan: allow
                     "198.19.255.5": "d3",  # scan: allow
+                    "198.19.255.6": {  # scan: allow
+                        "hub_id": "h1",
+                        "machine": "d4",
+                        "user": 7,
+                    },
+                    "198.19.255.7": {  # scan: allow
+                        "hub_id": "h1",
+                        "machine": "d1",
+                        "user": "neutrino-bob",
+                    },
                 }
             }
         )
@@ -288,14 +300,23 @@ def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_pa
     store = ClientServiceStore(path=str(path))
 
     assert store.files_addresses() == {
-        "198.19.255.2": {"hub_id": "h1", "machine": "d1"}  # scan: allow
+        "198.19.255.2": {"hub_id": "h1", "machine": "d1", "user": ""},  # scan: allow
+        "198.19.255.7": {  # scan: allow
+            "hub_id": "h1",
+            "machine": "d1",
+            "user": "neutrino-bob",
+        },
     }
 
-    store.set_files_address("198.19.255.3", "h2", "nas.lan")  # scan: allow
-    store.remove_files_addresses(["198.19.255.2"])  # scan: allow
+    store.set_files_address("198.19.255.3", "h2", "nas.lan", "nas-user")  # scan: allow
+    store.remove_files_addresses(["198.19.255.2", "198.19.255.7"])  # scan: allow
 
     assert store.files_addresses() == {
-        "198.19.255.3": {"hub_id": "h2", "machine": "nas.lan"}  # scan: allow
+        "198.19.255.3": {  # scan: allow
+            "hub_id": "h2",
+            "machine": "nas.lan",
+            "user": "nas-user",
+        }
     }
     assert os.stat(path).st_mode & 0o777 == 0o600
 
@@ -304,7 +325,7 @@ def test_a_files_address_names_a_hub_and_a_machine(tmp_path):
     store = ClientServiceStore(path=str(tmp_path / "state.json"))
 
     with pytest.raises(ValueError):
-        store.set_files_address("198.19.255.2", "h1", "")  # scan: allow
+        store.set_files_address("198.19.255.2", "h1", "", "u")  # scan: allow
 
 
 def test_a_replace_the_system_refuses_while_the_file_is_held_is_tried_again(

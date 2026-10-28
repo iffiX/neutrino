@@ -28,7 +28,8 @@ On Linux and macOS a mount takes the entry's forward of the local port
 table, made before the mount and ended once the share is unmounted, and
 the system mounts ``//127.0.0.1/<share>`` at that port. On Windows the
 system mounts the share at the files adapter's address for the share's
-machine; a share of this machine itself, an entry with ``is_own_machine``,
+machine and the SMB user it logs in as; a share of this machine itself, an
+entry with ``is_own_machine``,
 is mounted from ``//127.0.0.1/<share>`` at the system's own port, through no
 adapter.
 """
@@ -53,7 +54,7 @@ from neutrino_client.exceptions import (
     ShareAttachError,
 )
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
-from neutrino_client.services.files_adapter import files_machine
+from neutrino_client.services.files_adapter import files_machine, files_user
 from neutrino_client.services.forward import FORWARD_BIND_HOST
 
 MOUNT_RECORD_ID_LENGTH = 16
@@ -73,7 +74,7 @@ MOUNT_ONCE_SUFFIX = ".mount"
 MOUNT_OLD_LOGIN_SUFFIX = ".credentials"
 
 
-def _no_adapter(hub_id: str, machine: str) -> str:
+def _no_adapter(hub_id: str, machine: str, user: str) -> str:
     """No files adapter to mount through.
 
     Raises:
@@ -219,9 +220,10 @@ class FileServiceHandler(ServiceTypeHandler):
             open_service: ``open_service(hub_id, entry_id) -> dict`` reads a
                 machine's share's ``{user, password}`` with the ``service``
                 frame; None reads none.
-            adapter_host: ``adapter_host(hub_id, machine) -> str``, the
-                files adapter's address for a machine where the system
-                mounts through it, the adapter brought up for it; raises
+            adapter_host: ``adapter_host(hub_id, machine, user) -> str``,
+                the files adapter's address for a machine and the SMB user
+                a mount logs in as, where the system mounts through it, the
+                adapter brought up for it; raises
                 :class:`ShareAttachError` ``files_adapter_unavailable``;
                 None has no adapter.
             on_adapter_idle: Called with no arguments where the system
@@ -656,15 +658,19 @@ class FileServiceHandler(ServiceTypeHandler):
         for record_id, record in pending:
             self._remount(record_id, record)
 
-    def machines(self) -> set:
-        """The machines every kept record names, for the adapter's address plan.
+    def adapter_pairs(self) -> set:
+        """The machine and SMB user pairs every kept record names, for the adapter's address plan.
 
         Returns:
-            ``{(hub_id, machine)}`` as :func:`files_machine` names the machine;
-            this machine itself, which takes no address, is left out.
+            ``{(hub_id, machine, user)}`` as :func:`files_machine` names the
+            machine; this machine itself, which takes no address, is left out.
         """
         return {
-            (str(record.get("hub_id", "")), self._machine_of(record))
+            (
+                str(record.get("hub_id", "")),
+                self._machine_of(record),
+                self._user_of(record),
+            )
             for record in self._store.mounts().values()
             if not self._is_own_share(record)
         }
@@ -713,6 +719,7 @@ class FileServiceHandler(ServiceTypeHandler):
             if refusal is not None:
                 self._settle(record_id, record, refusal)
                 return
+            record = self._store.mounts().get(record_id, record)
             share_url, port = self._share_target(record)
             self._platform.attach_share(
                 share_url=share_url,
@@ -833,8 +840,8 @@ class FileServiceHandler(ServiceTypeHandler):
 
         Returns:
             ``(share_url, port)``: the files adapter's address for the
-            share's machine and port 0 where the system mounts through the
-            adapter, the loopback and port 0 there for a share of this
+            share's machine and SMB user and port 0 where the system mounts
+            through the adapter, the loopback and port 0 there for a share of this
             machine itself, else ``//127.0.0.1/<share>`` and the port of the
             entry's forward, made here when it has none.
 
@@ -849,7 +856,9 @@ class FileServiceHandler(ServiceTypeHandler):
         if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
             if self._is_own_share(record):
                 return f"//{FORWARD_BIND_HOST}/{share}", 0
-            host = self._adapter_host(hub_id, self._machine_of(record))
+            host = self._adapter_host(
+                hub_id, self._machine_of(record), self._user_of(record)
+            )
             return f"//{host}/{share}", 0
         port = self._forwards.ensure(
             hub_id=hub_id, entry_id=entry_id, kind=self.service_type
@@ -882,6 +891,24 @@ class FileServiceHandler(ServiceTypeHandler):
         if entry is None:
             return str(record.get("host", ""))
         return files_machine(entry) or str(record.get("host", ""))
+
+    def _user_of(self, record: dict) -> str:
+        """The SMB user a record's mount logs in as.
+
+        A declared share logs in with the person's user name. A machine's
+        share logs in as the user its entry names, the one the hub gives at
+        each mount, else as the user the record kept at its last mount.
+        """
+        if record.get("is_declared") is True:
+            return str(record.get("username", "") or "")
+        entry = find_entry(
+            self._entries_of(),
+            self.service_type,
+            str(record.get("hub_id", "")),
+            str(record.get("entry_id", "")),
+        )
+        user = files_user(entry) if entry is not None else ""
+        return user or str(record.get("username", "") or "")
 
     def _settle_adapter(self) -> None:
         """Let the files adapter go once no record of this run wants a share mounted; for a quit."""

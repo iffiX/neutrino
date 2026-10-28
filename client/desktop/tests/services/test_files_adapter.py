@@ -32,13 +32,14 @@ FIRST = "198.19.255.2"  # scan: allow
 SECOND = "198.19.255.3"  # scan: allow
 LAST = "198.19.255.253"  # scan: allow
 ADAPTER = "198.19.255.1"  # scan: allow
+ANN = "neutrino-ann"
 SHARE_ENTRY = {
     "hub_id": "h1",
     "id": "samba:media",
     "type": "file",
     "device_id": "d1",
     "is_healthy": True,
-    "payload": {"host": "192.168.10.20", "share": "media"},
+    "payload": {"host": "192.168.10.20", "share": "media", "users": [ANN]},
 }
 
 
@@ -171,34 +172,34 @@ def test_a_managed_machines_share_is_keyed_by_its_name_whatever_way_in():
 
 
 def test_each_machine_keeps_its_address_per_hub_across_a_restart(store, plan):
-    assert plan.address_for("h1", "d1") == FIRST
-    assert plan.address_for("h1", "d2") == SECOND
-    assert plan.address_for("h1", "d1") == FIRST
-    assert plan.address_for("h2", "d1") == "198.19.255.4"  # scan: allow
+    assert plan.address_for("h1", "d1", ANN) == FIRST
+    assert plan.address_for("h1", "d2", ANN) == SECOND
+    assert plan.address_for("h1", "d1", ANN) == FIRST
+    assert plan.address_for("h2", "d1", ANN) == "198.19.255.4"  # scan: allow
 
     again = FilesAddressPlan(store=ClientServiceStore(path=store._path))
-    assert again.address_for("h1", "d2") == SECOND
-    assert again.target_of(FIRST) == ("h1", "d1")
+    assert again.address_for("h1", "d2", ANN) == SECOND
+    assert again.target_of(FIRST) == ("h1", "d1", ANN)
     assert again.target_of(LAST) is None
 
 
 def test_a_full_table_gives_away_only_an_address_no_mount_names(store):
     for index, address in enumerate(files_addresses()):
-        store.set_files_address(address, "h1", f"d{index}")
+        store.set_files_address(address, "h1", f"d{index}", ANN)
     plan = FilesAddressPlan(store=store, held_of=lambda: {FIRST})
 
-    assert plan.address_for("h2", "new") == SECOND
-    assert plan.target_of(FIRST) == ("h1", "d0")
-    assert plan.target_of(SECOND) == ("h2", "new")
+    assert plan.address_for("h2", "new", ANN) == SECOND
+    assert plan.target_of(FIRST) == ("h1", "d0", ANN)
+    assert plan.target_of(SECOND) == ("h2", "new", ANN)
 
 
 def test_a_table_every_mount_names_is_refused(store):
     for index, address in enumerate(files_addresses()):
-        store.set_files_address(address, "h1", f"d{index}")
+        store.set_files_address(address, "h1", f"d{index}", ANN)
     plan = FilesAddressPlan(store=store, held_of=lambda: set(files_addresses()))
 
     with pytest.raises(ShareAttachError) as raised:
-        plan.address_for("h2", "new")
+        plan.address_for("h2", "new", ANN)
 
     assert raised.value.code == "files_adapter_unavailable"
     assert raised.value.detail == "addresses_exhausted"
@@ -206,20 +207,20 @@ def test_a_table_every_mount_names_is_refused(store):
 
 def test_leaving_a_hub_drops_its_addresses_no_mount_names(store):
     plan = FilesAddressPlan(store=store, held_of=lambda: {SECOND})
-    plan.address_for("h1", "d1")
-    plan.address_for("h1", "d2")
-    plan.address_for("h2", "d3")
+    plan.address_for("h1", "d1", ANN)
+    plan.address_for("h1", "d2", ANN)
+    plan.address_for("h2", "d3", ANN)
 
     plan.forget_hub("h1")
 
     assert store.files_addresses() == {
-        SECOND: {"hub_id": "h1", "machine": "d2"},
-        "198.19.255.4": {"hub_id": "h2", "machine": "d3"},  # scan: allow
+        SECOND: {"hub_id": "h1", "machine": "d2", "user": ANN},
+        "198.19.255.4": {"hub_id": "h2", "machine": "d3", "user": ANN},  # scan: allow
     }
 
 
 def test_a_known_machine_on_445_reaches_its_file_entry(plan, endpoint, connector):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
 
     reply = connect(client, FIRST, 445)
@@ -236,7 +237,7 @@ def test_a_known_machine_on_445_reaches_its_file_entry(plan, endpoint, connector
 
 
 def test_the_far_end_ending_closes_the_client(plan, endpoint, connector):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
     connect(client, FIRST, 445)
 
@@ -259,7 +260,7 @@ def test_the_far_end_ending_closes_the_client(plan, endpoint, connector):
 def test_any_other_address_or_port_is_not_allowed(
     plan, endpoint, connector, address, port
 ):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
 
     reply = connect(client, address, port)
@@ -269,7 +270,7 @@ def test_any_other_address_or_port_is_not_allowed(
 
 
 def test_a_name_or_an_ipv6_target_is_not_spoken(plan, endpoint, connector):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
     client.sendall(b"\x05\x01\x00\x03\x07nas.lan\x01\xbd")
 
@@ -278,7 +279,7 @@ def test_a_name_or_an_ipv6_target_is_not_spoken(plan, endpoint, connector):
 
 
 def test_a_command_other_than_connect_is_not_spoken(plan, endpoint, connector):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
 
     reply = connect(client, FIRST, 445, command=3)
@@ -297,7 +298,7 @@ def test_a_wrong_login_is_refused(endpoint, connector, field):
 
 
 def test_a_machine_with_no_share_published_is_unreachable(plan, endpoint, connector):
-    plan.address_for("h1", "gone")
+    plan.address_for("h1", "gone", ANN)
     client = socks_client(endpoint)
 
     reply = connect(client, FIRST, 445)
@@ -307,7 +308,7 @@ def test_a_machine_with_no_share_published_is_unreachable(plan, endpoint, connec
 
 
 def test_a_hub_that_refuses_the_stream_is_a_refusal(plan, endpoint, connector):
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     connector.error = ConnectionError("permission_denied")
     client = socks_client(endpoint)
 
@@ -322,7 +323,7 @@ def test_each_start_makes_a_fresh_login_and_a_stop_ends_every_relay(plan, connec
     )
     endpoint.start()
     first = (endpoint.port, endpoint.user, endpoint.password)
-    plan.address_for("h1", "d1")
+    plan.address_for("h1", "d1", ANN)
     client = socks_client(endpoint)
     connect(client, FIRST, 445)
 
@@ -389,7 +390,7 @@ def adapter(plan, connector, daemon):
 def test_a_mount_brings_the_adapter_up_for_this_endpoint(adapter, daemon):
     held, endpoint = adapter
 
-    assert held.host("h1", "d1") == FIRST
+    assert held.host("h1", "d1", ANN) == FIRST
 
     assert daemon.requests == [
         {
@@ -405,8 +406,8 @@ def test_a_mount_brings_the_adapter_up_for_this_endpoint(adapter, daemon):
 def test_every_mount_asks_again_so_a_restarted_service_comes_back(adapter, daemon):
     held, _ = adapter
 
-    held.host("h1", "d1")
-    held.host("h1", "d2")
+    held.host("h1", "d1", ANN)
+    held.host("h1", "d2", ANN)
 
     assert [request["verb"] for request in daemon.requests] == ["up", "up"]
 
@@ -416,7 +417,7 @@ def test_a_missing_or_stopped_service_is_the_one_refusal(adapter, daemon):
     daemon.error = FileNotFoundError(2, "The system cannot find the file specified")
 
     with pytest.raises(ShareAttachError) as raised:
-        held.host("h1", "d1")
+        held.host("h1", "d1", ANN)
 
     assert raised.value.code == "files_adapter_unavailable"
     assert raised.value.detail == "NeutrinoClientFiles does not answer"
@@ -430,7 +431,7 @@ def test_a_refusing_service_names_what_failed(adapter, daemon):
     }
 
     with pytest.raises(ShareAttachError) as raised:
-        held.host("h1", "d1")
+        held.host("h1", "d1", ANN)
 
     assert raised.value.detail == "the adapter neutrino_files is not up"
 
@@ -440,7 +441,7 @@ def test_an_answer_that_is_not_up_is_refused(adapter, daemon):
     daemon.answers["up"] = {"is_up": False, "port": 1}
 
     with pytest.raises(ShareAttachError) as raised:
-        held.host("h1", "d1")
+        held.host("h1", "d1", ANN)
 
     assert raised.value.detail == "not_up"
 
@@ -452,7 +453,7 @@ def test_a_platform_with_no_adapter_is_refused(plan, connector):
     )
     try:
         with pytest.raises(ShareAttachError) as raised:
-            held.host("h1", "d1")
+            held.host("h1", "d1", ANN)
     finally:
         endpoint.stop()
 
@@ -461,7 +462,7 @@ def test_a_platform_with_no_adapter_is_refused(plan, connector):
 
 def test_down_takes_the_adapter_down_while_it_serves_this_resident(adapter, daemon):
     held, _ = adapter
-    held.host("h1", "d1")
+    held.host("h1", "d1", ANN)
 
     held.down()
 
@@ -474,7 +475,7 @@ def test_down_takes_the_adapter_down_while_it_serves_this_resident(adapter, daem
 
 def test_down_leaves_an_adapter_another_resident_asked_for_last(adapter, daemon):
     held, _ = adapter
-    held.host("h1", "d1")
+    held.host("h1", "d1", ANN)
     daemon.serving = 1
 
     held.down()
@@ -492,7 +493,7 @@ def test_down_asks_nothing_when_nothing_was_brought_up(adapter, daemon):
 
 def test_a_down_nobody_hears_is_not_an_error(adapter, daemon):
     held, _ = adapter
-    held.host("h1", "d1")
+    held.host("h1", "d1", ANN)
     daemon.error = OSError("gone")
 
     held.down()
@@ -500,7 +501,7 @@ def test_a_down_nobody_hears_is_not_an_error(adapter, daemon):
 
 def test_a_quit_takes_the_adapter_down_and_stops_the_endpoint(adapter, daemon):
     held, endpoint = adapter
-    held.host("h1", "d1")
+    held.host("h1", "d1", ANN)
 
     held.stop()
 
@@ -513,7 +514,7 @@ def test_two_threads_mounting_at_once_both_get_their_address(adapter, daemon):
     found = {}
 
     def mount(machine):
-        found[machine] = held.host("h1", machine)
+        found[machine] = held.host("h1", machine, ANN)
 
     threads = [threading.Thread(target=mount, args=(f"d{n}",)) for n in range(8)]
     for thread in threads:
@@ -546,7 +547,7 @@ def test_an_adapter_held_by_another_account_is_its_own_refusal(adapter, daemon):
     daemon.answers["up"] = {"code": "files_adapter_in_use", "params": {}}
 
     with pytest.raises(ShareAttachError) as raised:
-        held.host("h1", "d1")
+        held.host("h1", "d1", ANN)
 
     assert raised.value.code == "files_adapter_in_use"
     assert raised.value.detail == ""
@@ -564,7 +565,7 @@ def test_a_share_nobody_publishes_is_one_line_until_it_comes_back(plan, connecto
         log=lines.append,
     )
     served.start()
-    address = plan.address_for("h1", "d1")
+    address = plan.address_for("h1", "d1", ANN)
     try:
         for _ in range(5):
             client = socks_client(served)
@@ -579,6 +580,73 @@ def test_a_share_nobody_publishes_is_one_line_until_it_comes_back(plan, connecto
 
     said = [line for line in lines if "publishes no share" in line]
     assert said == [
-        "files endpoint: h1 publishes no share on d1",
-        "files endpoint: h1 publishes no share on d1 (5 times in all)",
+        "files endpoint: h1 publishes no share on d1 for neutrino-ann",
+        "files endpoint: h1 publishes no share on d1 for neutrino-ann (5 times in all)",
     ]
+
+
+def test_two_users_of_one_machine_take_two_addresses(store, plan):
+    """Windows connects to one server as one user at a time, so each account
+    of a folder share is a server of its own."""
+    ann = plan.address_for("h1", "d1", ANN)
+    bob = plan.address_for("h1", "d1", "neutrino-bob")
+
+    assert (ann, bob) == (FIRST, SECOND)
+    assert plan.address_for("h1", "d1", ANN) == FIRST
+    assert plan.target_of(SECOND) == ("h1", "d1", "neutrino-bob")
+
+
+def test_each_address_reaches_the_entry_of_its_user(plan, connector):
+    """A folder share's two entries on one machine: the pair of each user
+    opens the stream of that user's entry."""
+    folder = {
+        **SHARE_ENTRY,
+        "id": "samba_folder_d1_lab_ann",
+        "payload": {"share": "lab", "users": [ANN], "account": "ann"},
+    }
+    other = {
+        **SHARE_ENTRY,
+        "id": "samba_folder_d1_lab_bob",
+        "payload": {"share": "lab", "users": ["neutrino-bob"], "account": "bob"},
+    }
+    endpoint = FilesSocksEndpoint(
+        plan=plan,
+        connector=connector,
+        entries_of=lambda: [other, folder],
+        log=discard,
+    )
+    endpoint.start()
+    try:
+        plan.address_for("h1", "d1", ANN)
+        plan.address_for("h1", "d1", "neutrino-bob")
+        assert connect(socks_client(endpoint), FIRST, 445)[:2] == b"\x05\x00"
+        assert connect(socks_client(endpoint), SECOND, 445)[:2] == b"\x05\x00"
+    finally:
+        endpoint.stop()
+
+    assert connector.calls == [
+        ("h1", "samba_folder_d1_lab_ann"),
+        ("h1", "samba_folder_d1_lab_bob"),
+    ]
+
+
+def test_an_address_an_earlier_client_kept_reaches_any_share_of_its_machine(
+    store, connector
+):
+    store._mutate(
+        lambda data: data["files_addresses"].update(
+            {FIRST: {"hub_id": "h1", "machine": "d1", "user": ""}}
+        )
+    )
+    plan = FilesAddressPlan(store=store)
+    endpoint = FilesSocksEndpoint(
+        plan=plan,
+        connector=connector,
+        entries_of=lambda: [dict(SHARE_ENTRY)],
+        log=discard,
+    )
+    endpoint.start()
+    try:
+        assert connect(socks_client(endpoint), FIRST, 445)[:2] == b"\x05\x00"
+    finally:
+        endpoint.stop()

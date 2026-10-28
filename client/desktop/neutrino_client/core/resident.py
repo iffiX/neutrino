@@ -2469,11 +2469,11 @@ class ClientResident:
 
     def _held_files_addresses(self) -> set:
         """The files adapter addresses a kept mount record names."""
-        machines = self._services["file"].machines()
+        pairs = self._services["file"].adapter_pairs()
         return {
             address
             for address, record in self._store.files_addresses().items()
-            if (record["hub_id"], record["machine"]) in machines
+            if (record["hub_id"], record["machine"], record["user"]) in pairs
         }
 
     def _open_panel_now(self, session: ClientHubSession) -> None:

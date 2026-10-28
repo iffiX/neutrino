@@ -114,17 +114,19 @@ def _files_address(raw) -> "dict | None":
         raw: What the file held for one address under ``files_addresses``.
 
     Returns:
-        ``{"hub_id", "machine"}``.
+        ``{"hub_id", "machine", "user"}``; ``user`` is empty in a record an
+        earlier client kept, which names no user.
     """
     if not isinstance(raw, dict):
         return None
     hub_id = raw.get("hub_id")
     machine = raw.get("machine")
+    user = raw.get("user", "")
     if not isinstance(hub_id, str) or not isinstance(machine, str):
         return None
-    if not hub_id or not machine:
+    if not hub_id or not machine or not isinstance(user, str):
         return None
-    return {"hub_id": hub_id, "machine": machine}
+    return {"hub_id": hub_id, "machine": machine, "user": user}
 
 
 def _record(raw: dict) -> dict:
@@ -407,26 +409,29 @@ class ClientServiceStore:
         self._mutate(change)
 
     def files_addresses(self) -> dict:
-        """The address each machine that provides a share takes on the files adapter.
+        """The address each machine and SMB user pair takes on the files adapter.
 
         Returns:
-            Address to ``{"hub_id", "machine"}``.
+            Address to ``{"hub_id", "machine", "user"}``.
         """
         return self._read()["files_addresses"]
 
-    def set_files_address(self, address: str, hub_id: str, machine: str) -> None:
-        """Keep one machine's address, replacing whatever held it.
+    def set_files_address(
+        self, address: str, hub_id: str, machine: str, user: str
+    ) -> None:
+        """Keep one pair's address, replacing whatever held it.
 
         Args:
             address: The address on the adapter's network.
             hub_id: The hub the machine is reached through.
             machine: The machine: an entry's device id, or a declared
                 record's host.
+            user: The SMB user a mount logs in to the machine as.
 
         Raises:
             ValueError: When the hub or the machine is empty.
         """
-        record = _files_address({"hub_id": hub_id, "machine": machine})
+        record = _files_address({"hub_id": hub_id, "machine": machine, "user": user})
         if record is None:
             raise ValueError("a files address names a hub and a machine")
 

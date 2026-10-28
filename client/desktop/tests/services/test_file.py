@@ -1106,8 +1106,8 @@ def drive_service(tmp_path, adapter_host=None, entries=(), **kwargs):
 def test_windows_mounts_the_files_adapters_address_for_the_machine(tmp_path):
     asked = []
 
-    def adapter_host(hub_id, machine):
-        asked.append((hub_id, machine))
+    def adapter_host(hub_id, machine, user):
+        asked.append((hub_id, machine, user))
         return "198.19.255.2"  # scan: allow
 
     entry = dict(entry_for(PAYLOAD), device_id="d_nas")
@@ -1118,13 +1118,13 @@ def test_windows_mounts_the_files_adapters_address_for_the_machine(tmp_path):
     call = platform.attach_calls[0]
     assert call["share_url"] == "//198.19.255.2/media"  # scan: allow
     assert (call["port"], call["location"]) == (0, "Z:")
-    assert asked == [("h1", "d_nas")]
+    assert asked == [("h1", "d_nas", "media")]
     assert subject._forwards.ensured == []
 
 
 def test_windows_mounts_at_the_first_free_letter_when_none_is_named(tmp_path):
     subject, platform = drive_service(
-        tmp_path, lambda hub_id, machine: "198.19.255.2"  # scan: allow
+        tmp_path, lambda hub_id, machine, user: "198.19.255.2"  # scan: allow
     )
 
     assert attach(subject, path="") == {}
@@ -1135,15 +1135,15 @@ def test_windows_mounts_at_the_first_free_letter_when_none_is_named(tmp_path):
 def test_a_declared_share_names_its_host_as_the_machine(tmp_path):
     asked = []
 
-    def adapter_host(hub_id, machine):
-        asked.append(machine)
+    def adapter_host(hub_id, machine, user):
+        asked.append((machine, user))
         return "198.19.255.3"  # scan: allow
 
     subject, _platform = drive_service(tmp_path, adapter_host)
 
     assert attach(subject, path="Z:") == {}
 
-    assert asked == ["hub"]
+    assert asked == [("hub", "media")]
 
 
 def test_an_adapter_that_cannot_be_made_fails_the_record_once(tmp_path):
@@ -1165,7 +1165,7 @@ def test_only_a_quit_lets_the_adapter_go(tmp_path):
     idle = []
     subject, _platform = drive_service(
         tmp_path,
-        lambda hub_id, machine: "198.19.255.2",  # scan: allow
+        lambda hub_id, machine, user: "198.19.255.2",  # scan: allow
         on_adapter_idle=lambda: idle.append(1),
     )
     assert attach(subject, path="Z:") == {}
@@ -1196,8 +1196,8 @@ def test_a_handler_with_no_adapter_refuses_the_windows_mount(tmp_path):
 def test_windows_mounts_its_own_machines_share_from_the_loopback(tmp_path):
     asked = []
 
-    def adapter_host(hub_id, machine):
-        asked.append((hub_id, machine))
+    def adapter_host(hub_id, machine, user):
+        asked.append((hub_id, machine, user))
         return "198.19.255.2"  # scan: allow
 
     entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
@@ -1212,13 +1212,13 @@ def test_windows_mounts_its_own_machines_share_from_the_loopback(tmp_path):
     assert subject._forwards.ensured == []
     row = subject.rows()[0]
     assert (row["state"], row["code"], row["server"]) == ("mounted", "", "127.0.0.1")
-    assert subject.machines() == set()
+    assert subject.adapter_pairs() == set()
 
 
 def test_windows_keeps_the_adapter_for_another_machines_share(tmp_path):
     entry = dict(entry_for(PAYLOAD), device_id="d_nas", is_own_machine=False)
     subject, platform = drive_service(
-        tmp_path, lambda hub_id, machine: "198.19.255.2", [entry]  # scan: allow
+        tmp_path, lambda hub_id, machine, user: "198.19.255.2", [entry]  # scan: allow
     )
 
     assert attach(subject, path="Z:", entry=entry) == {}
@@ -1226,7 +1226,7 @@ def test_windows_keeps_the_adapter_for_another_machines_share(tmp_path):
     assert (
         platform.attach_calls[0]["share_url"] == "//198.19.255.2/media"
     )  # scan: allow
-    assert subject.machines() == {("h1", "d_nas")}
+    assert subject.adapter_pairs() == {("h1", "d_nas", "media")}
 
 
 def test_linux_mounts_its_own_machines_share_through_its_forward(tmp_path):
@@ -1241,7 +1241,7 @@ def test_linux_mounts_its_own_machines_share_through_its_forward(tmp_path):
 
 
 def test_an_adapter_another_account_holds_does_not_stop_the_own_share(tmp_path):
-    def adapter_host(hub_id, machine):
+    def adapter_host(hub_id, machine, user):
         raise ShareAttachError("files_adapter_in_use")
 
     entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
@@ -1288,3 +1288,36 @@ def test_the_logins_a_0_5_client_kept_are_deleted_at_start(tmp_path):
     subject.clear_leftovers()
 
     assert sorted(os.listdir(str(tmp_path / "creds"))) == ["r2.login"]
+
+
+def test_two_accounts_of_a_folder_share_mount_through_two_pairs(tmp_path):
+    asked = []
+
+    def adapter_host(hub_id, machine, user):
+        asked.append((machine, user))
+        return f"198.19.255.{len(asked) + 1}"  # scan: allow
+
+    entries = [
+        dict(
+            entry_for(
+                {**PAYLOAD, "share": "lab", "users": [user], "account": account},
+                entry_id=f"samba_folder_d1_lab_{account}",
+            ),
+            device_id="d1",
+        )
+        for account, user in (("ann", "neutrino-ann"), ("bob", "neutrino-bob"))
+    ]
+    subject, platform = drive_service(tmp_path, adapter_host, entries)
+
+    assert attach(subject, path="Y:", entry=entries[0]) == {}
+    assert attach(subject, path="Z:", entry=entries[1]) == {}
+
+    assert asked == [("d1", "neutrino-ann"), ("d1", "neutrino-bob")]
+    assert [call["share_url"] for call in platform.attach_calls] == [
+        "//198.19.255.2/lab",  # scan: allow
+        "//198.19.255.3/lab",  # scan: allow
+    ]
+    assert subject.adapter_pairs() == {
+        ("h1", "d1", "neutrino-ann"),
+        ("h1", "d1", "neutrino-bob"),
+    }

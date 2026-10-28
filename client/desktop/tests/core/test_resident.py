@@ -166,7 +166,7 @@ class RecordingHandler(ServiceTypeHandler):
         self.withdrawn.append((hub_id, list(entries)))
         return 0
 
-    def machines(self) -> set:
+    def adapter_pairs(self) -> set:
         return set()
 
     def entry_fields(self, entry: dict) -> dict:

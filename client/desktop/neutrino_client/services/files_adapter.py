@@ -1,12 +1,14 @@
 """The files adapter on Windows, the resident's half: addresses and the SOCKS endpoint.
 
-Every machine that provides a ``file`` entry takes one address on the
-adapter's network, from the second up, kept per hub and machine in the
-store, so a drive letter keeps naming the same machine. The SOCKS endpoint
-listens on the loopback behind a user name and password made at each start;
-it accepts a connection to ``<address>:445`` of a machine the table knows and
-hands it to a connector naming a ``file`` entry of that machine, and refuses
-anything else. The files daemon, a service running as SYSTEM, runs tun2socks
+Every pair of a machine that provides a ``file`` entry and an SMB user a
+mount logs in to it as takes one address on the adapter's network, from the
+second up, kept per hub, machine and user in the store, so a drive letter
+keeps naming the same pair. Windows connects to one server as one user at a
+time, so two accounts' shares of one machine are two servers to it. The
+SOCKS endpoint listens on the loopback behind a user name and password made
+at each start; it accepts a connection to ``<address>:445`` of a pair the
+table knows and hands it to a connector naming a ``file`` entry of that
+machine for that user, and refuses anything else. The files daemon, a service running as SYSTEM, runs tun2socks
 on the adapter towards that endpoint when the resident asks it ``up``.
 
 A connector is ``connector(hub_id, entry_id)``, which opens one ``connect``
@@ -86,6 +88,41 @@ def files_machine(entry: dict) -> str:
             return device_name
     payload = entry.get("payload") or {}
     return str(payload.get("host", "")) if isinstance(payload, dict) else ""
+
+
+def files_user(entry: dict) -> str:
+    """The SMB user a machine's share logs in as, as the address table keys it.
+
+    Args:
+        entry: A ``file`` entry, as the merged service list carries it.
+
+    Returns:
+        The first of the payload's ``users``, the user the hub gives for a
+        machine's share; empty for a declared share, whose user is the
+        person's own login.
+    """
+    payload = entry.get("payload") or {}
+    users = payload.get("users") if isinstance(payload, dict) else None
+    if not isinstance(users, list) or not users:
+        return ""
+    return str(users[0] or "")
+
+
+def is_entry_of_user(entry: dict, user: str) -> bool:
+    """Whether a ``file`` entry serves a pair's SMB user.
+
+    Args:
+        entry: A ``file`` entry.
+        user: The pair's user; empty in a record an earlier client kept.
+
+    Returns:
+        True for an entry the hub gives that user's login for, for a
+        declared share, whose login is the person's own, and for any entry
+        when the pair or the entry names no user.
+    """
+    if not user or entry.get("source") == "declared":
+        return True
+    return files_user(entry) in ("", user)
 
 
 def files_addresses() -> list:
@@ -195,7 +232,7 @@ def _relay(client, far) -> None:
 
 
 class FilesAddressPlan:
-    """The adapter address each machine takes, kept per hub and machine in the store."""
+    """The adapter address each machine and SMB user pair takes, kept in the store."""
 
     def __init__(self, *, store, held_of=None):
         """
@@ -208,15 +245,16 @@ class FilesAddressPlan:
         self._held_of = held_of if held_of is not None else _none_held
         self._lock = threading.Lock()
 
-    def address_for(self, hub_id: str, machine: str) -> str:
-        """The address a machine takes, given one when it has none.
+    def address_for(self, hub_id: str, machine: str, user: str) -> str:
+        """The address a pair takes, given one when it has none.
 
-        A machine with no address takes the lowest free one; with none free,
-        the lowest one no mount names is taken from the machine that held it.
+        A pair with no address takes the lowest free one; with none free,
+        the lowest one no mount names is taken from the pair that held it.
 
         Args:
             hub_id: The hub the machine is reached through.
             machine: The machine, as :func:`files_machine` names it.
+            user: The SMB user the mount logs in as.
 
         Returns:
             The address.
@@ -227,8 +265,9 @@ class FilesAddressPlan:
         """
         with self._lock:
             table = self._store.files_addresses()
+            wanted = {"hub_id": hub_id, "machine": machine, "user": user}
             for address, record in table.items():
-                if record == {"hub_id": hub_id, "machine": machine}:
+                if record == wanted:
                     return address
             usable = files_addresses()
             free = [address for address in usable if address not in table]
@@ -237,25 +276,25 @@ class FilesAddressPlan:
                 free = [address for address in usable if address not in held]
             if not free:
                 raise _unavailable("addresses_exhausted")
-            self._store.set_files_address(free[0], hub_id, machine)
+            self._store.set_files_address(free[0], hub_id, machine, user)
             return free[0]
 
-    def target_of(self, address: str) -> "tuple[str, str] | None":
-        """The machine an address names.
+    def target_of(self, address: str) -> "tuple[str, str, str] | None":
+        """The pair an address names.
 
         Args:
             address: An address on the adapter's network.
 
         Returns:
-            ``(hub_id, machine)``, or None when no machine takes it.
+            ``(hub_id, machine, user)``, or None when no pair takes it.
         """
         record = self._store.files_addresses().get(address)
         if record is None:
             return None
-        return record["hub_id"], record["machine"]
+        return record["hub_id"], record["machine"], record["user"]
 
     def forget_hub(self, hub_id: str) -> None:
-        """Drop the addresses of a hub's machines that no mount names.
+        """Drop the addresses of a hub's pairs that no mount names.
 
         Args:
             hub_id: The hub left.
@@ -442,12 +481,14 @@ class FilesSocksEndpoint:
                 )
             _reply(client, SOCKS_REPLY_NOT_ALLOWED)
             return None
-        hub_id, machine = target
-        share = ("share", hub_id, machine)
-        entry_id = self._entry_of(hub_id, machine)
+        hub_id, machine, user = target
+        share = ("share", hub_id, machine, user)
+        entry_id = self._entry_of(hub_id, machine, user)
         if not entry_id:
             self._lines.note(
-                share, f"files endpoint: {hub_id} publishes no share on {machine}"
+                share,
+                f"files endpoint: {hub_id} publishes no share on {machine} "
+                f"for {user or 'any user'}",
             )
             _reply(client, SOCKS_REPLY_HOST_UNREACHABLE)
             return None
@@ -470,14 +511,15 @@ class FilesSocksEndpoint:
             raise
         return far
 
-    def _entry_of(self, hub_id: str, machine: str) -> str:
-        """The id of a ``file`` entry the machine provides, healthy ones first."""
+    def _entry_of(self, hub_id: str, machine: str, user: str) -> str:
+        """The id of a ``file`` entry the machine provides for the user, healthy ones first."""
         found = sorted(
             (is_unhealthy(entry), str(entry.get("id", "")))
             for entry in self._entries_of()
             if entry.get("type") == "file"
             and entry.get("hub_id") == hub_id
             and files_machine(entry) == machine
+            and is_entry_of_user(entry, user)
         )
         return found[0][1] if found else ""
 
@@ -503,22 +545,23 @@ class FilesAdapter:
         self._lock = threading.Lock()
         self._is_asked_up = False
 
-    def host(self, hub_id: str, machine: str) -> str:
-        """The address to mount a machine's share at, the adapter brought up for it.
+    def host(self, hub_id: str, machine: str, user: str) -> str:
+        """The address to mount a machine's share at as a user, the adapter brought up for it.
 
         Args:
             hub_id: The hub the machine is reached through.
             machine: The machine, as :func:`files_machine` names it.
+            user: The SMB user the mount logs in as.
 
         Returns:
-            The machine's address on the adapter.
+            The pair's address on the adapter.
 
         Raises:
             ShareAttachError: ``files_adapter_unavailable`` with what failed
                 when the service is missing, stopped or refuses, or every
                 address is taken.
         """
-        address = self._plan.address_for(hub_id, machine)
+        address = self._plan.address_for(hub_id, machine, user)
         with self._lock:
             self._bring_up()
         return address
