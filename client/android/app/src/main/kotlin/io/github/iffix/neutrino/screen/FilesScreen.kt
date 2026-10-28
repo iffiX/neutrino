@@ -97,7 +97,7 @@ fun FilesScreen(
             },
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(entry.title, style = NeutrinoTheme.rowTitle)
+                BasicText(root.title, style = NeutrinoTheme.rowTitle)
                 if (!isKept) Badge(words.word("ui.password_not_saved"), icon = AppIcon.LOCK)
             }
             if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)

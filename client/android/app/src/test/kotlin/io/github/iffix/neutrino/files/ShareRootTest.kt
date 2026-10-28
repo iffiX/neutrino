@@ -29,6 +29,29 @@ class ShareRootTest {
     }
 
     @Test
+    fun aFolderSharesEntriesAreARootEachNamedWithItsAccount() {
+        val roots = listOf("ann", "bob").map { account ->
+            ShareRoot.of(
+                hub,
+                ChannelServiceEntry(
+                    "samba_folder_d1_lab_$account",
+                    "file",
+                    "lab",
+                    Json.parseToJsonElement(
+                        """{"protocol":"smb","host":"h","share":"lab",""" +
+                            """"users":["neutrino-$account"],"account":"$account"}""",
+                    ).jsonObject,
+                    deviceName = "Argon",
+                ),
+            )
+        }
+        assertEquals(listOf("lab (ann)", "lab (bob)"), roots.map { it?.title })
+        assertEquals(listOf("ann", "bob"), roots.map { it?.account })
+        assertEquals(listOf("samba_folder_d1_lab_ann", "samba_folder_d1_lab_bob"), roots.map { it?.entryId })
+        assertEquals(listOf("lab", "lab"), roots.map { it?.share })
+    }
+
+    @Test
     fun anEntryWithoutUsersHasNone() {
         assertEquals(
             emptyList<String>(),

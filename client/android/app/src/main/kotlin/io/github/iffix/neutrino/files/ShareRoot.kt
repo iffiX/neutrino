@@ -10,7 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * One published share, as a root of the system's Files.
  *
  * @property key The root's id: the hub's binding and the entry, `<binding>~<entry>`.
- * @property title The share's title.
+ * @property title The share's title, and `<share> (<account>)` for a folder share's entry, a root of
+ *   its own for each account the share is open to.
  * @property host The server's address.
  * @property share The share's name.
  * @property users The accounts the hub names for it; empty when it names none.
@@ -20,6 +21,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * @property isDeclared Whether a declared app names the share, a NAS's share opened with the
  *   person's own login; a machine's share opens with the login the hub hands at every connect.
  * @property isReconnecting Whether its hub's channel dropped less than a minute ago and is not back yet.
+ * @property account The account a folder share's entry logs in as; empty for any other share. The
+ *   hub hands that account's login at every connect.
  */
 data class ShareRoot(
     val key: String,
@@ -32,6 +35,7 @@ data class ShareRoot(
     val entryId: String,
     val isDeclared: Boolean = false,
     val isReconnecting: Boolean = false,
+    val account: String = "",
 ) {
     companion object {
         /**
@@ -51,9 +55,10 @@ data class ShareRoot(
             }
             val users = (entry.payload["users"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.content }
             val device = entry.deviceName.ifEmpty { host }
+            val account = entry.text("account")
             return ShareRoot(
                 key = "${hub.binding.id}~${entry.id}",
-                title = entry.title,
+                title = if (account.isEmpty()) entry.title else "${entry.title} ($account)",
                 host = host,
                 share = share,
                 users = users,
@@ -61,6 +66,7 @@ data class ShareRoot(
                 bindingId = hub.binding.id,
                 entryId = entry.id,
                 isDeclared = entry.source == "declared",
+                account = account,
             )
         }
 

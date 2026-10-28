@@ -8,7 +8,8 @@ struct ShareTarget: Equatable, Identifiable {
     /// The `file` entry each `connect` stream names.
     let entryId: String
 
-    /// The share's title.
+    /// The share's title, and `<share> (<account>)` for a folder share's entry, a row of its own for each account
+    /// the share is open to.
     let title: String
 
     /// The share's name on its server.
@@ -20,6 +21,10 @@ struct ShareTarget: Equatable, Identifiable {
     /// Whether a declared app names the share, a NAS's share opened with the person's own login; a machine's share
     /// opens with the login the hub hands at every connect.
     var isDeclared = false
+
+    /// The account a folder share's entry logs in as; empty for any other share. The hub hands that account's login
+    /// at every connect.
+    var account = ""
 
     /// `<binding>/<entry>`, the key of its row, its login and its page.
     var id: String { "\(bindingId)/\(entryId)" }
@@ -33,9 +38,11 @@ struct ShareTarget: Equatable, Identifiable {
     static func of(_ hub: HubView, _ entry: ChannelServiceEntry) -> ShareTarget? {
         let share = entry.payload.text("share")
         guard entry.type == "file", entry.payload.text("protocol") == "smb", !share.isEmpty else { return nil }
+        let account = entry.payload.text("account")
         return ShareTarget(
-            bindingId: hub.binding.id, entryId: entry.id, title: entry.title, share: share,
+            bindingId: hub.binding.id, entryId: entry.id,
+            title: account.isEmpty ? entry.title : "\(entry.title) (\(account))", share: share,
             users: entry.payload["users"]?.arrayValue?.compactMap(\.stringValue) ?? [],
-            isDeclared: entry.source == "declared")
+            isDeclared: entry.source == "declared", account: account)
     }
 }

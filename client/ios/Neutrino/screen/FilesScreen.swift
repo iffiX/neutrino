@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The shares the joined hubs publish, one row each: the share's name, `//host/share`, and who provides it. Open
+/// The shares the joined hubs publish, one row each: the share's name, `<share> (<account>)` for each account of a
+/// folder share, `//host/share`, and who provides it. Open
 /// on a machine's share logs in with the login the hub hands and asks nothing; on a declared share it logs in
 /// with the login held, or shows the login sheet when none is, and Forget password arms and removes the login
 /// held.
@@ -29,7 +30,7 @@ struct FilesScreen: View {
         let isDeclared = target?.isDeclared ?? false
         let isFree = !row.isOpening && !hub.jobs.isRefreshing && !hub.isDisabled
         FeatureRow(marker: EntryText.tone(hub, entry, isBusy: row.isOpening), hasDivider: hasDivider) {
-            RowText(text: entry.title, style: .title)
+            RowText(text: target?.title ?? entry.title, style: .title)
             if entry.isUnhealthy {
                 RowText(text: words.word("ui.unhealthy"), style: .note)
             }

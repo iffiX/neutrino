@@ -74,6 +74,30 @@ final class ShareSessionsTests: XCTestCase {
             ]))
     }
 
+    func testAFolderSharesEntriesAreARowEachNamedWithItsAccount() throws {
+        let hub = hub(services: [])
+        let targets = try ["ann", "bob"].map { account in
+            try XCTUnwrap(
+                ShareTarget.of(
+                    hub,
+                    try XCTUnwrap(
+                        ChannelServiceEntry.of(
+                            .object([
+                                "id": .string("samba_folder_d1_lab_\(account)"), "type": .string("file"),
+                                "title": .string("lab"), "source": .string("module"),
+                                "payload": .object([
+                                    "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("lab"),
+                                    "users": .array([.string("neutrino-\(account)")]), "account": .string(account),
+                                ]),
+                            ])))))
+        }
+        XCTAssertEqual(targets.map(\.title), ["lab (ann)", "lab (bob)"])
+        XCTAssertEqual(targets.map(\.account), ["ann", "bob"])
+        XCTAssertEqual(targets.map(\.entryId), ["samba_folder_d1_lab_ann", "samba_folder_d1_lab_bob"])
+        XCTAssertEqual(targets.map(\.share), ["lab", "lab"])
+        XCTAssertFalse(targets[0].isDeclared)
+    }
+
     func testAFileEntryNamesItsShareAndItsUsers() throws {
         let hub = hub(services: [])
         XCTAssertEqual(ShareTarget.of(hub, try XCTUnwrap(entry)), target)
