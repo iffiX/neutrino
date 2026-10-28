@@ -242,11 +242,20 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName st
 	if !h.ledger.BeginHandshake() {
 		return
 	}
+	handshakeEnded := false
+	endHandshake := func() {
+		if !handshakeEnded {
+			handshakeEnded = true
+			h.ledger.EndHandshake()
+		}
+	}
+	// The guest counts among the handshakes in flight from its first check
+	// until its open record is answered.
+	defer endHandshake()
 	_ = conn.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
 	ctx, cancel := context.WithDeadline(context.Background(), d.acceptedAt.Add(knock.HandshakeTimeout))
 	channel, share, decision, err := h.gate.Open(ctx, conn)
 	cancel()
-	h.ledger.EndHandshake()
 	if err != nil {
 		h.log("gate_closed", "address", peerAddress, "listener", listenerName, "error", err.Error())
 		return
@@ -268,6 +277,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName st
 		"ticket": open.Ticket, "share": share, "protocol": open.Protocol,
 		"address": peerAddress, "listener": listenerName,
 	})
+	endHandshake()
 	bindingID := ""
 	if refusal == nil {
 		bindingID = stringField(answer, "binding_id")
