@@ -71,6 +71,7 @@ COLLECTIONS = [
     "collection-langchinese",
     "collection-xetex",
     "collection-latexrecommended",
+    "collection-pictures",
 ]
 
 

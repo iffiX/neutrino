@@ -42,6 +42,7 @@ AYAKALEAF_TEX_COLLECTIONS = (
     "collection-langchinese",
     "collection-xetex",
     "collection-latexrecommended",
+    "collection-pictures",
 )
 # What ``tlmgr`` runs from one source, in order: its own update, then the
 # collections. A ``tlmgr`` older than the repository refuses the install.
