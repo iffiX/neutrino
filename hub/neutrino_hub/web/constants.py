@@ -71,6 +71,8 @@ WEB_PATH_VERBS = frozenset(
         "reinstall",
         "restart",
         "kill",
+        "reveal",
+        "rotate",
         "rename",
     }
 )
