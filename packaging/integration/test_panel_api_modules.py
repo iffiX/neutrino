@@ -34,12 +34,13 @@ INSTANCE_MODULE = "codeg"
 INSTALL_METHODS = frozenset({"agent", "builtin", "system", "hub", "container"})
 # A person's own remote desktop products: detected by a module, never rows.
 REMOTE_DESKTOP_PRODUCTS = ["anydesk", "teamviewer"]
-# Each module's artifacts the package stream serves, in the recipe the hub
-# resolves for a Linux machine of this box's family and architecture, run in
-# the hub's interpreter.
+# Each module's install method and the artifacts the package stream serves,
+# in the recipe the hub resolves for a Linux machine of this box's family and
+# architecture, run in the hub's interpreter.
 RECIPE_SCRIPT = """
 import json
 from neutrino_hub.modules.devices.manifests import (
+    entry_method,
     load_module_manifests,
     module_recipe,
     resolve_platform_entry,
@@ -50,7 +51,10 @@ recipes = {}
 for name, manifest in load_module_manifests().items():
     _, entry = resolve_platform_entry(manifest, platform)
     artifacts = module_recipe(entry).get("params", {}).get("artifacts") or []
-    recipes[name] = [item["name"] for item in artifacts if item["kind"] != "npm"]
+    recipes[name] = {
+        "method": entry_method(entry),
+        "artifacts": [item["name"] for item in artifacts if item["kind"] != "npm"],
+    }
 print(json.dumps(recipes))
 """
 # The states a row may report, the closed set the panel words.
@@ -110,18 +114,21 @@ def test_every_row_is_installed_by_one_of_the_methods(modules):
 
 
 @pytest.mark.parametrize("name", sorted(HUB_MODULE_ARTIFACTS))
-def test_a_program_run_as_an_account_is_a_hub_row(modules, name):
+def test_a_program_run_as_an_account_is_a_hub_row(modules, linux_recipes, name):
+    """The row names no method until the machine reports its platform, and
+    the Linux entry the hub resolves names ``hub``."""
     rows = {entry["name"]: entry for entry in modules}
 
     assert name in rows, sorted(rows)
-    assert rows[name]["method"] == "hub"
+    assert rows[name]["method"] == ""
+    assert linux_recipes[name]["method"] == "hub"
 
 
 @pytest.mark.parametrize("name", sorted(HUB_MODULE_ARTIFACTS))
 def test_a_linux_recipe_names_each_artifact_the_agent_fetches(linux_recipes, name):
     """The row shows no recipe; the state the agent is sent does, and the
     agent opens one ``package`` stream per artifact the hub serves."""
-    assert linux_recipes[name] == HUB_MODULE_ARTIFACTS[name]
+    assert linux_recipes[name]["artifacts"] == HUB_MODULE_ARTIFACTS[name]
 
 
 def test_a_persons_own_remote_desktop_product_is_no_row(modules):
