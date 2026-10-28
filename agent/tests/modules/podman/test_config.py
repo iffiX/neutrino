@@ -467,11 +467,31 @@ def test_a_hub_container_parses_and_survives_a_round_trip():
         ({"after": ["neutrino_demo_ghost"]}, "container_unknown"),
         ({"after": ["neutrino_demo"]}, "container_unknown"),
         ({"page_port": 70000}, "port_mapping_invalid"),
+        ({"stop_timeout_s": -1}, "command_invalid"),
+        ({"stop_timeout_s": 3601}, "command_invalid"),
+        ({"stop_timeout_s": "soon"}, "command_invalid"),
+        ({"success_exit_codes": [256]}, "command_invalid"),
+        ({"success_exit_codes": ["two"]}, "command_invalid"),
         ({"source_sets": ["PyPI"]}, "environment_invalid"),
     ],
 )
 def test_a_hub_container_the_agent_cannot_render_is_refused(overrides, code):
     assert refused_code(hub_with(hub_container(**overrides))) == code
+
+
+def test_a_stop_timeout_and_exit_codes_are_kept_where_a_hub_container_names_them():
+    config = hub_with(
+        hub_container(stop_timeout_s=60, success_exit_codes=[2]),
+        hub_container(name="neutrino_demo_db", page_port=0),
+    )
+
+    config.validate()
+
+    lasting, plain = config.to_dict()["hub_containers"]
+    assert (lasting["stop_timeout_s"], lasting["success_exit_codes"]) == (60, [2])
+    assert "stop_timeout_s" not in plain
+    assert "success_exit_codes" not in plain
+    assert config.hub_containers[1].stop_timeout_s == 0
 
 
 def test_a_hub_container_cannot_share_a_declared_container_s_name():

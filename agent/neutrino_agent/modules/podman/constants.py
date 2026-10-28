@@ -22,14 +22,20 @@ PODMAN_ENV_FILE_MODE = 0o600
 PODMAN_ENV_DIR_MODE = 0o700
 
 # What a unit runs: the cid file it keeps under the runtime directory, the
-# seconds ``podman stop`` gives the container, how long systemd waits for a
-# stop and for a start, a first pull among it, and the cgroups mode: split
-# on Linux, and enabled inside a Podman machine, whose WSL systemd runs
-# under cgroupfs, where split mode finds no pids controller.
+# seconds ``podman stop`` gives the container, how much longer systemd waits
+# for a stop, how long it waits for a start, a first pull among it, and the
+# cgroups mode: split on Linux, and enabled inside a Podman machine, whose
+# WSL systemd runs under cgroupfs, where split mode finds no pids controller.
 PODMAN_CID_FILE = "%t/%N.cid"
 PODMAN_STOP_TIMEOUT_S = 10
-PODMAN_UNIT_STOP_TIMEOUT_S = 70
+PODMAN_UNIT_STOP_MARGIN_S = 60
 PODMAN_UNIT_START_TIMEOUT_S = 900
+# The longest stop timeout a hub container may name.
+PODMAN_STOP_TIMEOUT_MAX_S = 3600
+# The exit code a container that ends on the stop's SIGTERM gives, which a
+# unit counts as a clean stop, and the highest exit code there is.
+PODMAN_STOP_EXIT_CODE = 143
+PODMAN_EXIT_CODE_MAX = 255
 PODMAN_CGROUPS = "split"
 PODMAN_MACHINE_CGROUPS = "enabled"
 # The OCI runtime a Linux unit runs its container with; a Podman machine keeps

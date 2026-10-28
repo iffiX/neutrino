@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.podman.constants import (
     PODMAN_DIGEST_PATTERN,
+    PODMAN_EXIT_CODE_MAX,
     PODMAN_HUB_PREFIX,
     PODMAN_PROTOCOL_TCP,
     PODMAN_PROTOCOL_UDP,
@@ -31,6 +32,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_SERVICE_PORT,
     PODMAN_SERVICE_SCHEMES,
     PODMAN_SERVICE_WEB,
+    PODMAN_STOP_TIMEOUT_MAX_S,
 )
 from neutrino_agent.modules.podman.machine_paths import is_shared_source, split_volume
 
@@ -216,6 +218,10 @@ class PodmanHubContainer:
         after: The containers of its module it starts after, by name.
         page_port: The container's port its module's forwarder serves; 0
             for none.
+        stop_timeout_s: The seconds ``podman stop`` gives it before
+            SIGKILL; 0 for Podman's own 10.
+        success_exit_codes: The exit codes beside 143 its unit counts as a
+            clean stop.
     """
 
     module: str
@@ -231,6 +237,8 @@ class PodmanHubContainer:
     source_sets: list = field(default_factory=list)
     after: list = field(default_factory=list)
     page_port: int = 0
+    stop_timeout_s: int = 0
+    success_exit_codes: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "PodmanHubContainer":
@@ -253,10 +261,14 @@ class PodmanHubContainer:
             source_sets=[str(name) for name in data.get("source_sets") or []],
             after=[str(name) for name in data.get("after") or []],
             page_port=_count(data.get("page_port", 0)),
+            stop_timeout_s=_count(data.get("stop_timeout_s", 0)),
+            success_exit_codes=[
+                _count(code) for code in data.get("success_exit_codes") or []
+            ],
         )
 
     def to_dict(self) -> dict:
-        return {
+        held = {
             "module": self.module,
             "name": self.name,
             "image": {"digest": self.digest, "sources": list(self.sources)},
@@ -270,6 +282,11 @@ class PodmanHubContainer:
             "after": list(self.after),
             "page_port": self.page_port,
         }
+        if self.stop_timeout_s:
+            held["stop_timeout_s"] = self.stop_timeout_s
+        if self.success_exit_codes:
+            held["success_exit_codes"] = list(self.success_exit_codes)
+        return held
 
     @property
     def network(self) -> str:
@@ -556,6 +573,11 @@ class PodmanConfig:
                 "port_mapping_invalid",
                 {"name": name, "port": str(container.page_port)},
             )
+        if not 0 <= container.stop_timeout_s <= PODMAN_STOP_TIMEOUT_MAX_S:
+            raise ModuleApplyError("command_invalid", {"name": name})
+        for code in container.success_exit_codes:
+            if not 0 <= code <= PODMAN_EXIT_CODE_MAX:
+                raise ModuleApplyError("command_invalid", {"name": name})
 
     def _validate_machine(
         self, *, os_name: str, host_cpus: int, host_memory_gib: int, disk_gib_now: int

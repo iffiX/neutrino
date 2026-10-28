@@ -44,10 +44,11 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_REGISTRIES_CONF_PATH,
     PODMAN_RM_BINARY,
     PODMAN_RUNTIME,
+    PODMAN_STOP_EXIT_CODE,
     PODMAN_STOP_TIMEOUT_S,
     PODMAN_UNIT_DIR,
     PODMAN_UNIT_START_TIMEOUT_S,
-    PODMAN_UNIT_STOP_TIMEOUT_S,
+    PODMAN_UNIT_STOP_MARGIN_S,
     PODMAN_UNIT_SUFFIX,
 )
 from neutrino_agent.modules.podman.machine_paths import split_volume, to_machine
@@ -410,6 +411,8 @@ class _RenderedContainer:
         network: The network it joins; empty for Podman's default.
         after: The units it requires and starts after.
         page_publish: ``127.0.0.1:<host>:<page_port>``; empty for none.
+        stop_timeout_s: The seconds ``podman stop`` gives it.
+        success_exit_codes: The exit codes its unit counts as a clean stop.
     """
 
     container: PodmanContainer
@@ -420,6 +423,8 @@ class _RenderedContainer:
     network: str = ""
     after: tuple = ()
     page_publish: str = ""
+    stop_timeout_s: int = PODMAN_STOP_TIMEOUT_S
+    success_exit_codes: tuple = (PODMAN_STOP_EXIT_CODE,)
 
 
 class PodmanUnitRenderer:
@@ -514,6 +519,11 @@ class PodmanUnitRenderer:
                         if hub.page_port and page
                         else ""
                     ),
+                    stop_timeout_s=hub.stop_timeout_s or PODMAN_STOP_TIMEOUT_S,
+                    success_exit_codes=(
+                        PODMAN_STOP_EXIT_CODE,
+                        *hub.success_exit_codes,
+                    ),
                 )
             )
         return rendered
@@ -562,15 +572,16 @@ class PodmanUnitRenderer:
             "Restart=on-failure",
             # A container that ends on the stop's SIGTERM exits 143; SIGKILL
             # from outside stays a failure, which Restart answers.
-            "SuccessExitStatus=143",
+            "SuccessExitStatus="
+            + " ".join(str(code) for code in held.success_exit_codes),
             # A first pull of a large image takes longer than the default
             # start timeout allows.
             f"TimeoutStartSec={PODMAN_UNIT_START_TIMEOUT_S}",
-            f"TimeoutStopSec={PODMAN_UNIT_STOP_TIMEOUT_S}",
+            f"TimeoutStopSec={held.stop_timeout_s + PODMAN_UNIT_STOP_MARGIN_S}",
             # Podman 3.4's run fails on a cid file that is already there.
             f"ExecStartPre=-{PODMAN_RM_BINARY} -f {cid}",
             f"ExecStart={' '.join(self._run_command(held, volumes))}",
-            f"ExecStop={PODMAN_BINARY} stop --ignore -t {PODMAN_STOP_TIMEOUT_S} "
+            f"ExecStop={PODMAN_BINARY} stop --ignore -t {held.stop_timeout_s} "
             f"--cidfile={cid}",
             f"ExecStopPost=-{PODMAN_BINARY} rm -f --ignore --cidfile={cid}",
         ]

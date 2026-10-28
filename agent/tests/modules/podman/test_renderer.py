@@ -779,6 +779,23 @@ def test_a_hub_container_has_its_label_network_gateway_image_and_page_port():
     assert "s3cret" not in text
 
 
+def test_a_hub_container_s_stop_timeout_sets_its_stop_and_the_unit_s_wait():
+    hub = [
+        {**HUB_CONTAINERS[1], "stop_timeout_s": 60, "success_exit_codes": [2]},
+        HUB_CONTAINERS[0],
+    ]
+    rendered = PodmanUnitRenderer(config=hub_config(hub=hub)).render()
+    lasting = rendered["neutrino_demo.service"].splitlines()
+    plain = rendered["neutrino_demo_agent.service"].splitlines()
+
+    assert "TimeoutStopSec=120" in lasting
+    assert "ExecStop=/usr/bin/podman stop --ignore -t 60 --cidfile=%t/%N.cid" in lasting
+    assert "SuccessExitStatus=143 2" in lasting
+    assert "TimeoutStopSec=70" in plain
+    assert "ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%N.cid" in plain
+    assert "SuccessExitStatus=143" in plain
+
+
 def test_a_declared_container_reaches_the_machine_at_its_network_s_gateway():
     rendered = PodmanUnitRenderer(
         config=hub_config([FULL], hub=[]), context=HUB_CONTEXT
