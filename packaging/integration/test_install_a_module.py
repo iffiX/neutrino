@@ -246,13 +246,13 @@ def test_the_page_offers_to_uninstall_what_is_installed(panel, managed, installe
 def test_a_program_run_as_an_account_has_its_page_on_a_managed_machine(panel, managed):
     """The shared instances router answers for a machine the hub manages
     before anything of the module is installed: the fields every module view
-    carries, the socket's state, no instance, and the machine's accounts."""
+    carries, the socket's state, and the available accounts, none enabled."""
     view = panel.read(f"/agent/module/{INSTANCE_MODULE}?device_id={managed}")
 
     assert view["device_id"] == managed
     assert view["is_online"] is True, view
-    assert view["instances"] == []
     assert isinstance(view["accounts"], list)
+    assert not any(row["is_enabled"] for row in view["accounts"]), view
     assert {"host", "state", "code", "params", "is_active"} <= set(view)
 
 
