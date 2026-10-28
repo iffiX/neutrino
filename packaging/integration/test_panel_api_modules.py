@@ -15,6 +15,7 @@ import subprocess
 
 import pytest
 
+import test_panel_api_devices as devices_page
 import test_panel_update as update
 
 MODULE_VERBS = ["install", "start", "stop", "uninstall"]
@@ -72,12 +73,7 @@ STATE_WORDS = frozenset(
 @pytest.fixture(scope="module")
 def device_id(panel):
     """A stored device with no agent, adopted from a scan row of its own."""
-    status, device = panel.call(
-        "POST",
-        "/hub/device/set",
-        {"device_id": "scan:52:54:00:cc:dd:ee", "name": "modules audit"},
-    )
-    assert status == 200, device
+    device = devices_page.adopt(panel, "scan:52:54:00:cc:dd:ee", "modules audit")
     yield device["id"]
     panel.call("POST", "/hub/device/remove", {"device_id": device["id"]})
 

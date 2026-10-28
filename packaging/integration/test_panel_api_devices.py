@@ -41,13 +41,25 @@ def stored_with(panel, mac_address: str) -> list:
     ]
 
 
-def adopt(panel, scan_id: str, name: str) -> dict:
-    """Name a scan row, which is what stores it under an id of its own."""
-    status, device = panel.call(
-        "POST", "/hub/device/set", {"device_id": scan_id, "name": name}
+def adopt(panel, scan_id: str, name: str, **fields) -> dict:
+    """Name a scan row, which is what stores it under an id of its own.
+
+    Returns:
+        The stored row holding the scan row's address, from the device list
+        the write answers with.
+    """
+    status, listed = panel.call(
+        "POST", "/hub/device/set", {"device_id": scan_id, "name": name, **fields}
     )
-    assert status == 200, device
-    return device
+    assert status == 200, listed
+    mac_address = scan_id.split(":", 1)[1]
+    rows = [
+        entry
+        for entry in listed["devices"]
+        if entry["is_stored"] and mac_address in entry["mac_addresses"]
+    ]
+    assert len(rows) == 1, listed
+    return rows[0]
 
 
 @pytest.fixture(scope="module")

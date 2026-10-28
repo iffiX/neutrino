@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+import test_panel_api_devices as devices_page
+
 # The device these start from is a scan row nothing on this network
 # answers for: naming one adopts it under an id of its own.
 TEST_SCAN_ID = "scan:02:00:00:00:00:71"
@@ -107,23 +109,19 @@ def test_deleting_a_login_clears_the_device_that_referenced_it(panel):
     )
     assert status == 200, login
 
-    status, device = panel.call(
-        "POST",
-        "/hub/device/set",
-        {
-            "device_id": TEST_SCAN_ID,
-            "name": "itest box",
-            "ssh": {
-                "host": "192.0.2.71",
-                "port": 22,
-                "username": "itest",
-                "auth": "password",
-                "login_id": login["id"],
-                "sudo_login_id": login["id"],
-            },
+    device = devices_page.adopt(
+        panel,
+        TEST_SCAN_ID,
+        "itest box",
+        ssh={
+            "host": "192.0.2.71",
+            "port": 22,
+            "username": "itest",
+            "auth": "password",
+            "login_id": login["id"],
+            "sudo_login_id": login["id"],
         },
     )
-    assert status == 200, device
     device_id = device["id"]
     ssh_view = device["ssh"]
     assert ssh_view["login_id"] == login["id"]
