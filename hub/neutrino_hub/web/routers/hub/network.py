@@ -164,7 +164,7 @@ async def update_options(
     for family, names in exposure.items():
         if names is not None:
             _set_exposure(network, names, family=family, runtime=runtime)
-            _refuse_exposed_disabled(network)
+    _refuse_exposed_disabled(network)
     if options.exposed_overlays is not None:
         wanted = set(options.exposed_overlays)
         for overlay in network.overlays:

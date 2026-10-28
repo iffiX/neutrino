@@ -1680,6 +1680,29 @@ def test_a_role_a_port_cannot_take_in_one_step_is_refused(box, role):
     assert runtime.network().interface("wlp3s0").role == "disabled"
 
 
+def test_a_write_closing_both_segments_of_a_stopped_port_is_accepted(box):
+    """The refusal judges the exposure after both families are written."""
+    client, runtime, _ = box
+    stored = runtime.network()
+    radio = stored.interface("wlp3s0")
+    radio.set_exposed_in("ipv4", True)
+    radio.set_exposed_in("ipv6", True)
+    stored.replace(radio)
+    runtime.write_network(stored)
+
+    response = client.post(
+        "/api/hub/network/set", json=_options(exposed=["enp1s0"], overlays=[])
+    )
+
+    assert response.status_code == 200, response.json()
+    saved = runtime.network().interface("wlp3s0")
+    assert (saved.role, saved.is_ipv4_exposed, saved.is_ipv6_exposed) == (
+        "disabled",
+        False,
+        False,
+    )
+
+
 def test_a_router_refuses_the_role_disabled_on_an_exposed_port(box):
     client, runtime, _ = box
     settings = settings_of(client, "enp1s0")
