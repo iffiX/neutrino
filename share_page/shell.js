@@ -1,32 +1,52 @@
 "use strict";
-// The shell of a Web share. It holds the one connection to the hub: a WebRTC
-// data channel opened with static signalling from the link, the guest's open
-// record with the share ticket, and a yamux client whose streams carry the
-// control stream, HTTP requests and WebSockets to the one shared entry. The
-// service worker hands it every request the app's iframe makes.
+// The shell of a Web share. It owns the connection to the hub. It opens a
+// WebRTC data channel from the link's facts, sends the share's ticket in the
+// open record, and runs a yamux client. Its streams are the control stream,
+// the app's HTTP requests and the app's WebSockets, all to the share's entry.
+// The service worker sends it every request of the app's frame.
 
 const PROTOCOL = 4;
-const RECORD = { open: 1, accept: 2, data: 3, eof: 5, close: 8 };
+const LINK_FORM = 1;
+const RECORD = { open: 1, accept: 2, data: 3, close: 8 };
 const YAMUX = {
   data: 0, window: 1, ping: 2, goaway: 3,
   SYN: 1, ACK: 2, FIN: 4, RST: 8,
   headerBytes: 12, initialWindow: 256 * 1024, frameMax: 65507, receiveWindow: 4 * 1024 * 1024,
 };
-const CHANNEL = { label: "neutrino", messageMax: 64 * 1024, bufferedHigh: 4 * 1024 * 1024, bufferedLow: 1024 * 1024, openTimeoutMs: 15000 };
+const CHANNEL = { label: "neutrino", bufferedHigh: 4 * 1024 * 1024, bufferedLow: 1024 * 1024 };
+// Every interval of web_share.md, "The connection", in milliseconds.
+const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000 };
 const HTTP = { host: "127.0.0.1", streamsMax: 8 };
-const SCREENS = {
-  link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
-  hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
-  machine: ["This machine is offline.", "The app's machine is not connected to its hub right now."],
+// The query parameter that tags a navigation of the app's frame with its tab.
+const TAB_PARAM = "__neutrino_tab";
+// The query parameter that names the tab a new tab was opened from.
+const FROM_PARAM = "__neutrino_from";
+const KEPT_FACTS = "neutrino_share";
+const WORDS = {
+  en: {
+    opening: "Opening {app}…",
+    slow: "The line is slow, still connecting…",
+    link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
+    hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
+    machine: ["This machine is offline.", "The app's machine is not connected to its hub right now."],
+  },
+  zh: {
+    opening: "正在打开 {app}…",
+    slow: "线路较慢，仍在连接…",
+    link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
+    hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],
+    machine: ["这台机器已离线。", "这个应用所在的机器现在没有连上它的中枢。"],
+  },
 };
+// The codes that show the machine-offline screen, and those that end the share.
+const MACHINE_CODES = ["agent_offline", "service_unknown"];
+const SHARE_CODES = ["share_unknown"];
+// Refusals of a hello that a later try can pass.
+const PASSING_CODES = ["channel_full", "control_unavailable"];
 
 const encoder = new TextEncoder();
-const stats = { t0: performance.now(), requests: 0, bytesIn: 0, bytesOut: 0, routedByMapping: 0, routedByFallback: 0, wsTrace: [] };
-const WS_TRACE_MAX = 400;
-function traceWs(direction, data) {
-  if (stats.wsTrace.length >= WS_TRACE_MAX) stats.wsTrace.shift();
-  stats.wsTrace.push({ t: performance.now(), direction, text: typeof data === "string" ? data.slice(0, 160) : "<" + data.byteLength + " bytes>" });
-}
+const decoder = new TextDecoder();
+const stats = { startedAt: performance.now() };
 window.__neutrinoStats = stats;
 
 // --- bytes ---------------------------------------------------------------
@@ -64,62 +84,115 @@ class ByteQueue {
 function latin1(u8) { let s = ""; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return s; }
 function json(object) { return encoder.encode(JSON.stringify(object)); }
 function base64urlDecode(text) {
-  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - text.length % 4) % 4);
-  const binary = atob(padded);
+  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - text.length % 4) % 4));
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
 }
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
-// --- the link --------------------------------------------------------------
-
-function readPayload() {
-  const fragment = location.hash.slice(1);
-  let payload = null;
-  if (fragment) {
-    try { payload = JSON.parse(new TextDecoder().decode(base64urlDecode(fragment))); } catch (e) { payload = null; }
-    if (payload) sessionStorage.setItem("neutrino_share", JSON.stringify(payload));
-  }
-  if (!payload) {
-    const kept = sessionStorage.getItem("neutrino_share");
-    if (kept) payload = JSON.parse(kept);
-  }
-  return payload;
+// A refusal the page acts on: the screen it shows and the code behind it.
+class Refusal extends Error {
+  constructor(screen, code) { super(screen + ":" + code); this.screen = screen; this.code = code || ""; }
 }
+
+// The screen for a refusal code from the hub.
+function screenOf(code) {
+  if (SHARE_CODES.includes(code)) return "link";
+  if (MACHINE_CODES.includes(code)) return "machine";
+  return "hub";
+}
+
+// --- the link ------------------------------------------------------------
+
+// The share's facts from the link's fragment, else the tab's kept copy.
+function readFacts() {
+  let facts = null;
+  const fragment = location.hash.slice(1);
+  try {
+    facts = JSON.parse(fragment ? decoder.decode(base64urlDecode(fragment)) : sessionStorage.getItem(KEPT_FACTS) || "null");
+  } catch (e) {
+    facts = null;
+  }
+  if (!isFacts(facts)) return null;
+  if (fragment) sessionStorage.setItem(KEPT_FACTS, JSON.stringify(facts));
+  return facts;
+}
+
+// The share's facts from the tab this tab was opened from, through the worker.
+async function factsFromOpener() {
+  const url = new URL(location.href);
+  const from = url.searchParams.get(FROM_PARAM);
+  if (!from) return null;
+  url.searchParams.delete(FROM_PARAM);
+  history.replaceState(null, "", url.pathname + url.search + url.hash);
+  const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (!controller) return null;
+  const channel = new MessageChannel();
+  const answer = new Promise((resolve) => { channel.port1.onmessage = (event) => resolve(event.data); setTimeout(() => resolve(null), 3000); });
+  controller.postMessage({ type: "facts", from }, [channel.port2]);
+  const facts = await answer;
+  if (!isFacts(facts)) return null;
+  sessionStorage.setItem(KEPT_FACTS, JSON.stringify(facts));
+  stats.isFromOpener = true;
+  return facts;
+}
+
+function isFacts(facts) {
+  return !!facts && facts.v === LINK_FORM && !!facts.hub && typeof facts.hub.ip === "string" && Number.isInteger(facts.hub.port) &&
+    typeof facts.hub.fp === "string" && !!facts.ice && typeof facts.ice.ufrag === "string" && typeof facts.ice.pwd === "string" &&
+    typeof facts.ticket === "string" && !!facts.app && typeof facts.app.entry === "string";
+}
+
+// The Cache Storage cache of a hub's app.
+function cacheName(facts) { return "neutrino:" + facts.hub.fp + ":" + facts.app.entry; }
 
 // --- screens ---------------------------------------------------------------
 
+const words = WORDS[/^zh/i.test(navigator.language || "") ? "zh" : "en"];
+if (words === WORDS.zh) document.documentElement.lang = "zh-CN";
+
 const screen = {
-  elements: null,
-  bind() {
-    this.elements = { screen: document.getElementById("screen"), spinner: document.getElementById("spinner"), title: document.getElementById("title"), detail: document.getElementById("detail"), app: document.getElementById("app") };
-  },
+  kind: "",
+  // Counts every change of screen.
+  serial: 0,
+  element(id) { return document.getElementById(id); },
   loading(title) {
-    this.elements.spinner.classList.remove("hidden");
-    this.elements.title.textContent = title ? "Loading " + title : "Loading";
-    this.elements.detail.textContent = "";
-    this.elements.screen.classList.remove("hidden");
-    this.elements.app.style.display = "none";
+    this.kind = "loading";
+    this.serial++;
+    const line = words.opening.replace(title ? "{app}" : " {app}", title || "");
+    this.element("box").classList.add("loading");
+    this.element("title").textContent = line;
+    this.element("screen").classList.remove("hidden");
+    document.title = line;
+  },
+  slow() {
+    if (this.kind === "loading") this.element("title").textContent = words.slow;
   },
   refuse(kind) {
-    const [title, detail] = SCREENS[kind] || SCREENS.hub;
-    this.elements.spinner.classList.add("hidden");
-    this.elements.title.textContent = title;
-    this.elements.detail.textContent = detail;
-    this.elements.screen.classList.remove("hidden");
-    this.elements.app.style.display = "none";
+    const [title, detail] = words[kind];
+    this.kind = kind;
+    this.serial++;
+    this.element("box").classList.remove("loading");
+    this.element("title").textContent = title;
+    this.element("detail").textContent = detail;
+    this.element("screen").classList.remove("hidden");
     document.title = title;
-    stats.refusal = kind;
+    stats.screen = kind;
   },
   app() {
-    this.elements.screen.classList.add("hidden");
-    this.elements.app.style.display = "block";
+    this.kind = "app";
+    this.serial++;
+    this.element("screen").classList.add("hidden");
+    stats.screen = "app";
+    mirror.apply();
   },
 };
 
 // --- the channel -----------------------------------------------------------
 
-function hubOffer(payload) {
+// The hub's side of the session description, written from the link.
+function hubOffer(facts) {
   return [
     "v=0",
     "o=- 0 0 IN IP4 127.0.0.1",
@@ -131,36 +204,66 @@ function hubOffer(payload) {
     "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
     "c=IN IP4 0.0.0.0",
     "a=mid:0",
-    "a=ice-ufrag:" + payload.ice.ufrag,
-    "a=ice-pwd:" + payload.ice.pwd,
-    "a=fingerprint:sha-256 " + payload.hub.fp,
+    "a=ice-ufrag:" + facts.ice.ufrag,
+    "a=ice-pwd:" + facts.ice.pwd,
+    "a=fingerprint:sha-256 " + facts.hub.fp,
     "a=setup:actpass",
     "a=sctp-port:5000",
     "a=max-message-size:262144",
-    "a=candidate:1 1 tcp 2130706431 " + payload.hub.ip + " " + payload.hub.port + " typ host tcptype passive",
+    "a=candidate:1 1 tcp 2130706431 " + facts.hub.ip + " " + facts.hub.port + " typ host tcptype passive",
     "a=end-of-candidates",
     "",
   ].join("\r\n");
 }
 
-async function openChannel(payload) {
+// Waits for a promise until the deadline, else fails as the hub being out of reach.
+function within(promise, deadline) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Refusal("hub", "timeout")), Math.max(0, deadline - performance.now()));
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
+
+async function openChannel(facts, deadline) {
   const pc = new RTCPeerConnection({ iceServers: [] });
   const dc = pc.createDataChannel(CHANNEL.label, { negotiated: true, id: 0 });
   dc.binaryType = "arraybuffer";
   dc.bufferedAmountLowThreshold = CHANNEL.bufferedLow;
-  const started = performance.now();
-  await pc.setRemoteDescription({ type: "offer", sdp: hubOffer(payload) });
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("hub")), CHANNEL.openTimeoutMs);
-    dc.onopen = () => { clearTimeout(timer); resolve(); };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") { clearTimeout(timer); reject(new Error("hub")); }
-    };
-  });
-  stats.channelOpenMs = performance.now() - started;
+  try {
+    await pc.setRemoteDescription({ type: "offer", sdp: hubOffer(facts) });
+    await pc.setLocalDescription(await pc.createAnswer());
+    await within(new Promise((resolve, reject) => {
+      dc.onopen = resolve;
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed" || pc.connectionState === "closed") reject(new Refusal("hub", "channel"));
+      };
+    }), deadline);
+  } catch (error) {
+    pc.close();
+    throw error instanceof Refusal ? error : new Refusal("hub", "channel");
+  }
   return { pc, dc };
+}
+
+// Sends the open record with the ticket, and returns the share's id from the
+// accept and any bytes that came after it.
+function admit(dc, facts, deadline) {
+  return within(new Promise((resolve, reject) => {
+    const records = new RecordReader();
+    dc.onmessage = (event) => {
+      const [record] = records.feed(new Uint8Array(event.data));
+      if (!record) return;
+      dc.onmessage = null;
+      if (record.type !== RECORD.accept) {
+        const refusal = parseRefusal(record.payload);
+        reject(new Refusal(refusal.code === "control_unavailable" ? "hub" : "link", refusal.code));
+        return;
+      }
+      try { resolve({ id: JSON.parse(decoder.decode(record.payload)).id, rest: records.rest() }); } catch (e) { reject(new Refusal("link", "malformed")); }
+    };
+    dc.onclose = () => reject(new Refusal("hub", "closed"));
+    dc.send(encodeRecord(RECORD.open, json({ protocol: PROTOCOL, ticket: facts.ticket })));
+  }), deadline);
 }
 
 // --- yamux -----------------------------------------------------------------
@@ -171,32 +274,32 @@ class Yamux {
     this.queue = new ByteQueue();
     this.streams = new Map();
     this.nextID = 1;
-    this.pings = new Map();
-    this.nextPing = 1;
+    this.lastByteAt = performance.now();
     this.onEnd = null;
     this.isEnded = false;
-    channel.onmessage = (event) => { stats.bytesIn += event.data.byteLength; this.feed(new Uint8Array(event.data)); };
+    channel.onmessage = (event) => this.feed(new Uint8Array(event.data));
     channel.onbufferedamountlow = () => this.pumpAll();
-    channel.onclose = () => this.end(new Error("hub"));
-    channel.onerror = () => this.end(new Error("hub"));
+    channel.onclose = () => this.end();
+    channel.onerror = () => this.end();
   }
   sendFrame(type, flags, id, length, payload) {
+    if (this.isEnded) return;
     const frame = new Uint8Array(YAMUX.headerBytes + (payload ? payload.length : 0));
     const view = new DataView(frame.buffer);
-    frame[0] = 0; frame[1] = type;
+    frame[1] = type;
     view.setUint16(2, flags);
     view.setUint32(4, id);
     view.setUint32(8, length);
     if (payload) frame.set(payload, YAMUX.headerBytes);
-    stats.bytesOut += frame.length;
-    this.channel.send(frame);
+    try { this.channel.send(frame); } catch (e) { this.end(); }
   }
   feed(u8) {
+    this.lastByteAt = performance.now();
     this.queue.push(u8);
     while (this.queue.length >= YAMUX.headerBytes) {
       const head = this.queue.peek(YAMUX.headerBytes);
       const view = new DataView(head.buffer);
-      if (head[0] !== 0) { this.end(new Error("yamux version")); return; }
+      if (head[0] !== 0) { this.end(); return; }
       const type = head[1], flags = view.getUint16(2), id = view.getUint32(4), length = view.getUint32(8);
       let payload = null;
       if (type === YAMUX.data) {
@@ -210,12 +313,8 @@ class Yamux {
     }
   }
   dispatch(type, flags, id, length, payload) {
-    if (type === YAMUX.ping) {
-      if (flags & YAMUX.SYN) this.sendFrame(YAMUX.ping, YAMUX.ACK, 0, length);
-      else { const waiter = this.pings.get(length); if (waiter) { this.pings.delete(length); waiter(); } }
-      return;
-    }
-    if (type === YAMUX.goaway) { this.end(new Error("goaway " + length)); return; }
+    if (type === YAMUX.ping) { if (flags & YAMUX.SYN) this.sendFrame(YAMUX.ping, YAMUX.ACK, 0, length); return; }
+    if (type === YAMUX.goaway) { this.end(); return; }
     const stream = this.streams.get(id);
     if (!stream) return;
     if (type === YAMUX.window) stream.onWindow(flags, length);
@@ -231,20 +330,12 @@ class Yamux {
   }
   canSend() { return this.channel.bufferedAmount < CHANNEL.bufferedHigh; }
   pumpAll() { for (const stream of this.streams.values()) stream.pump(); }
-  ping() {
-    return new Promise((resolve) => {
-      const id = this.nextPing++;
-      const started = performance.now();
-      this.pings.set(id, () => resolve(performance.now() - started));
-      this.sendFrame(YAMUX.ping, YAMUX.SYN, 0, id);
-    });
-  }
-  end(error) {
+  end() {
     if (this.isEnded) return;
     this.isEnded = true;
-    for (const stream of this.streams.values()) stream.fail(error);
+    for (const stream of [...this.streams.values()]) stream.fail();
     this.streams.clear();
-    if (this.onEnd) this.onEnd(error);
+    if (this.onEnd) this.onEnd();
   }
 }
 
@@ -290,7 +381,7 @@ class YamuxStream {
     this.pump();
   }
   flags(flags) {
-    if (flags & YAMUX.RST) { this.fail(new Error("stream reset")); return; }
+    if (flags & YAMUX.RST) { this.fail(); return; }
     if (flags & YAMUX.FIN && !this.isReadClosed) {
       this.isReadClosed = true;
       if (this.onEnd) this.onEnd();
@@ -301,16 +392,16 @@ class YamuxStream {
   close() { this.isCloseQueued = true; this.pump(); }
   reset() {
     if (this.isFailed) return;
+    this.isFailed = true;
     this.mux.sendFrame(YAMUX.window, YAMUX.RST, this.id, 0);
-    this.isWriteClosed = this.isReadClosed = true;
     this.mux.streams.delete(this.id);
   }
   forgetIfDone() { if (this.isWriteClosed && this.isReadClosed) this.mux.streams.delete(this.id); }
-  fail(error) {
+  fail() {
     if (this.isFailed) return;
     this.isFailed = true;
     this.mux.streams.delete(this.id);
-    if (this.onError) this.onError(error);
+    if (this.onError) this.onError();
   }
 }
 
@@ -343,30 +434,30 @@ class RecordReader {
 }
 
 function parseRefusal(payload) {
-  try { const parsed = JSON.parse(new TextDecoder().decode(payload)); return { code: parsed.code || "", params: parsed.params || {} }; } catch (e) { return { code: "malformed", params: {} }; }
+  try { const parsed = JSON.parse(decoder.decode(payload)); return { code: parsed.code || "", params: parsed.params || {} }; } catch (e) { return { code: "malformed", params: {} }; }
 }
 
 // --- the control stream ----------------------------------------------------
 
+// The control stream's frames, each passed to a waiter of its type or to onFrame.
 class ControlStream {
   constructor(mux) {
     this.stream = mux.open();
     this.records = new RecordReader();
-    this.decoder = new TextDecoder();
     this.text = "";
-    this.frames = [];
     this.waiters = [];
+    this.onFrame = null;
     this.accepted = new Promise((resolve, reject) => { this.resolveAccept = resolve; this.rejectAccept = reject; });
     this.stream.handlers = {
       data: (u8) => {
         for (const record of this.records.feed(u8)) {
           if (record.type === RECORD.accept) this.resolveAccept();
-          else if (record.type === RECORD.close) { const refusal = parseRefusal(record.payload); this.rejectAccept(refusal); this.push({ type: "refused", code: refusal.code, params: refusal.params }); }
-          else if (record.type === RECORD.data) this.lines(this.decoder.decode(record.payload, { stream: true }));
+          else if (record.type === RECORD.close) { const refusal = parseRefusal(record.payload); this.rejectAccept(new Refusal("hub", refusal.code)); }
+          else if (record.type === RECORD.data) this.lines(decoder.decode(record.payload));
         }
       },
-      end: () => this.push({ type: "ended" }),
-      error: () => this.push({ type: "ended" }),
+      end: () => this.take({ type: "ended" }),
+      error: () => this.take({ type: "ended" }),
     };
     this.stream.write(encodeRecord(RECORD.open, json({ kind: "control" })));
   }
@@ -376,23 +467,19 @@ class ControlStream {
     while ((index = this.text.indexOf("\n")) >= 0) {
       const line = this.text.slice(0, index);
       this.text = this.text.slice(index + 1);
-      if (line) { try { this.push(JSON.parse(line)); } catch (e) { /* a line that is not JSON is dropped */ } }
+      if (line) { try { this.take(JSON.parse(line)); } catch (e) { /* a line that is not JSON is dropped */ } }
     }
   }
-  push(frame) {
-    this.frames.push(frame);
-    for (const waiter of this.waiters.splice(0)) waiter();
+  take(frame) {
+    const index = this.waiters.findIndex((waiter) => waiter.matches(frame));
+    if (index >= 0) { this.waiters.splice(index, 1)[0].resolve(frame); return; }
+    if (frame.type === "ended" || frame.type === "refused") for (const waiter of this.waiters.splice(0)) waiter.resolve(frame);
+    if (this.onFrame) this.onFrame(frame);
   }
-  writeFrame(frame) { this.stream.write(encodeRecord(RECORD.data, encoder.encode(JSON.stringify(frame) + "\n"))); }
-  async next(types, timeoutMs = 15000) {
-    const deadline = performance.now() + timeoutMs;
-    for (;;) {
-      const index = this.frames.findIndex((frame) => types.includes(frame.type));
-      if (index >= 0) return this.frames.splice(index, 1)[0];
-      const remaining = deadline - performance.now();
-      if (remaining <= 0) throw new Error("hub");
-      await new Promise((resolve) => { this.waiters.push(resolve); setTimeout(resolve, remaining); });
-    }
+  write(frame) { this.stream.write(encodeRecord(RECORD.data, encoder.encode(JSON.stringify(frame) + "\n"))); }
+  // The next frame that matches, or a refused or ended frame, by the deadline.
+  next(matches, deadline) {
+    return within(new Promise((resolve) => this.waiters.push({ matches, resolve })), deadline);
   }
 }
 
@@ -458,30 +545,21 @@ class HttpParser {
         if (!this.head(head)) return;
         continue;
       }
-      if (this.state === "fixed") {
+      if (this.state === "fixed" || this.state === "chunk-data") {
         if (!this.queue.length) return;
         const piece = this.queue.take(Math.min(this.remaining, this.queue.length));
         this.remaining -= piece.length;
         this.handlers.body(piece);
-        if (this.remaining === 0) this.finish();
+        if (this.remaining === 0) { if (this.state === "fixed") this.finish(); else this.state = "chunk-end"; }
         continue;
       }
       if (this.state === "chunk-size") {
         const end = this.queue.indexOf(CRLF);
         if (end < 0) return;
-        const line = latin1(this.queue.take(end + 2)).trim();
-        const size = parseInt(line.split(";")[0], 16);
-        if (Number.isNaN(size)) { this.handlers.error(new Error("chunk size")); return; }
+        const size = parseInt(latin1(this.queue.take(end + 2)).trim().split(";")[0], 16);
+        if (Number.isNaN(size)) { this.isDone = true; this.handlers.error(); return; }
         if (size === 0) { this.state = "trailer"; continue; }
         this.remaining = size; this.state = "chunk-data";
-        continue;
-      }
-      if (this.state === "chunk-data") {
-        if (!this.queue.length) return;
-        const piece = this.queue.take(Math.min(this.remaining, this.queue.length));
-        this.remaining -= piece.length;
-        this.handlers.body(piece);
-        if (this.remaining === 0) this.state = "chunk-end";
         continue;
       }
       if (this.state === "chunk-end") {
@@ -493,14 +571,10 @@ class HttpParser {
       if (this.state === "trailer") {
         const end = this.queue.indexOf(CRLF);
         if (end < 0) return;
-        const line = this.queue.take(end + 2);
-        if (line.length === 2) this.finish();
+        if (this.queue.take(end + 2).length === 2) this.finish();
         continue;
       }
-      if (this.state === "until-close") {
-        if (this.queue.length) this.handlers.body(this.queue.takeAll());
-        return;
-      }
+      if (this.state === "until-close" && this.queue.length) this.handlers.body(this.queue.takeAll());
       return;
     }
   }
@@ -508,13 +582,11 @@ class HttpParser {
     const lines = text.split("\r\n");
     const [version, statusText, ...rest] = lines[0].split(" ");
     const status = Number(statusText);
-    if (!version.startsWith("HTTP/") || Number.isNaN(status)) { this.handlers.error(new Error("status line")); return false; }
+    if (!version.startsWith("HTTP/") || Number.isNaN(status)) { this.isDone = true; this.handlers.error(); return false; }
     const headers = [];
     for (const line of lines.slice(1)) {
-      if (!line) continue;
       const cut = line.indexOf(":");
-      if (cut < 0) continue;
-      headers.push([line.slice(0, cut).trim(), line.slice(cut + 1).trim()]);
+      if (cut > 0) headers.push([line.slice(0, cut).trim(), line.slice(cut + 1).trim()]);
     }
     if (status >= 100 && status < 200 && status !== 101) return true;
     const header = (name) => { const found = headers.find(([key]) => key.toLowerCase() === name); return found ? found[1] : ""; };
@@ -530,10 +602,12 @@ class HttpParser {
     return true;
   }
   finish() { this.state = "head"; this.remaining = 0; this.handlers.end(); }
+  // The stream ended while a request waits for its response.
   end() {
     if (this.isDone) return;
-    if (this.state === "until-close") { this.isDone = true; this.handlers.end(); }
-    else if (this.state !== "head") { this.isDone = true; this.handlers.error(new Error("response cut short")); }
+    this.isDone = true;
+    if (this.state === "until-close") this.handlers.end();
+    else this.handlers.error();
   }
 }
 
@@ -543,81 +617,112 @@ function requestHead(method, path, headers) {
   return encoder.encode(text + "\r\n");
 }
 
+// A connect stream to the entry that sends HTTP/1.1 requests one at a time.
 class HttpConnection {
   constructor(pool) {
     this.pool = pool;
     this.stream = pool.mux.open();
     this.records = new RecordReader();
     this.isRaw = false; this.isUsable = true; this.current = null;
+    this.served = 0;
     this.stream.handlers = {
       data: (u8) => {
         if (this.isRaw) { if (this.current) this.current.parser.feed(u8); return; }
         for (const record of this.records.feed(u8)) {
           if (record.type === RECORD.accept) { this.isRaw = true; const rest = this.records.rest(); if (rest.length && this.current) this.current.parser.feed(rest); break; }
-          if (record.type === RECORD.close) { this.fail(parseRefusal(record.payload)); return; }
+          if (record.type === RECORD.close) { this.fail(parseRefusal(record.payload).code); return; }
         }
       },
-      end: () => { this.isUsable = false; if (this.current) this.current.parser.end(); this.pool.forget(this); },
-      error: () => { this.isUsable = false; this.fail({ code: "stream", params: {} }); this.pool.forget(this); },
+      end: () => { this.isUsable = false; if (this.current) this.current.parser.end(); else this.pool.forget(this); },
+      error: () => this.fail(""),
     };
     this.stream.write(encodeRecord(RECORD.open, json({ kind: "connect", id: pool.entry })));
   }
   send(request, sink) {
     const parser = new HttpParser(request.method, {
-      head: (head) => { this.closeAfter = head.isClosing || request.isClosing; sink.head(head); },
+      head: (head) => { this.isClosingAfter = head.isClosing; this.current.hasHead = true; sink.head(head); },
       body: (piece) => sink.body(piece),
-      end: () => { const closeAfter = this.closeAfter; this.current = null; sink.end(); if (closeAfter) { this.isUsable = false; this.stream.close(); this.pool.forget(this); } else this.pool.release(this); },
-      error: (error) => { this.isUsable = false; this.current = null; sink.fail({ code: "stream", params: { detail: String(error) } }); this.stream.reset(); this.pool.forget(this); },
+      end: () => {
+        this.current = null;
+        this.served++;
+        sink.end();
+        if (this.isClosingAfter || !this.isUsable) { this.isUsable = false; this.stream.close(); this.pool.forget(this); } else this.pool.release(this);
+      },
+      error: () => this.fail(""),
     });
     this.current = { request, sink, parser };
     this.stream.write(requestHead(request.method, request.path, request.headers));
     if (request.body && request.body.length) this.stream.write(request.body);
   }
-  fail(refusal) {
+  // Ends the connection. The code is the hub's close code, empty for a broken
+  // stream. A GET or HEAD on a reused stream that ended before its response
+  // is sent again on a new stream.
+  fail(code) {
+    if (!this.isUsable && !this.current) return;
     this.isUsable = false;
     const current = this.current;
     this.current = null;
-    if (current) current.sink.fail(refusal);
+    this.stream.reset();
     this.pool.forget(this);
+    if (current && !code && !current.hasHead && this.served > 0 && ["GET", "HEAD"].includes(current.request.method)) this.pool.resend(current.request, current.sink);
+    else if (current) current.sink.fail(code);
+    if (code) this.pool.onCode(code);
   }
 }
 
 class HttpPool {
-  constructor(mux, entry, jar) {
-    this.mux = mux; this.entry = entry; this.jar = jar;
+  constructor(mux, entry, jar, onCode) {
+    this.mux = mux; this.entry = entry; this.jar = jar; this.onCode = onCode;
     this.idle = []; this.active = new Set(); this.waiting = [];
+    this.byRequest = new Map();
   }
+  // Sends a request. The sink takes head, body, end and fail(code).
   request(request, sink) {
     const headers = [["Host", HTTP.host]];
     let hasAcceptEncoding = false;
     for (const [name, value] of request.headers || []) {
       const lower = name.toLowerCase();
-      if (lower === "host" || lower === "cookie" || lower === "connection" || lower === "content-length" || lower === "transfer-encoding") continue;
+      if (["host", "cookie", "connection", "content-length", "transfer-encoding", "keep-alive"].includes(lower)) continue;
       if (lower === "origin") { headers.push(["Origin", "http://" + HTTP.host]); continue; }
-      if (lower === "accept-encoding") hasAcceptEncoding = true;
+      if (lower === "referer") { headers.push(["Referer", onHost(value)]); continue; }
+      if (lower === "accept-encoding") { hasAcceptEncoding = true; headers.push([name, "gzip, deflate"]); continue; }
       headers.push([name, value]);
     }
-    if (!hasAcceptEncoding && typeof DecompressionStream === "function") headers.push(["Accept-Encoding", "gzip"]);
-    const cookie = this.jar.header(request.path.split("?")[0]);
+    if (!hasAcceptEncoding && typeof DecompressionStream === "function") headers.push(["Accept-Encoding", "gzip, deflate"]);
+    const path = request.path.split("?")[0];
+    const cookie = this.jar.header(path);
     if (cookie) headers.push(["Cookie", cookie]);
     if (request.body && request.body.length) headers.push(["Content-Length", String(request.body.length)]);
     else if (request.method !== "GET" && request.method !== "HEAD") headers.push(["Content-Length", "0"]);
-    stats.requests++;
-    const path = request.path;
     const wrapped = {
       head: (head) => {
         const kept = [];
+        let hasSetCookie = false;
         for (const [name, value] of head.headers) {
           const lower = name.toLowerCase();
-          if (lower === "set-cookie") { this.jar.set(value, path.split("?")[0]); continue; }
-          if (lower === "location") { kept.push([name, relativeLocation(value)]); continue; }
-          kept.push([name, value]);
+          if (lower === "set-cookie") { hasSetCookie = true; this.jar.set(value, path); continue; }
+          kept.push([name, lower === "location" ? relativeLocation(value) : value]);
         }
-        sink.head({ status: head.status, statusText: head.statusText, headers: kept });
+        sink.head({ status: head.status, statusText: head.statusText, headers: kept, hasSetCookie });
       },
-      body: sink.body, end: sink.end, fail: sink.fail,
+      body: sink.body,
+      end: () => { this.byRequest.delete(request.id); sink.end(); },
+      fail: (code) => { this.byRequest.delete(request.id); sink.fail(code); },
     };
-    this.acquire((connection) => connection.send({ method: request.method, path, headers, body: request.body, isClosing: false }, wrapped));
+    this.acquire((connection) => {
+      if (request.id !== undefined) this.byRequest.set(request.id, connection);
+      connection.send({ method: request.method, path: request.path, headers, body: request.body }, wrapped);
+    });
+  }
+  resend(request, sink) {
+    const connection = new HttpConnection(this);
+    this.active.add(connection);
+    connection.send(request, sink);
+  }
+  // Drops the connection of a request the page no longer reads.
+  abort(id) {
+    const connection = this.byRequest.get(id);
+    if (connection && connection.current) { connection.current.sink = { head() {}, body() {}, end() {}, fail() {} }; connection.fail(""); }
   }
   acquire(use) {
     while (this.idle.length) { const connection = this.idle.pop(); if (connection.isUsable) { this.active.add(connection); use(connection); return; } }
@@ -626,7 +731,7 @@ class HttpPool {
   }
   release(connection) {
     this.active.delete(connection);
-    if (this.waiting.length) { const use = this.waiting.shift(); this.active.add(connection); use(connection); return; }
+    if (this.waiting.length) { this.active.add(connection); this.waiting.shift()(connection); return; }
     this.idle.push(connection);
   }
   forget(connection) {
@@ -635,25 +740,34 @@ class HttpPool {
     if (index >= 0) this.idle.splice(index, 1);
     if (this.waiting.length && this.active.size < HTTP.streamsMax) this.acquire(this.waiting.shift());
   }
-  fetchWhole(method, path, headers = [], body = null) {
+  fetchWhole(method, path) {
     return new Promise((resolve, reject) => {
-      const chunks = [];
       let head = null;
-      this.request({ method, path, headers, body }, {
+      this.request({ method, path, headers: [] }, {
         head: (h) => { head = h; },
-        body: (piece) => chunks.push(piece),
-        end: () => resolve({ ...head, body: chunks }),
-        fail: (refusal) => reject(refusal),
+        body: () => {},
+        end: () => resolve(head),
+        fail: (code) => reject(new Refusal(screenOf(code), code)),
       });
     });
   }
 }
 
+// An absolute Location on the app's own host, as a path.
 function relativeLocation(value) {
   try {
     const url = new URL(value, "http://" + HTTP.host + "/");
     if (url.hostname === HTTP.host || url.hostname === "localhost") return url.pathname + url.search + url.hash;
-  } catch (e) { /* a Location that is not a URL is passed as it is */ }
+  } catch (e) { /* a Location that is not a URL passes unchanged */ }
+  return value;
+}
+
+// A Referer of the page's origin, on the app's own host.
+function onHost(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin === location.origin) return "http://" + HTTP.host + url.pathname + url.search;
+  } catch (e) { /* a Referer that is not a URL passes unchanged */ }
   return value;
 }
 
@@ -661,272 +775,459 @@ function relativeLocation(value) {
 
 const WS = { text: 1, binary: 2, close: 8, ping: 9, pong: 10 };
 
-class WebSocketBridge {
-  constructor(mux, entry, jar) { this.mux = mux; this.entry = entry; this.jar = jar; }
-  open(url, protocols, handlers) {
-    const target = new URL(url, location.href);
-    const path = target.pathname + target.search;
-    const stream = this.mux.open();
-    const records = new RecordReader();
-    const frames = new ByteQueue();
-    const key = btoa(latin1(crypto.getRandomValues(new Uint8Array(16))));
-    const headers = [["Host", HTTP.host], ["Upgrade", "websocket"], ["Connection", "Upgrade"], ["Sec-WebSocket-Key", key], ["Sec-WebSocket-Version", "13"], ["Origin", "http://" + HTTP.host]];
-    const wanted = Array.isArray(protocols) ? protocols : (protocols ? [protocols] : []);
-    if (wanted.length) headers.push(["Sec-WebSocket-Protocol", wanted.join(", ")]);
-    const cookie = this.jar.header(target.pathname);
-    if (cookie) headers.push(["Cookie", cookie]);
-    let isRaw = false, isOpen = false, isClosed = false;
-    let fragments = [], fragmentOpcode = 0;
-    const finish = (code, reason, wasClean) => {
-      if (isClosed) return;
-      isClosed = true;
-      stream.close();
-      handlers.close(code, reason, wasClean);
-    };
-    const sendFrame = (opcode, payload) => {
-      if (isClosed) return;
-      const mask = crypto.getRandomValues(new Uint8Array(4));
-      let headerLength = 2;
-      if (payload.length >= 65536) headerLength = 10; else if (payload.length >= 126) headerLength = 4;
-      const frame = new Uint8Array(headerLength + 4 + payload.length);
-      frame[0] = 0x80 | opcode;
-      if (headerLength === 2) frame[1] = 0x80 | payload.length;
-      else if (headerLength === 4) { frame[1] = 0x80 | 126; new DataView(frame.buffer).setUint16(2, payload.length); }
-      else { frame[1] = 0x80 | 127; new DataView(frame.buffer).setUint32(2, Math.floor(payload.length / 4294967296)); new DataView(frame.buffer).setUint32(6, payload.length >>> 0); }
-      frame.set(mask, headerLength);
-      for (let i = 0; i < payload.length; i++) frame[headerLength + 4 + i] = payload[i] ^ mask[i & 3];
-      stream.write(frame);
-    };
-    const parser = new HttpParser("GET", {
-      head: (head) => {
-        if (head.status !== 101) { handlers.error(new Error("upgrade refused " + head.status)); finish(1006, "", false); return; }
-        const accepted = head.headers.find(([name]) => name.toLowerCase() === "sec-websocket-protocol");
-        isOpen = true;
-        handlers.open(accepted ? accepted[1] : "");
-      },
-      body: () => {}, end: () => {},
-      error: () => { handlers.error(new Error("upgrade failed")); finish(1006, "", false); },
-      raw: (u8) => readFrames(u8),
-    });
-    const readFrames = (u8) => {
-      frames.push(u8);
-      for (;;) {
-        if (frames.length < 2) return;
-        const head = frames.peek(Math.min(14, frames.length));
-        const isFinal = (head[0] & 0x80) !== 0, opcode = head[0] & 0x0f, isMasked = (head[1] & 0x80) !== 0;
-        let length = head[1] & 0x7f, offset = 2;
-        if (length === 126) { if (head.length < 4) return; length = (head[2] << 8) | head[3]; offset = 4; }
-        else if (length === 127) { if (head.length < 10) return; length = new DataView(head.buffer).getUint32(2) * 4294967296 + new DataView(head.buffer).getUint32(6); offset = 10; }
-        if (isMasked) offset += 4;
-        if (frames.length < offset + length) return;
-        const whole = frames.take(offset + length);
-        const payload = whole.subarray(offset);
-        if (isMasked) { const mask = whole.subarray(offset - 4, offset); for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3]; }
-        if (opcode === WS.ping) { sendFrame(WS.pong, payload); continue; }
-        if (opcode === WS.pong) continue;
-        if (opcode === WS.close) {
-          const code = payload.length >= 2 ? (payload[0] << 8) | payload[1] : 1005;
-          const reason = payload.length > 2 ? new TextDecoder().decode(payload.subarray(2)) : "";
-          sendFrame(WS.close, payload.subarray(0, Math.min(payload.length, 2)));
-          finish(code, reason, true);
-          return;
-        }
-        if (opcode === 0) { fragments.push(payload); } else { fragmentOpcode = opcode; fragments = [payload]; }
-        if (!isFinal) continue;
-        let message;
-        if (fragments.length === 1) message = fragments[0];
-        else { const total = fragments.reduce((sum, part) => sum + part.length, 0); message = new Uint8Array(total); let at = 0; for (const part of fragments) { message.set(part, at); at += part.length; } }
-        fragments = [];
-        const delivered = fragmentOpcode === WS.text ? new TextDecoder().decode(message) : message.slice();
-        traceWs("in", delivered);
-        handlers.message(delivered);
+// Opens a WebSocket of the app over a connect stream, framed by RFC 6455.
+function openWebSocket(session, url, protocols, handlers) {
+  const target = new URL(url, location.href);
+  const stream = session.mux.open();
+  const records = new RecordReader();
+  const frames = new ByteQueue();
+  const key = btoa(latin1(crypto.getRandomValues(new Uint8Array(16))));
+  const headers = [["Host", HTTP.host], ["Upgrade", "websocket"], ["Connection", "Upgrade"], ["Sec-WebSocket-Key", key], ["Sec-WebSocket-Version", "13"], ["Origin", "http://" + HTTP.host]];
+  const wanted = Array.isArray(protocols) ? protocols : (protocols ? [protocols] : []);
+  if (wanted.length) headers.push(["Sec-WebSocket-Protocol", wanted.join(", ")]);
+  const cookie = session.jar.header(target.pathname);
+  if (cookie) headers.push(["Cookie", cookie]);
+  let isRaw = false, isOpen = false, isClosed = false;
+  let fragments = [], fragmentOpcode = 0;
+  const finish = (code, reason, wasClean) => {
+    if (isClosed) return;
+    isClosed = true;
+    stream.close();
+    handlers.close(code, reason, wasClean);
+  };
+  const sendFrame = (opcode, payload) => {
+    if (isClosed) return;
+    const mask = crypto.getRandomValues(new Uint8Array(4));
+    const headerLength = payload.length >= 65536 ? 10 : (payload.length >= 126 ? 4 : 2);
+    const frame = new Uint8Array(headerLength + 4 + payload.length);
+    const view = new DataView(frame.buffer);
+    frame[0] = 0x80 | opcode;
+    if (headerLength === 2) frame[1] = 0x80 | payload.length;
+    else if (headerLength === 4) { frame[1] = 0x80 | 126; view.setUint16(2, payload.length); }
+    else { frame[1] = 0x80 | 127; view.setUint32(2, Math.floor(payload.length / 4294967296)); view.setUint32(6, payload.length >>> 0); }
+    frame.set(mask, headerLength);
+    for (let i = 0; i < payload.length; i++) frame[headerLength + 4 + i] = payload[i] ^ mask[i & 3];
+    stream.write(frame);
+  };
+  const readFrames = (u8) => {
+    frames.push(u8);
+    while (frames.length >= 2) {
+      const head = frames.peek(Math.min(14, frames.length));
+      const view = new DataView(head.buffer);
+      const isFinal = (head[0] & 0x80) !== 0, opcode = head[0] & 0x0f, isMasked = (head[1] & 0x80) !== 0;
+      let length = head[1] & 0x7f, offset = 2;
+      if (length === 126) { if (head.length < 4) return; length = view.getUint16(2); offset = 4; }
+      else if (length === 127) { if (head.length < 10) return; length = view.getUint32(2) * 4294967296 + view.getUint32(6); offset = 10; }
+      if (isMasked) offset += 4;
+      if (frames.length < offset + length) return;
+      const whole = frames.take(offset + length);
+      const payload = whole.subarray(offset);
+      if (isMasked) { const mask = whole.subarray(offset - 4, offset); for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3]; }
+      if (opcode === WS.ping) { sendFrame(WS.pong, payload); continue; }
+      if (opcode === WS.pong) continue;
+      if (opcode === WS.close) {
+        const code = payload.length >= 2 ? (payload[0] << 8) | payload[1] : 1005;
+        sendFrame(WS.close, payload.subarray(0, Math.min(payload.length, 2)));
+        finish(code, payload.length > 2 ? decoder.decode(payload.subarray(2)) : "", true);
+        return;
       }
-    };
-    stream.handlers = {
-      data: (u8) => {
-        if (isRaw) { parser.feed(u8); return; }
-        for (const record of records.feed(u8)) {
-          if (record.type === RECORD.accept) { isRaw = true; const rest = records.rest(); if (rest.length) parser.feed(rest); break; }
-          if (record.type === RECORD.close) { handlers.error(new Error("refused " + parseRefusal(record.payload).code)); finish(1006, "", false); return; }
-        }
-      },
-      end: () => finish(1006, "", false),
-      error: () => finish(1006, "", false),
-    };
-    stream.write(encodeRecord(RECORD.open, json({ kind: "connect", id: this.entry })));
-    stream.write(requestHead("GET", path, headers));
-    return {
-      send: (data) => {
-        if (!isOpen || isClosed) return;
-        traceWs("out", data);
-        if (typeof data === "string") sendFrame(WS.text, encoder.encode(data));
-        else sendFrame(WS.binary, data instanceof Uint8Array ? data : new Uint8Array(data));
-      },
-      close: (code, reason) => {
-        if (isClosed) return;
-        const reasonBytes = encoder.encode(reason || "");
-        const payload = new Uint8Array(2 + reasonBytes.length);
-        payload[0] = (code || 1000) >> 8; payload[1] = (code || 1000) & 255; payload.set(reasonBytes, 2);
-        sendFrame(WS.close, payload);
-        setTimeout(() => finish(code || 1000, reason || "", true), 1000);
-      },
-    };
-  }
-}
-
-// --- the service worker ------------------------------------------------------
-
-async function startWorker(tab, onRequest) {
-  await navigator.serviceWorker.register("/__neutrino/sw.js", { scope: "/" });
-  await navigator.serviceWorker.ready;
-  if (!navigator.serviceWorker.controller) {
-    await new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
-  }
-  const channel = new MessageChannel();
-  const ready = new Promise((resolve) => {
-    channel.port1.onmessage = (event) => {
-      if (event.data && event.data.type === "ready") { resolve(); return; }
-      onRequest(event.data, channel.port1);
-    };
-  });
-  navigator.serviceWorker.controller.postMessage({ type: "shell", tab }, [channel.port2]);
-  await ready;
-}
-
-function serveRequest(pool, message, port) {
-  const { id, method, url, headers, body, routedBy } = message;
-  if (routedBy === "mapping") stats.routedByMapping++; else stats.routedByFallback++;
-  pool.request({ method, path: url, headers, body: body ? new Uint8Array(body) : null }, {
-    head: (head) => port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers }),
-    body: (piece) => { const copy = piece.slice(); port.postMessage({ type: "chunk", id, data: copy.buffer }, [copy.buffer]); },
-    end: () => port.postMessage({ type: "end", id }),
-    fail: (refusal) => {
-      port.postMessage({ type: "error", id, code: refusal.code });
-      if (refusal.code === "agent_offline") screen.refuse("machine");
+      if (opcode === 0) fragments.push(payload); else { fragmentOpcode = opcode; fragments = [payload]; }
+      if (!isFinal) continue;
+      let message = fragments[0];
+      if (fragments.length > 1) {
+        message = new Uint8Array(fragments.reduce((sum, part) => sum + part.length, 0));
+        let at = 0;
+        for (const part of fragments) { message.set(part, at); at += part.length; }
+      }
+      fragments = [];
+      handlers.message(fragmentOpcode === WS.text ? decoder.decode(message) : message.slice());
+    }
+  };
+  const parser = new HttpParser("GET", {
+    head: (head) => {
+      if (head.status !== 101) { handlers.error(); finish(1006, "", false); return; }
+      const accepted = head.headers.find(([name]) => name.toLowerCase() === "sec-websocket-protocol");
+      isOpen = true;
+      handlers.open(accepted ? accepted[1] : "");
     },
+    body: () => {}, end: () => {},
+    error: () => { handlers.error(); finish(1006, "", false); },
+    raw: readFrames,
   });
+  stream.handlers = {
+    data: (u8) => {
+      if (isRaw) { parser.feed(u8); return; }
+      for (const record of records.feed(u8)) {
+        if (record.type === RECORD.accept) { isRaw = true; const rest = records.rest(); if (rest.length) parser.feed(rest); break; }
+        if (record.type === RECORD.close) { handlers.error(); finish(1006, "", false); session.onCode(parseRefusal(record.payload).code); return; }
+      }
+    },
+    end: () => finish(1006, "", false),
+    error: () => finish(1006, "", false),
+  };
+  stream.write(encodeRecord(RECORD.open, json({ kind: "connect", id: session.entry })));
+  stream.write(requestHead("GET", target.pathname + target.search, headers));
+  return {
+    send: (data) => {
+      if (!isOpen || isClosed) return;
+      if (typeof data === "string") sendFrame(WS.text, encoder.encode(data));
+      else sendFrame(WS.binary, data instanceof Uint8Array ? data : new Uint8Array(data));
+    },
+    close: (code, reason) => {
+      if (isClosed) return;
+      const reasonBytes = encoder.encode(reason || "");
+      const payload = new Uint8Array(2 + reasonBytes.length);
+      payload[0] = (code || 1000) >> 8; payload[1] = (code || 1000) & 255; payload.set(reasonBytes, 2);
+      sendFrame(WS.close, payload);
+      setTimeout(() => finish(code || 1000, reason || "", true), 1000);
+    },
+  };
 }
 
-// --- the app's title -------------------------------------------------------
+// --- a session -------------------------------------------------------------
 
-function mirrorTitle(frame, fallback) {
-  const apply = () => { try { document.title = frame.contentDocument.title || fallback; } catch (e) { document.title = fallback; } };
-  frame.addEventListener("load", () => {
-    apply();
-    try {
-      const head = frame.contentDocument.head;
-      if (head) new MutationObserver(apply).observe(head, { subtree: true, childList: true, characterData: true });
-    } catch (e) { /* a document the shell cannot read keeps the fallback */ }
-    if (!stats.appLoadMs) stats.appLoadMs = performance.now() - stats.t0;
-    try {
-      const paint = frame.contentWindow.performance.getEntriesByType("paint").find((entry) => entry.name === "first-contentful-paint" || entry.name === "first-paint");
-      if (paint && !stats.appFirstPaintMs) stats.appFirstPaintMs = paint.startTime + frame.contentWindow.performance.timeOrigin - performance.timeOrigin;
-    } catch (e) { /* no paint timing */ }
-  });
+// An admitted connection to the hub: the channel, yamux, the control stream
+// and the pool of connect streams.
+class Session {
+  constructor({ pc, dc, mux, control, entry, jar, onCode }) {
+    this.pc = pc; this.dc = dc; this.mux = mux; this.control = control;
+    this.entry = entry; this.jar = jar; this.onCode = onCode;
+    this.pool = new HttpPool(mux, entry, jar, onCode);
+    this.pingSentAt = 0; this.pongAt = 0; this.nonce = 0;
+    this.isClosed = false;
+  }
+  // The service frame's reply for the share's entry.
+  async service(deadline) {
+    const request = "service-" + (++this.nonce);
+    this.control.write({ type: "service", request, id: this.entry });
+    const reply = await this.control.next((frame) => frame.type === "reply" && frame.request === request, deadline);
+    if (reply.type === "refused") throw new Refusal(screenOf(reply.code) === "link" ? "link" : "hub", reply.code);
+    if (reply.type !== "reply") throw new Refusal("hub", "ended");
+    return reply;
+  }
+  ping() {
+    const nonce = "p" + (++this.nonce);
+    if (this.pingSentAt <= this.pongAt) this.pingSentAt = performance.now();
+    this.control.write({ type: "ping", nonce });
+  }
+  // Whether the line counts as dropped: a ping with no pong and no byte for the silent span.
+  isSilent() {
+    return this.pingSentAt > this.pongAt && performance.now() - this.mux.lastByteAt >= TIMING.silent;
+  }
+  close() {
+    if (this.isClosed) return;
+    this.isClosed = true;
+    this.mux.onEnd = null;
+    this.mux.end();
+    try { this.pc.close(); } catch (e) { /* already closed */ }
+  }
 }
 
-// --- main --------------------------------------------------------------------
+// Opens a session by the deadline: the channel, the open record, yamux and the hello.
+async function openSession(facts, jar, deadline, onCode) {
+  const { pc, dc } = await openChannel(facts, deadline);
+  try {
+    const admitted = await admit(dc, facts, deadline);
+    const mux = new Yamux(dc);
+    if (admitted.rest.length) mux.feed(admitted.rest);
+    const control = new ControlStream(mux);
+    await within(control.accepted, deadline);
+    control.write({ type: "hello", protocol: PROTOCOL, role: "guest", id: admitted.id, name: "guest", software: "neutrino_share_page/" + LINK_FORM });
+    const welcome = await control.next((frame) => frame.type === "welcome", deadline);
+    if (welcome.type === "refused") throw new Refusal(PASSING_CODES.includes(welcome.code) ? "hub" : "link", welcome.code);
+    if (welcome.type !== "welcome") throw new Refusal("hub", "ended");
+    return new Session({ pc, dc, mux, control, entry: facts.app.entry, jar, onCode });
+  } catch (error) {
+    pc.close();
+    throw error instanceof Refusal ? error : new Refusal("hub", "session");
+  }
+}
 
-async function main() {
-  screen.bind();
-  if (window.top !== window) { screen.refuse("link"); return; }
-  const payload = readPayload();
-  if (!payload || !payload.hub || !payload.ice || !payload.ticket || !payload.app) { screen.refuse("link"); return; }
-  const title = payload.app.title || "";
-  screen.loading(title);
-  document.title = title || "Loading";
-  const tab = crypto.randomUUID();
-  const jar = new CookieJar();
-  let pool = null;
-  let bridge = null;
-  const pendingRequests = [];
-  const worker = startWorker(tab, (message, port) => {
-    if (!message || message.type !== "fetch") return;
-    if (pool) serveRequest(pool, message, port); else pendingRequests.push([message, port]);
-  }).catch((error) => { stats.workerError = String(error); });
+// --- the tab's title and icon ---------------------------------------------
 
-  let channel;
-  try { channel = await openChannel(payload); } catch (e) { screen.refuse("hub"); return; }
-  const { pc, dc } = channel;
-  window.__neutrinoConnection = pc;
+const mirror = {
+  frame: null,
+  observer: null,
+  watch(frame) {
+    this.frame = frame;
+    frame.addEventListener("load", () => {
+      if (this.observer) this.observer.disconnect();
+      try {
+        this.observer = new MutationObserver(() => this.apply());
+        this.observer.observe(frame.contentDocument.head || frame.contentDocument.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
+      } catch (e) { /* a document the shell cannot read keeps the last title */ }
+      this.apply();
+      if (!stats.appLoadMs) stats.appLoadMs = performance.now() - stats.startedAt;
+    });
+  },
+  apply() {
+    if (screen.kind !== "app" || !this.frame) return;
+    try {
+      const doc = this.frame.contentDocument;
+      if (doc.title) document.title = doc.title;
+      const icon = doc.querySelector("link[rel~='icon']");
+      document.getElementById("icon").href = icon ? icon.href : "/favicon.ico";
+    } catch (e) { /* a document the shell cannot read keeps the last title */ }
+  },
+};
 
-  const admitted = await new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ code: "hub" }), CHANNEL.openTimeoutMs);
-    dc.onmessage = (event) => {
-      clearTimeout(timer);
-      const reader = new RecordReader();
-      const [record] = reader.feed(new Uint8Array(event.data));
-      if (!record) { resolve({ code: "malformed" }); return; }
-      if (record.type === RECORD.accept) { try { resolve({ id: JSON.parse(new TextDecoder().decode(record.payload)).id }); } catch (e) { resolve({ code: "malformed" }); } return; }
-      resolve(parseRefusal(record.payload));
+// --- the service worker ----------------------------------------------------
+
+const worker = {
+  tab: crypto.randomUUID(),
+  onRequest: null,
+  // Registers the worker and announces this tab once it controls the page.
+  async start(cache) {
+    this.cache = cache;
+    window.__neutrinoTab = this.tab;
+    await navigator.serviceWorker.register("/__neutrino/sw.js", { scope: "/" });
+    const registration = await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      const changed = new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
+      registration.active.postMessage({ type: "claim" });
+      await within(changed, performance.now() + TIMING.open);
+    }
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "announce") this.announce();
+    });
+    navigator.serviceWorker.addEventListener("controllerchange", () => this.announce());
+    navigator.serviceWorker.startMessages();
+    await this.announce();
+  },
+  // Gives the worker a port for this tab's requests. A restarted worker asks again.
+  announce() {
+    const target = navigator.serviceWorker.controller;
+    if (!target) return Promise.resolve();
+    const channel = new MessageChannel();
+    return new Promise((resolve) => {
+      channel.port1.onmessage = (event) => {
+        if (event.data && event.data.type === "ready") { resolve(); return; }
+        if (this.onRequest) this.onRequest(event.data, channel.port1, event.ports[0]);
+      };
+      target.postMessage({ type: "shell", tab: this.tab, cache: this.cache }, [channel.port2]);
+    });
+  },
+};
+
+// --- the page ----------------------------------------------------------------
+
+const page = {
+  facts: null,
+  jar: new CookieJar(),
+  session: null,
+  isFrameLoaded: false,
+  isEnded: false,
+  // Requests that wait for a session, as [message, port].
+  waiting: [],
+  connecting: null,
+  machineTimer: 0,
+
+  async start() {
+    if (window.top !== window) { screen.refuse("link"); return; }
+    this.facts = readFacts() || (await factsFromOpener());
+    if (!this.facts) { screen.refuse("link"); return; }
+    const title = this.facts.app.title || "";
+    screen.loading(title);
+    const slowTimer = setTimeout(() => screen.slow(), TIMING.slow);
+    mirror.watch(document.getElementById("app"));
+    worker.onRequest = (message, port, reply) => this.take(message, port, reply);
+    const started = worker.start(cacheName(this.facts)).catch(() => { stats.isWorkerFailed = true; });
+    const deadline = stats.startedAt + TIMING.open;
+    let session = null;
+    while (!session && !this.isEnded) {
+      try {
+        session = await openSession(this.facts, this.jar, deadline, (code) => this.onCode(code));
+      } catch (error) {
+        if (error.screen === "link") { this.endShare(); return; }
+        if (performance.now() >= deadline) break;
+        await sleep(Math.min(2000, deadline - performance.now()));
+      }
+    }
+    clearTimeout(slowTimer);
+    await started;
+    if (stats.isWorkerFailed) { if (session) session.close(); screen.refuse("hub"); return; }
+    if (!session) { screen.refuse("hub"); this.reconnect(false); return; }
+    stats.admitMs = performance.now() - stats.startedAt;
+    this.use(session);
+    await this.check(deadline + TIMING.open);
+  },
+
+  // Makes a session the live one and watches its line.
+  use(session) {
+    if (this.session) this.session.close();
+    this.session = session;
+    session.mux.onEnd = () => this.drop(session);
+    session.control.onFrame = (frame) => {
+      if (frame.type === "pong") session.pongAt = performance.now();
+      else if (frame.type === "refused") { if (SHARE_CODES.includes(frame.code)) this.endShare(); else this.drop(session); }
+      else if (frame.type === "ended") this.drop(session);
     };
-    dc.send(encodeRecord(RECORD.open, json({ protocol: PROTOCOL, ticket: payload.ticket })));
-  });
-  if (!admitted.id) { stats.refusalCode = admitted.code; screen.refuse(admitted.code === "hub" ? "hub" : "link"); return; }
-  stats.admitMs = performance.now() - stats.t0;
+    clearInterval(this.watcher);
+    this.watcher = setInterval(() => { if (this.session === session && session.isSilent()) this.drop(session); }, 1000);
+    for (const [message, port] of this.waiting.splice(0)) this.serve(message, port);
+  },
 
-  const mux = new Yamux(dc);
-  mux.onEnd = () => { if (!stats.refusal) screen.refuse("hub"); };
-  const control = new ControlStream(mux);
-  try { await control.accepted; } catch (e) { screen.refuse("link"); return; }
-  control.writeFrame({ type: "hello", protocol: PROTOCOL, role: "guest", id: admitted.id, name: "guest", software: "neutrino_web/0.6.0" });
-  const welcome = await control.next(["welcome", "refused", "ended"]).catch(() => ({ type: "ended" }));
-  if (welcome.type !== "welcome") { screen.refuse(welcome.type === "refused" ? "link" : "hub"); return; }
-  stats.welcomeMs = performance.now() - stats.t0;
-
-  control.writeFrame({ type: "service", request: "token-1", id: payload.app.entry });
-  const reply = await control.next(["reply", "refused", "ended"]).catch(() => ({ type: "ended" }));
-  if (reply.type !== "reply") { screen.refuse(reply.type === "refused" ? "link" : "hub"); return; }
-  if (reply.code) { screen.refuse(reply.code === "agent_offline" ? "machine" : "link"); return; }
-  const token = reply.params && reply.params.token;
-  stats.tokenMs = performance.now() - stats.t0;
-
-  pool = new HttpPool(mux, payload.app.entry, jar);
-  bridge = new WebSocketBridge(mux, payload.app.entry, jar);
-  for (const [message, port] of pendingRequests.splice(0)) serveRequest(pool, message, port);
-
-  let startPath = location.pathname.startsWith("/__neutrino") ? (payload.app.path || "/") : location.pathname + location.search;
-  if (token) {
+  // Asks for the share's entry and shows the app, the machine-offline screen or the link screen.
+  async check(deadline) {
+    const session = this.session;
+    if (!session || this.isEnded) return;
+    let reply;
     try {
-      const first = await pool.fetchWhole("GET", "/?tkn=" + encodeURIComponent(token));
-      stats.loginStatus = first.status;
-      const where = first.headers.find(([name]) => name.toLowerCase() === "location");
-      if (where && startPath === "/" && !payload.app.path) startPath = where[1];
-    } catch (refusal) {
-      screen.refuse(refusal.code === "agent_offline" ? "machine" : "hub");
+      reply = await session.service(deadline);
+    } catch (error) {
+      if (error.screen === "link") { this.endShare(); return; }
+      this.drop(session);
       return;
     }
-  }
-  stats.loginMs = performance.now() - stats.t0;
+    if (this.session !== session) return;
+    const serial = screen.serial;
+    if (reply.code) {
+      const kind = screenOf(reply.code);
+      if (kind === "link") { this.endShare(); return; }
+      if (kind === "hub") { screen.refuse("hub"); this.drop(session, true); return; }
+      screen.refuse("machine");
+      clearTimeout(this.machineTimer);
+      this.machineTimer = setTimeout(() => this.check(performance.now() + TIMING.open), TIMING.retry);
+      return;
+    }
+    if (!this.isFrameLoaded) {
+      try {
+        await this.load(session, reply.params && reply.params.token);
+      } catch (error) {
+        if (error.screen === "link") { this.endShare(); return; }
+        if (error.screen === "machine") { this.onCode("agent_offline"); return; }
+        this.drop(session);
+        return;
+      }
+    }
+    if (this.session === session && screen.serial === serial) screen.app();
+  },
 
-  window.__neutrino = {
-    cookieGet: () => jar.header("/", true),
-    cookieSet: (text) => jar.set(text, "/"),
-    wsOpen: (url, protocols, handlers) => bridge.open(url, protocols, handlers),
-    ping: () => mux.ping(),
-  };
-  await worker;
-  if (stats.workerError) { screen.refuse("hub"); return; }
-  const frame = screen.elements.app;
-  mirrorTitle(frame, title);
-  frame.src = startPath;
-  screen.app();
-  stats.appStartMs = performance.now() - stats.t0;
-  setInterval(() => { mux.ping().then((rtt) => { stats.rttMs = rtt; }); }, 20000);
-  if (payload.report) reportTo(payload.report, frame);
-}
+  // Signs the visitor in where the reply has a token, then loads the app in the frame.
+  async load(session, token) {
+    let start = location.pathname.startsWith("/__neutrino") ? (this.facts.app.path || "/") : location.pathname + location.search;
+    if (token) {
+      const answer = await session.pool.fetchWhole("GET", "/?tkn=" + encodeURIComponent(token));
+      const where = answer.headers.find(([name]) => name.toLowerCase() === "location");
+      if (where && start === "/" && !this.facts.app.path) start = where[1];
+    }
+    const url = new URL(start, location.origin);
+    url.searchParams.set(TAB_PARAM, worker.tab);
+    const frame = document.getElementById("app");
+    const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
+    frame.src = url.pathname + url.search + url.hash;
+    this.isFrameLoaded = true;
+    stats.appStartMs = performance.now() - stats.startedAt;
+    await loaded;
+  },
 
-// reportTo posts the shell's measurements to a same-origin test endpoint every
-// two seconds for a minute; a test host reads them where no driver can.
-function reportTo(path, frame) {
-  let sent = 0;
-  const timer = setInterval(() => {
-    let bench = null, frameTitle = "", frameURL = "";
-    try { bench = frame.contentWindow.__bench || null; frameTitle = frame.contentDocument.title; frameURL = frame.contentWindow.location.href; } catch (e) { /* not readable yet */ }
-    const body = JSON.stringify({ at: Date.now(), userAgent: navigator.userAgent, stats: { ...stats, wsTrace: stats.wsTrace.length }, bench, frameTitle, frameURL });
-    fetch(path, { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {});
-    if (++sent >= 30) clearInterval(timer);
-  }, 2000);
-}
+  // A close code from a connect stream.
+  onCode(code) {
+    const kind = screenOf(code);
+    if (kind === "link") { this.endShare(); return; }
+    if (kind === "machine") {
+      if (screen.kind === "machine") return;
+      screen.refuse("machine");
+      clearTimeout(this.machineTimer);
+      this.machineTimer = setTimeout(() => this.check(performance.now() + TIMING.open), TIMING.retry);
+      return;
+    }
+    if (this.session) { screen.refuse("hub"); this.drop(this.session, true); }
+  },
 
-main().catch((error) => { stats.error = String(error); screen.refuse("hub"); });
+  // The live session ended. The page tries again quietly, then shows the hub-offline screen.
+  drop(session, isShown = false) {
+    if (this.session !== session || this.isEnded) return;
+    this.session = null;
+    clearInterval(this.watcher);
+    clearTimeout(this.machineTimer);
+    session.close();
+    stats.drops = (stats.drops || 0) + 1;
+    this.reconnect(!isShown);
+  },
+
+  // Opens sessions until a session is admitted, quietly for a while and then behind the hub-offline screen.
+  reconnect(isQuiet) {
+    if (this.connecting || this.isEnded) return;
+    this.connecting = (async () => {
+      const quietUntil = performance.now() + (isQuiet ? TIMING.quiet : 0);
+      for (;;) {
+        if (this.isEnded) return;
+        const tryStarted = performance.now();
+        if (!isQuiet || tryStarted >= quietUntil) {
+          if (screen.kind !== "hub") screen.refuse("hub");
+          this.failWaiting();
+        }
+        const deadline = isQuiet && tryStarted < quietUntil ? Math.max(quietUntil, tryStarted + TIMING.retry) : tryStarted + TIMING.open;
+        try {
+          const session = await openSession(this.facts, this.jar, deadline, (code) => this.onCode(code));
+          this.connecting = null;
+          stats.reconnects = (stats.reconnects || 0) + 1;
+          this.use(session);
+          await this.check(performance.now() + TIMING.open);
+          return;
+        } catch (error) {
+          if (error.screen === "link") { this.connecting = null; this.endShare(); return; }
+        }
+        const pause = performance.now() < quietUntil ? 1000 : tryStarted + TIMING.retry - performance.now();
+        await sleep(Math.max(0, pause));
+      }
+    })();
+  },
+
+  // The share ended. The page shows the link screen and deletes the app's cache.
+  endShare() {
+    if (this.isEnded) return;
+    this.isEnded = true;
+    clearInterval(this.watcher);
+    clearTimeout(this.machineTimer);
+    if (this.session) { this.session.close(); this.session = null; }
+    screen.refuse("link");
+    this.failWaiting();
+    sessionStorage.removeItem(KEPT_FACTS);
+    if (self.caches) caches.delete(cacheName(this.facts)).catch(() => {});
+  },
+
+  // A message of the worker: a request of the app's frame, an abort of one, or a new tab's ask for the facts.
+  take(message, port, reply) {
+    if (!message) return;
+    if (message.type === "facts") { if (reply) reply.postMessage(this.isEnded ? null : this.facts); return; }
+    if (message.type === "abort") { if (this.session) this.session.pool.abort(message.id); return; }
+    if (message.type !== "fetch") return;
+    if (this.isEnded) { port.postMessage({ type: "error", id: message.id, code: "share_unknown" }); return; }
+    if (this.session && !this.connecting) this.serve(message, port);
+    else if (screen.kind === "hub") port.postMessage({ type: "error", id: message.id, code: "hub_offline" });
+    else this.waiting.push([message, port]);
+  },
+
+  serve(message, port) {
+    const { id, method, url, headers, body } = message;
+    this.session.pool.request({ id, method, path: url, headers, body: body ? new Uint8Array(body) : null }, {
+      head: (head) => port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers, hasSetCookie: head.hasSetCookie }),
+      body: (piece) => { const copy = piece.slice(); port.postMessage({ type: "chunk", id, data: copy.buffer }, [copy.buffer]); },
+      end: () => port.postMessage({ type: "end", id }),
+      fail: (code) => port.postMessage({ type: "error", id, code: code || "stream" }),
+    });
+  },
+
+  failWaiting() {
+    for (const [message, port] of this.waiting.splice(0)) port.postMessage({ type: "error", id: message.id, code: "hub_offline" });
+  },
+};
+
+// The shell's calls for the shim inside the app's pages.
+window.__neutrino = {
+  cookieGet: () => page.jar.header("/", true),
+  cookieSet: (text) => page.jar.set(text, "/"),
+  wsOpen: (url, protocols, handlers) => {
+    if (!page.session) { setTimeout(() => { handlers.error(); handlers.close(1006, "", false); }, 0); return { send() {}, close() {} }; }
+    return openWebSocket(page.session, url, protocols, handlers);
+  },
+};
+
+// The heartbeat: a ping frame every TIMING.ping while the app is in use.
+setInterval(() => {
+  if (page.session && !page.connecting && (screen.kind === "app" || screen.kind === "machine")) page.session.ping();
+}, TIMING.ping);
+
+page.start().catch(() => { if (!page.isEnded) screen.refuse("hub"); });

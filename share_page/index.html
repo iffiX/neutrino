@@ -4,26 +4,32 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Loading</title>
+<title></title>
+<link rel="icon" id="icon" href="data:,">
 <style>
-  :root { color-scheme: light dark; --fg: #1d1f23; --bg: #f6f7f9; --muted: #6b7280; --accent: #3b6fd9; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #e6e7ea; --bg: #141619; --muted: #9aa0a8; } }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  #app { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
-  #screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
-  #screen .box { max-width: 360px; }
-  #screen h1 { font-size: 18px; font-weight: 600; margin: 16px 0 6px; }
-  #screen p { margin: 0; color: var(--muted); }
-  .spinner { width: 28px; height: 28px; margin: 0 auto; border: 3px solid rgba(128,128,128,.25); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .hidden { display: none !important; }
+  :root { color-scheme: light dark; --color-bg: #e8ebf0; --color-text: #0f172a; --color-text-muted: #5b6675; --color-accent: #0c6a84;
+    --color-accent-wash: rgb(12 106 132 / 12%); --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace; }
+  @media (prefers-color-scheme: dark) { :root { --color-bg: #070809; --color-text: #e6edf3; --color-text-muted: #8b96a5; --color-accent: #22d3ee; --color-accent-wash: rgb(34 211 238 / 12%); } }
+  html, body { margin: 0; height: 100%; background: var(--color-bg); color: var(--color-text); font: 14px/1.55 var(--font-sans); -webkit-font-smoothing: antialiased; }
+  #app { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  #screen { position: fixed; inset: 0; z-index: 1; display: grid; place-items: center; padding: 24px; text-align: center; background: var(--color-bg); }
+  #screen .box { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 360px; }
+  .mark { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--color-accent); border-radius: 10px; background: var(--color-accent-wash); box-shadow: 0 0 24px -10px var(--color-accent); }
+  .mark svg { height: 23px; }
+  .loading .mark { animation: splash_breathe 2.2s ease-in-out infinite; }
+  @keyframes splash_breathe { 0%, 100% { box-shadow: 0 0 24px -10px var(--color-accent); opacity: .75; } 50% { box-shadow: 0 0 34px -6px var(--color-accent); opacity: 1; } }
+  #title { margin: 0; font-size: 14px; font-weight: 500; }
+  .loading #title { font: 12px/1.55 var(--font-mono); letter-spacing: .08em; color: var(--color-text-muted); }
+  #detail { margin: -10px 0 0; font-size: 12px; color: var(--color-text-muted); text-wrap: balance; }
+  .loading #detail, .hidden { display: none !important; }
 </style>
 </head>
 <body>
 <div id="screen">
-  <div class="box">
-    <div class="spinner" id="spinner"></div>
-    <h1 id="title">Loading</h1>
+  <div class="box loading" id="box">
+    <div class="mark"><svg viewBox="98 83 314 347" aria-hidden="true"><linearGradient id="n" gradientUnits="userSpaceOnUse" x1="196" y1="32" x2="383" y2="63"><stop stop-color="#08adfe"/><stop offset=".5" stop-color="#8d61f6"/><stop offset="1" stop-color="#ef2eb6"/></linearGradient><path fill="url(#n)" d="M182 83h89l16 165 44-165h81l-93 347h-82l-16-172-45 172h-78z"/></svg></div>
+    <h1 id="title"></h1>
     <p id="detail"></p>
   </div>
 </div>

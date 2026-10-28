@@ -1,10 +1,69 @@
 "use strict";
 // The shim the service worker puts at the top of every page of the app: the
 // app's cookies live in the shell's jar, its WebSockets ride the shell's
-// streams, and its own service worker is never installed.
+// streams, and its own service worker is never installed. The page sends the
+// worker its tab, and the shim removes the tab's tag from the address before
+// the app reads it.
 (function () {
-  const shell = window.parent !== window ? window.parent.__neutrino : null;
+  const TAB_PARAM = "__neutrino_tab";
+  let shell = null, tab = "";
+  try { shell = window.top !== window ? window.top.__neutrino : null; tab = window.top.__neutrinoTab; } catch (e) { shell = null; }
   if (!shell) return;
+
+  const url = new URL(location.href);
+  if (url.searchParams.has(TAB_PARAM)) {
+    url.searchParams.delete(TAB_PARAM);
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  }
+  const worker = navigator.serviceWorker;
+  if (worker) {
+    const announce = () => { if (worker.controller) worker.controller.postMessage({ type: "client", tab }); };
+    worker.addEventListener("message", (event) => { if (event.data && event.data.type === "announce") announce(); });
+    worker.startMessages();
+    announce();
+  }
+
+  // A form sent in the frame by any method but GET gets this tab added to its
+  // action. A GET form loses its query, and the worker tags its page again.
+  const tagAction = (element, attribute) => {
+    const target = new URL(element[attribute] || location.href, location.href);
+    if (target.origin !== location.origin) return;
+    target.searchParams.set(TAB_PARAM, tab);
+    element[attribute] = target.href;
+  };
+  const tagForm = (form, submitter) => {
+    const method = String((submitter && submitter.getAttribute("formmethod")) || form.method || "get").toLowerCase();
+    if (method === "get" || method === "dialog") return;
+    if (submitter && submitter.hasAttribute("formaction")) tagAction(submitter, "formAction");
+    else tagAction(form, "action");
+  };
+  document.addEventListener("submit", (event) => { if (event.target instanceof HTMLFormElement) tagForm(event.target, event.submitter); }, true);
+  const submit = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function () { tagForm(this, null); return submit.call(this); };
+
+  // A same-origin address opened in another tab gets this tab added. The new
+  // tab's shell takes the share's facts from this tab through the worker.
+  const FROM_PARAM = "__neutrino_from";
+  const tagged = (address) => {
+    try {
+      const target = new URL(address, location.href);
+      if (target.origin !== location.origin) return address;
+      target.searchParams.set(FROM_PARAM, tab);
+      return target.href;
+    } catch (e) { return address; }
+  };
+  const open = window.open;
+  window.open = function (address, ...rest) { return open.call(window, address ? tagged(String(address)) : address, ...rest); };
+  const tagAnchor = (event) => {
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    const isOtherTab = event.button === 1 || event.ctrlKey || event.metaKey || event.shiftKey || (anchor && anchor.target && !/^_(self|parent|top)$/i.test(anchor.target));
+    if (!anchor || !isOtherTab) return;
+    const original = anchor.getAttribute("href");
+    anchor.href = tagged(anchor.href);
+    setTimeout(() => anchor.setAttribute("href", original), 0);
+  };
+  document.addEventListener("click", tagAnchor, true);
+  document.addEventListener("auxclick", tagAnchor, true);
 
   Object.defineProperty(document, "cookie", {
     configurable: true,
@@ -12,9 +71,9 @@
     set(text) { shell.cookieSet(String(text)); },
   });
 
-  if (navigator.serviceWorker) {
+  if (worker) {
     try {
-      Object.defineProperty(navigator.serviceWorker, "register", { configurable: true, value: () => new Promise(() => {}) });
+      Object.defineProperty(worker, "register", { configurable: true, value: () => new Promise(() => {}) });
     } catch (e) { /* a browser that keeps register read-only still refuses the app's worker in the shell's worker */ }
   }
 
