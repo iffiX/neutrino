@@ -450,7 +450,8 @@ class PublishedServiceCache:
         return None
 
     def _hosted_ssh_server(self, key: str, status: dict) -> "dict | None":
-        """The SSH server's instances the module enables, as last reported."""
+        """The SSH server's instances the module enables, as last reported,
+        each with its account key's fingerprint."""
         details = (
             status.get("details") if isinstance(status.get("details"), dict) else {}
         )
@@ -459,6 +460,10 @@ class PublishedServiceCache:
         )
         if not instances:
             return None
+        for instance in instances:
+            instance["account_key_fingerprint"] = (
+                self._desired_states.account_key_fingerprint(key, instance["account"])
+            )
         return {
             "host_key_fingerprint": str(details.get("host_key_fingerprint", "") or ""),
             "instances": instances,

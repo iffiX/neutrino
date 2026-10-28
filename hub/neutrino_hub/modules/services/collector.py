@@ -142,7 +142,8 @@ class ServiceListCollector:
                 "url", "ssh_listen_port"}``, each program run as an account
                 under its name as ``{"instances": [{"account", "port",
                 "is_healthy"}]}``, ``ssh_server: {"host_key_fingerprint",
-                "instances": [{"account", "port", "is_healthy"}]}``,
+                "instances": [{"account", "port", "is_healthy",
+                "account_key_fingerprint"}]}``,
                 ``hermes_webui: {"port", "is_healthy"}`` and ``podman:
                 {"containers": [{"name", "image", "is_running", "bindings",
                 "source"}]}``, ``bindings`` being ``(port, protocol,
@@ -318,6 +319,9 @@ class ServiceListCollector:
                             "port": int(instance["port"]),
                             "account": account,
                             "host_key_fingerprint": fingerprint,
+                            "account_key_fingerprint": str(
+                                instance.get("account_key_fingerprint", "") or ""
+                            ),
                         },
                         is_healthy=bool(instance.get("is_healthy")),
                         description=SERVICES_SSH_SERVER_DESCRIPTION.format(
