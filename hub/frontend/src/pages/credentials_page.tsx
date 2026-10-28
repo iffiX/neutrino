@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
+import { GeneratedCredentialsSection } from "../components/generated_credentials_section";
 import { Icon } from "../components/icon";
 import { PasswordInput } from "../components/password_input";
 import { apiPost, describeError } from "../api_client";
@@ -27,7 +28,8 @@ import "./credentials_page.css";
  * tools.
  *
  * Secrets travel one way. A key, password or token is typed once and never
- * shown again; everything on this page is metadata.
+ * shown again. A password the hub generated for a machine is shown to its
+ * owner on **Reveal**, which the hub logs.
  *
  * A credential is added and deleted, never edited — not its value, not its
  * name. Replacing one is adding its successor, pointing the things that use it
@@ -58,6 +60,7 @@ export function CredentialsPage() {
       <SshKeysSection />
       <LoginsSection />
       <TokensSection />
+      <GeneratedCredentialsSection />
     </div>
   );
 }
