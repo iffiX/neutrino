@@ -218,8 +218,10 @@ other in the page. The tab's **AI model** field holds it, `model` in
 
 The three containers take about 1.6 GB of memory idle: the app 1.24 to 1.30
 GB, mongo 120 to 320 MB and redis under 15 MB. A heavy XeLaTeX page adds
-about 0.2 GB while it compiles. In Podman's default 2 GiB machine on Windows
-the app started and compiled with about 0.7 GB left
-([../../min_support.md](../../min_support.md), "What the agent drives"). The
+about 0.2 GB while it compiles. On Windows the first start peaked at 2584 MB
+in a 4 GiB Podman machine, and in a 2 GiB machine it finished only by
+swapping. The manifest names 2600 as `memory_mib`
+([containers.md](containers.md), "Memory for the container modules";
+[../../min_support.md](../../min_support.md), "What the agent drives"). The
 three images take 4.7 GB on the disk of Podman's storage, and the TeX volume
 674 MB after the first start.
