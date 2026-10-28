@@ -35,12 +35,12 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
-something the whole page is about: `Add over SSH`, `Declare a service`, `Default
-permission`. Those sit in `page_actions`, and a page with none is the normal
-case.
+something the whole page is about: `Add over SSH`, `Declare a service`, `New
+Web share link`. Those sit in `page_actions`, and a page with none is the
+normal case.
 
 A header action that adds a record (**Add by link**, **Add over SSH**, **New
-client link**, **Declare a service**) opens a dialog in the style of the install
+client link**, **New Web share link**, **Declare a service**) opens a dialog in the style of the install
 dialog (`install_agent_modal.tsx`). The dialog holds the form, the link or the
 QR it produces, and the output of the task it starts; the page itself never
 shows an add form or a produced link inline. A header add wears
@@ -240,8 +240,8 @@ one entry per machine in the sidebar's agent group ("The machine page"). A
 record edited in one or two fields is edited in its row: a device's name and
 icon on the Agents page,
 a client's name and permission on the Clients page, the row lit as the inline
-form is while the edit is open. A setting that belongs to the whole page, the
-clients' default permission, is a dialog from the page header.
+form is while the edit is open. A setting that belongs to a whole panel, the
+clients' default permission, is a dialog from the panel's header.
 
 Actions that are not part of a record, reboot, wake, install, act at once from
 their own row, and the output of a task they start streams into the dialog
@@ -610,10 +610,19 @@ such as VS Code listens on its machine's loopback alone. It shows no `ssh`
 entry and no row for a machine's SSH server, which is no app
 ([protocol.md](protocol.md), "Apps").
 
+An app's row whose `web` entry has a `guest_login` carries **Share** (分享),
+a ghost button that opens the Clients page's Web share dialog with that
+entry chosen ("The Clients page"). An app no share can offer has no
+**Share**.
+
 ## The Clients page
 
-The **Clients** page, at `/clients`, is the clients enrolled with the hub,
-one row each, with what each is allowed.
+The **Clients** page, at `/clients`, is who reaches the hub's machines from
+outside the panel, in two panels, **Clients** (客户端), one row per enrolled
+device with what each is allowed, and **Web shares** (Web 分享), one row per
+share. The page's header holds two primary buttons, both dialogs, **New
+client link** and **New Web share link**. **Default permissions**, a
+bordered button in the Clients panel's header, opens the default's dialog.
 
 **New client link** (新建客户端链接), in the page's header, opens a dialog in
 the install dialog's style that adds one device. It asks **Name** and the
@@ -631,6 +640,43 @@ list. Its actions are **Permissions** and **Delete**, whose dialog says
 that the link stops working. The hub removes the row when the link expires
 unused, and the page's next read drops it; a join makes it an ordinary row
 with the permission it waited with.
+
+**New Web share link** (新建 Web 分享链接) opens a dialog in the same style
+that makes one share ([protocol.md](protocol.md), "Web shares"). The Services
+page's **Share** on an app's row opens the same dialog with the app's `web`
+entry chosen ("The Services page").
+
+| Field | Idiom |
+| --- | --- |
+| **Name** | a text field, required |
+| **App** | the panel's picker over `web_share_entries`, each the app's title and its machine's name; a share offers nothing else |
+| **Expires** | **1 day**, **7 days**, **30 days** or **Until revoked**, one choice of four, **7 days** chosen at the start |
+| **Site** | the picker over `web_share_sites`, the first chosen at the start, and **Another site**, which shows a field for an `https://` address |
+
+Its foot is **Generate link**, disabled while the name or the app is empty.
+The press makes the share, and the same dialog then shows the link in mono
+with a copy button, its QR under it, and `ui.web_shares.link_once`; for an
+app whose `guest_login` is `guest_account`, the guest account's e-mail in
+mono with a copy button and `ui.web_shares.guest_hint`. The form goes, and
+the foot becomes **Done**.
+
+The Web shares panel lists the shares, newest first, one row each: the
+name; the app's title and its machine; when it expires,
+`ui.web_shares.expires_in {days}` or `ui.web_shares.until_revoked`; its
+state as a dot and its word; `ui.web_shares.online {count}`; for a guest
+account, its e-mail in mono with a copy button; and **Revoke** last, in the
+danger tier. **Revoke** asks through `useConfirm`, the title
+`ui.web_shares.revoke_title {name}`, the body `ui.web_shares.revoke_body`
+and, for a guest account, `ui.web_shares.revoke_guest {email}` after it,
+and the button **Revoke**; it acts at once, as a revocation does ("When an
+effect happens"). A share that ends leaves the list at the page's next read.
+With no share the panel shows `ui.web_shares.empty` and its hint.
+
+| Rule | Reason |
+| --- | --- |
+| The state's tone follows "Status dots and badges": `active` is `ok`, `preparing` is `warn`, `unavailable` is `idle` and `failed` is `error`, with the code's words under the row. | A share's word is read at a glance beside its count. |
+| The panel reads `GET /api/hub/client` on the list cadence, so the count and the state move by themselves. | A share's visitors come and go while the page is open. |
+| A visitor has no row anywhere in the panel. | The share is what the owner manages: one press ends every visitor's access. |
 
 **The permission form.** One form, `client_permission_form.tsx`, edits
 every permission ([protocol.md](protocol.md), `/api/hub/client`): the

@@ -260,6 +260,40 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.clients.waiting_delete_body` | Its link stops working. | 它的链接随即失效。 |
 | `ui.devices.generate_link`, the **Add by link** dialog's foot | Generate link | 生成链接 |
 | `ui.devices.link_name_hint` | Left empty, the machine's host name names it. | 留空时用机器的主机名。 |
+| `ui.clients.panel_clients`, `ui.web_shares.title`, the two panels | Clients, Web shares | 客户端、Web 分享 |
+| `ui.web_shares.new_link` | New Web share link | 新建 Web 分享链接 |
+| `ui.web_shares.share`, on a Services page row | Share | 分享 |
+| `ui.web_shares.field_name`, `field_app`, `field_expires`, `field_site` | Name, App, Expires, Site | 名称、应用、有效期、站点 |
+| `ui.web_shares.expires_1d`, `expires_7d`, `expires_30d`, `until_revoked` | 1 day, 7 days, 30 days, Until revoked | 1 天、7 天、30 天、直到撤销 |
+| `ui.web_shares.site_other`, `site_other_hint` | Another site; The https:// address of your own copy of the page. | 其他站点；你自己托管的那份页面的 https:// 地址。 |
+| `ui.web_shares.link_once` | Anyone with this link opens this app until the share ends. Copy it now: the hub cannot show it again. | 拿到这个链接的人都能打开这个应用，直到分享结束。现在就复制：中枢之后无法再显示它。 |
+| `ui.web_shares.guest_hint` | Visitors sign in as this account. Invite this address inside the app to give them a project. | 访客以这个账户登录。在应用里邀请这个地址，访客就能看到对应的项目。 |
+| `ui.web_shares.expires_in` | Expires in {days} d | {days} 天后到期 |
+| `ui.web_shares.online`, the share's open pages | {count} online | 在线 {count} |
+| `state.share_active`, `state.share_preparing`, `state.share_unavailable`, `state.share_failed` | active, preparing, unavailable, failed | 可用、准备中、暂不可用、失败 |
+| `ui.web_shares.revoke` | Revoke | 撤销 |
+| `ui.web_shares.revoke_title` | Revoke {name} | 撤销 {name} |
+| `ui.web_shares.revoke_body` | Every page open on this share closes, and its link stops working. | 这个分享上打开着的页面全部关闭，链接随即失效。 |
+| `ui.web_shares.revoke_guest` | The guest account {email} is removed from the app; what it edited in your projects stays. | 应用里的访客账户 {email} 会删除；它在你的项目里改过的内容保留。 |
+| `ui.web_shares.empty`, `ui.web_shares.empty_hint` | No Web shares; Share one app's page with people who have no client. | 还没有 Web 分享；把一个应用的页面分享给没有客户端的人。 |
+| `code.share_unknown` | This share no longer exists. | 这个分享已不存在。 |
+| `code.web_share_entry_invalid` | This app's page cannot be shared. | 非法应用：这个应用的页面不能分享。 |
+| `code.web_share_site_invalid` | {site} is not an https:// address. | 非法站点：{site} 不是 https:// 地址。 |
+| `code.web_share_unknown` | This share no longer exists. | 这个分享已不存在。 |
+
+## The Web share page's words
+
+The page a Web share link opens ([web_share.md](web_share.md), "The
+screens") carries its words in `shell.js`, in the language the browser
+names: Chinese when it starts with `zh`, English otherwise. `<app>` is the
+link's `app.title`.
+
+| Screen | English | Chinese |
+| --- | --- | --- |
+| Loading | Opening <app>… | 正在打开 <app>… |
+| The link no longer works | This link is no longer valid. / Ask the person who shared it for a new one. | 这个链接已失效。/ 请向分享给你的人要一个新链接。 |
+| The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
+| The machine is offline | This machine is offline. / The app's machine is not connected to its hub right now. | 这台机器已离线。/ 这个应用所在的机器现在没有连上它的中枢。 |
 
 ## The machine page's words
 

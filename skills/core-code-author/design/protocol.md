@@ -291,9 +291,9 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `declared_service_invalid {field}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `declared_service_invalid {field}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}` |
 | 401 | a missing session, or on the legacy listener a token that names no binding | `binding_unknown` |
-| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown` |
+| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown` |
 | 413 | a body past the legacy listener's limit, `CHANNEL_REQUEST_BYTES_MAX` 64 KiB | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `transport_key_missing` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
@@ -324,6 +324,8 @@ walk theirs. A new code and its wording are one change.
 | `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row on Linux, the shares of the hub's own list that admit no enabled account's SMB user and are left out of the module's file ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
+| `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
+| `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/revoke` naming no share | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
@@ -351,7 +353,7 @@ listener.
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | The **Agents** page: every managed machine, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its machine page shows |
-| `/api/hub/client` | Enrolled client sessions and the links that enrol them |
+| `/api/hub/client` | Enrolled client sessions, the links that enrol them, and the Web shares |
 | `/api/hub/service` | The apps and the other published services, and the apps declared by hand |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
@@ -532,7 +534,7 @@ A client ticket's row waits to join for as long as its ticket lives
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps; and `web_shares`, each `{id, name, app_id, entry_id, app_title, device_name, expires_at, expires_in_s, state, code, params, online_count, guest_email}`, `expires_at` null for a share that lasts until it is revoked; `web_share_entries`, the entries a share can offer now, each `{entry_id, app_id, title, device_name, guest_login}`; and `web_share_sites`, each `{url, title}` |
 | `POST /api/hub/client/enrollment/create` | `{name, permission}`, `permission` null to follow the default, else `{kinds, devices, entries}` as `permission/set` takes them | makes the client's row at once, waiting to join with that name and permission, and its link, which works for `ENROLLMENT_TTL_S`, 30 minutes; `ClientEnrollmentView`, `{link, client_id, expires_at, expires_in_s}`; a client link still open from before stops working, and its waiting row goes; 400 as `permission/set`, 409 `transport_key_missing` |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
@@ -540,6 +542,8 @@ A client ticket's row waits to join for as long as its ticket lives
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
+| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no shareable `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`; 409 `vault_locked` |
+| `POST /api/hub/client/web_share/revoke` | `{share_id}` | ends the share at once: its link stops working, every page open on it closes, and a guest account it made is removed ("Web shares"); the list; 404 `web_share_unknown` |
 
 One client link adds one device. Its row is made when the link is, and
 waits to join: it holds the name and the permission the link was made with,
@@ -647,7 +651,7 @@ is not `true` or `false` is refused `body_invalid`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how a Web share's visitor signs in to a `web` entry a share can offer, `app` or `guest_account`, and empty for every other entry ("Web shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
 | `GET /api/hub/service/share` | | the shares devices declared |
 | `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
 | `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
@@ -2027,6 +2031,68 @@ with the agent's code:
 | A closed stream | A client that closes its stream, or whose session ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
 | Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is a `resize` record ("Kept shells"); without `is_tty` they are ignored. |
 | Account | `account`, an enabled account of the Terminal module, the first one when it is empty, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); never root or SYSTEM. The account's shell is not read, since `argv` names the program. |
+
+### Web shares
+
+A Web share offers one app's `web` entry to anyone who holds its link, in a
+browser, for as long as the share lasts; a visitor installs nothing and is
+no client. The Clients page makes and revokes shares
+([ui_behavior.md](ui_behavior.md), "The Clients page"), the visitor's page
+is [web_share.md](web_share.md), and its connection is the guest path
+([transport.md](transport.md), "The guest path").
+
+`config/clients/web_shares.json` holds `shares`, each `{id, name, app_id,
+entry_id, created_at, expires_at, ticket_sha256, ufrag, pwd_sealed,
+guest}`: `id` a uuid4 hex; `expires_at` Unix seconds, null for a share that
+lasts until it is revoked; `ticket_sha256` the SHA-256 of the share's
+ticket, which the hub keeps of it alone; `ufrag` in the clear and
+`pwd_sealed`, the pwd sealed under the vault's data key, the share's pair
+for the guest door; and `guest`,
+`{account, email, password_sealed, secret_sealed}`, the share's account in
+the app, for an entry whose `guest_login` is `guest_account` and absent for
+any other ([agent/module_install.md](agent/module_install.md), "The
+manifest").
+
+A share can offer an app's `web` entry when the entry's `guest_login` is not
+empty. `guest_login` is `app` for a declared app's or a container's `web`
+entry, the value the manifest's `web_share` names for a module's `web`
+entry, and empty for every other entry. No share offers a
+terminal, a file share, an SSH server, a remote desktop, a port, the AI
+gateway or the panel; a file is shared as an app whose page serves it.
+
+| State | The share is |
+| --- | --- |
+| `active` | admitting visitors: its entry is published and its machine has a session, and a guest account it needs is made |
+| `preparing` | waiting for its machine to report its guest account made |
+| `unavailable` | holding its link while its entry is not published or its machine has no session |
+| `failed` | holding its link while its machine reports the guest account's failure, which `code` and `params` name |
+
+`online_count` is the share's guest sessions open now, which the hub counts
+from the transport's `session_open` and `session_end` events of role
+`guest` ([transport.md](transport.md), "The hub's local channel"). A visitor
+is no client: the hub keeps no row, no record and no address of one, and a
+visitor's session ends with its page.
+
+A visitor's `service` frame and `connect` stream are judged in this order,
+`connect_limit` first on a stream, and the first check that fails gives the
+reply or the close its code:
+
+| `code` | Given when |
+| --- | --- |
+| `share_unknown` | the share no longer exists: revoked, expired, or removed with its machine, its app or its module |
+| `permission_denied {kind}` | the id is not the share's entry; for `{is_panel: true}`, `kind` is `panel` |
+| `agent_offline {device}` | the machine providing the entry has no session |
+| `service_unknown {service_id}` | the entry is not published now, or the share is `preparing` or `failed` |
+| `vault_locked` | on a `service` alone, the share's guest secret does not open |
+| `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
+
+| Rule | Reason |
+| --- | --- |
+| A share admits any number of visitors until it expires or is revoked, and limits none of them. | A share's protection is that it reaches one app, that it ends, and that one press ends it, with the app's own login, or its guest account, inside. A limit on visitors stops no leak and stops a classmate who changes devices. |
+| A share ends at its `expires_at`, within `WEB_SHARE_SWEEP_INTERVAL_S`, 60 seconds, and at once on **Revoke**. An end deletes the record, sends the transport `shares_set` without it and `session_close {code: share_unknown}` for each of its sessions, and takes its guest out of the module's state, whose apply removes the account. | Every page open on an ended share closes, and its link stops working. |
+| Forgetting a device and uninstalling a module end the shares of their entries, and removing a declared app ends its shares. A container's entry that stops being published leaves its share `unavailable`. | A share follows what it offers: an app gone for good takes its shares with it, and one stopped for a while keeps them. |
+| The ticket, the ufrag and the pwd are made with the share, and the link is given once, in `web_share/create`'s answer. | The hub keeps a hash of the ticket alone, so the link cannot be read back from the hub. |
+| The Web side offers apps and nothing else, now and in later releases. | A terminal, a file share or a desktop in a browser is a web client, which Neutrino does not make. |
 
 ### The rules the details settle
 

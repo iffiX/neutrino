@@ -42,6 +42,7 @@ password and is turned on for one client at a time.
 | `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the guest path's DTLS certificate, `dtls_certificate.pem`, its key `dtls_key.pem` in the clear with the static key's mode, and `dtls_fingerprint`; the transport generates them, and the backup carries both private keys sealed ([../design/transport.md](../design/transport.md), "The hub's static key" and "The DTLS certificate") |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds; each row's `client` keeps the token's hash, the agent's static `public_key` and its `agent_version` |
 | `config/clients/clients.json` | `clients.example.json` | yes: each client's token hash, its static `public_key` and its gateway key's id, and the permissions, the default's and each client's own, each `{kinds, devices, entries}` ([../design/protocol.md](../design/protocol.md), `/api/hub/client`) |
+| `config/clients/web_shares.json` | `web_shares.example.json` | yes: each Web share's ticket hash, its ufrag and its pwd sealed under the vault's data key, and a guest account's password and token secret sealed the same way ([../design/protocol.md](../design/protocol.md), "Web shares") |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |
 | `config/devices/<id>/samba.json` | none | yes: the file share's enabled accounts and each one's SMB password, sealed under the vault's data key, and `shares`, the shares the file names itself, a ZFS dataset's among them |
@@ -233,6 +234,13 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   `true` or `false`, the fine mode's exceptions to the kinds; `devices` and
   `entries` are written only when they name something
   ([../design/protocol.md](../design/protocol.md), `/api/hub/client`).
+- **`web_shares.json`**, in `config/clients/`: `shares`, each `{id, name,
+  app_id, entry_id, created_at, expires_at, ticket_sha256, ufrag,
+  pwd_sealed, guest}`, `expires_at` null for a share that lasts until it is
+  revoked and `guest` present for an app shared with a guest account; a
+  share past its `expires_at` is removed by the hub, so the file holds the
+  live shares alone ([../design/protocol.md](../design/protocol.md), "Web
+  shares").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`
   frame carries both, and `nhub reset all` deletes the file.
