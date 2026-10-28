@@ -638,7 +638,7 @@ restore.
 | --- | --- |
 | The transport keeps an existing pair at every start, and `keys_reload` reads it again, making a new one when a file is missing. `nhub reset all` deletes the three files with the static key and sends `keys_reload`. Nothing else makes a new certificate, and nothing renews it before its ten years. | Every share link holds the fingerprint, so a new certificate ends every link at once, and that is a step the person takes. |
 | The certificate's validity starts a day before it was made. | A browser whose clock runs behind still accepts it. |
-| The Settings tab's backup carries the private key sealed under the vault's data key, as `config/transport/dtls_key.pem.sealed`, beside the certificate and the fingerprint as they are, and is refused `vault_locked` while the vault is locked; a restore unseals it into `dtls_key.pem`, owned by the transport's account, and sends `keys_reload`. | A hub restored on new hardware keeps every share link working, as it keeps every binding ([../misc/config.md](../misc/config.md), "Backup and migrate"). |
+| The Settings tab's backup carries the private key sealed under the vault's data key, as `config/transport/dtls_key.pem.sealed`, beside the certificate and the fingerprint as they are, and is refused `vault_locked` while the vault is locked; a restore unseals it into `dtls_key.pem`, owned by the transport's account, and sends `keys_reload`. | A hub restored on new hardware keeps its fingerprint, as it keeps every binding ([../misc/config.md](../misc/config.md), "Backup and migrate"). |
 
 ### The binding
 
