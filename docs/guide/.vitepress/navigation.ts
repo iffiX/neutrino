@@ -71,7 +71,6 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         text: "Make the hub a router or side gateway",
         link: "/scenarios/router_or_gateway",
       },
-      { text: "Configure a managed machine as a NAS", link: "/scenarios/nas" },
       {
         text: "Configure a managed machine as a Docker host",
         link: "/agent/modules/containers",
@@ -141,7 +140,6 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
           { text: "CloudCLI", link: "/agent/modules/cloudcli" },
           { text: "Codeg", link: "/agent/modules/codeg" },
           { text: "Containers", link: "/agent/modules/containers" },
-          { text: "ZFS storage", link: "/agent/modules/zfs" },
         ],
       },
     ],
@@ -237,7 +235,6 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         text: "把中枢配置成路由器或旁路网关",
         link: "/zh-CN/scenarios/router_or_gateway",
       },
-      { text: "把一个被控端配置为 NAS", link: "/zh-CN/scenarios/nas" },
       {
         text: "把一个被控端配置为 Docker 主机",
         link: "/zh-CN/agent/modules/containers",
@@ -307,7 +304,6 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
           { text: "CloudCLI", link: "/zh-CN/agent/modules/cloudcli" },
           { text: "Codeg", link: "/zh-CN/agent/modules/codeg" },
           { text: "容器", link: "/zh-CN/agent/modules/containers" },
-          { text: "ZFS 存储", link: "/zh-CN/agent/modules/zfs" },
         ],
       },
     ],

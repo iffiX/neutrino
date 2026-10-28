@@ -57,7 +57,7 @@ sudo rm -rf "/Library/Application Support/Neutrino/agent" /Library/Logs/Neutrino
 
 第一条删掉被控端的程序、它的 launchd 任务和它带的 RustDesk，留下配置、状态和日志；第二条删掉这三样。
 
-`nagent service uninstall` 删掉模块为了运行加上的服务、计划任务和防火墙规则，并把各账户的 AI 工具切回原来的设置，不再走中枢的网关。文件共享的共享和账户、存储池、仓库、容器卷都留下，系统的 SMB 服务照常提供这些共享。
+`nagent service uninstall` 删掉模块为了运行加上的服务、计划任务和防火墙规则，并把各账户的 AI 工具切回原来的设置，不再走中枢的网关。文件共享的共享和账户、仓库、容器卷都留下，系统的 SMB 服务照常提供这些共享。
 
 ## 客户端
 

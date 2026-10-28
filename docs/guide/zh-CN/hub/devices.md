@@ -66,7 +66,7 @@ title: 设备
 
 ## 各系统能跑什么
 
-Windows 和 Mac 上能跑文件共享、终端、远程桌面、Gitea、VS Code、CloudCLI、Codeg 和容器，Mac 还能跑 code-server。ZFS 存储要装在 Linux 机器上。见[支持的平台](../reference/platforms.md)。
+Windows 和 Mac 上能跑文件共享、终端、远程桌面、Gitea、VS Code、CloudCLI、Codeg 和容器，Mac 还能跑 code-server。见[支持的平台](../reference/platforms.md)。
 
 ## 版本不一致的机器
 

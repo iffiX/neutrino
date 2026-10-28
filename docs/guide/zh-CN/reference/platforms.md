@@ -108,7 +108,6 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机
 | 远程桌面                                        | 支持                                                             | 只有 x86-64                                                                    | 支持                                                            |
 | Gitea                                           | x86-64 和 ARM64                                                  | x86-64                                                                         | Apple 芯片和 Intel                                              |
 | 容器                                            | 发行版软件源里的 Podman                                          | Windows 10 内部版本 19041 及以上或 Windows 11，开着虚拟化；WSL 2 上的 Podman 6 | macOS 13 及以上；Apple 芯片上是 Podman 6，Intel 上是 Podman 5.8 |
-| ZFS 存储                                        | 各发行版系列存放 OpenZFS 的软件源                                | 不支持                                                                         | 不支持                                                          |
 | VS Code                                         | x86-64 和 ARM64                                                  | x86-64                                                                         | Apple 芯片和 Intel                                              |
 | code-server                                     | x86-64 和 ARM64                                                  | 不支持                                                                         | Apple 芯片和 Intel                                              |
 | CloudCLI                                        | x86-64 和 ARM64                                                  | x86-64                                                                         | Apple 芯片和 Intel                                              |
@@ -121,7 +120,6 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机
 | ------------------ | ------------------------------------------ |
 | Podman             | Linux 上 3.4，每个版本都一样               |
 | Samba              | 4.15                                       |
-| ZFS                | 2.1                                        |
 | git                | 2.0，Gitea 用；macOS 和 Windows 上要自己装 |
 | Windows PowerShell | 5.1，Windows 上的文件共享用                |
 | macOS              | 12，macOS 上的文件共享用；13，容器用       |

@@ -72,7 +72,7 @@ Other sessions stay signed in after a password change. **System** takes the colo
 
 Under **Configuration archive**, select **Download backup**. The browser saves a `.tar.gz` of the whole of `config/`.
 
-The credentials inside are sealed under the vault passphrase; the rest is readable by whoever holds the file. Share contents, Gitea repositories, container volumes and ZFS datasets stay on their machines.
+The credentials inside are sealed under the vault passphrase; the rest is readable by whoever holds the file. Share contents, Gitea repositories and container volumes stay on their machines.
 
 ## Restore a backup
 

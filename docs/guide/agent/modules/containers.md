@@ -118,7 +118,7 @@ On Windows and macOS, an apply rejects any other folder, such as a network share
 
 **Browse…** beside **Add** opens the machine's folders. Open a folder and select **Choose this folder**, and the line starts with that folder and a colon. Type the path in the container after the colon, then select **Add**.
 
-Files the container writes under that path stay on the machine; every other file it writes is lost when the container is recreated. On Windows and macOS a named volume is on the Podman machine's disk. On Linux, a folder of a [ZFS storage](zfs.md) dataset works as a source, such as `/tank/media:/media`.
+Files the container writes under that path stay on the machine; every other file it writes is lost when the container is recreated. On Windows and macOS a named volume is on the Podman machine's disk.
 
 ## Environment and command
 

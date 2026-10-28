@@ -99,7 +99,6 @@ A module the machine's system cannot run is greyed in the **Modules** page's pic
 | Remote desktop                                         | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
 | Gitea                                                  | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
 | Containers                                             | Podman from the distribution's packages                                       | Windows 10 build 19041 and newer, or Windows 11, with virtualisation on; Podman 6 on WSL 2 | macOS 13 and newer; Podman 6 on Apple silicon, Podman 5.8 on Intel |
-| ZFS storage                                            | OpenZFS from the repository each family keeps it in                           | none                                                                                       | none                                                               |
 | VS Code                                                | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
 | code-server                                            | x86-64 and ARM64                                                              | none                                                                                       | Apple silicon and Intel                                            |
 | CloudCLI                                               | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
@@ -112,7 +111,6 @@ The agent drives these programs at these versions or newer:
 | ------------------ | ------------------------------------------------------ |
 | Podman             | 3.4 on Linux, run the same way on every version        |
 | Samba              | 4.15                                                   |
-| ZFS                | 2.1                                                    |
 | git                | 2.0, for Gitea; on Windows and macOS the machine's own |
 | Windows PowerShell | 5.1, for the file share on Windows                     |
 | macOS              | 12, for the file share on macOS; 13, for Containers    |

@@ -1373,8 +1373,7 @@
       "language": "en",
       "page": "agent/modules/shares.md",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1406,8 +1405,7 @@
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ]
     },
     {
@@ -1477,46 +1475,6 @@
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
-    },
-    {
-      "file": "zfs.png",
-      "language": "en",
-      "page": "agent/modules/zfs.md",
-      "pages": [
-        "scenarios/nas.md"
-      ],
-      "source": "panel",
-      "viewport": "desktop",
-      "url": "/modules",
-      "element": "viewport",
-      "wait_for": ".zfs_pool_card",
-      "state": "server with a ZFS pool.",
-      "press": [
-        ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
-        ".modules_list_row:has(.modules_list_row_title:text-is(\"ZFS storage\"))",
-        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
-      ],
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))"
-    },
-    {
-      "file": "zfs.png",
-      "language": "zh",
-      "page": "agent/modules/zfs.md",
-      "source": "panel",
-      "viewport": "desktop",
-      "url": "/modules",
-      "element": "viewport",
-      "wait_for": ".zfs_pool_card",
-      "state": "server with a ZFS pool.",
-      "press": [
-        ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
-        ".modules_list_row:has(.modules_list_row_title:text-is(\"ZFS 存储\"))",
-        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
-      ],
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))",
-      "pages": [
-        "scenarios/nas.md"
-      ]
     },
     {
       "file": "vscode_panel.png",
@@ -1801,8 +1759,7 @@
       "language": "en",
       "page": "client/desktop.md",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ],
       "source": "client",
       "viewport": "desktop",
@@ -1843,8 +1800,7 @@
         "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
       ],
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ]
     },
     {
@@ -2122,8 +2078,7 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -2134,8 +2089,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -2475,8 +2429,7 @@
       "language": "os",
       "page": "client/desktop.md",
       "pages": [
-        "quick-start/files.md",
-        "scenarios/nas.md"
+        "quick-start/files.md"
       ],
       "source": "os",
       "viewport": "os",

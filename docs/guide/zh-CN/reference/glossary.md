@@ -53,7 +53,6 @@ title: 术语表
 | 容器                 | Containers                   | 用 Podman 运行容器的模块；Windows 和 macOS 上运行在 Podman 虚拟机里                 |
 | 运行设置             | Run settings                 | Windows 和 macOS 上，运行容器的 Podman 虚拟机属于哪个账户、用多少处理器、内存和磁盘 |
 | Podman 虚拟机        | Podman machine               | Windows 和 macOS 上，某个账户的一台 Linux 虚拟机，Podman 在里面运行容器             |
-| ZFS 存储             | ZFS storage                  | 管 ZFS 存储池的模块，只在 Linux 上                                                  |
 | 服务                 | Services                     | 中枢发布给客户端的条目：网页、端口、AI、文件、桌面                                  |
 | 转发                 | forward                      | 客户端在本机开一个端口，接到中枢发布的条目                                          |
 | 持久                 | Persistent                   | 终端会话在窗口关掉后还在                                                            |
