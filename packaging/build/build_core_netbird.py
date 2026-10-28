@@ -11,7 +11,8 @@ NetBird publishes no library for phones, so the app carries one compiled
 here: ``gomobile bind`` over ``client/android`` of the pinned release and
 over the transport's ``mobile`` package of this tree, one ``.aar`` holding
 both, since an app loads one gomobile library; NetBird's ``go.mod`` gets a
-``require`` and a ``replace`` of the transport module for the bind. It is
+``require`` and a ``replace`` of the transport module for the bind, and
+keeps ``pion/stun`` at the version NetBird names. It is
 built for the two machines the app ships (arm64-v8a for phones, x86_64 for
 the emulator). The source
 archive is checked against its SHA-256 and the commit its header names
@@ -60,6 +61,9 @@ NETBIRD_MOBILE_PACKAGE = "./client/android"
 TRANSPORT_MODULE_PATH = "github.com/iffiX/neutrino/transport"
 TRANSPORT_MOBILE_PACKAGE = f"{TRANSPORT_MODULE_PATH}/mobile"
 TRANSPORT_MODULE_DIR = REPO_ROOT / "transport"
+# Modules held at the version NetBird's go.mod names. The transport's newer
+# pion/stun takes pion/transport/v4's Net, and NetBird's stdnet implements v3's.
+NETBIRD_MOBILE_HELD_MODULES = ("github.com/pion/stun/v3@v3.1.0",)
 NETBIRD_MOBILE_JAVA_PACKAGE = "io.netbird.gomobile"
 NETBIRD_MOBILE_TARGETS = "android/arm64,android/amd64"
 NETBIRD_MOBILE_ANDROID_API = "26"
@@ -150,6 +154,10 @@ def bind(source: Path, output: Path) -> None:
         "edit",
         f"-require={TRANSPORT_MODULE_PATH}@v0.0.0",
         f"-replace={TRANSPORT_MODULE_PATH}={TRANSPORT_MODULE_DIR}",
+        *(
+            f"-replace={held.split('@')[0]}={held}"
+            for held in NETBIRD_MOBILE_HELD_MODULES
+        ),
     ]
     print(" ".join(edit))
     subprocess.run(edit, cwd=source, env=environment, check=True)
