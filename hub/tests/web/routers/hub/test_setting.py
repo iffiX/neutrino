@@ -1292,6 +1292,50 @@ def test_a_restored_key_replaces_the_one_already_on_the_box(client):
     assert SecretVault().get(stale_id) is None
 
 
+def web_shares_file(config_dir, *share_ids) -> Path:
+    """A Web shares file of bare shares under ``config/clients/``."""
+    path = config_dir / "clients" / "web_shares.json"
+    path.parent.mkdir(exist_ok=True)
+    shares = [{"id": share_id, "ufrag": f"ufrag-{share_id}"} for share_id in share_ids]
+    path.write_text(json.dumps({"shares": shares}))
+    return path
+
+
+def test_a_backup_leaves_the_web_shares_out(client):
+    opened, config_dir = client
+    seed_config(config_dir)
+    web_shares_file(config_dir, "live")
+    (config_dir / "clients" / "clients.json").write_text(json.dumps({"clients": {}}))
+
+    contents = archive_contents(download_backup(opened))
+
+    assert "config/clients/web_shares.json" not in contents
+    assert "config/clients/clients.json" in contents
+    assert b"web_shares.json" not in contents["SHA256SUMS"]
+
+
+def test_a_restore_ends_the_boxs_web_shares_and_brings_back_none(client, monkeypatch):
+    """An archive holding a Web shares file, as an older hub wrote it."""
+    opened, config_dir = client
+    seed_config(config_dir)
+    contents = archive_contents(download_backup(opened))
+    revoked = json.dumps({"shares": [{"id": "revoked", "ufrag": "u"}]}).encode()
+    contents["config/clients/web_shares.json"] = revoked
+    digest = hashlib.sha256(revoked).hexdigest()
+    contents["SHA256SUMS"] += f"{digest}  clients/web_shares.json\n".encode()
+    web_shares_file(config_dir, "live")
+    ended = []
+    monkeypatch.setattr(
+        settings_router, "end_shares", lambda runtime, shares: ended.extend(shares)
+    )
+
+    response = upload_restore(opened, repacked(contents), PASSPHRASE)
+
+    assert response.status_code == 200, response.text
+    assert not (config_dir / "clients" / "web_shares.json").exists()
+    assert [share.id for share in ended] == ["live"]
+
+
 def test_a_restore_without_a_passphrase_writes_nothing(client):
     opened, config_dir = client
     seed_config(config_dir)

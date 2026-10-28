@@ -64,7 +64,9 @@ from neutrino_hub.modules.hub_update.state import (
     append_step,
     stamp_now,
 )
+from neutrino_hub.modules.clients.constants import WEB_SHARES_CONFIG_PATH
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.clients.web_shares import WebShareRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.system.machine import machine_id
@@ -126,6 +128,7 @@ from neutrino_hub.web.models import (
     TaskStarted,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.web_share_access import end_shares
 from neutrino_hub import HUB_PACKAGE_ASSET, HUB_VERSION
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os
@@ -738,7 +741,7 @@ def change_password(
 
 @router.post("/backup")
 def backup() -> StreamingResponse:
-    """Download the whole ``config/`` directory as one plain archive.
+    """Download ``config/`` as one plain archive, its Web shares left out.
 
     Restoring this on a fresh machine and running the installer reproduces
     the appliance. The archive travels plainly because ``config/`` holds no
@@ -785,7 +788,7 @@ def backup() -> StreamingResponse:
 
 
 def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
-    """Read the whole ``config/`` tree into memory, in one consistent pass.
+    """Read the ``config/`` tree but the Web shares into memory, in one consistent pass.
 
     Returns:
         The directory paths and the file paths with their bytes, both
@@ -795,10 +798,13 @@ def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
     files: list[tuple[str, bytes]] = []
     private_key = UTILS_CONFIG_DIR / TRANSPORT_KEY_DIR.name / TRANSPORT_PRIVATE_KEY_NAME
     dtls_key = UTILS_CONFIG_DIR / TRANSPORT_KEY_DIR.name / TRANSPORT_DTLS_KEY_NAME
+    web_shares = UTILS_CONFIG_DIR / WEB_SHARES_CONFIG_PATH
     for path in sorted(UTILS_CONFIG_DIR.rglob("*")):
         relative = path.relative_to(UTILS_CONFIG_DIR).as_posix()
         if path.is_dir():
             directories.append(relative)
+        elif path == web_shares:
+            continue
         elif path == private_key:
             files.append((_sealed_key_member(), sealed_private_key()))
         elif path == dtls_key:
@@ -879,6 +885,9 @@ async def restore(
     exactly as it was. The passphrase is always required — it is what turns
     the archive's wrapped data key back into a working vault.
 
+    The hub stores no Web share after it. The box's shares end as a revoke
+    ends them, and the archive's Web shares file is removed.
+
     Args:
         file: The uploaded ``.tar.gz`` backup.
         vault_passphrase: The master passphrase of the box the backup left.
@@ -908,6 +917,7 @@ async def restore(
     _check_mode(contents)
     data_key = _unwrapped_key(contents, vault_passphrase)
     with CONFIG_WRITE_LOCK:
+        box_shares = _stored_shares()
         try:
             with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
                 members = [
@@ -923,8 +933,10 @@ async def restore(
                 )
         except (tarfile.TarError, EOFError, OSError) as error:
             raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
+        (UTILS_CONFIG_DIR / WEB_SHARES_CONFIG_PATH).unlink(missing_ok=True)
         write_state_key(data_key)
         await _restore_static_key(runtime)
+    await asyncio.to_thread(end_shares, runtime, box_shares)
     _mark_local_agent_join(contents)
     # The restored decisions are made true without another command: apply
     # runs as a streamed task the modal shows, and the panel restarts itself
@@ -934,6 +946,14 @@ async def restore(
         label="apply the restored configuration", source=_restore_apply_source()
     )
     return {"is_restored": True, "task_id": stream.id}
+
+
+def _stored_shares() -> list:
+    """The Web shares stored now, or none for a file that does not read."""
+    try:
+        return WebShareRegistry().all()
+    except (OSError, ValueError):
+        return []
 
 
 def _mark_local_agent_join(contents: dict[str, bytes]) -> None:
