@@ -79,40 +79,19 @@ def install_agent(panel, device_id, host, key_id) -> None:
 @pytest.fixture(scope="module")
 def machine(panel, serving):  # noqa: F811
     """The second machine, joined, with the file share running one share."""
-    candidate = lifecycle.wait_for(
-        "the client's lease on the served wire",
-        lambda: next(
-            (
-                entry
-                for entry in panel.call("POST", "/hub/device/scan")[1]["devices"]
-                if entry["is_online"]
-                and not entry["is_stored"]
-                and entry["client"] is None
-                and entry["ipv4_address"].startswith(
-                    module_walk.MODULE_LAN.rsplit(".", 1)[0]
-                )
-            ),
-            None,
-        ),
-        module_walk.CLIENT_TIMEOUT_S,
-    )
-    host = candidate["ipv4_address"]
-    if lifecycle.ssh_to(host, "true").returncode != 0:
-        pytest.skip("the scanned machine does not answer the lab key")
+    host = lifecycle.served_client(module_walk.MODULE_LAN)["host"]
     status, key = panel.call(
         "POST",
         "/hub/credential/ssh_key/add",
         {"name": "removal lab key", "private_key": lifecycle.ID_LAB.read_text()},
     )
     assert status == 200, key
-    status, saved = panel.call(
-        "POST",
-        "/hub/device/set",
-        {"device_id": candidate["id"], "name": "removal client"},
+    device_id = lifecycle.add_over_ssh(panel, host, key["id"])
+    lifecycle.wait_for(
+        "the installed agent's first heartbeat",
+        lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
+        INSTALL_TIMEOUT_S,
     )
-    assert status == 200, saved
-    device_id = saved["id"]
-    install_agent(panel, device_id, host, key["id"])
 
     for path, body in (
         ("/agent/module/install", {"module": "samba"}),

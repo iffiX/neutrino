@@ -1,10 +1,11 @@
 """The whole device lifecycle against a live hub and a live second machine.
 
-Scan finds a stranger; naming it mints the id everything after addresses it
-by; one install delivers the native package and joins it over the channel;
-forgetting it on the hub is the one refusal that unbinds an agent; a link
-brings it back; leaving from the device side empties the hub's binding at
-once. Every transition of the state table in transport.md, walked once.
+The hub's lease finds a stranger; adding it over SSH stores the id
+everything after addresses it by, and one install delivers the native
+package and joins it over the channel; forgetting it on the hub is the one
+refusal that unbinds an agent; a link brings it back; leaving from the
+device side empties the hub's binding at once. Every transition of the
+state table in transport.md, walked once.
 
 The box is wired here — a router serving the spare port — so nothing depends
 on what an earlier test left behind. It needs the CI/CD pipeline's client VM on the
@@ -27,6 +28,8 @@ from test_panel_update import HUB_PYTHON
 
 ID_LAB = Path(__file__).resolve().parent / "id_lab"
 LIFECYCLE_LAN = "192.168.93.1"
+# The leases the hub's dnsmasq hands out, one per line: expiry, MAC, address.
+LEASE_FILE = Path("/var/lib/misc/dnsmasq.leases")
 
 CLIENT_TIMEOUT_S = 180
 INSTALL_TIMEOUT_S = 240
@@ -62,9 +65,74 @@ def device_by_id(panel, device_id):
 
 
 def device_by_mac(panel, mac):
-    """The row that holds one address, stored rows before scan rows."""
+    """The row that holds one address."""
     listed = panel.read("/hub/device")["devices"]
     return next((entry for entry in listed if mac in entry["mac_addresses"]), None)
+
+
+def leases_on(lan: str) -> list:
+    """The leases the hub handed out on a served network.
+
+    Returns:
+        One ``{host, mac}`` per lease, in the file's order.
+    """
+    prefix = lan.rsplit(".", 1)[0] + "."
+    try:
+        lines = LEASE_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [
+        {"host": fields[2], "mac": fields[1]}
+        for fields in (line.split() for line in lines)
+        if len(fields) >= 3 and fields[2].startswith(prefix)
+    ]
+
+
+def served_client(lan: str) -> dict:
+    """The client on a served network, the first leased machine that accepts
+    the lab key.
+
+    Returns:
+        ``{host, mac}`` of its lease.
+    """
+
+    def answering():
+        return next(
+            (
+                lease
+                for lease in leases_on(lan)
+                if ssh_to(lease["host"], "true").returncode == 0
+            ),
+            None,
+        )
+
+    return wait_for(
+        "a leased machine on the served wire to accept the lab key",
+        answering,
+        CLIENT_TIMEOUT_S,
+    )
+
+
+def add_over_ssh(panel, host: str, key_id: str) -> str:
+    """Add a machine over SSH. The add stores its row and starts the agent's
+    install.
+
+    Returns:
+        The id of the row the add stored.
+    """
+    status, started = panel.call(
+        "POST",
+        "/hub/device/add",
+        {"host": host, "port": 22, "username": "lab", "key_id": key_id},
+    )
+    assert status == 200, started
+    rows = [
+        entry
+        for entry in panel.read("/hub/device")["devices"]
+        if (entry["ssh"] or {}).get("host") == host
+    ]
+    assert len(rows) == 1, rows
+    return rows[0]["id"]
 
 
 # What the running agent says about itself, asked over its control socket.
@@ -203,64 +271,31 @@ def serving(panel, before):
 @pytest.fixture(scope="module")
 def stranger(panel, serving):
     """The client on the served wire, once its lease and its SSH answer."""
-
-    def scanned_candidate():
-        status, listed = panel.call("POST", "/hub/device/scan")
-        assert status == 200
-        for entry in listed["devices"]:
-            if (
-                entry["is_online"]
-                and not entry["is_stored"]
-                and entry["client"] is None
-                and entry["ipv4_address"].startswith(LIFECYCLE_LAN.rsplit(".", 1)[0])
-            ):
-                return entry
-        return None
-
-    candidate = wait_for(
-        "the client's lease on the served wire", scanned_candidate, CLIENT_TIMEOUT_S
-    )
-    probe = ssh_to(candidate["ipv4_address"], "true")
-    if probe.returncode != 0:
-        pytest.skip("the scanned machine does not answer the lab key")
-    return candidate
+    return served_client(LIFECYCLE_LAN)
 
 
 def test_the_lifecycle_walks_every_transition(panel, stranger):
-    mac = stranger["link_mac"]
-    host = stranger["ipv4_address"]
+    mac = stranger["mac"]
+    host = stranger["host"]
 
-    # The lab key becomes a stored key, and naming the scan row is what mints
-    # the id every call after this one carries.
+    # The lab key becomes a stored key, and adding the machine over SSH
+    # stores the id every later call sends. One install: the
+    # native package over SSH, then the same join a person would run.
+    # Managed means the handshake completed, a binding and never a generated
+    # token.
     status, key = panel.call(
         "POST",
         "/hub/credential/ssh_key/add",
         {"name": "lab key", "private_key": ID_LAB.read_text()},
     )
     assert status == 200, key
-    status, saved = panel.call(
-        "POST", "/hub/device/set", {"device_id": stranger["id"], "name": "lab client"}
+    device_id = add_over_ssh(panel, host, key["id"])
+    assert (
+        panel.status(
+            "POST", "/hub/device/set", {"device_id": device_id, "name": "lab client"}
+        )
+        == 200
     )
-    assert status == 200, saved
-    assert saved["is_stored"] is True
-    assert saved["id"] != stranger["id"]
-    device_id = saved["id"]
-
-    # One install: the native package over SSH, then the same join a person
-    # would run. Managed means the handshake completed — a binding, never a
-    # generated token.
-    status, started = panel.call(
-        "POST",
-        "/hub/device/agent/install",
-        {
-            "device_id": device_id,
-            "host": host,
-            "port": 22,
-            "username": "lab",
-            "key_id": key["id"],
-        },
-    )
-    assert status == 200, started
     wait_for(
         "the installed agent's first heartbeat",
         lambda: (device_by_id(panel, device_id) or {}).get("is_agent_online"),

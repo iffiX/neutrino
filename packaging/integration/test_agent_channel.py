@@ -50,7 +50,6 @@ DOOR_HOLD_MIN_S = 5
 DOOR_HOLD_MAX_S = 30
 DOOR_HOLD_SLACK_S = 5
 
-CLIENT_TIMEOUT_S = 180
 # The first install on a fresh client runs its first `apt-get update`, which
 # fetches the full package lists: about four minutes in the lab.
 FIRST_INSTALL_TIMEOUT_S = 600
@@ -167,27 +166,7 @@ def serving(panel, before):
 @pytest.fixture(scope="module")
 def stranger(panel, serving):
     """The client on the served wire, once its lease and its SSH answer."""
-
-    def scanned_candidate():
-        status, listed = panel.call("POST", "/hub/device/scan")
-        assert status == 200
-        for entry in listed["devices"]:
-            if (
-                entry["is_online"]
-                and not entry["is_stored"]
-                and entry["client"] is None
-                and entry["ipv4_address"].startswith(CHANNEL_LAN.rsplit(".", 1)[0])
-            ):
-                return entry
-        return None
-
-    candidate = lifecycle.wait_for(
-        "the client's lease on the served wire", scanned_candidate, CLIENT_TIMEOUT_S
-    )
-    probe = lifecycle.ssh_to(candidate["ipv4_address"], "true")
-    if probe.returncode != 0:
-        pytest.skip("the scanned machine does not answer the lab key")
-    return candidate
+    return lifecycle.served_client(CHANNEL_LAN)
 
 
 def test_a_tls_hello_gets_no_byte_and_then_a_reset(panel):
@@ -206,7 +185,7 @@ def test_a_tls_hello_gets_no_byte_and_then_a_reset(panel):
 
 
 def test_the_channel_runs_through_the_transport_end_to_end(panel, stranger):
-    host = stranger["ipv4_address"]
+    host = stranger["host"]
 
     # The link names the channel: the agent port on every exposed address,
     # the role it was made for, and the hub's static key.
@@ -235,15 +214,9 @@ def test_the_channel_runs_through_the_transport_end_to_end(panel, stranger):
         {"name": "channel lab key", "private_key": lifecycle.ID_LAB.read_text()},
     )
     assert status == 200, key
-    status, saved = panel.call(
-        "POST",
-        "/hub/device/set",
-        {"device_id": stranger["id"], "name": "channel client"},
-    )
-    assert status == 200, saved
-    device_id = saved["id"]
+    device_id = lifecycle.add_over_ssh(panel, host, key["id"])
     try:
-        walk_the_channel(panel, host=host, device_id=device_id, key_id=key["id"])
+        walk_the_channel(panel, host=host, device_id=device_id)
     finally:
         # Leave the box as this file found it, a failed walk too: a stored
         # device is one the later walks no longer accept as the stranger.
@@ -252,20 +225,9 @@ def test_the_channel_runs_through_the_transport_end_to_end(panel, stranger):
         panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
 
 
-def walk_the_channel(panel, *, host: str, device_id: str, key_id: str) -> None:
-    """Install, leave, a link of another key, a binding of 0.5, and a rejoin."""
-    status, started = panel.call(
-        "POST",
-        "/hub/device/agent/install",
-        {
-            "device_id": device_id,
-            "host": host,
-            "port": 22,
-            "username": "lab",
-            "key_id": key_id,
-        },
-    )
-    assert status == 200, started
+def walk_the_channel(panel, *, host: str, device_id: str) -> None:
+    """The install the add started, leave, a link of another key, a binding
+    of 0.5, and a rejoin."""
     lifecycle.wait_for(
         "the installed agent's first heartbeat through the transport",
         lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),

@@ -44,7 +44,6 @@ SHARE = {
 }
 JOURNAL_LINES = 50
 
-CLIENT_TIMEOUT_S = 180
 INSTALL_TIMEOUT_S = 600
 
 
@@ -118,52 +117,14 @@ def serving(panel, before):
 @pytest.fixture(scope="module")
 def managed(panel, serving):
     """The second machine, joined to this hub, and let go again afterwards."""
-
-    def scanned_candidate():
-        status, listed = panel.call("POST", "/hub/device/scan")
-        assert status == 200
-        for entry in listed["devices"]:
-            if (
-                entry["is_online"]
-                and not entry["is_stored"]
-                and entry["client"] is None
-                and entry["ipv4_address"].startswith(MODULE_LAN.rsplit(".", 1)[0])
-            ):
-                return entry
-        return None
-
-    candidate = lifecycle.wait_for(
-        "the client's lease on the served wire", scanned_candidate, CLIENT_TIMEOUT_S
-    )
-    host = candidate["ipv4_address"]
-    if lifecycle.ssh_to(host, "true").returncode != 0:
-        pytest.skip("the scanned machine does not answer the lab key")
-
+    host = lifecycle.served_client(MODULE_LAN)["host"]
     status, key = panel.call(
         "POST",
         "/hub/credential/ssh_key/add",
         {"name": "module lab key", "private_key": lifecycle.ID_LAB.read_text()},
     )
     assert status == 200, key
-    status, saved = panel.call(
-        "POST",
-        "/hub/device/set",
-        {"device_id": candidate["id"], "name": "module client"},
-    )
-    assert status == 200, saved
-    device_id = saved["id"]
-    status, started = panel.call(
-        "POST",
-        "/hub/device/agent/install",
-        {
-            "device_id": device_id,
-            "host": host,
-            "port": 22,
-            "username": "lab",
-            "key_id": key["id"],
-        },
-    )
-    assert status == 200, started
+    device_id = lifecycle.add_over_ssh(panel, host, key["id"])
     lifecycle.wait_for(
         "the installed agent's first heartbeat",
         lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
