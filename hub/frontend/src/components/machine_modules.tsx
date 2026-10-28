@@ -18,7 +18,6 @@ import { SambaStatusPanel } from "./samba_status_panel";
 import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VscodeTerms } from "./vscode_terms";
-import { ZfsPanels } from "./zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
 import { MODULE_DESCRIPTORS } from "../module_descriptors";
 import { moduleTitle, withModuleTitle } from "../module_title";
@@ -121,13 +120,6 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
     />
   ),
-  zfs: (target) => (
-    <ZfsPanels
-      deviceId={target.deviceId}
-      basePath={target.basePath}
-      isEditable={target.isEditable}
-    />
-  ),
 };
 
 /** The tabs' order: the modules every system runs first. A module not
@@ -144,7 +136,6 @@ const TAB_ORDER = [
   "codeg",
   "podman",
   "hermes_webui",
-  "zfs",
 ];
 
 /** The module whose tab opens only once its terms are accepted. */
