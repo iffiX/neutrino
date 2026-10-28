@@ -78,13 +78,11 @@ Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's inst
 
 Every part of one release speaks the same protocol number, and every 0.6.0 build speaks protocol 4. A 0.6.0 hub admits protocol 4, and rejects a program that speaks a newer one. An agent the hub admits updates itself when the hub names a newer version.
 
-| Program at a 0.6.0 hub       | What happens                                                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| a 0.5 agent                  | gets no answer; the machine takes the 0.6.0 agent package and joins with a new link, keeping its row              |
-| a 0.5 client                 | rejected; its hub row reads **Version too old · update the client**, and the new client installed over it connects |
-| a 0.3 or 0.4 agent or client | rejected, and it does not update itself; the machine takes the new package and joins with a new link               |
-
-A rejected program keeps its binding.
+| Program at a 0.6.0 hub       | What happens                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| a 0.5 agent                  | gets no answer; the machine takes the 0.6.0 agent package and joins with a new link, keeping its row                             |
+| a 0.5 client                 | gets no answer; the new client installed over it reads **Join refused** on each hub row and joins each hub again with a new link |
+| a 0.3 or 0.4 agent or client | gets no answer, and it does not update itself; the machine takes the new package and joins with a new link                       |
 
 [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 

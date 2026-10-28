@@ -145,8 +145,8 @@ Make a client link in the other hub's panel, and join with it through **Join a h
 
 ## Update a client
 
-A client changes version only when you install a new release over it. A hub on a newer protocol, as a 0.6.0 hub is for a 0.5 client, makes the client's row read **Version too old · update the client**.
+A client changes version only when you install a new release over it. A hub on a newer protocol makes the client's row read **Version too old · update the client**.
 
 - Install the new release over the old one, with the one command, the package file or the apk, as the sections on this page describe.
 
-The client keeps its hubs, and each row connects at its next round.
+The client keeps its hubs, and each row connects at its next round. A client updated from 0.5 is the exception: each hub's row reads **Join refused · This binding is from 0.5 and the hub no longer moves it; join the hub again with a new link.** On each such row, select **Leave**, then join with a new link from the hub's **Clients** page.

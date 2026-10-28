@@ -99,7 +99,7 @@ For up to three minutes after the install, the update checks that the panel and 
 
 After the check passes, the hub box's own agent is updated, and agents on other machines update themselves when they connect. A new major version does not install from here.
 
-A client changes version only when you install a new release over it. An update to a newer protocol, as from 0.5 to 0.6.0, leaves each client's row reading **Version too old · update the client** until then. [Install a client](../install/client.md#update-a-client) has the steps.
+A client changes version only when you install a new release over it. A 0.5 client cannot connect to a 0.6.0 hub. Install the new client over it, and join the hub again with a new link, as [Install a client](../install/client.md#update-a-client) describes.
 
 `sudo nhub update` does the same from a terminal, and `--package` installs a package file you downloaded yourself. On Linux, the update's log is in `journalctl -u neutrino_hub_update`.
 
