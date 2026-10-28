@@ -352,3 +352,27 @@ def test_vscode_waits_for_its_terms_and_the_terms_route_answers_the_view(api, tm
     assert accepted.json()["terms_url"]
     assert allowed.status_code == 200
     assert "terms_accepted_at" in stored(tmp_path, "vscode")
+
+
+def test_a_file_share_row_runs_while_the_machine_serves_its_home_share(api):
+    client, runtime = api
+    client.post(
+        "/api/agent/module/samba/set",
+        json={"device_id": DEVICE, "accounts": ["alice", "bob"]},
+    )
+    runtime.report(
+        DEVICE,
+        "samba",
+        state="running",
+        is_active=True,
+        shares=[{"name": "alice", "path": "/home/alice", "params": {}}],
+    )
+
+    rows = {
+        row["account"]: row
+        for row in client.get(
+            "/api/agent/module/samba", params={"device_id": DEVICE}
+        ).json()["accounts"]
+    }
+
+    assert (rows["alice"]["is_running"], rows["bob"]["is_running"]) == (True, False)

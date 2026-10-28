@@ -81,8 +81,9 @@ def device_view(
         The view: each available account with whether the module enables it,
         the port the agent took and whether the instance runs as last
         reported, and the module's own field on each row; the module's own
-        view fields beside them. A file share row of an enabled account with
-        no share path whose home the machine has not reported carries
+        view fields beside them. A file share row runs while the machine
+        reports its Home share served, and the row of an enabled account
+        with no share path whose home the machine has not reported carries
         ``account_home_unknown {account}``.
     """
     store = DeviceAccountStore(runtime.desired_states)
@@ -93,6 +94,11 @@ def device_view(
         str(instance.get("account", "")): instance
         for instance in context.details.get("instances") or []
         if isinstance(instance, dict)
+    }
+    served = {
+        str(share.get("name", "") or "")
+        for share in context.details.get("shares") or []
+        if isinstance(share, dict)
     }
     rows = []
     for account in store.accounts(context.key):
@@ -111,6 +117,7 @@ def device_view(
         if row.name == DEVICE_SAMBA_MODULE:
             fields["share_path"] = account.share_path
             fields["user"] = smb_user(account.account, platform)
+            fields["is_running"] = account.account in served
             home = str((homes.get(account.account) or {}).get("home", "") or "")
             if fields["is_enabled"] and not account.share_path and not home:
                 fields["code"] = CODE_ACCOUNT_HOME_UNKNOWN
