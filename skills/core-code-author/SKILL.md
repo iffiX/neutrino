@@ -43,7 +43,8 @@ conventions explicit so nobody drifts.
      never a kind declared elsewhere, `Raises:` on every public docstring.
    - [coding_style/comment.md](coding_style/comment.md) — comments,
      UI copy and error messages. A comment names the thing and stops, except
-     a fact the code depends on, such as an order. No narrated reasoning.
+     a fact the code depends on, such as an order, a lock or a precondition. No
+     narrated reasoning.
    - [coding_style/typescript.md](coding_style/typescript.md) — the
      React + TypeScript frontend: prettier/eslint, under_score files, no `any`,
      component order.
