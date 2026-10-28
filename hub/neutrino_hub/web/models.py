@@ -3140,3 +3140,26 @@ class HermesWebuiDeviceView(ModuleDeviceFields):
     version: str = ""
     # What the machine last reported: ``{version, port}``.
     details: dict = Field(default_factory=dict)
+
+
+class AyakaleafDeviceView(ModuleDeviceFields):
+    """One device's Ayakaleaf: the forwarder's port, the AI model and where the module stands."""
+
+    # The forwarder's port as the machine reports it; 0 before it does.
+    port: int = 0
+    # The tab's AI model; empty for the gateway's first.
+    model: str = ""
+    # The names the gateway serves, for the picker.
+    models: list[str] = Field(default_factory=list)
+    is_gateway_serving: bool = False
+    # The version the machine reports; empty before it reports one.
+    version: str = ""
+    # What the machine last reported: ``{version, port, guests}``.
+    details: dict = Field(default_factory=dict)
+
+
+class AyakaleafModelUpdate(BaseModel):
+    """The AI model Ayakaleaf's app uses on one device; empty for the gateway's first."""
+
+    device_id: str
+    model: str = Field(default="", max_length=200)

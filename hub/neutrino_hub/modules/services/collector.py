@@ -40,7 +40,11 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_AI_PROTOCOL,
     SERVICES_AI_TITLE,
     SERVICES_APP_ENTRY_TYPES,
+    SERVICES_AYAKALEAF_DESCRIPTION,
+    SERVICES_AYAKALEAF_ID,
+    SERVICES_AYAKALEAF_TITLE,
     SERVICES_DESCRIPTION_AI_GATEWAY,
+    SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
@@ -110,6 +114,26 @@ CATALOG_ENTRY_DEFAULTS = {
 # The module name the Containers module's apps and entries carry in their ids.
 PODMAN_MODULE = "podman"
 
+# The container modules whose page the agent's forwarder serves, each one web
+# entry per device: the module, its app id's prefix, the title, the
+# provenance line and its code, in the list's order.
+FORWARDED_CONTAINER_MODULES = (
+    (
+        "hermes_webui",
+        SERVICES_HERMES_WEBUI_ID,
+        SERVICES_HERMES_WEBUI_TITLE,
+        SERVICES_HERMES_WEBUI_DESCRIPTION,
+        SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
+    ),
+    (
+        "ayakaleaf",
+        SERVICES_AYAKALEAF_ID,
+        SERVICES_AYAKALEAF_TITLE,
+        SERVICES_AYAKALEAF_DESCRIPTION,
+        SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
+    ),
+)
+
 
 class ServiceListCollector:
     """Renders every app and every entry the hub currently publishes."""
@@ -148,7 +172,8 @@ class ServiceListCollector:
                 "is_healthy"}]}``, ``ssh_server: {"host_key_fingerprint",
                 "instances": [{"account", "port", "is_healthy",
                 "account_key_fingerprint"}]}``,
-                ``hermes_webui: {"port", "is_healthy"}`` and ``podman:
+                ``hermes_webui`` and ``ayakaleaf`` each as ``{"port",
+                "is_healthy"}``, and ``podman:
                 {"containers": [{"name", "image", "is_running", "bindings",
                 "source"}]}``, ``bindings`` being ``(port, protocol,
                 scheme)`` triples, ``scheme`` naming a ``web`` entry's and
@@ -336,28 +361,27 @@ class ServiceListCollector:
                         device_id=device_id,
                     )
                 )
-        hermes = device.get("hermes_webui")
-        if hermes and hermes.get("port"):
-            app_id = f"{SERVICES_HERMES_WEBUI_ID}_{device_id}"
+        for name, prefix, title, description, code in FORWARDED_CONTAINER_MODULES:
+            served = device.get(name)
+            if not served or not served.get("port"):
+                continue
+            app_id = f"{prefix}_{device_id}"
             apps.setdefault(
-                app_id,
-                self._app(
-                    app_id, SERVICES_HERMES_WEBUI_TITLE, SERVICES_SOURCE_MODULE, device
-                ),
+                app_id, self._app(app_id, title, SERVICES_SOURCE_MODULE, device)
             )
             entries.append(
                 self._app_entry(
                     app_id,
                     SERVICES_ENTRY_WEB,
                     type=SERVICES_TYPE_WEB,
-                    title=SERVICES_HERMES_WEBUI_TITLE,
+                    title=title,
                     payload={
-                        "url": f"http://{_url_host(host)}:{hermes['port']}/",
+                        "url": f"http://{_url_host(host)}:{served['port']}/",
                         "is_token_required": True,
                     },
-                    is_healthy=bool(hermes.get("is_healthy")),
-                    description=SERVICES_HERMES_WEBUI_DESCRIPTION.format(host=host),
-                    description_code=SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
+                    is_healthy=bool(served.get("is_healthy")),
+                    description=description.format(host=host),
+                    description_code=code,
                     description_params={"host": host},
                     device_id=device_id,
                 )

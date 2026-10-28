@@ -42,6 +42,7 @@ from neutrino_hub.web.routers.agent import (
     file,
     module,
     module_account,
+    module_ayakaleaf,
     module_gitea,
     module_hermes_webui,
     module_instances,
@@ -102,6 +103,7 @@ API_ROUTERS = (
     module_gitea.router,
     module_podman.router,
     module_hermes_webui.router,
+    module_ayakaleaf.router,
     *module_instances.ROUTERS.values(),
     module_vscode_terms.router,
 )

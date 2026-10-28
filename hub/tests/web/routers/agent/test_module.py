@@ -511,6 +511,7 @@ SUPPORTED_OFF_LINUX = {
     "samba": (True, True),
     "vscode": (True, True),
     "hermes_webui": (True, True),
+    "ayakaleaf": (True, True),
 }
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}

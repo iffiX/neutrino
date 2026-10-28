@@ -934,8 +934,8 @@ class _AgentFrames:
             session.offered_hash = document["hash"]
         elif await asyncio.to_thread(runtime.desired_states.uses_gateway_models, key):
             # Whether the gateway serves moves with no write to announce it,
-            # so a machine whose AI tools or SiYuan accounts use it has its
-            # state read again.
+            # so a machine whose AI tools, SiYuan accounts or Ayakaleaf use
+            # it has its state read again.
             document = await asyncio.to_thread(channel_state.agent_state, runtime, key)
             if document["hash"] != session.offered_hash:
                 await session.push_state(document)

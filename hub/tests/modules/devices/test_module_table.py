@@ -51,6 +51,7 @@ def test_the_rows_come_in_the_order_the_machine_page_lists_them():
         "siyuan",
         "podman",
         "hermes_webui",
+        "ayakaleaf",
     ]
 
 
@@ -75,6 +76,7 @@ def test_every_row_is_one_of_the_five_kinds():
         "siyuan": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
+        "ayakaleaf": DEVICE_MODULE_KIND_CONTAINER,
     }
 
 
@@ -159,9 +161,30 @@ def test_hermes_webui_seals_its_secret_and_its_password_and_mints_its_token():
     assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
     assert row.is_gateway_used is True
     assert row.has_forwarder is True
-    assert module_table.gateway_module_names() == ("siyuan", "hermes_webui")
-    assert module_table.gateway_container_names() == ("hermes_webui",)
+    assert module_table.gateway_module_names() == (
+        "siyuan",
+        "hermes_webui",
+        "ayakaleaf",
+    )
+    assert module_table.gateway_container_names() == ("hermes_webui", "ayakaleaf")
     assert module_table.gateway_instance_names() == ("siyuan",)
+
+
+def test_ayakaleaf_seals_four_secrets_and_mints_its_token():
+    row = module_row("ayakaleaf")
+
+    assert [(field.key, field.opened_key) for field in row.sealed_fields] == [
+        ("secret_sealed", "secret"),
+        ("password_sealed", "password"),
+        ("session_secret_sealed", "session_secret"),
+        ("invite_secret_sealed", "invite_secret"),
+    ]
+    assert row.sealed_field("invite_secret_sealed").aad == (
+        b"device_ayakaleaf:invite_secret"
+    )
+    assert all(field.secret_bytes == 32 for field in row.sealed_fields)
+    assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
+    assert (row.is_gateway_used, row.has_forwarder) == (True, True)
 
 
 def test_each_program_run_as_an_account_names_its_token_its_login_and_its_forwarder():
@@ -212,6 +235,7 @@ def test_each_row_names_its_published_entry():
         "siyuan": ("siyuan_module", "SiYuan ({account})"),
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
+        "ayakaleaf": ("ayakaleaf_module", "Ayakaleaf"),
     }
 
 

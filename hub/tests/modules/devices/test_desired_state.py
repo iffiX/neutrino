@@ -420,6 +420,46 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     assert "gateway_url" not in store.agent_config(DEVICE, "codeg", {}, PLATFORM)
 
 
+def test_a_machine_with_ayakaleaf_reads_the_gateway_s_models_until_it_goes(unlocked):
+    store = DesiredStateStore()
+
+    assert not store.uses_gateway_models(DEVICE)
+    store.set_want(DEVICE, "ayakaleaf", "installed")
+    assert store.uses_gateway_models(DEVICE)
+    store.set_want(DEVICE, "ayakaleaf", "absent")
+    assert not store.uses_gateway_models(DEVICE)
+
+
+def test_the_state_sends_ayakaleaf_its_secrets_names_and_container_digests(
+    unlocked, monkeypatch
+):
+    from neutrino_hub.modules.devices import ayakaleaf, catalog
+
+    monkeypatch.setattr(
+        desired_state_module, "resolved_modules", catalog.resolved_modules
+    )
+    store = DesiredStateStore()
+    ayakaleaf.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "podman", "running")
+    store.set_want(DEVICE, "ayakaleaf", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, machine_slug="argon")
+
+    config = desired["modules"]["ayakaleaf"]["config"]
+    assert set(config) == {"secret", "password", "cookie_name", "local_name", "guests"}
+    assert config["local_name"] == "ayakaleaf.argon.localhost"
+    assert desired["source_sets"]["ctan"]["variables"] == []
+    names = [
+        item["name"]
+        for item in desired["modules"]["podman"]["config"]["hub_containers"]
+    ]
+    assert names == [
+        "neutrino_ayakaleaf_mongo",
+        "neutrino_ayakaleaf_redis",
+        "neutrino_ayakaleaf",
+    ]
+
+
 def test_gitea_is_handed_the_local_port_of_its_ssh_entry(unlocked):
     store = DesiredStateStore()
     store.set_want(DEVICE, "gitea", "running")

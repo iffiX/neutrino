@@ -88,6 +88,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
+    DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
     DEVICE_INSTANCE_GATEWAY_KEY,
@@ -103,7 +104,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
-from neutrino_hub.modules.devices import hermes_webui
+from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.accounts import DeviceAccount
 from neutrino_hub.modules.devices.folder_shares import (
     folder_shares,
@@ -134,6 +135,8 @@ from neutrino_hub.modules.services.apps import (
     slug,
 )
 from neutrino_hub.modules.services.constants import (
+    SERVICES_AYAKALEAF_ID,
+    SERVICES_AYAKALEAF_TITLE,
     SERVICES_ENTRY_SSH,
     SERVICES_ENTRY_WEB,
     SERVICES_GITEA_ID,
@@ -194,7 +197,7 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
 
     The set the local names are told apart in: each enabled account's
     instance of a program run as an account, Gitea, the SSH server, Hermes
-    WebUI and the containers the Containers module declares.
+    WebUI, Ayakaleaf and the containers the Containers module declares.
 
     Args:
         store: The per-device store.
@@ -207,6 +210,7 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
         f"{SERVICES_GITEA_ID}_{key}": SERVICES_GITEA_TITLE,
         f"{SERVICES_SSH_SERVER_ID}_{key}": SERVICES_SSH_SERVER_TITLE,
         f"{SERVICES_HERMES_WEBUI_ID}_{key}": SERVICES_HERMES_WEBUI_TITLE,
+        f"{SERVICES_AYAKALEAF_ID}_{key}": SERVICES_AYAKALEAF_TITLE,
     }
     for row in account_layer_rows():
         if not row.entry_title or "{account}" not in row.entry_title:
@@ -1231,10 +1235,17 @@ class DesiredStateStore:
             key: The device key.
 
         Returns:
-            True while an account's AI tools switch is on, or a module that
-            holds a gateway key per account enables an account.
+            True while an account's AI tools switch is on, a module that
+            holds a gateway key per account enables an account, or the
+            Ayakaleaf module, whose app reads its model from the state, is
+            installed.
         """
-        return self.is_ai_tools_enabled(key) or self.has_gateway_instances(key)
+        return (
+            self.is_ai_tools_enabled(key)
+            or self.has_gateway_instances(key)
+            or self.want_of(key, DEVICE_AYAKALEAF_MODULE)
+            not in ("", CHANNEL_MODULE_STATE_ABSENT)
+        )
 
     def agent_config(
         self,
@@ -1285,7 +1296,8 @@ class DesiredStateStore:
             secrets it signs with and its SSH entry's local port, Containers
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes WebUI
-            with its secrets opened and its names.
+            and Ayakaleaf with their secrets opened and their names,
+            Ayakaleaf with the guests of its app's live Web shares.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -1329,6 +1341,12 @@ class DesiredStateStore:
             app_id = f"{SERVICES_HERMES_WEBUI_ID}_{key}"
             made = (app_slug_of or {}).get(app_id) or slug(SERVICES_HERMES_WEBUI_TITLE)
             config = hermes_webui.agent_config(
+                config, key, local_name=local_name(made, machine_slug)
+            )
+        elif name == DEVICE_AYAKALEAF_MODULE:
+            app_id = ayakaleaf.app_id(key)
+            made = (app_slug_of or {}).get(app_id) or slug(SERVICES_AYAKALEAF_TITLE)
+            config = ayakaleaf.agent_config(
                 config, key, local_name=local_name(made, machine_slug)
             )
         return config

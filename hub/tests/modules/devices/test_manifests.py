@@ -423,6 +423,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "gitea",
         "siyuan",
         "vscode",
+        "ayakaleaf",
         "hermes_webui",
     ]
 
@@ -480,6 +481,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "codeg": "spacering-net/codeg",
         "siyuan": "siyuan-note/siyuan",
         "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
+        "ayakaleaf": "ayaka-notes/ayakaleaf-pro",
     }
 
 

@@ -46,6 +46,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
+    DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
@@ -65,7 +66,7 @@ from neutrino_hub.modules.clients.ai_keys import (
     settle_instance_keys,
 )
 from neutrino_hub.modules.devices.catalog import resolve_module
-from neutrino_hub.modules.devices.hermes_webui import ensure_config
+from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.hub_containers import container_modules
 from neutrino_hub.modules.devices.module_table import (
     gateway_instance_names,
@@ -1088,9 +1089,9 @@ def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
 def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> None:
     """Give a container module what its containers are composed from, ahead of its install or start.
 
-    Hermes WebUI gets its port and its two secrets where its file holds
-    none, and a module that uses the AI gateway its own key. A locked vault
-    leaves a secret or the key for a later press.
+    Hermes WebUI and Ayakaleaf get the secrets their files hold none of,
+    and a module that uses the AI gateway its own key. A locked vault leaves
+    a secret or the key for a later press.
 
     Args:
         runtime: The shared runtime.
@@ -1101,7 +1102,11 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> N
         OSError: When the module's file cannot be written.
     """
     store = runtime.desired_states
-    if module == DEVICE_HERMES_WEBUI_MODULE:
+    ensure_config = {
+        DEVICE_HERMES_WEBUI_MODULE: hermes_webui.ensure_config,
+        DEVICE_AYAKALEAF_MODULE: ayakaleaf.ensure_config,
+    }.get(module)
+    if ensure_config is not None:
         try:
             ensure_config(store, key)
         except VaultLockedError:

@@ -12,6 +12,16 @@ other kind has its own router and panel and reads its row for the rest.
 from dataclasses import dataclass
 
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_AYAKALEAF_INVITE_SECRET_AAD,
+    DEVICE_AYAKALEAF_INVITE_SECRET_KEY,
+    DEVICE_AYAKALEAF_MODULE,
+    DEVICE_AYAKALEAF_PASSWORD_AAD,
+    DEVICE_AYAKALEAF_PASSWORD_KEY,
+    DEVICE_AYAKALEAF_SECRET_AAD,
+    DEVICE_AYAKALEAF_SECRET_BYTES,
+    DEVICE_AYAKALEAF_SECRET_KEY,
+    DEVICE_AYAKALEAF_SESSION_SECRET_AAD,
+    DEVICE_AYAKALEAF_SESSION_SECRET_KEY,
     DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_PASSWORD_AAD,
     DEVICE_CLOUDCLI_PASSWORD_KEY,
@@ -61,6 +71,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TOKEN_KEY,
 )
 from neutrino_hub.modules.services.constants import (
+    SERVICES_AYAKALEAF_TITLE,
+    SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CODEG_MODULE,
@@ -374,6 +386,42 @@ DEVICE_MODULE_ROWS = (
         entry_title=SERVICES_HERMES_WEBUI_TITLE,
         has_forwarder=True,
         token_field=DEVICE_HERMES_WEBUI_SECRET_KEY,
+        is_token_minted=True,
+        is_gateway_used=True,
+    ),
+    _row(
+        DEVICE_AYAKALEAF_MODULE,
+        DEVICE_MODULE_KIND_CONTAINER,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_AYAKALEAF_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_AYAKALEAF_SECRET_AAD,
+                secret_bytes=DEVICE_AYAKALEAF_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_AYAKALEAF_PASSWORD_KEY,
+                opened_key="password",
+                aad=DEVICE_AYAKALEAF_PASSWORD_AAD,
+                secret_bytes=DEVICE_AYAKALEAF_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_AYAKALEAF_SESSION_SECRET_KEY,
+                opened_key="session_secret",
+                aad=DEVICE_AYAKALEAF_SESSION_SECRET_AAD,
+                secret_bytes=DEVICE_AYAKALEAF_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_AYAKALEAF_INVITE_SECRET_KEY,
+                opened_key="invite_secret",
+                aad=DEVICE_AYAKALEAF_INVITE_SECRET_AAD,
+                secret_bytes=DEVICE_AYAKALEAF_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
+        entry_title=SERVICES_AYAKALEAF_TITLE,
+        has_forwarder=True,
+        token_field=DEVICE_AYAKALEAF_SECRET_KEY,
         is_token_minted=True,
         is_gateway_used=True,
     ),

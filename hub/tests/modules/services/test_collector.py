@@ -277,6 +277,32 @@ def test_hermes_webui_is_one_app_with_its_page_alone():
     assert app["local_name"] == "hermes-webui.argon-box.localhost"
 
 
+def test_ayakaleaf_is_one_app_with_its_page_alone():
+    held = collector(
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "ayakaleaf": {"port": 8900, "is_healthy": True},
+            }
+        ]
+    )
+
+    (entry,) = held.render()
+    (app,) = held.apps()
+    assert entry["id"] == f"ayakaleaf_{DEVICE}_web"
+    assert entry["payload"] == {
+        "url": f"http://{HOST}:8900/",
+        "is_token_required": True,
+    }
+    assert (entry["description_code"], entry["description_params"]) == (
+        "ayakaleaf_module",
+        {"host": HOST},
+    )
+    assert app["title"] == "Ayakaleaf"
+    assert app["local_name"] == "ayakaleaf.argon-box.localhost"
+
+
 def test_a_declared_apps_entries_are_named_by_their_type_and_port():
     app = DeclaredApp(
         id="app1",

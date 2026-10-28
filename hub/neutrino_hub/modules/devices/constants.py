@@ -181,6 +181,7 @@ DEVICE_MODULE_NAMES = (
     "gitea",
     "podman",
     "hermes_webui",
+    "ayakaleaf",
     "vscode",
     "code_server",
     "cloudcli",
@@ -391,6 +392,62 @@ DEVICE_HERMES_WEBUI_STATE_DIR = "/home/hermeswebui/.hermes/webui"
 # browser keep their own logins.
 DEVICE_HERMES_WEBUI_COOKIE_PREFIX = "hermes_session_"
 DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS = 12
+# Ayakaleaf: three hub containers, the app, MongoDB and Redis. Its file under
+# the device's directory holds four secrets the hub generates once and keeps
+# sealed, the token secret, the administrator's password and the app's
+# session and invitation secrets, the module's gateway key and the tab's AI
+# model; the forwarder's port is the agent's.
+DEVICE_AYAKALEAF_MODULE = "ayakaleaf"
+DEVICE_AYAKALEAF_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_AYAKALEAF_PASSWORD_KEY = "password_sealed"  # scan: allow
+DEVICE_AYAKALEAF_SESSION_SECRET_KEY = "session_secret_sealed"  # scan: allow
+DEVICE_AYAKALEAF_INVITE_SECRET_KEY = "invite_secret_sealed"  # scan: allow
+DEVICE_AYAKALEAF_SECRET_AAD = b"device_ayakaleaf:secret"
+DEVICE_AYAKALEAF_PASSWORD_AAD = b"device_ayakaleaf:password"
+DEVICE_AYAKALEAF_SESSION_SECRET_AAD = b"device_ayakaleaf:session_secret"
+DEVICE_AYAKALEAF_INVITE_SECRET_AAD = b"device_ayakaleaf:invite_secret"
+DEVICE_AYAKALEAF_SECRET_BYTES = 32
+DEVICE_AYAKALEAF_MODEL_KEY = "model"
+# Its three containers, the images they run by artifact name, and what each
+# mounts, runs and is given. The app's 80 is the port its forwarder serves,
+# and its stop flushes the open edits for about 19 seconds.
+DEVICE_AYAKALEAF_APP_CONTAINER = "neutrino_ayakaleaf"
+DEVICE_AYAKALEAF_MONGO_CONTAINER = "neutrino_ayakaleaf_mongo"
+DEVICE_AYAKALEAF_REDIS_CONTAINER = "neutrino_ayakaleaf_redis"
+DEVICE_AYAKALEAF_APP_IMAGE = "app"
+DEVICE_AYAKALEAF_MONGO_IMAGE = "mongo"
+DEVICE_AYAKALEAF_REDIS_IMAGE = "redis"
+DEVICE_AYAKALEAF_MONGO_COMMAND = "--replSet overleaf"
+DEVICE_AYAKALEAF_REDIS_COMMAND = "redis-server --appendonly yes"
+DEVICE_AYAKALEAF_PAGE_PORT = 80
+DEVICE_AYAKALEAF_APP_STOP_TIMEOUT_S = 60
+# The app exits 2 on the stop's SIGTERM once its flush has ended.
+DEVICE_AYAKALEAF_APP_SUCCESS_EXIT_CODES = (2,)
+DEVICE_AYAKALEAF_APP_VOLUMES = (
+    "neutrino_ayakaleaf_data:/var/lib/overleaf",
+    "neutrino_ayakaleaf_texlive:/usr/local/texlive",
+)
+DEVICE_AYAKALEAF_MONGO_VOLUMES = ("neutrino_ayakaleaf_mongo:/data/db",)
+DEVICE_AYAKALEAF_REDIS_VOLUMES = ("neutrino_ayakaleaf_redis:/data",)
+# The app's fixed environment; the secrets, the cookie's name and the
+# gateway's variables are composed per device.
+DEVICE_AYAKALEAF_APP_ENVIRONMENT = (
+    "OVERLEAF_MONGO_URL=mongodb://neutrino_ayakaleaf_mongo/sharelatex",
+    "OVERLEAF_REDIS_HOST=neutrino_ayakaleaf_redis",  # scan: allow
+    "REDIS_HOST=neutrino_ayakaleaf_redis",
+    "REDIS_PORT=6379",
+    "V1_HISTORY_URL=http://127.0.0.1:3100/api",
+    "GIT_BRIDGE_ENABLED=false",
+    "EMAIL_CONFIRMATION_DISABLED=true",
+    "DOCS_MCP_URL=",
+)
+# The app's session cookie: its name on each device is this prefix and the
+# first characters of the device id, so the pages of two devices open in one
+# browser keep their own logins.
+DEVICE_AYAKALEAF_COOKIE_PREFIX = "ayakaleaf_sid_"
+DEVICE_AYAKALEAF_COOKIE_ID_CHARS = 12
+# The suffix the gateway's address takes in the app's ``AI_BASE_URL``.
+DEVICE_AYAKALEAF_AI_PATH = "/v1"
 # Where a container comes from, by the owner rule: the label, the declared
 # names, else a person's own.
 DEVICE_CONTAINER_SOURCE_HUB = "hub"

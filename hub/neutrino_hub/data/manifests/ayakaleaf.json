@@ -1,0 +1,137 @@
+{
+  "_comment": "Ayakaleaf (ayaka-notes/ayakaleaf-pro, AGPL-3.0), Overleaf Community Edition with the Server Pro features its publisher adds, run as three images on the Containers module: the app, MongoDB (SSPL-1.0) and Redis (RSALv2 or SSPL-1.0). The module's version is the app's: the oci feed lists the app image's dotted tags, and a version other than the tested one takes the app digest the registry gives its tag, while MongoDB and Redis keep their own digests for every version. Each digest is the publisher's OCI index digest, covering amd64 and arm64; the app's mirrors serve the same index, and the docker.io images are reached through the docker.io mirrors the Containers module names. The first start's TeX step reads the ctan set.", "_source_scan": "scan: allow",
+  "name": "ayakaleaf",
+  "title": "Ayakaleaf",
+  "description": "LaTeX papers written and compiled in Ayakaleaf, Overleaf with its Server Pro features, opened from a client with a token",
+  "publisher": "ayaka-notes/ayakaleaf-pro",
+  "license": "AGPL-3.0",
+  "corresponding_source": "https://github.com/ayaka-notes/ayakaleaf-pro/tree/pro-v{version}", "_corresponding_scan": "scan: allow",
+  "uninstall_data": {"is_deleted": true, "text": {"en": "The papers and projects are deleted and cannot be recovered.", "zh-CN": "论文和项目都会删除，无法恢复。"}},
+  "is_data_forward_only": true,
+  "platforms": {
+    "linux": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "6.3.2",
+          "releases": [{"kind": "oci", "sources": ["https://ghcr.io"], "repository": "ayaka-notes/overleaf-pro", "tag": "{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "image",
+              "digest": "sha256:5f84c7f2d0230dd558130ca2901f603d4e0bfe021054879efea1b7fece2f4f1c", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/ayaka-notes/overleaf-pro", "ghcr.nju.edu.cn/ayaka-notes/overleaf-pro", "ghcr.m.daocloud.io/ayaka-notes/overleaf-pro"]
+            },
+            {
+              "name": "mongo",
+              "kind": "image",
+              "digest": "sha256:8e7d23aa641b0ec6c86418866d5d18d74d5abf89061bc5db7bc4b80929021ef6", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/mongo"]
+            },
+            {
+              "name": "redis",
+              "kind": "image",
+              "digest": "sha256:bd28fff4b665fdf1b73e8b5b73ec05d2f858f4fa3c8ea0d7c9bc09f7f6bf7039", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/redis"]
+            }
+          ],
+          "source_sets": ["ctan"]
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "6.3.2",
+          "releases": [{"kind": "oci", "sources": ["https://ghcr.io"], "repository": "ayaka-notes/overleaf-pro", "tag": "{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "image",
+              "digest": "sha256:5f84c7f2d0230dd558130ca2901f603d4e0bfe021054879efea1b7fece2f4f1c", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/ayaka-notes/overleaf-pro", "ghcr.nju.edu.cn/ayaka-notes/overleaf-pro", "ghcr.m.daocloud.io/ayaka-notes/overleaf-pro"]
+            },
+            {
+              "name": "mongo",
+              "kind": "image",
+              "digest": "sha256:8e7d23aa641b0ec6c86418866d5d18d74d5abf89061bc5db7bc4b80929021ef6", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/mongo"]
+            },
+            {
+              "name": "redis",
+              "kind": "image",
+              "digest": "sha256:bd28fff4b665fdf1b73e8b5b73ec05d2f858f4fa3c8ea0d7c9bc09f7f6bf7039", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/redis"]
+            }
+          ],
+          "source_sets": ["ctan"]
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "6.3.2",
+          "releases": [{"kind": "oci", "sources": ["https://ghcr.io"], "repository": "ayaka-notes/overleaf-pro", "tag": "{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "image",
+              "digest": "sha256:5f84c7f2d0230dd558130ca2901f603d4e0bfe021054879efea1b7fece2f4f1c", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/ayaka-notes/overleaf-pro", "ghcr.nju.edu.cn/ayaka-notes/overleaf-pro", "ghcr.m.daocloud.io/ayaka-notes/overleaf-pro"]
+            },
+            {
+              "name": "mongo",
+              "kind": "image",
+              "digest": "sha256:8e7d23aa641b0ec6c86418866d5d18d74d5abf89061bc5db7bc4b80929021ef6", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/mongo"]
+            },
+            {
+              "name": "redis",
+              "kind": "image",
+              "digest": "sha256:bd28fff4b665fdf1b73e8b5b73ec05d2f858f4fa3c8ea0d7c9bc09f7f6bf7039", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/redis"]
+            }
+          ],
+          "source_sets": ["ctan"]
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "container",
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "6.3.2",
+          "releases": [{"kind": "oci", "sources": ["https://ghcr.io"], "repository": "ayaka-notes/overleaf-pro", "tag": "{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "image",
+              "digest": "sha256:5f84c7f2d0230dd558130ca2901f603d4e0bfe021054879efea1b7fece2f4f1c", "_digest_scan": "scan: allow",
+              "sources": ["ghcr.io/ayaka-notes/overleaf-pro", "ghcr.nju.edu.cn/ayaka-notes/overleaf-pro", "ghcr.m.daocloud.io/ayaka-notes/overleaf-pro"]
+            },
+            {
+              "name": "mongo",
+              "kind": "image",
+              "digest": "sha256:8e7d23aa641b0ec6c86418866d5d18d74d5abf89061bc5db7bc4b80929021ef6", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/mongo"]
+            },
+            {
+              "name": "redis",
+              "kind": "image",
+              "digest": "sha256:bd28fff4b665fdf1b73e8b5b73ec05d2f858f4fa3c8ea0d7c9bc09f7f6bf7039", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/library/redis"]
+            }
+          ],
+          "source_sets": ["ctan"]
+        }
+      }
+    }
+  }
+}
