@@ -663,7 +663,7 @@ class AyakaleafHooks(ContainerHooks):
         self._config = AyakaleafConfig.from_dict(config)
 
     def installed(self, version: str) -> None:
-        """Note the version the install pulled; a new one makes the TeX volume again.
+        """Note the recipe's version, at the install and at each start; a new one makes the TeX volume again.
 
         Args:
             version: The version the recipe names.
