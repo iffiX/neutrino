@@ -983,6 +983,12 @@ desktop tab is the one place the share is set, and it shows beside the
 switch the RustDesk state with **Reset seat password**, and the AnyDesk and
 TeamViewer detection with their unattended passwords.
 
+On Windows and macOS the tab of a container module whose `want` is not
+`absent` shows `ui.modules.memory_need {memory, need}` as a warn notice
+under its state line while the module list's `memory_need` is set
+([agent/modules/containers.md](agent/modules/containers.md), "Memory for the
+container modules"). It is a hint: every button stays as its state makes it.
+
 A tab whose module the machine reports `unsupported`, an agent older than the
 module, keeps its state word `unsupported` and draws its panel with every
 field, the switch and the apply bar disabled, and no sentence added.
@@ -997,7 +1003,7 @@ On Linux the tab has no Run settings, since root runs Podman there
 | Control | Idiom |
 | --- | --- |
 | **Account** | a picker over the machine's available accounts; on Windows the account's login is the one its form holds |
-| **CPUs**, **Memory (GiB)** | number fields, 0 for the default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
+| **CPUs**, **Memory (GiB)** | number fields, 0 for the default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows; under **Memory (GiB)** `ui.containers.run_memory_need {need}` while the view's `memory_need` is set and the field holds less than its `need_gib` |
 | **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 
 The group is one `settings_group` with its own apply bar,

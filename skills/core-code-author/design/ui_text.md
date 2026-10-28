@@ -492,8 +492,9 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 
 ## The Containers tab's words
 
-The Run settings, the container editor's **Services** row, the restart
-notice and the codes Containers adds. [ui_behavior.md](ui_behavior.md),
+The Run settings, the memory advice on a container module's tab, the
+container editor's **Services** row, the restart notice and the codes
+Containers adds. [ui_behavior.md](ui_behavior.md),
 "The machine page", places them. The `ui.*` keys are in
 `locales/<language>/modules.json` and the `code.*` keys in `codes.json`;
 the agent's `cli/wording.py` words the same codes in English.
@@ -508,6 +509,8 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |
 | `ui.containers.run_default_hint` | 0 uses the default: half the CPUs, half the memory up to 4 GiB, a 100 GiB disk. | 填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）、100 GiB 磁盘。 |
 | `ui.containers.run_default_hint_windows` | A 0 for CPUs or memory uses the default: half the CPUs, half the memory up to 4 GiB. | CPU 数或内存填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）。 |
+| `ui.containers.run_memory_need`, under **Memory (GiB)** | Set {need} GiB or more for the container modules installed here. | 为这里安装的容器模块，设为 {need} GiB 或更多。 |
+| `ui.modules.memory_need`, on a container module's tab | The Podman machine has {memory} GiB of memory; set {need} GiB under Containers, Run settings. | Podman 虚拟机现有 {memory} GiB 内存；请在“容器”的“运行设置”里设为 {need} GiB。 |
 | `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
 | `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
 | `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |

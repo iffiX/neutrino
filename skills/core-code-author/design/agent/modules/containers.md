@@ -129,6 +129,25 @@ GiB at an init, and leaves the disk of a machine taken over as it is.
 | On WSL, when the `.wslconfig` write or the resize right after the init fails, the agent removes the machine the init made, with `podman machine rm -f` as the account, and the apply fails with the step's code. | The new machine holds nothing yet, and kept with WSL's 1 TB disk it would refuse every smaller limit; the next apply makes it again and sizes it. |
 | A new account stops the old account's machine and removes its keeper before the new one starts; the old machine, its images and named volumes and the old account's `.wslconfig` stay as they are. | Two running machines publish the same ports on `127.0.0.1`, and the old machine's data is the person's. |
 
+### Memory for the container modules
+
+Every container runs in the one Podman machine, so the container modules
+share its memory. A container module's manifest names the memory its
+containers need as `memory_mib` ([module_install.md](../module_install.md),
+"The manifest").
+
+| Rule | Reason |
+| --- | --- |
+| The hub sums the `memory_mib` of every container module `modules.json` asks for with a `want` other than `absent`, and rounds the sum up to whole GiB. | A module counts from the press of its **Install**, so the advice shows before its first start. |
+| The machine's memory is the reported machine's `memory_gib` while the report names the stored account's machine running, else the stored `memory_gib`, else the reported `default_memory_gib`. | A machine made under an older default keeps its size until the Run settings change, and the report shows its size. |
+| While the sum passes the machine's memory, the module list and the Containers view carry `memory_need`, `{need_gib, memory_gib}`, and the panel shows it as a hint ([../../ui_behavior.md](../../ui_behavior.md), "The machine page"). Nothing is refused. | The person chooses the memory: a machine with less still runs the modules, more slowly. |
+| Linux has no advice. | Linux runs the containers on the machine itself, with all its memory. |
+
+Ayakaleaf's first start peaked at 2584 MB in a 4 GiB machine, and in a 2 GiB
+machine it finished only by swapping. Hermes WebUI's first start took 410 MiB
+of its own memory on a Linux machine, and its manifest names 1024
+([hermes_webui.md](hermes_webui.md)).
+
 ### The keeper
 
 The keeper starts the machine at boot, with nobody signed in, and starts it

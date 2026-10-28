@@ -23,6 +23,7 @@ is the module's identity, the same on every platform:
 | `corresponding_source` | the address of the source the licence asks for, with `{version}` where the version goes |
 | `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does; absent is false ("Module versions") |
 | `uninstall_data` | `{is_deleted, text}`: what an uninstall does to the module's data, the line the uninstall dialog shows ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `is_deleted` is true when the data goes with the module, and `text` is the line in each language of the panel, keyed `en` and `zh-CN` |
+| `memory_mib` | optional, and only on a module whose entries name the `container` method: the memory in MiB its containers run in without swapping from their first start, a whole number above 0; on Windows and macOS the hub sums it over the container modules of a machine against the Podman machine's memory ([modules/containers.md](modules/containers.md), "Memory for the container modules") |
 | `web_share` | `{guest_login}`, present for every module with a page and absent for a module without one: `guest_login` is how a Web share's visitor is signed in, `app` for the app's own login page, `guest_account` for one account of the app per share, which the forwarder signs every visitor of that share in as, and `run_account` for the account the app runs as, which the visitor is signed in as, the way the owner's clients are ([module_template.md](module_template.md), "The run") |
 | `platforms` | one entry per platform the module runs on |
 
@@ -48,6 +49,7 @@ A platform entry is `{runner, min_version, install}`:
 | Ayakaleaf names `{guest_login: guest_account}` ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The guest account"). | The app has accounts of its own and shares a project with an account, so a visitor works in what the owner shares with that account and sees nothing else. |
 | Gitea names `{guest_login: app}`, and a declared app's `web` entry and a container's, declared or started by hand, are offered as they are, with `guest_login` `app`, and have no manifest. | Gitea has accounts and a login page of its own, and the hub holds no login of the others, so the visitor meets the app's own login page, the guard the person already set. |
 | The loader refuses a `web_share` of another shape, and a `guest_login` outside the three. | A manifest decides what a visitor holds, so a wrong one fails the suite. |
+| The loader refuses a `memory_mib` that is no whole number above 0, and one named by a manifest with no `container` entry. | The sum counts container modules alone, since their containers share the one Podman machine on Windows and macOS. |
 
 `cc_switch.json` describes a tool and no module: it names `is_module: false`,
 its version at the top level, and `artifacts` alone in each platform entry,
