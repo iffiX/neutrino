@@ -18,7 +18,13 @@ import { SambaStatusPanel } from "./samba_status_panel";
 import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VscodeTerms } from "./vscode_terms";
-import { hasWord, t, useLanguage } from "../i18n";
+import {
+  LANGUAGE_DEFAULT,
+  getLanguage,
+  hasWord,
+  t,
+  useLanguage,
+} from "../i18n";
 import { MODULE_DESCRIPTORS } from "../module_descriptors";
 import { moduleTitle, withModuleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
@@ -36,6 +42,7 @@ import type {
   DeviceModuleView,
   DeviceRequest,
   EnabledAccountsView,
+  ModuleUninstallData,
   TaskStarted,
 } from "../api_types";
 
@@ -425,9 +432,9 @@ export function MachineModules({
         module: moduleTitle(activeRow.name, activeRow.title),
         device: deviceName,
       }),
-      body: activeRow.is_data_kept
-        ? t("ui.modules.uninstall_body")
-        : t("ui.modules.uninstall_body_data"),
+      body: t("ui.modules.uninstall_body"),
+      detail: uninstallLine(activeRow.uninstall_data),
+      isDanger: activeRow.uninstall_data?.is_deleted === true,
       confirmLabel: t("ui.modules.uninstall"),
       onConfirm: () => void act("uninstall"),
     });
@@ -744,6 +751,15 @@ function ActionButton({
 }
 
 /** The machine's modules, by name. */
+/** A module's uninstall line in the panel's language, else in English.
+ * Empty for a module the agent carries. */
+function uninstallLine(data: ModuleUninstallData | null): string {
+  if (data === null) {
+    return "";
+  }
+  return data.text[getLanguage()] ?? data.text[LANGUAGE_DEFAULT] ?? "";
+}
+
 function rowsByName(
   list: DeviceModuleListView | null,
 ): Record<string, DeviceModuleView> {

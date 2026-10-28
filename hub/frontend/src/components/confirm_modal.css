@@ -53,6 +53,22 @@
   overflow-wrap: anywhere;
 }
 
+.confirm_body p {
+  margin: 0;
+}
+
+.confirm_body p + p {
+  margin-top: var(--space-3);
+}
+
+.confirm_detail {
+  color: var(--color-text);
+}
+
+.confirm_detail--danger {
+  color: var(--color-error);
+}
+
 .confirm_foot {
   display: flex;
   flex-shrink: 0;

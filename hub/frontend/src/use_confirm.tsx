@@ -21,6 +21,11 @@ export interface ConfirmRequest {
   body: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;
+  /** A line under the body about the person's data. */
+  detail?: string;
+  /** Whether the act destroys data. The detail then takes the error tone,
+   * and the button `button--danger`. */
+  isDanger?: boolean;
   onConfirm: () => void;
 }
 
@@ -44,6 +49,8 @@ export function useConfirm(): Confirm {
         title={pending.title}
         body={pending.body}
         confirmLabel={pending.confirmLabel}
+        detail={pending.detail}
+        isDanger={pending.isDanger}
         onConfirm={() => {
           setPending(null);
           pending.onConfirm();

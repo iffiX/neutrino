@@ -1158,13 +1158,23 @@ export interface DeviceModuleView {
   is_carried: boolean;
   /** Whether its tab is on the machine page. */
   is_shown: boolean;
-  is_data_kept: boolean;
+  /** The line the uninstall dialog shows under its body. Null for a module
+   * the agent carries. */
+  uninstall_data: ModuleUninstallData | null;
   /** Whether the hub holds a configuration for the module on this device;
    * the first Configure imports one from the machine where it holds none. */
   is_configured: boolean;
   /** The task carrying the module's last install or uninstall lines, to
    * follow on `/ws/hub/task`; empty when none has run. */
   task_id: string;
+}
+
+/** What an uninstall does to a module's data, as the manifest words it. */
+export interface ModuleUninstallData {
+  /** True when the data goes with the module. */
+  is_deleted: boolean;
+  /** The line in each language of the panel, keyed `en` and `zh-CN`. */
+  text: Record<string, string>;
 }
 
 export interface DeviceModuleListView {

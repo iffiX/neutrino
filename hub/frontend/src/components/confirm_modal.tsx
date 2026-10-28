@@ -24,6 +24,11 @@ interface ConfirmModalProps {
   body: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;
+  /** A line under the body about the person's data. */
+  detail?: string;
+  /** Whether the act destroys data. The detail then takes the error tone,
+   * and the button `button--danger`. */
+  isDanger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -32,6 +37,8 @@ export function ConfirmModal({
   title,
   body,
   confirmLabel,
+  detail = "",
+  isDanger = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -56,14 +63,31 @@ export function ConfirmModal({
           <Icon name="alert" size={16} />
           <h2>{title}</h2>
         </div>
-        {body !== "" && <p className="confirm_body">{body}</p>}
+        {(body !== "" || detail !== "") && (
+          <div className="confirm_body">
+            {body !== "" && <p>{body}</p>}
+            {detail !== "" && (
+              <p
+                className={
+                  isDanger
+                    ? "confirm_detail confirm_detail--danger"
+                    : "confirm_detail"
+                }
+              >
+                {detail}
+              </p>
+            )}
+          </div>
+        )}
         <div className="confirm_foot">
           <button type="button" className="button" onClick={onCancel}>
             {t("ui.confirm.cancel")}
           </button>
           <button
             type="button"
-            className="button button--primary"
+            className={
+              isDanger ? "button button--danger" : "button button--primary"
+            }
             onClick={onConfirm}
           >
             {confirmLabel}
