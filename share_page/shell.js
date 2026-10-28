@@ -28,17 +28,17 @@ const WORDS = {
     slow: "The line is slow, still connecting…",
     link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
     hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
-    machine: ["This machine is offline.", "The app's machine is not connected to its hub right now."],
+    unavailable: ["The app cannot be opened right now.", "It opens by itself once it is back."],
   },
   zh: {
     opening: "正在打开 {app}…",
     slow: "线路较慢，仍在连接…",
     link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
     hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],
-    machine: ["这台机器已离线。", "这个应用所在的机器现在没有连上它的中枢。"],
+    unavailable: ["应用暂时打不开。", "恢复后会自动打开。"],
   },
 };
-// The codes that show the machine-offline screen, and those that end the share.
+// The codes that show the app-unavailable screen, and those that end the share.
 // A connect close names one of APP_DOWN_CODES while the shared app itself is down.
 const MACHINE_CODES = ["agent_offline", "service_unknown"];
 const APP_DOWN_CODES = ["connect_failed", "port_not_published"];
@@ -101,7 +101,7 @@ class Refusal extends Error {
 // The screen for a refusal code from the hub.
 function screenOf(code) {
   if (SHARE_CODES.includes(code)) return "link";
-  if (MACHINE_CODES.includes(code) || APP_DOWN_CODES.includes(code)) return "machine";
+  if (MACHINE_CODES.includes(code) || APP_DOWN_CODES.includes(code)) return "unavailable";
   return "hub";
 }
 
@@ -1042,7 +1042,7 @@ const page = {
   // Requests that wait for a session, as [message, port].
   waiting: [],
   connecting: null,
-  machineTimer: 0,
+  unavailableTimer: 0,
   // Whether the shared app is down: a connect close named one of APP_DOWN_CODES,
   // and no connect to the entry was accepted since.
   isAppDown: false,
@@ -1092,7 +1092,7 @@ const page = {
     for (const [message, port] of this.waiting.splice(0)) this.serve(message, port);
   },
 
-  // Asks for the share's entry and shows the app, the machine-offline screen or the link screen.
+  // Asks for the share's entry and shows the app, the app-unavailable screen or the link screen.
   // After the shared app was down, a connect to the entry must be accepted too, and the frame loads again.
   async check(deadline) {
     const session = this.session;
@@ -1113,7 +1113,7 @@ const page = {
       const kind = screenOf(code);
       if (kind === "link") { this.endShare(); return; }
       if (kind === "hub") { screen.refuse("hub"); this.drop(session, true); return; }
-      this.showMachine(code);
+      this.showUnavailable(code);
       return;
     }
     if (screen.serial !== serial) return;
@@ -1123,7 +1123,7 @@ const page = {
         await this.load(session, reply.params && reply.params.token);
       } catch (error) {
         if (error.screen === "link") { this.endShare(); return; }
-        if (error.screen === "machine") { this.onCode(error.code); return; }
+        if (error.screen === "unavailable") { this.onCode(error.code); return; }
         this.drop(session);
         return;
       }
@@ -1167,19 +1167,19 @@ const page = {
   onCode(code) {
     const kind = screenOf(code);
     if (kind === "link") { this.endShare(); return; }
-    if (kind === "machine") { this.showMachine(code); return; }
+    if (kind === "unavailable") { this.showUnavailable(code); return; }
     if (this.session) { screen.refuse("hub"); this.drop(this.session, true); }
   },
 
-  // Shows the machine-offline screen. The page asks for the entry again after
+  // Shows the app-unavailable screen. The page asks for the entry again after
   // TIMING.retry, unless that ask is already scheduled.
-  showMachine(code) {
+  showUnavailable(code) {
     if (this.isEnded) return;
     if (APP_DOWN_CODES.includes(code)) this.isAppDown = true;
-    screen.refuse("machine");
-    if (this.machineTimer) return;
-    this.machineTimer = setTimeout(() => {
-      this.machineTimer = 0;
+    screen.refuse("unavailable");
+    if (this.unavailableTimer) return;
+    this.unavailableTimer = setTimeout(() => {
+      this.unavailableTimer = 0;
       this.check(performance.now() + TIMING.open);
     }, TIMING.retry);
   },
@@ -1189,8 +1189,8 @@ const page = {
     if (this.session !== session || this.isEnded) return;
     this.session = null;
     clearInterval(this.watcher);
-    clearTimeout(this.machineTimer);
-    this.machineTimer = 0;
+    clearTimeout(this.unavailableTimer);
+    this.unavailableTimer = 0;
     session.close();
     stats.drops = (stats.drops || 0) + 1;
     this.reconnect(!isShown);
@@ -1230,8 +1230,8 @@ const page = {
     if (this.isEnded) return;
     this.isEnded = true;
     clearInterval(this.watcher);
-    clearTimeout(this.machineTimer);
-    this.machineTimer = 0;
+    clearTimeout(this.unavailableTimer);
+    this.unavailableTimer = 0;
     if (this.session) { this.session.close(); this.session = null; }
     screen.refuse("link");
     this.failWaiting();
@@ -1278,7 +1278,7 @@ window.__neutrino = {
 
 // The heartbeat: a ping frame every TIMING.ping while the app is in use.
 setInterval(() => {
-  if (page.session && !page.connecting && (screen.kind === "app" || screen.kind === "machine")) page.session.ping();
+  if (page.session && !page.connecting && (screen.kind === "app" || screen.kind === "unavailable")) page.session.ping();
 }, TIMING.ping);
 
 page.start().catch(() => { if (!page.isEnded) screen.refuse("hub"); });
