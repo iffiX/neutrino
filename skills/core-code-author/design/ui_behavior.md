@@ -997,7 +997,7 @@ On Linux the tab has no Run settings, since root runs Podman there
 | Control | Idiom |
 | --- | --- |
 | **Account** | a picker over the machine's available accounts; on Windows the account's login is the one its form holds |
-| **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
+| **CPUs**, **Memory (GiB)** | number fields, 0 for the default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
 | **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 
 The group is one `settings_group` with its own apply bar,

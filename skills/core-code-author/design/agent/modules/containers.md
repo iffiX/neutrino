@@ -105,11 +105,12 @@ exit_code}`.
 
 The Run settings are the configuration's `machine`, `{account, cpus,
 memory_gib, disk_gib}`, with the account's `password` added by the hub for a
-Windows machine. A 0 CPUs is half the computer's logical processors and a 0
-memory is 2 GiB, Podman's defaults. On Windows the disk limit is 1 GiB or
-more, and a 0 is refused `machine_disk_invalid {disk_gib}`. On macOS a 0
-disk is 100 GiB at an init, and leaves the disk of a machine taken over as
-it is.
+Windows machine. A 0 CPUs is half the computer's logical processors,
+Podman's default. A 0 memory is half the computer's memory in whole GiB, at
+most 4 GiB and at least 1, and Podman's own 2 GiB where the agent cannot
+read the computer's memory. On Windows the disk limit is 1 GiB or more, and
+a 0 is refused `machine_disk_invalid {disk_gib}`. On macOS a 0 disk is 100
+GiB at an init, and leaves the disk of a machine taken over as it is.
 
 | Rule | Reason |
 | --- | --- |
@@ -122,6 +123,8 @@ it is.
 | On WSL the CPUs and the memory are `processors=<n>` and `memory=<n>GB` under `[wsl2]` in the account's `%USERPROFILE%\.wslconfig`, a 0 written as the default's number; the agent makes the file or the section when it is missing, changes these two keys and keeps every other line. | WSL ignores Podman's numbers and reads this file, which is the person's own and applies to every WSL system of the account. |
 | A change of CPUs, memory or disk in the configuration, against the last one applied, runs `wsl --shutdown` as the account on WSL, which stops every WSL system of that account, then resizes the disk when it grew, and starts the machine before the apply writes into it. The panel warns before the apply. | WSL reads `.wslconfig`, and resizes a disk, only while none of the account's WSL systems runs; a person's own edit of the file is theirs and restarts nothing. |
 | On macOS a change runs `podman machine set --cpus --memory --disk-size` on the stopped machine, then starts it. | Podman sets an applehv machine's resources itself. |
+| A 0 memory takes its number when the agent makes the machine and when the Run settings change. A machine made under another default keeps its size while the Run settings stay. | A size change on WSL stops every WSL system of the account, so only an apply the person pressed after the panel's warning changes the size. |
+| The default memory is one function in the agent's runner, `default_memory_gib`, and the report's `machine` adds its number for the computer as `default_memory_gib`. The report reads the computer's memory once per agent start. | The hub compares the container modules' need with the machine's memory, a stored 0 among them, and reads that number from the report. |
 | A disk other than 0 and smaller than the machine's disk now, its virtual size, is refused `machine_disk_shrink {disk_gib, current_gib}`, a machine taken over among them; a disk of 0 on Windows `machine_disk_invalid {disk_gib}`; CPUs past the computer's logical processors `machine_cpus_invalid {cpus, max}`, memory past its size `machine_memory_invalid {memory_gib, max}`, an empty account `machine_account_missing`, and an account the computer does not have `account_unknown {account}`. | Shrinking a disk can cut the data on it; WSL shrinks one when asked, so the rule is the module's. |
 | On WSL, when the `.wslconfig` write or the resize right after the init fails, the agent removes the machine the init made, with `podman machine rm -f` as the account, and the apply fails with the step's code. | The new machine holds nothing yet, and kept with WSL's 1 TB disk it would refuse every smaller limit; the next apply makes it again and sizes it. |
 | A new account stops the old account's machine and removes its keeper before the new one starts; the old machine, its images and named volumes and the old account's `.wslconfig` stay as they are. | Two running machines publish the same ports on `127.0.0.1`, and the old machine's data is the person's. |

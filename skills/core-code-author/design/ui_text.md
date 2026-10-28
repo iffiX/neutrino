@@ -506,8 +506,8 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_cpus` | CPUs | CPU 数 |
 | `ui.containers.run_memory` | Memory (GiB) | 内存（GiB） |
 | `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |
-| `ui.containers.run_default_hint` | 0 uses Podman's default: half the CPUs, 2 GiB of memory, a 100 GiB disk. | 填 0 用 Podman 的默认值：一半的 CPU、2 GiB 内存、100 GiB 磁盘。 |
-| `ui.containers.run_default_hint_windows` | A 0 for CPUs or memory uses Podman's default: half the CPUs, 2 GiB of memory. | CPU 数或内存填 0 用 Podman 的默认值：一半的 CPU、2 GiB 内存。 |
+| `ui.containers.run_default_hint` | 0 uses the default: half the CPUs, half the memory up to 4 GiB, a 100 GiB disk. | 填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）、100 GiB 磁盘。 |
+| `ui.containers.run_default_hint_windows` | A 0 for CPUs or memory uses the default: half the CPUs, half the memory up to 4 GiB. | CPU 数或内存填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）。 |
 | `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
 | `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
 | `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |

@@ -1504,7 +1504,7 @@ services}`, and `services` is a list of `{port, kind, scheme, protocols}`
 per host port: `kind` `auto`, `web` or `port`, `scheme` `http` or `https`
 for `web`, and `protocols` a list of `tcp` and `udp` for `port`; a host
 port the list does not name is `auto`. `machine` is the Run settings,
-`{account, cpus, memory_gib, disk_gib}`, a 0 being Podman's default except
+`{account, cpus, memory_gib, disk_gib}`, a 0 being the default except
 a Windows `disk_gib`, which is 1 or more, `account` an available account,
 with `password`, that account's login, added for a Windows machine. The hub sends `machine` to a Windows or macOS machine
 alone, and a Linux state never names it. The Linux recipe's runner is
@@ -1523,9 +1523,11 @@ The macOS recipe names two artifacts, `podman` of kind `pkg` and `image` of
 kind `raw_zst`, and the `verify` `/opt/podman/bin/podman --version`; its
 entry's `min_version` is `13`, and the Windows entry's `19041`. The agent
 opens `package {module: podman, artifact, digest}` for each. On Windows and macOS `details` adds
-`machine`, `{account, is_running, cpus, memory_gib, disk_gib}`, what the
-machine reports through the agent's read (`podman info`), `disk_gib` the
-size of its disk now.
+`machine`, `{account, is_running, cpus, memory_gib, disk_gib,
+default_memory_gib}`, what the machine reports through the agent's read
+(`podman info`), `disk_gib` the size of its disk now, and
+`default_memory_gib` the memory a 0 in the Run settings gives on the
+computer.
 
 An apply refuses `service_invalid {name, port}` for a service whose port
 the container does not publish, whose `kind`, `scheme` or protocol is
@@ -1542,9 +1544,9 @@ published on UDP. An install ends
 {artifact, exit_code}`; the machine's own steps fail with
 `machine_image_missing`, `machine_init_failed {detail}`,
 `machine_set_failed {detail}` and `machine_unreachable {detail}`. `machine`,
-`services`, `detected`, `hub_containers`, each reported container's
-`module` and the code on an `installing` row are added fields and keep
-`PROTOCOL`. The recipe's shape, `{runner, method, params}`, and each
+its `default_memory_gib`, `services`, `detected`, `hub_containers`, each
+reported container's `module` and the code on an `installing` row are added
+fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params}`, and each
 module's `version` in the report come with 0.6.0, which no released agent
 read before, and keep `PROTOCOL` 4 ("Versioning").
 
