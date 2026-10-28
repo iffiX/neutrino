@@ -97,6 +97,7 @@ from neutrino_hub.web.models import (
     WolResult,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.web_share_access import end_device_shares
 
 router = APIRouter(
     prefix="/api/hub/device", tags=["device"], dependencies=[Depends(require_session)]
@@ -290,6 +291,7 @@ def forget(
         An empty object.
     """
     device_id = request.device_id
+    end_device_shares(runtime, device_id)
     DeviceRegistry().forget(device_id)
     ClientRegistry().forget_device(device_id)
     runtime.forget_device(device_id)

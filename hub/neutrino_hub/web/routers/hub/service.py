@@ -40,7 +40,7 @@ from neutrino_hub.web.models import (
     ServiceShareListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.web.web_share_access import entry_guest_login
+from neutrino_hub.web.web_share_access import end_app_shares, entry_guest_login
 
 router = APIRouter(
     prefix="/api/hub/service", tags=["service"], dependencies=[Depends(require_session)]
@@ -158,6 +158,7 @@ def delete_declared_app(
     except KeyError as error:
         raise _unknown() from error
     ClientRegistry().forget_permission_rows([body.app_id])
+    end_app_shares(runtime, body.app_id)
     runtime.published_services.expire()
     return _list_view(request, runtime)
 

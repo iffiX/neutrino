@@ -102,6 +102,7 @@ from neutrino_hub.web.models import (
     PodmanMemoryNeedView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.web_share_access import end_device_shares
 
 router = APIRouter(
     prefix="/api/agent/module", tags=["module"], dependencies=[Depends(require_session)]
@@ -512,7 +513,9 @@ def uninstall_module(
     Note:
         A container module's gateway key is voided.
     """
-    return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
+    listed = _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
+    end_device_shares(runtime, request.device_id, request.module)
+    return listed
 
 
 @router.get("/journal", response_model=JournalView)
