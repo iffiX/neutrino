@@ -46,6 +46,12 @@ AGENT_TREE = "/opt/neutrino/agent/python/lib/python3*/site-packages/neutrino_age
 # in that tree does nothing until the bytecode beside it is gone, which is
 # what the drills below do before they restart the service.
 DROP_BYTECODE = f"sudo rm -rf {AGENT_TREE}/__pycache__"
+# The package database records the older version as well. apt installs
+# nothing for a version it has recorded already.
+RECORD_OLDER_PACKAGE = (
+    "sudo sed -i '/^Package: neutrino-agent$/,/^$/s/^Version: .*/Version: 0.0.0/'"
+    " /var/lib/dpkg/status"
+)
 
 
 def wait_for(what, predicate, timeout_s):
@@ -327,6 +333,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     # for the moment in between loses that race by construction.
     downgraded = ssh_to(
         host,
+        f"{RECORD_OLDER_PACKAGE} && "
         "sudo sed -i 's/^AGENT_VERSION = .*/AGENT_VERSION = \"0.0.0\"/' "
         f"{AGENT_TREE}/_version.py && grep '^AGENT_VERSION' {AGENT_TREE}/_version.py"
         f" && {DROP_BYTECODE} && sudo systemctl restart neutrino_agent",
