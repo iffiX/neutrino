@@ -413,9 +413,10 @@ per-user include ([modules/file_share.md](agent/modules/file_share.md),
 **Rotate** on the Credentials page generates the password again and pushes
 the state, and the agent sets the new one on the SMB user; a client reads it
 at its next mount ([ui_behavior.md](ui_behavior.md), "The Credentials
-page"). Disabling an account removes its SMB user and its Samba credential on every
-system, and takes the account out of every folder share; removing the
-agent's package leaves them, as
+page"). Disabling an account takes it out of every folder share. On Linux
+it removes the SMB user's Samba credential, and the user itself when the
+module made it; on Windows and macOS it disables the SMB user. Removing the
+agent's package leaves the SMB users, as
 [modules/file_share.md](agent/modules/file_share.md) says.
 
 ## The connect stream

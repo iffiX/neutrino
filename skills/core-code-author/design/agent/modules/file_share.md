@@ -29,7 +29,7 @@ them.
 | --- | --- |
 | A folder share's name is compared with every other share name of the machine without regard to case. A name that an available account of the machine has, another folder share has, or a share of the person's own has, is refused `share_name_taken {name}`; enabling an account whose name a folder share has is refused the same way. | SMB names a share without case, and each available account takes a Home share of its own name once it is enabled. |
 | A file written to a folder share belongs to the account that connected: on Linux through the per-user include ("Linux"), and on Windows and macOS through that account's SMB user, as on its Home share ("Windows and macOS"). | A file has the owner it would have had if the account wrote it on the machine, so the account's own programs open and change it later. |
-| Disabling an account takes it out of every folder share in the same write. A folder share left with no account stays configured and is served to nobody, and the module row reads `share_users_unknown {shares}`. | A share never stays open to an SMB user the module has removed. |
+| Disabling an account takes it out of every folder share in the same write. A folder share left with no account stays configured and is served to nobody, and the module row reads `share_users_unknown {shares}`. | A share never stays open to an SMB user the module has removed or disabled. |
 | Removing a folder share removes the share and the access the module gave its SMB users to the folder, and never the folder or a file in it. | The folder held the person's files before it was shared. |
 | The person's own shares and users stay as they are, whatever the folder shares are named ("Parallel, never take over"). | The module manages only what it made. |
 
