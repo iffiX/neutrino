@@ -19,7 +19,7 @@ from neutrino_hub.modules.devices.source_sets import (
 )
 
 
-def test_the_shipped_file_holds_the_three_sets_of_the_standard():
+def test_the_shipped_file_holds_the_four_sets_of_the_standard():
     sets = load_source_sets()
 
     assert sets == {
@@ -51,6 +51,20 @@ def test_the_shipped_file_holds_the_three_sets_of_the_standard():
             "sources": ["https://huggingface.co", "https://hf-mirror.com"],
             "variables": ["HF_ENDPOINT"],
         },
+        "ctan": {
+            "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.sha512",
+            "sources": [
+                "https://mirror.ctan.org",
+                "https://mirrors.mit.edu/CTAN",
+                "https://mirrors.tuna.tsinghua.edu.cn/CTAN",
+                "https://mirrors.ustc.edu.cn/CTAN",
+                "https://mirrors.aliyun.com/CTAN",
+                "https://mirrors.cloud.tencent.com/CTAN",
+                "https://mirrors.sjtug.sjtu.edu.cn/ctan",
+                "https://mirror.nju.edu.cn/CTAN",
+            ],
+            "variables": [],
+        },
     }
 
 
@@ -67,7 +81,7 @@ GOOD = {"probe": "/x", "sources": ["https://a.example"], "variables": ["X_URL"]}
         {"pypi": {**GOOD, "probe": "pip/"}},
         {"pypi": {**GOOD, "sources": []}},
         {"pypi": {**GOOD, "sources": ["http://a.example"]}},
-        {"pypi": {**GOOD, "variables": []}},
+        {"pypi": {**GOOD, "variables": "X_URL"}},
         {"pypi": {**GOOD, "variables": ["NOT A NAME"]}},
         [],
     ],
@@ -79,6 +93,16 @@ def test_the_loader_refuses_a_file_outside_the_shape(monkeypatch, tmp_path, held
 
     with pytest.raises(ValueError):
         load_source_sets()
+
+
+def test_a_set_whose_tool_takes_its_source_on_its_command_line_names_no_variable(
+    monkeypatch, tmp_path
+):
+    path = tmp_path / "source_sets.json"
+    path.write_text(json.dumps({"ctan": {**GOOD, "variables": []}}))
+    monkeypatch.setattr(source_sets_module, "SOURCE_SETS_PATH", path)
+
+    assert load_source_sets() == {"ctan": {**GOOD, "variables": []}}
 
 
 def test_the_loader_drops_the_comment_keys(monkeypatch, tmp_path):

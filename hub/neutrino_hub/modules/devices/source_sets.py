@@ -35,8 +35,10 @@ def load_source_sets() -> dict:
         ValueError: For a file that is not an object of sets, a set name
             not of the form ``[a-z][a-z0-9_]*``, a set whose keys are not
             ``probe``, ``sources`` and ``variables``, a probe that is not a
-            path, a source that is not an https address, or a variable that
-            is not an environment name.
+            path, a source that is not an https address, variables that are
+            not a list, or a variable that is not an environment name; an
+            empty list names a set whose tool takes its source on its
+            command line.
     """
     try:
         held = strip_comments(json.loads(SOURCE_SETS_PATH.read_text(encoding="utf-8")))
@@ -112,8 +114,8 @@ def _check_set(name, entry) -> None:
         if not isinstance(source, str) or not source.startswith("https://"):
             raise ValueError(f"source set {name}: {source!r} is no https address")
     variables = entry["variables"]
-    if not isinstance(variables, list) or not variables:
-        raise ValueError(f"source set {name}: must list at least one variable")
+    if not isinstance(variables, list):
+        raise ValueError(f"source set {name}: variables must be a list")
     for variable in variables:
         if not isinstance(variable, str) or not re.fullmatch(
             DEVICE_SOURCE_SET_VARIABLE_PATTERN, variable
