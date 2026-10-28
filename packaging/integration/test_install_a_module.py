@@ -99,8 +99,11 @@ def serving(panel, before):
     matrix.put_mode(panel, "router")
     # The way in becomes the way out, whatever role an earlier file left
     # on it: a router with no uplink serves a network with nothing behind
-    # it, and the machine on it cannot reach a package archive.
-    matrix.put_interface(panel, before["interface"], role="wan")
+    # it, and the machine on it cannot reach a package archive. The uplink
+    # keeps the addressing the machine arrived with.
+    matrix.put_interface(
+        panel, before["interface"], role="wan", wan=matrix.uplink_wan(before)
+    )
     matrix.put_interface(panel, spares[-1], role="lan", lan=matrix.lan_body(MODULE_LAN))
     exposed = [
         entry["settings"]["name"]

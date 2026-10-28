@@ -212,6 +212,33 @@ def put_proxy(panel, **changes) -> None:
     assert answer.get("is_applied"), answer
 
 
+def uplink_wan(before) -> dict:
+    """The uplink's addressing as the machine arrived with it.
+
+    Returns:
+        A static uplink with its address, prefix and gateway when its default
+        route was static, else DHCP. A static uplink names no resolver. The
+        hub's built-in resolvers serve it.
+    """
+    interface = before["interface"]
+    lines = before["addresses_and_routes"]
+    routes = [
+        line
+        for line in lines
+        if line.startswith("default ") and f" dev {interface} " in f"{line} "
+    ]
+    addresses = [line.split()[1] for line in lines if line.startswith(f"{interface} ")]
+    if not routes or "proto static" not in routes[0] or not addresses:
+        return {"method": "dhcp"}
+    address, _, prefix_len = addresses[0].partition("/")
+    return {
+        "method": "static",
+        "address": address,
+        "prefix_len": int(prefix_len),
+        "gateway": routes[0].split()[2],
+    }
+
+
 def lan_body(address: str) -> dict:
     prefix = address.rsplit(".", 1)[0]
     return {
