@@ -40,6 +40,7 @@ from neutrino_hub.web.channel_shell import SessionReplyBook
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
+from neutrino_hub.web.web_share_access import WebShareGuestSessions
 from tests.conftest import StubPublishedServices
 from tests.web.fake_transport import SECRET, FakeTransport
 
@@ -54,6 +55,7 @@ class FakeRuntime:
     def __init__(self, tmp_path):
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
+        self.web_share_guests = WebShareGuestSessions()
         self.channel_port = ChannelPortGuard()
         self.enrollments = ChannelTicketRegistry(path=tmp_path / "tickets.json")
         self.events = PanelEventBus()
@@ -426,6 +428,8 @@ def test_a_hello_naming_another_binding_closes_the_session(config, recorded, tmp
                 },
             )
             command = await fake.next_command()
+            if command["command"] == "shares_set":
+                command = await fake.next_command()
         finally:
             await stopped(fake, channel, task)
         return command, runtime.agent_sessions.is_online(device_id)

@@ -25,6 +25,7 @@ CHANNEL_TICKET_FILE_MODE = 0o600
 CHANNEL_ROLE_AGENT = "agent"
 CHANNEL_ROLE_CLIENT = "client"
 CHANNEL_ROLE_HUB = "hub"
+CHANNEL_ROLE_GUEST = "guest"
 
 # The legacy listener: the 0.5 channel of an agent updating itself, served
 # over the agent TLS pair on loopback alone, and the route an updated peer
@@ -55,6 +56,7 @@ CHANNEL_QUESTION_PEER = "peer"
 CHANNEL_QUESTION_TICKET = "ticket"
 CHANNEL_QUESTION_ENTRY = "entry"
 CHANNEL_QUESTION_TOKEN = "token"
+CHANNEL_QUESTION_GUEST = "guest"
 CHANNEL_COMMAND_SESSION_CLOSE = "session_close"
 CHANNEL_COMMAND_STREAMS_CLOSE = "streams_close"
 CHANNEL_COMMAND_KEYS_RELOAD = "keys_reload"

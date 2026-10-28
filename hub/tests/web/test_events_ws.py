@@ -35,6 +35,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.channel_serve import ChannelControlHandler
 from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.events import PanelEventBus
+from neutrino_hub.web.web_share_access import WebShareGuestSessions
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
 SESSION_TOKEN = "panel-session"
@@ -88,6 +89,7 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        self.web_share_guests = WebShareGuestSessions()
         self.agent_update_sessions = {}
         self.agent_sessions.on_presence_change = self._publish_devices
         self.desired = ("", {"modules": {}, "desktop": {}})

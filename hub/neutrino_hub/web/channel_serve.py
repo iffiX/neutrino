@@ -61,11 +61,13 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_PACKAGE_PLATFORM_POLL_S,
     CHANNEL_PACKAGE_PLATFORM_WAIT_S,
     CHANNEL_QUESTION_ENTRY,
+    CHANNEL_QUESTION_GUEST,
     CHANNEL_QUESTION_PEER,
     CHANNEL_QUESTION_TICKET,
     CHANNEL_QUESTION_TOKEN,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
+    CHANNEL_ROLE_GUEST,
     CHANNEL_ROLE_HUB,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_LOG,
@@ -78,6 +80,7 @@ from neutrino_hub.modules.channel.sessions import (
     version_of_software,
 )
 from neutrino_hub.modules.clients.ai_keys import revoke_client_key
+from neutrino_hub.modules.clients.constants import WEB_SHARE_CODE_SHARE_UNKNOWN
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import panel_material, service_material
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleSendProgress
@@ -95,6 +98,12 @@ from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_entry import entry_answer
+from neutrino_hub.web.channel_guest import (
+    guest_answer,
+    guest_entry_answer,
+    guest_token_answer,
+    is_share_live,
+)
 from neutrino_hub.web.channel_shell import SESSION_VERBS, relay_session_verb
 from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
@@ -106,6 +115,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.identity import hub_id, hub_name
 from neutrino_hub.web.models import ChannelHello, ChannelJoin
 from neutrino_hub.web.panel_sign_in import SESSION_END_LEFT, end_client_panel_sessions
+from neutrino_hub.web.web_share_access import push_shares
 
 LOGGER = logging.getLogger(__name__)
 
@@ -126,14 +136,25 @@ class ChannelControlHandler:
         self._pending: dict = {}
 
     async def control_opened(self) -> None:
-        """A control connection is live; the transport replays its sessions."""
+        """A control connection is live; the transport replays its sessions.
+
+        The live shares' table is sent on the new connection once this
+        returns, since the connection's answers are read after it.
+        """
         self._pending.clear()
+        asyncio.get_running_loop().create_task(self._push_shares())
+
+    async def _push_shares(self) -> None:
+        try:
+            await push_shares(self._runtime)
+        except StreamRefusedError as error:
+            LOGGER.warning("the transport did not take the live shares: %s", error.code)
 
     async def answer_question(self, question: str, fields: dict) -> dict:
-        """Answer one of the transport's four questions.
+        """Answer one of the transport's five questions.
 
         Args:
-            question: ``peer``, ``ticket``, ``entry`` or ``token``.
+            question: ``peer``, ``ticket``, ``entry``, ``token`` or ``guest``.
             fields: The question's fields.
 
         Returns:
@@ -148,6 +169,8 @@ class ChannelControlHandler:
             return await self._answer_entry(fields)
         if question == CHANNEL_QUESTION_TOKEN:
             return await self._answer_token(fields)
+        if question == CHANNEL_QUESTION_GUEST:
+            return await guest_answer(fields)
         return _refusal(CHANNEL_CODE_CONTROL_UNAVAILABLE, {})
 
     async def take_event(self, event: str, fields: dict) -> None:
@@ -276,9 +299,15 @@ class ChannelControlHandler:
 
     async def _answer_entry(self, fields: dict) -> dict:
         """Where a stream goes, judged for its binding now."""
-        session = self._live(str(fields.get("session", "") or ""))
-        binding_id = str(fields.get("binding_id", "") or "")
+        session_id = str(fields.get("session", "") or "")
         open_body = fields.get("open")
+        share_id = self._runtime.web_share_guests.share_of(session_id)
+        if share_id:
+            if not isinstance(open_body, dict):
+                return _refusal(CHANNEL_CODE_BINDING_UNKNOWN, {})
+            return await guest_entry_answer(self._runtime, share_id, open_body)
+        session = self._live(session_id)
+        binding_id = str(fields.get("binding_id", "") or "")
         if session is None or not isinstance(open_body, dict):
             return _refusal(CHANNEL_CODE_BINDING_UNKNOWN, {})
         return await entry_answer(
@@ -289,10 +318,14 @@ class ChannelControlHandler:
         )
 
     async def _answer_token(self, fields: dict) -> dict:
-        """The material a client's ``service`` frame is handed."""
-        session = self._live(str(fields.get("session", "") or ""))
+        """The material a client's or a visitor's ``service`` frame is handed."""
+        session_id = str(fields.get("session", "") or "")
         frame = fields.get("frame")
         frame = frame if isinstance(frame, dict) else {}
+        share_id = self._runtime.web_share_guests.share_of(session_id)
+        if share_id:
+            return await guest_token_answer(self._runtime, share_id, frame)
+        session = self._live(session_id)
         if session is None or session.role != CHANNEL_ROLE_CLIENT:
             return _refusal(CHANNEL_CODE_BINDING_UNKNOWN, {})
         if frame.get("is_panel") is True:
@@ -333,6 +366,9 @@ class ChannelControlHandler:
         pending = self._pending.pop(session_id, None)
         if pending is not None:
             pending.mark_ended()
+            return
+        if self._runtime.web_share_guests.end(session_id):
+            self._runtime.events.publish(WEB_EVENT_CLIENTS)
             return
         session = self._live(session_id)
         if session is None:
@@ -395,6 +431,9 @@ class ChannelControlHandler:
         session.name = hello.name
         session.software = hello.software
         self._pending.pop(session.session_id, None)
+        if session.role == CHANNEL_ROLE_GUEST:
+            await self._admit_guest(session)
+            return
         if session.role == CHANNEL_ROLE_AGENT:
             device = await asyncio.to_thread(DeviceRegistry().get, session.key)
             if device is None:
@@ -436,6 +475,17 @@ class ChannelControlHandler:
             platform={},
             version=session.version,
         )
+        runtime.events.publish(WEB_EVENT_CLIENTS)
+
+    async def _admit_guest(self, session: ChannelSession) -> None:
+        """Welcome a visitor's session while its share is live; it gets no state."""
+        runtime = self._runtime
+        if not await asyncio.to_thread(is_share_live, session.key):
+            await session.refuse(WEB_SHARE_CODE_SHARE_UNKNOWN, {})
+            return
+        runtime.web_share_guests.add(session.key, session)
+        session.is_admitted = True
+        await session.send_json(await asyncio.to_thread(welcome_frame))
         runtime.events.publish(WEB_EVENT_CLIENTS)
 
     async def _refuse_pending(
