@@ -361,6 +361,47 @@ def test_a_module_s_hooks_are_called_where_the_runner_says(store, monkeypatch):
     assert runner.details(RECIPE) == {"version": "0.52.492", "port": 8787}
 
 
+def test_each_start_tells_the_hooks_the_recipe_s_version_first(store, monkeypatch):
+    calls: list = []
+
+    class DemoHooks(ContainerHooks):
+        def installed(self, version):
+            calls.append(("installed", version))
+
+        def start(self):
+            calls.append(("start",))
+
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", DemoHooks
+    )
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    runner = runner_for(containers, FakePodman(running=["neutrino_demo"]))
+
+    runner.take_recipe(RECIPE)
+    runner.start()
+
+    assert calls == [("installed", "0.52.492"), ("start",)]
+
+
+def test_the_state_s_source_sets_reach_the_module_s_hooks(store, monkeypatch):
+    taken: list = []
+
+    class DemoHooks(ContainerHooks):
+        def take_source_sets(self, source_sets):
+            taken.append(source_sets)
+
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", DemoHooks
+    )
+    runner = runner_for(FakeContainers(), FakePodman())
+    sets = {"ctan": {"probe": "/x", "sources": ["https://a.example"], "variables": []}}
+
+    runner.take_source_sets(sets)
+    runner_for(FakeContainers(), FakePodman()).take_source_sets({})
+
+    assert taken == [sets, {}]
+
+
 def test_an_install_tells_the_hooks_its_version_and_installing_is_theirs(
     store, monkeypatch
 ):

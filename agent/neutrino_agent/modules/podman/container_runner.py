@@ -94,8 +94,15 @@ class ContainerHooks:
             ModuleApplyError: When the configuration is refused.
         """
 
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Take the state's ``source_sets`` section, for a step that ranks a set itself.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+
     def installed(self, version: str) -> None:
-        """Note the version an install just pulled the images of.
+        """Note the version the recipe names, once an install pulled its images and at each start.
 
         Args:
             version: The version the recipe names.
@@ -178,6 +185,7 @@ class ContainerModuleRunner(ModuleRunner):
         self._containers = containers
         self._probe_one = probe_one
         self._run = run_command
+        self._version = ""
         hooks_class = CONTAINER_MODULE_HOOKS.get(name, ContainerHooks)
         self._hooks = hooks_class(
             platform=platform, name=name, containers=containers, log=self._log
@@ -251,6 +259,22 @@ class ContainerModuleRunner(ModuleRunner):
                     self._quietly([*command, "rmi", reference])
         self._hooks.remove()
 
+    def take_recipe(self, recipe: dict) -> None:
+        """Take the version the recipe names, which each start tells the hooks.
+
+        Args:
+            recipe: ``{runner, method, params}``.
+        """
+        self._version = str(params_of(recipe).get("version", "") or "")
+
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Hand the state's ``source_sets`` section to the module's hooks.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+        self._hooks.take_source_sets(dict(source_sets))
+
     def apply(self, config: dict) -> None:
         """Hand the module's configuration to its hooks.
 
@@ -265,6 +289,9 @@ class ContainerModuleRunner(ModuleRunner):
     def start(self) -> None:
         """Start the module's containers that do not run, once Containers renders them.
 
+        The hooks are told the recipe's version first, which starts a
+        version change whose images the store already held.
+
         Raises:
             ModuleInstallPending: While Containers has not rendered the
                 module's containers, or the hooks wait on their first start.
@@ -273,6 +300,8 @@ class ContainerModuleRunner(ModuleRunner):
         names = self._names()
         if not names:
             raise ModuleInstallPending("containers_pending")
+        if self._version:
+            self._hooks.installed(self._version)
         if self._containers.is_engine_active():
             states = self._states(self._command())
             down = [name for name in names if not states.get(name)]
