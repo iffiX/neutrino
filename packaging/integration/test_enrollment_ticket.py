@@ -2,77 +2,31 @@
 
 The Clients page makes a link; the ticket file under the state root holds its
 hash, never the ticket, at mode 0600; the panel restarts; the link joins once
-over the pinned agent port and is refused ``ticket_spent`` the second time.
-The client row it made is removed at the end.
+through a transport of the check's own and is refused ``ticket_spent`` the
+second time. The client leaves at the end, and the row it made is removed.
 
 Run as root on a set-up box with at least one exposed address, so a link has
 an address to carry.
 """
 
-import base64
 import hashlib
-import http.client
 import json
 import os
-import ssl
 import stat
 import subprocess
 import time
-import urllib.parse
-import zlib
 
 import pytest
 
 import machine_state
 
+connect_probe = pytest.importorskip(
+    "connect_probe", reason="needs the agent package for the client's transport"
+)
+
 TICKET_FILE = "/var/lib/neutrino/hub/enrollment_tickets.json"
 PANEL_UNIT = "neutrino_hub_web"
 PANEL_RETURN_S = 60
-JOIN_TIMEOUT_S = 10
-PROTOCOL = 4
-
-
-def link_payload(link: str) -> dict:
-    payload_text = link.removeprefix("neutrino://enroll/")
-    padded = payload_text + "=" * (-len(payload_text) % 4)
-    return json.loads(zlib.decompress(base64.urlsafe_b64decode(padded)))
-
-
-def pinned_join(url: str, fingerprint: str, ticket: str) -> tuple:
-    """One join over TLS held to the link's fingerprint.
-
-    Returns:
-        The status and the decoded answer.
-    """
-    parts = urllib.parse.urlsplit(url)
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    connection = http.client.HTTPSConnection(
-        parts.hostname, parts.port, context=context, timeout=JOIN_TIMEOUT_S
-    )
-    connection.connect()
-    certificate = connection.sock.getpeercert(binary_form=True)
-    assert hashlib.sha256(certificate).hexdigest() == fingerprint
-    body = {
-        "ticket": ticket,
-        "role": "client",
-        "protocol": PROTOCOL,
-        "machine_id": "integration-ticket-check",
-        "name": "integration-ticket-check",
-        "software": "neutrino_client/0.5.0",
-        "platform": {"os": "linux", "family": "debian", "arch": "amd64"},
-    }
-    connection.request(
-        "POST",
-        "/api/channel/join",
-        body=json.dumps(body),
-        headers={"Content-Type": "application/json"},
-    )
-    answer = connection.getresponse()
-    text = answer.read().decode()
-    connection.close()
-    return answer.status, (json.loads(text) if text else None)
 
 
 def restart_panel(panel) -> None:
@@ -97,15 +51,14 @@ def client_link(panel):
     if status == 400 and made.get("detail", {}).get("code") == "no_reachable_address":
         pytest.skip("this box exposes no address a client could be sent to")
     assert status == 200, made
-    payload = link_payload(made["link"])
-    yield payload
+    yield connect_probe.parse_client_link(made["link"])
     for row in panel.read("/hub/client")["clients"]:
         if row["name"].startswith("integration-ticket"):
             panel.call("POST", "/hub/client/remove", {"client_id": row["id"]})
 
 
 def test_a_client_link_survives_a_restart_and_joins_once(panel, client_link, request):
-    ticket = client_link["token"]
+    addresses, ticket, hub_key = client_link
     digest = hashlib.sha256(ticket.encode()).hexdigest()
 
     mode = stat.S_IMODE(os.stat(TICKET_FILE).st_mode)
@@ -118,12 +71,19 @@ def test_a_client_link_survives_a_restart_and_joins_once(panel, client_link, req
     restart_panel(panel)
     panel.sign_in(request.config.getoption("--password"))
 
-    url = client_link["urls"][0]
-    first = pinned_join(url, client_link["fp"], ticket)
-    second = pinned_join(url, client_link["fp"], ticket)
+    first = connect_probe.Client()
+    second = connect_probe.Client()
+    first.start()
+    second.start()
+    try:
+        first.join(addresses, ticket, hub_key)
+        with pytest.raises(connect_probe.GatewayUnreachable, match="ticket_spent"):
+            second.join(addresses, ticket, hub_key)
+    finally:
+        first.leave()
+        first.close()
+        second.close()
 
-    assert first[0] == 200, first
-    assert second[0] == 401, second
-    assert second[1]["detail"]["code"] == "ticket_spent"
+    assert first.binding_id
     entries = json.loads(open(TICKET_FILE, encoding="utf-8").read())
     assert all(entry["token_sha256"] != digest for entry in entries)
