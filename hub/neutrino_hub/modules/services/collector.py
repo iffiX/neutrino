@@ -457,7 +457,7 @@ class ServiceListCollector:
         """One entry per machine that says it is sharing its desktop."""
         return [
             _entry(
-                id=f"rdp_{share.share_id}",
+                id=f"rdp_{share.device_id}",
                 type=SERVICES_TYPE_RDP,
                 title=share.hostname or share.host,
                 payload={

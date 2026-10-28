@@ -513,8 +513,8 @@ def _instance_row(description_code: str):
 
 def _live_share(runtime, entry: dict):
     """The desktop share an ``rdp`` entry names, None once it stopped."""
-    share_id = entry["id"][len(CLIENT_RDP_SERVICE_PREFIX) :]
+    device_id = entry["id"][len(CLIENT_RDP_SERVICE_PREFIX) :]
     for share in runtime.device_shares.live():
-        if share.share_id == share_id:
+        if share.device_id == device_id:
             return share
     return None

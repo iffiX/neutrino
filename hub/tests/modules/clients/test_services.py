@@ -49,7 +49,7 @@ ENTRY = {
 }
 RDP_ENTRY = {
     **ENTRY,
-    "id": "rdp_s1",
+    "id": "rdp_dev",
     "type": "rdp",
     "payload": {"host": "192.168.100.7", "port": 21118},
     "device_id": "dev",
@@ -168,7 +168,7 @@ def test_a_desktops_material_is_the_seat_password_alone(config_dir):
     client_id = ClientRegistry().create("alice")
     runtime.client_scope[client_id] = LAN
 
-    code, params = service_material(runtime, client_id, "rdp_s1")
+    code, params = service_material(runtime, client_id, "rdp_dev")
 
     assert code == ""
     assert params == {"password": "seat-pass"}  # scan: allow
@@ -178,9 +178,9 @@ def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
 
-    assert service_material(runtime, client_id, "rdp_s1") == (
+    assert service_material(runtime, client_id, "rdp_dev") == (
         "rdp_not_shared",
-        {"service_id": "rdp_s1"},
+        {"service_id": "rdp_dev"},
     )
 
 
@@ -251,16 +251,16 @@ def test_an_entry_of_a_device_outside_the_filter_is_permission_denied(config_dir
 
     registry.set_permission(client_id, ["rdp"], {"rdp": ["d2"]})
 
-    assert service_material(runtime, client_id, "rdp_s1") == (
+    assert service_material(runtime, client_id, "rdp_dev") == (
         "permission_denied",
         {"kind": "rdp"},
     )
 
     registry.set_permission(client_id, ["rdp"], {"rdp": ["d1"]})
 
-    assert service_material(runtime, client_id, "rdp_s1") == (
+    assert service_material(runtime, client_id, "rdp_dev") == (
         "rdp_not_shared",
-        {"service_id": "rdp_s1"},
+        {"service_id": "rdp_dev"},
     )
 
 
@@ -489,15 +489,15 @@ def test_a_connect_is_refused_in_the_service_streams_order_with_the_limit(
         runtime, client_id, {"id": "nothing"}, CHANNEL_CONNECT_STREAMS_MAX - 1
     ) == ("service_unknown", {"service_id": "nothing"}, None)
     registry.set_permission(client_id, ["ai"])
-    assert target(runtime, client_id, {"id": "rdp_s1"}) == (
+    assert target(runtime, client_id, {"id": "rdp_dev"}) == (
         "permission_denied",
         {"kind": "rdp"},
         None,
     )
     registry.set_permission(client_id, ["rdp"])
-    assert target(runtime, client_id, {"id": "rdp_s1"}) == (
+    assert target(runtime, client_id, {"id": "rdp_dev"}) == (
         "rdp_not_shared",
-        {"service_id": "rdp_s1"},
+        {"service_id": "rdp_dev"},
         None,
     )
 
@@ -546,7 +546,7 @@ def test_an_entry_a_machine_provides_goes_to_its_agent_at_the_entrys_port(
 
     assert [
         target(runtime, client_id, {"id": entry_id})[2]
-        for entry_id in ("vscode_dev_alice", "rdp_s1", "samba_dev_media")
+        for entry_id in ("vscode_dev_alice", "rdp_dev", "samba_dev_media")
     ] == [
         ConnectTarget("dev", "", 8000),
         ConnectTarget("dev", "", 21118),
