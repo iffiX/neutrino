@@ -212,7 +212,7 @@ class SambaDarwinApplier:
             swept = self._sweep(points)
             owned_shares, owned_accounts = {}, []
             points = self._share_points()
-        for share in config.shares:
+        for share in config.served_shares():
             held = [point for point in points if point["smb_name"] == share.name]
             is_ours = share.name in owned_shares and all(
                 point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX) for point in held
@@ -529,14 +529,15 @@ class SambaDarwinApplier:
         *,
         refused: "set | None" = None,
     ) -> list:
-        """Keep one point per configured share, and remove the module's others.
+        """Keep one point per served share, and remove the module's others.
 
         An account in ``refused`` does not exist as one, so no folder names
         it.
         """
         refused = refused or set()
         notes = []
-        wanted = {share.name for share in config.shares}
+        served = config.served_shares()
+        wanted = {share.name for share in served}
         ours = [
             point
             for point in points
@@ -550,24 +551,16 @@ class SambaDarwinApplier:
                 notes.append(f"removed share {name}")
         known = accounts + [name for name in config.users if name not in accounts]
         known = [name for name in known if name not in refused]
-        for share in config.shares:
-            granted = [
-                name
-                for name in share.valid_users or config.users
-                if name not in refused
-            ]
-            self._run(["mkdir", "-p", share.path])
-            for name in known:
-                for entry in (SAMBA_DARWIN_ACL_CHANGE, SAMBA_DARWIN_ACL_READ):
-                    self._run(
-                        ["chmod", "-a", f"user:{name} allow {entry}", share.path],
-                        is_checked=False,
-                    )
-            entry = (
-                SAMBA_DARWIN_ACL_READ if share.is_read_only else SAMBA_DARWIN_ACL_CHANGE
-            )
-            for name in granted:
-                self._run(["chmod", "+a", f"user:{name} allow {entry}", share.path])
+        grants = folder_acl_grants(served, refused=refused)
+        for path in owned.values():
+            if path and path not in grants:
+                self._take_back(path, known)
+        for path, rights in grants.items():
+            self._run(["mkdir", "-p", path])
+            self._take_back(path, known)
+            for name, entry in rights.items():
+                self._run(["chmod", "+a", f"user:{name} allow {entry}", path])
+        for share in served:
             held = [point for point in ours if point["smb_name"] == share.name]
             kept = _kept_point(held, share)
             for point in held:
@@ -594,6 +587,15 @@ class SambaDarwinApplier:
             self._run(command)
             notes.append(f"created share {share.name}")
         return notes
+
+    def _take_back(self, path: str, names: list) -> None:
+        """Take every access-control entry the module grants these accounts off a folder."""
+        for name in names:
+            for entry in (SAMBA_DARWIN_ACL_CHANGE, SAMBA_DARWIN_ACL_READ):
+                self._run(
+                    ["chmod", "-a", f"user:{name} allow {entry}", path],
+                    is_checked=False,
+                )
 
     def _share_points(self) -> list:
         return parse_share_points(self._read(["sharing", "-l", "-f", "json"]))
@@ -641,6 +643,30 @@ class SambaDarwinApplier:
         except (OSError, subprocess.SubprocessError):
             return ""
         return result.stdout if result.is_success else ""
+
+
+def folder_acl_grants(shares: list, *, refused: "set | None" = None) -> dict:
+    """The access-control entry each account takes on each shared folder.
+
+    Args:
+        shares: The shares served, each with its users.
+        refused: Accounts the system would not make, which no folder names.
+
+    Returns:
+        Folder to ``{account: entry}``, the folders in the shares' order.
+        An account two shares of one folder name takes the change entry
+        when either share is writable.
+    """
+    refused = refused or set()
+    grants: dict = {}
+    for share in shares:
+        entry = SAMBA_DARWIN_ACL_READ if share.is_read_only else SAMBA_DARWIN_ACL_CHANGE
+        held = grants.setdefault(share.path, {})
+        for name in share.valid_users:
+            if name in refused or held.get(name) == SAMBA_DARWIN_ACL_CHANGE:
+                continue
+            held[name] = entry
+    return grants
 
 
 def _kept_point(held: list, share) -> "dict | None":

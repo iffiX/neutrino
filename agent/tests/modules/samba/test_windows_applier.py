@@ -29,7 +29,12 @@ from tests.conftest import RecordingHost
 CONFIG = SambaConfig.from_dict(
     {
         "shares": [
-            {"name": "media", "path": "D:\\media", "comment": "films"},
+            {
+                "name": "media",
+                "path": "D:\\media",
+                "comment": "films",
+                "valid_users": ["ann", "bob"],
+            },
             {
                 "name": "docs",
                 "path": "D:\\docs",
@@ -107,6 +112,9 @@ def test_an_apply_names_only_what_the_module_made():
         )
     ]
     assert icacls.calls == [
+        ["icacls.exe", "D:\\old", "/remove:g", "eve"],
+        ["icacls.exe", "D:\\old", "/remove:g", "ann"],
+        ["icacls.exe", "D:\\old", "/remove:g", "bob"],
         ["icacls.exe", "D:\\media", "/remove:g", "eve"],
         ["icacls.exe", "D:\\media", "/grant", "ann:(OI)(CI)M"],
         ["icacls.exe", "D:\\media", "/grant", "bob:(OI)(CI)M"],
@@ -122,7 +130,12 @@ def test_the_ssh_folder_under_a_share_is_taken_from_every_module_account(
 ):
     (tmp_path / ".ssh").mkdir()
     config = SambaConfig.from_dict(
-        {"shares": [{"name": "ann", "path": str(tmp_path)}], "users": ["ann", "bob"]}
+        {
+            "shares": [
+                {"name": "ann", "path": str(tmp_path), "valid_users": ["ann", "bob"]}
+            ],
+            "users": ["ann", "bob"],
+        }
     )
     icacls = Icacls()
     applier = applier_with(RecordingHost(), run=icacls, denied=[])
@@ -144,7 +157,10 @@ def test_the_ssh_folder_under_a_share_is_taken_from_every_module_account(
 def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
     (tmp_path / ".ssh").mkdir()
     config = SambaConfig.from_dict(
-        {"shares": [{"name": "ann", "path": str(tmp_path)}], "users": ["ann"]}
+        {
+            "shares": [{"name": "ann", "path": str(tmp_path), "valid_users": ["ann"]}],
+            "users": ["ann"],
+        }
     )
     icacls = Icacls(refused=[("/inheritance:d",)])
     applier = applier_with(RecordingHost(), run=icacls, denied=[])
@@ -388,3 +404,78 @@ def test_the_first_apply_asks_the_host_to_sweep_what_the_marker_names():
     assert first[1]["user_prefix"] == "neutrino-"
     assert second[1]["is_sweep"] is False
     assert notes == ["swept share old"]
+
+
+def test_a_folder_share_with_no_account_stays_off_and_its_folder_loses_the_grants():
+    """A share whose users are none is no request of the host's, the host
+    removes it as the module's, and its folder loses every module account."""
+    host = RecordingHost()
+    icacls = Icacls()
+    applier = applier_with(host, run=icacls, denied=[])
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "lab", "path": "D:\\lab", "valid_users": []},
+                {"name": "ann", "path": "C:\\Users\\ann", "valid_users": ["ann"]},
+            ],
+            "users": ["ann"],
+        }
+    )
+
+    applier.apply(config, {"shares": {"lab": "D:\\lab"}, "accounts": ["ann", "bob"]})
+
+    request = host.calls[0][1]
+    assert [share["name"] for share in request["shares"]] == ["ann"]
+    assert request["removed_shares"] == ["lab"]
+    assert icacls.calls[:2] == [
+        ["icacls.exe", "D:\\lab", "/remove:g", "ann"],
+        ["icacls.exe", "D:\\lab", "/remove:g", "bob"],
+    ]
+
+
+def test_a_folder_two_shares_name_is_granted_each_of_their_accounts_once():
+    """A folder share at an account's home keeps the Home share's account
+    and adds its own; the change right wins over the read right, and an
+    account taken out of both loses its grant."""
+    icacls = Icacls()
+    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "ann", "path": "C:\\Users\\ann", "valid_users": ["ann"]},
+                {
+                    "name": "lab",
+                    "path": "c:\\users\\ann\\",
+                    "is_read_only": True,
+                    "valid_users": ["ann", "bob"],
+                },
+            ],
+            "users": ["ann", "bob"],
+        }
+    )
+
+    applier.apply(config, {"shares": {}, "accounts": ["carol"]})
+
+    assert icacls.calls == [
+        ["icacls.exe", "C:\\Users\\ann", "/remove:g", "carol"],
+        ["icacls.exe", "C:\\Users\\ann", "/grant", "ann:(OI)(CI)M"],
+        ["icacls.exe", "C:\\Users\\ann", "/grant", "bob:(OI)(CI)RX"],
+    ]
+
+
+def test_a_folder_share_that_moved_takes_its_grants_off_the_old_folder():
+    icacls = Icacls()
+    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+    config = SambaConfig.from_dict(
+        {
+            "shares": [{"name": "lab", "path": "E:\\lab", "valid_users": ["ann"]}],
+            "users": ["ann"],
+        }
+    )
+
+    applier.apply(config, {"shares": {"lab": "D:\\lab"}, "accounts": ["ann"]})
+
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\lab", "/remove:g", "ann"],
+        ["icacls.exe", "E:\\lab", "/grant", "ann:(OI)(CI)M"],
+    ]

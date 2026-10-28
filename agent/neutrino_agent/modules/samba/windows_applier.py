@@ -117,13 +117,13 @@ def _account_sid(advapi32, account: str):
     return sid
 
 
-def _share_request(share, config: SambaConfig) -> dict:
+def _share_request(share) -> dict:
     """One share as the host's apply converges it."""
     return {
         "name": share.name,
         "path": share.path,
         "description": f"{SAMBA_WINDOWS_MARKER} {share.comment}".strip(),
-        "accounts": list(share.valid_users or config.users),
+        "accounts": list(share.valid_users),
         "share_right": (
             SAMBA_WINDOWS_SHARE_READ
             if share.is_read_only
@@ -259,7 +259,8 @@ class SambaWindowsApplier:
         """
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
-        wanted_shares = {share.name for share in config.shares}
+        served = config.served_shares()
+        wanted_shares = {share.name for share in served}
         known_accounts = owned_accounts + [
             name for name in config.users if name not in owned_accounts
         ]
@@ -274,15 +275,19 @@ class SambaWindowsApplier:
                     name for name in owned_accounts if name not in config.users
                 ],
                 "removed_shares": sorted(set(owned_shares) - wanted_shares),
-                "shares": [_share_request(share, config) for share in config.shares],
+                "shares": [_share_request(share) for share in served],
                 "retired_rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
                 "is_sweep": is_sweep,
                 "user_prefix": SAMBA_LINUX_USER_PREFIX,
             },
         )
-        for share in config.shares:
-            self._grant_folder(share, config, known_accounts)
+        grants = folder_grants(served)
+        for path in _paths_left(owned_shares, grants):
+            for name in known_accounts:
+                icacls(self._run, [path, "/remove:g", name])
+        for path, rights in grants.items():
+            self._grant_folder(path, rights, known_accounts)
         for name in config.users:
             self._deny_logon(name)
         return [str(note) for note in _listed(answer.get("notes"))]
@@ -340,29 +345,80 @@ class SambaWindowsApplier:
         """
         self._powershell.call("share_password", {"name": name, "password": password})
 
-    def _grant_folder(self, share, config: SambaConfig, known_accounts: list) -> None:
-        """Grant one share's folder to its accounts and take it from the others.
+    def _grant_folder(self, path: str, rights: dict, known_accounts: list) -> None:
+        """Grant a folder to its shares' accounts and take it from the module's others.
 
-        The ``.ssh`` folder under the share, when there is one, stops
-        inheriting the folder's entries and loses every module account's,
-        so OpenSSH's check of the account's own files passes.
+        The ``.ssh`` folder directly under it, when there is one, stops
+        inheriting the folder's entries and loses every module account's.
+        OpenSSH's check of the account's own files then passes.
         """
-        accounts = list(share.valid_users or config.users)
-        right = (
-            SAMBA_WINDOWS_FOLDER_READ
-            if share.is_read_only
-            else SAMBA_WINDOWS_FOLDER_CHANGE
-        )
         for name in known_accounts:
-            if name not in accounts:
-                icacls(self._run, [share.path, "/remove:g", name])
-        for name in accounts:
-            if icacls(self._run, [share.path, "/grant", f"{name}:{right}"]) != 0:
-                raise OSError(f"icacls refused {name} on {share.path}")
-        ssh_dir = os.path.join(share.path, SAMBA_WINDOWS_SSH_DIR_NAME)
+            if name not in rights:
+                icacls(self._run, [path, "/remove:g", name])
+        for name, right in rights.items():
+            if icacls(self._run, [path, "/grant", f"{name}:{right}"]) != 0:
+                raise OSError(f"icacls refused {name} on {path}")
+        ssh_dir = os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME)
         if not os.path.isdir(ssh_dir):
             return
         if icacls(self._run, [ssh_dir, "/inheritance:d"]) != 0:
             raise OSError(f"icacls could not keep {ssh_dir} the account's own")
         for name in known_accounts:
             icacls(self._run, [ssh_dir, "/remove:g", name])
+
+
+def folder_grants(shares: list) -> dict:
+    """The right each account takes on each shared folder.
+
+    Args:
+        shares: The shares served, each with its users.
+
+    Returns:
+        Folder to ``{account: right}``, the folders in the shares' order.
+        An account two shares of one folder name takes the change right
+        when either share is writable.
+    """
+    grants: dict = {}
+    for share in shares:
+        right = (
+            SAMBA_WINDOWS_FOLDER_READ
+            if share.is_read_only
+            else SAMBA_WINDOWS_FOLDER_CHANGE
+        )
+        held = grants.setdefault(_folder_key(share.path, grants), {})
+        for name in share.valid_users:
+            if held.get(name) != SAMBA_WINDOWS_FOLDER_CHANGE:
+                held[name] = right
+    return grants
+
+
+def _folder_key(path: str, grants: dict) -> str:
+    """A folder as :func:`folder_grants` keys it: a spelling it already holds."""
+    for held in grants:
+        if _is_same_folder(held, path):
+            return held
+    return path
+
+
+def _is_same_folder(one: str, other: str) -> bool:
+    """Whether two Windows paths name one folder, without regard to case."""
+    return one.rstrip("\\/").lower() == other.rstrip("\\/").lower()
+
+
+def _paths_left(owned_shares: dict, grants: dict) -> list:
+    """The folders of the module's shares that no share serves now.
+
+    Args:
+        owned_shares: Share name to its folder, as the record lists them.
+        grants: The folders served now, as :func:`folder_grants` gives them.
+
+    Returns:
+        Each such folder once, in the record's order.
+    """
+    left: list = []
+    for path in owned_shares.values():
+        if not path or any(_is_same_folder(path, held) for held in grants):
+            continue
+        if not any(_is_same_folder(path, held) for held in left):
+            left.append(path)
+    return left

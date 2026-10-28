@@ -306,6 +306,7 @@ class SambaNativeServerRunner(ModuleRunner):
         )
         self._clock = clock
         self._config: "SambaConfig | None" = None
+        self._left_out: list = []
         self._lock = threading.Lock()
         self._status: "dict | None" = None
         self._status_at = 0.0
@@ -372,8 +373,9 @@ class SambaNativeServerRunner(ModuleRunner):
         )
         if is_sweep:
             record = dict(record, shares={}, accounts=[], passwords={})
+        served = parsed.served_shares()
         shares = dict(record["shares"])
-        shares.update({share.name: share.path for share in parsed.shares})
+        shares.update({share.name: share.path for share in served})
         self._write_record(dict(record, shares=shares))
         refusal = None
         try:
@@ -404,16 +406,28 @@ class SambaNativeServerRunner(ModuleRunner):
             self._forget_status()
         self._write_record(
             {
-                "shares": {share.name: share.path for share in parsed.shares},
+                "shares": {share.name: share.path for share in served},
                 "accounts": accounts,
                 "passwords": passwords,
                 "is_served": True,
             }
         )
         self._config = parsed
+        self._left_out = [share.name for share in parsed.shares if share not in served]
+        if self._left_out:
+            notes.append("left out " + ", ".join(self._left_out))
         self._log("samba: " + "; ".join(notes or ["unchanged"]))
         if refusal is not None:
             raise refusal
+
+    def notice(self) -> dict:
+        """``share_users_unknown {shares}`` while the last apply left shares out."""
+        if not self._left_out:
+            return {}
+        return {
+            "code": "share_users_unknown",
+            "params": {"shares": ", ".join(self._left_out)},
+        }
 
     def _set_passwords(self, config: SambaConfig, held: dict, refused: str) -> dict:
         """Set each account's password that differs from the one set last.
@@ -465,6 +479,7 @@ class SambaNativeServerRunner(ModuleRunner):
         """
         record = self._read_record()
         self._config = None
+        self._left_out = []
         try:
             self._applier.withdraw(record, is_removed=True)
         finally:

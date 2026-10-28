@@ -561,7 +561,7 @@ class NativeServerPlatform(RecordingPlatform):
 
 
 WINDOWS_CONFIG = {
-    "shares": [{"name": "share", "path": "D:\\share"}],
+    "shares": [{"name": "share", "path": "D:\\share", "valid_users": ["ann"]}],
     "users": ["ann"],
     "passwords": {"ann": "pw"},
 }
@@ -701,7 +701,7 @@ def test_a_password_is_set_again_only_when_the_hubs_differs(native):
 
 def test_a_dropped_user_leaves_the_digests_and_comes_back_with_its_password(native):
     native.apply(WINDOWS_CONFIG)
-    native.apply({**WINDOWS_CONFIG, "users": [], "passwords": {}})
+    native.apply({"shares": [], "users": [], "passwords": {}})
 
     assert record_of(native)["passwords"] == {}
 
@@ -913,3 +913,27 @@ def test_the_native_first_apply_sweeps_and_starts_from_an_empty_record(
     assert first[2]["accounts"] == []
     assert second[2]["accounts"] == [] and second[2]["shares"] == {"share": "D:\\share"}
     assert record_of(native)["accounts"] == ["ann"]
+
+
+def test_a_native_share_with_no_user_is_named_on_the_row_and_left_out_of_the_record(
+    native,
+):
+    native.apply(
+        {
+            **WINDOWS_CONFIG,
+            "shares": [
+                *WINDOWS_CONFIG["shares"],
+                {"name": "lab", "path": "D:\\lab", "valid_users": []},
+            ],
+        }
+    )
+
+    assert native.notice() == {
+        "code": "share_users_unknown",
+        "params": {"shares": "lab"},
+    }
+    assert record_of(native)["shares"] == {"share": "D:\\share"}
+
+    native.apply(WINDOWS_CONFIG)
+
+    assert native.notice() == {}

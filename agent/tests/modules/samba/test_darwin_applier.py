@@ -33,7 +33,11 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 CONFIG = SambaConfig.from_dict(
     {
         "shares": [
-            {"name": "media", "path": "/Volumes/data/media"},
+            {
+                "name": "media",
+                "path": "/Volumes/data/media",
+                "valid_users": ["ann", "bob"],
+            },
             {
                 "name": "docs",
                 "path": "/Volumes/data/docs",
@@ -690,3 +694,56 @@ def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
     assert ["dscl", ".", "-delete", "/Users/neutrino-old"] in tools.calls
     assert ["dscl", ".", "-delete", "/Users/bob"] not in tools.calls
     assert notes[:2] == ["swept share old", "swept account neutrino-old"]
+
+
+def test_a_folder_share_with_no_account_has_no_point_and_its_folder_loses_the_entries(
+    applier, tools
+):
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "lab", "path": "/Volumes/data/lab", "valid_users": []},
+                {"name": "ann", "path": "/Users/ann", "valid_users": ["ann"]},
+            ],
+            "users": ["ann"],
+        }
+    )
+    tools.users["ann"] = account()
+
+    applier.apply(config, {"shares": {"lab": "/Volumes/data/lab"}, "accounts": ["ann"]})
+
+    made = [call[call.index("-S") + 1] for call in tools.ran("sharing", "-a")]
+    assert made == ["ann"]
+    taken = [call[-1] for call in tools.ran("chmod", "-a")]
+    assert "/Volumes/data/lab" in taken
+    assert [call[-1] for call in tools.ran("chmod", "+a")] == ["/Users/ann"]
+
+
+def test_each_account_of_a_folder_share_is_granted_the_folder_once(applier, tools):
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {
+                    "name": "lab",
+                    "path": "/Volumes/data/lab",
+                    "valid_users": ["ann", "bob"],
+                },
+                {
+                    "name": "lab_read",
+                    "path": "/Volumes/data/lab",
+                    "is_read_only": True,
+                    "valid_users": ["bob", "carol"],
+                },
+            ],
+            "users": ["ann", "bob", "carol"],
+        }
+    )
+    for name in ("ann", "bob", "carol"):
+        tools.users[name] = account(f"neutrino file share {name}")
+
+    applier.apply(config, {"shares": {}, "accounts": ["ann", "bob", "carol"]})
+
+    granted = [
+        (call[2].split()[0], "write" in call[2]) for call in tools.ran("chmod", "+a")
+    ]
+    assert granted == [("user:ann", True), ("user:bob", True), ("user:carol", False)]
