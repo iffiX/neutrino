@@ -58,11 +58,19 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
 from neutrino_hub.modules.devices.module_releases import is_locked
-from neutrino_hub.modules.clients.ai_keys import ensure_module_key, revoke_module_key
+from neutrino_hub.modules.clients.ai_keys import (
+    ensure_module_key,
+    revoke_instance_keys,
+    revoke_module_key,
+    settle_instance_keys,
+)
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.hermes_webui import ensure_config
 from neutrino_hub.modules.devices.hub_containers import container_modules
-from neutrino_hub.modules.devices.module_table import gateway_module_names
+from neutrino_hub.modules.devices.module_table import (
+    gateway_instance_names,
+    gateway_module_names,
+)
 from neutrino_hub.modules.devices.manifests import (
     entry_params,
     load_module_manifests,
@@ -1029,6 +1037,14 @@ def _set_want(
         elif is_container and want == CHANNEL_MODULE_STATE_ABSENT:
             if module in gateway_module_names():
                 revoke_module_key(runtime.desired_states, key, module)
+        if module in gateway_instance_names():
+            if want == CHANNEL_MODULE_STATE_ABSENT:
+                revoke_instance_keys(runtime.desired_states, key, module)
+            else:
+                device = DeviceRegistry().get(key)
+                settle_instance_keys(
+                    runtime.desired_states, key, module, device.name if device else ""
+                )
         runtime.desired_states.set_want(key, module, want)
         if is_retried:
             DeviceRetryMarks().mark(key, module)

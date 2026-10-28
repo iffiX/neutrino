@@ -48,6 +48,7 @@ def test_the_rows_come_in_the_order_the_machine_page_lists_them():
         "code_server",
         "cloudcli",
         "codeg",
+        "siyuan",
         "podman",
         "hermes_webui",
     ]
@@ -71,12 +72,13 @@ def test_every_row_is_one_of_the_five_kinds():
         "code_server": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "cloudcli": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        "siyuan": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
     }
 
 
-def test_the_account_layer_is_seven_rows_in_table_order():
+def test_the_account_layer_is_eight_rows_in_table_order():
     assert account_layer_names() == (
         "samba",
         "terminal",
@@ -85,9 +87,16 @@ def test_the_account_layer_is_seven_rows_in_table_order():
         "code_server",
         "cloudcli",
         "codeg",
+        "siyuan",
     )
     assert [row.name for row in account_layer_rows()] == list(account_layer_names())
-    assert account_program_names() == ("vscode", "code_server", "cloudcli", "codeg")
+    assert account_program_names() == (
+        "vscode",
+        "code_server",
+        "cloudcli",
+        "codeg",
+        "siyuan",
+    )
     assert [row.name for row in account_program_rows()] == list(account_program_names())
     assert rows_of_kind(DEVICE_MODULE_KIND_AGENT) == (
         module_row("terminal"),
@@ -98,8 +107,9 @@ def test_the_account_layer_is_seven_rows_in_table_order():
 
 def test_each_account_layer_row_seals_its_own_fields():
     """The file share its password, VS Code its token, code-server its
-    secret, CloudCLI its password and its secret, Codeg its secret, the SSH
-    server the account's private key; the terminal seals nothing."""
+    secret, CloudCLI its password and its secret, Codeg its secret, SiYuan its
+    secret and its access code, the SSH server the account's private key; the
+    terminal seals nothing."""
     sealed = {
         row.name: [(field.key, field.opened_key) for field in row.sealed_fields]
         for row in account_layer_rows()
@@ -116,7 +126,14 @@ def test_each_account_layer_row_seals_its_own_fields():
             ("token_secret_sealed", "token_secret"),
         ],
         "codeg": [("secret_sealed", "secret")],
+        "siyuan": [
+            ("secret_sealed", "secret"),
+            ("access_code_sealed", "access_code"),
+        ],
     }
+    assert module_row("siyuan").sealed_field("access_code_sealed").aad == (
+        b"device_siyuan:access_code"
+    )
     assert module_row("ssh_server").sealed_fields[0].kind == SEALED_KIND_SSH_KEY
     assert module_row("samba").sealed_fields[0].kind == SEALED_KIND_TOKEN
     assert module_row("samba").sealed_fields[0].secret_bytes == 24
@@ -142,7 +159,9 @@ def test_hermes_webui_seals_its_secret_and_its_password_and_mints_its_token():
     assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
     assert row.is_gateway_used is True
     assert row.has_forwarder is True
-    assert module_table.gateway_module_names() == ("hermes_webui",)
+    assert module_table.gateway_module_names() == ("siyuan", "hermes_webui")
+    assert module_table.gateway_container_names() == ("hermes_webui",)
+    assert module_table.gateway_instance_names() == ("siyuan",)
 
 
 def test_each_program_run_as_an_account_names_its_token_its_login_and_its_forwarder():
@@ -155,18 +174,21 @@ def test_each_program_run_as_an_account_names_its_token_its_login_and_its_forwar
         "code_server": ("secret_sealed", True),
         "cloudcli": ("token_secret_sealed", True),
         "codeg": ("secret_sealed", True),
+        "siyuan": ("secret_sealed", True),
     }
     assert {name: row.is_login_named for name, row in rows.items()} == {
         "vscode": True,
         "code_server": False,
         "cloudcli": True,
         "codeg": True,
+        "siyuan": True,
     }
     assert {name: row.has_forwarder for name, row in rows.items()} == {
         "vscode": False,
         "code_server": True,
         "cloudcli": True,
         "codeg": True,
+        "siyuan": True,
     }
     assert rows["vscode"].config_head == (("address", ""),)
     assert rows["codeg"].config_head == ()
@@ -187,6 +209,7 @@ def test_each_row_names_its_published_entry():
         "code_server": ("code_server_module", "code-server ({account})"),
         "cloudcli": ("cloudcli_module", "CloudCLI ({account})"),
         "codeg": ("codeg_module", "Codeg ({account})"),
+        "siyuan": ("siyuan_module", "SiYuan ({account})"),
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
     }

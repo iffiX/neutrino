@@ -18,6 +18,13 @@ labelled ``device/<name>/<module>`` and kept sealed in that module's file
 under the device's directory: minted when the module is installed, voided
 at its uninstall and when the device is removed, and handed to the module's
 containers in their environment whatever the AI tools setting says.
+
+One more per enabled account of a program run as an account that uses the
+gateway, SiYuan, labelled ``device/<name>/<module>/<account>`` and kept
+sealed in the account's record of that module's file: minted when the
+account is enabled, voided when it is disabled or removed, at the module's
+uninstall and when the device is removed, and handed to the instance in the
+module's section of the state.
 """
 
 from neutrino_hub.modules.clients.constants import (
@@ -29,6 +36,10 @@ from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LISTEN_HOST
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_DISABLED_ACCOUNTS_KEY,
+    DEVICE_ENABLED_ACCOUNTS_KEY,
+    DEVICE_INSTANCE_GATEWAY_KEY,
+    DEVICE_INSTANCE_GATEWAY_LABEL,
     DEVICE_MODULE_GATEWAY_KEY,
     DEVICE_MODULE_GATEWAY_LABEL,
 )
@@ -216,6 +227,120 @@ def revoke_module_key(store, device_id: str, module: str) -> None:
             return
         held.pop(DEVICE_MODULE_GATEWAY_KEY)
         store.write(device_id, module, held)
+    _apply()
+
+
+def settle_instance_keys(store, device_id: str, module: str, name: str) -> None:
+    """Give each enabled account of one module its own key, and void a disabled account's.
+
+    Args:
+        store: The desired state store, whose file of the module holds the
+            accounts' records.
+        device_id: The device.
+        module: A program run as an account that uses the gateway.
+        name: What the device is called, for each key's label.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
+    minted = []
+    with CONFIG_WRITE_LOCK:
+        held = store.read(device_id, module)
+        written = dict(held)
+        enabled = []
+        for record in held.get(DEVICE_ENABLED_ACCOUNTS_KEY) or []:
+            if not isinstance(record, dict) or not record.get("account"):
+                continue
+            record = dict(record)
+            if CliproxyApiClientKey.from_stored(
+                record.get(DEVICE_INSTANCE_GATEWAY_KEY)
+            ):
+                enabled.append(record)
+                continue
+            label = DEVICE_INSTANCE_GATEWAY_LABEL.format(
+                device=name or device_id, module=module, account=record["account"]
+            )
+            try:
+                key = CliproxyApiClientKey.generated(label)
+            except ValueError:
+                enabled.append(record)
+                continue
+            record[DEVICE_INSTANCE_GATEWAY_KEY] = key.to_dict()
+            minted.append(key)
+            enabled.append(record)
+        written[DEVICE_ENABLED_ACCOUNTS_KEY] = enabled
+        disabled = [
+            {
+                field: value
+                for field, value in record.items()
+                if field != DEVICE_INSTANCE_GATEWAY_KEY
+            }
+            for record in held.get(DEVICE_DISABLED_ACCOUNTS_KEY) or []
+            if isinstance(record, dict)
+        ]
+        if disabled:
+            written[DEVICE_DISABLED_ACCOUNTS_KEY] = disabled
+        if written == held:
+            return
+        store.write(device_id, module, written)
+    _apply(new_key=minted[-1].open_key() if minted else None)
+
+
+def revoke_instance_keys(store, device_id: str, module: str) -> None:
+    """Void every account's key of one module on one device, and hand the gateway the change.
+
+    Args:
+        store: The desired state store.
+        device_id: The device.
+        module: A program run as an account that uses the gateway.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
+    with CONFIG_WRITE_LOCK:
+        held = store.read(device_id, module)
+        written = dict(held)
+        is_changed = False
+        for group in (DEVICE_ENABLED_ACCOUNTS_KEY, DEVICE_DISABLED_ACCOUNTS_KEY):
+            records = []
+            for record in held.get(group) or []:
+                if isinstance(record, dict) and DEVICE_INSTANCE_GATEWAY_KEY in record:
+                    record = {
+                        field: value
+                        for field, value in record.items()
+                        if field != DEVICE_INSTANCE_GATEWAY_KEY
+                    }
+                    is_changed = True
+                records.append(record)
+            if group in held:
+                written[group] = records
+        if not is_changed:
+            return
+        store.write(device_id, module, written)
+    _apply()
+
+
+def instance_key(record: dict) -> str:
+    """One enabled account's key material, minting none.
+
+    Args:
+        record: The account's record in the module's file.
+
+    Returns:
+        The material; empty when the record holds no key or it does not
+        open.
+    """
+    key = CliproxyApiClientKey.from_stored(record.get(DEVICE_INSTANCE_GATEWAY_KEY))
+    if key is None:
+        return ""
+    try:
+        return key.open_key()
+    except ValueError:
+        return ""
+
+
+def apply_keys() -> None:
+    """Hand the gateway the keys as they stand, after a file that held some went away."""
     _apply()
 
 

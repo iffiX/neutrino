@@ -21,6 +21,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.clients.ai_keys import (
+    apply_keys,
     ensure_device_key,
     gateway_models,
     revoke_device_key,
@@ -32,7 +33,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_PASSWORD_OS,
     DEVICE_TERMINAL_MODULE,
 )
-from neutrino_hub.modules.devices.module_table import account_layer_names
+from neutrino_hub.modules.devices.module_table import (
+    account_layer_names,
+    gateway_instance_names,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -197,11 +201,13 @@ def remove_account(
     store = DeviceAccountStore(runtime.desired_states)
     try:
         removed = store.remove(key, request.account)
-        runtime.desired_states.forget_account(key, request.account)
+        was_enabled = runtime.desired_states.forget_account(key, request.account)
     except OSError as error:
         raise _config_unwritable(error) from error
     if removed is not None:
         _delete_login(removed.login_id)
+    if set(was_enabled) & set(gateway_instance_names()):
+        apply_keys()
     _settle_device_key(runtime, key)
     if runtime.agent_sessions.is_online(key):
         push_state(runtime, key)

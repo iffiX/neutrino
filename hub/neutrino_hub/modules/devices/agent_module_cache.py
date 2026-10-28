@@ -30,6 +30,8 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_CACHE_DIR,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
     AGENT_MODULE_PACKAGE_MAGIC,
+    AGENT_MODULE_PACKAGE_TAIL_BYTES,
+    AGENT_MODULE_PACKAGE_TAIL_MAGIC,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
     DEVICE_ARTIFACT_FILE_KINDS,
@@ -76,21 +78,43 @@ class AgentModuleArtifact:
     title: str
 
 
-def looks_like_kind(head: bytes, kind: str) -> bool:
-    """Whether a file's first bytes open like its artifact kind.
+def looks_like_kind(head: bytes, kind: str, tail: bytes = b"") -> bool:
+    """Whether a file's first or last bytes open like its artifact kind.
 
     Args:
         head: The file's first bytes.
         kind: The artifact's kind.
+        tail: The file's last bytes, which a disk image is told by.
 
     Returns:
         True when the head starts with one of the kind's magic prefixes, or
-        when the kind names none.
+        the tail with the kind's trailer, or when the kind names neither.
     """
+    trailer = AGENT_MODULE_PACKAGE_TAIL_MAGIC.get(kind)
+    if trailer:
+        return tail.startswith(trailer)
     magic = AGENT_MODULE_PACKAGE_MAGIC.get(kind)
     if not magic:
         return True
     return any(head.startswith(prefix) for prefix in magic)
+
+
+def file_tail(path, size: int) -> bytes:
+    """A file's last bytes, as many as a disk image's trailer holds.
+
+    Args:
+        path: The file.
+        size: How many bytes it holds.
+
+    Returns:
+        The bytes; empty when the file cannot be read.
+    """
+    try:
+        with open(path, "rb") as stream:
+            stream.seek(max(0, size - AGENT_MODULE_PACKAGE_TAIL_BYTES))
+            return stream.read(AGENT_MODULE_PACKAGE_TAIL_BYTES)
+    except OSError:
+        return b""
 
 
 def format_megabytes(size: int) -> str:
@@ -397,7 +421,12 @@ class AgentModuleCache:
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
         kind = str(artifact.get("kind", ""))
-        if not looks_like_kind(download.head, kind):
+        tail = (
+            file_tail(download.path, download.size)
+            if kind in AGENT_MODULE_PACKAGE_TAIL_MAGIC
+            else b""
+        )
+        if not looks_like_kind(download.head, kind, tail):
             download.discard()
             raise AgentArtifactFetchError(
                 DownloadFailedError.code,

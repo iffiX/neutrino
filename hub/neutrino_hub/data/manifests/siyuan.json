@@ -1,0 +1,205 @@
+{
+  "_comment": "SiYuan: the kernel of the publisher's desktop build, one artifact per platform unpacked under siyuan/app: the Linux tarball without its top directory, the macOS disk image's SiYuan.app/Contents/Resources copied out, and the 7z archive inside the Windows NSIS installer, which the agent reads itself. Each digest is the asset's digest in GitHub's API; the publisher's own release.liuyun.io serves the same files. The Linux kernel is a static-pie ELF, so no entry names a min_version.",
+  "name": "siyuan",
+  "title": "SiYuan",
+  "description": "Notes in the browser from SiYuan, one workspace per account, opened from a client with a token",
+  "publisher": "siyuan-note/siyuan",
+  "license": "AGPL-3.0",
+  "corresponding_source": "https://github.com/siyuan-note/siyuan/tree/v{version}",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's notes stay in {data_dir}.",
+      "zh-CN": "每个账户的笔记留在 {data_dir}。"
+    }
+  },
+  "platforms": {
+    "linux-amd64": {
+      "runner": "siyuan",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "3.8.8",
+          "releases": [
+            {
+              "kind": "github",
+              "sources": [
+                "https://api.github.com"
+              ],
+              "repository": "siyuan-note/siyuan",
+              "tag": "v{version}"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "tar_gz",
+              "directory": "app",
+              "file": "siyuan-{version}-linux.tar.gz",
+              "digest": "sha256:499516eac85cd711a6b1406f075ffa82d640a6a9a55734bebb0c3d3cb6d95247",
+              "sources": [
+                "https://github.com/siyuan-note/siyuan/releases/download/v{version}/{file}",
+                "https://release.liuyun.io/siyuan/{file}"
+              ]
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/siyuan/app/resources/kernel/SiYuan-Kernel --version",
+          "uninstall": {
+            "post_uninstall": [],
+            "is_data_kept": true
+          }
+        }
+      }
+    },
+    "linux-arm64": {
+      "runner": "siyuan",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "3.8.8",
+          "releases": [
+            {
+              "kind": "github",
+              "sources": [
+                "https://api.github.com"
+              ],
+              "repository": "siyuan-note/siyuan",
+              "tag": "v{version}"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "tar_gz",
+              "directory": "app",
+              "file": "siyuan-{version}-linux-arm64.tar.gz",
+              "digest": "sha256:2ac2bd147429425289810d941e52d787e53fbd58fa46e0e20dffc8c5732720f5",
+              "sources": [
+                "https://github.com/siyuan-note/siyuan/releases/download/v{version}/{file}",
+                "https://release.liuyun.io/siyuan/{file}"
+              ]
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/siyuan/app/resources/kernel/SiYuan-Kernel --version",
+          "uninstall": {
+            "post_uninstall": [],
+            "is_data_kept": true
+          }
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "siyuan",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "3.8.8",
+          "releases": [
+            {
+              "kind": "github",
+              "sources": [
+                "https://api.github.com"
+              ],
+              "repository": "siyuan-note/siyuan",
+              "tag": "v{version}"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "dmg",
+              "directory": "app",
+              "file": "siyuan-{version}-mac-arm64.dmg",
+              "digest": "sha256:835257eeed0e661ef9e6d245a430d1188f897539876b9448aa22b802b501826d",
+              "sources": [
+                "https://github.com/siyuan-note/siyuan/releases/download/v{version}/{file}",
+                "https://release.liuyun.io/siyuan/{file}"
+              ],
+              "member": "SiYuan.app/Contents/Resources"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/siyuan/app/kernel/SiYuan-Kernel\" --version",
+          "uninstall": {
+            "post_uninstall": [],
+            "is_data_kept": true
+          }
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "siyuan",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "3.8.8",
+          "releases": [
+            {
+              "kind": "github",
+              "sources": [
+                "https://api.github.com"
+              ],
+              "repository": "siyuan-note/siyuan",
+              "tag": "v{version}"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "dmg",
+              "directory": "app",
+              "file": "siyuan-{version}-mac.dmg",
+              "digest": "sha256:743b826e5fb319ecabcdd1119d046296ab73ddcc0c700ee30818c010c87a5bce",
+              "sources": [
+                "https://github.com/siyuan-note/siyuan/releases/download/v{version}/{file}",
+                "https://release.liuyun.io/siyuan/{file}"
+              ],
+              "member": "SiYuan.app/Contents/Resources"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/siyuan/app/kernel/SiYuan-Kernel\" --version",
+          "uninstall": {
+            "post_uninstall": [],
+            "is_data_kept": true
+          }
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "siyuan",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "3.8.8",
+          "releases": [
+            {
+              "kind": "github",
+              "sources": [
+                "https://api.github.com"
+              ],
+              "repository": "siyuan-note/siyuan",
+              "tag": "v{version}"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "app",
+              "kind": "nsis",
+              "directory": "app",
+              "file": "siyuan-{version}-win.exe",
+              "digest": "sha256:dd96a360af003257caa41eaa8332b723bf3bb9bfae0b6a37e4be8b2c16a046d2",
+              "sources": [
+                "https://github.com/siyuan-note/siyuan/releases/download/v{version}/{file}",
+                "https://release.liuyun.io/siyuan/{file}"
+              ]
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\siyuan\\app\\resources\\kernel\\SiYuan-Kernel.exe\" --version",
+          "uninstall": {
+            "post_uninstall": [],
+            "is_data_kept": true
+          }
+        }
+      }
+    }
+  }
+}

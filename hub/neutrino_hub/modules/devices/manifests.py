@@ -28,6 +28,7 @@ from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_DIRECTORY_KINDS,
     DEVICE_ARTIFACT_FILE_KINDS,
+    DEVICE_ARTIFACT_KIND_DMG,
     DEVICE_ARTIFACT_KIND_IMAGE,
     DEVICE_ARTIFACT_KIND_NPM,
     DEVICE_FEED_KEYS,
@@ -65,9 +66,16 @@ MODULE_KEYS = {
     "license",
     "corresponding_source",
     "is_data_forward_only",
+    "uninstall_data",
     "platforms",
 }
-TOOL_KEYS = (MODULE_KEYS - {"is_data_forward_only"}) | {"is_module", "version"}
+TOOL_KEYS = (MODULE_KEYS - {"is_data_forward_only", "uninstall_data"}) | {
+    "is_module",
+    "version",
+}
+# What ``uninstall_data`` holds, and the languages its line is in.
+UNINSTALL_DATA_KEYS = {"is_deleted", "text"}
+UNINSTALL_DATA_LANGUAGES = {"en", "zh-CN"}
 ENTRY_KEYS = {"runner", "min_version", "install"}
 # What each method's params hold: the keys it must name, and those it may.
 PARAMS_REQUIRED = {
@@ -87,12 +95,20 @@ UNINSTALL_KEYS = {
     DEVICE_METHOD_HUB: {"post_uninstall", "is_data_kept"},
 }
 # The artifact keys each kind names, beside ``name``, ``kind`` and ``digest``.
-FILE_ARTIFACT_KEYS = {"name", "kind", "digest", "file", "sources", "directory"}
+FILE_ARTIFACT_KEYS = {
+    "name",
+    "kind",
+    "digest",
+    "file",
+    "sources",
+    "directory",
+    "member",
+}
 NPM_ARTIFACT_KEYS = {"name", "kind", "digest", "package", "source_set", "hosts"}
 IMAGE_ARTIFACT_KEYS = {"name", "kind", "digest", "sources"}
 # What the recipe keeps of a hub artifact the agent takes from the package
 # stream: the bytes come down the stream, so no source is sent.
-RECIPE_FILE_ARTIFACT_KEYS = ("name", "kind", "digest", "directory")
+RECIPE_FILE_ARTIFACT_KEYS = ("name", "kind", "digest", "directory", "member")
 
 
 def load_module_manifests() -> dict:
@@ -507,6 +523,8 @@ def _check_module(file_name: str, manifest: dict) -> None:
         if isinstance(entry, dict)
     )
     _check_identity(file_name, manifest, is_licensed=is_licensed)
+    if "uninstall_data" in manifest:
+        _check_uninstall_data(file_name, manifest)
     for key, entry in platforms.items():
         where = f"platform {key}"
         _check_keys(file_name, where, entry, ENTRY_KEYS, {"runner", "install"})
@@ -532,6 +550,49 @@ def _check_module(file_name: str, manifest: dict) -> None:
                 file_name, f"{where} method", f"is no install method, not {method!r}"
             )
         _check_params(file_name, where, method, install["params"])
+
+
+def _check_uninstall_data(file_name: str, manifest: dict) -> None:
+    """Refuse an ``uninstall_data`` of another shape, or one that disagrees with the entries.
+
+    Raises:
+        ValueError: For keys outside ``{is_deleted, text}``, a line missing in
+            a language of the panel, or ``is_deleted`` against what an entry's
+            method or ``is_data_kept`` says.
+    """
+    held = manifest["uninstall_data"]
+    _check_keys(
+        file_name, "uninstall_data", held, UNINSTALL_DATA_KEYS, UNINSTALL_DATA_KEYS
+    )
+    if not isinstance(held["is_deleted"], bool):
+        _refuse(file_name, "uninstall_data is_deleted", "must be true or false")
+    _check_keys(
+        file_name,
+        "uninstall_data text",
+        held["text"],
+        UNINSTALL_DATA_LANGUAGES,
+        UNINSTALL_DATA_LANGUAGES,
+    )
+    for language in UNINSTALL_DATA_LANGUAGES:
+        _check_text(
+            file_name, f"uninstall_data text {language}", held["text"][language]
+        )
+    for key, entry in manifest["platforms"].items():
+        install = entry.get("install") if isinstance(entry, dict) else None
+        method = install.get("method") if isinstance(install, dict) else None
+        params = install.get("params") if isinstance(install, dict) else None
+        removal = params.get("uninstall") if isinstance(params, dict) else None
+        is_deleted = method == DEVICE_METHOD_CONTAINER or (
+            method == DEVICE_METHOD_HUB
+            and isinstance(removal, dict)
+            and removal.get("is_data_kept") is False
+        )
+        if method != DEVICE_METHOD_AGENT and held["is_deleted"] != is_deleted:
+            _refuse(
+                file_name,
+                "uninstall_data is_deleted",
+                f"disagrees with platform {key}",
+            )
 
 
 def _check_params(file_name: str, where: str, method: str, params) -> None:
@@ -655,14 +716,26 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 file_name, named, artifact, IMAGE_ARTIFACT_KEYS, IMAGE_ARTIFACT_KEYS
             )
         else:
-            required = FILE_ARTIFACT_KEYS - {"directory"}
+            required = FILE_ARTIFACT_KEYS - {"directory", "member"}
             if kind in DEVICE_ARTIFACT_DIRECTORY_KINDS:
-                required = FILE_ARTIFACT_KEYS
-            allowed = FILE_ARTIFACT_KEYS
+                required = FILE_ARTIFACT_KEYS - {"member"}
+            allowed = FILE_ARTIFACT_KEYS - {"member"}
             if kind == "binary":
-                allowed = FILE_ARTIFACT_KEYS - {"directory"}
+                allowed = FILE_ARTIFACT_KEYS - {"directory", "member"}
+            if kind == DEVICE_ARTIFACT_KIND_DMG:
+                required = required | {"member"}
+                allowed = FILE_ARTIFACT_KEYS
             _check_keys(file_name, named, artifact, allowed, required)
             _check_text(file_name, f"{named} file", artifact["file"])
+            if "member" in artifact:
+                _check_text(
+                    file_name,
+                    f"{named} member",
+                    artifact["member"],
+                    pattern=r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*",
+                )
+                if ".." in artifact["member"].split("/"):
+                    _refuse(file_name, f"{named} member", "must stay inside the image")
             if "directory" in artifact:
                 directory = artifact["directory"]
                 _check_text(

@@ -20,6 +20,7 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
     AgentModuleSendProgress,
     clear_module_cache,
+    file_tail,
     looks_like_kind,
 )
 from neutrino_hub.modules.devices.constants import AGENT_MODULE_FETCH_LIMIT_BYTES
@@ -438,11 +439,23 @@ def test_a_cache_that_cannot_be_written_says_so(manifests, root):
         ("pkg", b"xar!"),
         ("tar_gz", GZIP),
         ("zip", b"PK\x03\x04"),
+        ("nsis", b"MZ"),
     ],
 )
 def test_each_kind_is_recognised_by_its_head(kind, head):
     assert looks_like_kind(head + b"the rest", kind)
     assert not looks_like_kind(b"<html>an error page</html>", kind)
+
+
+def test_a_disk_image_is_recognised_by_its_trailer(tmp_path):
+    image = tmp_path / "app.dmg"
+    image.write_bytes(b"\x00" * 4096 + b"koly" + b"\x00" * 508)
+    page = tmp_path / "page.dmg"
+    page.write_bytes(b"<html>an error page</html>" * 40)
+
+    assert looks_like_kind(b"", "dmg", file_tail(image, image.stat().st_size))
+    assert not looks_like_kind(b"", "dmg", file_tail(page, page.stat().st_size))
+    assert file_tail(tmp_path / "gone.dmg", 600) == b""
 
 
 def test_a_file_whose_head_is_not_its_kind_is_refused_and_kept_nowhere(manifests, root):

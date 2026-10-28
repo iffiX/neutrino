@@ -8,7 +8,8 @@ shape the agent applies, and the account layer: the available accounts,
 each module's enabled accounts with secrets generated once and kept across
 a disable, the file share's shares, users and passwords, the SSH server's
 public keys, the local names and cookie names of the programs behind a
-forwarder, a Windows machine's login passwords, the removal of an account
+forwarder, SiYuan's access codes, gateway keys, gateway address and models
+and the AI forward it opens, a Windows machine's login passwords, the removal of an account
 from every module, and the Containers Run settings naming an account.
 """
 
@@ -335,6 +336,46 @@ def test_a_program_behind_a_forwarder_carries_its_local_name_and_cookie(unlocked
         DEVICE, "codeg", "ann", "secret_sealed"
     )
     assert "port" not in instance
+
+
+def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
+    unlocked, monkeypatch
+):
+    from neutrino_hub.modules.clients import ai_keys
+
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    monkeypatch.setattr(desired_state_module, "gateway_port", lambda: 18317)
+    store = DesiredStateStore()
+    with_accounts(store, "ann")
+    store.set_enabled_accounts(DEVICE, "siyuan", ["ann"])
+    ai_keys.settle_instance_keys(store, DEVICE, "siyuan", "argon")
+    store.set_want(DEVICE, "siyuan", "running")
+
+    managed, _ = store.compose(
+        DEVICE, PLATFORM, machine_slug="argon", ai_models=["m1", "m2"]
+    )
+    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=["m1"])
+
+    config = managed["modules"]["siyuan"]["config"]
+    (instance,) = config["instances"]
+    record = store.read(DEVICE, "siyuan")["accounts"][0]
+    assert instance["access_code"] == store.account_secret(
+        DEVICE, "siyuan", "ann", "access_code_sealed"
+    )
+    assert instance["access_code"] != instance["secret"]
+    assert instance["gateway_key"] == ai_keys.instance_key(record)
+    assert instance["local_name"] == "siyuan-ann.argon.localhost"
+    assert config["gateway_url"] == "http://127.0.0.1:8317"
+    assert config["models"] == ["m1", "m2"]
+    assert own["modules"]["siyuan"]["config"]["gateway_url"] == (
+        "http://127.0.0.1:18317"
+    )
+    assert managed["ai_tools"]["is_forwarded"] is True
+    assert managed["ai_tools"]["gateway_port"] == 0
+    assert own["ai_tools"]["is_forwarded"] is False
+    assert own["ai_tools"]["gateway_port"] == 0
+    assert store.has_gateway_instances(DEVICE)
+    assert "gateway_url" not in store.agent_config(DEVICE, "codeg", {}, PLATFORM)
 
 
 def test_gitea_is_handed_the_local_port_of_its_ssh_entry(unlocked):

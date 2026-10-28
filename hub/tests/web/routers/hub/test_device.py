@@ -1502,7 +1502,7 @@ def test_forgetting_a_device_deletes_its_module_configuration(
     assert not (tmp_path / "devices" / DEVICE).exists()
 
 
-def test_forgetting_a_device_voids_its_container_modules_gateway_keys(
+def test_forgetting_a_device_voids_its_modules_gateway_keys(
     box_api, monkeypatch, tmp_path
 ):
     client, runtime = box_api
@@ -1513,12 +1513,20 @@ def test_forgetting_a_device_voids_its_container_modules_gateway_keys(
     monkeypatch.setattr(
         devices_router,
         "revoke_module_key",
-        lambda store, device_id, module: voided.append((device_id, module)),
+        lambda store, device_id, module: voided.append(("module", device_id, module)),
+    )
+    monkeypatch.setattr(
+        devices_router,
+        "revoke_instance_keys",
+        lambda store, device_id, module: voided.append(
+            ("instances", device_id, module)
+        ),
     )
 
     client.post(f"{DEVICE_PATH}/remove", json={"device_id": DEVICE})
 
-    assert voided == [(DEVICE, "hermes_webui")]
+    assert ("module", DEVICE, "hermes_webui") in voided
+    assert ("instances", DEVICE, "siyuan") in voided
 
 
 @pytest.mark.parametrize("device_id", ["hello", "scan:nonsense", "", "12345"])

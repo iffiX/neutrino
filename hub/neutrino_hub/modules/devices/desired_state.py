@@ -52,7 +52,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_WANTS,
 )
-from neutrino_hub.modules.clients.ai_keys import device_gateway, gateway_port
+from neutrino_hub.modules.clients.ai_keys import (
+    device_gateway,
+    gateway_port,
+    instance_key,
+)
 from neutrino_hub.modules.devices.ai_tools import resolved_tool_configs
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.manifests import (
@@ -85,6 +89,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
     DEVICE_HERMES_WEBUI_MODULE,
+    DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
+    DEVICE_INSTANCE_GATEWAY_KEY,
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
@@ -110,6 +116,8 @@ from neutrino_hub.modules.devices.module_table import (
     SEALED_KIND_SSH_KEY,
     DeviceModuleRow,
     account_layer_rows,
+    gateway_container_names,
+    gateway_instance_names,
     gateway_module_names,
     module_row,
 )
@@ -219,6 +227,8 @@ def account_layer_agent_config(
     account_details: "dict | None" = None,
     machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
     app_slug_of: "dict | None" = None,
+    gateway_url: str = "",
+    models: "list | tuple" = (),
 ) -> dict:
     """What the agent is sent for one account-layer module.
 
@@ -236,13 +246,18 @@ def account_layer_agent_config(
         machine_slug: The slug of the machine's name, for the local names.
         app_slug_of: App id to its slug, as :func:`machine_apps` and
             :func:`app_slugs` give them; None slugs each title alone.
+        gateway_url: Where a module that holds a gateway key per account
+            reaches the gateway on the machine.
+        models: The names the gateway serves, for such a module.
 
     Returns:
         The Terminal module's ``{accounts: [{account, shell_path,
         password}]}``; the file share's ``{shares, users, passwords}``; the
         others' ``{...config_head, instances: [{account, <opened fields>,
         password, local_name, cookie_name}]}``, the last two on a module
-        with a forwarder and ``password`` on a Windows machine alone.
+        with a forwarder and ``password`` on a Windows machine alone; a
+        module that holds a gateway key per account adds each instance's
+        ``gateway_key`` and ``{gateway_url, models}`` beside the instances.
     """
     is_windows = platform.get("os") == DEVICE_PASSWORD_OS
     by_name = {account.account: account for account in available}
@@ -282,6 +297,8 @@ def account_layer_agent_config(
             sent["shell_path"] = by_name[account].shell_path
         if row.is_login_named:
             _with_password(sent, by_name[account], is_windows)
+        if row.name in gateway_instance_names():
+            sent["gateway_key"] = instance_key(record)
         if row.has_forwarder:
             app_id = instance_app_id(row.name, device_id, account)
             made = (app_slug_of or {}).get(app_id) or slug(
@@ -291,7 +308,25 @@ def account_layer_agent_config(
             sent["cookie_name"] = cookie_name(entry_id(app_id, SERVICES_ENTRY_WEB))
         instances.append(sent)
     config["instances"] = instances
+    if row.name in gateway_instance_names():
+        config["gateway_url"] = gateway_url
+        config["models"] = [str(name) for name in models]
     return config
+
+
+def instance_gateway_url(*, is_hub_machine: bool) -> str:
+    """Where a program run as an account reaches the AI gateway on its machine.
+
+    Args:
+        is_hub_machine: Whether the machine is the hub's own.
+
+    Returns:
+        ``http://127.0.0.1:8317``, the agent's forward, on a managed machine;
+        the gateway's own ``listen_port`` in place of 8317 on the hub's.
+    """
+    if is_hub_machine:
+        return f"http://127.0.0.1:{gateway_port()}"
+    return DEVICE_INSTANCE_GATEWAY_FORWARD_URL
 
 
 def _samba_config(
@@ -1083,21 +1118,29 @@ class DesiredStateStore:
             return CHANNEL_MODULE_STATE_STOPPED
         return CHANNEL_MODULE_STATE_RUNNING
 
-    def has_gateway_module(self, key: str) -> bool:
-        """Whether a container module that uses the AI gateway is installed on one device.
+    def has_gateway_module(self, key: str, *, is_container: bool = False) -> bool:
+        """Whether a module that uses the AI gateway is installed on one device.
 
         Args:
             key: The device key.
+            is_container: Whether only a container module counts.
 
         Returns:
             True while ``modules.json`` names such a module with a ``want``
             other than ``absent``.
         """
         modules = self.modules(key)
+        names = gateway_container_names() if is_container else gateway_module_names()
         return any(
             modules[name]["want"] != CHANNEL_MODULE_STATE_ABSENT
-            for name in gateway_module_names()
+            for name in names
             if name in modules
+        )
+
+    def has_gateway_instances(self, key: str) -> bool:
+        """Whether a module that holds a gateway key per account enables an account on one device."""
+        return any(
+            self.enabled_accounts(key, name) for name in gateway_instance_names()
         )
 
     def agent_config(
@@ -1112,6 +1155,7 @@ class DesiredStateStore:
         account_details: "dict | None" = None,
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         app_slug_of: "dict | None" = None,
+        ai_models: "list | tuple" = (),
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -1133,6 +1177,8 @@ class DesiredStateStore:
             machine_slug: The slug of the machine's name, for local names.
             app_slug_of: App id to its slug for this machine; None slugs each
                 title alone.
+            ai_models: The names the gateway serves now, which a module that
+                holds a gateway key per account is sent.
 
         Returns:
             The configuration: an account-layer module as
@@ -1158,6 +1204,12 @@ class DesiredStateStore:
                 account_details=account_details,
                 machine_slug=machine_slug,
                 app_slug_of=app_slug_of,
+                gateway_url=(
+                    instance_gateway_url(is_hub_machine=is_hub_machine)
+                    if name in gateway_instance_names()
+                    else ""
+                ),
+                models=ai_models,
             )
         elif name == DEVICE_GITEA_MODULE:
             config["address"] = address
@@ -1235,6 +1287,7 @@ class DesiredStateStore:
             "account_details": account_details,
             "machine_slug": machine_slug,
             "app_slug_of": slugs,
+            "ai_models": tuple(ai_models),
         }
         modules = {}
         for name, entry in self.modules(key).items():
@@ -1271,6 +1324,7 @@ class DesiredStateStore:
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         switcher = load_tool_manifests().get(DEVICE_AI_SWITCHER_NAME, {})
         is_gateway_module = self.has_gateway_module(key)
+        is_gateway_container = self.has_gateway_module(key, is_container=True)
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
@@ -1285,7 +1339,7 @@ class DesiredStateStore:
                 is_hub_machine=is_hub_machine,
                 is_gateway_module=is_gateway_module,
                 listen_port=(
-                    gateway_port() if is_hub_machine and is_gateway_module else 0
+                    gateway_port() if is_hub_machine and is_gateway_container else 0
                 ),
             ),
         }

@@ -65,6 +65,8 @@ DEVICE_PLATFORM_OS = ("linux", "windows", "darwin")
 DEVICE_ARTIFACT_FILE_KINDS = (
     "tar_gz",
     "zip",
+    "dmg",
+    "nsis",
     "binary",
     "msi",
     "pkg",
@@ -72,6 +74,9 @@ DEVICE_ARTIFACT_FILE_KINDS = (
     "raw_zst",
 )
 DEVICE_ARTIFACT_DIRECTORY_KINDS = ("msi", "pkg", "tar_zst", "raw_zst")
+# The kind that names ``member``, the folder a macOS disk image holds the
+# program in.
+DEVICE_ARTIFACT_KIND_DMG = "dmg"
 DEVICE_ARTIFACT_KIND_NPM = "npm"
 DEVICE_ARTIFACT_KIND_IMAGE = "image"
 # A source set's name, and a variable its ecosystem's tools read the
@@ -127,8 +132,8 @@ AGENT_PACKAGE_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 
 # What each artifact kind starts with, so a page served in a file's place is
 # never kept: a Windows Installer package, a macOS installer package, a gzip
-# stream, a zip, a release binary (ELF, a 64-bit Mach-O or PE) and a zstd
-# frame.
+# stream, a zip, a release binary (ELF, a 64-bit Mach-O or PE), a zstd frame
+# and an NSIS installer, a PE program.
 AGENT_MODULE_PACKAGE_MAGIC = {
     "msi": (b"\xd0\xcf\x11\xe0",),
     "pkg": (b"xar!",),
@@ -137,7 +142,12 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "binary": (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"MZ"),
     "tar_zst": (b"\x28\xb5\x2f\xfd",),
     "raw_zst": (b"\x28\xb5\x2f\xfd",),
+    "nsis": (b"MZ",),
 }
+# What a kind's last bytes start with where its head names nothing: a macOS
+# disk image ends with its 512-byte trailer, which opens with ``koly``.
+AGENT_MODULE_PACKAGE_TAIL_MAGIC = {"dmg": b"koly"}
+AGENT_MODULE_PACKAGE_TAIL_BYTES = 512
 
 # The five kinds of device module the description table sorts every module
 # into: carried by the agent's own package, installed from the system's own
@@ -175,6 +185,7 @@ DEVICE_MODULE_NAMES = (
     "code_server",
     "cloudcli",
     "codeg",
+    "siyuan",
 )
 # The directory under ``config/`` that holds one directory per device.
 DEVICE_CONFIG_DIR_NAME = "devices"
@@ -379,7 +390,23 @@ DEVICE_CODEG_MODULE = "codeg"
 DEVICE_CODEG_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODEG_SECRET_AAD = b"device_codeg:secret"
 DEVICE_CODEG_SECRET_BYTES = 32
-# A token a CloudCLI, code-server or Codeg instance's forwarder takes once:
+# SiYuan, once per account. Each enabled account's record holds, beside the
+# account, the secret its tokens are signed with and the kernel's access
+# code, which the hub generates once and keeps sealed, and while the account
+# is enabled its own key to the AI gateway, the key's record sealed as the
+# gateway's own keys are and labelled ``device/<device>/siyuan/<account>``.
+DEVICE_SIYUAN_MODULE = "siyuan"
+DEVICE_SIYUAN_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_SIYUAN_SECRET_AAD = b"device_siyuan:secret"
+DEVICE_SIYUAN_ACCESS_CODE_KEY = "access_code_sealed"  # scan: allow
+DEVICE_SIYUAN_ACCESS_CODE_AAD = b"device_siyuan:access_code"
+DEVICE_SIYUAN_SECRET_BYTES = 32
+DEVICE_INSTANCE_GATEWAY_KEY = "gateway_key_sealed"  # scan: allow
+DEVICE_INSTANCE_GATEWAY_LABEL = "device/{device}/{module}/{account}"
+# Where a program run as an account reaches the AI gateway on a managed
+# machine: the agent's forward on its loopback.
+DEVICE_INSTANCE_GATEWAY_FORWARD_URL = "http://127.0.0.1:8317"
+# A token a CloudCLI, code-server, Codeg or SiYuan instance's forwarder takes once:
 # ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
 # the expiry eight bytes big-endian in seconds since the epoch, minted for
 # one ``service`` answer; the agent's forwarder checks the same layout.

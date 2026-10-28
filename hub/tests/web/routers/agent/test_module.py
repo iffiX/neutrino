@@ -471,6 +471,7 @@ SUPPORTED_OFF_LINUX = {
     "cloudcli": (True, True),
     "code_server": (False, True),
     "codeg": (True, True),
+    "siyuan": (True, True),
     "gitea": (True, True),
     "podman": (True, True),
     "samba": (True, True),
@@ -1216,3 +1217,31 @@ def test_a_container_module_reads_unknown_until_the_device_reports(containers_ap
     rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
 
     assert {row["name"]: row["state"] for row in rows}["demo"] == "unknown"
+
+
+def test_siyuans_uninstall_voids_its_keys_and_its_install_settles_them(
+    api, monkeypatch
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = WINDOWS
+    called: list = []
+    monkeypatch.setattr(
+        device_modules,
+        "revoke_instance_keys",
+        lambda store, key, module: called.append(("revoke", key, module)),
+    )
+    monkeypatch.setattr(
+        device_modules,
+        "settle_instance_keys",
+        lambda store, key, module, name: called.append(("settle", key, module)),
+    )
+
+    for press in ("install", "uninstall"):
+        answer = client.post(
+            f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "siyuan"}
+        )
+        assert answer.status_code == 200, press
+
+    assert called == [("settle", DEVICE, "siyuan"), ("revoke", DEVICE, "siyuan")]

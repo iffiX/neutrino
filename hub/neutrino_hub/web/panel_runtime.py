@@ -929,18 +929,13 @@ class PanelRuntime:
             The hash and the state.
         """
         key = device if isinstance(device, str) else device.id
-        ai_models = (
-            gateway_models(self.served_models)
-            if self.desired_states.is_ai_tools_enabled(key)
-            else []
-        )
         desired, state_hash = self.desired_states.compose(
             key,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             urls=self._device_urls(key),
             is_hub_machine=self.is_hub_machine(key),
-            ai_models=ai_models,
+            ai_models=self._gateway_models_for(key),
             retry_marks=DeviceRetryMarks().marks(key),
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
@@ -982,7 +977,23 @@ class PanelRuntime:
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
             app_slug_of=app_slugs(machine_apps(self.desired_states, key)),
+            ai_models=self._gateway_models_for(key),
         )
+
+    def _gateway_models_for(self, key: str) -> list:
+        """The names the gateway serves, for a device whose AI tools or SiYuan accounts call it.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The served names; none for a device whose state needs none.
+        """
+        if self.desired_states.is_ai_tools_enabled(
+            key
+        ) or self.desired_states.has_gateway_instances(key):
+            return gateway_models(self.served_models)
+        return []
 
     def _device_urls(self, key: str) -> list:
         """The addresses a device's state names: loopback first for the hub's own.

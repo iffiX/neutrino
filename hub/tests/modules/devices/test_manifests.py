@@ -416,6 +416,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "code_server",
         "codeg",
         "gitea",
+        "siyuan",
         "vscode",
         "hermes_webui",
     ]
@@ -472,6 +473,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "code_server": "coder/code-server",
         "cloudcli": "siteboon/claudecodeui",
         "codeg": "spacering-net/codeg",
+        "siyuan": "siyuan-note/siyuan",
         "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
     }
 
@@ -602,6 +604,7 @@ def test_gitea_resolves_by_machine_and_refuses_the_rest():
     [
         ("cloudcli", "cloudcli\\node\\node.exe"),
         ("codeg", "codeg\\server\\codeg-server.exe"),
+        ("siyuan", "siyuan\\app\\resources\\kernel\\SiYuan-Kernel.exe"),
         ("gitea", "gitea\\gitea.exe"),
         ("vscode", "vscode\\code.exe"),
     ],
@@ -792,6 +795,109 @@ def test_codeg_pins_the_server_bundle_and_cloudclis_node_per_platform():
         "/var/lib/neutrino/agent/codeg/server/codeg-server --version"
     )
     assert resolve_platform_entry(manifest, {**WINDOWS, "arch": "arm64"}) == ("", None)
+
+
+SIYUAN_VERSION = "3.8.8"
+SIYUAN_BUILDS = {
+    "linux-amd64": (
+        "siyuan-{version}-linux.tar.gz",
+        "tar_gz",
+        "499516eac85cd711a6b1406f075ffa82d640a6a9a55734bebb0c3d3cb6d95247",  # scan: allow
+    ),
+    "linux-arm64": (
+        "siyuan-{version}-linux-arm64.tar.gz",
+        "tar_gz",
+        "2ac2bd147429425289810d941e52d787e53fbd58fa46e0e20dffc8c5732720f5",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "siyuan-{version}-mac-arm64.dmg",
+        "dmg",
+        "835257eeed0e661ef9e6d245a430d1188f897539876b9448aa22b802b501826d",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "siyuan-{version}-mac.dmg",
+        "dmg",
+        "743b826e5fb319ecabcdd1119d046296ab73ddcc0c700ee30818c010c87a5bce",  # scan: allow
+    ),
+    "windows-amd64": (
+        "siyuan-{version}-win.exe",
+        "nsis",
+        "dd96a360af003257caa41eaa8332b723bf3bb9bfae0b6a37e4be8b2c16a046d2",  # scan: allow
+    ),
+}
+
+
+def test_siyuan_pins_the_publishers_desktop_build_per_platform_from_two_sources():
+    """One artifact per platform under app, GitHub's release then the
+    publisher's own mirror, each digest GitHub's; the disk image's resources
+    copied out; no floor; the notes kept at an uninstall."""
+    manifest = load_module_manifests()["siyuan"]
+
+    assert manifest["license"] == "AGPL-3.0"
+    assert manifest["corresponding_source"] == (
+        "https://github.com/siyuan-note/siyuan/tree/v{version}"
+    )
+    assert manifest["uninstall_data"] == {
+        "is_deleted": False,
+        "text": {
+            "en": "Each account's notes stay in {data_dir}.",
+            "zh-CN": "每个账户的笔记留在 {data_dir}。",
+        },
+    }
+    assert "web_share" not in manifest
+    assert set(manifest["platforms"]) == set(SIYUAN_BUILDS)
+    for key, (file, kind, digest) in SIYUAN_BUILDS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert params["version"] == SIYUAN_VERSION
+        assert params["releases"] == [
+            {
+                "kind": "github",
+                "sources": ["https://api.github.com"],
+                "repository": "siyuan-note/siyuan",
+                "tag": "v{version}",
+            }
+        ]
+        assert "min_version" not in entry
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert (artifact["name"], artifact["directory"], artifact["kind"]) == (
+            "app",
+            "app",
+            kind,
+        )
+        assert artifact.get("member") == (
+            "SiYuan.app/Contents/Resources" if kind == "dmg" else None
+        )
+        assert artifact["digest"] == f"sha256:{digest}"
+        name = file.format(version=SIYUAN_VERSION)
+        assert artifact_sources(artifact, SIYUAN_VERSION) == [
+            f"https://github.com/siyuan-note/siyuan/releases/download/v3.8.8/{name}",
+            f"https://release.liuyun.io/siyuan/{name}",
+        ]
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+    assert entry_params(manifest["platforms"]["linux-amd64"])["verify"] == (
+        "/var/lib/neutrino/agent/siyuan/app/resources/kernel/SiYuan-Kernel --version"
+    )
+    assert entry_params(manifest["platforms"]["darwin-arm64"])["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/siyuan/app/kernel/'
+        'SiYuan-Kernel" --version'
+    )
+    recipe = module_recipe(manifest["platforms"]["darwin-arm64"])
+    assert recipe["params"]["artifacts"][0]["member"] == (
+        "SiYuan.app/Contents/Resources"
+    )
+    assert "sources" not in recipe["params"]["artifacts"][0]
+
+
+def test_every_shipped_uninstall_data_agrees_with_its_entries(manifests_dir):
+    manifest = valid_manifest()
+    manifest["uninstall_data"] = {
+        "is_deleted": False,
+        "text": {"en": "Data stays.", "zh-CN": "数据留下。"},
+    }
+    write_manifest(manifests_dir, "sample", manifest)
+
+    assert load_module_manifests()["sample"]["uninstall_data"]["is_deleted"] is False
 
 
 def test_containers_pins_podmans_release_per_platform_off_linux():
@@ -1278,6 +1384,35 @@ def _no_artifacts(manifest):
     hub_params(manifest)["artifacts"] = []
 
 
+def _dmg_without_member(manifest):
+    hub_params(manifest)["artifacts"][0]["kind"] = "dmg"
+
+
+def _member_on_a_tarball(manifest):
+    hub_params(manifest)["artifacts"][0]["member"] = "App.app/Contents/Resources"
+
+
+def _member_outside_the_image(manifest):
+    artifact = hub_params(manifest)["artifacts"][0]
+    artifact["kind"] = "dmg"
+    artifact["member"] = "App.app/../../etc"
+
+
+def _uninstall_data_of_another_shape(manifest):
+    manifest["uninstall_data"] = {"is_deleted": False, "line": "x"}
+
+
+def _uninstall_data_in_one_language(manifest):
+    manifest["uninstall_data"] = {"is_deleted": False, "text": {"en": "Data stays."}}
+
+
+def _uninstall_data_deleted_beside_kept_data(manifest):
+    manifest["uninstall_data"] = {
+        "is_deleted": True,
+        "text": {"en": "Data goes.", "zh-CN": "数据会删除。"},
+    }
+
+
 @pytest.mark.parametrize(
     "spoil, said",
     [
@@ -1309,6 +1444,12 @@ def _no_artifacts(manifest):
         (_unknown_system, "solaris-amd64"),
         (_stray_params_key, "url"),
         (_no_artifacts, "artifact"),
+        (_dmg_without_member, "member"),
+        (_member_on_a_tarball, "member"),
+        (_member_outside_the_image, "member"),
+        (_uninstall_data_of_another_shape, "uninstall_data"),
+        (_uninstall_data_in_one_language, "zh-CN"),
+        (_uninstall_data_deleted_beside_kept_data, "disagrees"),
     ],
 )
 def test_the_loader_refuses_a_manifest_outside_the_shapes(spoil, said, manifests_dir):

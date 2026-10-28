@@ -23,7 +23,7 @@ from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
 
 ACCEPTED_AT = "2026-10-05T08:00:00+00:00"
-SEVEN = [
+EIGHT = [
     "samba",
     "terminal",
     "ssh_server",
@@ -31,6 +31,7 @@ SEVEN = [
     "code_server",
     "cloudcli",
     "codeg",
+    "siyuan",
 ]
 
 
@@ -61,13 +62,13 @@ def stored(tmp_path, module: str) -> dict:
     return json.loads(path.read_text())
 
 
-def test_the_table_gives_the_seven_account_layer_modules_a_router_and_no_other():
-    assert list(module_instances.ROUTERS) == SEVEN
+def test_the_table_gives_the_eight_account_layer_modules_a_router_and_no_other():
+    assert list(module_instances.ROUTERS) == EIGHT
     assert "gitea" not in module_instances.ROUTERS
     assert "remote_desktop" not in module_instances.ROUTERS
 
 
-@pytest.mark.parametrize("module", SEVEN)
+@pytest.mark.parametrize("module", EIGHT)
 def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(module):
     paths = sorted(
         (sorted(route.methods - {"HEAD", "OPTIONS"})[0], route.path)
@@ -170,6 +171,52 @@ def test_a_set_enables_the_accounts_and_seals_each_ones_fields_once(
         "" if module in ("terminal", "ssh_server") else "running"
     )
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE] * 3
+
+
+def test_a_siyuan_account_gets_a_gateway_key_while_it_is_enabled(
+    api, tmp_path, monkeypatch
+):
+    from neutrino_hub.modules.clients import ai_keys
+
+    applied: list = []
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: applied.append(kwargs))
+    client, runtime = api
+
+    first = client.post(
+        "/api/agent/module/siyuan/set",
+        json={"device_id": DEVICE, "accounts": ["bob", "alice"]},
+    )
+    held = stored(tmp_path, "siyuan")["accounts"]
+    client.post(
+        "/api/agent/module/siyuan/set", json={"device_id": DEVICE, "accounts": []}
+    )
+    disabled = stored(tmp_path, "siyuan")["disabled"]
+    client.post(
+        "/api/agent/module/siyuan/set", json={"device_id": DEVICE, "accounts": ["bob"]}
+    )
+    again = stored(tmp_path, "siyuan")["accounts"][0]
+
+    assert first.status_code == 200, first.text
+    assert set(held[0]) == {
+        "account",
+        "secret_sealed",
+        "access_code_sealed",
+        "gateway_key_sealed",
+    }
+    assert held[0]["gateway_key_sealed"]["name"].endswith("/siyuan/bob")
+    assert all("gateway_key_sealed" not in record for record in disabled)
+    assert again["secret_sealed"] == held[0]["secret_sealed"]
+    assert again["access_code_sealed"] == held[0]["access_code_sealed"]
+    assert again["gateway_key_sealed"]["id"] != held[0]["gateway_key_sealed"]["id"]
+    assert len(applied) == 3
+    _, module, section = runtime.agent_sessions.validations[0]
+    assert module == "siyuan"
+    assert [instance["account"] for instance in section["instances"]] == [
+        "bob",
+        "alice",
+    ]
+    assert all(instance["gateway_key"] for instance in section["instances"])
+    assert section["gateway_url"] == "http://127.0.0.1:8317"
 
 
 def test_the_agent_checks_the_section_the_state_will_carry(api):

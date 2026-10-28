@@ -2,12 +2,13 @@
 
 ``GET /api/agent/module/<module>`` and ``POST /api/agent/module/<module>/set``
 are served for each account-layer row of the description table: Terminal,
-the file share, the SSH server, VS Code, code-server, CloudCLI and Codeg.
-The view lists every available account with whether the module enables it
-and what the machine reports of its instance; the set replaces the enabled
-accounts, generating each newly enabled account's secrets, and writes
-``want: running`` with it as an apply of a configuration does (protocol.md,
-"The account layer in the state").
+the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and
+SiYuan. The view lists every available account with whether the module
+enables it and what the machine reports of its instance; the set replaces
+the enabled accounts, generating each newly enabled account's secrets, a
+SiYuan account's gateway key among them and voided for an account it
+disables, and writes ``want: running`` with it as an apply of a
+configuration does (protocol.md, "The account layer in the state").
 """
 
 import functools
@@ -20,6 +21,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_VALIDATE,
 )
+from neutrino_hub.modules.clients.ai_keys import apply_keys, settle_instance_keys
 from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
@@ -35,7 +37,9 @@ from neutrino_hub.modules.devices.desired_state import smb_user
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_layer_rows,
+    gateway_instance_names,
 )
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     EnabledAccountRowView,
@@ -169,16 +173,28 @@ def replace_accounts(
             )
         chosen.append(account)
     previous = dict(context.config)
+    is_keyed = row.name in gateway_instance_names()
     try:
         written = runtime.desired_states.set_enabled_accounts(
             context.key, row.name, chosen
         )
+        if is_keyed:
+            device = DeviceRegistry().get(context.key)
+            settle_instance_keys(
+                runtime.desired_states,
+                context.key,
+                row.name,
+                device.name if device else "",
+            )
+            written = runtime.desired_states.read(context.key, row.name)
     except OSError as error:
         raise _config_unwritable(error) from error
     try:
         _validate(runtime, context, written)
     except HTTPException:
         write_module_config(runtime, context.key, row.name, previous)
+        if is_keyed:
+            apply_keys()
         raise
     context.config = written
     if row.name not in DEVICE_AGENT_MODULES:

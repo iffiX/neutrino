@@ -325,3 +325,79 @@ def test_a_locked_vault_mints_no_container_module_key(config_dir, monkeypatch):
 
     assert ai_keys.ensure_module_key(store, "dev-1", "hermes_webui", "argon") is None
     assert store.read("dev-1", "hermes_webui") == {}
+
+
+def test_each_enabled_siyuan_account_gets_its_own_key_and_a_disabled_one_loses_it(
+    module_store, unlocked
+):
+    import yaml
+
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    module_store.write(
+        "dev-1",
+        "siyuan",
+        {
+            "accounts": [{"account": "ann"}, {"account": "bob"}],
+            "disabled": [{"account": "cy", "gateway_key_sealed": {"id": "x"}}],
+        },
+    )
+
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+
+    held = module_store.read("dev-1", "siyuan")
+    ann, bob = held["accounts"]
+    assert held["disabled"] == [{"account": "cy"}]
+    assert ai_keys.instance_key(ann) and ai_keys.instance_key(bob)
+    assert ai_keys.instance_key(ann) != ai_keys.instance_key(bob)
+    keys = {key.name for _, module, key in load_module_keys() if module == "siyuan"}
+    assert keys == {"device/argon/siyuan/ann", "device/argon/siyuan/bob"}
+    rendered = yaml.safe_load((unlocked / "generated" / "cliproxyapi.yaml").read_text())
+    assert ai_keys.instance_key(ann) in rendered["api-keys"]
+
+    first = ai_keys.instance_key(ann)
+    module_store.write(
+        "dev-1", "siyuan", {"accounts": [held["accounts"][1]], "disabled": [ann]}
+    )
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+
+    held = module_store.read("dev-1", "siyuan")
+    assert held["disabled"] == [{"account": "ann"}]
+    rendered = yaml.safe_load((unlocked / "generated" / "cliproxyapi.yaml").read_text())
+    assert first not in rendered["api-keys"]
+    assert ai_keys.instance_key(held["accounts"][0]) in rendered["api-keys"]
+
+
+def test_a_key_already_held_stays_and_an_uninstall_voids_every_one(
+    module_store, unlocked
+):
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    module_store.write("dev-1", "siyuan", {"accounts": [{"account": "ann"}]})
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+    kept = ai_keys.instance_key(module_store.read("dev-1", "siyuan")["accounts"][0])
+
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+    assert ai_keys.instance_key(
+        module_store.read("dev-1", "siyuan")["accounts"][0]
+    ) == (kept)
+
+    ai_keys.revoke_instance_keys(module_store, "dev-1", "siyuan")
+
+    assert module_store.read("dev-1", "siyuan") == {"accounts": [{"account": "ann"}]}
+    assert load_module_keys() == []
+
+
+def test_a_locked_vault_mints_no_siyuan_key(config_dir, monkeypatch):
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config_dir
+    )
+    store = DesiredStateStore()
+    store.write("dev-1", "siyuan", {"accounts": [{"account": "ann"}]})
+
+    ai_keys.settle_instance_keys(store, "dev-1", "siyuan", "argon")
+
+    assert store.read("dev-1", "siyuan") == {"accounts": [{"account": "ann"}]}
+    assert ai_keys.instance_key({"account": "ann"}) == ""

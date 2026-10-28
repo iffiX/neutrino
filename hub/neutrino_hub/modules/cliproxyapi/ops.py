@@ -53,6 +53,8 @@ from neutrino_hub.modules.cliproxyapi.renderer import CliproxyApiConfigRenderer
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CONFIG_DIR_NAME,
+    DEVICE_ENABLED_ACCOUNTS_KEY,
+    DEVICE_INSTANCE_GATEWAY_KEY,
     DEVICE_MODULE_GATEWAY_KEY,
 )
 from neutrino_hub.modules.devices.module_table import gateway_module_names
@@ -74,11 +76,12 @@ def load_config() -> CliproxyApiConfig:
 
 
 def load_module_keys() -> list:
-    """The gateway key of every container module that uses the gateway, on every device.
+    """The gateway key of every module that uses the gateway, on every device.
 
     Returns:
         ``(device_id, module, key)`` for each module file under
-        ``config/devices/`` that holds a sealed key, by device and in the
+        ``config/devices/`` that holds a sealed key, and for each enabled
+        account's key of a program run as an account, by device and in the
         description table's order; none while the directory cannot be read.
     """
     root = json_file.UTILS_CONFIG_DIR / DEVICE_CONFIG_DIR_NAME
@@ -96,11 +99,17 @@ def load_module_keys() -> list:
                 held = read_config(path)
             except (FileNotFoundError, ValueError):
                 continue
-            key = CliproxyApiClientKey.from_stored(
-                held.get(DEVICE_MODULE_GATEWAY_KEY) if isinstance(held, dict) else None
-            )
-            if key is not None:
-                found.append((directory.name, module, key))
+            if not isinstance(held, dict):
+                continue
+            stored = [held.get(DEVICE_MODULE_GATEWAY_KEY)] + [
+                record.get(DEVICE_INSTANCE_GATEWAY_KEY)
+                for record in held.get(DEVICE_ENABLED_ACCOUNTS_KEY) or []
+                if isinstance(record, dict)
+            ]
+            for entry in stored:
+                key = CliproxyApiClientKey.from_stored(entry)
+                if key is not None:
+                    found.append((directory.name, module, key))
     return found
 
 

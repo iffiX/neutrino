@@ -2,7 +2,8 @@
 
 What these pin: an add with a password on a Windows machine stores one
 login holding ``password``, the row references it, and the view says it
-holds one.
+holds one; removing an account a module with a gateway key per account
+enables hands the gateway its keys again.
 """
 
 import json
@@ -53,3 +54,21 @@ def test_a_windows_account_without_a_password_is_refused(api):
     answer = client.post(f"{BASE}/add", json={"device_id": DEVICE, "account": "lab"})
     assert answer.status_code == 400
     assert answer.json()["detail"]["code"] == "credential_missing"
+
+
+def test_removing_an_account_siyuan_enables_hands_the_gateway_its_keys_again(
+    api, monkeypatch
+):
+    client, runtime, _tmp_path = api
+    applied: list = []
+    monkeypatch.setattr(module_account, "apply_keys", lambda: applied.append(True))
+    client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+    runtime.desired_states.set_enabled_accounts(DEVICE, "siyuan", ["lab"])
+
+    answer = client.post(f"{BASE}/remove", json={"device_id": DEVICE, "account": "lab"})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.read(DEVICE, "siyuan")["accounts"] == []
+    assert applied == [True]

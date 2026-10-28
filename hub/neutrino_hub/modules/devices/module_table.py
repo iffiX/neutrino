@@ -4,7 +4,7 @@ A row names the module's kind, its configuration file under
 ``config/devices/<id>/``, whether it runs one instance per enabled account
 (the account layer), the fields the vault seals in each account's record,
 the published entry's ``description_code`` and title, and the panel the
-machine page draws it with. The seven account-layer modules share one
+machine page draws it with. The eight account-layer modules share one
 router, one panel and one state composition, each driven by its row; every
 other kind has its own router and panel and reads its row for the rest.
 """
@@ -45,6 +45,12 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SAMBA_PASSWORD_AAD,
     DEVICE_SAMBA_PASSWORD_BYTES,
     DEVICE_SAMBA_PASSWORD_KEY,
+    DEVICE_SIYUAN_ACCESS_CODE_AAD,
+    DEVICE_SIYUAN_ACCESS_CODE_KEY,
+    DEVICE_SIYUAN_MODULE,
+    DEVICE_SIYUAN_SECRET_AAD,
+    DEVICE_SIYUAN_SECRET_BYTES,
+    DEVICE_SIYUAN_SECRET_KEY,
     DEVICE_SSH_SERVER_KEY_AAD,
     DEVICE_SSH_SERVER_KEY_KEY,
     DEVICE_SSH_SERVER_MODULE,
@@ -62,6 +68,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_GITEA_MODULE,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
+    SERVICES_DESCRIPTION_SIYUAN_MODULE,
     SERVICES_DESCRIPTION_SSH_SERVER_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_GITEA_TITLE,
@@ -128,10 +135,11 @@ class DeviceModuleRow:
             open, or is the field's own value.
         config_head: The fields that lead the module's configuration in the
             state, as ``(key, value)`` pairs.
-        is_gateway_used: Whether the module's containers call the AI
-            gateway, which opens the agent's AI gateway forward, or on the
-            hub's own machine relays the gateway's port, while the module is
-            installed.
+        is_gateway_used: Whether the module calls the AI gateway, which
+            opens the agent's AI gateway forward while the module is
+            installed; a container module's containers also have the
+            gateway's port relayed on the hub's own machine, and a program
+            run as an account holds one key per enabled account.
     """
 
     name: str
@@ -314,6 +322,33 @@ DEVICE_MODULE_ROWS = (
         is_token_minted=True,
     ),
     _row(
+        DEVICE_SIYUAN_MODULE,
+        DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        is_account_layer=True,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_SIYUAN_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_SIYUAN_SECRET_AAD,
+                secret_bytes=DEVICE_SIYUAN_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_SIYUAN_ACCESS_CODE_KEY,
+                opened_key="access_code",
+                aad=DEVICE_SIYUAN_ACCESS_CODE_AAD,
+                secret_bytes=DEVICE_SIYUAN_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_SIYUAN_MODULE,
+        entry_title="SiYuan ({account})",
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        is_login_named=True,
+        has_forwarder=True,
+        token_field=DEVICE_SIYUAN_SECRET_KEY,
+        is_token_minted=True,
+        is_gateway_used=True,
+    ),
+    _row(
         DEVICE_PODMAN_MODULE,
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         description_code=SERVICES_DESCRIPTION_CONTAINER,
@@ -401,12 +436,38 @@ def account_program_rows() -> tuple:
 
 
 def gateway_module_names() -> tuple:
-    """The names of the container modules whose containers call the AI gateway, in the table's order.
+    """The names of the modules that call the AI gateway, in the table's order.
 
     Returns:
         The names.
     """
     return tuple(row.name for row in DEVICE_MODULE_ROWS if row.is_gateway_used)
+
+
+def gateway_container_names() -> tuple:
+    """The names of the container modules whose containers call the AI gateway, in the table's order.
+
+    Returns:
+        The names.
+    """
+    return tuple(
+        row.name
+        for row in DEVICE_MODULE_ROWS
+        if row.is_gateway_used and row.kind == DEVICE_MODULE_KIND_CONTAINER
+    )
+
+
+def gateway_instance_names() -> tuple:
+    """The names of the programs run as an account that hold one gateway key per enabled account.
+
+    Returns:
+        The names.
+    """
+    return tuple(
+        row.name
+        for row in DEVICE_MODULE_ROWS
+        if row.is_gateway_used and row.kind == DEVICE_MODULE_KIND_ACCOUNT_PROGRAM
+    )
 
 
 def account_program_names() -> tuple:
