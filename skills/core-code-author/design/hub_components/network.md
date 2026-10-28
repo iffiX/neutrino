@@ -63,7 +63,9 @@ every mode: a Wake-on-LAN packet is broadcast on each of them, and never on an
 overlay, which has no broadcast domain.
 
 **`server` and `side_gateway` touch nothing at all.** No connection is edited,
-no manager is stopped, no file outside the hub's own roots is written. A
+no manager is stopped, no file outside the hub's own roots is written. The
+hub's package disables one unit in every mode, the dhcpcd unit its own
+dependency enabled ("The system's dhcpcd unit"). A
 kernel switch is flipped only for a rule that needs it: `server` forwards
 nothing and leaves `ip_forward` alone, while `side_gateway` forwards and asks
 for exactly that. `side_gateway`
@@ -1097,7 +1099,9 @@ somebody is holding in another room, that is the whole box gone.
 
 Nothing has to be restored, because nothing was taken away: the managers that
 were stood down are started again from a note of which ones they were, and no
-file of theirs was ever read or written.
+file of theirs was ever read or written. The dhcpcd unit the hub's own
+dependency enabled is the one stood-down unit left disabled ("The system's
+dhcpcd unit").
 
 The resolver file is the one file put back. Router mode replaces
 `/etc/resolv.conf`, and the first write copies what was there to
@@ -1155,9 +1159,12 @@ state, nothing of theirs:
   the machine's own client is stopped before ours starts.
 
   The package to depend on is `dhcpcd-base`, which is the binary with no unit,
-  the same split `dnsmasq-base` is taken for.
+  the same split `dnsmasq-base` is taken for. Ubuntu 22.04 has only
+  `dhcpcd5`, which brings a unit the hub's package disables ("The system's
+  dhcpcd unit").
 
-Both are ordinary dependencies, because installing neither takes anything over.
+Both are ordinary dependencies, because installing neither takes anything over
+apart from that unit.
 Measured on 2026-09-01: Fedora and Arch enable nothing at all, and Debian
 enables one unit, `wpa_supplicant.service`, which runs
 
@@ -1196,6 +1203,29 @@ before any step that starts a unit ordered after it. Stopping it tears
 nothing down, so a restart leaves no gap in the firewall. Removing the
 package and `nhub reset all` hand the firewall back, firewalld's entries
 included.
+
+### The system's dhcpcd unit
+
+The hub's dependency `dhcpcd-base | dhcpcd5` installs `dhcpcd5` on Ubuntu
+22.04, the one supported release without `dhcpcd-base`. The maintainer script
+of `dhcpcd5` enables `dhcpcd.service` and starts nothing. From the next boot
+that unit runs dhcpcd on every interface, beside the machine's own manager.
+
+Measured on 2026-10-28 on Ubuntu 22.04 in `server` mode, with a static address
+under systemd-networkd and no DHCP server on the wire. At boot dhcpcd put a
+169.254 address on the port and replaced the default route with one over that
+address. It also claimed the Podman bridge and each container's veth link.
+The box lost the outside and its resolver.
+
+| Rule | Reason |
+| --- | --- |
+| The `.deb`'s postinst, at every `configure`, disables `dhcpcd.service` when a package the hub names for dhcpcd (`dhcpcd-base`, `dhcpcd5`) ships the unit and apt marks that package automatically installed. | The automatic mark records that a dependency brought the package in. apt writes it before dpkg runs any postinst, and a hub first installed as 0.5.2 still has it at its upgrade. |
+| A machine whose `dhcpcd.service` is its own manager keeps it. | On Debian 12, Ubuntu 24.04 and Raspberry Pi OS bookworm the unit belongs to `dhcpcd`, a package the hub does not name. A `dhcpcd5` installed by hand is marked manual. |
+| The test reads apt's record of who installed the package, and no other manager's state. | A manager can be active and drive no ethernet: Ubuntu ships NetworkManager restricted to Wi-Fi and WWAN ("What was measured"). A test of what is active reads it as a second manager beside dhcpcd. |
+| The unit is disabled and never stopped. A client already running keeps running until the next boot. | `dhcpcd5` never starts its unit at install, so on a first install it has not run. On a box where it runs, a stop with Ubuntu's `persistent` leaves every address and route dhcpcd set, which repairs nothing. A stop without `persistent` takes off every address dhcpcd set, and one of them can be the address the upgrading session uses. |
+| The rule holds in every mode. | The dependency is installed in every mode. In `router` mode a takeover already masks a running client, and a disable of a masked unit changes nothing. |
+| The hand-back unmasks this unit and disables it, and never starts it. | A takeover under 0.5.2 masked the running client with the machine's manager and recorded both. Started again, it runs beside the manager it was stood down with. |
+| The `.rpm` and the Arch package have no such step. | The `dhcpcd` of EPEL and of Arch ships its unit disabled: the RHEL presets disable a unit they do not name, and pacman enables none. |
 
 ### Neither engine's configuration can be checked before it is applied
 
