@@ -1,6 +1,6 @@
 """Fixed values of the Ayakaleaf module."""
 
-# The module's name on the wire, which names its record's directory and file.
+# The module's name on the wire. It names its record's directory and file.
 AYAKALEAF_NAME = "ayakaleaf"
 
 # The port the agent takes the forwarder's port from, the first free one up.
@@ -43,8 +43,8 @@ AYAKALEAF_TEX_COLLECTIONS = (
     "collection-xetex",
     "collection-latexrecommended",
 )
-# What ``tlmgr`` runs from one source, in order: its own update, which a
-# repository newer than the image's ``tlmgr`` needs, then the collections.
+# What ``tlmgr`` runs from one source, in order: its own update, then the
+# collections. A ``tlmgr`` older than the repository refuses the install.
 AYAKALEAF_TEX_VERBS = (
     ("update", "--self"),
     ("install", *AYAKALEAF_TEX_COLLECTIONS),

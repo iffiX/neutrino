@@ -32,8 +32,8 @@ PODMAN_UNIT_STOP_MARGIN_S = 60
 PODMAN_UNIT_START_TIMEOUT_S = 900
 # The longest stop timeout a hub container may name.
 PODMAN_STOP_TIMEOUT_MAX_S = 3600
-# The exit code a container that ends on the stop's SIGTERM gives, which a
-# unit counts as a clean stop, and the highest exit code there is.
+# The exit code of a container that ends on the stop's SIGTERM, a clean stop
+# for its unit, and the highest exit code there is.
 PODMAN_STOP_EXIT_CODE = 143
 PODMAN_EXIT_CODE_MAX = 255
 PODMAN_CGROUPS = "split"

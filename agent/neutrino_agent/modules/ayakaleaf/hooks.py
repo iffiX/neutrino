@@ -637,8 +637,8 @@ class AyakaleafHooks(ContainerHooks):
         self._config: "AyakaleafConfig | None" = None
         self._source_sets: dict = {}
         self._forwarder = None
-        # The guests made, as the record keeps them, which the forwarder
-        # signs a visitor in as.
+        # The guests made, as the record keeps them. The forwarder signs a
+        # visitor in as one of them.
         self._guests: tuple = ()
         self._replica_since: "float | None" = None
         self._is_resumed = False
