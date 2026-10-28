@@ -735,7 +735,9 @@ class ForwardRequest:
         headers: ``((name, value), ...)`` as the request carried them.
         token: What ``?tkn=`` held, empty for none.
         take_token: Spends the token: True when it verifies and was never
-            spent, so a module's rule may trade it for its own login.
+            spent, so a module's rule may trade it for its own login. A
+            ``secret`` keyword checks it under that secret in place of the
+            instance's own.
     """
 
     method: str
@@ -1114,19 +1116,24 @@ class InstanceForwarder:
         upstream = self._open_upstream()
         return ConnectionReader(upstream) if upstream is not None else None
 
-    def take_token(self, token: str) -> bool:
+    def take_token(self, token: str, *, secret: "str | None" = None) -> bool:
         """Whether a token verifies and was never spent; spends it if so.
 
         Args:
             token: What ``?tkn=`` held.
+            secret: The secret it is checked under; None is this instance's
+                own.
 
         Returns:
-            True for a token signed with this instance's secret, whose
-            expiry is ahead and no further than the horizon, and whose
-            nonce was not accepted before.
+            True for a token signed with the secret, whose expiry is ahead
+            and no further than the horizon, and whose nonce was not
+            accepted before; False for an empty secret.
         """
         now = self._clock()
-        secret = str(self.record.get(self._hooks.secret_field, "") or "")
+        if secret is None:
+            secret = str(self.record.get(self._hooks.secret_field, "") or "")
+        if not secret:
+            return False
         with self._lock:
             return take_token(token, secret=secret, now=now, spent=self._spent)
 

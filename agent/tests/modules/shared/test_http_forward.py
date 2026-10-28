@@ -874,3 +874,20 @@ def test_the_forwarder_renames_the_cookie_toward_the_page_websocket_included():
     assert received.startswith(b"HTTP/1.1 101")
     assert b"Cookie: siyuan=v\r\n" in page.requests[1]
     assert refused_answer.startswith(b"HTTP/1.1 401")
+
+
+def test_a_token_is_checked_under_the_secret_given_and_spent_once():
+    forwarder = forwarder_for(DemoHooks(1), free_port(), clock=time.time)
+    other = mint_token("guest-secret", expiry=int(time.time()) + 60, nonce=b"n" * 16)
+
+    assert forwarder.take_token(other) is False
+    assert forwarder.take_token(other, secret="wrong") is False
+    assert forwarder.take_token(other, secret="guest-secret") is True
+    assert forwarder.take_token(other, secret="guest-secret") is False
+
+
+def test_an_empty_secret_takes_no_token():
+    forwarder = forwarder_for(DemoHooks(1), free_port(), clock=time.time)
+    token = mint_token("", expiry=int(time.time()) + 60, nonce=os.urandom(16))
+
+    assert forwarder.take_token(token, secret="") is False
