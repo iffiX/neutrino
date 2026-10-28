@@ -29,9 +29,10 @@ new floor is written down.
 
 Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
 reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
-(`hub/neutrino_hub/system/constants.py:134`): Ubuntu has the first name from
-24.04 and the same daemon in the second before it, whose unit the takeover
-stands down with every other manager's. One table spells the names for every
+(`hub/neutrino_hub/system/constants.py:197`): Ubuntu has the first name from
+24.04 and the same daemon in the second before it, whose `dhcpcd.service` the
+`.deb`'s postinst disables ([hub_components/network.md](hub_components/network.md),
+"The system's dhcpcd unit"). One table spells the names for every
 family, and both the control field of the `.deb` and the packages `nhub setup`
 checks read it (`hub/neutrino_hub/system/package_manager.py:420`), so a
 machine installs and is checked against whichever of the two names its
