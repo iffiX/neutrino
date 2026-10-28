@@ -5,7 +5,8 @@ release, and hands it to `neutrino_hub_update`; what these check is that the
 unit installs, holds its gate, and writes the record the panel reads, and
 that a gate which cannot pass puts the previous package back. Installing the
 same version is what makes the first possible with one package to hand; a
-plan whose target version cannot come true is what makes the second.
+gate held for a unit that starts only once the rollback begins is what makes
+the second.
 
 Run with `--package`, on a box that is already set up; the runner does it as
 its own phase, after the reinstall.
@@ -25,6 +26,9 @@ HUB_PYTHON = "/opt/neutrino/hub/python/bin/python3"
 # An install, a gate of three minutes, and the same again for the rollback.
 UPDATE_SETTLE_S = 10 * 60
 LIVE_UNITS = ("neutrino_hub_web", "neutrino_hub_xray", "neutrino_hub_dnsmasq")
+# A transient unit the rollback's gate holds for. It is started once the
+# record reads rolling_back, so the first gate fails and the rollback's passes.
+GATE_UNIT = "neutrino_itest_gate"
 
 
 def read_state() -> dict:
@@ -32,18 +36,23 @@ def read_state() -> dict:
         return json.load(stream)
 
 
-def wait_settled() -> dict:
-    """The record once the unit has written a final stage."""
+def wait_stage(stages: tuple) -> dict:
+    """The record once the unit has written one of the stages."""
     deadline = time.monotonic() + UPDATE_SETTLE_S
     while time.monotonic() < deadline:
         try:
             record = read_state()
         except (OSError, ValueError):
             record = {}
-        if record.get("stage") in ("installed", "rolled_back", "failed"):
+        if record.get("stage") in stages:
             return record
         time.sleep(2.0)
-    raise AssertionError(f"the update never settled: {read_state()}")
+    raise AssertionError(f"the update never reached {stages}: {read_state()}")
+
+
+def wait_settled() -> dict:
+    """The record once the unit has written a final stage."""
+    return wait_stage(("installed", "rolled_back", "failed"))
 
 
 @pytest.fixture(scope="module")
@@ -103,11 +112,12 @@ def test_the_package_stays_as_the_next_rollback(updated, package):
 
 @pytest.fixture(scope="module")
 def rolled_back(updated, package):
-    """The box, after a plan whose target version can never come true.
+    """The box, after a plan whose gate cannot pass until the rollback.
 
-    The same package is installed and gated on version 9.9.9, which no
-    package prints, so the gate fails and the unit installs the rollback,
-    which is that same package gated on the version it does print.
+    The same package is installed and gated on the panel and on
+    ``GATE_UNIT``, which is not running, so the gate fails and the unit
+    installs the rollback. ``GATE_UNIT`` starts once the record reads
+    rolling_back, and the rollback's gate passes.
     """
     import os
 
@@ -128,22 +138,33 @@ from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 from neutrino_hub.system.machine import distribution_family
 installer = HubUpdateInstaller(checker=HubReleaseChecker(), state=HubUpdateStateFile())
 plan = HubUpdatePlan(
-    from_version=HUB_VERSION, to_version="9.9.9", package=Path({staged!r}),
+    from_version=HUB_VERSION, to_version=HUB_VERSION, package=Path({staged!r}),
     rollback=Path({staged!r}), family=distribution_family(), port={port},
     https_port={https_port},
-    units=("neutrino_hub_web",), started_at="2026-01-01T00:00:00Z",
+    units=("neutrino_hub_web", {GATE_UNIT!r}), started_at="2026-01-01T00:00:00Z",
 )
 installer.launch(plan)
 """
+    subprocess.run(["systemctl", "stop", GATE_UNIT], capture_output=True)
     result = subprocess.run([HUB_PYTHON, "-c", snippet], capture_output=True, text=True)
     assert result.returncode == 0, (result.stderr or result.stdout).strip()
-    return wait_settled()
+    try:
+        wait_stage(("rolling_back", "installed", "rolled_back", "failed"))
+        subprocess.run(
+            ["systemd-run", f"--unit={GATE_UNIT}", "sleep", str(UPDATE_SETTLE_S)],
+            capture_output=True,
+        )
+        yield wait_settled()
+    finally:
+        subprocess.run(["systemctl", "stop", GATE_UNIT], capture_output=True)
 
 
 def test_a_gate_that_cannot_pass_puts_the_previous_package_back(rolled_back):
     assert rolled_back["stage"] == "rolled_back", rolled_back
     assert rolled_back["reason"] == "health_gate_failed"
-    assert "version=" in rolled_back["output"]
+    steps = rolled_back["steps"]
+    assert any(step.startswith("panel did not answer") for step in steps), steps
+    assert any(step.startswith("rolled back to") for step in steps), steps
 
 
 def test_the_box_answers_after_the_rollback(rolled_back, panel, request):
