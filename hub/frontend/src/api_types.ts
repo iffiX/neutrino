@@ -1143,6 +1143,8 @@ export interface DeviceModuleView {
   name: string;
   /** The manifest's title. */
   title: string;
+  /** The install method of its entry for the machine's platform. */
+  method: string;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */
   want: string;
   state: string;
@@ -1180,6 +1182,9 @@ export interface ModuleUninstallData {
 export interface DeviceModuleListView {
   modules: DeviceModuleView[];
   is_agent_online: boolean;
+  /** Set on Windows and macOS while the container modules need more memory
+   * than the Podman machine has; null otherwise. */
+  memory_need: PodmanMemoryNeed | null;
 }
 
 /** A request naming one device. */
@@ -2199,6 +2204,16 @@ export interface PodmanMachineState {
   memory_gib: number;
   /** The size of its disk now, the least a disk limit can be. */
   disk_gib: number;
+  /** The memory a 0 in the Run settings gives on this computer. */
+  default_memory_gib: number;
+}
+
+/** The memory the machine's container modules need, beside the Podman
+ * machine's memory. */
+export interface PodmanMemoryNeed {
+  /** The sum of their `memory_mib`, in whole GiB rounded up. */
+  need_gib: number;
+  memory_gib: number;
 }
 
 export interface PodmanSettings {
@@ -2217,6 +2232,9 @@ export interface PodmanSettings {
   machine: PodmanMachine | null;
   /** The Podman machine as last reported; null until one is. */
   machine_state: PodmanMachineState | null;
+  /** Set on Windows and macOS while the container modules need more memory
+   * than the Podman machine has; null otherwise. */
+  memory_need: PodmanMemoryNeed | null;
 }
 
 /** Podman on one device: its settings, and where the module stands there. */

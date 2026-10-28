@@ -168,6 +168,12 @@ const HERMES_MODULE = "hermes_webui";
 /** The module whose tab says the owner installs it and its two databases. */
 const AYAKALEAF_MODULE = "ayakaleaf";
 
+/** The method of a module whose containers run on Containers. */
+const CONTAINER_METHOD = "container";
+
+/** The wants of a module the machine is not asked to have. */
+const UNWANTED = ["", "absent"];
+
 /** The modules whose first Configure imports what the machine already has. */
 const IMPORTING_MODULES = ["gitea", "podman"];
 
@@ -482,6 +488,12 @@ export function MachineModules({
     activeRow.state === "failed" &&
     CONFIGURING_WANTS.includes(activeRow.want);
   const termsView = terms.data;
+  const memoryNeed = modules.data.memory_need;
+  const isMemoryShort =
+    memoryNeed !== null &&
+    activeRow !== undefined &&
+    activeRow.method === CONTAINER_METHOD &&
+    !UNWANTED.includes(activeRow.want);
   const isTermsGated =
     activeModule === TERMS_MODULE && termsView?.is_terms_accepted !== true;
 
@@ -570,6 +582,17 @@ export function MachineModules({
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
                     {t("ui.modules.agent_offline")}
+                  </div>
+                </div>
+              )}
+              {isMemoryShort && (
+                <div className="notice notice--warn">
+                  <Icon name="alert" size={15} />
+                  <div className="notice_body">
+                    {t("ui.modules.memory_need", {
+                      memory: memoryNeed.memory_gib,
+                      need: memoryNeed.need_gib,
+                    })}
                   </div>
                 </div>
               )}

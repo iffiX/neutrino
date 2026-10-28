@@ -20,9 +20,10 @@ import "./containers_run_settings.css";
 /**
  * The Run settings of Containers on a Windows or macOS machine: the
  * available account whose Podman machine runs the containers, and the
- * machine's CPUs, memory and disk limit, each 0 for Podman's default except
- * the disk limit on Windows, which is at least 1. On Windows the machine
- * starts with the login the account's form holds.
+ * machine's CPUs, memory and disk limit, each 0 for the default except the
+ * disk limit on Windows, which is at least 1. On Windows the machine starts
+ * with the login the account's form holds. While the container modules need
+ * more memory than the machine has, the memory field advises their need.
  *
  * The disk limit starts at the disk's size now, as the machine reported it,
  * the way Podman Desktop's edit form for a machine holds its disk size. An
@@ -93,6 +94,9 @@ export function ContainersRunSettings({
   const leastDisk = isWindows ? Math.max(1, currentDisk) : currentDisk;
   const isShrunk = draft.disk_gib !== 0 && draft.disk_gib < currentDisk;
   const isDiskMissing = isWindows && draft.disk_gib < 1;
+  const memoryNeed = saved.memory_need;
+  const isMemoryShort =
+    memoryNeed !== null && draft.memory_gib < memoryNeed.need_gib;
   const diskError = isDiskMissing
     ? t("code.machine_disk_invalid", { disk_gib: draft.disk_gib })
     : isShrunk
@@ -175,6 +179,13 @@ export function ContainersRunSettings({
               })
             }
           />
+          {isMemoryShort && (
+            <span className="field_hint">
+              {t("ui.containers.run_memory_need", {
+                need: memoryNeed.need_gib,
+              })}
+            </span>
+          )}
         </label>
         <label className="field">
           <span className="field_label">{t("ui.containers.run_disk")}</span>
