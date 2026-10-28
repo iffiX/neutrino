@@ -5,7 +5,7 @@ temp=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR) && export TMPDIR="$temp"
 PATH="/opt/podman/bin:$PATH"
 while :; do
     state=$(podman machine inspect --format '{{.State}}' podman-machine-default 2>/dev/null)
-    if [ "$state" != running ]; then
+    if [ -n "$state" ] && [ "$state" != running ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') the machine is \"$state\", starting it"
         if ! podman machine start podman-machine-default; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') the start failed, stopping the machine and starting it once more"

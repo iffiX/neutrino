@@ -41,6 +41,17 @@ def test_the_windows_keeper_deletes_the_socket_before_each_start_and_retries_onc
     assert lines[-2:] == ["ping -n 31 127.0.0.1 >nul", "goto loop"]
 
 
+def test_a_state_the_keeper_cannot_read_waits_for_the_next_round():
+    windows = keeper_script(
+        os_name="windows", binary=WINDOWS_BINARY, provider="wsl"
+    ).splitlines()
+    darwin = keeper_script(os_name="darwin", binary=DARWIN_BINARY, provider="applehv")
+
+    read = next(i for i, line in enumerate(windows) if "machine inspect" in line)
+    assert windows[read + 1] == 'if "%STATE%"=="" goto wait'
+    assert 'if [ -n "$state" ] && [ "$state" != running ]; then' in darwin
+
+
 def test_the_mac_keeper_is_the_golden_script():
     script = keeper_script(os_name="darwin", binary=DARWIN_BINARY, provider="applehv")
 

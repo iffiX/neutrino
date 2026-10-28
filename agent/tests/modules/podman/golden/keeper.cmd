@@ -7,6 +7,7 @@ set "SOCKET=%TEMP%\podman\podman-machine-default-api.sock"
 :loop
 set "STATE="
 for /f "usebackq delims=" %%s in (`podman machine inspect --format "{{.State}}" podman-machine-default 2^>nul`) do set "STATE=%%s"
+if "%STATE%"=="" goto wait
 if /i "%STATE%"=="running" goto wait
 echo %date% %time% the machine is "%STATE%", starting it
 if exist "%SOCKET%" del /q "%SOCKET%"

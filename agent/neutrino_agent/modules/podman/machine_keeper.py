@@ -5,7 +5,8 @@ task ``neutrino_podman_<account>`` under the account's login on Windows,
 the LaunchDaemon ``com.neutrino.podman.<account>`` with ``UserName`` on
 macOS. Its script loops by itself, since Task Scheduler did not start a
 task again after its program exited: every 30 seconds it reads the
-machine's state and starts the machine when it is not running. On Windows
+machine's state and starts the machine when it is not running. A state it
+cannot read is unknown, and the keeper waits for the next round. On Windows
 each start first deletes the socket file a restart with the machine running
 leaves behind, and a start that fails is followed by a stop and one more
 start, so Podman moves an ssh port that fell into a range Windows reserved
@@ -46,6 +47,7 @@ set "SOCKET={socket}"
 :loop
 set "STATE="
 for /f "usebackq delims=" %%s in (`podman machine inspect --format "{{{{.State}}}}" {machine} 2^>nul`) do set "STATE=%%s"
+if "%STATE%"=="" goto wait
 if /i "%STATE%"=="running" goto wait
 echo %date% %time% the machine is "%STATE%", starting it
 if exist "%SOCKET%" del /q "%SOCKET%"
@@ -70,7 +72,7 @@ temp=$({temp_dir_command}) && export {temp_dir_variable}="$temp"
 PATH="{program_dir}:$PATH"
 while :; do
     state=$(podman machine inspect --format '{{{{.State}}}}' {machine} 2>/dev/null)
-    if [ "$state" != running ]; then
+    if [ -n "$state" ] && [ "$state" != running ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') the machine is \\"$state\\", starting it"
         if ! podman machine start {machine}; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') the start failed, stopping the machine and starting it once more"
