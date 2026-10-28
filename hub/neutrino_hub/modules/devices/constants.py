@@ -334,6 +334,8 @@ DEVICE_MODULE_RELEASES_VERSIONS_MAX = 50
 # are sent the Run settings, ``machine`` in ``podman.json``.
 DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")
 DEVICE_PODMAN_MACHINE_KEY = "machine"
+# A manifest's ``memory_mib`` against the Run settings' whole GiB.
+DEVICE_MIB_PER_GIB = 1024
 # The key a guest_account module's state holds its guests under, and the
 # fields of each guest.
 DEVICE_GUESTS_KEY = "guests"

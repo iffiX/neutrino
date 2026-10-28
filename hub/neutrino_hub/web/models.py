@@ -2272,6 +2272,15 @@ class DeviceServicesView(BaseModel):
     rdp: dict = Field(default_factory=dict)
 
 
+class PodmanMemoryNeedView(BaseModel):
+    """The memory the machine's container modules need, beside the Podman
+    machine's memory."""
+
+    # The sum of their ``memory_mib``, in whole GiB rounded up.
+    need_gib: int
+    memory_gib: int
+
+
 class DeviceModuleListView(BaseModel):
     """Every module a device could run, with its state.
 
@@ -2284,6 +2293,9 @@ class DeviceModuleListView(BaseModel):
     modules: list[DeviceModuleView] = Field(default_factory=list)
     is_agent_managed: bool = False
     is_agent_online: bool = False
+    # Set on Windows and macOS while the container modules need more memory
+    # than the Podman machine has; None otherwise.
+    memory_need: PodmanMemoryNeedView | None = None
 
 
 class DeviceModuleRequest(BaseModel):
@@ -2702,6 +2714,8 @@ class PodmanMachineStateView(BaseModel):
     memory_gib: float = 0
     # The size of its disk now, the least a disk limit can be.
     disk_gib: float = 0
+    # The memory a 0 in the Run settings gives on this computer.
+    default_memory_gib: int = 0
 
 
 class PodmanSettingsView(BaseModel):
@@ -2721,6 +2735,9 @@ class PodmanSettingsView(BaseModel):
     machine: PodmanMachineView | None = None
     # The Podman machine as last reported; None until one is.
     machine_state: PodmanMachineStateView | None = None
+    # Set on Windows and macOS while the container modules need more memory
+    # than the Podman machine has; None otherwise.
+    memory_need: PodmanMemoryNeedView | None = None
 
 
 class PodmanDeviceView(ModuleDeviceFields, PodmanSettingsView):

@@ -51,6 +51,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
     DEVICE_MODULE_CATALOG_PATH,
+    DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MODULE,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
@@ -68,6 +69,7 @@ from neutrino_hub.modules.clients.ai_keys import (
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.hub_containers import container_modules
+from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
     gateway_instance_names,
     gateway_module_names,
@@ -97,6 +99,7 @@ from neutrino_hub.web.models import (
     ModuleVersionEntryView,
     ModuleVersionRequest,
     ModuleVersionView,
+    PodmanMemoryNeedView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -234,6 +237,7 @@ def list_modules(
         modules=modules,
         is_agent_managed=device.is_managed,
         is_agent_online=runtime.agent_sessions.is_online(key),
+        memory_need=podman_memory_need(runtime, key),
     )
 
 
@@ -702,6 +706,32 @@ def module_status(
         "params": dict(reported.get("params") or {}),
         "details": dict(details),
     }
+
+
+def podman_memory_need(runtime: PanelRuntime, key: str) -> PodmanMemoryNeedView | None:
+    """The memory to advise for one machine's Podman machine.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+
+    Returns:
+        The container modules' need beside the Podman machine's memory, on
+        Windows and macOS while the need passes it; None otherwise.
+    """
+    stored = runtime.desired_states.read(key, DEVICE_PODMAN_MODULE).get(
+        DEVICE_PODMAN_MACHINE_KEY
+    )
+    reported = module_status(runtime, key, DEVICE_PODMAN_MODULE)["details"].get(
+        DEVICE_PODMAN_MACHINE_KEY
+    )
+    need = memory_need(
+        runtime.desired_states.modules(key),
+        os_name=str(runtime.device_platform.get(key, {}).get("os", "") or ""),
+        stored=stored if isinstance(stored, dict) else {},
+        reported=reported if isinstance(reported, dict) else {},
+    )
+    return PodmanMemoryNeedView(**need) if need is not None else None
 
 
 def panel_details(details: dict) -> dict:

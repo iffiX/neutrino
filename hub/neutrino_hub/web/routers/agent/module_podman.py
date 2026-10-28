@@ -50,6 +50,7 @@ from neutrino_hub.web.routers.agent.module import (
     DeviceModuleContext,
     device_context,
     module_router,
+    podman_memory_need,
     run_command,
     store_config,
 )
@@ -88,7 +89,8 @@ def device_view(
         container modules compose, every container the device's podman
         knows with its owner, the engine's own state, and the human accounts
         the machine reported; on Windows and macOS the stored Run settings,
-        and the Podman machine wherever the machine reports one.
+        the Podman machine wherever the machine reports one, and the memory
+        the container modules need while it passes the machine's.
     """
     details = context.details
     config = context.config
@@ -135,6 +137,7 @@ def device_view(
             if isinstance(reported_machine, dict)
             else None
         ),
+        memory_need=podman_memory_need(runtime, context.key),
     )
 
 

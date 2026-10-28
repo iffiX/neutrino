@@ -8,7 +8,8 @@ module the agent carries takes none; a press on a module whose last report is
 ``failed`` or ``install_failed`` puts a fresh retry mark, and one on any other
 module puts none; a failed install reads its code beside the want it keeps;
 the task carrying a module's install lines is
-named on its row. The door: the per-device read carrying the module's own
+named on its row; on Windows and macOS the list advises the Podman
+machine's memory while the container modules need more. The door: the per-device read carrying the module's own
 fields beside the shared ones, an import that writes what the machine
 reports only where the hub holds no configuration yet, a configuration
 checked on the agent as the module's ``validate`` verb before it is stored
@@ -651,6 +652,37 @@ def test_the_row_names_the_newest_task_carrying_the_modules_lines(api):
     row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
 
     assert row["task_id"] == newest_id
+
+
+def test_the_list_advises_memory_while_the_container_modules_pass_the_machine(
+    api, monkeypatch, demo_container_module
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    demo = json.loads((demo_container_module / "demo.json").read_text())
+    (demo_container_module / "demo.json").write_text(
+        json.dumps(dict(demo, memory_mib=2600))
+    )
+    runtime.desired_states.set_want(DEVICE, "demo", "installed")
+    runtime.desired_states.write(
+        DEVICE, "podman", {"machine": {"account": "lab", "memory_gib": 0}}
+    )
+    runtime.device_modules[DEVICE] = {
+        "podman": {
+            "state": "running",
+            "details": {
+                "machine": {"account": "lab", "is_running": True, "memory_gib": 2}
+            },
+        }
+    }
+
+    runtime.device_platform[DEVICE] = {"os": "windows", "arch": "amd64"}
+    windows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+    runtime.device_platform[DEVICE] = {"os": "linux", "arch": "amd64"}
+    linux = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+
+    assert windows["memory_need"] == {"need_gib": 3, "memory_gib": 2}
+    assert linux["memory_need"] is None
 
 
 # --- the one door every module block goes through ---

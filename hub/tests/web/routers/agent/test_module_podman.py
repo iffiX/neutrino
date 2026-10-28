@@ -5,8 +5,11 @@ is not available, a Windows account with no login and a Windows disk limit
 of 0 before the agent is asked, and takes a macOS disk of 0; the agent
 checks the settings as the state carries them, with the login's password on
 Windows alone and never the login's id; the view holds the stored settings
-on Windows and macOS, the reported machine and the accounts.
+on Windows and macOS, the reported machine, the accounts, and the memory
+the container modules need past the machine's.
 """
+
+import json
 
 import pytest
 
@@ -600,6 +603,7 @@ def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(b
         "cpus": 4,
         "memory_gib": 7.5,
         "disk_gib": 120,
+        "default_memory_gib": 4,
     }
     runtime.report(
         DEVICE, "podman", "running", is_active=True, containers=[], machine=reported
@@ -610,6 +614,26 @@ def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(b
     assert view["accounts"] == ["lab", "ann"]
     assert view["machine"] == RUN_SETTINGS
     assert view["machine_state"] == reported
+    assert view["memory_need"] is None
+
+
+def test_the_view_advises_memory_past_the_run_settings(box, demo_container_module):
+    client, runtime = box
+    demo = json.loads((demo_container_module / "demo.json").read_text())
+    (demo_container_module / "demo.json").write_text(
+        json.dumps(dict(demo, memory_mib=3000))
+    )
+    runtime.device_platform[DEVICE] = DARWIN
+    runtime.desired_states.set_want(DEVICE, "demo", "installed")
+    runtime.desired_states.write(
+        DEVICE,
+        "podman",
+        {"containers": [], "mirrors": [], "machine": dict(RUN_SETTINGS, memory_gib=2)},
+    )
+
+    view = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert view["memory_need"] == {"need_gib": 3, "memory_gib": 2}
 
 
 def test_the_run_settings_are_empty_on_windows_and_macos_until_stored_and_none_on_linux(
