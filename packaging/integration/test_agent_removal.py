@@ -111,6 +111,11 @@ def machine(panel, serving):  # noqa: F811
 
     yield {"device_id": device_id, "host": host, "key_id": key["id"]}
     lifecycle.ssh_to(host, f"sudo rm -f {UNIT_DIR}/{FOREIGN_UNIT}")
+    # The file share is uninstalled as well. The module walk skips a machine
+    # that has it installed.
+    uninstall = {"device_id": device_id, "module": "samba"}
+    if panel.status("POST", "/agent/module/uninstall", uninstall) == 200:
+        module_walk.wait_state(panel, device_id, "absent", ("absent",))
     lifecycle.ssh_to(host, "sudo nagent leave --yes")
     panel.call("POST", "/hub/device/remove", {"device_id": device_id})
     panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
