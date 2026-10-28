@@ -65,6 +65,8 @@ from neutrino_agent.constants import (
     AGENT_WANT_RUNNING,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_NAME
+from neutrino_agent.modules.ayakaleaf.hooks import AyakaleafHooks
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.codeg.hooks import CodegHooks
@@ -137,6 +139,7 @@ SshServerModuleRunner = functools.partial(
 # The container modules with hooks of their own, which the container runner
 # reads by module name.
 CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
+CONTAINER_MODULE_HOOKS[AYAKALEAF_NAME] = AyakaleafHooks
 
 # The states a kept failure reads as: an install's, and every other step's.
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)

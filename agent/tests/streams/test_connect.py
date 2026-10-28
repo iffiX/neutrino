@@ -58,6 +58,10 @@ SSH_SERVER = {
     },
 }
 HERMES = {"state": "running", "details": {"version": "0.52.492", "port": 8787}}
+AYAKALEAF = {
+    "state": "running",
+    "details": {"version": "6.3.2", "port": 8900, "guests": []},
+}
 DESKTOP = {"is_shared": True, "port": 21118}
 
 
@@ -69,6 +73,7 @@ def everything() -> dict:
         podman=PODMAN,
         ssh_server=SSH_SERVER,
         hermes_webui=HERMES,
+        ayakaleaf=AYAKALEAF,
     )
 
 
@@ -86,6 +91,7 @@ def test_every_kind_of_published_port_is_in_the_table():
         3101: "127.0.0.1",
         22000: "127.0.0.1",
         8787: "127.0.0.1",
+        8900: "127.0.0.1",
         5432: "192.168.1.5",
         8080: "127.0.0.1",
         8081: "127.0.0.1",

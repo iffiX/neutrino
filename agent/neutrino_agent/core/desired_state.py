@@ -88,6 +88,7 @@ APPLY_ORDER = (
     "gitea",
     "podman",
     "hermes_webui",
+    "ayakaleaf",
     "vscode",
     "code_server",
     "cloudcli",

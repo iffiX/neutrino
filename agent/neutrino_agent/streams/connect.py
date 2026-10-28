@@ -31,7 +31,7 @@ INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg", "siyuan")
 RUNNING_INSTANCE_MODULES = ("ssh_server",)
 # The container modules whose page the agent's forwarder serves at the port
 # their details report.
-FORWARDED_MODULES = ("hermes_webui",)
+FORWARDED_MODULES = ("hermes_webui", "ayakaleaf")
 
 
 def published_ports(
