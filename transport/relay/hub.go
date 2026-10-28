@@ -58,6 +58,8 @@ type HubConfig struct {
 	Memory *session.TransportMemory
 	// Now reads the clock; time.Now when nil.
 	Now func() time.Time
+	// Draws are the door's random draws; knock.DefaultDoorDraws when nil.
+	Draws *knock.DoorDraws
 	// Log receives one line per event; nil logs nothing.
 	Log EventFunc
 }
@@ -70,6 +72,7 @@ type Hub struct {
 	memory  *session.TransportMemory
 	now     func() time.Time
 	log     EventFunc
+	draws   knock.DoorDraws
 	gate    *gate.Gate
 	ledger  *knock.KnockLedger
 	replay  *knock.ReplayWindow
@@ -85,7 +88,7 @@ type Hub struct {
 	mu              sync.Mutex
 	sessions        map[string]*RelaySession
 	byBinding       map[string]*RelaySession
-	unadmitted      map[*knock.Unadmitted]io.Closer
+	unadmitted      map[*knock.Unadmitted]*doorCloser
 	nextSession     uint64
 	nextStream      uint64
 	listeners       []net.Listener
@@ -114,6 +117,10 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 	if logger == nil {
 		logger = func(string, ...string) {}
 	}
+	draws := knock.DefaultDoorDraws
+	if config.Draws != nil {
+		draws = *config.Draws
+	}
 	jar, err := knock.NewCookieJar(config.Key.Public, now)
 	if err != nil {
 		return nil, err
@@ -129,6 +136,7 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 		memory:          memory,
 		now:             now,
 		log:             logger,
+		draws:           draws,
 		ledger:          knock.NewKnockLedger(),
 		replay:          knock.NewReplayWindow(knock.KnockReplayKeysMax),
 		handOff:         NewHandOff(ControlQuestionTimeout),
@@ -136,7 +144,7 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 		jar:             jar,
 		sessions:        make(map[string]*RelaySession),
 		byBinding:       make(map[string]*RelaySession),
-		unadmitted:      make(map[*knock.Unadmitted]io.Closer),
+		unadmitted:      make(map[*knock.Unadmitted]*doorCloser),
 		keepAliveLogged: make(map[string]time.Time),
 		config:          config,
 	}, nil

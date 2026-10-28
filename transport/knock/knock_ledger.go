@@ -10,6 +10,7 @@ import (
 type Unadmitted struct {
 	acceptedAt      time.Time
 	isHandshakeDone bool
+	isRefused       bool
 	isListed        bool
 }
 
@@ -29,7 +30,8 @@ func NewKnockLedger() *KnockLedger {
 
 // Accept counts a connection accepted at now. When the count passes
 // UnadmittedMax it returns the earlier connection to close to make room: the
-// oldest whose handshake is not done, else the oldest of all; otherwise nil.
+// oldest refused, else the oldest whose handshake is not done, else the
+// oldest of all; otherwise nil.
 func (l *KnockLedger) Accept(now time.Time) (*Unadmitted, *Unadmitted) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -41,13 +43,20 @@ func (l *KnockLedger) Accept(now time.Time) (*Unadmitted, *Unadmitted) {
 	earlier := l.waiting[:len(l.waiting)-1]
 	victim := earlier[0]
 	for _, candidate := range earlier {
-		if !candidate.isHandshakeDone {
+		if candidate.evictionRank() < victim.evictionRank() {
 			victim = candidate
-			break
 		}
 	}
 	l.removeLocked(victim)
 	return entry, victim
+}
+
+// Refuse marks a connection the door refused and keeps open until its
+// deadline.
+func (l *KnockLedger) Refuse(entry *Unadmitted) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry.isRefused = true
 }
 
 // HandshakeDone marks a connection whose message 2 is written.
@@ -117,4 +126,17 @@ func (l *KnockLedger) removeLocked(entry *Unadmitted) {
 			return
 		}
 	}
+}
+
+// evictionRank orders connections for closing at UnadmittedMax: a refused
+// one first, then one whose handshake is not done, then the rest. The
+// caller locks the ledger first.
+func (u *Unadmitted) evictionRank() int {
+	switch {
+	case u.isRefused:
+		return 0
+	case !u.isHandshakeDone:
+		return 1
+	}
+	return 2
 }

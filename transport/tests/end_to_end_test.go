@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -30,6 +31,15 @@ const (
 )
 
 var timings = session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}
+
+// doorHold is the hold deadline of the tests' hubs.
+const doorHold = 300 * time.Millisecond
+
+// doorDraws are the tests' door draws: the longest read and doorHold.
+var doorDraws = knock.DoorDraws{
+	ReadBytes: func() int { return knock.DoorReadBytesMax },
+	Hold:      func() time.Duration { return doorHold },
+}
 
 // shareRecord is one Web share as the faked hub Python keeps it: its id,
 // its ticket and the one entry it opens.
@@ -164,7 +174,7 @@ func startHub(t *testing.T, dir string, port int) *hubSide {
 		t.Fatal(err)
 	}
 	hubControl := control.NewHubControl(listener, hubSecret, keyDir, nil)
-	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, Certificate: &certificate, Timings: timings}, hubControl)
+	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, Certificate: &certificate, Timings: timings, Draws: &doorDraws}, hubControl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,12 +496,13 @@ func TestBoundReconnectAfterAHubRestart(t *testing.T) {
 	agent.hello(t, restored, binding)
 }
 
-// TestATLSRecordMeetsSilence checks that a 0.5 peer's TLS ClientHello gets
-// no byte back.
-func TestATLSRecordMeetsSilence(t *testing.T) {
+// TestATLSRecordIsHeldThenReset checks that a 0.5 peer's TLS ClientHello
+// meets silence and then a reset at the hold deadline.
+func TestATLSRecordIsHeldThenReset(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
 	startHub(t, dir, port)
+	started := time.Now()
 	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
 	if err != nil {
 		t.Fatal(err)
@@ -499,8 +510,12 @@ func TestATLSRecordMeetsSilence(t *testing.T) {
 	defer conn.Close()
 	_, _ = conn.Write([]byte{0x16, 0x03, 0x01, 0x00, 0xa5, 0x01, 0x00, 0x00, 0xa1, 0x03, 0x03})
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if n, err := conn.Read(make([]byte, 64)); n != 0 || err == nil {
-		t.Fatalf("read %d bytes, %v; want nothing and a close", n, err)
+	n, err := conn.Read(make([]byte, 64))
+	if n != 0 || !errors.Is(err, syscall.ECONNRESET) {
+		t.Fatalf("read %d bytes, %v; want nothing and a reset", n, err)
+	}
+	if elapsed := time.Since(started); elapsed < doorHold-50*time.Millisecond {
+		t.Fatalf("reset after %v, before the hold of %v", elapsed, doorHold)
 	}
 }
 

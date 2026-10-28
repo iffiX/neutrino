@@ -50,9 +50,14 @@ const (
 )
 
 const (
-	// KnockFirstByteTimeout bounds a connection that has sent fewer bytes
-	// than the magic.
-	KnockFirstByteTimeout = 3 * time.Second
+	// DoorReadBytesMin and DoorReadBytesMax bound the length the door reads
+	// of a connection before it refuses it, drawn for each connection.
+	DoorReadBytesMin = 20
+	DoorReadBytesMax = 100
+	// DoorHoldMin and DoorHoldMax bound a connection's hold deadline after
+	// the accept, drawn for each connection.
+	DoorHoldMin = 5 * time.Second
+	DoorHoldMax = 30 * time.Second
 	// HandshakeTimeout bounds the knock and the hub's answer, from the accept.
 	HandshakeTimeout = 10 * time.Second
 	// AdmissionTimeout bounds the time from the accept to an admitted hello.
@@ -60,7 +65,7 @@ const (
 	// UnadmittedMax is how many connections may wait for admission at once.
 	UnadmittedMax = 128
 	// HandshakesInFlightMax is how many knocks may have their message 1 open
-	// or their question pending at once.
+	// or their question pending, and guests their handshake running, at once.
 	HandshakesInFlightMax = 64
 	// CookieLoadThreshold is the number of knocks in flight above which the
 	// hub is under load and asks for mac2.

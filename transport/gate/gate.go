@@ -48,12 +48,13 @@ type Gate struct {
 	shares      map[string]string
 }
 
-// firstCheck is a connection's first connectivity check, verified.
-type firstCheck struct {
+// FirstCheck is a connection's first connectivity check, verified.
+type FirstCheck struct {
 	message  *stun.Message
 	ufrag    string
 	password string
-	decision Decision
+	// Decision is where the hub decided the check.
+	Decision Decision
 }
 
 // New makes a gate under certificate with no live share.
@@ -101,24 +102,75 @@ func (g *Gate) HasShares() bool {
 	return len(g.shares) > 0
 }
 
-// Open runs the gate on one accepted connection whose first byte is a
-// frame length's: it reads the first connectivity check under the read
-// deadline the caller set and closes at the first byte that does not fit a
-// Binding Request for a live share, answers it once its integrity verifies,
-// clears the connection's deadline, then runs the DTLS handshake, the SCTP
-// association and data channel 0 under ctx. It returns the channel as a connection,
-// the ufrag of the share it was opened under and where the check was
-// decided. It returns ErrNotStun, ErrShareUnknown or ErrStunRefused for the
-// first check, the handshake's error, or ctx's error when ctx ends first;
-// the connection is closed on every error.
-func (g *Gate) Open(ctx context.Context, conn net.Conn) (*ChannelConn, string, Decision, error) {
-	reader := bufio.NewReaderSize(conn, GateFrameLengthBytes+GateFrameBytesMax)
-	check, err := g.readFirstCheck(reader)
-	if err != nil {
-		conn.Close()
-		return nil, "", Decision{}, err
+// ReadFirstCheck reads a connection's first frame from r as far as it fits
+// a Binding Request for a live share, and no further: the frame length, the
+// STUN type and length, the magic cookie, the USERNAME's ufrag against the
+// live shares, then the rest of the frame and its integrity and
+// fingerprint. It reads every byte through r, whose deadline the caller
+// sets, and writes nothing. It returns ErrNotStun, ErrShareUnknown or
+// ErrStunRefused at the first check that fails.
+func (g *Gate) ReadFirstCheck(r io.Reader) (*FirstCheck, error) {
+	var head [GatePeekBytes]byte
+	if _, err := io.ReadFull(r, head[:GateFrameLengthBytes]); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
 	}
+	if head[0] != GateFrameFirstByte {
+		return nil, fmt.Errorf("%w: first byte %d", ErrNotStun, head[0])
+	}
+	length := int(head[1])
+	if length < GateStunHeaderBytes {
+		return nil, fmt.Errorf("%w: frame of %d bytes", ErrNotStun, length)
+	}
+	if _, err := io.ReadFull(r, head[GateFrameLengthBytes:6]); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
+	}
+	if binary.BigEndian.Uint16(head[2:4]) != GateStunBindingRequestType {
+		return nil, fmt.Errorf("%w: type %x", ErrNotStun, head[2:4])
+	}
+	if int(binary.BigEndian.Uint16(head[4:6])) != length-GateStunHeaderBytes {
+		return nil, fmt.Errorf("%w: stun length", ErrNotStun)
+	}
+	if _, err := io.ReadFull(r, head[6:GatePeekBytes]); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
+	}
+	if binary.BigEndian.Uint32(head[6:GatePeekBytes]) != GateStunMagicCookie {
+		return nil, fmt.Errorf("%w: cookie", ErrNotStun)
+	}
+	frame := make([]byte, length)
+	copy(frame, head[GateFrameLengthBytes:GatePeekBytes])
+	ufrag, usernameEnd, err := readToUsername(r, frame)
+	if err != nil {
+		return nil, err
+	}
+	decision := Decision{FrameBytes: GateFrameLengthBytes + length, UsernameEndByte: GateFrameLengthBytes + usernameEnd}
+	g.mu.RLock()
+	password, isLive := g.shares[ufrag]
+	g.mu.RUnlock()
+	if !isLive {
+		return nil, fmt.Errorf("%w: %s", ErrShareUnknown, ufrag)
+	}
+	if _, err := io.ReadFull(r, frame[usernameEnd:]); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
+	}
+	message := &stun.Message{Raw: frame}
+	if err := message.Decode(); err != nil || message.Type != stun.BindingRequest {
+		return nil, fmt.Errorf("%w: decode", ErrNotStun)
+	}
+	if err := verifyCheck(message, password); err != nil {
+		return nil, err
+	}
+	return &FirstCheck{message: message, ufrag: ufrag, password: password, Decision: decision}, nil
+}
+
+// Open runs the gate on one accepted connection whose first check passed:
+// it answers the check, clears the connection's deadline, then runs the
+// DTLS handshake, the SCTP association and data channel 0 under ctx. It
+// returns the channel as a connection and the ufrag of the share it was
+// opened under. It returns the handshake's error, or ctx's error when ctx
+// ends first. The connection is closed on every error.
+func (g *Gate) Open(ctx context.Context, conn net.Conn, check *FirstCheck) (*ChannelConn, string, error) {
 	_ = conn.SetReadDeadline(time.Time{})
+	reader := bufio.NewReaderSize(conn, GateFrameLengthBytes+GateFrameBytesMax)
 	answerer := &stunAnswerer{ufrag: check.ufrag, password: check.password, peer: tcpAddr(conn.RemoteAddr())}
 	framed := newFramedConn(&readerConn{Conn: conn, reader: reader}, answerer.handle)
 	answerer.write = framed.WriteFrame
@@ -128,7 +180,7 @@ func (g *Gate) Open(ctx context.Context, conn net.Conn) (*ChannelConn, string, D
 	}
 	if err := answerer.answer(check.message); err != nil {
 		framed.Close()
-		return nil, "", check.decision, fmt.Errorf("stun answer: %w", err)
+		return nil, "", fmt.Errorf("stun answer: %w", err)
 	}
 	g.mu.RLock()
 	certificate := g.certificate
@@ -143,84 +195,27 @@ func (g *Gate) Open(ctx context.Context, conn net.Conn) (*ChannelConn, string, D
 	)
 	if err != nil {
 		framed.Close()
-		return nil, "", check.decision, fmt.Errorf("dtls: %w", err)
+		return nil, "", fmt.Errorf("dtls: %w", err)
 	}
 	if err := dtlsConn.HandshakeContext(ctx); err != nil {
 		framed.Close()
-		return nil, "", check.decision, fmt.Errorf("dtls handshake: %w", err)
+		return nil, "", fmt.Errorf("dtls handshake: %w", err)
 	}
 	channel, err := openChannel(dtlsConn, serverAssociation, g.logger)
 	if err != nil {
 		dtlsConn.Close()
 		framed.Close()
-		return nil, "", check.decision, err
+		return nil, "", err
 	}
 	_ = framed.SetReadDeadline(time.Time{})
-	return newChannelConn(channel, conn, dtlsConn, framed), check.ufrag, check.decision, nil
-}
-
-// readFirstCheck reads a connection's first frame as far as it fits a
-// Binding Request for a live share, and no further: the frame length, the
-// STUN type and length, the magic cookie, the USERNAME's ufrag against the
-// live shares, then the rest of the frame and its integrity and fingerprint.
-func (g *Gate) readFirstCheck(reader *bufio.Reader) (*firstCheck, error) {
-	var head [GatePeekBytes]byte
-	if _, err := io.ReadFull(reader, head[:GateFrameLengthBytes]); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
-	}
-	if head[0] != GateFrameFirstByte {
-		return nil, fmt.Errorf("%w: first byte %d", ErrNotStun, head[0])
-	}
-	length := int(head[1])
-	if length < GateStunHeaderBytes {
-		return nil, fmt.Errorf("%w: frame of %d bytes", ErrNotStun, length)
-	}
-	if _, err := io.ReadFull(reader, head[GateFrameLengthBytes:6]); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
-	}
-	if binary.BigEndian.Uint16(head[2:4]) != GateStunBindingRequestType {
-		return nil, fmt.Errorf("%w: type %x", ErrNotStun, head[2:4])
-	}
-	if int(binary.BigEndian.Uint16(head[4:6])) != length-GateStunHeaderBytes {
-		return nil, fmt.Errorf("%w: stun length", ErrNotStun)
-	}
-	if _, err := io.ReadFull(reader, head[6:GatePeekBytes]); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
-	}
-	if binary.BigEndian.Uint32(head[6:GatePeekBytes]) != GateStunMagicCookie {
-		return nil, fmt.Errorf("%w: cookie", ErrNotStun)
-	}
-	frame := make([]byte, length)
-	copy(frame, head[GateFrameLengthBytes:GatePeekBytes])
-	ufrag, usernameEnd, err := readToUsername(reader, frame)
-	if err != nil {
-		return nil, err
-	}
-	decision := Decision{FrameBytes: GateFrameLengthBytes + length, UsernameEndByte: GateFrameLengthBytes + usernameEnd}
-	g.mu.RLock()
-	password, isLive := g.shares[ufrag]
-	g.mu.RUnlock()
-	if !isLive {
-		return nil, fmt.Errorf("%w: %s", ErrShareUnknown, ufrag)
-	}
-	if _, err := io.ReadFull(reader, frame[usernameEnd:]); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
-	}
-	message := &stun.Message{Raw: frame}
-	if err := message.Decode(); err != nil || message.Type != stun.BindingRequest {
-		return nil, fmt.Errorf("%w: decode", ErrNotStun)
-	}
-	if err := verifyCheck(message, password); err != nil {
-		return nil, err
-	}
-	return &firstCheck{message: message, ufrag: ufrag, password: password, decision: decision}, nil
+	return newChannelConn(channel, conn, dtlsConn, framed), check.ufrag, nil
 }
 
 // readToUsername reads a first frame's attributes into frame, after the
 // header's first eight bytes already there, up to the end of its USERNAME.
 // It returns the ufrag and the offset in frame where the USERNAME ended, or
 // ErrNotStun for a frame with no USERNAME of the form ufrag:peer.
-func readToUsername(reader *bufio.Reader, frame []byte) (string, int, error) {
+func readToUsername(reader io.Reader, frame []byte) (string, int, error) {
 	if _, err := io.ReadFull(reader, frame[GatePeekBytes-GateFrameLengthBytes:GateStunHeaderBytes]); err != nil {
 		return "", 0, fmt.Errorf("%w: %w", ErrNotStun, err)
 	}

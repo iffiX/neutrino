@@ -3,5 +3,6 @@
 // knock's layout, mac1 under the hub's static public key, mac2 under a
 // cookie, the cookie reply the hub writes under load, the replay window per
 // static key, the counts of unadmitted connections and handshakes in flight
-// with their limits, and the padding of the handshake's two messages.
+// with their limits, the door's random draws, and the padding of the
+// handshake's two messages.
 package knock

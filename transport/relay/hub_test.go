@@ -161,11 +161,27 @@ type testHub struct {
 	key    noise.DHKey
 }
 
+// testHold is the hold deadline of the tests' door.
+const testHold = 300 * time.Millisecond
+
+// fixedDraws are door draws that return readBytes and hold every time.
+func fixedDraws(readBytes int, hold time.Duration) *knock.DoorDraws {
+	return &knock.DoorDraws{
+		ReadBytes: func() int { return readBytes },
+		Hold:      func() time.Duration { return hold },
+	}
+}
+
 func newTestHub(t *testing.T) *testHub {
+	t.Helper()
+	return newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, testHold))
+}
+
+func newTestHubWith(t *testing.T, draws *knock.DoorDraws) *testHub {
 	t.Helper()
 	key, _ := handshake.GenerateKey()
 	python := newFakePython()
-	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
+	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Draws: draws, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +382,7 @@ func TestRefusalsAtTheDoor(t *testing.T) {
 	hub.python.isSilent = true
 	hub.python.mu.Unlock()
 	hub.hub.handOff.timeout = 100 * time.Millisecond
-	quiet, _ := NewHub(HubConfig{Key: hub.key, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, hub.python)
+	quiet, _ := NewHub(HubConfig{Key: hub.key, Draws: fixedDraws(knock.DoorReadBytesMax, testHold), Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, hub.python)
 	defer quiet.Close()
 	quietListener, _ := net.Listen("tcp", "127.0.0.1:0")
 	defer quietListener.Close()
@@ -387,43 +403,6 @@ func TestRefusalsAtTheDoor(t *testing.T) {
 	}
 	if time.Since(started) < ControlQuestionTimeout {
 		t.Fatal("control_unavailable came before the question's timeout")
-	}
-}
-
-func TestSilenceForWrongKnocks(t *testing.T) {
-	hub := newTestHub(t)
-	address := hub.listen(t)
-	hostPort, _ := session.ParseAddress(address)
-	cases := []struct {
-		name  string
-		bytes []byte
-	}{
-		{"a TLS record", []byte{22, 3, 1, 0, 5, 1, 2, 3, 4, 5}},
-		{"an unknown version", []byte{5, 0, 3, 1, 2, 3}},
-		{"a knock with a wrong mac1", func() []byte {
-			other, _ := handshake.GenerateKey()
-			raw, _ := knock.Encode([]byte("message"), other.Public, nil)
-			return raw
-		}()},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			conn, err := net.Dial("tcp", hostPort)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
-			_, _ = conn.Write(c.bytes)
-			_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-			buffer := make([]byte, 1)
-			n, err := conn.Read(buffer)
-			if n != 0 || !errors.Is(err, io.EOF) {
-				t.Fatalf("read %d bytes, %v; want silence and a close", n, err)
-			}
-		})
-	}
-	if hub.hub.Ledger().Waiting() != 0 {
-		t.Fatalf("%d connections still counted", hub.hub.Ledger().Waiting())
 	}
 }
 
@@ -506,12 +485,15 @@ func TestReplacedByASecondSession(t *testing.T) {
 }
 
 // serveGuestAccepted runs the door's guest path on conn as for a connection
-// the hub accepted age ago.
+// the hub accepted age ago, with its hold deadline at knock.DoorHoldMax.
 func (h *testHub) serveGuestAccepted(conn net.Conn, age time.Duration) {
 	acceptedAt := time.Now().Add(-age)
 	entry, _ := h.hub.ledger.Accept(acceptedAt)
 	closer := newDoorCloser(conn)
-	d := &door{entry: entry, closer: closer, acceptedAt: acceptedAt}
+	d := &door{
+		entry: entry, closer: closer, reader: &doorReader{conn: conn}, acceptedAt: acceptedAt,
+		holdUntil: acceptedAt.Add(knock.DoorHoldMax), readBytes: knock.DoorReadBytesMin,
+	}
 	d.admission = time.AfterFunc(knock.AdmissionTimeout, func() { closer.fire() })
 	defer func() {
 		h.hub.ledger.Leave(entry)
@@ -520,13 +502,19 @@ func (h *testHub) serveGuestAccepted(conn net.Conn, age time.Duration) {
 			closer.fire()
 		}
 	}()
-	h.hub.serveGuest(d, conn, PeerIP(conn.RemoteAddr()), RelayListenerMain)
+	head := make([]byte, knock.KnockMagicBytes)
+	if _, err := io.ReadFull(d.reader, head); err != nil {
+		return
+	}
+	if h.hub.serveGuest(d, conn, head, PeerIP(conn.RemoteAddr()), RelayListenerMain) {
+		h.hub.ledger.Refuse(entry)
+	}
 }
 
 // TestGuestHandshakeTime checks the guest path's handshake time from the
 // accept. A guest accepted past HandshakeTimeout still gets its share's
-// accept, and the hub closes a guest accepted past GateHandshakeTimeout with
-// nothing written.
+// accept, and the hub refuses a guest accepted past GateHandshakeTimeout
+// with nothing written.
 func TestGuestHandshakeTime(t *testing.T) {
 	certificate, err := gate.LoadOrCreateCertificate(t.TempDir())
 	if err != nil {

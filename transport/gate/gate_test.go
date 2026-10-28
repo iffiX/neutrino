@@ -46,8 +46,15 @@ func serveGate(t *testing.T, g *Gate) (string, chan openResult) {
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				channel, ufrag, decision, err := g.Open(ctx, conn)
-				results <- openResult{conn: channel, ufrag: ufrag, decision: decision, err: err}
+				_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				check, err := g.ReadFirstCheck(conn)
+				if err != nil {
+					conn.Close()
+					results <- openResult{err: err}
+					return
+				}
+				channel, ufrag, err := g.Open(ctx, conn, check)
+				results <- openResult{conn: channel, ufrag: ufrag, decision: check.Decision, err: err}
 			}()
 		}
 	}()
@@ -185,6 +192,31 @@ func TestFirstCheckCutOffs(t *testing.T) {
 				t.Fatalf("hub: %v, want %v", result.err, c.hubErr)
 			}
 		})
+	}
+}
+
+// TestFirstCheckReadsNoFurther checks that the first check reads a frame
+// for an unknown ufrag only through its USERNAME, and a good frame only to
+// its end.
+func TestFirstCheckReadsNoFurther(t *testing.T) {
+	g := testGate(t)
+	unknown := stunFrame(t, stun.BindingRequest, stun.NewUsername("nobody0123456789abcdef01:browser"), stun.NewShortTermIntegrity(testPassword), stun.Fingerprint)
+	_, usernameEnd, _ := usernameOf(unknown[GateFrameLengthBytes:])
+	reader := bytes.NewReader(append(unknown, 0xee))
+	if _, err := g.ReadFirstCheck(reader); !errors.Is(err, ErrShareUnknown) {
+		t.Fatalf("unknown ufrag: %v", err)
+	}
+	if read := len(unknown) + 1 - reader.Len(); read != GateFrameLengthBytes+usernameEnd {
+		t.Fatalf("read %d bytes, want %d", read, GateFrameLengthBytes+usernameEnd)
+	}
+	good := stunFrame(t, stun.BindingRequest, stun.NewUsername(testUfrag+":browser"), stun.NewShortTermIntegrity(testPassword), stun.Fingerprint)
+	reader = bytes.NewReader(append(good, 0xee))
+	check, err := g.ReadFirstCheck(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.Len() != 1 || check.Decision.FrameBytes != len(good) {
+		t.Fatalf("%d bytes left, decision %+v", reader.Len(), check.Decision)
 	}
 }
 
