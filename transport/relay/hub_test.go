@@ -14,9 +14,19 @@ import (
 
 	"github.com/flynn/noise"
 
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/handshake"
 	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/session"
+)
+
+// A live share's ICE pair and ticket, and the share id its guest question
+// returns.
+const (
+	guestUfrag    = "0123456789abcdef01234567"         // scan: allow
+	guestPassword = "0123456789abcdef0123456789abcdef" // scan: allow
+	guestTicket   = "share-ticket-1"
+	guestShareID  = "share-1"
 )
 
 // fakePython answers the hub's questions from tables and records its events.
@@ -98,6 +108,11 @@ func (p *fakePython) Ask(ctx context.Context, question string, fields map[string
 		return answer.answer, nil
 	case "token":
 		return map[string]any{"params": map[string]any{"token": "material"}}, nil
+	case "guest":
+		if fields["ticket"] != guestTicket {
+			return nil, session.NewRefusal("share_unknown", nil)
+		}
+		return map[string]any{"binding_id": guestShareID}, nil
 	}
 	return nil, errors.New("unknown question")
 }
@@ -532,5 +547,90 @@ func TestReplacedByASecondSession(t *testing.T) {
 	}
 	if _, err := hub.hub.Session(secondID); err != nil {
 		t.Fatal("the second session is gone")
+	}
+}
+
+// serveGuestAccepted runs the door's guest path on conn as for a connection
+// the hub accepted age ago.
+func (h *testHub) serveGuestAccepted(conn net.Conn, age time.Duration) {
+	acceptedAt := time.Now().Add(-age)
+	entry, _ := h.hub.ledger.Accept(acceptedAt)
+	closer := newDoorCloser(conn)
+	d := &door{entry: entry, closer: closer, acceptedAt: acceptedAt}
+	d.admission = time.AfterFunc(knock.AdmissionTimeout, func() { closer.fire() })
+	defer func() {
+		h.hub.ledger.Leave(entry)
+		if !d.isHandedOver {
+			d.admission.Stop()
+			closer.fire()
+		}
+	}()
+	h.hub.serveGuest(d, conn, PeerIP(conn.RemoteAddr()), RelayListenerMain)
+}
+
+// TestGuestHandshakeTime checks the guest path's handshake time from the
+// accept. A guest accepted past HandshakeTimeout still gets its share's
+// accept, and the hub closes a guest accepted past GateHandshakeTimeout with
+// nothing written.
+func TestGuestHandshakeTime(t *testing.T) {
+	certificate, err := gate.LoadOrCreateCertificate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := handshake.GenerateKey()
+	python := newFakePython()
+	hub, err := NewHub(HubConfig{Key: key, Certificate: &certificate, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(hub.Close)
+	hub.SetShares([]gate.Share{{Ufrag: guestUfrag, Password: guestPassword}})
+	test := &testHub{hub: hub, python: python, key: key}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+
+	for _, step := range []struct {
+		age    time.Duration
+		isOpen bool
+	}{
+		{age: knock.HandshakeTimeout + 5*time.Second, isOpen: true},
+		{age: gate.GateHandshakeTimeout + time.Second, isOpen: false},
+	} {
+		go func() {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			test.serveGuestAccepted(conn, step.age)
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		channel, err := gate.Dial(ctx, listener.Addr().String(), gate.DialOptions{Ufrag: guestUfrag, Password: guestPassword, Fingerprint: hub.Fingerprint()})
+		cancel()
+		if !step.isOpen {
+			if !errors.Is(err, gate.ErrStunRefused) {
+				t.Fatalf("accepted %s ago: %v, want the connection closed", step.age, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("accepted %s ago: %v", step.age, err)
+		}
+		if _, err := channel.Write(gate.GuestOpenRecord(gate.GuestOpen{Protocol: knock.PROTOCOL, Ticket: guestTicket})); err != nil {
+			t.Fatal(err)
+		}
+		message := make([]byte, gate.GateGuestOpenBytesMax)
+		_ = channel.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err := channel.ReadMessage(message)
+		if err != nil {
+			t.Fatalf("accepted %s ago: %v", step.age, err)
+		}
+		id, refusal, err := gate.ParseGuestAnswer(message[:n])
+		if err != nil || refusal != nil || id != guestShareID {
+			t.Fatalf("accepted %s ago: answer %q %v %v", step.age, id, refusal, err)
+		}
+		channel.Close()
 	}
 }
