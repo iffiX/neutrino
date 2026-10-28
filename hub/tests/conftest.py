@@ -705,6 +705,9 @@ class StubDesiredStates:
     def is_ai_tools_enabled(self, key: str) -> bool:
         return False
 
+    def uses_gateway_models(self, key: str) -> bool:
+        return False
+
     def has_gateway_module(self, key: str) -> bool:
         return False
 

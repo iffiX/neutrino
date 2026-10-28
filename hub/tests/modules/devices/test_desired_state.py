@@ -375,6 +375,9 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     assert own["ai_tools"]["is_forwarded"] is False
     assert own["ai_tools"]["gateway_port"] == 0
     assert store.has_gateway_instances(DEVICE)
+    assert store.uses_gateway_models(DEVICE)
+    store.set_enabled_accounts(DEVICE, "siyuan", [])
+    assert not store.uses_gateway_models(DEVICE)
     assert "gateway_url" not in store.agent_config(DEVICE, "codeg", {}, PLATFORM)
 
 

@@ -989,9 +989,7 @@ class PanelRuntime:
         Returns:
             The served names; none for a device whose state needs none.
         """
-        if self.desired_states.is_ai_tools_enabled(
-            key
-        ) or self.desired_states.has_gateway_instances(key):
+        if self.desired_states.uses_gateway_models(key):
             return gateway_models(self.served_models)
         return []
 

@@ -1143,6 +1143,18 @@ class DesiredStateStore:
             self.enabled_accounts(key, name) for name in gateway_instance_names()
         )
 
+    def uses_gateway_models(self, key: str) -> bool:
+        """Whether one device's state names the models the gateway serves.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            True while an account's AI tools switch is on, or a module that
+            holds a gateway key per account enables an account.
+        """
+        return self.is_ai_tools_enabled(key) or self.has_gateway_instances(key)
+
     def agent_config(
         self,
         key: str,

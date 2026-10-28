@@ -301,7 +301,7 @@ class ComposingStates:
     def is_ai_tools_enabled(self, key):
         return False
 
-    def has_gateway_instances(self, key):
+    def uses_gateway_models(self, key):
         return False
 
     def compose(self, key, platform, **kwargs):
