@@ -160,6 +160,12 @@ class PublishedServiceCache:
         self._refresh_lock = threading.Lock()
         self._is_refreshing = False
         self._is_refresh_pending = False
+        # The count of expiries, and the count a written list was composed
+        # under. A compose begun before an expiry never replaces a list
+        # composed after it.
+        self._write_lock = threading.Lock()
+        self._generation = 0
+        self._written_generation = 0
         self._entries: list = []
         self._apps: list = []
         self._fingerprint = ""
@@ -219,7 +225,9 @@ class PublishedServiceCache:
 
     def expire(self) -> None:
         """Make the next read recompose, after a declaration or probe."""
-        self._refreshed_at = None
+        with self._write_lock:
+            self._generation += 1
+            self._refreshed_at = None
 
     def schedule_refresh(self) -> None:
         """Compose the list again, off the calling thread.
@@ -235,7 +243,31 @@ class PublishedServiceCache:
         self._executor.submit(self._refresh_until_settled)
 
     def refresh(self) -> None:
-        """Compose the list now, replacing the cache whole."""
+        """Compose the list now, replacing the cache whole.
+
+        A compose begun before the latest :meth:`expire` replaces no list
+        composed after it, and leaves the cache stale.
+        """
+        generation = self._generation
+        entries, apps = self._compose()
+        with self._write_lock:
+            if generation < self._written_generation:
+                return
+            self._written_generation = generation
+            previous = self._fingerprint
+            self._entries = entries
+            self._apps = apps
+            serialized = json.dumps([entries, apps], sort_keys=True).encode("utf-8")
+            self._fingerprint = hashlib.sha256(serialized).hexdigest()[:16]
+            is_fresh = generation == self._generation
+            self._refreshed_at = time.monotonic() if is_fresh else None
+            is_changed = self._fingerprint != previous
+        if is_changed and self._on_fingerprint_change is not None:
+            self._on_fingerprint_change()
+
+    def _compose(self) -> tuple:
+        """The published entries and their apps, composed from what the hub
+        holds now."""
         declared = DeclaredAppRegistry().list_apps()
         healths = self._declared_probe.results(declared)
         lan_addresses = self._lan_addresses()
@@ -271,17 +303,7 @@ class PublishedServiceCache:
             },
             device_names=names,
         )
-        entries = collector.render()
-        apps = collector.apps()
-
-        previous = self._fingerprint
-        self._entries = entries
-        self._apps = apps
-        serialized = json.dumps([entries, apps], sort_keys=True).encode("utf-8")
-        self._fingerprint = hashlib.sha256(serialized).hexdigest()[:16]
-        self._refreshed_at = time.monotonic()
-        if self._fingerprint != previous and self._on_fingerprint_change is not None:
-            self._on_fingerprint_change()
+        return collector.render(), collector.apps()
 
     def _refresh_if_stale(self) -> None:
         if (
