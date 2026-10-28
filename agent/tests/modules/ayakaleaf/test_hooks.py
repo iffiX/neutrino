@@ -466,7 +466,7 @@ def test_after_a_restart_the_record_brings_the_forwarder_and_the_guests_back(box
 
     assert details["guests"] == [{"account": "guest-k3f9", "code": "", "params": {}}]
     assert box.forwarders[-1].is_started
-    assert again._guests[0]["email"] == GUEST["email"]
+    assert [made["email"] for made in again._guests._made] == [GUEST["email"]]
 
 
 # --- the guests ---
@@ -827,13 +827,3 @@ def test_the_forwarder_tries_a_held_port_again_every_report_interval():
 
     assert made._retry_s == 5
     assert made.account == ""
-
-
-def test_a_guest_failure_is_a_module_apply_error_with_its_step():
-    error = hooks_module._guest_failed("register", ConnectionError("x"))
-
-    assert isinstance(error, ModuleApplyError)
-    assert (error.code, error.params) == (
-        "ayakaleaf_guest_failed",
-        {"step": "register", "detail": "x"},
-    )

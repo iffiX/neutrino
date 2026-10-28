@@ -22,10 +22,12 @@ from the fastest source of the ``ctan`` set. Until all three are done and
 waits; a step that fails ends the install. A version change makes the TeX
 volume again and runs the TeX step again.
 
-Once the first start has ended, each start makes the guest of every live
-Web share the record does not hold, through the app's own routes as the
-administrator, and deletes every guest the state no longer names. The
-record keeps what the forwarder needs, so it listens again after the agent
+Once the first start has ended, each start settles the guests of the
+module's Web shares through :class:`ShareGuestAccounts`, which calls the
+three guest hooks: a guest is made through the app's own routes as the
+administrator, deleted by its ``user_id``, and signed in as the forwarder
+signs in the administrator, its waiting invitations accepted. The record
+keeps what the forwarder needs, so it listens again after the agent
 restarts.
 
 Not pure: runs podman, opens sockets, writes the record.
@@ -59,7 +61,7 @@ from neutrino_agent.exceptions import (
     ModuleInstallPending,
     ModuleSetupError,
 )
-from neutrino_agent.modules.ayakaleaf.config import AyakaleafConfig, AyakaleafGuest
+from neutrino_agent.modules.ayakaleaf.config import AyakaleafConfig
 from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_ACTIVATE_PATH,
     AYAKALEAF_ADMIN_EMAIL,
@@ -106,6 +108,12 @@ from neutrino_agent.modules.ayakaleaf.constants import (
 )
 from neutrino_agent.modules.podman.container_runner import ContainerHooks
 from neutrino_agent.modules.shared import source_fetch
+from neutrino_agent.modules.shared.guest_accounts import (
+    GuestAccountHooks,
+    ShareGuest,
+    ShareGuestAccounts,
+    guest_failed,
+)
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwardDecision,
@@ -475,14 +483,7 @@ def register_admin(browser: AppBrowser, email: str, password: str) -> None:
         raise ConnectionError(refusal(answer, AYAKALEAF_REGISTER_ADMIN_PATH))
 
 
-def _guest_failed(step: str, error: BaseException) -> ModuleApplyError:
-    """A guest's failure at one step, its detail the error's words."""
-    return ModuleApplyError(
-        AYAKALEAF_GUEST_FAILED, {"step": step, "detail": str(error)[:DETAIL_CHARS]}
-    )
-
-
-def make_guest(admin: AppBrowser, guest: AyakaleafGuest, browser) -> str:
+def register_guest(admin: AppBrowser, guest: ShareGuest, browser) -> str:
     """Make one guest account through the app's own routes.
 
     The administrator registers the e-mail, the guest's activation sets its
@@ -515,7 +516,9 @@ def make_guest(admin: AppBrowser, guest: AyakaleafGuest, browser) -> str:
                 f"{AYAKALEAF_ADMIN_REGISTER_PATH} named no activation address"
             )
     except OSError as error:
-        raise _guest_failed(AYAKALEAF_GUEST_STEP_REGISTER, error) from error
+        raise guest_failed(
+            AYAKALEAF_GUEST_FAILED, AYAKALEAF_GUEST_STEP_REGISTER, error
+        ) from error
     try:
         activating = browser()
         query = urllib.parse.urlencode({"token": token, "user_id": user_id})
@@ -529,7 +532,9 @@ def make_guest(admin: AppBrowser, guest: AyakaleafGuest, browser) -> str:
         if answer.status != 200:
             raise ConnectionError(refusal(answer, AYAKALEAF_PASSWORD_SET_PATH))
     except OSError as error:
-        raise _guest_failed(AYAKALEAF_GUEST_STEP_PASSWORD, error) from error
+        raise guest_failed(
+            AYAKALEAF_GUEST_FAILED, AYAKALEAF_GUEST_STEP_PASSWORD, error
+        ) from error
     try:
         naming = browser()
         sign_in(naming, guest.email, guest.password)
@@ -539,7 +544,9 @@ def make_guest(admin: AppBrowser, guest: AyakaleafGuest, browser) -> str:
         if not 200 <= answer.status < 300:
             raise ConnectionError(refusal(answer, AYAKALEAF_SETTINGS_PATH))
     except OSError as error:
-        raise _guest_failed(AYAKALEAF_GUEST_STEP_NAME, error) from error
+        raise guest_failed(
+            AYAKALEAF_GUEST_FAILED, AYAKALEAF_GUEST_STEP_NAME, error
+        ) from error
     return user_id
 
 
@@ -577,8 +584,8 @@ def _browser(*, port: int, cookie_name: str, host: str = "") -> AppBrowser:
     return AppBrowser(port=port, cookie_name=cookie_name, host=host)
 
 
-class AyakaleafHooks(ContainerHooks):
-    """Ayakaleaf's first start, forwarder, guests, health read and version change."""
+class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
+    """Ayakaleaf's first start, forwarder, guest accounts, health read and version change."""
 
     # What the forwarder reads of the record.
     secret_field = "secret"
@@ -637,9 +644,7 @@ class AyakaleafHooks(ContainerHooks):
         self._config: "AyakaleafConfig | None" = None
         self._source_sets: dict = {}
         self._forwarder = None
-        # The guests made, as the record keeps them. The forwarder signs a
-        # visitor in as one of them.
-        self._guests: tuple = ()
+        self._guests = ShareGuestAccounts(name=name, hooks=self, log=log)
         self._replica_since: "float | None" = None
         self._is_resumed = False
         self._is_starting = False
@@ -741,30 +746,16 @@ class AyakaleafHooks(ContainerHooks):
             ``ayakaleaf_guest_failed`` while a step fails.
         """
         record = self._resume()
-        guests = [
-            {"account": str(guest["account"]), "code": "", "params": {}}
-            for guest in record.get("guests") or []
-            if isinstance(guest, dict) and guest.get("account")
-        ]
-        failures = record.get("guest_failures")
-        for account, failure in (
-            failures.items() if isinstance(failures, dict) else ()
-        ):
-            if isinstance(failure, dict):
-                guests.append(
-                    {
-                        "account": str(account),
-                        "code": AYAKALEAF_GUEST_FAILED,
-                        "params": dict(failure),
-                    }
-                )
-        return {"port": int(record.get("port", 0) or 0), "guests": guests}
+        return {
+            "port": int(record.get("port", 0) or 0),
+            "guests": self._guests.details(record),
+        }
 
     def remove(self) -> None:
         """Stop serving the page and forget the record, with its directory when nothing else is in it."""
         with self._lock:
             self._is_starting = False
-            self._guests = ()
+        self._guests.forget()
         self._close_forwarder()
         self._records.remove(self._name)
         with contextlib.suppress(OSError):
@@ -803,36 +794,17 @@ class AyakaleafHooks(ContainerHooks):
         if is_login_route(request.method, request.path):
             return refused()
         if request.token:
-            host = request.header("host")
             if request.take_token():
-                cookie = self._signed_in(
-                    record,
-                    AYAKALEAF_ADMIN_EMAIL,
-                    str(record.get("password", "") or ""),
-                    host,
+                return _signed_in_answer(
+                    self._signed_in(
+                        record,
+                        AYAKALEAF_ADMIN_EMAIL,
+                        str(record.get("password", "") or ""),
+                        request.header("host"),
+                    )
                 )
-            else:
-                guest = self._token_guest(request)
-                if guest is None:
-                    return refused()
-                cookie = self._signed_in(
-                    record,
-                    str(guest.get("email", "") or ""),
-                    str(guest.get("password", "") or ""),
-                    host,
-                    is_guest=True,
-                )
-            if not cookie:
-                return answered(502)
-            return answered(
-                302,
-                headers=(
-                    ("Location", AYAKALEAF_PROJECT_PATH),
-                    ("Set-Cookie", cookie),
-                    ("Cache-Control", "no-store"),
-                    ("Referrer-Policy", "no-referrer"),
-                ),
-            )
+            decision = self._guests.admit(request, record)
+            return refused() if decision is None else decision
         if request.cookie_values(_cookie_name(record)):
             return RELAY
         return refused()
@@ -854,17 +826,94 @@ class AyakaleafHooks(ContainerHooks):
             timeout=AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
         )
 
+    # --- the guest hooks ---
+
+    def make_guest(self, guest: ShareGuest, record: dict) -> dict:
+        """Make one guest's account in four steps, as the administrator.
+
+        Args:
+            guest: The guest.
+            record: The module's record.
+
+        Returns:
+            ``{user_id}``, the app's id for the account.
+
+        Raises:
+            ModuleApplyError: ``ayakaleaf_guest_failed {step, detail}``,
+                ``step`` being ``admin_login``, ``register``, ``password``
+                or ``name``.
+        """
+        port = int(record.get("upstream_port", 0) or 0)
+        admin = self._admin(record, step=AYAKALEAF_GUEST_STEP_ADMIN_LOGIN)
+        user_id = register_guest(
+            admin,
+            guest,
+            functools.partial(
+                self._browser_factory, port=port, cookie_name=_cookie_name(record)
+            ),
+        )
+        return {"user_id": user_id}
+
+    def remove_guest(self, made: dict, record: dict) -> bool:
+        """Delete one guest's account by its ``user_id``, as the administrator.
+
+        Args:
+            made: The guest as the record keeps it.
+            record: The module's record.
+
+        Returns:
+            True once the account is gone.
+
+        Raises:
+            OSError: When the app does not answer or refuses the
+                administrator.
+        """
+        admin = self._admin(record)
+        return delete_guest(admin, str(made.get("user_id", "") or ""))
+
+    def sign_in_guest(self, request, made: dict, record: dict) -> ForwardDecision:
+        """Sign a visitor in as a guest, its waiting invitations accepted.
+
+        Args:
+            request: The request.
+            made: The guest as the record keeps it.
+            record: The module's record.
+
+        Returns:
+            A redirect to ``/project`` carrying the app's cookie; 502 when
+            the app refuses the login or does not answer.
+        """
+        return _signed_in_answer(
+            self._signed_in(
+                record,
+                str(made.get("email", "") or ""),
+                str(made.get("password", "") or ""),
+                request.header("host"),
+                is_guest=True,
+            )
+        )
+
     # --- the module's own steps ---
 
-    def _token_guest(self, request) -> "dict | None":
-        """The made guest whose secret the request's token verifies under, spent; None for none."""
-        with self._lock:
-            guests = self._guests
-        for guest in guests:
-            secret = str(guest.get("secret", "") or "")
-            if secret and request.take_token(secret=secret):
-                return guest
-        return None
+    def _admin(self, record: dict, *, step: str = "") -> AppBrowser:
+        """A browser signed in as the administrator over the published port.
+
+        Raises:
+            ModuleApplyError: ``ayakaleaf_guest_failed {step, detail}`` for
+                a refused or unanswered login, when a step is named.
+            OSError: For the same, when none is.
+        """
+        admin = self._browser_factory(
+            port=int(record.get("upstream_port", 0) or 0),
+            cookie_name=_cookie_name(record),
+        )
+        try:
+            sign_in(admin, AYAKALEAF_ADMIN_EMAIL, str(record.get("password", "") or ""))
+        except OSError as error:
+            if not step:
+                raise
+            raise guest_failed(AYAKALEAF_GUEST_FAILED, step, error) from error
+        return admin
 
     def _signed_in(
         self,
@@ -1006,95 +1055,20 @@ class AyakaleafHooks(ContainerHooks):
         raise _setup_failed(AYAKALEAF_STEP_TEX, detail)
 
     def _settle_guests(self, record: dict) -> dict:
-        """Make each guest the state names and the record does not hold, and delete each one it no longer names.
+        """Make and remove the guests of the module's Web shares, once the app answers.
 
         Raises:
-            ModuleInstallPending: While a guest is owed and the app does
-                not answer.
+            ModuleInstallPending: While a guest is owed or kept past its
+                share and the app does not answer.
         """
         config = self._config or AyakaleafConfig.from_dict(record)
-        wanted = {guest.account: guest for guest in config.guests}
-        made = {}
-        for held in record.get("guests") or []:
-            if isinstance(held, dict) and held.get("account"):
-                made[str(held["account"])] = dict(held)
-        for account, guest in wanted.items():
-            if account in made:
-                made[account]["secret"] = guest.secret
-        held_failures = record.get("guest_failures")
-        failures = {
-            account: dict(failure)
-            for account, failure in (
-                held_failures.items() if isinstance(held_failures, dict) else ()
-            )
-            if account in wanted and account not in made and isinstance(failure, dict)
-        }
-        owed = [guest for account, guest in wanted.items() if account not in made]
-        gone = [account for account in made if account not in wanted]
-        if owed or gone:
-            port = int(record.get("upstream_port", 0) or 0)
-            if self._status(port) != 200:
-                self._keep_guests(record, made, failures)
-                raise ModuleInstallPending(AYAKALEAF_GUESTS_PENDING)
-            admin = self._browser_factory(port=port, cookie_name=_cookie_name(record))
-            try:
-                sign_in(
-                    admin, AYAKALEAF_ADMIN_EMAIL, str(record.get("password", "") or "")
-                )
-            except OSError as error:
-                for guest in owed:
-                    failures[guest.account] = {
-                        "step": AYAKALEAF_GUEST_STEP_ADMIN_LOGIN,
-                        "detail": str(error)[:DETAIL_CHARS],
-                    }
-                self._log(f"{self._name}: guests wait: {str(error)[:DETAIL_CHARS]}")
-                return self._keep_guests(record, made, failures)
-            for guest in owed:
-                try:
-                    user_id = make_guest(
-                        admin,
-                        guest,
-                        functools.partial(
-                            self._browser_factory,
-                            port=port,
-                            cookie_name=_cookie_name(record),
-                        ),
-                    )
-                except ModuleApplyError as error:
-                    failures[guest.account] = dict(error.params)
-                    self._log(f"{self._name}: {guest.account}: {error.params}")
-                    continue
-                made[guest.account] = {**guest.to_dict(), "user_id": user_id}
-                failures.pop(guest.account, None)
-                self._log(f"{self._name}: the guest {guest.account} is made")
-            for account in gone:
-                try:
-                    is_gone = delete_guest(admin, str(made[account].get("user_id", "")))
-                except OSError as error:
-                    is_gone = False
-                    self._log(f"{self._name}: {account} stays: {error}")
-                if is_gone:
-                    del made[account]
-                    self._log(f"{self._name}: the guest {account} is deleted")
-        return self._keep_guests(record, made, failures)
-
-    def _keep_guests(self, record: dict, made: dict, failures: dict) -> dict:
-        """Write the guests made and the failures into the record, and hand the made ones to the forwarder."""
-        kept = self._keep(
-            {**record, "guests": list(made.values()), "guest_failures": failures}
-        )
-        self._take_guests(kept)
-        return kept
-
-    def _take_guests(self, record: dict) -> None:
-        """Take the guests a record holds as the ones the forwarder signs visitors in as."""
-        guests = tuple(
-            dict(guest)
-            for guest in record.get("guests") or []
-            if isinstance(guest, dict)
-        )
-        with self._lock:
-            self._guests = guests
+        if self._guests.is_settled(config.guests, record):
+            self._guests.take_record(record)
+            return record
+        if self._status(int(record.get("upstream_port", 0) or 0)) != 200:
+            self._guests.take_record(record)
+            raise ModuleInstallPending(AYAKALEAF_GUESTS_PENDING)
+        return self._keep({**record, **self._guests.settle(config.guests, record)})
 
     def _started_record(self) -> dict:
         """The record as this start serves it: the configuration, the ports, running.
@@ -1182,7 +1156,7 @@ class AyakaleafHooks(ContainerHooks):
             if self._is_resumed:
                 return record
             self._is_resumed = True
-        self._take_guests(record)
+        self._guests.take_record(record)
         if record and not record.get("is_stopped"):
             self._sync_forwarder(record)
         return record
@@ -1197,7 +1171,7 @@ class AyakaleafHooks(ContainerHooks):
                 return
             self._forwarder = None
         if is_first:
-            self._take_guests(record)
+            self._guests.take_record(record)
         if current is not None:
             current.close()
         if not record.get("port") or not record.get("upstream_port"):
@@ -1214,6 +1188,21 @@ class AyakaleafHooks(ContainerHooks):
             forwarder, self._forwarder = self._forwarder, None
         if forwarder is not None:
             forwarder.close()
+
+
+def _signed_in_answer(cookie: str) -> ForwardDecision:
+    """A redirect to ``/project`` carrying the app's session cookie; 502 for none."""
+    if not cookie:
+        return answered(502)
+    return answered(
+        302,
+        headers=(
+            ("Location", AYAKALEAF_PROJECT_PATH),
+            ("Set-Cookie", cookie),
+            ("Cache-Control", "no-store"),
+            ("Referrer-Policy", "no-referrer"),
+        ),
+    )
 
 
 def _cookie_name(record: dict) -> str:

@@ -17,49 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_COOKIE
-
-
-@dataclass(frozen=True)
-class AyakaleafGuest:
-    """The guest account of one live Web share of the app.
-
-    Attributes:
-        account: ``guest-`` and 4 characters, the account's name.
-        email: ``<account>@share.neutrino``.
-        password: The account's password.
-        secret: The secret a visitor's token is signed with.
-    """
-
-    account: str
-    email: str
-    password: str
-    secret: str
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "AyakaleafGuest | None":
-        """Read one guest the state carries.
-
-        Args:
-            data: ``{account, email, password, secret}``.
-
-        Returns:
-            The guest; None when a field is missing or empty.
-        """
-        fields = {
-            name: str(data.get(name, "") or "")
-            for name in ("account", "email", "password", "secret")
-        }
-        if not all(fields.values()):
-            return None
-        return cls(**fields)
-
-    def to_dict(self) -> dict:
-        return {
-            "account": self.account,
-            "email": self.email,
-            "password": self.password,
-            "secret": self.secret,
-        }
+from neutrino_agent.modules.shared.guest_accounts import share_guests
 
 
 @dataclass(frozen=True)
@@ -71,7 +29,8 @@ class AyakaleafConfig:
         password: The administrator's password.
         cookie_name: The name of the app's session cookie.
         local_name: The app's local name, a ``Host`` the forwarder accepts.
-        guests: The guest accounts of the live Web shares, in order.
+        guests: The guest accounts of the live Web shares, in order, each
+            a :class:`ShareGuest`.
     """
 
     secret: str = ""
@@ -92,18 +51,10 @@ class AyakaleafConfig:
         Returns:
             The configuration.
         """
-        guests = []
-        accounts = set()
-        for entry in data.get("guests") or []:
-            guest = AyakaleafGuest.from_dict(entry) if isinstance(entry, dict) else None
-            if guest is None or guest.account in accounts:
-                continue
-            accounts.add(guest.account)
-            guests.append(guest)
         return cls(
             secret=str(data.get("secret", "") or ""),
             password=str(data.get("password", "") or ""),
             cookie_name=str(data.get("cookie_name", "") or "") or AYAKALEAF_COOKIE,
             local_name=str(data.get("local_name", "") or ""),
-            guests=tuple(guests),
+            guests=share_guests(data.get("guests")),
         )
