@@ -2,9 +2,10 @@
 
 The tab words where each container comes from with one of three chips, and
 the Hub containers block with its title, its hint and its empty line; the
-codes Containers adds for hub containers and for container modules have a
-sentence in both languages; and the old badges are gone, so nothing names
-a person's container anything but manual.
+Run settings' default line says what ui_text.md writes; the codes
+Containers adds for hub containers and for container modules have a
+sentence in both languages; and the old badges are gone, so nothing names a
+person's container anything but manual.
 """
 
 import json
@@ -31,6 +32,8 @@ WORDS = {
         "ui.containers.source_hub": "hub",
         "ui.containers.source_declared": "declared",
         "ui.containers.source_manual": "manual",
+        "ui.containers.run_default_hint": "0 uses the default: half the CPUs, half the memory up to 4 GiB, a 100 GiB disk.",
+        "ui.containers.run_default_hint_windows": "A 0 for CPUs or memory uses the default: half the CPUs, half the memory up to 4 GiB.",
     },
     "zh-CN": {
         "ui.containers.hub_title": "中枢的容器",
@@ -39,6 +42,8 @@ WORDS = {
         "ui.containers.source_hub": "中枢",
         "ui.containers.source_declared": "声明",
         "ui.containers.source_manual": "手动",
+        "ui.containers.run_default_hint": "填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）、100 GiB 磁盘。",
+        "ui.containers.run_default_hint_windows": "CPU 数或内存填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）。",
     },
 }
 CODES = ("container_name_reserved", "module_in_use", "container_hub_owned")
