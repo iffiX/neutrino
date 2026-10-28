@@ -38,7 +38,7 @@ from neutrino_hub.web.constants import (
     WEB_SOCKET_SESSION_END_GRACE_S,
     WEB_STATS_PUSH_INTERVAL_S,
 )
-from neutrino_hub.web.dependencies import request_cookie
+from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.dns_log import DnsLogReader
 from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.shell_bridge import (
@@ -394,14 +394,14 @@ async def _while_signed_in(websocket: WebSocket, serving) -> None:
 async def _session_ended(websocket: WebSocket) -> None:
     """Return once the socket's session is no longer valid."""
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(request_cookie(runtime, websocket))
+    token = websocket.cookies.get(session_cookie())
     while runtime.sessions.is_valid(token):
         await asyncio.sleep(WEB_SOCKET_SESSION_CHECK_INTERVAL_S)
 
 
 async def _accept(websocket: WebSocket) -> bool:
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(request_cookie(runtime, websocket))
+    token = websocket.cookies.get(session_cookie())
     if not runtime.sessions.is_valid(token):
         await websocket.close(code=POLICY_VIOLATION_CODE, reason="not authenticated")
         return False

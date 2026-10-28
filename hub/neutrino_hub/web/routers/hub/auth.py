@@ -32,7 +32,7 @@ def login(
         request: The submitted password.
         response: Response the session cookie is set on.
         http_request: The incoming request, read for the scheme it came
-            over, which names the cookie and sets ``Secure``.
+            over, which sets ``Secure``.
         runtime: The shared runtime.
 
     Returns:
@@ -49,7 +49,7 @@ def login(
         )
     scheme = http_request.url.scheme
     response.set_cookie(
-        session_cookie(runtime),
+        session_cookie(),
         token,
         httponly=True,
         samesite="lax",
@@ -75,7 +75,7 @@ def logout(
     Returns:
         Always unauthenticated.
     """
-    name = session_cookie(runtime)
+    name = session_cookie()
     token = request.cookies.get(name)
     if token:
         runtime.sessions.logout(token)
@@ -97,7 +97,7 @@ def session(
     Returns:
         The current authentication state.
     """
-    token = request.cookies.get(session_cookie(runtime))
+    token = request.cookies.get(session_cookie())
     return SessionView(
         is_authenticated=runtime.sessions.is_valid(token),
         lockout_remaining_s=runtime.sessions.lockout_remaining_s(),

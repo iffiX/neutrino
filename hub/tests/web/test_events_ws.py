@@ -11,7 +11,6 @@ what they carry. The agent arrives as the transport brings it: a
 """
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -39,8 +38,6 @@ from neutrino_hub.web.web_share_access import WebShareGuestSessions
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
 SESSION_TOKEN = "panel-session"
-# This panel answers on the default port, so its cookie is named for it.
-SESSION_COOKIE = session_cookie(SimpleNamespace(settings={}))
 POLICY_VIOLATION_CODE = 1008
 
 
@@ -120,7 +117,7 @@ def box(monkeypatch, tmp_path):
     app.state.runtime = runtime
     set_config_write_hook(runtime._publish_config_write)
     with TestClient(app) as client:
-        client.cookies.set(SESSION_COOKIE, SESSION_TOKEN)
+        client.cookies.set(session_cookie(), SESSION_TOKEN)
         yield client, runtime
     set_config_write_hook(None)
 
@@ -234,7 +231,7 @@ def frames_until(panel, event_type: str) -> list:
 
 def test_an_unauthenticated_socket_is_closed_on_the_policy_code(box):
     client, _ = box
-    client.cookies.delete(SESSION_COOKIE)
+    client.cookies.delete(session_cookie())
 
     with pytest.raises(WebSocketDisconnect) as refusal:
         with client.websocket_connect("/ws/hub/event"):

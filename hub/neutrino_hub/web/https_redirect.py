@@ -24,10 +24,10 @@ from neutrino_hub.web.constants import (
     WEB_HTTPS_SCHEME_PORT,
     WEB_PANEL_TLS_AUTHORITY_ROUTE,
     WEB_PANEL_TLS_PROBE_ROUTE,
-    WEB_SESSION_COOKIE_PREFIX,
     WEB_SETTING_HTTPS,
     WEB_SETTING_HTTPS_PORT,
 )
+from neutrino_hub.web.dependencies import session_cookie
 
 HTTPS_REDIRECT_STATUS = 301
 # The close code a websocket gets on the port the panel is not on.
@@ -168,7 +168,7 @@ class PanelHttpsRedirectMiddleware:
 
     def _deleted_cookie(self, is_secure: bool) -> str:
         """The header that removes the session cookie on the port left."""
-        name = f"{WEB_SESSION_COOKIE_PREFIX}{self._http_port()}"
+        name = session_cookie()
         secure = "; Secure" if is_secure else ""
         return f"{name}=; Max-Age=0; Path=/; HttpOnly; SameSite=lax{secure}"
 

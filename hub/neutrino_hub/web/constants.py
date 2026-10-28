@@ -8,19 +8,14 @@ from neutrino_hub.utils.constants import (
 )
 
 WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
-# The session cookie carries the panel's port in its name, so two hubs behind
-# one hostname keep their own session instead of evicting each other's. The
-# name is composed in one place, ``web/dependencies.session_cookie``.
+# The session cookie's prefix, and how many characters of the hub's id follow
+# it. The name is composed in one place, ``web/dependencies.session_cookie``.
 WEB_SESSION_COOKIE_PREFIX = "neutrino_session_"
+WEB_SESSION_COOKIE_HUB_CHARS = 12
 # A client's sign-in to the panel: the query parameter the token rides in,
 # its random bytes, how long it may wait to be spent, and how many one
 # client may hold unspent.
 WEB_PANEL_TOKEN_PARAM = "tkn"
-# The cookie a session a client's forward opened rides in, named by the hub,
-# since a browser keeps cookies by host alone on 127.0.0.1; and how many
-# characters of the hub's id name it.
-WEB_PANEL_COOKIE_PREFIX = "neutrino_panel_"
-WEB_PANEL_COOKIE_HUB_CHARS = 12
 WEB_PANEL_TOKEN_BYTES = 32
 WEB_PANEL_TOKEN_TTL_S = 60
 WEB_PANEL_TOKENS_MAX = 8

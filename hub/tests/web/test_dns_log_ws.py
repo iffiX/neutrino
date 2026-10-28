@@ -17,7 +17,6 @@ from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.models import DnsLogEntry
 
 SESSION_TOKEN = "panel-session"
-SESSION_COOKIE = session_cookie(SimpleNamespace(settings={}))
 POLL_S = 0.01
 
 
@@ -53,7 +52,7 @@ def client(monkeypatch):
     app.include_router(ws.router)
     app.state.runtime = SimpleNamespace(settings={}, sessions=StubSessions())
     with TestClient(app) as test_client:
-        test_client.cookies.set(SESSION_COOKIE, SESSION_TOKEN)
+        test_client.cookies.set(session_cookie(), SESSION_TOKEN)
         yield test_client
 
 

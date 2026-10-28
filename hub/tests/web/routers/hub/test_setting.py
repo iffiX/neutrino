@@ -458,11 +458,12 @@ def test_the_settings_count_the_peers_with_a_binding_and_no_session(port_client)
     assert settings["offline_agent_count"] == 1
 
 
-# --- the port names the session cookie, so two hubs on one host keep theirs ---
+# --- the session cookie, named after the hub, on the auth and Settings routes ---
 
 PANEL_PORT = 9443
 PANEL_PASSWORD = "right"
-OTHER_PORT_COOKIE = "neutrino_session_8080"
+HUB_ID = "a9cae9416662417c8f1e2d3c4b5a6978"  # scan: allow
+HUB_COOKIE = "neutrino_session_a9cae9416662"
 
 
 class CookieRuntime:
@@ -476,10 +477,21 @@ class CookieRuntime:
 
 
 @pytest.fixture
-def cookie_client(monkeypatch, tmp_path):
+def hub_identity(monkeypatch, tmp_path):
+    """A config directory whose identity file holds ``HUB_ID``."""
+    monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", tmp_path)
+    (tmp_path / "web").mkdir(exist_ok=True)
+    (tmp_path / "web" / "identity.json").write_text(
+        json.dumps({"id": HUB_ID, "name": "argon"})
+    )
     monkeypatch.setattr(
         web_auth, "WEB_LOGIN_LOCKOUT_STATE_PATH", tmp_path / "login_lockout.json"
     )
+    return tmp_path
+
+
+@pytest.fixture
+def cookie_client(hub_identity):
     runtime = CookieRuntime()
     app = FastAPI()
     app.include_router(auth_router.router)
@@ -497,50 +509,9 @@ def signed_in_token(opened) -> str:
     """Log in and hand back the token the cookie carries."""
     response = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
     assert response.json()["is_authenticated"] is True
-    token = response.cookies[f"neutrino_session_{PANEL_PORT}"]
+    token = response.cookies[HUB_COOKIE]
     opened.cookies.clear()
     return token
-
-
-def test_the_login_cookie_is_named_after_the_panel_port(cookie_client):
-    response = cookie_client.post(
-        "/api/hub/auth/login", json={"password": PANEL_PASSWORD}
-    )
-
-    assert response.status_code == 200
-    assert f"neutrino_session_{PANEL_PORT}" in response.cookies
-    assert OTHER_PORT_COOKIE not in response.cookies
-
-
-def test_a_cookie_named_for_another_port_is_not_a_session(cookie_client):
-    token = signed_in_token(cookie_client)
-
-    response = cookie_client.get(
-        "/api/hub/thing", headers={"cookie": f"{OTHER_PORT_COOKIE}={token}"}
-    )
-
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "not_authenticated"
-
-
-def test_the_cookie_named_for_this_port_is_the_session(cookie_client):
-    token = signed_in_token(cookie_client)
-
-    response = cookie_client.get(
-        "/api/hub/thing",
-        headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
-    )
-
-    assert response.json() == {"read": True}
-
-
-def test_a_login_over_https_sets_the_one_cookie_secure(cookie_client):
-    with TestClient(cookie_client.app, base_url="https://testserver") as secure:
-        response = secure.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
-
-    assert response.json()["is_authenticated"] is True
-    assert f"neutrino_session_{PANEL_PORT}" in response.cookies
-    assert "Secure" in response.headers["set-cookie"]
 
 
 def test_the_session_view_names_the_https_port(cookie_client):
@@ -557,7 +528,7 @@ def test_switching_https_ends_the_session_on_the_scheme_left(cookie_client):
     token = runtime.sessions.login(PANEL_PASSWORD)
     request = SimpleNamespace(
         url=SimpleNamespace(scheme="https"),
-        cookies={f"neutrino_session_{PANEL_PORT}": token},
+        cookies={HUB_COOKIE: token},
     )
     response = Response()
 
@@ -565,24 +536,24 @@ def test_switching_https_ends_the_session_on_the_scheme_left(cookie_client):
 
     assert runtime.sessions.is_valid(token) is False
     header = response.headers["set-cookie"]
-    assert header.startswith(f"neutrino_session_{PANEL_PORT}=")
+    assert header.startswith(f"{HUB_COOKIE}=")
     assert "Max-Age=0" in header and "Secure" in header
 
 
-def test_logout_clears_the_cookie_this_port_named(cookie_client):
+def test_logout_clears_the_hub_cookie(cookie_client):
     token = signed_in_token(cookie_client)
 
     response = cookie_client.post(
         "/api/hub/auth/logout",
-        headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
+        headers={"cookie": f"{HUB_COOKIE}={token}"},
     )
 
     assert response.json()["is_authenticated"] is False
-    assert f"neutrino_session_{PANEL_PORT}" in response.headers["set-cookie"]
+    assert HUB_COOKIE in response.headers["set-cookie"]
     assert (
         cookie_client.get(
             "/api/hub/thing",
-            headers={"cookie": f"neutrino_session_{PANEL_PORT}={token}"},
+            headers={"cookie": f"{HUB_COOKIE}={token}"},
         ).status_code
         == 401
     )
@@ -2298,7 +2269,7 @@ def test_the_https_port_answers_301_to_the_http_port_while_https_is_off(
     assert answer.headers["location"] == location
 
 
-def test_the_redirect_deletes_the_session_cookie_of_the_port_left():
+def test_the_redirect_deletes_the_session_cookie_of_the_port_left(hub_identity):
     off = redirecting(HttpsRuntime())
     on_runtime = HttpsRuntime()
     on_runtime.settings["is_https_enabled"] = True
@@ -2307,9 +2278,9 @@ def test_the_redirect_deletes_the_session_cookie_of_the_port_left():
     from_https = off.get("https://192.168.100.1/").headers["set-cookie"]
     from_http = on.get("http://192.168.100.1:8080/").headers["set-cookie"]
 
-    assert from_https.startswith("neutrino_session_8080=")
+    assert from_https.startswith(f"{HUB_COOKIE}=")
     assert "Max-Age=0" in from_https and "Secure" in from_https
-    assert from_http.startswith("neutrino_session_8080=")
+    assert from_http.startswith(f"{HUB_COOKIE}=")
     assert "Max-Age=0" in from_http and "Secure" not in from_http
 
 
@@ -2386,10 +2357,7 @@ def test_a_locked_vault_turns_nothing_on(https_box, monkeypatch, tmp_path):
     assert restarts == []
 
 
-def test_the_session_cookie_is_secure_on_the_https_port_only(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        web_auth, "WEB_LOGIN_LOCKOUT_STATE_PATH", tmp_path / "login_lockout.json"
-    )
+def test_the_session_cookie_is_secure_on_the_https_port_only(hub_identity):
     runtime = CookieRuntime()
     runtime.settings["is_https_enabled"] = True
     app = FastAPI()
@@ -2402,9 +2370,9 @@ def test_the_session_cookie_is_secure_on_the_https_port_only(monkeypatch, tmp_pa
         secure = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
 
     assert "secure" not in plain.headers["set-cookie"].lower()
-    assert plain.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
+    assert plain.headers["set-cookie"].startswith(f"{HUB_COOKIE}=")
     assert "secure" in secure.headers["set-cookie"].lower()
-    assert secure.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
+    assert secure.headers["set-cookie"].startswith(f"{HUB_COOKIE}=")
 
 
 # --- macOS and Windows: the panel restarts by the service exiting ---
