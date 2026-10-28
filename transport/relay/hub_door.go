@@ -205,14 +205,15 @@ func (h *Hub) serveKnock(d *door, conn net.Conn, reader *bufio.Reader, key noise
 			}
 		}
 	}
-	message2, keys, err := responder.Answer(psk)
+	message2, keys, err := responder.Answer(psk, knock.Padding())
 	if err != nil {
 		return
 	}
-	if _, err := conn.Write(knock.EncodeHeader(key.Public, knock.KnockTypeAnswer)); err != nil {
+	answer := bytes.NewBuffer(knock.EncodeHeader(key.Public, knock.KnockTypeAnswer))
+	if err := session.WriteLengthPrefixed(answer, message2); err != nil {
 		return
 	}
-	if err := session.WriteLengthPrefixed(conn, message2); err != nil {
+	if _, err := conn.Write(answer.Bytes()); err != nil {
 		return
 	}
 	endHandshake()

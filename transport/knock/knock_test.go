@@ -128,7 +128,7 @@ func TestWrongKnocks(t *testing.T) {
 	if good.VerifyMac1(otherKey) {
 		t.Fatal("mac1 verifies under another key")
 	}
-	if _, err := ReadBody(bytes.NewReader([]byte{0x03, 0xff}), raw[:KnockHeaderBytes]); !errors.Is(err, ErrKnockMalformed) {
+	if _, err := ReadBody(bytes.NewReader([]byte{0x04, 0x20}), raw[:KnockHeaderBytes]); !errors.Is(err, ErrKnockMalformed) {
 		t.Fatalf("err %v, want malformed", err)
 	}
 	if _, err := ParseHeader(raw[:KnockHeaderBytes], otherKey); !errors.Is(err, ErrKnockMalformed) {
@@ -145,6 +145,23 @@ func TestWrongKnocks(t *testing.T) {
 	}
 	if _, err := Encode(make([]byte, KnockBytesMax), nil, nil); !errors.Is(err, ErrKnockMalformed) {
 		t.Fatalf("err %v, want malformed", err)
+	}
+}
+
+// TestPaddedKnockVector checks the knock over a padded message 1 against
+// paddedKnockVector, its size within KnockBytesMax.
+func TestPaddedKnockVector(t *testing.T) {
+	v := loadVectors(t)
+	raw, err := Encode(unhex(t, paddedKnockVector.Message1), unhex(t, v.HubPublic), unhex(t, v.Cookie))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(raw); got != paddedKnockVector.Knock {
+		t.Fatalf("knock %s, want %s", got, paddedKnockVector.Knock)
+	}
+	parsed, err := ReadBody(bytes.NewReader(raw[KnockHeaderBytes:]), raw[:KnockHeaderBytes])
+	if err != nil || !parsed.VerifyMac1(unhex(t, v.HubPublic)) || len(raw) > KnockBytesMax {
+		t.Fatalf("a knock of %d bytes: %v", len(raw), err)
 	}
 }
 

@@ -43,13 +43,13 @@ func (r *Responder) Read(message1 []byte) error {
 	return nil
 }
 
-// Answer writes message 2 under psk and returns it with the session's keys.
-// It returns an error when psk is not 32 bytes.
-func (r *Responder) Answer(psk []byte) ([]byte, *Keys, error) {
+// Answer writes message 2 under psk with payload inside it and returns it
+// with the session's keys. It returns an error when psk is not 32 bytes.
+func (r *Responder) Answer(psk, payload []byte) ([]byte, *Keys, error) {
 	if err := r.state.SetPresharedKey(psk); err != nil {
 		return nil, nil, fmt.Errorf("psk: %w", err)
 	}
-	message2, receive, send, err := r.state.WriteMessage(nil, nil)
+	message2, receive, send, err := r.state.WriteMessage(nil, payload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("message 2: %w", err)
 	}

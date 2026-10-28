@@ -84,7 +84,7 @@ func (h *fakeHub) answer(conn net.Conn) {
 	if err := responder.Read(parsed.Message1); err != nil {
 		return
 	}
-	message2, keys, err := responder.Answer(h.psk)
+	message2, keys, err := responder.Answer(h.psk, knock.Padding())
 	if err != nil {
 		return
 	}
@@ -182,5 +182,37 @@ func TestDialSilenceAndSchemes(t *testing.T) {
 	}
 	if _, err := Dial(context.Background(), "tcp://127.0.0.1:1", options); err == nil {
 		t.Fatal("a closed port dialled")
+	}
+}
+
+// TestKnockIsPadded checks that message 1 carries 0 to KnockPaddingBytesMax
+// bytes of padding after its JSON, drawn for each dial, and that the hub
+// reads the JSON through it.
+func TestKnockIsPadded(t *testing.T) {
+	hub := newFakeHub(t)
+	peer, _ := handshake.GenerateKey()
+	sizes := map[int]bool{}
+	smallest, largest := knock.KnockBytesMax, 0
+	for i := 0; i < 40; i++ {
+		options := DialOptions{Static: peer, HubPublic: hub.key.Public, Psk: handshake.ZeroPsk, Protocol: knock.PROTOCOL, Role: knock.KnockRoleAgent, IsJoin: true}
+		result, err := Dial(context.Background(), hub.address(), options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.Conn.Close()
+		knocked := <-hub.knocks
+		responder, _ := handshake.NewResponder(hub.key)
+		if err := responder.Read(knocked.Message1); err != nil {
+			t.Fatal(err)
+		}
+		payload, err := knock.ParsePayload(responder.Payload)
+		if err != nil || payload.Role != knock.KnockRoleAgent || !payload.IsJoin {
+			t.Fatalf("payload %+v: %v", payload, err)
+		}
+		sizes[len(knocked.Raw)] = true
+		smallest, largest = min(smallest, len(knocked.Raw)), max(largest, len(knocked.Raw))
+	}
+	if len(sizes) < 5 || largest-smallest > knock.KnockPaddingBytesMax {
+		t.Fatalf("%d knock sizes from %d to %d bytes", len(sizes), smallest, largest)
 	}
 }

@@ -30,9 +30,12 @@ const (
 	KnockTypeKnock       = 1
 	KnockTypeAnswer      = 2
 	KnockTypeCookieReply = 3
+	// KnockPaddingBytesMax bounds the random padding after message 1's JSON
+	// and in message 2's payload.
+	KnockPaddingBytesMax = 64
 	// KnockBytesMax bounds a whole knock: the header, the length, message 1
-	// and the two macs.
-	KnockBytesMax = 1024
+	// with its padding and the two macs.
+	KnockBytesMax = 1024 + KnockPaddingBytesMax
 	// KnockMacBytes is the size of mac1, of mac2 and of a cookie.
 	KnockMacBytes = 16
 	// KnockMac1Label keys mac1 together with the hub's public key.

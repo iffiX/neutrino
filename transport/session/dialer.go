@@ -113,7 +113,7 @@ func dialOnce(ctx context.Context, hostPort string, options DialOptions, cookie 
 		_ = conn.SetDeadline(deadline)
 	}
 	payload := knock.Payload{Protocol: options.Protocol, Role: options.Role, IsJoin: options.IsJoin, Time: now().UnixNano()}
-	initiator, err := handshake.NewInitiator(options.Static, options.HubPublic, options.Psk, payload.Marshal())
+	initiator, err := handshake.NewInitiator(options.Static, options.HubPublic, options.Psk, append(payload.Marshal(), knock.Padding()...))
 	if err != nil {
 		return nil, nil, err
 	}

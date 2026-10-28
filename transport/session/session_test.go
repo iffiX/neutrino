@@ -28,7 +28,7 @@ func noisePair(t *testing.T) (*NoiseConn, *NoiseConn) {
 	if err := responder.Read(initiator.Message1); err != nil {
 		t.Fatal(err)
 	}
-	message2, hubKeys, err := responder.Answer(handshake.ZeroPsk)
+	message2, hubKeys, err := responder.Answer(handshake.ZeroPsk, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

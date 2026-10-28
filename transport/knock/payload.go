@@ -1,6 +1,7 @@
 package knock
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -24,12 +25,12 @@ func (p Payload) Marshal() []byte {
 	return data
 }
 
-// ParsePayload reads a payload and checks its role. It returns
-// ErrKnockMalformed for bytes that are not the JSON object or a role that is
-// neither agent nor client.
+// ParsePayload reads a payload's JSON object, ignores the padding after it
+// and checks its role. It returns ErrKnockMalformed for bytes that do not
+// open with the JSON object or a role that is neither agent nor client.
 func ParsePayload(data []byte) (Payload, error) {
 	var payload Payload
-	if err := json.Unmarshal(data, &payload); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&payload); err != nil {
 		return Payload{}, fmt.Errorf("%w: payload: %w", ErrKnockMalformed, err)
 	}
 	if payload.Role != KnockRoleAgent && payload.Role != KnockRoleClient {

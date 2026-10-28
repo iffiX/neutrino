@@ -18,3 +18,23 @@ var cacophonyVector = vector{
 	Msg3Payload:    "7375626d6172696e6579656c6c6f77",                                                                                                                                                                   // scan: allow
 	Msg3Ciphertext: "8a2e7119635e41a35b7e64e0adac5483b66b1a9827895124ea07d58440b654",                                                                                                                                   // scan: allow
 }
+
+// paddedVector is message 1 and message 2 of the cacophony keys under the
+// channel's prologue, message 1 carrying a payload's JSON and 64 bytes of
+// 0xa5 padding and message 2 64 bytes of 0x5a padding. It was made on
+// 2026-10-28 when the padding was added.
+var paddedVector = struct {
+	Payload      string
+	Padding1     byte
+	Padding2     byte
+	PaddingBytes int
+	Message1     string
+	Message2     string
+}{
+	Payload:      `{"protocol":4,"role":"agent","is_join":false,"time":1761600000000000000}`,
+	Padding1:     0xa5,
+	Padding2:     0x5a,
+	PaddingBytes: 64,
+	Message1:     "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254d06f15f78ad0914d9715147bb5a5004b27345a838bab4aa8bc5f144afc2cf4cc142fdcfd78db6728d82683ff8e94a852657a74be5f83b479ffba58cf336b4203db897fba7b18229f65d3a4ba8adfb3187bba9176cabc81cd87810d2675ff708bbd4a99b94dafbdb4ec10798d9b7c4634d6acaee934605f25b01e29060e87d6a37ccb50a49703cfb98ae6e8d627b213004ca628fc17691e5c80aa3569cb44b9f95c1d89017846426bb6f7e553cea7849c1aab8e093d9c2840e6ed4b2141c87477ead86501bccfb226", // scan: allow
+	Message2:     "64b101b1d0be5a8704bd078f9895001fc03e8e9f9522f188dd128d9846d4846638b1403de2ba531601d9845fb9643872978fdc7ce1f9d8793f1f38a7b057e10cd5b058d28016dc307af498c0bba9a89b533f0681d31a63e6294c80bb3a362b12b5de7fcc845958860bd46e412f846213",                                                                                                                                                                                                                                                 // scan: allow
+}

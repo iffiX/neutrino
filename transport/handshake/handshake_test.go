@@ -66,7 +66,7 @@ func TestVector(t *testing.T) {
 	if !bytes.Equal(responder.PeerStatic, initStatic.Public) {
 		t.Fatalf("peer static %x, want %x", responder.PeerStatic, initStatic.Public)
 	}
-	message2, hubKeys, err := responder.Answer(psk)
+	message2, hubKeys, err := responder.Answer(psk, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +93,43 @@ func TestVector(t *testing.T) {
 	}
 	if got := hex.EncodeToString(sealed); got != v.Msg3Ciphertext {
 		t.Fatalf("transport message 2 %s, want %s", got, v.Msg3Ciphertext)
+	}
+}
+
+// TestPaddedVector checks message 1 and message 2 with their padding against
+// paddedVector, and that each side reads the other's message through it.
+func TestPaddedVector(t *testing.T) {
+	v := cacophonyVector
+	initStatic := pairFromPrivate(t, v.InitStatic)
+	respStatic := pairFromPrivate(t, v.RespStatic)
+	psk := unhex(t, v.PresharedKey)
+	payload := append([]byte(paddedVector.Payload), bytes.Repeat([]byte{paddedVector.Padding1}, paddedVector.PaddingBytes)...)
+	initiator, err := newInitiator(initStatic, unhex(t, v.InitEphemeral), respStatic.Public, psk, payload, []byte(HandshakePrologue))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(initiator.Message1); got != paddedVector.Message1 {
+		t.Fatalf("message 1 %s, want %s", got, paddedVector.Message1)
+	}
+	responder, err := newResponder(respStatic, bytes.NewReader(unhex(t, v.RespEphemeral)), []byte(HandshakePrologue))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := responder.Read(initiator.Message1); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(responder.Payload, payload) {
+		t.Fatalf("payload %q", responder.Payload)
+	}
+	message2, _, err := responder.Answer(psk, bytes.Repeat([]byte{paddedVector.Padding2}, paddedVector.PaddingBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(message2); got != paddedVector.Message2 {
+		t.Fatalf("message 2 %s, want %s", got, paddedVector.Message2)
+	}
+	if _, isRefusal, err := initiator.Open(message2); err != nil || isRefusal {
+		t.Fatalf("open: %v, refusal %v", err, isRefusal)
 	}
 }
 
@@ -135,7 +172,7 @@ func TestPskRules(t *testing.T) {
 			if string(responder.Payload) != `{"role":"agent"}` {
 				t.Fatalf("payload %q", responder.Payload)
 			}
-			message2, hubKeys, err := responder.Answer(c.hubPsk)
+			message2, hubKeys, err := responder.Answer(c.hubPsk, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
