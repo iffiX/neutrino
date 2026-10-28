@@ -305,7 +305,7 @@ def _checked_row(
                 account=request.account,
             )
     for path in (request.share_path, request.shell_path):
-        if path and not _is_absolute(path, is_windows):
+        if path and not is_machine_path_absolute(path, is_windows):
             raise _refusal(status.HTTP_400_BAD_REQUEST, CODE_PATH_INVALID, path=path)
     if is_windows and not request.password and (held is None or not held.login_id):
         raise _refusal(
@@ -411,7 +411,7 @@ def _settle_device_key(runtime: PanelRuntime, key: str) -> None:
     revoke_device_key(key)
 
 
-def _is_absolute(path: str, is_windows: bool) -> bool:
+def is_machine_path_absolute(path: str, is_windows: bool) -> bool:
     """Whether a path is absolute in the machine's own form."""
     if is_windows:
         return len(path) >= 3 and path[1] == ":" and path[2] in "\\/"

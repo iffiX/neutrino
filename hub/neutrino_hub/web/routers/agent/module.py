@@ -775,6 +775,33 @@ def store_config(
             configuration, 502 when the agent could not be asked, 500
             ``config_unwritable`` when the configuration cannot be written.
     """
+    validate_config(runtime, context, config)
+    written = dict(config)
+    write_module_config(runtime, context.key, context.module, written)
+    context.config = written
+    _claim_reported(runtime, context)
+    push_state(runtime, context.key)
+    recompose_published(runtime, context.module)
+
+
+def validate_config(
+    runtime: PanelRuntime, context: DeviceModuleContext, config: dict
+) -> None:
+    """Ask the agent whether the module's section holds together.
+
+    The agent checks the section as the pushed state would carry it,
+    composed from ``config`` by the same step.
+
+    Args:
+        runtime: The shared runtime.
+        context: The device and the module.
+        config: What the module's file would hold.
+
+    Raises:
+        HTTPException: 409 ``agent_offline`` when the device has no socket,
+            400 with the agent's own code when it refuses the
+            configuration, 502 when the agent could not be asked.
+    """
     require_online(context)
     try:
         verdict = runtime.agent_sessions.run_stream_from_thread(
@@ -804,12 +831,6 @@ def store_config(
             str(verdict.get("code") or "config_invalid"),
             **params,
         )
-    written = dict(config)
-    write_module_config(runtime, context.key, context.module, written)
-    context.config = written
-    _claim_reported(runtime, context)
-    push_state(runtime, context.key)
-    recompose_published(runtime, context.module)
 
 
 def _claim_reported(runtime: PanelRuntime, context: DeviceModuleContext) -> None:

@@ -34,6 +34,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TERMS_URL,
 )
 from neutrino_hub.modules.devices.desired_state import smb_user
+from neutrino_hub.modules.devices.folder_shares import folder_shares
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_layer_rows,
@@ -62,6 +63,7 @@ from neutrino_hub.web.routers.agent.module import (
 CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
 CODE_ACCOUNT_HOME_UNKNOWN = "account_home_unknown"
+CODE_SHARE_NAME_TAKEN = "share_name_taken"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
 
 
@@ -149,8 +151,9 @@ def replace_accounts(
         HTTPException: 400 ``account_unknown {account}`` for an account that
             is not available, ``account_duplicate {account}``; 409
             ``terms_not_accepted {module}`` for VS Code before its terms,
-            ``agent_offline``; 400 with the agent's code when it refuses the
-            configuration; 500 ``config_unwritable``.
+            ``agent_offline``; 400 ``share_name_taken {name}`` for a file
+            share account a folder share's name takes; 400 with the agent's
+            code when it refuses the configuration; 500 ``config_unwritable``.
         VaultLockedError: When a secret has to be sealed and the vault is
             locked.
     """
@@ -172,6 +175,8 @@ def replace_accounts(
                 status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_DUPLICATE, account=account
             )
         chosen.append(account)
+    if row.name == DEVICE_SAMBA_MODULE:
+        _refuse_folder_share_names(chosen, context.config)
     previous = dict(context.config)
     is_keyed = row.name in gateway_instance_names()
     try:
@@ -207,6 +212,20 @@ def replace_accounts(
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)
+
+
+def _refuse_folder_share_names(accounts: list, stored: dict) -> None:
+    """Refuse an account whose Home share would take a folder share's name.
+
+    Raises:
+        HTTPException: 400 ``share_name_taken {name}``, naming the folder
+            share.
+    """
+    for share in folder_shares(stored):
+        if any(account.lower() == share["name"].lower() for account in accounts):
+            raise _refusal(
+                status.HTTP_400_BAD_REQUEST, CODE_SHARE_NAME_TAKEN, name=share["name"]
+            )
 
 
 def _validate(runtime: PanelRuntime, context: DeviceModuleContext, config: dict):

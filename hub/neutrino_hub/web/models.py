@@ -2522,6 +2522,40 @@ class SambaStatusView(BaseModel):
     disks: list[SambaDiskView]
 
 
+class FolderShareView(BaseModel):
+    """A folder share: a named share at a folder, open to the accounts checked."""
+
+    name: str
+    path: str
+    # The accounts checked for it, in the file share's order.
+    accounts: list[str] = Field(default_factory=list)
+
+
+class FolderShareListView(BaseModel):
+    """A machine's folder shares and the accounts a folder share can name."""
+
+    # In the order they were added.
+    shares: list[FolderShareView] = Field(default_factory=list)
+    # The file share's enabled accounts, in their order.
+    accounts: list[str] = Field(default_factory=list)
+
+
+class FolderShareUpdate(BaseModel):
+    """A folder share being added, or replaced under its name."""
+
+    device_id: str
+    name: str
+    path: str
+    accounts: list[str] = Field(min_length=1)
+
+
+class FolderShareRemove(BaseModel):
+    """A folder share being removed."""
+
+    device_id: str
+    name: str
+
+
 class GiteaSettingsView(BaseModel):
     """The Gitea tab: configuration plus what the box actually has."""
 

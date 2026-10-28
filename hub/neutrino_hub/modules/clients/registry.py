@@ -660,6 +660,49 @@ class ClientRegistry:
                 self._write_stored()
         return expired
 
+    def forget_permission_rows(self, row_ids) -> bool:
+        """Take rows out of the ``entries`` of every permission, the default's and each client's.
+
+        Args:
+            row_ids: The row ids of things gone for good, such as a removed
+                folder share's.
+
+        Returns:
+            Whether any permission named one. The file is written once, and
+            only when something changed.
+        """
+        gone = set(row_ids)
+        with CONFIG_WRITE_LOCK:
+            try:
+                document = read_config(CLIENTS_CONFIG_PATH)
+            except FileNotFoundError:
+                return False
+            permissions = [document.get("default_permission")]
+            clients = document.get("clients")
+            if isinstance(clients, dict):
+                permissions += [
+                    entry.get("permission")
+                    for entry in clients.values()
+                    if isinstance(entry, dict)
+                ]
+            is_changed = False
+            for permission in permissions:
+                entries = (
+                    permission.get("entries") if isinstance(permission, dict) else None
+                )
+                if not isinstance(entries, dict) or not gone & set(entries):
+                    continue
+                kept = {key: value for key, value in entries.items() if key not in gone}
+                if kept:
+                    permission["entries"] = kept
+                else:
+                    del permission["entries"]
+                is_changed = True
+            if is_changed:
+                write_config(CLIENTS_CONFIG_PATH, document)
+                self._stored = self._read_stored()
+        return is_changed
+
     def forget(self, client_id: str) -> None:
         """Remove a client's record. An unknown id is ignored."""
         with CONFIG_WRITE_LOCK:

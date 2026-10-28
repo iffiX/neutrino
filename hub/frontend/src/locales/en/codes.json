@@ -187,9 +187,9 @@
   "code.share_link_unreadable": "That share link cannot be read.",
   "code.share_missing": "The server answers, but does not export this share.",
   "code.share_name_duplicate": "Two shares are both named {name}; rename one.",
-  "code.share_name_invalid": "The share name {name} is not usable; use up to 32 letters, digits, spaces, dashes and underscores.",
+  "code.share_name_invalid": "{name} cannot name a share: use 1 to 64 letters, digits, -, _ and ., other than global, homes and printers.",
   "code.share_name_reserved": "{name} is a name the file share keeps for itself; pick another.",
-  "code.share_name_taken": "The machine already has a share named {name} that is not the module's; rename that share.",
+  "code.share_name_taken": "The machine already has a share named {name}. Give the new share another name, or rename or remove the other one.",
   "code.samba_hosts_allow_no_loopback": "Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer; add it there.",
   "code.samba_interfaces_no_loopback": "Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there.",
   "code.samba_domain_member": "Samba on this machine is a domain member, which the module's local users cannot sign in to.",
@@ -197,7 +197,7 @@
   "code.share_scan_failed": "This box could not list that server's shares: {reason}",
   "code.share_unverified": "The server answers, but the share name could not be checked.",
   "code.share_user_unknown": "There is no user {user} to share with.",
-  "code.share_users_unknown": "The shares {shares} admit no user of the module's and are not served; enable an account they name, or remove them.",
+  "code.share_users_unknown": "The folder shares {shares} have no account and are not served; check an account for them, or remove them.",
   "code.shell_failed": "The shell could not be opened: {detail}",
   "code.socks_ports_share_a_port": "Two listeners cannot share a port.",
   "code.split_needs_wired_port": "Only a wired port can be split into VLANs.",
@@ -361,5 +361,7 @@
   "code.transport_key_missing": "The hub's connection port is not ready yet; make the link again in a moment.",
   "code.version_locked": "The version of {module} follows the system or the agent and cannot be chosen.",
   "code.version_switch_failed": "Version {version} did not start, so the previous version runs again: {detail}",
-  "code.version_unknown": "Version {version} is not listed for this machine."
+  "code.version_unknown": "Version {version} is not listed for this machine.",
+  "code.share_account_not_enabled": "{account} is not enabled for this machine's file share.",
+  "code.folder_share_unknown": "This machine has no folder share named {name}."
 }
