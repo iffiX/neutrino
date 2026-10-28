@@ -69,7 +69,7 @@
   "ui.settings.preparing": "Preparing…",
   "ui.settings.restore": "Restore",
   "ui.settings.restore_applying": "Applying the restored configuration; this can take a few minutes.",
-  "ui.settings.restore_body": "The archive replaces the whole configuration, and the panel restarts.",
+  "ui.settings.restore_body": "The archive replaces the whole configuration, every Web share ends, and the panel restarts.",
   "ui.settings.restore_failed_apply": "The configuration could not be applied; the output above says why. The files were restored; fix the cause and run nhub apply in a terminal.",
   "ui.settings.restore_failed_lost": "The panel did not come back. The files were restored; run nhub apply in a terminal, then reload this page.",
   "ui.settings.restore_from_file": "Restore from file",
