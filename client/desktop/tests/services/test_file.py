@@ -24,7 +24,10 @@ system mounts ``//127.0.0.1/<share>`` at the port of the entry's forward,
 made before the mount and ended once the share is unmounted or refused for
 good; on Windows it mounts the files adapter's address for the share's
 machine, and an adapter that cannot be made fails the record with
-``files_adapter_unavailable`` and is not retried.
+``files_adapter_unavailable`` and is not retried. A share of this machine on
+Windows mounts from ``127.0.0.1``, ``localhost`` or the host name, a name
+per SMB user that its record stores. A fourth user is refused
+``share_session_conflict`` and is not retried.
 """
 
 import json
@@ -41,6 +44,7 @@ from neutrino_client.services.file import (
     FileServiceHandler,
     default_place,
     mount_record_id,
+    own_servers,
 )
 from neutrino_client.services.store import ClientServiceStore
 from tests.conftest import FakeClientPlatform, discard
@@ -1213,6 +1217,145 @@ def test_windows_mounts_its_own_machines_share_from_the_loopback(tmp_path):
     row = subject.rows()[0]
     assert (row["state"], row["code"], row["server"]) == ("mounted", "", "127.0.0.1")
     assert subject.adapter_pairs() == set()
+
+
+def own_entry(user, account=""):
+    """A Home share of this machine, or a folder share's entry for an account."""
+    payload = {
+        "protocol": "smb",
+        "host": "hub",
+        "share": "projects" if account else user,
+        "users": [f"neutrino-{account or user}"],
+    }
+    entry_id = f"share_{account}_projects" if account else f"share_{user}"
+    return dict(
+        entry_for(payload, entry_id=entry_id), device_id="d_self", is_own_machine=True
+    )
+
+
+def own_service(tmp_path, monkeypatch, entries):
+    """A Windows handler on a machine named NMXWIN, the entries its own shares."""
+    monkeypatch.setattr("socket.gethostname", lambda: "NMXWIN")
+    return drive_service(
+        tmp_path, lambda hub_id, machine, user: "198.19.255.2", entries  # scan: allow
+    )
+
+
+def record_of(subject, entry):
+    """The id of the one record of an entry."""
+    (record_id,) = [
+        row["record_id"] for row in subject.rows() if row["entry_id"] == entry["id"]
+    ]
+    return record_id
+
+
+def row_at(subject, letter):
+    """The row of the record at a drive letter."""
+    (row,) = [row for row in subject.rows() if row["path"] == letter]
+    return row
+
+
+def test_three_users_mount_this_machine_from_three_server_names(tmp_path, monkeypatch):
+    entries = [own_entry("alice"), own_entry("bob"), own_entry("carol")]
+    subject, platform = own_service(tmp_path, monkeypatch, entries)
+
+    for entry, letter in zip(entries, ("Z:", "Y:", "X:")):
+        assert attach(subject, path=letter, entry=entry) == {}
+
+    assert [call["share_url"] for call in platform.attach_calls] == [
+        "//127.0.0.1/alice",
+        "//localhost/bob",
+        "//NMXWIN/carol",
+    ]
+    rows = [row_at(subject, letter) for letter in ("Z:", "Y:", "X:")]
+    assert [row["server"] for row in rows] == ["127.0.0.1", "localhost", "NMXWIN"]
+    assert {row["state"] for row in rows} == {"mounted"}
+
+
+def test_a_users_second_share_of_this_machine_mounts_from_its_name(
+    tmp_path, monkeypatch
+):
+    home, bob, folder = (
+        own_entry("alice"),
+        own_entry("bob"),
+        own_entry("alice", account="alice"),
+    )
+    subject, platform = own_service(tmp_path, monkeypatch, [home, bob, folder])
+
+    assert attach(subject, path="Z:", entry=home) == {}
+    assert attach(subject, path="Y:", entry=bob) == {}
+    assert attach(subject, path="X:", entry=folder) == {}
+
+    assert platform.attach_calls[2]["share_url"] == "//127.0.0.1/projects"
+
+
+def test_a_fourth_user_of_this_machine_is_refused_and_not_retried(
+    tmp_path, monkeypatch
+):
+    entries = [own_entry(user) for user in ("alice", "bob", "carol", "dave")]
+    subject, platform = own_service(tmp_path, monkeypatch, entries)
+    for entry, letter in zip(entries, ("Z:", "Y:", "X:", "W:")):
+        assert attach(subject, path=letter, entry=entry) == {}
+
+    subject.reconcile()
+
+    row = row_at(subject, "W:")
+    assert (row["state"], row["code"]) == ("failed", "share_session_conflict")
+    assert len(platform.attach_calls) == 3
+
+
+def test_a_name_another_user_mounts_from_now_is_refused_to_the_record(
+    tmp_path, monkeypatch
+):
+    entries = [own_entry(user) for user in ("alice", "bob", "carol", "dave")]
+    alice, dave = entries[0], entries[3]
+    subject, platform = own_service(tmp_path, monkeypatch, entries)
+    for entry, letter in zip(entries[:3], ("Z:", "Y:", "X:")):
+        assert attach(subject, path=letter, entry=entry) == {}
+    assert subject.detach(record_id=record_of(subject, alice)) == {}
+
+    assert attach(subject, path="W:", entry=dave) == {}
+    assert subject.remount(record_id=record_of(subject, alice)) == {}
+    subject.reconcile()
+
+    assert platform.attach_calls[3]["share_url"] == "//127.0.0.1/dave"
+    row = row_at(subject, "Z:")
+    assert (row["state"], row["code"]) == ("failed", "share_session_conflict")
+
+
+def test_a_free_name_no_other_user_stored_goes_first(tmp_path, monkeypatch):
+    alice, bob, carol = own_entry("alice"), own_entry("bob"), own_entry("carol")
+    subject, platform = own_service(tmp_path, monkeypatch, [alice, bob, carol])
+    assert attach(subject, path="Z:", entry=alice) == {}
+    assert attach(subject, path="Y:", entry=bob) == {}
+    assert subject.detach(record_id=record_of(subject, alice)) == {}
+
+    assert attach(subject, path="X:", entry=carol) == {}
+
+    assert platform.attach_calls[2]["share_url"] == "//NMXWIN/carol"
+
+
+def test_a_record_of_this_machine_mounts_from_its_stored_name_again(
+    tmp_path, monkeypatch
+):
+    alice, bob = own_entry("alice"), own_entry("bob")
+    subject, platform = own_service(tmp_path, monkeypatch, [alice, bob])
+    assert attach(subject, path="Z:", entry=alice) == {}
+    assert attach(subject, path="Y:", entry=bob) == {}
+    for entry in (alice, bob):
+        assert subject.detach(record_id=record_of(subject, entry)) == {}
+    subject._store.remove_mount(record_of(subject, alice))
+
+    assert subject.remount(record_id=record_of(subject, bob)) == {}
+    subject.reconcile()
+
+    assert platform.attach_calls[2]["share_url"] == "//localhost/bob"
+
+
+def test_a_host_name_equal_to_localhost_is_not_a_third_name(monkeypatch):
+    monkeypatch.setattr("socket.gethostname", lambda: "LOCALHOST")
+
+    assert own_servers() == ["127.0.0.1", "localhost"]
 
 
 def test_windows_keeps_the_adapter_for_another_machines_share(tmp_path):

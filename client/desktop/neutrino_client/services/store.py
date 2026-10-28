@@ -6,7 +6,8 @@ reads, the palette the window draws in, the terminal's font size, the AI
 tool choices, the local port each forwardable entry takes, the address
 each machine that provides a share takes on the Windows files adapter, and
 the mount records: the hub and entry a share came from, its host, its login
-name and where it goes. Nothing about a service standing on is here; that is the
+name and where it goes, and on Windows the server name a share of this
+machine is mounted from. Nothing about a service standing on is here; that is the
 running client's own and starts clean.
 
 Secrets never enter it: a mount's password lives in that record's own
@@ -39,8 +40,9 @@ from neutrino_client.constants import (
     CLIENT_THEMES,
 )
 
-# What one mount record keeps, whether its share was on this machine at its
-# last mount among them; a record's other fields are dropped.
+# Mount record fields. They include whether the share was on this machine at
+# its last mount, and on Windows the server name a share of this machine is
+# mounted from. The store drops a record's other fields.
 STORE_MOUNT_KEYS = (
     "hub_id",
     "entry_id",
@@ -50,6 +52,7 @@ STORE_MOUNT_KEYS = (
     "path",
     "is_own_machine",
     "is_declared",
+    "server",
 )
 # How often, and how far apart, a replace the system refuses with the
 # file held open is tried.

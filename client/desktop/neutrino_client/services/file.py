@@ -13,7 +13,8 @@ first free one by default. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
 
 A record in the store is the hub and entry a share came from, its host, its
-share, the user it last mounted as and its place, nothing more. What is
+share, the user it last mounted as and its place. On Windows a record of a
+share of this machine also stores the server name it mounts from. What is
 attached is this run's own. The reconcile remounts what this run attached
 and lost, which is what brings a share back after the network dropped; a
 record from an earlier run waits for the person to ask. A mount takes the
@@ -29,10 +30,11 @@ On Linux and macOS a mount takes the entry's forward of the local port
 table, made before the mount and ended once the share is unmounted, and
 the system mounts ``//127.0.0.1/<share>`` at that port. On Windows the
 system mounts the share at the files adapter's address for the share's
-machine and the SMB user it logs in as; a share of this machine itself, an
-entry with ``is_own_machine``,
-is mounted from ``//127.0.0.1/<share>`` at the system's own port, through no
-adapter.
+machine and the SMB user it logs in as. A share of this machine itself, an
+entry with ``is_own_machine``, is mounted from the system's own server at its
+own port, through no adapter. Windows connects to a server as one SMB user
+at a time, so each user mounts it from a name of its own: ``127.0.0.1``,
+``localhost`` or the machine's host name.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -42,6 +44,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import socket
 import threading
 
 from neutrino_client.constants import (
@@ -73,6 +76,10 @@ MOUNT_SOURCE_DECLARED = "declared"
 MOUNT_LOGIN_SUFFIX = ".login"
 MOUNT_ONCE_SUFFIX = ".mount"
 MOUNT_OLD_LOGIN_SUFFIX = ".credentials"
+# The first two server names a share of this machine is mounted from on
+# Windows, in the order SMB users take them. The machine's host name is the
+# third.
+MOUNT_OWN_SERVERS = (FORWARD_BIND_HOST, "localhost")
 
 
 def _no_adapter(hub_id: str, machine: str, user: str) -> str:
@@ -148,6 +155,20 @@ def default_place(entry: dict, platform) -> str:
     if account:
         name = f"{name}-{place_name(account)}"
     return os.path.join(platform.home(), MOUNT_DEFAULT_DIR, name)
+
+
+def own_servers() -> list:
+    """The server names a share of this machine is mounted from on Windows, in order.
+
+    Returns:
+        ``127.0.0.1``, ``localhost`` and the machine's host name. A host
+        name equal to one of the first two is left out.
+    """
+    names = list(MOUNT_OWN_SERVERS)
+    host = socket.gethostname()
+    if host and host.casefold() not in [name.casefold() for name in names]:
+        names.append(host)
+    return names
 
 
 def _share_url(record: dict) -> str:
@@ -495,6 +516,9 @@ class FileServiceHandler(ServiceTypeHandler):
                 "is_own_machine": entry.get("is_own_machine") is True,
                 "is_declared": is_declared,
             }
+            server = (self._store.mounts().get(record_id) or {}).get("server")
+            if server:
+                record["server"] = server
             if is_declared and username:
                 try:
                     self._platform.write_share_credentials(
@@ -723,7 +747,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 self._settle(record_id, record, refusal)
                 return
             record = self._store.mounts().get(record_id, record)
-            share_url, port = self._share_target(record)
+            share_url, port = self._share_target(record_id, record)
             self._platform.attach_share(
                 share_url=share_url,
                 port=port,
@@ -838,19 +862,21 @@ class FileServiceHandler(ServiceTypeHandler):
         self._log(f"share moved to {host}: {_share_url(moved)} at {moved.get('path')}")
         return moved
 
-    def _share_target(self, record: dict) -> "tuple[str, int]":
+    def _share_target(self, record_id: str, record: dict) -> "tuple[str, int]":
         """What the system mounts one record's share from, and at which port.
 
         Returns:
             ``(share_url, port)``: the files adapter's address for the
             share's machine and SMB user and port 0 where the system mounts
-            through the adapter, the loopback and port 0 there for a share of this
-            machine itself, else ``//127.0.0.1/<share>`` and the port of the
-            entry's forward, made here when it has none.
+            through the adapter, the server name of :meth:`_own_server` and
+            port 0 there for a share of this machine itself, else
+            ``//127.0.0.1/<share>`` and the port of the entry's forward,
+            made here when it has none.
 
         Raises:
             ShareAttachError: ``files_adapter_unavailable`` when the adapter
-                cannot be made.
+                cannot be made, ``share_session_conflict`` when every server
+                name of this machine is taken.
             OSError: When the forward cannot listen.
         """
         hub_id = str(record.get("hub_id", ""))
@@ -858,7 +884,7 @@ class FileServiceHandler(ServiceTypeHandler):
         share = str(record.get("share", ""))
         if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
             if self._is_own_share(record):
-                return f"//{FORWARD_BIND_HOST}/{share}", 0
+                return f"//{self._own_server(record_id, record)}/{share}", 0
             host = self._adapter_host(
                 hub_id, self._machine_of(record), self._user_of(record)
             )
@@ -869,14 +895,76 @@ class FileServiceHandler(ServiceTypeHandler):
         return f"//{FORWARD_BIND_HOST}/{share}", port
 
     def _server_of(self, record: dict) -> str:
-        """The server the system lists a record's share under: the loopback
-        a forwarded share, and one of this machine, is mounted from, else
-        the share's own host."""
+        """The server the system lists a record's share under.
+
+        A forwarded share is listed under the loopback. On Windows a share
+        of this machine is listed under the server name its record stores,
+        the loopback while it stores none, and any other share under its
+        own host.
+        """
         if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
             if self._is_own_share(record):
-                return FORWARD_BIND_HOST
+                return str(record.get("server") or FORWARD_BIND_HOST)
             return str(record.get("host", ""))
         return FORWARD_BIND_HOST
+
+    def _own_server(self, record_id: str, record: dict) -> str:
+        """The server name a record's share of this machine is mounted from on Windows.
+
+        Windows connects to a server as one SMB user at a time, so two users
+        never mount from one name at once. A share is mounted while it is on
+        its way, mounted on the system, or wanted by this run and not
+        failed. The record stores the name it takes.
+
+        Args:
+            record_id: The record's id.
+            record: The record, as the store keeps it now.
+
+        Returns:
+            The record's stored name while no mounted share of another user
+            uses it. Else the name a mounted share of the record's user uses,
+            else the first name of :func:`own_servers` no record of another
+            user stores, else the first name no mounted share of another
+            user uses.
+
+        Raises:
+            ShareAttachError: ``share_session_conflict`` when a mounted share
+                of another user uses every name.
+        """
+        names = own_servers()
+        user = self._user_of(record)
+        with self._lock:
+            stored_by_others = set()
+            used_by_others = set()
+            used_by_user = []
+            for other_id, other in self._store.mounts().items():
+                server = other.get("server")
+                if other_id == record_id or server not in names:
+                    continue
+                if not self._is_own_share(other):
+                    continue
+                is_used = not self._holds_no_place(other_id, other)
+                if self._user_of(other) == user:
+                    if is_used:
+                        used_by_user.append(server)
+                    continue
+                stored_by_others.add(server)
+                if is_used:
+                    used_by_others.add(server)
+            free = [name for name in names if name not in used_by_others]
+            if not free:
+                raise ShareAttachError("share_session_conflict")
+            kept = record.get("server")
+            ordered = (
+                [name for name in used_by_user if name in free]
+                + [name for name in free if name not in stored_by_others]
+                + free
+            )
+            server = kept if kept in free else ordered[0]
+            held = self._store.mounts().get(record_id)
+            if held is not None and held.get("server") != server:
+                self._store.set_mount(record_id, dict(held, server=server))
+        return server
 
     @staticmethod
     def _is_own_share(record: dict) -> bool:

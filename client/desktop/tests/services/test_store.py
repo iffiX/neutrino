@@ -77,6 +77,14 @@ def test_mount_records_round_trip(store):
     assert store.mounts() == {}
 
 
+def test_a_record_of_this_machine_keeps_its_server_name(store):
+    record = dict(RECORD, is_own_machine=True, server="localhost")
+
+    store.set_mount("r1", record)
+
+    assert store.mounts() == {"r1": record}
+
+
 def test_a_record_keeps_only_the_fields_the_store_holds(store, tmp_path):
     store.set_mount("r1", dict(RECORD, is_enabled=True, is_attached=True))
 
