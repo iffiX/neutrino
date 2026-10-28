@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,7 +162,7 @@ func (g *Gate) Open(ctx context.Context, conn net.Conn) (*ChannelConn, string, D
 // readFirstCheck reads a connection's first frame as far as it fits a
 // Binding Request for a live share, and no further: the frame length, the
 // STUN type and length, the magic cookie, the USERNAME's ufrag against the
-// live shares, then the whole message's integrity and fingerprint.
+// live shares, then the rest of the frame and its integrity and fingerprint.
 func (g *Gate) readFirstCheck(reader *bufio.Reader) (*firstCheck, error) {
 	var head [GatePeekBytes]byte
 	if _, err := io.ReadFull(reader, head[:GateFrameLengthBytes]); err != nil {
@@ -191,12 +192,9 @@ func (g *Gate) readFirstCheck(reader *bufio.Reader) (*firstCheck, error) {
 	}
 	frame := make([]byte, length)
 	copy(frame, head[GateFrameLengthBytes:GatePeekBytes])
-	if _, err := io.ReadFull(reader, frame[GatePeekBytes-GateFrameLengthBytes:]); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
-	}
-	ufrag, usernameEnd, isFound := usernameOf(frame)
-	if !isFound {
-		return nil, fmt.Errorf("%w: no username", ErrNotStun)
+	ufrag, usernameEnd, err := readToUsername(reader, frame)
+	if err != nil {
+		return nil, err
 	}
 	decision := Decision{FrameBytes: GateFrameLengthBytes + length, UsernameEndByte: GateFrameLengthBytes + usernameEnd}
 	g.mu.RLock()
@@ -204,6 +202,9 @@ func (g *Gate) readFirstCheck(reader *bufio.Reader) (*firstCheck, error) {
 	g.mu.RUnlock()
 	if !isLive {
 		return nil, fmt.Errorf("%w: %s", ErrShareUnknown, ufrag)
+	}
+	if _, err := io.ReadFull(reader, frame[usernameEnd:]); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStun, err)
 	}
 	message := &stun.Message{Raw: frame}
 	if err := message.Decode(); err != nil || message.Type != stun.BindingRequest {
@@ -213,6 +214,44 @@ func (g *Gate) readFirstCheck(reader *bufio.Reader) (*firstCheck, error) {
 		return nil, err
 	}
 	return &firstCheck{message: message, ufrag: ufrag, password: password, decision: decision}, nil
+}
+
+// readToUsername reads a first frame's attributes into frame, after the
+// header's first eight bytes already there, up to the end of its USERNAME.
+// It returns the ufrag and the offset in frame where the USERNAME ended, or
+// ErrNotStun for a frame with no USERNAME of the form ufrag:peer.
+func readToUsername(reader *bufio.Reader, frame []byte) (string, int, error) {
+	if _, err := io.ReadFull(reader, frame[GatePeekBytes-GateFrameLengthBytes:GateStunHeaderBytes]); err != nil {
+		return "", 0, fmt.Errorf("%w: %w", ErrNotStun, err)
+	}
+	offset := GateStunHeaderBytes
+	for offset+GateStunAttributeHeaderBytes <= len(frame) {
+		valueStart := offset + GateStunAttributeHeaderBytes
+		if _, err := io.ReadFull(reader, frame[offset:valueStart]); err != nil {
+			return "", 0, fmt.Errorf("%w: %w", ErrNotStun, err)
+		}
+		attributeType := binary.BigEndian.Uint16(frame[offset:])
+		valueEnd := valueStart + int(binary.BigEndian.Uint16(frame[offset+2:]))
+		if valueEnd > len(frame) {
+			return "", 0, fmt.Errorf("%w: attribute length", ErrNotStun)
+		}
+		if attributeType == GateStunUsernameType {
+			if _, err := io.ReadFull(reader, frame[valueStart:valueEnd]); err != nil {
+				return "", 0, fmt.Errorf("%w: %w", ErrNotStun, err)
+			}
+			ufrag, _, isPair := strings.Cut(string(frame[valueStart:valueEnd]), ":")
+			if !isPair || ufrag == "" {
+				return "", 0, fmt.Errorf("%w: username", ErrNotStun)
+			}
+			return ufrag, valueEnd, nil
+		}
+		next := min(valueStart+(valueEnd-valueStart+3)&^3, len(frame))
+		if _, err := io.ReadFull(reader, frame[valueStart:next]); err != nil {
+			return "", 0, fmt.Errorf("%w: %w", ErrNotStun, err)
+		}
+		offset = next
+	}
+	return "", 0, fmt.Errorf("%w: no username", ErrNotStun)
 }
 
 // openChannel runs the SCTP association with associate over the DTLS
