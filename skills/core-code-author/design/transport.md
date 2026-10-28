@@ -45,15 +45,13 @@ the frp loopback listeners included.
 | --- | --- | --- |
 | the hub's magic, 4 bytes ("The header and the magic") | the member path | an agent or a client, which has the magic from its link |
 | a STUN Binding Request in RFC 4571 framing, its 2-byte length starting with `0x00` ("The guest path") | the guest path, while a Web share is live | a browser opening a Web share |
-| `0x16` followed by `0x03`, the start of a TLS handshake record, while the legacy switch is on | the 0.5 TLS listener ("An agent of 0.5") | an agent of 0.5 updating itself |
 | anything else | none: the connection is refused ("A refused connection") | |
 
 | Rule | Reason |
 | --- | --- |
 | One TCP port carries every door. | A home has one reachable port, and through the SSH relay and the frp nodes one forwarded port is all a sender reaches. A member and a guest reach the hub at the same address. |
 | The transport checks the first bytes as they arrive, and refuses a connection only after it has read a length drawn at random for that connection, `DoorReadBytesMin` 20 to `DoorReadBytesMax` 100 bytes, or after the peer stopped sending. The member path decides at the fourth byte and still reads to that length. The guest path decides at the end of the USERNAME, byte 55 to 59 of a browser's first frame, and cuts at the later of its decision and that length. | The door never stops reading at a byte of the magic, so the magic cannot be found byte by byte. How far the transport reads before it cuts has the same spread on both paths. A connection that passes its checks never waits for that length. |
-| The magic's first byte is never `0x00` or `0x16`. | The first byte alone then tells the doors apart, so no connection fits two of them. |
-| The TLS door tests two bytes, `0x16` and `0x03`. | Every TLS handshake record starts with both, and the second byte closes a stray `0x16` before the legacy listener spends anything on it. |
+| The magic's first byte is never `0x00` or `0x16`. | `0x00` opens a browser's frame, so the first byte alone tells the two doors apart. Avoiding `0x16`, the first byte of a TLS record, costs nothing. |
 
 ### A refused connection
 
@@ -367,7 +365,7 @@ questions to the hub's Python ("The local channel").
 | Windows | yamux's window per stream, from `StreamWindowInitialBytes` growing with the round trip to `StreamWindowMaxBytes`. A receiver takes bytes as it consumes them, so a long transfer starves nothing. |
 | Result | `close {code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. The side that receives a close writes nothing more and closes the stream, so a stream one side closed gets no close back. A TCP `connect` stream after its `accept` carries no record, so it ends with no code: its end is the end of its bytes, or a yamux reset in the place of the refusing `close` any other stream takes. |
 | Order | The records of one stream arrive in the order they were written. |
-| Small writes | Every socket that carries a stream's bytes over TCP sends them at once, with `TCP_NODELAY` on: the transport's sockets by Go's default, and every Python socket that relays a stream, an agent forwarder's both sockets ([agent/module_template.md](agent/module_template.md), "The run"), the legacy listener's and the Windows client's files adapter's among them, set by hand. |
+| Small writes | Every socket that carries a stream's bytes over TCP sends them at once, with `TCP_NODELAY` on: the transport's sockets by Go's default, and every Python socket that relays a stream, an agent forwarder's both sockets ([agent/module_template.md](agent/module_template.md), "The run") and the Windows client's files adapter's among them, set by hand. |
 
 | `type` | Record | Payload |
 | --- | --- | --- |
@@ -396,9 +394,8 @@ and `FRP_OPENFRP_LOOPBACK_PORT`, 18444, open whether each way in is on or off
 its listener, and the listener a connection arrived on settles its
 `reached_through`. The hub's Python renders what the transport opens into
 `generated/transport.json` under the state root, `{listen_port,
-frp_listeners: [{port, listener}], legacy_tls_port, control_socket}`, and the
-transport reads it at its start; a change of the file restarts the
-transport.
+frp_listeners: [{port, listener}], control_socket}`, and the transport reads
+it at its start; a change of the file restarts the transport.
 
 The agent port answers a sender inside every exposed segment, whatever the
 interface's role, an uplink's included, and on every exposed overlay
@@ -666,25 +663,22 @@ hub sends its own in `welcome`. The hub alone also has `PROTOCOL_MIN`, the
 oldest number it admits to the channel's whole use: 4 from 0.6.0, for agents
 and clients alike. An agent or a client speaks one number; the hub meets
 peers from different releases and needs a range, `PROTOCOL_MIN <= protocol
-<= PROTOCOL`. Below the range the two roles part:
+<= PROTOCOL`:
 
 | Peer | `protocol` | At `join` | At `hello` |
 | --- | --- | --- | --- |
 | an agent or a client | `PROTOCOL_MIN` to `PROTOCOL` | admitted | admitted |
-| an agent | 3, the number of 0.5 | refused `protocol_too_old` on the legacy listener | admitted on the legacy listener for its own update alone ("An agent of 0.5") |
-| an agent | below 3 | refused `protocol_too_old` | refused `protocol_too_old` |
-| a client | below `PROTOCOL_MIN` | refused `protocol_too_old` | refused `protocol_too_old` |
+| an agent or a client | below `PROTOCOL_MIN` | refused `protocol_too_old` | refused `protocol_too_old` |
 | an agent or a client | above `PROTOCOL` | refused `protocol_too_new` | refused `protocol_too_new` |
 
 | Code | When | `params` |
 | --- | --- | --- |
-| `protocol_too_old` | `protocol < PROTOCOL_MIN`, except for an agent's `hello` at 3; and every stream an agent at 3 opens, except its own package | `{peer, hub, min}` |
+| `protocol_too_old` | `protocol < PROTOCOL_MIN` | `{peer, hub, min}` |
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
 
-A peer below 3 or a client of 0.5 dials TLS, which only the legacy listener
-answers; while that listener is off the peer meets silence ("An agent of
-0.5"). A client refused `protocol_too_old` keeps its binding, and its Hubs
-row reads that the client is too old and says to update it
+A peer of 0.5 or earlier speaks TLS and never reaches `join` or `hello` ("A
+peer of 0.5"). A client refused `protocol_too_old` keeps its binding, and its
+Hubs row reads that the client is too old and says to update it
 ([client.md](client.md), "The Hubs page"). The person installs the new
 client, since a client does not update itself. A new client keeps the old
 one's state, so the binding stays and the next round connects.
@@ -695,65 +689,28 @@ The agent stays as it is when the hub's version does not parse or ends in
 `+dev`, so a hub of `+dev` offers no update. The hub's `software` is always
 `neutrino_hub/{HUB_VERSION}`, and the client has no self-upgrade.
 
-### An agent of 0.5
+### A peer of 0.5
 
-An agent of 0.5 speaks 3, one below `PROTOCOL_MIN`, over TLS pinned by the
-fingerprint of `config/web/agent_tls/`. The hub keeps the 0.5 channel for
-one purpose, that agent's own update to the hub's version, on the legacy
-listener: the hub's Python serves `/api/channel/socket` and
-`/api/channel/key/set` over that TLS on
-`127.0.0.1:<CHANNEL_LEGACY_TLS_PORT>`, 18445, and the transport hands it
-every connection on any of its listeners whose first two bytes are `0x16`
-and `0x03`, a TLS handshake record's, while the switch is on ("The doors").
-The magic's first byte is never `0x16`, so the two never meet. A connection
-handed over leaves the transport's counts and limits, and the legacy
-listener's own apply; it arrives there from loopback, so the 0.5 session's
-address is its report's link address. A panel port or the agent port set to
-18445 is refused `port_already_in_use {value}`.
+An agent or a client of 0.5 speaks 3 over TLS, and the transport has no
+door for TLS: the connection is refused as any first bytes that fit no door
+("A refused connection"). The hub keeps no way for a peer of 0.5 to reach
+it. Each machine's 0.5 agent is reinstalled by hand with the 0.6 agent and
+joins again with a new link, and each client is installed again and scans a
+new link.
 
-The TLS pair under `config/web/agent_tls/`, `certificate.pem` and
-`key.sealed`, serves the legacy listener alone, which a 0.5 agent reaches
-with its pinned fingerprint. `nhub reset all` deletes it with the vault key.
+A 0.6 agent or client that finds a binding of the 0.5 shape on its machine,
+with a `fingerprint` and no `hub_key`, has no way to the hub's key. The
+agent records `last_error` `hub_key_missing` and dials nothing until `nagent
+join` binds it again. The client's row reads `join_refused` with
+`hub_key_missing`, and **Leave** is its only action ([client.md](client.md),
+"The Hubs page"). The hub's own update replaces the agent on the hub's own
+machine, and that agent joins again the same way.
 
 | Rule | Reason |
 | --- | --- |
-| The switch is `is_legacy_channel_enabled` in `config/web/settings.json`, rendered into `transport.json` as `legacy_tls_port`, 0 while it is off. An upgrade from 0.5 finds device rows and turns it on; a new hub has it off. | A 0.5 agent knows only `https` addresses on the agent port, and a hub with no 0.5 agent has nothing to keep it for. |
-| The hub turns the switch off by itself once no device row names an agent version below 0.6.0. | Each 0.5 machine that updates itself takes one row off the list, and the listener closes after the last. |
+| 0.6 carries no part of the 0.5 channel: no TLS door, no listener for it, and no move of a 0.5 binding to the hub's key. | The TLS door answered a scan with a certificate whose name scanning services index, and every second channel is a second way in to keep safe. |
+| A machine that joins again lands on the row its ticket names, else on the row whose `machine_id` its join reports, else on a new row. Its row keeps the name, the icon, the MACs, the stored credentials and `config/devices/<id>/`, and takes a new token and a new static key. | A machine reinstalled with the 0.6 agent keeps every setting the hub stores for it. A machine whose system was reinstalled reports a new `machine_id` and lands on a new row, unless its link was made from its old row. |
 | The hub's first 0.6.0 start moves each machine's 0.5 files into the account layer once ([protocol.md](protocol.md), "The account layer in the state"). The file share's 0.5 `shares` and `users` are dropped from `samba.json`, not carried: they are the person's own on the machine, served as they are and managed by nothing ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux"). The ports 0.5 kept for VS Code, code-server and CloudCLI are not carried; the agent takes fresh ones. | What an earlier version made on a machine is the person's now, and the module runs beside it. |
-| While the switch is off, a TLS first byte meets silence, as any first byte that opens no door does. | The port then writes to a member's knock and to a live share's Binding Request alone. |
-
-On the legacy listener the hub admits the 0.5 agent's `hello` for its update
-and closes every other stream the agent opens:
-
-| The agent | The hub |
-| --- | --- |
-| sends `hello` with its token | sends `welcome`, whose `software` names the hub's newer version |
-| sends a `report` | reads the platform from its `machine` section, which names the package, and records nothing else; it pushes no `state` |
-| opens `package {}`, its own package | streams it, as for any agent's upgrade |
-| opens any other stream | closes it `protocol_too_old {peer, hub, min}` |
-
-The hub opens no stream to it. The agent reads the newer `software` in
-`welcome`, installs the package and restarts. The updated agent holds a
-binding of the 0.5 shape, with a `fingerprint` and no `hub_key`. It makes
-its own static key and sends `POST /api/channel/key/set {id, token,
-public_key}` once, over the same pinned TLS to the legacy listener; the hub
-records `public_key` on the binding the token names and answers `{key}`, its
-own static public key in hex, or 401 `binding_unknown`, which ends the
-binding. The agent writes `hub_key` and `private_key` into its binding, drops
-`fingerprint`, writes each `https://` address of its binding as `tcp://`
-with the same host and port, and knocks with 4 as any agent does. While the
-switch is off, a binding of the 0.5 shape has no way to the hub's key: the
-agent reports `last_error` `hub_key_missing` and joins again with a new
-link. A client binding of the 0.5 shape, kept by a client the
-person upgraded, moves the same way while the legacy listener is on, and
-joins again with a new link while it is off. The hub's own agent is updated
-by the hub's own update, from the hub's cache.
-
-| Case | What follows |
-| --- | --- |
-| the update runs | the Agents page shows the machine updating, `ui.device_tile.agent_updating`, from the admitted `hello` until the agent knocks with 4 |
-| the hub has no package for the machine's platform, the install fails and the agent comes back at 3, or the hub's version ends in `+dev` | the session stays update-only, and the Agents page shows the machine's version mismatch (`is_version_mismatched`), which asks for a reinstall |
-| an unbound agent of 0.5 joins | the `join` is refused `protocol_too_old`; the person installs a 0.6 agent with the install script and joins with it |
 
 ### What a leave does to the binding
 
