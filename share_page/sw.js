@@ -13,6 +13,7 @@ const REDIRECTS_MAX = 20;
 const ANNOUNCE_WAIT_MS = 3000;
 const CACHE_BYTES_MAX = 50 * 1024 * 1024;
 const STORED_BYTES_HEADER = "x-neutrino-stored-bytes";
+const STORED_AT_HEADER = "x-neutrino-stored-at";
 const KEPT_DESTINATIONS = new Set(["script", "style", "font", "image"]);
 const KEPT_TYPES = /^(text\/css|text\/javascript|application\/(x-)?javascript|application\/ecmascript|font\/|application\/(x-)?font|image\/)/;
 
@@ -88,7 +89,7 @@ async function route(event, url) {
   if (request.method === "GET" && !isNavigation && !request.headers.has("range") && shell.cache) {
     const hit = await caches.open(shell.cache).then((cache) => cache.match(url.href)).catch(() => null);
     if (hit) {
-      event.waitUntil(revalidate(shell, sent, hit).catch(() => {}));
+      if (!isFresh(hit)) event.waitUntil(revalidate(shell, sent, hit).catch(() => {}));
       return fromCache(hit);
     }
   }
@@ -280,10 +281,21 @@ function isKeepable(sent, head, contentType) {
   return KEPT_DESTINATIONS.has(sent.destination) || KEPT_TYPES.test(contentType);
 }
 
-// A cached response with the worker's own header taken off.
+// Whether a cached response is served with no check: it has no validator and its max-age has not passed.
+function isFresh(hit) {
+  if (hit.headers.get("etag") || hit.headers.get("last-modified")) return false;
+  const control = (hit.headers.get("cache-control") || "").toLowerCase();
+  if (/(^|[\s,])no-cache\b/.test(control)) return false;
+  const maxAge = /(?:^|[\s,])max-age=(\d+)/.exec(control);
+  const storedAt = Number(hit.headers.get(STORED_AT_HEADER)) || 0;
+  return maxAge !== null && Date.now() < storedAt + Number(maxAge[1]) * 1000;
+}
+
+// A cached response with the worker's own headers taken off.
 function fromCache(hit) {
   const headers = new Headers(hit.headers);
   headers.delete(STORED_BYTES_HEADER);
+  headers.delete(STORED_AT_HEADER);
   return new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers });
 }
 
@@ -356,6 +368,7 @@ async function store(name, url, stream, head) {
     }
     const headers = new Headers(head.headers);
     headers.set(STORED_BYTES_HEADER, String(bytes));
+    headers.set(STORED_AT_HEADER, String(Date.now()));
     await cache.put(url, new Response(new Blob(chunks), { status: head.status, statusText: head.statusText, headers }));
     ledger.entries.set(url, bytes);
     ledger.total += bytes;
