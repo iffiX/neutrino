@@ -128,7 +128,7 @@ def seal_bytes(data: bytes, aad: bytes) -> dict:
 
     Args:
         data: The payload to seal.
-        aad: What binds the seal to its use, for example ``agent_tls:key``.
+        aad: What binds the seal to its use, for example ``web_share:pwd``.
 
     Returns:
         A JSON-ready object holding the nonce and the ciphertext.

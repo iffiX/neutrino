@@ -1,17 +1,15 @@
 """Assembling the FastAPI applications.
 
-One process, two applications: the panel serves its API, grouped as the
-sidebar is under ``/api/hub`` and ``/api/agent``, and the built frontend on
-its HTTP port and its HTTPS port, and the legacy listener serves
-``/api/channel`` alone over the agent TLS pair on loopback, for a 0.5
-agent's own update. Both share one runtime, which the transport's local
-channel also drives.
+The panel serves its API, grouped as the sidebar is under ``/api/hub`` and
+``/api/agent``, and the built frontend on its HTTP port and its HTTPS port.
+The transport's local channel drives the same runtime.
 
 The frontend is a single-page app: any panel path that is not an API route, a
 websocket, or a real file falls through to ``index.html``.
 """
 
 import logging
+import shutil
 import subprocess
 
 from fastapi import FastAPI
@@ -30,14 +28,17 @@ from neutrino_hub.modules.devices.legacy_files import move_legacy_device_files
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.hub_update.installer import retire_finished_job
 from neutrino_hub.web import ws
-from neutrino_hub.web.legacy_listener import ChannelRequestLimitMiddleware
-from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
+from neutrino_hub.web.constants import (
+    WEB_CODE_BODY_INVALID,
+    WEB_FRONTEND_DIST_DIR,
+    WEB_LEGACY_TLS_DIR,
+    WEB_LEGACY_TLS_SERVED_KEY_PATH,
+)
 from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
 from neutrino_hub.web.panel_sign_in import PanelSignInMiddleware
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
-from neutrino_hub.web.routers import channel
 from neutrino_hub.web.routers.agent import (
     file,
     module,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.add_middleware(OriginGuardMiddleware)
     app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
     _move_legacy_files()
+    _drop_legacy_tls()
     _grant_ssh_once()
     _settle_gateway_key()
     _settle_device_keys()
@@ -140,28 +142,6 @@ def create_app() -> FastAPI:
     app.include_router(ws.router)
 
     _mount_frontend(app)
-    return app
-
-
-def create_agent_app() -> FastAPI:
-    """Build the legacy listener: the ``/api/channel`` routes and nothing
-    else, no API description among them, with each body held to the
-    listener's limit.
-
-    Returns:
-        The configured application, sharing the panel's runtime.
-    """
-    app = FastAPI(
-        title="Neutrino Hub Legacy Listener",
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
-    app.state.runtime = shared_runtime()
-    app.add_exception_handler(VaultLockedError, _vault_locked)
-    app.add_exception_handler(RequestValidationError, _body_invalid)
-    app.add_middleware(ChannelRequestLimitMiddleware)
-    app.include_router(channel.router)
     return app
 
 
@@ -259,6 +239,21 @@ def _move_legacy_files() -> None:
         return
     if moved:
         LOGGER.info("devices: the 0.5 files of %s moved", ", ".join(moved))
+
+
+def _drop_legacy_tls() -> None:
+    """Delete the TLS pair of 0.5's agent channel, at the panel's start.
+
+    A hub upgraded from 0.5 still stores the pair under ``config/web/`` and
+    the served key under the state root, and 0.6.0 serves neither.
+    """
+    try:
+        if WEB_LEGACY_TLS_DIR.is_dir():
+            shutil.rmtree(WEB_LEGACY_TLS_DIR)
+            LOGGER.info("deleted the 0.5 TLS pair at %s", WEB_LEGACY_TLS_DIR)
+        WEB_LEGACY_TLS_SERVED_KEY_PATH.unlink(missing_ok=True)
+    except OSError as error:
+        LOGGER.warning("the 0.5 TLS pair was not deleted: %s", error)
 
 
 def _grant_ssh_once() -> None:

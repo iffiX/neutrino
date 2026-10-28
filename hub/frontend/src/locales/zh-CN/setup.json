@@ -85,7 +85,6 @@
   "ui.setup.step_xray_core": "安装 xray-core 和地理数据",
   "ui.setup.step_frpc": "安装 frpc",
   "ui.setup.step_config_files": "准备配置",
-  "ui.setup.step_agent_tls": "生成被控端通道证书",
   "ui.setup.step_systemd_units": "安装系统服务",
   "ui.setup.step_interfaces": "应用网口角色",
   "ui.setup.step_render_all": "应用配置",

@@ -94,16 +94,12 @@ class DeviceClientInfo:
             authenticates its channel with; the raw token exists only in
             the enroll reply and on the device.
         public_key: The agent's static public key, 64 hex characters, which
-            its knock names the binding by; None until the agent joined or
-            moved its binding to the transport.
-        agent_version: The version the agent's last hello named, kept so a
-            hub that starts again knows which rows still need the legacy
-            listener; empty until the agent said hello.
+            its knock names the binding by; None until the agent joined, and
+            on a row that joined under 0.5.
     """
 
     token_sha256: str | None = None
     public_key: str | None = None
-    agent_version: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "DeviceClientInfo":
@@ -118,7 +114,6 @@ class DeviceClientInfo:
         return cls(
             token_sha256=data.get("token_sha256"),
             public_key=str(data.get("public_key") or "") or None,
-            agent_version=str(data.get("agent_version") or ""),
         )
 
     def to_dict(self) -> dict:
@@ -133,7 +128,6 @@ class DeviceClientInfo:
         return {
             "token_sha256": self.token_sha256,
             "public_key": self.public_key,
-            "agent_version": self.agent_version,
         }
 
 
@@ -447,26 +441,6 @@ class DeviceRegistry:
             if stored and secrets.compare_digest(stored, wanted):
                 return self._from_stored(device_id, entry)
         return None
-
-    def note_agent_version(self, device_id: str, version: str) -> bool:
-        """Keep the version a device's agent said hello with.
-
-        Args:
-            device_id: The device.
-            version: The version its software named; empty keeps the stored.
-
-        Returns:
-            Whether the row changed.
-        """
-        if not version:
-            return False
-        with CONFIG_WRITE_LOCK:
-            device = self._fresh(device_id)
-            if device is None or device.client.agent_version == version:
-                return False
-            device.client.agent_version = str(version)
-            self._store(device)
-        return True
 
     def set_public_key(self, device_id: str, public_key: "str | None") -> None:
         """Record the static public key a device's agent knocks with.

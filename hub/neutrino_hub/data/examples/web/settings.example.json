@@ -11,8 +11,6 @@
   "is_https_enabled": false,
   "_comment_agent": "The agent port the transport serves the channel on: the knock, the Noise handshake under the hub's static key, then one yamux session per peer. Every enrollment link names it.",
   "agent_listen_port": 8443,
-  "_comment_legacy": "Whether the transport hands a TLS first byte to the legacy listener on 127.0.0.1:18445, where an agent of 0.5 updates itself. An upgrade from 0.5 turns it on; the hub turns it off once no device row names an agent older than 0.6.0.",
-  "is_legacy_channel_enabled": false,
   "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH",
   "session_ttl_hours": 168,
 

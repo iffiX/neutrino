@@ -449,10 +449,6 @@ class ChannelControlHandler:
                 peer_host=session.address,
                 reached_host=getattr(session, "local_address", ""),
             )
-            await asyncio.to_thread(
-                DeviceRegistry().note_agent_version, device.id, session.version
-            )
-            await asyncio.to_thread(runtime.settle_legacy_channel)
             return
         client = await asyncio.to_thread(ClientRegistry().get, session.key)
         if client is None:
@@ -663,7 +659,7 @@ async def serve_package_stream(runtime, session, stream) -> None:
 
     Args:
         runtime: The shared runtime.
-        session: The agent's session, on the transport or the legacy listener.
+        session: The agent's session.
         stream: The stream, closed here.
     """
     module = str(stream.args.get("module", "") or "")

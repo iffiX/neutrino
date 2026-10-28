@@ -31,7 +31,6 @@ EVERY_STEP = [
     *[f"{name}_core" for name in XRAY],
     "frpc",
     "config_files",
-    "agent_tls",
     "panel_tls",
     "transport",
     "systemd_units",

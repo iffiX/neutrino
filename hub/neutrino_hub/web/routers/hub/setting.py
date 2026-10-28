@@ -143,7 +143,6 @@ from neutrino_hub.modules.easytier.constants import (
 )
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_KEYS_RELOAD,
-    CHANNEL_LEGACY_TLS_PORT,
 )
 from neutrino_hub.modules.transport.constants import (
     TRANSPORT_DTLS_KEY_NAME,
@@ -303,7 +302,7 @@ def update_settings(
                 value=port,
             )
     for port in (request.listen_port, https_port, agent_port):
-        if port in FRP_LOOPBACK_PORTS.values() or port == CHANNEL_LEGACY_TLS_PORT:
+        if port in FRP_LOOPBACK_PORTS.values():
             raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
     if https_port == request.listen_port:
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)

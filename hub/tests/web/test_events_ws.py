@@ -90,7 +90,6 @@ class FakeRuntime:
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.web_share_guests = WebShareGuestSessions()
-        self.agent_update_sessions = {}
         self.agent_sessions.on_presence_change = self._publish_devices
         self.desired = ("", {"modules": {}, "desktop": {}})
 
@@ -99,9 +98,6 @@ class FakeRuntime:
 
     def desired_state_for(self, device):
         return self.desired
-
-    def settle_legacy_channel(self):
-        return None
 
     def push_desired_state(self, key):
         return None

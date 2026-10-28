@@ -27,12 +27,11 @@ WEB_PANEL_TOKENS_MAX = 8
 
 # --- the shape of every path ---
 # A route is `/api/<group>/<page>/...` or `/ws/<group>/...`, grouped the way
-# the sidebar is; `/api/channel` is the agent port's own app. Every segment is
-# a singular `under_score` noun, and a write's last segment is one verb from
-# the closed table below (skills/core-code-author/design/protocol.md).
+# the sidebar is. Every segment is a singular `under_score` noun, and a
+# write's last segment is one verb from the closed table below
+# (skills/core-code-author/design/protocol.md).
 WEB_PATH_PREFIX_HUB = "/api/hub/"
 WEB_PATH_PREFIX_AGENT = "/api/agent/"
-WEB_PATH_PREFIX_CHANNEL = "/api/channel"
 WEB_PATH_PREFIX_WS_HUB = "/ws/hub/"
 WEB_PATH_PREFIX_WS_AGENT = "/ws/agent/"
 WEB_PATH_VERBS = frozenset(
@@ -103,20 +102,12 @@ WEB_DEFAULT_HTTPS_LISTEN_PORT = 443
 WEB_HTTPS_SCHEME_PORT = 443
 WEB_HTTP_SCHEME_PORT = 80
 
-# The agent channel: the /api/agent routes on their own TLS port, pinned by
-# the fingerprint every enrollment link carries. The certificate is public
-# and travels plainly in a backup; the private key beside it is sealed under
-# the vault's data key, and the unsealed copy uvicorn serves with is state.
+# The agent port's default number.
 WEB_DEFAULT_AGENT_LISTEN_PORT = 8443
-WEB_AGENT_TLS_DIR = UTILS_CONFIG_DIR / "web" / "agent_tls"
-WEB_AGENT_TLS_CERT_PATH = WEB_AGENT_TLS_DIR / "certificate.pem"
-WEB_AGENT_TLS_SEALED_KEY_PATH = WEB_AGENT_TLS_DIR / "key.sealed"
-WEB_AGENT_TLS_SERVED_KEY_PATH = UTILS_STATE_ROOT / "agent_tls_key.pem"
-WEB_AGENT_TLS_KEY_AAD = b"agent_tls:key"
-WEB_AGENT_TLS_SUBJECT = "neutrino-hub"
-# Verification is the pinned fingerprint, not the validity window, so the
-# certificate simply has to outlive the box.
-WEB_AGENT_TLS_VALIDITY_DAYS = 3650
+# The TLS pair of 0.5's agent channel, which a hub upgraded from 0.5 still
+# stores. The panel deletes both at its start.
+WEB_LEGACY_TLS_DIR = UTILS_CONFIG_DIR / "web" / "agent_tls"
+WEB_LEGACY_TLS_SERVED_KEY_PATH = UTILS_STATE_ROOT / "agent_tls_key.pem"
 # The panel's own certificate authority, which a browser installs once, and
 # the certificate the panel serves under it. The authority's certificate is
 # public and travels in a backup; its key beside it is sealed under the

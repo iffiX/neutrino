@@ -121,7 +121,6 @@ from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.transport.constants import TRANSPORT_BINARY_PATH
 from neutrino_hub.modules.transport.ops import TransportApplier
-from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_CODE_SETUP_IN_PROGRESS,
@@ -1509,17 +1508,6 @@ def _step_config_files(reporter: InstallReporter) -> str:
     return f"created {len(created)}"
 
 
-def _step_agent_tls(reporter: InstallReporter) -> str:
-    """Give the legacy listener its certificate, once.
-
-    Regenerating would change the fingerprint every 0.5 agent pins, so an
-    existing pair is left alone.
-    """
-    if ensure_certificate():
-        return "generated"
-    return "present"
-
-
 def _step_transport(reporter: InstallReporter) -> str:
     """Make what the transport needs: its account, its directories, the
     local channel's secret and ``transport.json``; the transport makes its
@@ -1713,7 +1701,6 @@ CORE_STEPS = (
     *(step for steps in edition.hooks("setup_steps") for step in steps),
     ("frpc", "Installing frpc", _step_frpc),
     ("config_files", "Preparing config/ from examples", _step_config_files),
-    ("agent_tls", "Generating the legacy listener certificate", _step_agent_tls),
     ("panel_tls", "Generating the panel's certificates", _step_panel_tls),
     ("transport", "Preparing the transport", _step_transport),
     ("systemd_units", "Installing systemd units", _step_systemd_units),

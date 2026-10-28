@@ -1,9 +1,8 @@
 """`nhub run --only-web`: the servers one process runs, and their ports.
 
 The panel is served over HTTP on ``listen_port`` and over HTTPS on
-``https_listen_port`` whatever ``is_https_enabled`` says, and the agent
-channel on its own TLS port. The HTTPS listener's TLS context is the one a
-renewal loads the new certificate into.
+``https_listen_port`` whatever ``is_https_enabled`` says. The HTTPS
+listener's TLS context is the one a renewal loads the new certificate into.
 """
 
 import argparse
@@ -18,7 +17,6 @@ import pytest
 from neutrino_hub import edition
 from neutrino_hub.cli import run
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
-from neutrino_hub.web.legacy_listener import AgentPortProtocol, AgentPortServer
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
@@ -63,18 +61,12 @@ def served(monkeypatch):
     monkeypatch.setattr(run.asyncio, "run", asyncio_run)
     monkeypatch.setattr(run, "ensure_hub_identity", lambda: None)
     monkeypatch.setattr(run, "resolve_management_key", lambda: "key")
-    monkeypatch.setattr(run, "_agent_key", lambda: "/state/agent_key.pem")
     monkeypatch.setattr(run, "_configured_port", lambda: 80)
     monkeypatch.setattr(run, "_configured_https_port", lambda: 443)
     monkeypatch.setattr(run, "_prepare_transport", lambda: None)
-    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: False)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
-    monkeypatch.setattr(run, "_agent_port_guard", lambda: "guard")
     monkeypatch.setattr(
         run, "_stop_samplers", lambda: recorded["steps"].append("samplers stopped")
-    )
-    monkeypatch.setattr(
-        run, "agent_port_context", lambda cert, key: f"context of {cert} {key}"
     )
     return recorded
 
@@ -96,20 +88,6 @@ def test_two_panel_servers_each_on_its_own_port(served, monkeypatch):
     assert [config.keywords["port"] for config in configs] == [80, 443]
 
 
-def test_the_legacy_listener_is_served_on_loopback_while_its_switch_is_on(
-    served, monkeypatch
-):
-    monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
-    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
-
-    run._serve_panel(arguments())
-
-    configs = [server.config for server in served["servers"]]
-    assert configs[2].application == run.AGENT_APPLICATION_PATH
-    assert configs[2].keywords["host"] == "127.0.0.1"
-    assert configs[2].keywords["port"] == 18445
-
-
 def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
     monkeypatch.setattr(run, "_panel_certificate", dict)
 
@@ -118,24 +96,15 @@ def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
     assert served["steps"] == ["served", "samplers stopped"]
 
 
-def test_only_the_https_port_and_the_legacy_listener_speak_tls(served, monkeypatch):
+def test_only_the_https_port_speaks_tls(served, monkeypatch):
     monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
-    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
 
     run._serve_panel(arguments())
 
-    http, https, agent = (server.config.keywords for server in served["servers"])
+    http, https = (server.config.keywords for server in served["servers"])
     assert "ssl_certfile" not in http
     assert https["ssl_certfile"] == TLS["ssl_certfile"]
     assert https["ssl_keyfile"] == TLS["ssl_keyfile"]
-    assert "ssl_certfile" not in agent
-    assert type(served["servers"][2]) is AgentPortServer
-    gate = agent["http"]
-    assert gate.func is AgentPortProtocol
-    assert gate.keywords == {
-        "guard": "guard",
-        "ssl_context": f"context of {run.WEB_AGENT_TLS_CERT_PATH} /state/agent_key.pem",
-    }
 
 
 def test_the_https_context_is_the_one_a_renewal_reloads(served, monkeypatch):
@@ -154,17 +123,6 @@ def test_no_certificate_serves_http_alone(served, monkeypatch):
     ports = [server.config.keywords["port"] for server in served["servers"]]
     assert ports == [80]
     assert served["watched"] == []
-
-
-def test_a_legacy_key_that_will_not_open_serves_the_panel_alone(served, monkeypatch):
-    monkeypatch.setattr(run, "_panel_certificate", dict)
-    monkeypatch.setattr(run, "_is_legacy_enabled", lambda: True)
-    monkeypatch.setattr(run, "_agent_key", lambda: None)
-
-    run._serve_panel(arguments())
-
-    ports = [server.config.keywords["port"] for server in served["servers"]]
-    assert ports == [80]
 
 
 def test_an_https_port_that_is_the_http_port_is_not_served(served, monkeypatch, capsys):

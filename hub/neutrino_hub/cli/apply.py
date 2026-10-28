@@ -95,9 +95,7 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
     write_working_key,
 )
 from neutrino_hub.modules.transport.ops import TransportApplier, render_settings
-from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
-    WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_IDENTITY_FILE,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
@@ -156,18 +154,6 @@ def main() -> int:
     if args.dry_run:
         _print_artifacts(artifacts)
         return 0
-
-    try:
-        if ensure_certificate():
-            print(f"agent certificate generated at {WEB_AGENT_TLS_CERT_PATH}")
-        write_served_key()
-    except (OSError, ValueError) as error:
-        code = getattr(error, "code", "agent_tls_key_unavailable")
-        print(
-            f'error: {{"code": "{code}"}}: the legacy listener has no served key '
-            f"({error})",
-            file=sys.stderr,
-        )
 
     try:
         if ensure_served():

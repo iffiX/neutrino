@@ -1050,9 +1050,6 @@ class DeviceClientInfoView(BaseModel):
     # What the agent's last hello named, from memory: null for a device that
     # has not connected since the panel started.
     version: str | None = None
-    # True while an agent of 0.5, admitted for its own update alone, takes
-    # this hub's version, until it knocks with this hub's number.
-    is_updating: bool = False
     # True when the agent's version is not this hub's. The two ship together
     # and are only supported together, so the panel offers an upgrade rather
     # than trying to interoperate.
@@ -1820,31 +1817,6 @@ class ChannelLeave(BaseModel):
 
 class ChannelLeft(BaseModel):
     """The ``left`` frame: the hub's answer to a ``leave``."""
-
-
-class LegacyHello(BaseModel):
-    """A 0.5 agent's hello on the legacy listener, its token with it."""
-
-    protocol: int
-    role: str
-    id: str
-    token: str
-    name: str = ""
-    software: str = ""
-
-
-class LegacyKeySetRequest(BaseModel):
-    """An updated peer moving its binding to the transport: its new key."""
-
-    id: str
-    token: str
-    public_key: str = Field(min_length=64, max_length=64, pattern="^[0-9a-fA-F]+$")
-
-
-class LegacyKeySetView(BaseModel):
-    """The hub's static public key, which the peer knocks with from now on."""
-
-    key: str
 
 
 class ChannelHello(BaseModel):

@@ -85,7 +85,6 @@
   "ui.setup.step_xray_core": "Installing xray-core and geodata",
   "ui.setup.step_frpc": "Installing frpc",
   "ui.setup.step_config_files": "Preparing configuration",
-  "ui.setup.step_agent_tls": "Generating the agent channel certificate",
   "ui.setup.step_systemd_units": "Installing system services",
   "ui.setup.step_interfaces": "Applying the interface roles",
   "ui.setup.step_render_all": "Applying configuration",

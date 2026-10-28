@@ -61,14 +61,6 @@ from neutrino_hub.modules.netbird.constants import NETBIRD_HUB_STATE_DIR
 from neutrino_hub.modules.netbird.run_part import (
     child_start_lines as netbird_start_lines,
 )
-from neutrino_hub.modules.channel.constants import (
-    CHANNEL_LEGACY_HOST,
-    CHANNEL_LEGACY_TLS_PORT,
-    CHANNEL_MESSAGE_BYTES_MAX,
-    CHANNEL_PING_INTERVAL_S,
-    CHANNEL_PING_TIMEOUT_S,
-    CHANNEL_SETTING_LEGACY,
-)
 from neutrino_hub.modules.transport import ops as transport_ops
 from neutrino_hub.modules.transport.constants import (
     TRANSPORT_BINARY_PATH,
@@ -105,15 +97,7 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
-from neutrino_hub.web.legacy_listener import (
-    AgentPortServer,
-    ChannelWebSocketProtocol,
-    agent_port_context,
-    agent_port_protocol,
-)
-from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
-    WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
@@ -129,7 +113,6 @@ from neutrino_hub.utils.json_file import read_config
 DEFAULT_LISTEN_HOST = "0.0.0.0"
 GRACEFUL_SHUTDOWN_S = 5
 APPLICATION_PATH = "neutrino_hub.web.app:create_app"
-AGENT_APPLICATION_PATH = "neutrino_hub.web.app:create_agent_app"
 PANEL_SETTINGS_FILE = "web/settings.json"
 # Where the frontend's dev server is started from, relative to the checkout.
 FRONTEND_DIR_NAME = "hub/frontend"
@@ -483,14 +466,11 @@ def _first_binary(candidates: tuple, name: str):
 
 
 def _serve_panel(arguments) -> int:
-    """Run the control panel, the local channel and the legacy listener.
+    """Run the control panel and the local channel.
 
-    Two or three servers, one loop: the panel over HTTP on its port and over
-    HTTPS on its HTTPS port with its own certificate, whatever
-    ``is_https_enabled`` says, and, while ``is_legacy_channel_enabled`` is
-    on and the vault's data key unseals the agent TLS key, the legacy
-    listener on loopback. The local channel to the transport runs on the
-    same loop. ``--reload`` serves the panel alone over HTTP, because
+    Two servers, one loop: the panel over HTTP on its port and over HTTPS on
+    its HTTPS port with its own certificate, whatever ``is_https_enabled``
+    says. The local channel to the transport runs on the same loop. ``--reload`` serves the panel alone over HTTP, because
     uvicorn's reloader supervises a single server.
 
     Args:
@@ -542,10 +522,6 @@ def _serve_panel(arguments) -> int:
         watch_served_context(https_config.ssl)
         servers.append(uvicorn.Server(https_config))
     _prepare_transport()
-    if _is_legacy_enabled():
-        agent_key_path = _agent_key()
-        if agent_key_path is not None:
-            servers.append(AgentPortServer(_legacy_config(agent_key_path)))
     _finish_first_run()
     asyncio.run(_serve_together(servers))
     _stop_samplers()
@@ -561,7 +537,6 @@ def _prepare_transport() -> None:
 
     runtime = shared_runtime()
     try:
-        runtime.settle_legacy_channel()
         if is_linux() and not is_dev_root_set() and os.geteuid() == 0:
             from neutrino_hub.system.units import SystemdUnitInstaller
 
@@ -577,54 +552,6 @@ def _prepare_transport() -> None:
             f"error: the transport is not ready ({command_failure_text(error)})",
             file=sys.stderr,
         )
-
-
-def _is_legacy_enabled() -> bool:
-    """Whether the legacy listener is on, from the settings."""
-    try:
-        return read_config(PANEL_SETTINGS_FILE).get(CHANNEL_SETTING_LEGACY) is True
-    except (FileNotFoundError, ValueError):
-        return False
-
-
-def _legacy_config(key_path) -> uvicorn.Config:
-    """The legacy listener on loopback, over the agent TLS pair.
-
-    uvicorn listens over TCP and the listener's own protocol runs each TLS
-    handshake under the listener's limits before uvicorn's HTTP protocol
-    takes the connection.
-
-    Args:
-        key_path: The agent certificate's unsealed key.
-
-    Returns:
-        The server's configuration.
-    """
-    return uvicorn.Config(
-        AGENT_APPLICATION_PATH,
-        factory=True,
-        host=CHANNEL_LEGACY_HOST,
-        port=CHANNEL_LEGACY_TLS_PORT,
-        log_level="info",
-        access_log=False,
-        http=agent_port_protocol(
-            guard=_agent_port_guard(),
-            ssl_context=agent_port_context(str(WEB_AGENT_TLS_CERT_PATH), str(key_path)),
-        ),
-        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
-        ws=ChannelWebSocketProtocol,
-        ws_ping_interval=CHANNEL_PING_INTERVAL_S,
-        ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
-        ws_max_size=CHANNEL_MESSAGE_BYTES_MAX,
-        proxy_headers=False,
-    )
-
-
-def _agent_port_guard():
-    """The runtime's counts of the legacy listener, which its routes read too."""
-    from neutrino_hub.web.app import shared_runtime
-
-    return shared_runtime().channel_port
 
 
 def _stop_samplers() -> None:
@@ -711,27 +638,6 @@ def _panel_certificate() -> dict:
         "ssl_certfile": str(WEB_PANEL_TLS_SERVED_CERT_PATH),
         "ssl_keyfile": str(WEB_PANEL_TLS_SERVED_KEY_PATH),
     }
-
-
-def _agent_key():
-    """Unseal the agent TLS key into the file the legacy listener serves with.
-
-    Returns:
-        The served key's path, or None when the listener cannot start, a
-        locked vault or a sealed key that will not open. The panel is served
-        either way; the refusal is one coded line in the log.
-    """
-    try:
-        ensure_certificate()
-        return write_served_key()
-    except (OSError, ValueError) as error:
-        code = getattr(error, "code", "agent_tls_key_unavailable")
-        print(
-            f'error: {{"code": "{code}"}}: the legacy listener cannot start '
-            f"({error}); serving the panel alone",
-            file=sys.stderr,
-        )
-        return None
 
 
 async def _serve_together(servers: list) -> None:

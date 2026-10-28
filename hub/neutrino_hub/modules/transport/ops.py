@@ -27,7 +27,6 @@ except ImportError:
     grp = None
 
 from neutrino_hub.exceptions import VaultLockedError
-from neutrino_hub.modules.channel.constants import CHANNEL_SETTING_LEGACY
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.transport.constants import (
     TRANSPORT_ACCOUNT,
@@ -377,7 +376,6 @@ def render_settings(settings: dict) -> dict:
             settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
         ),
         control_socket=control_socket_address(),
-        is_legacy_enabled=settings.get(CHANNEL_SETTING_LEGACY) is True,
     ).render()
 
 

@@ -7,7 +7,6 @@ by itself.
 """
 
 import asyncio
-import contextlib
 import ipaddress
 import logging
 import re
@@ -120,12 +119,10 @@ from neutrino_hub.web.web_share_access import (
     PanelWebShareSweeper,
     WebShareGuestSessions,
 )
-from neutrino_hub.modules.channel.legacy_channel import settle_legacy_switch
 from neutrino_hub.modules.channel.local_channel import LocalChannelClient
 from neutrino_hub.modules.transport.ops import (
     TransportApplier,
     control_socket_address,
-    settings_or_empty,
     transport_secret,
 )
 from neutrino_hub.web.shell_bridge import device_name
@@ -142,7 +139,6 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
 )
-from neutrino_hub.modules.channel.legacy_sessions import LegacyChannelSession
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -201,10 +197,6 @@ class PanelRuntime:
         # Every managed machine's live session on the transport.
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
-        # The channel of each machine whose agent of 0.5 is admitted for its
-        # own update alone, by device id, kept after its socket ends until
-        # the agent knocks with this hub's number.
-        self.agent_update_sessions: dict[str, LegacyChannelSession] = {}
         # The agents' replies to the persist and stop_session frames the hub
         # relayed, by the request it sent. Imported here: the handler reads
         # the routes' helpers, which read this module for the runtime's type.
@@ -304,8 +296,7 @@ class PanelRuntime:
         self.device_last_error: dict[str, dict] = {}
         # The open enrolment tickets, read back from the state root.
         self.enrollments = ChannelTicketRegistry()
-        # The legacy listener's open handshakes and admitted sockets, and the
-        # failed admissions of both listeners, which pause join.
+        # The failed admissions on the agent port, which pause join.
         self.channel_port = ChannelPortGuard()
         # Where the relay stands: its process and the probe of its public
         # address. The application starts it; a CLI run never wants it.
@@ -847,21 +838,6 @@ class PanelRuntime:
             LOGGER.info("transport: %s", note)
         return note
 
-    def settle_legacy_channel(self) -> bool:
-        """Turn the legacy listener off once no device row names a 0.5 agent.
-
-        Returns:
-            True when the switch moved and the transport was told.
-        """
-        if not settle_legacy_switch(DeviceRegistry().all_stored()):
-            return False
-        self.settings = settings_or_empty()
-        try:
-            self.apply_transport()
-        except (subprocess.SubprocessError, OSError, ValueError) as error:
-            LOGGER.warning("legacy listener: %s", command_failure_text(error))
-        return True
-
     def device_names(self) -> dict:
         """Device id to what the hub calls the machine, for every stored device."""
         return {
@@ -1062,10 +1038,6 @@ class PanelRuntime:
         self.device_shares.withdraw(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
-        update = self.agent_update_sessions.pop(key, None)
-        if update is not None and not update.is_closed:
-            with contextlib.suppress(StreamRefusedError, RuntimeError):
-                update.call(update.refuse(CHANNEL_CODE_BINDING_UNKNOWN), timeout=5.0)
 
     def forget_client(self, client_id: str) -> None:
         """Drop everything held in memory about one client.

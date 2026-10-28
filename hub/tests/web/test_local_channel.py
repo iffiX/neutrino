@@ -71,12 +71,7 @@ class FakeRuntime:
         self.client_reached: dict = {}
         self.settings = {"listen_port": 8080}
         self.forgotten: list = []
-        self.legacy_settled = 0
         self.channel = None
-
-    def settle_legacy_channel(self):
-        self.legacy_settled += 1
-        return False
 
     def forget_device(self, key):
         self.forgotten.append(("device", key))

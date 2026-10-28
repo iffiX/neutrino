@@ -198,11 +198,10 @@ def test_the_panel_settings_carry_the_scheme_asked_for(tmp_path, monkeypatch, is
     assert settings["is_https_enabled"] is is_https
 
 
-def test_the_panel_certificates_are_made_right_after_the_agent_channels():
+def test_the_panel_certificates_are_made_right_after_the_config_files():
     names = [step_id for step_id, _, _ in setup.CORE_STEPS]
 
-    assert names.index("panel_tls") == names.index("agent_tls") + 1
-    assert names.index("panel_tls") > names.index("config_files")
+    assert names.index("panel_tls") == names.index("config_files") + 1
 
 
 def test_an_https_run_hands_over_the_authority_to_install(monkeypatch, tmp_path):

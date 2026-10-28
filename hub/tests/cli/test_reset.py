@@ -56,8 +56,6 @@ def box(tmp_path, monkeypatch):
             }
         )
     )
-    (config / "web/agent_tls").mkdir()
-    (config / "web/agent_tls/certificate.pem").write_text("cert")
     (config / "web/panel_tls").mkdir()
     (config / "web/panel_tls/authority.pem").write_text("authority")
     (config / "web/identity.json").write_text(
@@ -110,7 +108,6 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert "wrapped_key" not in vault
     assert not (box / "devices/aa-bb-cc-dd-ee-ff").exists()
     assert (box / "devices/devices.json").exists()
-    assert not (box / "web/agent_tls").exists()
     assert not (box / "web/panel_tls").exists()
     assert not (box.parent / "state" / "panel_tls_certificate.pem").exists()
     assert not (box.parent / "state" / "panel_tls_key.pem").exists()

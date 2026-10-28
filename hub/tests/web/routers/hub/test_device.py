@@ -17,7 +17,6 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.channel.legacy_sessions import LegacyChannelSession
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -121,7 +120,6 @@ class ListRuntime:
         self.device_modules = {}
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
-        self.agent_update_sessions = {}
         self.desired_states = StubDesiredStates()
         self.published_services = StubPublishedServices()
         self.network_config = _EmptyNetwork()
@@ -253,65 +251,6 @@ def test_a_device_not_seen_since_the_panel_started_has_no_version_or_stamp(liste
     assert device["client"]["is_version_mismatched"] is False
 
 
-def update_session() -> LegacyChannelSession:
-    """The channel of an agent of 0.5 admitted for its own update alone."""
-    return LegacyChannelSession(
-        key=DEVICE,
-        role="agent",
-        websocket=None,
-        loop=None,
-        software="neutrino_agent/0.5.2",
-    )
-
-
-def test_an_agent_of_0_5_reads_updating_until_it_says_hello_at_this_hubs_number(
-    listed, monkeypatch
-):
-    client, runtime = listed
-    monkeypatch.setattr(devices_router, "HUB_VERSION", "0.6.0")
-    session = update_session()
-    runtime.agent_update_sessions[DEVICE] = session
-
-    (live,) = client.get(DEVICE_PATH).json()["devices"]
-    session.fail_streams()
-    (restarting,) = client.get(DEVICE_PATH).json()["devices"]
-    runtime.agent_sessions.online.add(DEVICE.lower())
-    runtime.agent_sessions.versions[DEVICE.lower()] = "0.6.0"
-    (back,) = client.get(DEVICE_PATH).json()["devices"]
-
-    for device in (live, restarting):
-        assert device["client"]["is_updating"] is True
-        assert device["client"]["is_version_mismatched"] is False
-        assert device["client"]["version"] == "0.5.2"
-        assert device["client"]["is_online"] is False
-    assert (live["is_online"], restarting["is_online"]) == (True, False)
-    assert back["client"]["is_updating"] is False
-    assert back["client"]["version"] == "0.6.0"
-    assert back["client"]["is_online"] is True
-
-
-@pytest.mark.parametrize("cause", ["checkout", "package", "install"])
-def test_an_agent_of_0_5_whose_update_cannot_run_reads_its_version_mismatch(
-    listed, monkeypatch, cause
-):
-    client, runtime = listed
-    hub_version = "0.6.0+dev" if cause == "checkout" else "0.6.0"
-    monkeypatch.setattr(devices_router, "HUB_VERSION", hub_version)
-    session = update_session()
-    session.is_package_refused = cause == "package"
-    if cause == "install":
-        session.record_report(
-            {"error": {"code": "reinstall_failed", "params": {"exit_code": 100}}}
-        )
-    runtime.agent_update_sessions[DEVICE] = session
-
-    (device,) = client.get(DEVICE_PATH).json()["devices"]
-
-    assert device["client"]["is_updating"] is False
-    assert device["client"]["is_version_mismatched"] is True
-    assert device["client"]["version"] == "0.5.2"
-
-
 def test_a_device_is_at_the_address_its_channel_comes_from(listed):
     """SSH is for installing and power, never for locating: an agent joined
     by a link has no stored host and is no less reachable."""
@@ -363,7 +302,6 @@ class SshRuntime:
         self.device_last_error = {}
         self.device_modules = {}
         self.agent_sessions = FakeChannelSessions()
-        self.agent_update_sessions = {}
 
 
 @pytest.fixture
@@ -657,7 +595,6 @@ class RdpRuntime:
     def __init__(self, online=()):
         self.events = PanelEventBus()
         self.agent_sessions = FakeChannelSessions(online)
-        self.agent_update_sessions = {}
         self.desired_states = DesiredStateStore()
 
     def push_desired_state(self, key: str) -> None:
@@ -763,7 +700,6 @@ class ServiceRuntime:
         self.device_platform = {}
         self.device_catalog = StubCatalog()
         self.agent_sessions = FakeChannelSessions(online=[DEVICE])
-        self.agent_update_sessions = {}
 
 
 @pytest.fixture
@@ -838,7 +774,6 @@ class InstallRuntime:
         self.device_modules = {}
         self.enrollments = ChannelTicketRegistry()
         self.agent_sessions = FakeChannelSessions()
-        self.agent_update_sessions = {}
         self.agent_packages = AgentPackageCache(
             root=packages_dir / "agent_cache",
             manifest_path=packages_dir / "agent_packages.json",

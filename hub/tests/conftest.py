@@ -774,7 +774,6 @@ class FakeModuleRuntime:
         self.device_shares = DeviceShareRegistry()
         self.tasks = TaskStreamRegistry()
         self.agent_sessions = FakeChannelSessions(online)
-        self.agent_update_sessions = {}
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
         self.module_releases = ModuleReleaseStore(path=None)

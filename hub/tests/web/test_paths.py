@@ -1,8 +1,7 @@
 """Every route follows the path rules of protocol.md.
 
 A path is grouped as the sidebar is, under ``/api/hub`` or ``/api/agent``
-(``/api/channel`` on the agent port, ``/ws/hub`` and ``/ws/agent`` for the
-sockets); every segment is a singular ``under_score`` noun; an identifier is
+(``/ws/hub`` and ``/ws/agent`` for the sockets); every segment is a singular ``under_score`` noun; an identifier is
 in the query or the body, never in the path; a read is a GET ending in a
 noun and a write a POST ending in one verb from the closed table.
 """
@@ -16,7 +15,6 @@ from starlette.routing import Route, WebSocketRoute
 import neutrino_hub.web.app as app_module
 from neutrino_hub.web.constants import (
     WEB_PATH_PREFIX_AGENT,
-    WEB_PATH_PREFIX_CHANNEL,
     WEB_PATH_PREFIX_HUB,
     WEB_PATH_PREFIX_WS_AGENT,
     WEB_PATH_PREFIX_WS_HUB,
@@ -27,7 +25,6 @@ from neutrino_hub.web.setup_app import WebSetupSession, create_setup_app
 PREFIXES = (
     WEB_PATH_PREFIX_HUB,
     WEB_PATH_PREFIX_AGENT,
-    WEB_PATH_PREFIX_CHANNEL,
     WEB_PATH_PREFIX_WS_HUB,
     WEB_PATH_PREFIX_WS_AGENT,
 )
@@ -170,10 +167,6 @@ def test_every_panel_route_follows_the_rules(factories):
     assert_every_route_follows_the_rules(factories.create_app())
 
 
-def test_every_agent_port_route_follows_the_rules(factories):
-    assert_every_route_follows_the_rules(factories.create_agent_app())
-
-
 def test_every_setup_route_follows_the_rules():
     assert_every_route_follows_the_rules(create_setup_app(WebSetupSession(context={})))
 
@@ -265,13 +258,11 @@ def _each_module(path: str) -> list:
 def test_every_route_served_is_a_row_of_the_protocol_page(factories):
     """The page says a route absent from it does not exist, and nothing
     else would notice a route the code grew without a row."""
-    served = set()
-    for app in (factories.create_app(), factories.create_agent_app()):
-        served |= {
-            (method, path)
-            for method, path in routes_of(app)
-            if method != "WS" and path not in FRAME_PATHS
-        }
+    served = {
+        (method, path)
+        for method, path in routes_of(factories.create_app())
+        if method != "WS" and path not in FRAME_PATHS
+    }
     served |= {
         (method, path)
         for method, path in routes_of(create_setup_app(WebSetupSession(context={})))

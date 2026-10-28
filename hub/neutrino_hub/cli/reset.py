@@ -53,9 +53,6 @@ from neutrino_hub.utils.constants import (
 RESET_COLLECTED_PATHS = (
     "devices/known_hosts",
     "devices/packages",
-    # The agent TLS pair of the legacy listener goes with the fleet that
-    # pinned it; the next setup generates a fresh one for its own.
-    "web/agent_tls",
     # The transport's static key, which every binding pins; the transport
     # makes a new pair at its next start.
     "transport",
@@ -79,7 +76,6 @@ RESET_COLLECTED_PATHS = (
 RESET_STATE_PATHS = (
     "session.secret",
     "vault.key",
-    "agent_tls_key.pem",
     "panel_tls_certificate.pem",
     "panel_tls_key.pem",
     *edition.hooks("reset_state_paths"),

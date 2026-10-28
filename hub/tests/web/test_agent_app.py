@@ -1,10 +1,4 @@
-"""The panel and the agent channel are two applications on one runtime.
-
-The agent port serves ``/api/channel`` and nothing else: the panel app must
-not answer the channel on plain HTTP, and the agent app must answer nothing
-but the channel. One runtime behind both is what lets a ticket generated
-on the panel be spent on the agent port.
-"""
+"""The panel application: its routes and what it starts and stops."""
 
 import pytest
 
@@ -53,7 +47,7 @@ class StubUsageCollector:
 
 
 class StubRuntime:
-    """Only what assembling the two applications reaches for."""
+    """Only what assembling the panel application reaches for."""
 
     def __init__(self):
         self.served_models = None
@@ -116,87 +110,14 @@ def route_set(app) -> set:
     }
 
 
-CHANNEL_ROUTES = {
-    ("POST", "/api/channel/key/set"),
-    ("WS", "/api/channel/socket"),
-}
-
-
-def test_the_agent_app_serves_the_channel_routes_and_nothing_else(factories):
-    app = factories.create_agent_app()
-
-    assert route_set(app) == CHANNEL_ROUTES
-    assert api_paths(app) == {"/api/channel/key/set"}
-
-
-def test_every_other_path_on_the_agent_app_is_404(factories):
-    from fastapi.testclient import TestClient
-
-    app = factories.create_agent_app()
-    with TestClient(app) as client:
-        statuses = {
-            path: client.get(path).status_code
-            for path in (
-                "/openapi.json",
-                "/docs",
-                "/redoc",
-                "/",
-                "/api/hub/client",
-                "/api/channel",
-            )
-        }
-
-    assert set(statuses.values()) == {404}
-
-
-def test_an_oversize_join_body_is_413_on_the_agent_app(factories):
-    from fastapi.testclient import TestClient
-
-    from neutrino_hub.modules.channel.constants import CHANNEL_REQUEST_BYTES_MAX
-
-    app = factories.create_agent_app()
-    with TestClient(app) as client:
-        answer = client.post(
-            "/api/channel/key/set",
-            content=b"{" + b" " * CHANNEL_REQUEST_BYTES_MAX + b"}",
-            headers={"Content-Type": "application/json"},
-        )
-
-    assert answer.status_code == 413
-    assert answer.json()["detail"]["code"] == "request_too_large"
-
-
 def test_the_panel_app_serves_no_channel_route(factories):
     app = factories.create_app()
     paths = api_paths(app)
 
     assert paths
     assert not any(path.startswith("/api/channel") for path in paths)
-    assert not route_set(app) & CHANNEL_ROUTES
+    assert not any(path.startswith("/api/channel") for _, path in route_set(app))
     assert "/api/hub/client" in paths
-
-
-def test_a_body_that_does_not_validate_is_refused_in_the_one_shape(factories):
-    """FastAPI's own answer is a 422 carrying a list; a client written from
-    protocol.md reads every refusal as ``{code, params}`` under a status of
-    the 400 class, and this is where that promise is kept."""
-    from fastapi.testclient import TestClient
-
-    app = factories.create_agent_app()
-    with TestClient(app) as client:
-        answer = client.post("/api/channel/key/set", json={"token": 7})
-
-    assert answer.status_code == 400
-    detail = answer.json()["detail"]
-    assert detail["code"] == "body_invalid"
-    assert set(detail["params"]["fields"].split(", ")) == {"id", "token", "public_key"}
-
-
-def test_both_apps_share_one_runtime(factories):
-    panel = factories.create_app()
-    agent = factories.create_agent_app()
-
-    assert panel.state.runtime is agent.state.runtime
 
 
 def test_the_panel_counts_the_traffic_history_and_writes_it_at_its_stop(factories):
@@ -243,3 +164,22 @@ def test_a_box_without_the_gateway_applies_nothing_at_start(gateway, monkeypatch
     gateway.create_app()
 
     assert StubGatewayApplier.applied == 0
+
+
+def test_the_panel_deletes_the_tls_pair_of_0_5_at_start(
+    factories, monkeypatch, tmp_path
+):
+    pair = tmp_path / "config" / "web" / "agent_tls"
+    pair.mkdir(parents=True)
+    (pair / "certificate.pem").write_text("cert")
+    (pair / "key.sealed").write_text("{}")
+    served = tmp_path / "state" / "agent_tls_key.pem"
+    served.parent.mkdir()
+    served.write_text("key")
+    monkeypatch.setattr(factories, "WEB_LEGACY_TLS_DIR", pair)
+    monkeypatch.setattr(factories, "WEB_LEGACY_TLS_SERVED_KEY_PATH", served)
+
+    factories.create_app()
+
+    assert not pair.exists()
+    assert not served.exists()

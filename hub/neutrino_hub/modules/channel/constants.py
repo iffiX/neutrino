@@ -27,24 +27,6 @@ CHANNEL_ROLE_CLIENT = "client"
 CHANNEL_ROLE_HUB = "hub"
 CHANNEL_ROLE_GUEST = "guest"
 
-# The legacy listener: the 0.5 channel of an agent updating itself, served
-# over the agent TLS pair on loopback alone, and the route an updated peer
-# moves its binding to the transport with.
-CHANNEL_LEGACY_HOST = "127.0.0.1"
-CHANNEL_LEGACY_TLS_PORT = 18445
-CHANNEL_WS_PATH = "/api/channel/socket"
-CHANNEL_KEY_SET_PATH = "/api/channel/key/set"
-# The switch in settings.json that keeps the legacy listener open.
-CHANNEL_SETTING_LEGACY = "is_legacy_channel_enabled"
-# The first release whose agents and clients speak PROTOCOL 4; a device row
-# whose agent reports an older one keeps the legacy listener open.
-CHANNEL_TRANSPORT_FIRST_VERSION = "0.6.0"
-
-# The legacy listener's close codes: a refused hello, and a socket replaced
-# by a second one for the same binding.
-CHANNEL_CLOSE_REFUSED = 4000
-CHANNEL_CLOSE_REPLACED = 4010
-
 # The local channel between the hub's Python and its transport: the first
 # line's operations, the questions the transport asks, the commands the
 # Python sends and the events the transport raises (transport.md, "The local
@@ -113,18 +95,8 @@ CHANNEL_FRAME_SERVICE = "service"
 CHANNEL_FRAME_PERSIST = "persist"
 CHANNEL_FRAME_STOP_SESSION = "stop_session"
 CHANNEL_FRAME_REPLY = "reply"
-# The legacy listener's WebSocket frames: a stream's open and close, its
-# credit, and the end of input on an exec stream.
-CHANNEL_FRAME_OPEN = "open"
-CHANNEL_FRAME_CLOSE = "close"
-CHANNEL_FRAME_CREDIT = "credit"
-CHANNEL_FRAME_PING = "ping"
-CHANNEL_FRAME_PONG = "pong"
-CHANNEL_FRAME_EOF = "eof"
 # A frame's ``request``, the asker's own string, holds this many characters.
 CHANNEL_REQUEST_CHARS_MAX = 64
-# A ``pong`` echoes the ``ping``'s nonce up to this many characters.
-CHANNEL_PING_NONCE_CHARS_MAX = 64
 
 # The stream kinds.
 CHANNEL_STREAM_SHELL = "shell"
@@ -186,29 +158,13 @@ CHANNEL_DEV_VERSION_SUFFIX = "+dev"
 CHANNEL_SHELL_OWNER_HUB = "hub"
 CHANNEL_SHELL_OWNER_CLIENT_PREFIX = "client:"
 
-# The hub allots even stream ids from here; a peer's ids are odd.
-CHANNEL_FIRST_HUB_STREAM_ID = 0
-
-# A binary frame is a big-endian u32 stream id, then the bytes.
-CHANNEL_STREAM_ID_BYTES = 4
 # A frame down an ``exec`` stream has one byte after the id: 1 for the
 # process's stdout, 2 for its stderr.
 CHANNEL_EXEC_FD_BYTES = 1
-# What a stream may have in flight before the receiving side grants more.
-CHANNEL_STREAM_CREDIT_BYTES = 1024 * 1024
 # The largest binary frame either side sends on one stream.
 CHANNEL_CHUNK_BYTES = 64 * 1024
-# How long a fresh socket may stay silent before its hello is due.
-CHANNEL_HELLO_TIMEOUT_S = 10.0
 # How long a call from a thread waits on the loop before it is given up.
 CHANNEL_CALL_TIMEOUT_S = 15.0
-# Protocol-level keepalive: uvicorn pings on this interval and drops a
-# socket whose pong is late by this much. The pong waits behind what the
-# socket queued, so the timeout covers about 2 MB at 256 kbit/s.
-CHANNEL_PING_INTERVAL_S = 20.0
-CHANNEL_PING_TIMEOUT_S = 60.0
-# The least time between two journal lines for one peer's late pong.
-CHANNEL_LATE_PONG_LOG_INTERVAL_S = 60.0
 # How long the hub waits for the far end of a ``connect`` stream it dials.
 CHANNEL_CONNECT_DIAL_TIMEOUT_S = 10.0
 # How many ``connect`` streams one client socket may hold open at once.
@@ -225,35 +181,18 @@ CHANNEL_UDP_HELD_DATAGRAMS_MAX = 16
 CHANNEL_UDP_SOURCE_BYTES = 2
 # The loopback address the hub dials its own gateway and panel on.
 CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
-# The legacy listener's limits, each over the whole listener and never per
-# peer address (transport.md, "What an unadmitted peer can cost the hub"):
-# a socket's time to its first byte, a TLS handshake's time from that byte,
-# the time from accept to an admitted hello, the connections not yet past
-# hello, the sockets past it, and the failed admissions within the window
-# that pause join, which the transport's admissions count into as well.
-CHANNEL_FIRST_BYTE_TIMEOUT_S = 3.0
-CHANNEL_TLS_HANDSHAKE_TIMEOUT_S = 10.0
-CHANNEL_ADMISSION_TIMEOUT_S = 30.0
-CHANNEL_UNADMITTED_MAX = 128
-CHANNEL_SOCKETS_MAX = 512
+# The failed admissions within the window that pause join, over the whole
+# agent port and never per peer address (transport.md, "What an unadmitted
+# peer can cost the hub").
 CHANNEL_ADMISSION_FAILURES_MAX = 30
 CHANNEL_ADMISSION_WINDOW_S = 60.0
-# The least time between two log lines of one kind of close the port
-# makes on its own: a socket closed to make room, or one past its first
-# byte or its TLS handshake time.
-CHANNEL_CLOSE_LOG_INTERVAL_S = 60.0
-CHANNEL_CLOSE_ROOM = "room"
-CHANNEL_CLOSE_FIRST_BYTE = "first_byte"
-CHANNEL_CLOSE_HANDSHAKE = "handshake"
-# The largest WebSocket message the agent port takes, admitted or not. Four
+# The largest control frame the agent port takes, admitted or not. Four
 # times the largest message measured on a hub of 64 machines with every
 # module and 32 shares, 256 entries and every terminal, rounded up to a power
 # of two: a client's state 274 KB, a command's close 98 KB, an agent's report
 # 74 KB, a data frame 64 KB, an agent's state 40 KB
 # (tests/web/test_channel_message_size.py).
 CHANNEL_MESSAGE_BYTES_MAX = 2 * 1024 * 1024
-# The largest body a join or a leave may carry.
-CHANNEL_REQUEST_BYTES_MAX = 64 * 1024
 
 # The codes a refusal or a close carries.
 CHANNEL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
@@ -277,8 +216,6 @@ CHANNEL_CODE_HELLO_INVALID = "hello_invalid"
 # admissions are at their limit.
 CHANNEL_CODE_CHANNEL_FULL = "channel_full"
 CHANNEL_CODE_ADMISSION_PAUSED = "admission_paused"
-# A join or a leave whose body is past CHANNEL_REQUEST_BYTES_MAX.
-CHANNEL_CODE_REQUEST_TOO_LARGE = "request_too_large"
 # What a request gets when the machine it went to never answered it: the
 # stream ran out of time, or the loop did. It is a display code, worded by
 # the panel as the word for a machine that has not reported.
