@@ -488,8 +488,12 @@ integer inside and a label under: CPU, memory, disk, GPU and temperature, in
 the tones `device_gauge` uses, the temperature ring warning at 70 and failing
 at 85. The GPU ring shows the busiest card and wears a `×N` badge at its
 corner when the machine has more than one; a machine with none has no GPU
-ring. An offline machine's cell reads `Offline · <ago>`. The rings move on
-the `metrics` event and ask for nothing.
+ring. An offline machine's cell reads `Offline · <ago>`. A machine whose
+row holds a token and no static key joined under 0.5, and it stays offline
+until its agent is reinstalled and joins again. Its cell reads the words of
+`code.hub_key_missing` in place of `Offline · <ago>`
+([transport.md](transport.md), "A peer of 0.5"). The rings move on the
+`metrics` event and ask for nothing.
 
 The page has no filter chips, no legend, no search box, no scan and no drawer.
 Its title carries `<n> agents, <m> online`, and its header holds two primary
@@ -748,7 +752,7 @@ table. Three sections follow, top to bottom; what each reads is
 
 | Section | Holds |
 | --- | --- |
-| **Monitor** (`ui.machine.monitor`) | four number tiles, uptime, load over 1, 5 and 15 minutes, disk and temperature, the last two toned by their thresholds; then the CPU and memory charts, one chart per GPU, and the process table; an offline machine shows `ui.device_monitor.waiting` alone |
+| **Monitor** (`ui.machine.monitor`) | four number tiles, uptime, load over 1, 5 and 15 minutes, disk and temperature, the last two toned by their thresholds; then the CPU and memory charts, one chart per GPU, and the process table; an offline machine shows `ui.device_monitor.waiting` alone, and a machine that joined under 0.5 the words of `code.hub_key_missing` in its place |
 | **Modules** (`ui.machine.modules`) | **Available accounts**, then **Module configuration** |
 | **The agent** (`ui.machine.agent`) | four rows, the version, the platform, the host name and the last report; and two bordered buttons, **Update agent** and **Reinstall**, the latter opening the **Add over SSH** dialog for this machine. Forgetting a machine is on the Agents page alone |
 
