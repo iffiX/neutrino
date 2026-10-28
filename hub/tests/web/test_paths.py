@@ -85,6 +85,7 @@ class StubRuntime:
         self.release_sampler = StubLinkSampler()
         self.traffic_history = StubLinkSampler()
         self.enrollment_sweeper = StubExitController()
+        self.web_share_sweeper = StubExitController()
         self.proxy = StubExitController()
         self.relay_monitor = StubExitController()
         self.frp_monitors = {
