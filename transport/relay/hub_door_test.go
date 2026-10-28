@@ -23,7 +23,14 @@ const (
 	// answerUnpaddedBytes is message 2 with no payload: an ephemeral key and
 	// an empty payload's tag.
 	answerUnpaddedBytes = 32 + 16
+	// wsaConnReset is WSAECONNRESET, what Winsock answers for a reset.
+	wsaConnReset = syscall.Errno(10054)
 )
+
+// isReset reports whether a read's error is the peer's reset.
+func isReset(err error) bool {
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, wsaConnReset)
+}
 
 func randomBytes(n int) []byte {
 	data := make([]byte, n)
@@ -117,7 +124,7 @@ func TestRefusedConnectionsAreHeldThenReset(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			n, elapsed, err := refusalOf(t, hostPort, c.bytes)
-			if n != 0 || !errors.Is(err, syscall.ECONNRESET) {
+			if n != 0 || !isReset(err) {
 				t.Fatalf("read %d bytes, %v; want nothing and a reset", n, err)
 			}
 			if elapsed < testHold-50*time.Millisecond || elapsed > testHold+2*time.Second {
@@ -138,7 +145,7 @@ func TestRefusalPastTheHoldDeadlineResetsAtOnce(t *testing.T) {
 	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, 0))
 	hostPort, _ := session.ParseAddress(hub.listen(t))
 	n, elapsed, err := refusalOf(t, hostPort, randomBytes(40))
-	if n != 0 || !errors.Is(err, syscall.ECONNRESET) || elapsed > time.Second {
+	if n != 0 || !isReset(err) || elapsed > time.Second {
 		t.Fatalf("read %d bytes, %v after %v; want a reset at once", n, err, elapsed)
 	}
 }
@@ -219,7 +226,7 @@ func TestRefusedConnectionsAreClosedFirst(t *testing.T) {
 	resets := 0
 	for _, conn := range held {
 		_ = conn.SetReadDeadline(readUntil)
-		if _, err := conn.Read(make([]byte, 1)); errors.Is(err, syscall.ECONNRESET) {
+		if _, err := conn.Read(make([]byte, 1)); isReset(err) {
 			resets++
 		}
 	}

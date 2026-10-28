@@ -35,6 +35,14 @@ var timings = session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 
 // doorHold is the hold deadline of the tests' hubs.
 const doorHold = 300 * time.Millisecond
 
+// wsaConnReset is WSAECONNRESET, what Winsock answers for a reset.
+const wsaConnReset = syscall.Errno(10054)
+
+// isReset reports whether a read's error is the peer's reset.
+func isReset(err error) bool {
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, wsaConnReset)
+}
+
 // doorDraws are the tests' door draws: the longest read and doorHold.
 var doorDraws = knock.DoorDraws{
 	ReadBytes: func() int { return knock.DoorReadBytesMax },
@@ -511,7 +519,7 @@ func TestATLSRecordIsHeldThenReset(t *testing.T) {
 	_, _ = conn.Write([]byte{0x16, 0x03, 0x01, 0x00, 0xa5, 0x01, 0x00, 0x00, 0xa1, 0x03, 0x03})
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	n, err := conn.Read(make([]byte, 64))
-	if n != 0 || !errors.Is(err, syscall.ECONNRESET) {
+	if n != 0 || !isReset(err) {
 		t.Fatalf("read %d bytes, %v; want nothing and a reset", n, err)
 	}
 	if elapsed := time.Since(started); elapsed < doorHold-50*time.Millisecond {
