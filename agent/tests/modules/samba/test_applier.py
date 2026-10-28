@@ -33,6 +33,7 @@ from neutrino_agent.modules.samba.applier import (
     check_person_config,
     password_digest,
     plan_smb_conf,
+    share_owner,
     testparm as samba_testparm,
     without_include_line,
 )
@@ -722,3 +723,40 @@ def test_a_configuration_whose_only_share_admits_no_user_serves_nothing(box):
     assert note == "unchanged"
     assert (tmp_path / "etc/smb.conf").read_text() == persons
     assert not (tmp_path / "etc/neutrino.conf").exists()
+
+
+def test_a_missing_folder_is_made_for_the_account_it_writes_as():
+    """A Home share's folder is its account's; a folder share's of one SMB
+    user is that user's account's; a folder share of two users stays root's."""
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {
+                    "name": "ann",
+                    "path": "/home/ann",
+                    "valid_users": ["neutrino-ann"],
+                    "force_user": "ann",
+                },
+                {
+                    "name": "bob",
+                    "path": "/home/bob",
+                    "valid_users": ["neutrino-bob"],
+                    "force_user": "bob",
+                },
+                {"name": "solo", "path": "/srv/solo", "valid_users": ["neutrino-ann"]},
+                {
+                    "name": "team",
+                    "path": "/srv/team",
+                    "valid_users": ["neutrino-ann", "neutrino-bob"],
+                },
+            ],
+            "users": ["neutrino-ann", "neutrino-bob"],
+        }
+    )
+
+    assert [share_owner(share, config) for share in config.shares] == [
+        "ann",
+        "bob",
+        "ann",
+        "",
+    ]

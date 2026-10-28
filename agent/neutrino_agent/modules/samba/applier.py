@@ -669,13 +669,14 @@ class SambaConfigApplier:
         run(["systemctl", "stop", self._unit], is_checked=False)
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
-        """Make a share's folder that is missing, owned by its one user."""
+        """Make a share's folder that is missing, owned by the one account it writes as."""
         for share in config.shares:
             if os.path.isdir(share.path):
                 continue
             os.makedirs(share.path, exist_ok=True)
-            if len(share.valid_users) == 1 and pwd is not None:
-                entry = pwd.getpwnam(share.valid_users[0])
+            account = share_owner(share, config)
+            if account and pwd is not None:
+                entry = pwd.getpwnam(account)
                 os.chown(share.path, entry.pw_uid, entry.pw_gid)
 
     def _write_user_files(self, user_files: dict) -> None:
@@ -687,6 +688,29 @@ class SambaConfigApplier:
                 os.unlink(os.path.join(SAMBA_USERS_DIR, name))
         for name, text in user_files.items():
             _write_file(os.path.join(SAMBA_USERS_DIR, name), text)
+
+
+def share_owner(share, config: SambaConfig) -> str:
+    """The machine's account a share's missing folder is made for.
+
+    Args:
+        share: The share.
+        config: The configuration, whose Home shares name each SMB user's
+            account.
+
+    Returns:
+        A Home share's forced account; for a folder share of one SMB user,
+        the account that user's Home share forces; empty for any other,
+        whose folder stays root's.
+    """
+    if share.force_user:
+        return share.force_user
+    if len(share.valid_users) != 1:
+        return ""
+    for held in config.shares:
+        if held.force_user and held.valid_users == share.valid_users:
+            return held.force_user
+    return ""
 
 
 def _write_file(path: str, text: str) -> None:
