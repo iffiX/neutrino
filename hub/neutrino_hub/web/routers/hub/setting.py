@@ -143,11 +143,18 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_LEGACY_TLS_PORT,
 )
 from neutrino_hub.modules.transport.constants import (
+    TRANSPORT_DTLS_KEY_NAME,
+    TRANSPORT_DTLS_SEALED_KEY_NAME,
     TRANSPORT_KEY_DIR,
     TRANSPORT_PRIVATE_KEY_NAME,
     TRANSPORT_SEALED_KEY_NAME,
 )
-from neutrino_hub.modules.transport.ops import restore_private_key, sealed_private_key
+from neutrino_hub.modules.transport.ops import (
+    restore_dtls_key,
+    restore_private_key,
+    sealed_dtls_key,
+    sealed_private_key,
+)
 from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_PORTS, FRP_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 
@@ -787,12 +794,15 @@ def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
     directories: list[str] = []
     files: list[tuple[str, bytes]] = []
     private_key = UTILS_CONFIG_DIR / TRANSPORT_KEY_DIR.name / TRANSPORT_PRIVATE_KEY_NAME
+    dtls_key = UTILS_CONFIG_DIR / TRANSPORT_KEY_DIR.name / TRANSPORT_DTLS_KEY_NAME
     for path in sorted(UTILS_CONFIG_DIR.rglob("*")):
         relative = path.relative_to(UTILS_CONFIG_DIR).as_posix()
         if path.is_dir():
             directories.append(relative)
         elif path == private_key:
             files.append((_sealed_key_member(), sealed_private_key()))
+        elif path == dtls_key:
+            files.append((_sealed_dtls_key_member(), sealed_dtls_key()))
         elif path.is_file():
             files.append((relative, path.read_bytes()))
     return directories, files
@@ -803,24 +813,36 @@ def _sealed_key_member() -> str:
     return f"{TRANSPORT_KEY_DIR.name}/{TRANSPORT_SEALED_KEY_NAME}"
 
 
-async def _restore_static_key(runtime: PanelRuntime) -> None:
-    """Put a restored archive's sealed static key back as the transport's.
+def _sealed_dtls_key_member() -> str:
+    """The config-relative path the sealed DTLS key takes in an archive."""
+    return f"{TRANSPORT_KEY_DIR.name}/{TRANSPORT_DTLS_SEALED_KEY_NAME}"
 
-    The sealed member is unsealed under the restored vault's data key into
+
+async def _restore_static_key(runtime: PanelRuntime) -> None:
+    """Put a restored archive's sealed static key and DTLS key back as the transport's.
+
+    Each sealed member is unsealed under the restored vault's data key into
     the transport's own file and deleted, and the transport is told
     ``keys_reload``. A key that cannot be unsealed is logged and left; the
-    transport then makes a new pair at its next start.
+    transport then makes a new one at its next start.
     """
-    sealed = UTILS_CONFIG_DIR / _sealed_key_member()
-    if not sealed.exists():
+    is_restored = False
+    for member, restore_key in (
+        (_sealed_key_member(), restore_private_key),
+        (_sealed_dtls_key_member(), restore_dtls_key),
+    ):
+        sealed = UTILS_CONFIG_DIR / member
+        if not sealed.exists():
+            continue
+        try:
+            restore_key(sealed.read_bytes())
+            is_restored = True
+        except (VaultLockedError, ValueError, OSError) as error:
+            LOGGER.warning("the backup's %s was not restored: %s", member, error)
+        finally:
+            sealed.unlink(missing_ok=True)
+    if not is_restored:
         return
-    try:
-        restore_private_key(sealed.read_bytes())
-    except (VaultLockedError, ValueError, OSError) as error:
-        LOGGER.warning("the backup's static key was not restored: %s", error)
-        return
-    finally:
-        sealed.unlink(missing_ok=True)
     try:
         await runtime.channel.send_command(CHANNEL_COMMAND_KEYS_RELOAD)
     except StreamRefusedError as error:

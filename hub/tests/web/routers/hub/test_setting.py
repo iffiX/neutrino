@@ -1166,6 +1166,42 @@ def test_a_restore_puts_the_static_key_back_and_reloads_the_transports_keys(
     assert _FakeChannel.commands == ["keys_reload"]
 
 
+def dtls_key(config_dir) -> bytes:
+    """The guest path's certificate files beside the static key."""
+    key_dir = config_dir / "transport"
+    private = b"-----BEGIN EC PRIVATE KEY-----\nkey\n-----END EC PRIVATE KEY-----\n"
+    (key_dir / "dtls_key.pem").write_bytes(private)
+    (key_dir / "dtls_certificate.pem").write_text("certificate")
+    (key_dir / "dtls_fingerprint").write_text(":".join(["AB"] * 32) + "\n")
+    return private
+
+
+def test_a_backup_carries_the_dtls_key_sealed_and_a_restore_puts_it_back(
+    client, monkeypatch
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    transport_key(monkeypatch, config_dir)
+    private = dtls_key(config_dir)
+
+    archive_bytes = download_backup(opened)
+    contents = archive_contents(archive_bytes)
+
+    assert "config/transport/dtls_key.pem" not in contents
+    assert "config/transport/dtls_certificate.pem" in contents
+    assert "config/transport/dtls_fingerprint" in contents
+    assert private not in contents["config/transport/dtls_key.pem.sealed"]
+
+    wipe_box(config_dir)
+    _FakeChannel.commands.clear()
+    response = upload_restore(opened, archive_bytes, PASSPHRASE)
+
+    assert response.status_code == 200, response.text
+    assert (config_dir / "transport" / "dtls_key.pem").read_bytes() == private
+    assert not (config_dir / "transport" / "dtls_key.pem.sealed").exists()
+    assert _FakeChannel.commands == ["keys_reload"]
+
+
 def test_a_backup_restores_the_vault_it_left_with(client):
     opened, config_dir = client
     secret_id = seed_config(config_dir)

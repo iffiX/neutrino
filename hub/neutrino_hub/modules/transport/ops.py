@@ -13,6 +13,7 @@ or restore the private half for a backup; nothing here prints either.
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -40,6 +41,11 @@ from neutrino_hub.modules.transport.constants import (
     TRANSPORT_KEY_AAD,
     TRANSPORT_KEY_DIR,
     TRANSPORT_CONFIG_ROOT_MODE,
+    TRANSPORT_DTLS_CERTIFICATE_NAME,
+    TRANSPORT_DTLS_FINGERPRINT_NAME,
+    TRANSPORT_DTLS_KEY_AAD,
+    TRANSPORT_DTLS_KEY_NAME,
+    TRANSPORT_DTLS_PUBLIC_MODE,
     TRANSPORT_KEY_DIR_MODE,
     TRANSPORT_KEY_HEX_CHARS,
     TRANSPORT_PRIVATE_KEY_MODE,
@@ -285,6 +291,71 @@ def restore_private_key(sealed_json: bytes) -> None:
     public = TRANSPORT_KEY_DIR / TRANSPORT_PUBLIC_KEY_NAME
     if public.exists():
         public.unlink()
+
+
+def read_dtls_fingerprint() -> str:
+    """The fingerprint of the guest path's DTLS certificate, as the transport wrote it.
+
+    Returns:
+        Uppercase hex pairs joined by colons.
+
+    Raises:
+        FileNotFoundError: While the transport has made no certificate yet.
+        ValueError: When the file holds no fingerprint.
+    """
+    path = TRANSPORT_KEY_DIR / TRANSPORT_DTLS_FINGERPRINT_NAME
+    fingerprint = path.read_text("utf-8").strip()
+    if not re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", fingerprint):
+        raise ValueError("the fingerprint file holds no fingerprint")
+    return fingerprint
+
+
+def sealed_dtls_key() -> bytes:
+    """The DTLS certificate's private key sealed under the vault's data key, for a backup.
+
+    Returns:
+        The sealed record as JSON bytes.
+
+    Raises:
+        FileNotFoundError: While the transport has made no certificate yet.
+        VaultLockedError: While the vault is locked.
+    """
+    private = (TRANSPORT_KEY_DIR / TRANSPORT_DTLS_KEY_NAME).read_bytes()
+    try:
+        sealed = seal_bytes(private, TRANSPORT_DTLS_KEY_AAD)
+    except (OSError, ValueError) as error:
+        raise VaultLockedError() from error
+    return json.dumps(sealed).encode("utf-8")
+
+
+def restore_dtls_key(sealed_json: bytes) -> None:
+    """Put a backup's DTLS private key back as the transport's own.
+
+    The certificate and the fingerprint the archive brought are given to
+    the transport's account too.
+
+    Args:
+        sealed_json: What :func:`sealed_dtls_key` produced.
+
+    Raises:
+        VaultLockedError: While the vault cannot open it.
+        ValueError: When the archive member is not a sealed record.
+        OSError: When the key cannot be written.
+    """
+    sealed = json.loads(sealed_json.decode("utf-8"))
+    if not isinstance(sealed, dict):
+        raise ValueError("the sealed key is not a record")
+    try:
+        private = unseal_bytes(sealed, TRANSPORT_DTLS_KEY_AAD)
+    except (OSError, ValueError) as error:
+        raise VaultLockedError() from error
+    ensure_key_dir()
+    path = TRANSPORT_KEY_DIR / TRANSPORT_DTLS_KEY_NAME
+    path.write_bytes(private)
+    _own_by_account(path, TRANSPORT_PRIVATE_KEY_MODE)
+    for name in (TRANSPORT_DTLS_CERTIFICATE_NAME, TRANSPORT_DTLS_FINGERPRINT_NAME):
+        if (TRANSPORT_KEY_DIR / name).exists():
+            _own_by_account(TRANSPORT_KEY_DIR / name, TRANSPORT_DTLS_PUBLIC_MODE)
 
 
 def generated_path() -> Path:

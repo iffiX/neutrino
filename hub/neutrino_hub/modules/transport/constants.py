@@ -36,6 +36,15 @@ TRANSPORT_SEALED_KEY_NAME = "static_key.sealed"
 TRANSPORT_KEY_AAD = b"transport:static_key"
 TRANSPORT_KEY_HEX_CHARS = 64
 TRANSPORT_PRIVATE_KEY_MODE = 0o600
+# The guest path's DTLS certificate beside the static key: its private key,
+# which a backup carries sealed, and its fingerprint, which a share link
+# carries (transport.md, "The DTLS certificate").
+TRANSPORT_DTLS_CERTIFICATE_NAME = "dtls_certificate.pem"
+TRANSPORT_DTLS_KEY_NAME = "dtls_key.pem"
+TRANSPORT_DTLS_SEALED_KEY_NAME = "dtls_key.pem.sealed"
+TRANSPORT_DTLS_KEY_AAD = b"transport:dtls_key"
+TRANSPORT_DTLS_FINGERPRINT_NAME = "dtls_fingerprint"
+TRANSPORT_DTLS_PUBLIC_MODE = 0o644
 
 # The transport's state directory and the local channel's secret in it: 32
 # random bytes in hex, root's with the transport's group, mode 0640.
