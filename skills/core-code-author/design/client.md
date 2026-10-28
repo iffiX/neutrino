@@ -569,7 +569,7 @@ share's own address:
 | --- | --- |
 | Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options and deletes the credentials file once the mount answered; a machine with no `pkexec` refuses the mount `pkexec_missing`, a `failed` the timer does not retry |
 | macOS | the entry's forward, mounted by the system as below, with the place a symbolic link to the volume |
-| Windows | the files adapter's address for the share's machine and SMB user, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
+| Windows | the files adapter's address for the share's machine and SMB user, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from the machine's own SMB server directly, through no adapter, at `\\127.0.0.1`, `\\localhost` or `\\<host name>`, one server name per SMB user |
 
 On macOS the client does not mount the share itself: it asks the system to
 mount the volume through `osascript`, with the one-line script on its
@@ -669,11 +669,17 @@ A share of the client's own machine never goes through the adapter.
 Windows refuses a login that leaves the machine and comes back to it
 (`0xC000006D`), and a mount at a fake address of the machine itself would
 read on the row as a wrong password. An entry with `is_own_machine` is
-mounted at `\\127.0.0.1\<share>`, the machine's own SMB server on its own
-445, takes no fake address and brings the adapter up for nothing; its row
-reads as any mounted row. On Linux and macOS such a share takes its forward
-like any other: neither system's SMB client is the Windows one that the
-server recognises as its own.
+mounted from the machine's own SMB server on its own 445, takes no fake
+address and brings the adapter up for nothing; its row reads as any mounted
+row. On Linux and macOS such a share takes its forward like any other:
+neither system's SMB client is the Windows one that the server recognises
+as its own.
+
+| Rule | Reason |
+| --- | --- |
+| The first SMB user that mounts a share of the client's own machine mounts it from `\\127.0.0.1\<share>`, the second from `\\localhost\<share>`, and the third from `\\<host name>\<share>`, the machine's host name. | Windows connects to one server as one SMB user at a time. `localhost` and the host name reach the machine's own server as two more servers; `127.0.0.2` and `[::1]` do not reach it. |
+| A mount record keeps the server name it took and mounts from it again. A record with no name, or whose name another user's mounted share uses, takes the name a mounted share of its own user uses, else the first name no record of another user keeps, else the first name no mounted share of another user uses. | A drive letter keeps naming the same server, and two users never mount from one name at once. |
+| A fourth user, while a mounted share of every name logs in as another user, is refused `share_session_conflict`, a `failed` the timer does not retry. | Windows has no fourth name for its own server. |
 
 When the adapter cannot be made, because the service is missing, stopped or
 refuses, the mount record goes `failed` with `files_adapter_unavailable
