@@ -34,13 +34,13 @@ MODULE = "samba"
 # installed here.
 INSTANCE_MODULE = "codeg"
 MODULE_LAN = "192.168.95.1"
-# One share, every field spelled, so the read-back is compared whole.
+# The account the file share enables, the lab machine's own login.
+SHARE_ACCOUNT = "lab"
+# One folder share, every field spelled, so the read-back is compared whole.
 SHARE = {
     "name": "integration",
     "path": "/srv/integration",
-    "comment": "saved through the panel",
-    "is_read_only": True,
-    "valid_users": [],
+    "accounts": [SHARE_ACCOUNT],
 }
 JOURNAL_LINES = 50
 
@@ -166,18 +166,34 @@ def test_the_machine_says_why_when_it_can(installed):
     assert installed["code"] == "", installed
 
 
-def test_a_saved_share_list_reads_back_as_it_was_written(panel, managed, installed):
-    """The save is checked by the machine's own `testparm`, stored under the
-    device and pushed; the page then reads the same shares back, whole."""
+def enable_share_account(panel, device_id) -> None:
+    """Make ``SHARE_ACCOUNT`` available on the machine and enable it on the
+    file share. A folder share names it."""
     status, answer = panel.call(
         "POST",
-        "/agent/module/samba/share/set",
-        {"device_id": managed, "shares": [SHARE]},
+        "/agent/module/account/add",
+        {"device_id": device_id, "account": SHARE_ACCOUNT},
+    )
+    assert status == 200 or answer["detail"]["code"] == "account_duplicate", answer
+    status, answer = panel.call(
+        "POST",
+        "/agent/module/samba/set",
+        {"device_id": device_id, "accounts": [SHARE_ACCOUNT]},
+    )
+    assert status == 200, answer
+
+
+def test_a_saved_share_list_reads_back_as_it_was_written(panel, managed, installed):
+    """The folder share is stored under the device and pushed. The page then
+    reads the same share back, whole."""
+    enable_share_account(panel, managed)
+    status, answer = panel.call(
+        "POST", "/agent/module/samba/folder_share/add", {"device_id": managed, **SHARE}
     )
     assert status == 200, answer
     assert answer["shares"] == [SHARE], answer
 
-    view = panel.read(f"/agent/module/samba?device_id={managed}")
+    view = panel.read(f"/agent/module/samba/folder_share?device_id={managed}")
     assert view["shares"] == [SHARE], view
 
 

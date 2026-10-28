@@ -21,9 +21,7 @@ from test_install_a_module import serving  # noqa: F401
 SHARE = {
     "name": "removal",
     "path": "/srv/removal",
-    "comment": "left by the removal",
-    "is_read_only": False,
-    "valid_users": [],
+    "accounts": [module_walk.SHARE_ACCOUNT],
 }
 # A unit named as a module names its units, which the removal takes, and
 # one named as the hub names its own, which it leaves.
@@ -93,17 +91,20 @@ def machine(panel, serving):  # noqa: F811
         INSTALL_TIMEOUT_S,
     )
 
+    status, answer = panel.call(
+        "POST", "/agent/module/install", {"device_id": device_id, "module": "samba"}
+    )
+    assert status == 200, answer
+    module_walk.wait_state(
+        panel, device_id, "installed", ("installed", "stopped", "running")
+    )
+    module_walk.enable_share_account(panel, device_id)
     for path, body in (
-        ("/agent/module/install", {"module": "samba"}),
-        ("/agent/module/samba/share/set", {"shares": [SHARE]}),
+        ("/agent/module/samba/folder_share/add", SHARE),
         ("/agent/module/start", {"module": "samba"}),
     ):
         status, answer = panel.call("POST", path, {"device_id": device_id, **body})
         assert status == 200, (path, answer)
-        if path == "/agent/module/install":
-            module_walk.wait_state(
-                panel, device_id, "installed", ("installed", "stopped", "running")
-            )
     module_walk.wait_state(panel, device_id, "running", ("running",))
     planted = lifecycle.ssh_to(host, PLANT_UNITS)
     assert planted.returncode == 0, planted.stdout + planted.stderr
@@ -157,6 +158,8 @@ def test_an_install_after_the_removal_reports_the_share_once(panel, removed):
 
     row = module_walk.wait_state(panel, removed["device_id"], "running", ("running",))
     assert row["code"] == "", row
-    view = panel.read(f"/agent/module/samba?device_id={removed['device_id']}")
+    view = panel.read(
+        f"/agent/module/samba/folder_share?device_id={removed['device_id']}"
+    )
     assert [share["name"] for share in view["shares"]] == [SHARE["name"]], view
     assert share_count(removed["host"]) == 1
