@@ -5,8 +5,9 @@ token for a client that holds the ``panel`` permission.
 
 A ``service`` frame's reply is the material: ``{password}`` for a desktop,
 ``{api_key, model}`` for the AI gateway, ``{token}`` for a VS Code
-instance, and for a CloudCLI, code-server or Codeg instance and for Hermes
-WebUI a ``{token}`` minted for that one answer, ``{account, private_key,
+instance, and for a CloudCLI, code-server or Codeg instance and for a
+container module's page, Hermes WebUI's and Ayakaleaf's, a ``{token}``
+minted for that one answer, ``{account, private_key,
 host_key}`` for an ``ssh`` entry and ``{user, password}`` for a machine's
 share. The published list carries no secret; this is where the one secret a
 service takes from the hub is opened, for one reply.
@@ -47,13 +48,16 @@ from neutrino_hub.modules.clients.permissions import (
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_HERMES_WEBUI_MODULE,
+    DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_SAMBA_MODULE,
     DEVICE_SAMBA_PASSWORD_KEY,
     DEVICE_SSH_SERVER_KEY_KEY,
     DEVICE_SSH_SERVER_MODULE,
 )
-from neutrino_hub.modules.devices.module_table import account_program_rows
+from neutrino_hub.modules.devices.module_table import (
+    account_program_rows,
+    rows_of_kind,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.collector import catalog_entries
@@ -61,7 +65,6 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
     SERVICES_AI_ID,
-    SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_SAMBA_DEFAULT_PORT,
     SERVICES_SOURCE_DECLARED,
     SERVICES_SOURCE_MODULE,
@@ -142,9 +145,10 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         return _ssh_material(runtime, raw, entry)
     if entry["type"] == SERVICES_TYPE_FILE:
         return _share_material(runtime, raw, entry)
-    if entry["description_code"] == SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE:
+    container = _container_row(str(entry["description_code"] or ""))
+    if container is not None:
         token = runtime.desired_states.module_token(
-            str(raw.get("device_id") or ""), DEVICE_HERMES_WEBUI_MODULE
+            str(raw.get("device_id") or ""), container.name
         )
         if not token:
             return VaultLockedError.code, {}
@@ -514,6 +518,16 @@ def _instance_row(description_code: str):
     """The row of the program run as an account whose entries carry a code."""
     for row in account_program_rows():
         if row.description_code == description_code:
+            return row
+    return None
+
+
+def _container_row(description_code: str):
+    """The row of the container module whose page carries a code and opens with a token."""
+    for row in rows_of_kind(DEVICE_MODULE_KIND_CONTAINER):
+        if row.description_code != description_code:
+            continue
+        if row.has_forwarder and row.token_field:
             return row
     return None
 

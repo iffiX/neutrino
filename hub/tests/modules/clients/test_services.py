@@ -831,6 +831,26 @@ def test_hermes_webui_s_secret_that_does_not_open_is_vault_locked(config_dir):
     )
 
 
+AYAKALEAF_ENTRY = {
+    **HERMES_ENTRY,
+    "id": "ayakaleaf_dev_web",
+    "title": "Ayakaleaf",
+    "payload": {"url": "http://192.168.100.7:8900/", "is_token_required": True},
+    "description_code": "ayakaleaf_module",
+}
+
+
+def test_ayakaleaf_s_material_is_a_token_minted_from_its_own_secret(config_dir):
+    runtime = FakeRuntime(entries=(AYAKALEAF_ENTRY,))
+    runtime.desired_states = ModuleMintingDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    answer = service_material(runtime, client_id, "ayakaleaf_dev_web")
+
+    assert answer == ("", {"token": "fresh-1"})
+    assert runtime.desired_states.minted == [("dev", "ayakaleaf")]
+
+
 # --- the rows of the fine mode ---
 
 
