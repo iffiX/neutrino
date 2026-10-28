@@ -188,7 +188,6 @@ Where this project is announced and discussed:
 - [Gitea](https://github.com/go-gitea/gitea), the private git server
 - [Samba](https://www.samba.org/), the SMB shares
 - [Podman](https://github.com/containers/podman), the container runtime
-- [OpenZFS](https://github.com/openzfs/zfs), the pools and datasets
 - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html), DHCP and DNS on the served networks
 - [hostapd](https://w1.fi/hostapd/), the wireless access point
 - [v2fly geodata](https://github.com/v2fly/domain-list-community), the lists for split routing

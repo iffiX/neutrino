@@ -188,7 +188,6 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 - [Gitea](https://github.com/go-gitea/gitea)：私有 git 服务器
 - [Samba](https://www.samba.org/)：SMB 共享
 - [Podman](https://github.com/containers/podman)：容器运行时
-- [OpenZFS](https://github.com/openzfs/zfs)：存储池和数据集
 - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html)：局域网的 DHCP 和 DNS
 - [hostapd](https://w1.fi/hostapd/)：无线接入点
 - [v2fly geodata](https://github.com/v2fly/domain-list-community)：分流用的域名和 IP 列表
