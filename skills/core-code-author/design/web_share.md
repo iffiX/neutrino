@@ -37,7 +37,7 @@ the share's entry ([protocol.md](protocol.md), "The service frame").
 
 | Rule | Reason |
 | --- | --- |
-| Opening the page, the data channel and the admission together have 10 seconds. Past them the page shows the hub-offline screen, tries again every 10 seconds with nothing on screen changing, and shows the app as soon as a try connects. | A visitor waits a few seconds for a page, and a hub that comes back is taken at once. |
+| Opening the page, the data channel and the admission together have 30 seconds. After 10 seconds of the loading screen, its line reads that the line is slow and the page is still connecting. Past the 30 seconds the page shows the hub-offline screen, tries again every 10 seconds with nothing on screen changing, and shows the app as soon as a try connects. | From an iPhone through a SakuraFrp tunnel, at about 330 ms round trip, a connection took 0.2 to 4 seconds and at times over 15. The changed line shows the visitor that the page is still working, and a hub that comes back is taken at once. |
 | While the app is in use, the shell sends a `ping` frame every 3 seconds, and counts the channel as dropped when no `pong` comes within 6. | The browser's own consent checks take 15 to 30 seconds to give up on a dead connection. |
 | A dropped channel is opened again with nothing on screen changing for about 10 seconds, the app's frame kept; past them the page shows the hub-offline screen, tries again every 10 seconds, and shows the app again when a try connects. | A short drop, a phone changing networks among them, passes unseen. |
 | The machine-offline screen shows as soon as a `service` reply or a `connect` close carries `agent_offline`, or `service_unknown` for the share's entry. The page keeps its channel, sends the `service` frame again every 10 seconds, and shows the app when a reply carries no code. | The hub is up, so the page keeps the channel it has, and the app shows again as soon as its machine or the app itself is back. |
@@ -92,9 +92,9 @@ English otherwise.
 
 | Screen | Shown | Under the mark |
 | --- | --- | --- |
-| Loading | from the page's start until the app's first page | the mark breathes; one line, `Opening <app title>…`, in 12 px monospace, muted |
+| Loading | from the page's start until the app's first page | the mark breathes; one line, `Opening <app title>…`, in 12 px monospace, muted, which after 10 seconds reads `The line is slow, still connecting…` |
 | The link no longer works | the share is refused, or the link's facts do not read | the mark still; the sentence in 14 px regular text in the main text colour, and a second line in 12 px muted text |
-| The hub is offline | no channel within 10 seconds, or a dropped one not back within about 10 | the same |
+| The hub is offline | no channel and admission within 30 seconds of the page's start, or a dropped one not back within about 10 | the same |
 | The machine is offline | `agent_offline` or `service_unknown` for the share's entry | the same |
 
 | Rule | Reason |
