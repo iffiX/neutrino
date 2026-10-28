@@ -39,6 +39,7 @@ from neutrino_agent.exceptions import (
     GatewayUnreachable,
     ModuleApplyError,
     ModuleInstallPending,
+    ModuleSetupError,
 )
 from tests.streams.fake_channel import FakeChannel
 
@@ -669,6 +670,29 @@ def test_an_apply_waiting_on_an_install_is_neither_applied_nor_failed(tmp_path):
     assert engine.configured == {"samba"}
     assert sorted(held._tried) == ["samba"]
     assert held._rechecked["hash"] == "h1"
+
+
+def test_a_failed_step_of_a_first_start_reads_install_failed_and_installs_again(
+    tmp_path,
+):
+    failure = ModuleSetupError("ayakaleaf_setup_failed", {"step": "tex", "detail": "x"})
+    runners = {"samba": FakeRunner(failure=failure)}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+
+    assert engine.failed_states == {"samba": "install_failed"}
+    assert engine.results["samba"] == (
+        "ayakaleaf_setup_failed",
+        {"step": "tex", "detail": "x"},
+    )
+    assert held.state_error["code"] == "ayakaleaf_setup_failed"
+
+    runners["samba"].failure = None
+    held.apply(marked(state("h2", samba="running"), "samba"))
+
+    assert engine.installs[-1][0] == "samba"
+    assert engine.failed_states == {}
 
 
 def test_a_waiting_module_is_applied_again_and_a_failed_one_beside_it_is_not(

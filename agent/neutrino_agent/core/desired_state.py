@@ -71,6 +71,7 @@ from neutrino_agent.exceptions import (
     GatewayUnreachable,
     ModuleApplyError,
     ModuleInstallPending,
+    ModuleSetupError,
     PlatformUnsupportedError,
 )
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
@@ -694,7 +695,9 @@ class DesiredStateApplier:
             config: The configuration the state carries for it.
 
         Returns:
-            None when it took, ``{"code", "params"}`` when it did not.
+            None when it took, ``{"code", "params"}`` when it did not, with
+            ``state`` ``install_failed`` for a failed step of the module's
+            first start.
         """
         try:
             runner.apply(dict(config) if isinstance(config, dict) else {})
@@ -705,6 +708,14 @@ class DesiredStateApplier:
             self._log(f"{name}: {want}")
         except ModuleInstallPending:
             return {"code": PENDING_CODE, "params": {}}
+        except ModuleSetupError as error:
+            said = " ".join(f"{key}={value}" for key, value in error.params.items())
+            self._log(f"{name}: {error.code} {said}".rstrip()[:500])
+            return {
+                "state": AGENT_MODULE_STATE_INSTALL_FAILED,
+                "code": error.code,
+                "params": dict(error.params),
+            }
         except ModuleApplyError as error:
             said = " ".join(f"{key}={value}" for key, value in error.params.items())
             self._log(f"{name}: {error.code} {said}".rstrip()[:500])

@@ -84,6 +84,14 @@ class ModuleApplyError(ValueError):
         self.params = dict(params or {})
 
 
+class ModuleSetupError(ModuleApplyError):
+    """Raised when a step of a module's first start fails, which ends its install.
+
+    The module reads ``install_failed`` with the code and params, and the
+    next **Install** runs the steps its record does not hold.
+    """
+
+
 class ModuleInstallPending(RuntimeError):
     """Raised when a module's apply waits on an install that still runs.
 
