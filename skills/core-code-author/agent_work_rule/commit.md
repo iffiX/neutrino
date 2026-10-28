@@ -85,6 +85,11 @@ decided to add a resource monitor. While doing that I also noticed that ...
 Stage the files, write the message to a scratch file, run the checks below,
 and report the `git commit` line the user can run. Nothing past that.
 
+Neutrino's exception: in a round of several agents the user starts, each
+subagent commits its finished, tested work on its own local branch. The
+session that coordinates the round merges into `main` and pushes only when
+the user says so.
+
 ## Before you ask, run the checks
 
 Both must pass on everything the commit will contain:
