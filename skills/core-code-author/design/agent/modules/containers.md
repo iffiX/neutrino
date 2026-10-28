@@ -140,6 +140,7 @@ macOS.
 | The keeper's script loops by itself: every 30 seconds it checks the machine's state and starts the machine when it is not running. | Task Scheduler did not start the task again after its program exited, whatever its restart settings. |
 | Before each start on Windows it deletes `%TEMP%\podman\podman-machine-default-api.sock`. | A file left by a restart with the machine running keeps `win-sshproxy.exe` from binding at the next start. |
 | A start that fails is followed by `podman machine stop`, the same deletion, and one more start. | Windows reserves a port range at boot that can hold the machine's ssh port; Podman finds the conflict at the next start and moves the port. |
+| A state the keeper cannot read is unknown: the keeper waits for the next round and neither starts nor stops the machine. | In a 2 GiB machine under Ayakaleaf's TeX step `podman machine inspect` printed nothing, the start that followed failed `already running`, and the stop after it took the running machine and the step down. |
 | On macOS the script sets `TMPDIR` from `getconf DARWIN_USER_TEMP_DIR` before its first command. | The keeper, the agent's machine commands and the account's sessions then reach the same machine files. |
 | On macOS the keeper's LaunchDaemon has `AbandonProcessGroup`. | The machine's processes are children of the keeper's `podman machine start`, and launchd ends the job's whole process group when the job stops. |
 
