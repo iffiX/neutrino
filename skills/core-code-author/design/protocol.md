@@ -544,7 +544,7 @@ A client ticket's row waits to join for as long as its ticket lives
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
-| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`; 409 `vault_locked` |
+| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`, `no_reachable_address` while the hub has no address a link can name; 409 `vault_locked`, `transport_key_missing` while the transport has made no DTLS certificate |
 | `POST /api/hub/client/web_share/revoke` | `{share_id}` | ends the share at once: its link stops working, every page open on it closes, and a guest account it made is removed ("Web shares"); the list; 404 `web_share_unknown` |
 
 One client link adds one device. Its row is made when the link is, and
@@ -2067,8 +2067,12 @@ is [web_share.md](web_share.md), and its connection is the guest path
 ([transport.md](transport.md), "The guest path").
 
 `config/clients/web_shares.json` holds `shares`, each `{id, name, app_id,
-entry_id, created_at, expires_at, ticket_sha256, ufrag, pwd_sealed,
-guest}`: `id` a uuid4 hex; `expires_at` Unix seconds, null for a share that
+app_title, entry_id, device_id, module, created_at, expires_at,
+ticket_sha256, ufrag, pwd_sealed, guest}`: `id` a uuid4 hex; `app_title`
+the app's title when the share was made, which the list shows while the app
+is not published; `device_id` the machine providing the entry and `module`
+the module whose page it is, each empty where none is, which a share ends
+with; `expires_at` Unix seconds, null for a share that
 lasts until it is revoked; `ticket_sha256` the SHA-256 of the share's
 ticket, which the hub keeps of it alone; `ufrag` in the clear and
 `pwd_sealed`, the pwd sealed under the vault's data key, the share's pair
