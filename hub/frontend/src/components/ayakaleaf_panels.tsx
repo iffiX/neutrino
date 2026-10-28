@@ -16,9 +16,9 @@ import type { PickerOption } from "./picker";
  * uses, from the models the gateway serves, its first row the gateway's
  * first model.
  *
- * A new model rewrites the app's environment, which restarts the app, so
- * the bar stays busy after its press until the machine reports the module
- * running again, at most two minutes.
+ * A new model rewrites the app's environment and restarts the app. The bar
+ * stays busy after its press until the machine reports the module running
+ * again, at most two minutes.
  */
 
 interface AyakaleafPanelsProps {
