@@ -680,7 +680,9 @@ danger tier. **Revoke** asks through `useConfirm`, the title
 `ui.web_shares.revoke_title {name}`, the body `ui.web_shares.revoke_body`
 and, for a guest account, `ui.web_shares.revoke_guest {email}` after it,
 and the button **Revoke**; it acts at once, as a revocation does ("When an
-effect happens"). A share that ends leaves the list at the page's next read.
+effect happens"). A share that ends, at its expiry or by **Revoke**, leaves
+the list at the page's next read, and the hub keeps nothing of it
+([protocol.md](protocol.md), "Web shares").
 With no share the panel shows `ui.web_shares.empty` and its hint.
 
 | Rule | Reason |
