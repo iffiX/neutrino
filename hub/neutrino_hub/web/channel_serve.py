@@ -553,9 +553,9 @@ def join_agent(
 def join_client(runtime, request: ChannelJoin, ticket: dict, *, public_key: str):
     """Bind a person's program to the row it had, else to its link's row.
 
-    A machine that already has a row lands back on it: the link's fresh row
-    goes, the old row takes the link's name and keeps its key, its switch
-    and everything it last reported.
+    A machine that already has a row lands back on it: the link's waiting
+    row goes, the old row takes the link's name and permission and keeps
+    its key, its switch and everything it last reported.
 
     Args:
         runtime: The shared runtime.
@@ -571,7 +571,8 @@ def join_client(runtime, request: ChannelJoin, ticket: dict, *, public_key: str)
     """
     registry = ClientRegistry()
     client_id = str(ticket.get("client_id", ""))
-    if registry.get(client_id) is None:
+    waiting = registry.get(client_id)
+    if waiting is None:
         raise KeyError(client_id)
     enrolled = registry.find_by_machine_id(request.machine_id)
     if enrolled is not None and enrolled.id != client_id:
@@ -579,6 +580,12 @@ def join_client(runtime, request: ChannelJoin, ticket: dict, *, public_key: str)
         runtime.forget_client(client_id)
         client_id = enrolled.id
         registry.rename(client_id, str(ticket.get("name") or "") or enrolled.name)
+        registry.set_permission(
+            client_id,
+            waiting.permission,
+            waiting.permission_devices,
+            waiting.permission_entries,
+        )
     registry.record_seen(
         client_id,
         hostname=request.name,

@@ -1,13 +1,14 @@
 """The clients enrolled with this hub: one record per person's program.
 
-A client is a desktop program a person runs, enrolled once by name. The
-record is created when its link is minted, so a client that has never
-joined is a row already; what it authenticates with is the SHA-256 of a
-token the enroll reply handed it once. Presence and when it was last seen
-are the session registry's, in memory; what is written here is what the
-program said it is when it last connected.
+A client is a program a person runs, enrolled once by name. The record is
+created with its link and waits to join until the link expires; what it
+authenticates with is the SHA-256 of a token the enroll reply handed it
+once. Presence and when it was last seen are the session registry's, in
+memory; what is written here is what the program said it is when it last
+connected.
 """
 
+import functools
 import hashlib
 import secrets
 import uuid
@@ -24,7 +25,10 @@ from neutrino_hub.modules.clients.constants import (
     CLIENTS_CONFIG_PATH,
 )
 from neutrino_hub.modules.clients.permissions import (
+    ClientPermission,
+    is_row_of_device,
     permission_devices,
+    permission_entries,
     permission_kinds,
 )
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
@@ -57,12 +61,62 @@ def _stored_devices(entry) -> dict:
     )
 
 
-def _permission_document(kinds: list, devices: dict) -> dict:
-    """A permission as stored: its kinds, and its filter when it has one."""
+def _stored_entries(entry) -> dict:
+    """The rows a stored permission names, anything unreadable dropped."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("entries"), dict):
+        return {}
+    return permission_entries(
+        {
+            row_id: value
+            for row_id, value in entry["entries"].items()
+            if isinstance(value, bool)
+        }
+    )
+
+
+def _permission_document(kinds: list, devices: dict, entries: dict) -> dict:
+    """A permission as stored: its kinds, its filter and its rows when it has
+    them."""
     document = {"kinds": list(kinds)}
     if devices:
         document["devices"] = {kind: list(ids) for kind, ids in devices.items()}
+    if entries:
+        document["entries"] = dict(entries)
     return document
+
+
+def _without_device_rows(
+    device_id: str, kinds: list, devices: dict, entries: dict
+) -> tuple:
+    """A permission with one device taken out of its lists and its rows.
+
+    Returns:
+        ``(kinds, devices, entries)``.
+    """
+    kinds, devices = _without_device(kinds, devices, device_id)
+    rows = {
+        row_id: value
+        for row_id, value in entries.items()
+        if not is_row_of_device(row_id, device_id)
+    }
+    return kinds, devices, rows
+
+
+def _without_rows(dropped: set, kinds: list, devices: dict, entries: dict) -> tuple:
+    """A permission with some rows taken out of ``entries``.
+
+    Returns:
+        ``(kinds, devices, entries)``.
+    """
+    rows = {row_id: value for row_id, value in entries.items() if row_id not in dropped}
+    return kinds, devices, rows
+
+
+def _stored_time(value) -> "float | None":
+    """A stored Unix time, None for anything that is not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
 
 
 def _with_ssh(kinds: list, devices: dict) -> "tuple | None":
@@ -129,6 +183,10 @@ class Client:
         permission: The kinds it is allowed, or None to follow the default.
         permission_devices: With a permission of its own, the device ids
             each kind is narrowed to; a kind not named allows every device.
+        permission_entries: With a permission of its own, row id to
+            ``True`` or ``False``; a row not named follows its kind.
+        link_expires_at: When its link stops working, in Unix seconds,
+            while it waits to join; None once it joined.
     """
 
     id: str
@@ -144,11 +202,18 @@ class Client:
     ai_key_id: "str | None" = None
     permission: "list | None" = None
     permission_devices: dict = field(default_factory=dict)
+    permission_entries: dict = field(default_factory=dict)
+    link_expires_at: "float | None" = None
 
     @property
     def is_enrolled(self) -> bool:
         """Whether the client holds a token that still stands."""
         return bool(self.token_sha256)
+
+    @property
+    def is_waiting(self) -> bool:
+        """Whether the client has not joined yet."""
+        return not self.token_sha256 and not self.public_key
 
     @classmethod
     def from_dict(cls, client_id: str, data: dict) -> "Client":
@@ -176,6 +241,8 @@ class Client:
             ai_key_id=data.get("ai_key_id") or None,
             permission=_stored_kinds(data.get("permission")),
             permission_devices=_stored_devices(data.get("permission")),
+            permission_entries=_stored_entries(data.get("permission")),
+            link_expires_at=_stored_time(data.get("link_expires_at")),
         )
 
     def to_dict(self) -> dict:
@@ -194,8 +261,11 @@ class Client:
             "permission": (
                 None
                 if self.permission is None
-                else _permission_document(self.permission, self.permission_devices)
+                else _permission_document(
+                    self.permission, self.permission_devices, self.permission_entries
+                )
             ),
+            "link_expires_at": self.link_expires_at,
         }
 
 
@@ -209,6 +279,7 @@ class ClientRegistry:
     def __init__(self):
         self._default = None
         self._default_devices = {}
+        self._default_entries = {}
         self._is_ssh_granted = False
         self._is_file_present = False
         self._stored = self._read_stored()
@@ -227,19 +298,39 @@ class ClientRegistry:
             return None
         return Client.from_dict(client_id, entry)
 
-    def create(self, name: str) -> str:
+    def create(
+        self,
+        name: str,
+        *,
+        permission: "ClientPermission | None" = None,
+        link_expires_at: "float | None" = None,
+    ) -> str:
         """Add a client that has not joined yet.
 
         Args:
             name: What the person calls it.
+            permission: Its own permission; None follows the default.
+            link_expires_at: When its link stops working, in Unix seconds.
 
         Returns:
             The new client's id.
+
+        Raises:
+            ValueError: If the permission names a kind that is not one, a
+                filter on a kind that takes none, or a row that is neither
+                on nor off.
         """
         client_id = uuid.uuid4().hex
+        client = Client(
+            id=client_id, name=name.strip(), link_expires_at=link_expires_at
+        )
+        if permission is not None:
+            client.permission = permission_kinds(permission.kinds)
+            client.permission_devices = permission_devices(permission.devices)
+            client.permission_entries = permission_entries(permission.entries)
         with CONFIG_WRITE_LOCK:
             self._stored = self._read_stored()
-            self._stored[client_id] = Client(id=client_id, name=name.strip()).to_dict()
+            self._stored[client_id] = client.to_dict()
             self._write_stored()
         return client_id
 
@@ -256,7 +347,9 @@ class ClientRegistry:
             KeyError: When there is no such client.
         """
         token = secrets.token_urlsafe(CLIENT_TOKEN_BYTES)
-        self._update(client_id, {"token_sha256": _token_digest(token)})
+        self._update(
+            client_id, {"token_sha256": _token_digest(token), "link_expires_at": None}
+        )
         return token
 
     def find_by_token(self, token: str) -> "Client | None":
@@ -425,27 +518,39 @@ class ClientRegistry:
         """
         return {kind: list(ids) for kind, ids in self._default_devices.items()}
 
-    def set_default_permission(self, kinds, devices=None) -> None:
+    def default_permission_entries(self) -> dict:
+        """The rows a client with no permission of its own is held to.
+
+        Returns:
+            Row id to ``True`` or ``False``; empty when the default sets no
+            row.
+        """
+        return dict(self._default_entries)
+
+    def set_default_permission(self, kinds, devices=None, entries=None) -> None:
         """Store what a client with no permission of its own is allowed.
 
         Args:
             kinds: The kinds.
             devices: Device ids by kind; None or a missing kind allows every
                 device.
+            entries: Row id to ``True`` or ``False``; None sets no row.
 
         Raises:
-            ValueError: If one of the kinds is not a permission kind, or one
-                takes no device filter.
+            ValueError: If one of the kinds is not a permission kind, one
+                takes no device filter, or a row is neither on nor off.
         """
         chosen = permission_kinds(kinds)
         filters = permission_devices(devices)
+        rows = permission_entries(entries)
         with CONFIG_WRITE_LOCK:
             self._stored = self._read_stored()
             self._default = chosen
             self._default_devices = filters
+            self._default_entries = rows
             self._write_stored()
 
-    def set_permission(self, client_id: str, kinds, devices=None) -> None:
+    def set_permission(self, client_id: str, kinds, devices=None, entries=None) -> None:
         """Give one client a permission of its own, or put it back on the
         default.
 
@@ -454,16 +559,20 @@ class ClientRegistry:
             kinds: The kinds, or None to follow the default.
             devices: Device ids by kind; None or a missing kind allows every
                 device. Ignored when ``kinds`` is None.
+            entries: Row id to ``True`` or ``False``; None sets no row.
+                Ignored when ``kinds`` is None.
 
         Raises:
             KeyError: When there is no such client.
-            ValueError: If one of the kinds is not a permission kind, or one
-                takes no device filter.
+            ValueError: If one of the kinds is not a permission kind, one
+                takes no device filter, or a row is neither on nor off.
         """
         chosen = None
         if kinds is not None:
             chosen = _permission_document(
-                permission_kinds(kinds), permission_devices(devices)
+                permission_kinds(kinds),
+                permission_devices(devices),
+                permission_entries(entries),
             )
         self._update(client_id, {"permission": chosen})
 
@@ -492,45 +601,64 @@ class ClientRegistry:
                     continue
                 granted = _with_ssh(client.permission, client.permission_devices)
                 if granted is not None:
-                    entry["permission"] = _permission_document(*granted)
+                    entry["permission"] = _permission_document(
+                        *granted, client.permission_entries
+                    )
             self._is_ssh_granted = True
             self._write_stored()
         return True
 
     def forget_device(self, device_id: str) -> bool:
-        """Take one device out of every filter, the default's and each client's.
+        """Take one device out of every permission, the default's and each
+        client's.
 
-        A kind whose list named only that device is turned off.
+        A kind whose list named only that device is turned off, and every
+        row whose id names the device leaves ``entries``.
 
         Args:
             device_id: The device that is gone.
 
         Returns:
-            Whether any filter named it.
+            Whether any permission named it.
+        """
+        return self._rewrite_permissions(
+            functools.partial(_without_device_rows, device_id)
+        )
+
+    def forget_permission_rows(self, row_ids) -> bool:
+        """Take rows out of every permission, the default's and each client's.
+
+        Args:
+            row_ids: The row ids of things that are gone for good.
+
+        Returns:
+            Whether any permission named one of them.
+        """
+        dropped = {str(row_id) for row_id in row_ids}
+        return self._rewrite_permissions(functools.partial(_without_rows, dropped))
+
+    def sweep_waiting(self, now: float) -> list:
+        """Remove every client that waits to join on a link that expired.
+
+        Args:
+            now: The time, in Unix seconds.
+
+        Returns:
+            The removed clients' ids.
         """
         with CONFIG_WRITE_LOCK:
             self._stored = self._read_stored()
-            is_changed = False
-            kinds, kept = _without_device(
-                self.default_permission(), self._default_devices, device_id
-            )
-            if kept != self._default_devices:
-                self._default = kinds
-                self._default_devices = kept
-                is_changed = True
-            for client_id, entry in self._stored.items():
-                client = Client.from_dict(client_id, entry)
-                if client.permission is None:
-                    continue
-                kinds, kept = _without_device(
-                    client.permission, client.permission_devices, device_id
-                )
-                if kept != client.permission_devices:
-                    entry["permission"] = _permission_document(kinds, kept)
-                    is_changed = True
-            if is_changed:
+            expired = [
+                client.id
+                for client in self.all()
+                if client.is_waiting
+                and (client.link_expires_at is None or client.link_expires_at < now)
+            ]
+            for client_id in expired:
+                del self._stored[client_id]
+            if expired:
                 self._write_stored()
-        return is_changed
+        return expired
 
     def forget(self, client_id: str) -> None:
         """Remove a client's record. An unknown id is ignored."""
@@ -538,6 +666,45 @@ class ClientRegistry:
             self._stored = self._read_stored()
             self._stored.pop(client_id, None)
             self._write_stored()
+
+    def _rewrite_permissions(self, rewrite) -> bool:
+        """Rewrite the default and every client's own permission.
+
+        Args:
+            rewrite: Takes ``(kinds, devices, entries)`` and returns them
+                rewritten.
+
+        Returns:
+            Whether any permission changed; the file is written then.
+        """
+        with CONFIG_WRITE_LOCK:
+            self._stored = self._read_stored()
+            is_changed = False
+            before = (
+                self.default_permission(),
+                self._default_devices,
+                self._default_entries,
+            )
+            after = rewrite(*before)
+            if after != before:
+                self._default, self._default_devices, self._default_entries = after
+                is_changed = True
+            for client_id, entry in self._stored.items():
+                client = Client.from_dict(client_id, entry)
+                if client.permission is None:
+                    continue
+                before = (
+                    client.permission,
+                    client.permission_devices,
+                    client.permission_entries,
+                )
+                after = rewrite(*before)
+                if after != before:
+                    entry["permission"] = _permission_document(*after)
+                    is_changed = True
+            if is_changed:
+                self._write_stored()
+        return is_changed
 
     def _update(self, client_id: str, changes: dict) -> None:
         with CONFIG_WRITE_LOCK:
@@ -554,6 +721,7 @@ class ClientRegistry:
         except FileNotFoundError:
             self._default = None
             self._default_devices = {}
+            self._default_entries = {}
             self._is_ssh_granted = False
             self._is_file_present = False
             return {}
@@ -561,6 +729,7 @@ class ClientRegistry:
         self._is_ssh_granted = data.get(CLIENT_SSH_GRANTED_KEY) is True
         self._default = _stored_kinds(data.get("default_permission"))
         self._default_devices = _stored_devices(data.get("default_permission"))
+        self._default_entries = _stored_entries(data.get("default_permission"))
         clients = data.get("clients", {})
         return dict(clients) if isinstance(clients, dict) else {}
 
@@ -569,7 +738,7 @@ class ClientRegistry:
         if self._default is not None:
             document = {
                 "default_permission": _permission_document(
-                    self._default, self._default_devices
+                    self._default, self._default_devices, self._default_entries
                 ),
                 **document,
             }

@@ -1,11 +1,13 @@
 """The Clients page: the people's programs enrolled with this hub.
 
-A client is created when its link is minted, so it is a row before it
-joins; the panel renames it, switches it off and on, and deletes it. Presence,
+A client is created with its link and the permission it joins with, so it
+is a row that waits to join until the link expires; the panel renames it,
+switches it off and on, sets its permission and deletes it. Presence,
 hostname, platform and version come from its live session where it has
 one, and from what it last reported otherwise.
 """
 
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,8 +27,14 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_CLIENT,
     ENROLLMENT_TTL_S,
 )
-from neutrino_hub.modules.clients.permissions import permitted_kinds
+from neutrino_hub.modules.clients.permissions import (
+    ClientPermission,
+    client_permission,
+    default_permission,
+    is_permitted,
+)
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
+from neutrino_hub.modules.clients.rows import permission_rows
 from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.web import channel_overlay, channel_state
@@ -47,6 +55,7 @@ from neutrino_hub.web.models import (
     ClientRequest,
     ClientUpdate,
     ClientView,
+    PermissionRowView,
 )
 from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -77,19 +86,25 @@ def create_enrollment(
     request: ClientEnrollmentRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ClientEnrollmentView:
-    """Create a client and the link its program joins with, carrying the
-    overlays' join material when the default permission allows ``overlay``.
+    """Create a client that waits to join with its name and permission, and
+    the link its program joins with.
+
+    The link carries the overlays' join material when the client's
+    permission allows ``overlay``. A client link still open from before
+    stops working, and its waiting row goes.
 
     Args:
-        request: The client's name.
+        request: The client's name, and its permission or null to follow
+            the default.
         runtime: The shared runtime, which holds the open tickets.
 
     Returns:
-        The link and when it lapses.
+        The link, the new client's id and when the link lapses.
 
     Raises:
         HTTPException: 400 with ``client_name_required`` when the name is
-            blank; the link's own refusals as the device link's.
+            blank; the permission's refusals as ``permission/set``'s; the
+            link's own refusals as the device link's.
         OSError: When the ticket file cannot be written.
     """
     name = request.name.strip()
@@ -98,20 +113,46 @@ def create_enrollment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": CLIENT_CODE_NAME_REQUIRED, "params": {}},
         )
+    permission = None
+    if request.permission is not None:
+        _require_kinds(request.permission.kinds)
+        _require_devices(request.permission.devices)
+        permission = ClientPermission(
+            kinds=frozenset(request.permission.kinds),
+            devices=dict(request.permission.devices or {}),
+            entries=dict(request.permission.entries or {}),
+        )
     urls, key = enrollment_link_parts(runtime)
     registry = ClientRegistry()
+    joined_with = permission or default_permission(registry)
     overlays = []
-    if CLIENT_PERMISSION_OVERLAY in registry.default_permission():
+    if is_permitted(joined_with, CLIENT_PERMISSION_OVERLAY):
         overlays = channel_overlay.overlay_materials(runtime)
-    client_id = registry.create(name)
-    token, expires_at = runtime.enrollments.make(
-        kind=CHANNEL_ROLE_CLIENT, name=name, client_id=client_id
+    replaced = [
+        entry["client_id"]
+        for entry in runtime.enrollments.entries()
+        if entry["kind"] == CHANNEL_ROLE_CLIENT and entry["client_id"]
+    ]
+    client_id = registry.create(
+        name, permission=permission, link_expires_at=time.time() + ENROLLMENT_TTL_S
     )
+    try:
+        token, expires_at = runtime.enrollments.make(
+            kind=CHANNEL_ROLE_CLIENT, name=name, client_id=client_id
+        )
+    except OSError:
+        registry.forget(client_id)
+        raise
+    for waiting_id in replaced:
+        waiting = registry.get(waiting_id)
+        if waiting is not None and waiting.is_waiting:
+            registry.forget(waiting_id)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
         link=enrollment_link(
             urls, token, key, role=CHANNEL_ROLE_CLIENT, overlays=overlays
         ),
+        client_id=client_id,
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         expires_in_s=ENROLLMENT_TTL_S,
     )
@@ -192,8 +233,8 @@ def disable_client(
 def delete_client(
     request: ClientRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
-    """Remove a client: its key, its record, and its socket, refused with
-    ``binding_unknown``.
+    """Remove a client: its key, its record, its socket, refused with
+    ``binding_unknown``, and the link of a client that waits to join.
 
     Args:
         request: The client.
@@ -209,6 +250,7 @@ def delete_client(
     registry = ClientRegistry()
     client = _require(registry, request.client_id)
     revoke_client_key(registry, client)
+    runtime.enrollments.withdraw_client(client.id)
     registry.forget(client.id)
     runtime.forget_client(client.id)
     close_lost_access(runtime, why=SESSION_END_REMOVED)
@@ -221,11 +263,11 @@ def set_default_permission(
     request: ClientDefaultPermissionRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ClientListView:
-    """Store the kinds a client with no set of its own is allowed, and push
-    every client its state.
+    """Store what a client with no permission of its own is allowed, and
+    push every client its state.
 
     Args:
-        request: The kinds.
+        request: The kinds, their device lists and the rows.
         runtime: The shared runtime.
 
     Returns:
@@ -239,7 +281,7 @@ def set_default_permission(
     _require_kinds(request.kinds)
     _require_devices(request.devices)
     registry = ClientRegistry()
-    registry.set_default_permission(request.kinds, request.devices)
+    registry.set_default_permission(request.kinds, request.devices, request.entries)
     for client in registry.all():
         _settle_ai_key(registry, client)
     close_lost_access(runtime, why=SESSION_END_PERMISSION)
@@ -252,12 +294,12 @@ def set_default_permission(
 def set_permission(
     request: ClientPermissionRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
-    """Give one client a set of kinds of its own, or put it back on the
+    """Give one client a permission of its own, or put it back on the
     default, and push it its state.
 
     Args:
-        request: The client, its kinds and its device filter; ``kinds`` null
-            follows the default.
+        request: The client, its kinds, its device lists and its rows;
+            ``kinds`` null follows the default.
         runtime: The shared runtime.
 
     Returns:
@@ -274,7 +316,7 @@ def set_permission(
         _require_devices(request.devices)
     registry = ClientRegistry()
     client = _require(registry, request.client_id)
-    registry.set_permission(client.id, request.kinds, request.devices)
+    registry.set_permission(client.id, request.kinds, request.devices, request.entries)
     _settle_ai_key(registry, registry.get(client.id))
     close_lost_access(runtime, why=SESSION_END_PERMISSION)
     _push_one(runtime, client.id)
@@ -310,7 +352,7 @@ def _push_one(runtime: PanelRuntime, client_id: str) -> None:
 
 def _settle_ai_key(registry: ClientRegistry, client: Client) -> None:
     """Revoke the gateway key of a client no longer allowed the AI entry."""
-    if SERVICES_TYPE_AI not in permitted_kinds(registry, client):
+    if not is_permitted(client_permission(registry, client), SERVICES_TYPE_AI):
         revoke_client_key(registry, client)
 
 
@@ -361,6 +403,7 @@ def _require(registry: ClientRegistry, client_id: str) -> Client:
 def _list_view(runtime: PanelRuntime) -> ClientListView:
     sessions = runtime.client_sessions
     registry = ClientRegistry()
+    now = time.time()
     views = []
     for client in registry.all():
         session = sessions.get(client.id)
@@ -377,11 +420,25 @@ def _list_view(runtime: PanelRuntime) -> ClientListView:
                 is_disabled=client.is_disabled,
                 permission=client.permission,
                 permission_devices=client.permission_devices,
+                permission_entries=client.permission_entries,
+                link_expires_in_s=_link_expires_in_s(client, now),
             )
         )
     return ClientListView(
         clients=views,
         default_permission=registry.default_permission(),
         default_permission_devices=registry.default_permission_devices(),
+        default_permission_entries=registry.default_permission_entries(),
         permission_kinds=list(CLIENT_PERMISSION_KINDS),
+        permission_rows={
+            kind: [PermissionRowView(**row) for row in rows]
+            for kind, rows in permission_rows(runtime).items()
+        },
     )
+
+
+def _link_expires_in_s(client: Client, now: float) -> "int | None":
+    """The seconds a waiting client's link still works; None once it joined."""
+    if not client.is_waiting:
+        return None
+    return max(0, int((client.link_expires_at or now) - now))

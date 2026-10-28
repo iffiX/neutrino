@@ -127,7 +127,7 @@ def test_a_refusal_is_the_session_close_command_and_ends_the_session():
     assert is_closed
 
 
-def test_closing_streams_names_the_binding_the_kind_the_machine_and_the_shell():
+def test_closing_streams_names_the_binding_the_kind_the_machine_the_row_and_the_shell():
     async def scenario():
         channel = FakeLocalChannel()
         held = session(channel, key="client-a", role=CHANNEL_ROLE_CLIENT)
@@ -136,6 +136,7 @@ def test_closing_streams_names_the_binding_the_kind_the_machine_and_the_shell():
             code="session_not_owned",
             params={"session_id": "x"},
             device_id=DEVICE,
+            row_id=f"terminal_{DEVICE}",
             session_id="x",
         )
         return channel.commands
@@ -147,6 +148,7 @@ def test_closing_streams_names_the_binding_the_kind_the_machine_and_the_shell():
                 "binding_id": "client-a",
                 "kind": "terminal",
                 "device_id": DEVICE,
+                "key": f"terminal_{DEVICE}",
                 "session_id": "x",
                 "code": "session_not_owned",
                 "params": {"session_id": "x"},

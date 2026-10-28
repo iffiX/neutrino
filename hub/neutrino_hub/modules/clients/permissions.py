@@ -1,20 +1,26 @@
-"""What one client is allowed, by kind and by device.
+"""What one client is allowed, by kind, by device and by row.
 
 A kind is a published service type, joining the hub's overlay, opening a
 shell or running one command on a managed machine, or opening the hub's
-panel. A permission may also narrow a kind to the
-entries some devices provide: a kind with no list, or an empty one, allows
-every device. A client follows the default permission unless it has one of
+panel. A permission may narrow a kind to the entries some devices provide,
+and may set a row, one app, share, desktop or machine, on or off whatever
+its kind says. A client follows the default permission unless it has one of
 its own. Pure functions: the registry and the devices are read by the caller.
 """
 
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_KINDS,
+    CLIENT_TERMINAL_ROW_PREFIX,
 )
-from neutrino_hub.modules.services.constants import SERVICES_SOURCE_DECLARED
+from neutrino_hub.modules.services.constants import (
+    SERVICES_SOURCE_DECLARED,
+    SERVICES_TYPE_AI,
+    SERVICES_TYPE_FILE,
+)
 
 
 def permission_kinds(kinds) -> list:
@@ -61,35 +67,144 @@ def permission_devices(devices) -> dict:
     return filters
 
 
-def permitted_kinds(registry, client) -> frozenset:
-    """The kinds one client is allowed now.
+def permission_entries(entries) -> dict:
+    """A row map in the one shape it is stored in.
 
     Args:
-        registry: The :class:`ClientRegistry` holding the default set.
+        entries: Row id to ``True`` or ``False``; None for no row.
+
+    Returns:
+        The rows in their given order, without an empty id.
+
+    Raises:
+        ValueError: If a value is not ``True`` or ``False``.
+    """
+    rows = {}
+    for row_id, value in (entries or {}).items():
+        if not isinstance(value, bool):
+            raise ValueError(f"row {row_id!r} is neither true nor false")
+        if str(row_id):
+            rows[str(row_id)] = value
+    return rows
+
+
+def client_permission(registry, client) -> "ClientPermission":
+    """The permission one client is held to now.
+
+    Args:
+        registry: The :class:`ClientRegistry` holding the default.
         client: The client.
 
     Returns:
-        Its own set when it has one, else the default set.
+        Its own permission when it has one, else the default.
     """
     if client.permission is not None:
-        return frozenset(client.permission)
-    return frozenset(registry.default_permission())
+        return ClientPermission(
+            kinds=frozenset(client.permission),
+            devices=dict(client.permission_devices),
+            entries=dict(client.permission_entries),
+        )
+    return default_permission(registry)
 
 
-def permitted_devices(registry, client) -> dict:
-    """The device filter one client is held to now.
+def default_permission(registry) -> "ClientPermission":
+    """The permission a client with none of its own is held to.
 
     Args:
-        registry: The :class:`ClientRegistry` holding the default filter.
-        client: The client.
+        registry: The :class:`ClientRegistry` holding the default.
 
     Returns:
-        Device ids by kind: its own when it has a permission of its own,
-        else the default's.
+        The default.
     """
-    if client.permission is not None:
-        return dict(client.permission_devices)
-    return registry.default_permission_devices()
+    return ClientPermission(
+        kinds=frozenset(registry.default_permission()),
+        devices=registry.default_permission_devices(),
+        entries=registry.default_permission_entries(),
+    )
+
+
+def is_permitted(
+    permission: "ClientPermission", kind: str, device_id: str = "", row_id: str = ""
+) -> bool:
+    """Whether a permission allows one use.
+
+    Args:
+        permission: The permission the client is held to.
+        kind: The kind the use falls under.
+        device_id: The device providing the thing; empty for none known.
+        row_id: The thing's row id; empty for a kind with no rows.
+
+    Returns:
+        The value ``entries`` gives the row when it names it; otherwise
+        whether the kind is on and its device list lets the device through.
+    """
+    if row_id and row_id in permission.entries:
+        return permission.entries[row_id]
+    return kind in permission.kinds and is_device_permitted(
+        permission.devices, kind, device_id
+    )
+
+
+def entry_row_id(entry: dict) -> str:
+    """The row one published entry is judged under.
+
+    Args:
+        entry: The composed entry, with ``id``, ``type`` and ``app_id``.
+
+    Returns:
+        The app's id for an entry of an app, :func:`file_row_id` for a
+        ``file`` entry of no app, the entry's own id for any other, and
+        empty for the ``ai`` entry.
+    """
+    if entry.get("type") == SERVICES_TYPE_AI:
+        return ""
+    if entry.get("app_id"):
+        return str(entry["app_id"])
+    if entry.get("type") == SERVICES_TYPE_FILE:
+        return file_row_id(entry)
+    return str(entry.get("id", "") or "")
+
+
+def file_row_id(entry: dict) -> str:
+    """The row a ``file`` entry is judged under.
+
+    Args:
+        entry: The entry, with ``id`` and its payload's ``account``.
+
+    Returns:
+        A folder share's id for an entry of a folder share, else the
+        entry's own id.
+    """
+    entry_id = str(entry.get("id", "") or "")
+    account = str((entry.get("payload") or {}).get("account", "") or "")
+    if account and entry_id.endswith(f"_{account}"):
+        return entry_id[: -len(account) - 1]
+    return entry_id
+
+
+def terminal_row_id(device_id: str) -> str:
+    """The row a managed machine's shells and commands are judged under.
+
+    Args:
+        device_id: The machine.
+
+    Returns:
+        ``terminal_<device id>``.
+    """
+    return f"{CLIENT_TERMINAL_ROW_PREFIX}{device_id}"
+
+
+def is_row_of_device(row_id: str, device_id: str) -> bool:
+    """Whether a row id names one device.
+
+    Args:
+        row_id: The row id.
+        device_id: The device.
+
+    Returns:
+        True when the device's id is one of the row id's parts.
+    """
+    return bool(device_id) and f"_{device_id}_" in f"_{row_id}_"
 
 
 def is_device_permitted(devices: dict, kind: str, device_id: str) -> bool:
@@ -105,19 +220,6 @@ def is_device_permitted(devices: dict, kind: str, device_id: str) -> bool:
     """
     chosen = devices.get(kind) or []
     return not chosen or device_id in chosen
-
-
-def permitted_entries(entries: list, kinds) -> list:
-    """The published entries whose type is among the allowed kinds.
-
-    Args:
-        entries: The published entries, each with a ``type``.
-        kinds: The allowed kinds.
-
-    Returns:
-        The entries allowed, in their given order.
-    """
-    return [entry for entry in entries if entry["type"] in kinds]
 
 
 def entry_device_id(
@@ -186,3 +288,20 @@ def entry_host(entry: dict) -> str:
         if payload.get(key):
             return urlsplit(str(payload[key])).hostname or ""
     return str(payload.get("host", "") or "")
+
+
+@dataclass(frozen=True)
+class ClientPermission:
+    """What one client is allowed: its own permission, or the default.
+
+    Attributes:
+        kinds: The kinds that are on.
+        devices: Device ids by kind; a kind with no list allows every
+            device.
+        entries: Row id to ``True`` or ``False``; a row absent follows its
+            kind.
+    """
+
+    kinds: frozenset = frozenset()
+    devices: dict = field(default_factory=dict)
+    entries: dict = field(default_factory=dict)

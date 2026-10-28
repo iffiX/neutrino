@@ -1,16 +1,21 @@
-"""What a client is allowed, by kind and by device: the default permission,
-or one of its own."""
+"""What a client is allowed, by kind, by device and by row: the default
+permission, or one of its own."""
 
 import pytest
 
 from neutrino_hub.modules.clients.permissions import (
+    ClientPermission,
+    client_permission,
     entry_device_id,
+    entry_row_id,
+    file_row_id,
     is_device_permitted,
+    is_permitted,
+    is_row_of_device,
     permission_devices,
+    permission_entries,
     permission_kinds,
-    permitted_devices,
-    permitted_entries,
-    permitted_kinds,
+    terminal_row_id,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 
@@ -24,14 +29,18 @@ def config_dir(tmp_path, monkeypatch):
 def test_a_client_follows_the_default_until_it_has_its_own(config_dir):
     registry = ClientRegistry()
     client_id = registry.create("alice")
-    registry.set_default_permission(["web", "file"])
+    registry.set_default_permission(["web", "file"], entries={"gitea_d1": False})
 
-    assert permitted_kinds(registry, registry.get(client_id)) == {"web", "file"}
+    held = client_permission(registry, registry.get(client_id))
+    assert held.kinds == {"web", "file"}
+    assert held.entries == {"gitea_d1": False}
 
-    registry.set_permission(client_id, ["terminal"])
+    registry.set_permission(client_id, ["terminal"], entries={"gitea_d1": True})
     registry = ClientRegistry()
 
-    assert permitted_kinds(registry, registry.get(client_id)) == {"terminal"}
+    held = client_permission(registry, registry.get(client_id))
+    assert held.kinds == {"terminal"}
+    assert held.entries == {"gitea_d1": True}
 
 
 def test_an_empty_set_of_its_own_allows_nothing(config_dir):
@@ -40,20 +49,86 @@ def test_an_empty_set_of_its_own_allows_nothing(config_dir):
     registry.set_permission(client_id, [])
     registry = ClientRegistry()
 
-    assert permitted_kinds(registry, registry.get(client_id)) == frozenset()
+    assert client_permission(registry, registry.get(client_id)).kinds == frozenset()
 
 
-def test_filtering_keeps_the_allowed_entries_in_order():
-    entries = [
-        {"id": "a", "type": "web"},
-        {"id": "b", "type": "ai"},
-        {"id": "c", "type": "web"},
-        {"id": "d", "type": "rdp"},
-    ]
+def test_a_row_in_entries_wins_over_its_kind_both_ways():
+    permission = ClientPermission(
+        kinds=frozenset({"web"}),
+        devices={"web": ["d1"]},
+        entries={"vscode_d1_lab": False, "gitea_d2": True},
+    )
 
-    kept = permitted_entries(entries, {"web", "rdp"})
+    assert is_permitted(permission, "web", "d1", "hermes_webui_d1")
+    assert not is_permitted(permission, "web", "d1", "vscode_d1_lab")
+    assert is_permitted(permission, "web", "d2", "gitea_d2")
+    assert is_permitted(permission, "port", "d2", "gitea_d2")
+    assert not is_permitted(permission, "web", "d2", "cloudcli_d2_lab")
+    assert not is_permitted(permission, "ai")
 
-    assert [entry["id"] for entry in kept] == ["a", "c", "d"]
+
+def test_a_kind_off_allows_only_the_rows_set_on():
+    permission = ClientPermission(entries={"rdp_d1": True, "terminal_d2": True})
+
+    assert is_permitted(permission, "rdp", "d1", "rdp_d1")
+    assert not is_permitted(permission, "rdp", "d3", "rdp_d3")
+    assert is_permitted(permission, "terminal", "d2", terminal_row_id("d2"))
+    assert not is_permitted(permission, "overlay")
+    assert not is_permitted(permission, "panel")
+
+
+@pytest.mark.parametrize(
+    "entry, row_id",
+    [
+        (
+            {"id": "vscode_d1_lab_web", "type": "web", "app_id": "vscode_d1_lab"},
+            "vscode_d1_lab",
+        ),
+        (
+            {"id": "ssh_server_d1_lab", "type": "ssh", "app_id": "ssh_server_d1"},
+            "ssh_server_d1",
+        ),
+        (
+            {"id": "samba_d1_lab", "type": "file", "payload": {"account": ""}},
+            "samba_d1_lab",
+        ),
+        (
+            {
+                "id": "samba_folder_d1_data_lab",
+                "type": "file",
+                "payload": {"account": "lab"},
+            },
+            "samba_folder_d1_data",
+        ),
+        ({"id": "nas_files", "type": "file", "app_id": "nas", "payload": {}}, "nas"),
+        ({"id": "rdp_d1", "type": "rdp"}, "rdp_d1"),
+        ({"id": "ai", "type": "ai"}, ""),
+    ],
+)
+def test_an_entry_is_judged_under_its_app_its_share_or_itself(entry, row_id):
+    assert entry_row_id(entry) == row_id
+
+
+def test_a_home_share_entry_is_its_own_row():
+    assert file_row_id({"id": "samba_d1_lab", "payload": {}}) == "samba_d1_lab"
+
+
+def test_a_row_names_a_device_by_a_whole_part_of_its_id():
+    assert is_row_of_device("vscode_d1_lab", "d1")
+    assert is_row_of_device("rdp_d1", "d1")
+    assert is_row_of_device("terminal_d1", "d1")
+    assert not is_row_of_device("vscode_d10_lab", "d1")
+    assert not is_row_of_device("nas", "")
+
+
+def test_a_row_map_refuses_a_value_that_is_not_true_or_false():
+    assert permission_entries({"a": True, "": False, "b": False}) == {
+        "a": True,
+        "b": False,
+    }
+    assert permission_entries(None) == {}
+    with pytest.raises(ValueError):
+        permission_entries({"a": 1})
 
 
 def test_kinds_come_back_once_each_in_the_one_order():
@@ -86,12 +161,13 @@ def test_a_client_is_held_to_the_defaults_filter_until_it_has_its_own(config_dir
     client_id = registry.create("alice")
     registry.set_default_permission(["web"], {"web": ["d1"]})
 
-    assert permitted_devices(registry, registry.get(client_id)) == {"web": ["d1"]}
+    held = client_permission(registry, registry.get(client_id))
+    assert held.devices == {"web": ["d1"]}
 
     registry.set_permission(client_id, ["web"])
     registry = ClientRegistry()
 
-    assert permitted_devices(registry, registry.get(client_id)) == {}
+    assert client_permission(registry, registry.get(client_id)).devices == {}
 
 
 @pytest.mark.parametrize(

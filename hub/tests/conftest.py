@@ -557,12 +557,12 @@ class FakeChannelSessions:
         return [SimpleNamespace(key=key, address="") for key in sorted(self.online)]
 
     def close_streams_from_thread(
-        self, key, *, kind, code, params=None, device_id="", session_id=""
+        self, key, *, kind, code, params=None, device_id="", row_id="", session_id=""
     ) -> bool:
         if key.lower() not in self.online:
             return False
         self.stream_closes.append(
-            (key.lower(), kind, device_id, session_id, code, dict(params or {}))
+            (key.lower(), kind, device_id, row_id, session_id, code, dict(params or {}))
         )
         return True
 

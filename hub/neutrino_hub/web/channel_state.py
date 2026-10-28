@@ -30,13 +30,13 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
+    client_permission,
     entry_device_id,
     entry_host,
     entry_machine_id,
-    is_device_permitted,
-    permitted_devices,
-    permitted_entries,
-    permitted_kinds,
+    entry_row_id,
+    is_permitted,
+    terminal_row_id,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import device_owners
@@ -107,26 +107,24 @@ def client_state(runtime, client_id: str) -> dict:
     terminals = []
     is_panel_allowed = False
     if not is_disabled:
-        kinds = permitted_kinds(registry, client)
-        devices = permitted_devices(registry, client)
+        permission = client_permission(registry, client)
         scope = runtime.client_scope.get(client_id) or link_scope("")
         own_machine_id = client.os_machine_id
         hub_device_id, device_ids_by_address = (
-            device_owners(runtime) if devices or own_machine_id else ("", {})
+            device_owners(runtime) if permission.devices or own_machine_id else ("", {})
         )
         allowed = [
             entry
-            for entry in permitted_entries(
-                runtime.published_services.entries_for(scope), kinds
-            )
-            if is_device_permitted(
-                devices,
+            for entry in runtime.published_services.entries_for(scope)
+            if is_permitted(
+                permission,
                 entry["type"],
                 entry_device_id(
                     entry,
                     hub_device_id=hub_device_id,
                     device_ids_by_address=device_ids_by_address,
                 ),
+                entry_row_id(entry),
             )
         ]
         services = _named_entries(runtime, allowed)
@@ -137,17 +135,19 @@ def client_state(runtime, client_id: str) -> dict:
             device_ids_by_address=device_ids_by_address,
         )
         apps = _apps_of(runtime, services)
-        if CLIENT_PERMISSION_OVERLAY in kinds:
+        if is_permitted(permission, CLIENT_PERMISSION_OVERLAY):
             overlays = channel_overlay.overlay_materials(runtime)
-        if CLIENT_PERMISSION_TERMINAL in kinds:
-            terminals = [
-                terminal
-                for terminal in _terminals(runtime, client_owner(client_id))
-                if is_device_permitted(
-                    devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
-                )
-            ]
-        is_panel_allowed = CLIENT_PERMISSION_PANEL in kinds
+        terminals = [
+            terminal
+            for terminal in _terminals(runtime, client_owner(client_id))
+            if is_permitted(
+                permission,
+                CLIENT_PERMISSION_TERMINAL,
+                terminal["device_id"],
+                terminal_row_id(terminal["device_id"]),
+            )
+        ]
+        is_panel_allowed = is_permitted(permission, CLIENT_PERMISSION_PANEL)
     urls = channel_urls(runtime)
     servers = {
         "ssh_relay_url": relay_url(),

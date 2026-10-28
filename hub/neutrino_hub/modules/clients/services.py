@@ -38,11 +38,11 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_RDP_SERVICE_PREFIX,
 )
 from neutrino_hub.modules.clients.permissions import (
+    client_permission,
     entry_device_id,
     entry_host,
-    is_device_permitted,
-    permitted_devices,
-    permitted_kinds,
+    entry_row_id,
+    is_permitted,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
@@ -95,6 +95,8 @@ class ConnectTarget:
         provider: The machine the permission's device lists judge it by,
             empty for none.
         protocol: ``tcp``, or ``udp`` for a UDP ``port`` entry.
+        row_id: The entry's row id in a permission, empty for ``ai`` and
+            the panel.
     """
 
     device_id: str
@@ -103,6 +105,7 @@ class ConnectTarget:
     kind: str = field(default="", compare=False)
     provider: str = field(default="", compare=False)
     protocol: str = SERVICES_PROTOCOL_TCP
+    row_id: str = field(default="", compare=False)
 
 
 def service_material(runtime, client_id: str, entry_id: str) -> tuple:
@@ -174,7 +177,7 @@ def panel_material(runtime, client_id: str) -> tuple:
     code, params = _client_refusal(client)
     if code:
         return code, params
-    if CLIENT_PERMISSION_PANEL not in permitted_kinds(registry, client):
+    if not is_permitted(client_permission(registry, client), CLIENT_PERMISSION_PANEL):
         return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_PANEL}
     return "", {"token": runtime.panel_tokens.mint(client.id)}
 
@@ -208,7 +211,9 @@ def connect_target(
     if open_count >= CHANNEL_CONNECT_STREAMS_MAX:
         return CHANNEL_CODE_CONNECT_LIMIT, {"limit": CHANNEL_CONNECT_STREAMS_MAX}, None
     if args.get("is_panel") is True:
-        if CLIENT_PERMISSION_PANEL not in permitted_kinds(registry, client):
+        if not is_permitted(
+            client_permission(registry, client), CLIENT_PERMISSION_PANEL
+        ):
             return (
                 CLIENT_CODE_PERMISSION_DENIED,
                 {"kind": CLIENT_PERMISSION_PANEL},
@@ -255,6 +260,7 @@ def connect_target(
             kind=kind,
             provider=provider,
             protocol=entry_protocol(raw),
+            row_id=entry_row_id(raw),
         ),
     )
 
@@ -393,18 +399,17 @@ def _judge_entry(runtime, registry, client, entry_id: str) -> tuple:
     if entry is None:
         return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}, None, None
     raw = _raw_entry(runtime, scope, entry_id)
-    if entry["type"] not in permitted_kinds(registry, client):
-        return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}, None, None
-    devices = permitted_devices(registry, client)
-    if devices.get(entry["type"]):
+    permission = client_permission(registry, client)
+    provider = ""
+    if permission.devices.get(entry["type"]):
         hub_device_id, device_ids_by_address = device_owners(runtime)
         provider = entry_device_id(
             raw,
             hub_device_id=hub_device_id,
             device_ids_by_address=device_ids_by_address,
         )
-        if not is_device_permitted(devices, entry["type"], provider):
-            return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}, None, None
+    if not is_permitted(permission, entry["type"], provider, entry_row_id(raw)):
+        return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}, None, None
     if entry["type"] == SERVICES_TYPE_RDP and _live_share(runtime, entry) is None:
         return CLIENT_CODE_RDP_NOT_SHARED, {"service_id": entry["id"]}, None, None
     return "", {}, entry, raw

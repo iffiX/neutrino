@@ -24,9 +24,9 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_TERMINAL
 from neutrino_hub.modules.clients.permissions import (
-    is_device_permitted,
-    permitted_devices,
-    permitted_kinds,
+    client_permission,
+    is_permitted,
+    terminal_row_id,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
@@ -482,15 +482,16 @@ def _client_terminal_rights(client_id: str):
     client = registry.get(client_id)
     if client is None or client.is_disabled:
         return None
-    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(registry, client):
-        return _no_device
-    devices = permitted_devices(registry, client)
-    return functools.partial(is_device_permitted, devices, CLIENT_PERMISSION_TERMINAL)
+    return functools.partial(
+        _is_terminal_permitted, client_permission(registry, client)
+    )
 
 
-def _no_device(device_id: str) -> bool:
-    """Terminal rights on no machine."""
-    return False
+def _is_terminal_permitted(permission, device_id: str) -> bool:
+    """Whether a permission gives terminal rights on a machine."""
+    return is_permitted(
+        permission, CLIENT_PERMISSION_TERMINAL, device_id, terminal_row_id(device_id)
+    )
 
 
 def _count(value, fallback: int) -> int:

@@ -64,6 +64,7 @@ def test_create_makes_a_row_that_has_not_joined(config_dir):
         "is_disabled",
         "ai_key_id",
         "permission",
+        "link_expires_at",
     }
 
 
@@ -305,3 +306,131 @@ def test_the_os_machine_id_is_kept_and_an_empty_one_keeps_it(config_dir):
     registry.record_seen(client_id, hostname="", platform={}, version="")
 
     assert ClientRegistry().get(client_id).os_machine_id == "m-1"
+
+
+# --- the rows of the fine mode ---
+
+
+def test_rows_are_stored_beside_the_kinds_and_only_when_they_name_something(
+    config_dir,
+):
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    bob = registry.create("bob")
+    registry.set_default_permission(["web"], entries={"gitea_d1": False})
+    registry.set_permission(alice, [], entries={"ayakaleaf_d1": True})
+    registry.set_permission(bob, ["web"])
+
+    data = json.loads((config_dir / "clients" / "clients.json").read_text())
+    assert data["default_permission"] == {
+        "kinds": ["web"],
+        "entries": {"gitea_d1": False},
+    }
+    assert data["clients"][alice]["permission"] == {
+        "kinds": [],
+        "entries": {"ayakaleaf_d1": True},
+    }
+    assert data["clients"][bob]["permission"] == {"kinds": ["web"]}
+    registry = ClientRegistry()
+    assert registry.default_permission_entries() == {"gitea_d1": False}
+    assert registry.get(alice).permission_entries == {"ayakaleaf_d1": True}
+    with pytest.raises(ValueError):
+        registry.set_permission(bob, ["web"], entries={"gitea_d1": "yes"})
+
+
+def test_a_stored_row_that_is_no_bool_is_dropped_at_read(config_dir):
+    (config_dir / "clients").mkdir()
+    (config_dir / "clients" / "clients.json").write_text(
+        json.dumps(
+            {
+                "default_permission": {
+                    "kinds": ["web"],
+                    "entries": {"gitea_d1": 1, "rdp_d1": True},
+                },
+                "clients": {},
+            }
+        )
+    )
+
+    assert ClientRegistry().default_permission_entries() == {"rdp_d1": True}
+
+
+def test_forgetting_a_device_takes_its_rows_out_of_every_permission(config_dir):
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    registry.set_default_permission(
+        ["web"], entries={"vscode_d1_lab": False, "gitea_d10": True, "nas": True}
+    )
+    registry.set_permission(
+        alice, ["web"], entries={"rdp_d1": True, "terminal_d1": False}
+    )
+
+    assert ClientRegistry().forget_device("d1") is True
+
+    registry = ClientRegistry()
+    assert registry.default_permission_entries() == {"gitea_d10": True, "nas": True}
+    assert registry.get(alice).permission_entries == {}
+
+
+def test_forgetting_rows_takes_them_out_of_the_default_and_each_client(config_dir):
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    bob = registry.create("bob")
+    registry.set_default_permission(["file"], entries={"samba_folder_d1_data": True})
+    registry.set_permission(
+        alice, ["file"], entries={"samba_folder_d1_data": False, "nas": True}
+    )
+
+    assert ClientRegistry().forget_permission_rows(["samba_folder_d1_data"]) is True
+
+    registry = ClientRegistry()
+    assert registry.default_permission_entries() == {}
+    assert registry.get(alice).permission_entries == {"nas": True}
+    assert registry.get(bob).permission is None
+    assert ClientRegistry().forget_permission_rows(["samba_folder_d1_data"]) is False
+
+
+# --- the rows that wait to join ---
+
+
+def test_a_link_makes_a_waiting_row_with_its_permission_and_expiry(config_dir):
+    from neutrino_hub.modules.clients.permissions import ClientPermission
+
+    client_id = ClientRegistry().create(
+        "alice",
+        permission=ClientPermission(
+            kinds=frozenset({"terminal", "web"}),
+            devices={"terminal": ["d1"]},
+            entries={"gitea_d1": False},
+        ),
+        link_expires_at=1000.0,
+    )
+
+    client = ClientRegistry().get(client_id)
+    assert client.is_waiting
+    assert client.link_expires_at == 1000.0
+    assert client.permission == ["web", "terminal"]
+    assert client.permission_devices == {"terminal": ["d1"]}
+    assert client.permission_entries == {"gitea_d1": False}
+
+    ClientRegistry().issue_token(client_id)
+
+    client = ClientRegistry().get(client_id)
+    assert not client.is_waiting
+    assert client.link_expires_at is None
+
+
+def test_the_sweep_removes_waiting_rows_whose_link_expired_and_nothing_else(
+    config_dir,
+):
+    registry = ClientRegistry()
+    expired = registry.create("expired", link_expires_at=100.0)
+    open_link = registry.create("open", link_expires_at=300.0)
+    old = registry.create("old")
+    joined = registry.create("joined", link_expires_at=100.0)
+    registry.issue_token(joined)
+
+    assert sorted(ClientRegistry().sweep_waiting(200.0)) == sorted([expired, old])
+
+    assert [client.id for client in ClientRegistry().all()] == [open_link, joined]
+    assert ClientRegistry().sweep_waiting(200.0) == []

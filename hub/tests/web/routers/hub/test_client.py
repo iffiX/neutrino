@@ -11,6 +11,7 @@ import hashlib
 
 import pytest
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
@@ -22,6 +23,7 @@ from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.auth import SessionStore
 from neutrino_hub.web import channel_addresses, channel_state
+from neutrino_hub.web.app import _body_invalid
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
 from tests.conftest import unlock_vault
@@ -48,8 +50,24 @@ class RecordingSessions(ChannelSessionRegistry):
         self.refused.append((key, code, dict(params or {})))
 
 
+class PublishedServices:
+    """What the hub publishes: set by a test, empty at the start."""
+
+    def __init__(self):
+        self.listed: list = []
+        self.listed_apps: list = []
+
+    def entries(self):
+        return list(self.listed), "f"
+
+    def apps(self):
+        return list(self.listed_apps)
+
+
 class FakeRuntime:
     def __init__(self):
+        self.published_services = PublishedServices()
+        self.device_address = {}
         self.enrollments = ChannelTicketRegistry()
         self.events = RecordingEvents()
         self.client_sessions = RecordingSessions()
@@ -61,6 +79,9 @@ class FakeRuntime:
 
     def host_scopes(self) -> list:
         return self.scopes
+
+    def device_names(self) -> dict:
+        return {device.id: device.name for device in DeviceRegistry().all_stored()}
 
     def forget_client(self, client_id: str) -> None:
         self.client_catalog_host.pop(client_id, None)
@@ -97,6 +118,7 @@ def api(monkeypatch, tmp_path):
         lambda given, role: given.pushed.append(role),
     )
     app = FastAPI()
+    app.add_exception_handler(RequestValidationError, _body_invalid)
     app.include_router(clients_router.router)
     app.dependency_overrides[require_session] = lambda: None
     app.dependency_overrides[get_runtime] = lambda: runtime
@@ -145,8 +167,10 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
         "expires_at": ticket["expires_at"],
     }
     assert body["expires_at"].endswith("+00:00")
+    assert body["client_id"] == rows[0]["id"]
     # The page shows this number, not a difference against its own clock.
     assert body["expires_in_s"] == 30 * 60
+    assert 30 * 60 - 5 <= rows[0]["link_expires_in_s"] <= 30 * 60
     assert rows[0] == {
         "id": rows[0]["id"],
         "name": "alice",
@@ -158,6 +182,8 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
         "is_disabled": False,
         "permission": None,
         "permission_devices": {},
+        "permission_entries": {},
+        "link_expires_in_s": rows[0]["link_expires_in_s"],
     }
     assert runtime.events.published == ["clients"]
 
@@ -185,6 +211,8 @@ def test_a_blank_name_is_refused_and_a_new_link_replaces_only_client_tickets(api
     assert runtime.enrollments.get(second["token"]) is not None
     assert len(runtime.enrollments.entries()) == 2
     assert first["token"] != second["token"]
+    # The first link's waiting row goes with its ticket.
+    assert [row.name for row in ClientRegistry().all()] == ["b"]
 
 
 def test_disabling_revokes_the_key_and_enabling_mints_one_again(api):
@@ -508,7 +536,7 @@ def test_the_enrollment_view_carries_one_link_and_no_qr_link(api):
 
     reply = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
 
-    assert set(reply.json()) == {"link", "expires_at", "expires_in_s"}
+    assert set(reply.json()) == {"link", "client_id", "expires_at", "expires_in_s"}
 
 
 # --- the panel sessions a client's sign-in opened ---
@@ -566,3 +594,122 @@ def test_taking_the_panel_from_the_default_ends_its_followers_sessions(api):
 
     assert not runtime.sessions.is_valid(session)
     assert runtime.sessions.is_valid(own_session)
+
+
+# --- the link's permission and the waiting row ---
+
+
+def test_a_link_made_with_a_permission_stores_it_on_the_waiting_row(api):
+    client, runtime = api
+    runtime.overlays = [NETBIRD_OVERLAY]
+
+    reply = client.post(
+        "/api/hub/client/enrollment/create",
+        json={
+            "name": "guest",
+            "permission": {"kinds": [], "entries": {"ayakaleaf_d1": True}},
+        },
+    )
+
+    assert reply.status_code == 200
+    waiting = ClientRegistry().get(reply.json()["client_id"])
+    assert waiting.permission == []
+    assert waiting.permission_entries == {"ayakaleaf_d1": True}
+    # The link's own permission does not allow ``overlay``.
+    assert decoded_link(reply.json()["link"])["overlays"] == []
+
+
+def test_a_link_permission_is_refused_as_the_set_routes_refuse_it(api):
+    client, runtime = api
+
+    unknown = client.post(
+        "/api/hub/client/enrollment/create",
+        json={"name": "a", "permission": {"kinds": ["telnet"]}},
+    )
+    not_bool = client.post(
+        "/api/hub/client/enrollment/create",
+        json={"name": "a", "permission": {"kinds": [], "entries": {"x": "yes"}}},
+    )
+
+    assert unknown.json()["detail"] == {
+        "code": "permission_kind_unknown",
+        "params": {"kind": "telnet"},
+    }
+    assert not_bool.status_code == 400
+    assert not_bool.json()["detail"]["code"] == "body_invalid"
+    assert ClientRegistry().all() == []
+    assert runtime.enrollments.entries() == []
+
+
+def test_both_set_routes_take_rows_and_refuse_a_row_that_is_no_bool(api):
+    client, runtime = api
+    alice = ClientRegistry().create("alice")
+
+    default = client.post(
+        "/api/hub/client/default_permission/set",
+        json={"kinds": ["web"], "entries": {"gitea_d1": False}},
+    )
+    own = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": alice, "kinds": [], "entries": {"rdp_d1": True}},
+    )
+    refused = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": alice, "kinds": [], "entries": {"rdp_d1": 1}},
+    )
+
+    assert default.json()["default_permission_entries"] == {"gitea_d1": False}
+    assert own.json()["clients"][0]["permission_entries"] == {"rdp_d1": True}
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "body_invalid"
+    assert ClientRegistry().get(alice).permission_entries == {"rdp_d1": True}
+
+
+def test_the_list_carries_the_rows_of_every_kind_that_has_rows(api):
+    client, runtime = api
+    device = DeviceRegistry().create("lab")
+    runtime.published_services.listed = [
+        {
+            "id": f"gitea_{device.id}_web",
+            "type": "web",
+            "app_id": f"gitea_{device.id}",
+            "device_id": device.id,
+            "source": "module",
+            "payload": {},
+        },
+        {
+            "id": f"rdp_{device.id}",
+            "type": "rdp",
+            "app_id": "",
+            "device_id": device.id,
+            "source": "device",
+            "title": "lab",
+            "payload": {},
+        },
+    ]
+    runtime.published_services.listed_apps = [
+        {"id": f"gitea_{device.id}", "title": "Gitea", "source": "module"}
+    ]
+
+    rows = client.get("/api/hub/client").json()["permission_rows"]
+
+    assert set(rows) == {"web", "port", "ssh", "file", "rdp", "terminal"}
+    assert rows["web"] == [
+        {
+            "id": f"gitea_{device.id}",
+            "title": "Gitea",
+            "device_id": device.id,
+            "device_name": "lab",
+        }
+    ]
+    assert [row["id"] for row in rows["rdp"]] == [f"rdp_{device.id}"]
+
+
+def test_deleting_a_waiting_row_takes_its_link_too(api):
+    client, runtime = api
+    made = client.post("/api/hub/client/enrollment/create", json={"name": "a"}).json()
+
+    client.post("/api/hub/client/remove", json={"client_id": made["client_id"]})
+
+    assert ClientRegistry().all() == []
+    assert runtime.enrollments.entries() == []

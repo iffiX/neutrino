@@ -183,6 +183,7 @@ class ChannelSession:
         code: str,
         params: "dict | None" = None,
         device_id: str = "",
+        row_id: str = "",
         session_id: str = "",
     ) -> None:
         """Close every stream of this binding the transport holds under one kind.
@@ -192,6 +193,8 @@ class ChannelSession:
             code: What each stream closes with.
             params: What the code's wording names.
             device_id: The machine the streams reach; empty for every one.
+            row_id: The row the streams fall under in a permission; empty
+                for every one.
             session_id: The kept shell the streams are attached to; empty
                 for every one.
 
@@ -203,6 +206,7 @@ class ChannelSession:
             binding_id=self.key,
             kind=kind,
             device_id=device_id,
+            key=row_id,
             session_id=session_id,
             code=code,
             params=dict(params or {}),
@@ -521,6 +525,7 @@ class ChannelSessionRegistry:
         code: str,
         params: "dict | None" = None,
         device_id: str = "",
+        row_id: str = "",
         session_id: str = "",
     ) -> bool:
         """:meth:`ChannelSession.close_streams` for a caller outside the loop.
@@ -539,6 +544,7 @@ class ChannelSessionRegistry:
                     code=code,
                     params=params,
                     device_id=device_id,
+                    row_id=row_id,
                     session_id=session_id,
                 ),
                 timeout=CHANNEL_CALL_TIMEOUT_S,

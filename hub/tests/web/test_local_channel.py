@@ -508,7 +508,13 @@ def test_the_entry_and_token_questions_carry_the_judgments_answers(
             "",
             {},
             ConnectTarget(
-                "dev-1", "", 3000, kind="web", provider="dev-1", protocol="tcp"
+                "dev-1",
+                "",
+                3000,
+                kind="web",
+                provider="dev-1",
+                protocol="tcp",
+                row_id="gitea_dev-1",
             ),
         ),
     )
@@ -584,6 +590,7 @@ def test_the_entry_and_token_questions_carry_the_judgments_answers(
     assert entry == {
         "kind": "web",
         "device_id": "dev-1",
+        "key": "gitea_dev-1",
         "target": {
             "session": "agent-s",
             "open": {"kind": "connect", "port": 3000, "protocol": "tcp"},

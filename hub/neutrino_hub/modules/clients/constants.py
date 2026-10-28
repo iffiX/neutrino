@@ -1,4 +1,8 @@
-from neutrino_hub.modules.services.constants import SERVICES_TYPE_SSH, SERVICES_TYPES
+from neutrino_hub.modules.services.constants import (
+    SERVICES_TYPE_AI,
+    SERVICES_TYPE_SSH,
+    SERVICES_TYPES,
+)
 
 # Where the enrolled clients live under config/. Real file gitignored; the
 # example beside it in data/examples documents the shape.
@@ -18,6 +22,8 @@ CLIENT_AI_DEVICE_FORWARD_URL = "http://127.0.0.1:8317"
 
 # What an rdp entry's id starts with in the published list.
 CLIENT_RDP_SERVICE_PREFIX = "rdp_"
+# What a managed machine's row id starts with under the ``terminal`` kind.
+CLIENT_TERMINAL_ROW_PREFIX = "terminal_"
 
 # The codes a client is answered with.
 CLIENT_CODE_DISABLED = "client_disabled"
@@ -50,4 +56,9 @@ CLIENT_DEFAULT_PERMISSION_KINDS = tuple(
 # The kinds a permission may narrow to the entries of some devices; the
 # overlay and the panel are the hub's own and belong to no device.
 CLIENT_PERMISSION_FILTERED_KINDS = SERVICES_TYPES + (CLIENT_PERMISSION_TERMINAL,)
+# The kinds whose things are rows of the fine mode, in the order a form lists
+# them. The AI gateway, the overlay and the panel have none.
+CLIENT_PERMISSION_ROW_KINDS = tuple(
+    kind for kind in CLIENT_PERMISSION_FILTERED_KINDS if kind != SERVICES_TYPE_AI
+)
 CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"

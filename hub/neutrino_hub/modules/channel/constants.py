@@ -15,6 +15,8 @@ CHANNEL_PROTOCOL_UPDATE_ONLY = 3
 # carries a package prefix.
 ENROLLMENT_TOKEN_BYTES = 18
 ENROLLMENT_TTL_S = 30 * 60
+# How often the hub removes the client rows whose link expired unused.
+ENROLLMENT_SWEEP_INTERVAL_S = 60
 # The open tickets, each as its SHA-256, mode 0600.
 CHANNEL_TICKET_PATH = UTILS_STATE_ROOT / "enrollment_tickets.json"
 CHANNEL_TICKET_FILE_MODE = 0o600

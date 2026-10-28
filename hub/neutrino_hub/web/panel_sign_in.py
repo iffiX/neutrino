@@ -13,7 +13,7 @@ token was worth, and a ``tkn`` from any other peer is never looked up.
 import logging
 
 from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_PANEL
-from neutrino_hub.modules.clients.permissions import permitted_kinds
+from neutrino_hub.modules.clients.permissions import client_permission, is_permitted
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web.constants import WEB_PANEL_TOKEN_PARAM
 from neutrino_hub.web.dependencies import session_cookie
@@ -130,7 +130,9 @@ def may_open_panel(client) -> bool:
     """
     if client.is_disabled:
         return False
-    return CLIENT_PERMISSION_PANEL in permitted_kinds(ClientRegistry(), client)
+    return is_permitted(
+        client_permission(ClientRegistry(), client), CLIENT_PERMISSION_PANEL
+    )
 
 
 def end_client_panel_sessions(

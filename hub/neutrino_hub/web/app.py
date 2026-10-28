@@ -330,6 +330,7 @@ def _start_samplers() -> None:
     runtime.link_sampler.start()
     runtime.address_sampler.start()
     runtime.release_sampler.start()
+    runtime.enrollment_sweeper.start()
     runtime.traffic_history.start()
     if runtime.proxy is not None:
         runtime.proxy.start()

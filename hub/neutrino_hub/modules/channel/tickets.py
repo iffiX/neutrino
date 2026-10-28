@@ -146,6 +146,27 @@ class ChannelTicketRegistry:
                 self._write_quietly()
             return entry
 
+    def withdraw_client(self, client_id: str) -> bool:
+        """Take the open ticket that binds one client row out, unspent.
+
+        Args:
+            client_id: The client row.
+
+        Returns:
+            Whether a ticket bound it.
+        """
+        with self._lock:
+            digests = [
+                digest
+                for digest, entry in self._entries.items()
+                if client_id and entry["client_id"] == client_id
+            ]
+            for digest in digests:
+                del self._entries[digest]
+            if digests:
+                self._write_quietly()
+        return bool(digests)
+
     def get(self, ticket: str) -> "dict | None":
         """The live entry of a ticket, left open.
 

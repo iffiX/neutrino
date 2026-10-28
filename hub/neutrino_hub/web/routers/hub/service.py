@@ -16,6 +16,7 @@ wording.
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from neutrino_hub.exceptions import ServiceFieldInvalidError
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import (
@@ -135,7 +136,8 @@ def delete_declared_app(
     body: DeclaredAppRequest,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> ServiceListView:
-    """Remove a declared app, every entry it published with it.
+    """Remove a declared app, every entry it published with it, and its row
+    from every client permission.
 
     Args:
         request: The incoming request.
@@ -153,6 +155,7 @@ def delete_declared_app(
         DeclaredAppRegistry().delete(body.app_id)
     except KeyError as error:
         raise _unknown() from error
+    ClientRegistry().forget_permission_rows([body.app_id])
     runtime.published_services.expire()
     return _list_view(request, runtime)
 

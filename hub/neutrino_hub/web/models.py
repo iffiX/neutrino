@@ -4,7 +4,7 @@ These are the contract the frontend's ``api_types.ts`` mirrors field for field,
 so a rename here is a rename there.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -1629,6 +1629,20 @@ class ClientView(BaseModel):
     permission: list[str] | None = None
     # With a permission of its own, the device ids each kind is narrowed to.
     permission_devices: dict[str, list[str]] = Field(default_factory=dict)
+    # With a permission of its own, row id to on or off.
+    permission_entries: dict[str, bool] = Field(default_factory=dict)
+    # The seconds its link still works while it waits to join; None once
+    # it joined.
+    link_expires_in_s: int | None = None
+
+
+class PermissionRowView(BaseModel):
+    """A row the fine mode lists under a kind."""
+
+    id: str
+    title: str
+    device_id: str = ""
+    device_name: str = ""
 
 
 class ClientListView(BaseModel):
@@ -1638,13 +1652,29 @@ class ClientListView(BaseModel):
     default_permission: list[str] = Field(default_factory=list)
     # The device ids each kind of the default is narrowed to.
     default_permission_devices: dict[str, list[str]] = Field(default_factory=dict)
+    # The default's rows, row id to on or off.
+    default_permission_entries: dict[str, bool] = Field(default_factory=dict)
     permission_kinds: list[str] = Field(default_factory=list)
+    # The rows the fine mode lists, by kind, in the Services page's order.
+    permission_rows: dict[str, list[PermissionRowView]] = Field(default_factory=dict)
+
+
+class ClientPermissionFields(BaseModel):
+    """A permission as a form sends it."""
+
+    kinds: list[str]
+    # Device ids by kind; a kind not named allows every device.
+    devices: dict[str, list[str]] | None = None
+    # Row id to on or off; a row not named follows its kind.
+    entries: dict[str, StrictBool] | None = None
 
 
 class ClientEnrollmentRequest(BaseModel):
     """Ask for a link a named client can join with."""
 
     name: str = ""
+    # The permission the client joins with; None follows the default.
+    permission: ClientPermissionFields | None = None
 
 
 class ClientEnrollmentView(BaseModel):
@@ -1656,6 +1686,7 @@ class ClientEnrollmentView(BaseModel):
     """
 
     link: str
+    client_id: str
     expires_at: str
     expires_in_s: int
 
@@ -1673,12 +1704,8 @@ class ClientUpdate(BaseModel):
     name: str
 
 
-class ClientDefaultPermissionRequest(BaseModel):
+class ClientDefaultPermissionRequest(ClientPermissionFields):
     """What a client with no permission of its own is allowed."""
-
-    kinds: list[str]
-    # Device ids by kind; a kind not named allows every device.
-    devices: dict[str, list[str]] | None = None
 
 
 class ClientPermissionRequest(BaseModel):
@@ -1688,6 +1715,8 @@ class ClientPermissionRequest(BaseModel):
     kinds: list[str] | None
     # Device ids by kind; a kind not named allows every device.
     devices: dict[str, list[str]] | None = None
+    # Row id to on or off; a row not named follows its kind.
+    entries: dict[str, StrictBool] | None = None
 
 
 # --- the channel ---

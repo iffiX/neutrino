@@ -31,9 +31,9 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
-    is_device_permitted,
-    permitted_devices,
-    permitted_kinds,
+    client_permission,
+    is_permitted,
+    terminal_row_id,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web.shell_bridge import (
@@ -73,10 +73,11 @@ def judge_terminal(client_id: str, device_id: str) -> tuple:
         return CHANNEL_CODE_BINDING_UNKNOWN, {}
     if client.is_disabled:
         return CLIENT_CODE_DISABLED, {}
-    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(registry, client):
-        return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_TERMINAL}
-    if not is_device_permitted(
-        permitted_devices(registry, client), CLIENT_PERMISSION_TERMINAL, device_id
+    if not is_permitted(
+        client_permission(registry, client),
+        CLIENT_PERMISSION_TERMINAL,
+        device_id,
+        terminal_row_id(device_id),
     ):
         return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_TERMINAL}
     return "", {}

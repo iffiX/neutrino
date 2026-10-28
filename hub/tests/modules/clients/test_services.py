@@ -784,3 +784,61 @@ def test_hermes_webui_s_secret_that_does_not_open_is_vault_locked(config_dir):
         "vault_locked",
         {},
     )
+
+
+# --- the rows of the fine mode ---
+
+
+def test_a_row_set_on_opens_its_app_while_its_kind_is_off(config_dir):
+    runtime = FakeRuntime()
+    sharing(runtime)
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["ai"], entries={"rdp_dev": True})
+    runtime.client_scope[client_id] = LAN
+
+    assert service_material(runtime, client_id, "rdp_dev") == (
+        "",
+        {"password": "seat-pass"},  # scan: allow
+    )
+    assert service_material(runtime, client_id, "web_gitea") == (
+        "permission_denied",
+        {"kind": "web"},
+    )
+
+
+def test_a_row_set_off_refuses_its_app_while_its_kind_is_on(config_dir):
+    runtime = FakeRuntime(entries=(VSCODE_ENTRY, RDP_ENTRY))
+    sharing(runtime)
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(
+        client_id, ["web", "rdp"], entries={"vscode_dev_alice": False}
+    )
+    runtime.client_scope[client_id] = LAN
+
+    assert target(runtime, client_id, {"id": "vscode_dev_alice"}) == (
+        "permission_denied",
+        {"kind": "web"},
+        None,
+    )
+    assert target(runtime, client_id, {"id": "rdp_dev"})[0] == ""
+
+
+def test_a_connect_names_its_row_for_the_transport(config_dir):
+    runtime = FakeRuntime(
+        entries=(
+            {**VSCODE_ENTRY, "id": "vscode_dev_alice_web", "app_id": "vscode_dev"},
+            RDP_ENTRY,
+        )
+    )
+    sharing(runtime)
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
+
+    rows = [
+        target(runtime, client_id, {"id": entry_id})[2].row_id
+        for entry_id in ("vscode_dev_alice_web", "rdp_dev")
+    ]
+
+    assert rows == ["vscode_dev", "rdp_dev"]

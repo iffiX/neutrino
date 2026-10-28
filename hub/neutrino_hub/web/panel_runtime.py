@@ -114,6 +114,7 @@ from neutrino_hub.web.address_sampler import PanelAddressSampler
 from neutrino_hub.web.channel_addresses import channel_urls, own_agent_urls
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
+from neutrino_hub.web.enrollment_sweep import PanelEnrollmentSweeper
 from neutrino_hub.web.release_sampler import PanelReleaseSampler
 from neutrino_hub.modules.channel.legacy_channel import settle_legacy_switch
 from neutrino_hub.modules.channel.local_channel import LocalChannelClient
@@ -317,6 +318,8 @@ class PanelRuntime:
         # and never wants the thread.
         self.link_sampler = PanelLinkSampler(runtime=self)
         self.release_sampler = PanelReleaseSampler(store=self.module_releases)
+        # A client row whose link expired unused is removed by a sweep.
+        self.enrollment_sweeper = PanelEnrollmentSweeper(events=self.events)
         # The channel's own address set moves the same way, and every peer
         # holds a copy; sampled, and pushed to both roles when it moved.
         self.address_sampler = PanelAddressSampler(runtime=self)

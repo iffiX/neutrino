@@ -67,6 +67,9 @@ class StubPublishedServices:
             hub_host=scope.hub_address,
         )
 
+    def apps(self):
+        return []
+
 
 class FakeRuntime:
     def __init__(self):
@@ -927,3 +930,49 @@ def test_a_client_from_outside_through_direct_is_given_the_address_it_dialled(
     state = channel_state.client_state(runtime, client_id)
 
     assert state["services"][0]["payload"] == {"url": "http://198.51.100.2:3000"}
+
+
+# --- the rows of the fine mode ---
+
+
+def test_a_row_set_on_is_listed_while_its_kind_is_off_and_one_set_off_is_not(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    runtime.published_services.entries = [
+        ENTRY,
+        {**ENTRY, "id": "vscode_d_lab_web", "app_id": "vscode_d_lab"},
+        {**ENTRY, "id": "rdp_d", "type": "rdp", "payload": {"host": "x", "port": 1}},
+    ]
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_permission(client_id, ["rdp"], entries={"vscode_d_lab": True})
+    one_app = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, ["web", "rdp"], entries={"rdp_d": False})
+    no_desktop = channel_state.client_state(runtime, client_id)
+
+    assert [entry["id"] for entry in one_app["services"]] == [
+        "vscode_d_lab_web",
+        "rdp_d",
+    ]
+    assert [entry["id"] for entry in no_desktop["services"]] == [
+        "web_gitea",
+        "vscode_d_lab_web",
+    ]
+
+
+def test_a_machine_set_on_is_a_terminal_while_the_kind_is_off(config_dir):
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    lepton = devices.create("lepton")
+    devices.issue_token(lepton.id)
+    muon = devices.create("muon")
+    devices.issue_token(muon.id)
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_permission(client_id, [], entries={f"terminal_{muon.id}": True})
+
+    state = channel_state.client_state(runtime, client_id)
+    assert [entry["name"] for entry in state["terminals"]] == ["muon"]

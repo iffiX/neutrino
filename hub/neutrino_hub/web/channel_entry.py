@@ -20,6 +20,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_SHELL,
 )
 from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_TERMINAL
+from neutrino_hub.modules.clients.permissions import terminal_row_id
 from neutrino_hub.modules.clients.services import (
     agent_connect_target,
     connect_target,
@@ -44,8 +45,9 @@ async def entry_answer(runtime, *, role: str, binding_id: str, open_body: dict) 
         open_body: The open record's object, ``kind`` first.
 
     Returns:
-        ``{kind, device_id, target}`` to admit the stream, or ``{code,
-        params}`` to refuse it.
+        ``{kind, device_id, key, target}`` to admit the stream, ``key`` the
+        stream's row id in a permission, or ``{code, params}`` to refuse
+        it.
     """
     kind = str(open_body.get("kind", "") or "")
     if role == CHANNEL_ROLE_AGENT:
@@ -59,6 +61,7 @@ async def entry_answer(runtime, *, role: str, binding_id: str, open_body: dict) 
         return {
             "kind": target.kind,
             "device_id": target.provider,
+            "key": target.row_id,
             "target": {
                 "address": target.host,
                 "port": target.port,
@@ -91,6 +94,7 @@ async def _client_connect(runtime, client_id: str, open_body: dict) -> dict:
         return {
             "kind": target.kind,
             "device_id": target.provider,
+            "key": target.row_id,
             "target": {
                 "session": agent.session_id,
                 "open": {
@@ -103,6 +107,7 @@ async def _client_connect(runtime, client_id: str, open_body: dict) -> dict:
     return {
         "kind": target.kind,
         "device_id": target.provider,
+        "key": target.row_id,
         "target": {
             "address": target.host or CHANNEL_CONNECT_LOOPBACK,
             "port": target.port,
@@ -139,6 +144,7 @@ async def _client_terminal(runtime, client_id: str, kind: str, open_body: dict) 
     return {
         "kind": CLIENT_PERMISSION_TERMINAL,
         "device_id": device_id,
+        "key": terminal_row_id(device_id),
         "target": {
             "session": agent.session_id,
             "open": agent_shell_open(kind, open_body, owner=owner),

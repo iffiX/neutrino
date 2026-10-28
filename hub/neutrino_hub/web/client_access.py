@@ -3,10 +3,10 @@
 A change on the Clients page holds for the next stream by itself, since every
 ``open`` is judged then. What is already open is closed here, through the
 transport: the session of a client switched off or deleted, with
-``session_close``; otherwise its streams of each kind it lost, and of each
-machine it lost under a kind, with ``streams_close``, the panel's forward
-among them; and its panel sessions once ``panel`` goes (transport.md, "The
-hub's local channel"). A stream closed this way ends with the refusal its
+``session_close``; otherwise its streams of each kind it lost, of each
+machine it lost under a kind and of each row it lost, with
+``streams_close``, the panel's forward among them; and its panel sessions
+once ``panel`` goes (transport.md, "The hub's local channel"). A stream closed this way ends with the refusal its
 next ``open`` would get. A persistent or shared shell stays on its machine;
 only this client's stream to it closes.
 
@@ -20,16 +20,16 @@ import logging
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
-    CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_KINDS,
     CLIENT_PERMISSION_PANEL,
 )
 from neutrino_hub.modules.clients.permissions import (
+    client_permission,
     is_device_permitted,
-    permitted_devices,
-    permitted_kinds,
+    is_permitted,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.clients.rows import permission_rows
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.panel_sign_in import may_open_panel
 
@@ -48,13 +48,14 @@ def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict
 
     Returns:
         What was closed, by client id: ``socket``, ``streams``, the
-        ``(kind, device_id)`` pairs whose streams were asked closed, an
-        empty device for every machine, and ``panel_sessions``, each only
-        where something was.
+        ``(kind, device_id, row_id)`` triples whose streams were asked
+        closed, an empty device for every machine and an empty row for
+        every row, and ``panel_sessions``, each only where something was.
     """
     registry = ClientRegistry()
     closed: dict = {}
     device_ids = [device.id for device in DeviceRegistry().all_stored()]
+    rows = None
     for session in runtime.client_sessions.sessions():
         client = registry.get(session.key)
         if client is None:
@@ -65,12 +66,16 @@ def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict
             )
             closed.setdefault(session.key, {})["socket"] = True
             continue
-        lost = _lost_kinds(registry, client, device_ids)
-        for kind, device_id in lost:
+        permission = client_permission(registry, client)
+        if rows is None and permission.entries:
+            rows = permission_rows(runtime)
+        lost = lost_streams(permission, device_ids, rows or {})
+        for kind, device_id, row_id in lost:
             if not runtime.client_sessions.close_streams_from_thread(
                 session.key,
                 kind=kind,
                 device_id=device_id,
+                row_id=row_id,
                 code=CLIENT_CODE_PERMISSION_DENIED,
                 params={"kind": kind},
             ):
@@ -95,28 +100,50 @@ def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict
     return closed
 
 
-def _lost_kinds(registry, client, device_ids: list) -> list:
-    """The kinds and machines one client's permission no longer covers.
+def lost_streams(permission, device_ids: list, rows: dict) -> list:
+    """The streams one permission no longer covers, as closes to ask for.
+
+    A kind with no row set on is closed whole when it is off, and on each
+    machine outside its list when it has one. A kind with a row set on is
+    closed row by row, so the rows it keeps stay open.
+
+    Args:
+        permission: The :class:`ClientPermission` the client is held to.
+        device_ids: Every stored device.
+        rows: Kind to its rows from :func:`permission_rows`; needed only
+            while ``entries`` names a row.
 
     Returns:
-        ``(kind, device_id)`` pairs: a kind the client lost whole with an
-        empty device, and for a kind kept with a device list, each stored
-        machine outside the list.
+        ``(kind, device_id, row_id)`` triples, an empty device for every
+        machine and an empty row for every row.
     """
-    kinds = permitted_kinds(registry, client)
-    devices = permitted_devices(registry, client)
     lost = []
     for kind in CLIENT_PERMISSION_KINDS:
         if kind == CLIENT_PERMISSION_PANEL:
             continue
-        if kind not in kinds:
-            lost.append((kind, ""))
+        held = rows.get(kind) or []
+        if any(permission.entries.get(row["id"]) is True for row in held):
+            lost += [
+                (kind, row["device_id"], row["id"])
+                for row in held
+                if not is_permitted(permission, kind, row["device_id"], row["id"])
+            ]
             continue
-        if kind not in CLIENT_PERMISSION_FILTERED_KINDS or not devices.get(kind):
+        if kind not in permission.kinds:
+            lost.append((kind, "", ""))
             continue
-        for device_id in device_ids:
-            if not is_device_permitted(devices, kind, device_id):
-                lost.append((kind, device_id))
-    if CLIENT_PERMISSION_PANEL not in kinds:
-        lost.append((CLIENT_PERMISSION_PANEL, ""))
+        if permission.devices.get(kind):
+            lost += [
+                (kind, device_id, "")
+                for device_id in device_ids
+                if not is_device_permitted(permission.devices, kind, device_id)
+            ]
+        lost += [
+            (kind, row["device_id"], row["id"])
+            for row in held
+            if permission.entries.get(row["id"]) is False
+            and is_device_permitted(permission.devices, kind, row["device_id"])
+        ]
+    if not is_permitted(permission, CLIENT_PERMISSION_PANEL):
+        lost.append((CLIENT_PERMISSION_PANEL, "", ""))
     return lost

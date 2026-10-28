@@ -60,6 +60,7 @@ class StubRuntime:
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
         self.release_sampler = StubLinkSampler()
+        self.enrollment_sweeper = StubLinkSampler()
         self.traffic_history = StubTrafficHistory()
         self.proxy = StubExitController()
         self.relay_monitor = StubRelayMonitor()
