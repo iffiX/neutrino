@@ -56,8 +56,9 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_API_WAIT_S,
     PODMAN_MACHINE_CHANGED_PREFIX,
     PODMAN_MACHINE_DEFAULT_DISK_GIB,
-    PODMAN_MACHINE_DEFAULT_MEMORY_GIB,
+    PODMAN_MACHINE_DEFAULT_MEMORY_MAX_GIB,
     PODMAN_MACHINE_DETAIL_CHARS,
+    PODMAN_MACHINE_FALLBACK_MEMORY_GIB,
     PODMAN_MACHINE_IMAGE_ARTIFACT,
     PODMAN_MACHINE_INFO_TTL_S,
     PODMAN_MACHINE_IMAGE_KINDS,
@@ -113,6 +114,21 @@ def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
 
         return PodmanDarwinApplier(platform=platform)
     return PodmanSystemApplier()
+
+
+def default_memory_gib(host_memory_gib: int) -> int:
+    """The machine's memory for a 0 in the Run settings.
+
+    Args:
+        host_memory_gib: The computer's memory in GiB; 0 when it was not read.
+
+    Returns:
+        Half the computer's memory, at most 4 GiB and at least 1; Podman's
+        own 2 GiB when the computer's memory was not read.
+    """
+    if host_memory_gib <= 0:
+        return PODMAN_MACHINE_FALLBACK_MEMORY_GIB
+    return max(1, min(PODMAN_MACHINE_DEFAULT_MEMORY_MAX_GIB, host_memory_gib // 2))
 
 
 def _unit_names(declared: list, hub_names: dict) -> list:
@@ -324,6 +340,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # The last reading of the machine: ``(at, account, command, info)``,
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
+        # The computer's memory in GiB, read at the first report; 0 until
+        # it is read.
+        self._host_memory_gib = 0
 
     def verify(self, recipe: dict) -> bool:
         """Whether Podman's program is on the computer.
@@ -572,7 +591,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ``{"containers", "mirrors", "version", "is_active", "machine"}``,
             each container as on Linux with its addresses empty and its
             folders written as the computer names them, and ``machine``
-            ``{"account", "is_running", "cpus", "memory_gib", "disk_gib"}``.
+            ``{"account", "is_running", "cpus", "memory_gib", "disk_gib",
+            "default_memory_gib"}``, the last the memory a 0 in the Run
+            settings gives on this computer.
         """
         record = self._record()
         config = self._config or PodmanConfig()
@@ -589,6 +610,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 "cpus": 0,
                 "memory_gib": 0,
                 "disk_gib": 0,
+                "default_memory_gib": self._default_memory_gib(),
             },
         }
         if not record:
@@ -805,6 +827,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
         records = self._records.read_all()
         return records[0] if records else {}
 
+    def _default_memory_gib(self) -> int:
+        """The memory a 0 in the Run settings gives, the computer's memory read once."""
+        if self._host_memory_gib <= 0:
+            self._host_memory_gib = self._system.host_facts()[1]
+        return default_memory_gib(self._host_memory_gib)
+
     def _machine_of(self, account: str, password: str) -> PodmanMachine:
         return self._machine_class(
             platform=self._platform,
@@ -884,9 +912,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             OSError: When the keeper cannot be written.
             subprocess.SubprocessError: When the service manager refuses.
         """
-        host_cpus, _memory = self._system.host_facts()
+        host_cpus, host_memory_gib = self._system.host_facts()
         cpus = settings.cpus or max(1, host_cpus // 2)
-        memory_gib = settings.memory_gib or PODMAN_MACHINE_DEFAULT_MEMORY_GIB
+        memory_gib = settings.memory_gib or default_memory_gib(host_memory_gib)
         keeper = self._keeper_of(settings.account, settings.password)
         notes = []
         if not machine.is_present():

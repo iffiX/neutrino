@@ -105,8 +105,11 @@ PODMAN_DARWIN_TEMP_DIR_COMMAND = ("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR")
 PODMAN_DARWIN_TEMP_DIR_VARIABLE = "TMPDIR"
 PODMAN_DARWIN_COMMAND_TIMEOUT_S = 30
 
-# Podman's own defaults for a 0 in the Run settings.
-PODMAN_MACHINE_DEFAULT_MEMORY_GIB = 2
+# The machine's memory for a 0 in the Run settings is half the computer's, at
+# most the cap. Podman's own 2 GiB serves where the computer's is not read.
+PODMAN_MACHINE_DEFAULT_MEMORY_MAX_GIB = 4
+PODMAN_MACHINE_FALLBACK_MEMORY_GIB = 2
+# Podman's own disk for a 0 in the Run settings.
 PODMAN_MACHINE_DEFAULT_DISK_GIB = 100
 
 # The artifact that holds the machine image, and its directory, as the

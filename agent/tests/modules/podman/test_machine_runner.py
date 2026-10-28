@@ -6,6 +6,7 @@ a pkg handed to the system's installer; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
 provider takes no size at init, and removed when that sizing fails; a
+memory of 0 as half the computer's at most 4 GiB, in the details too; a
 machine taken over made rootful and sized, refused a smaller disk; a change
 of size against the last apply, the disk grown and never shrunk; a new account stopping the old
 machine and removing its keeper; the wait for the machine to answer; the one
@@ -31,6 +32,7 @@ from neutrino_agent.modules.podman.machine_runner import (
     PODMAN_GIB,
     PodmanMachineModuleRunner,
     PodmanSystemApplier,
+    default_memory_gib,
 )
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
@@ -644,9 +646,42 @@ def test_a_wsl_machine_is_sized_after_the_init_and_before_its_first_start(tmp_pa
 
     rig.runner.apply(dict(CONFIG, machine=dict(MACHINE, cpus=0, memory_gib=0)))
 
-    assert rig.system.calls == [("resources", "me", 4, 2), ("disk", "me", 100)]
+    assert rig.system.calls == [("resources", "me", 4, 4), ("disk", "me", 100)]
     assert rig.world.calls[0][1] == "init"
     assert ("me", "info") in rig.world.calls
+
+
+@pytest.mark.parametrize(
+    "host_memory_gib, memory_gib", [(32, 4), (6, 3), (3, 1), (1, 1), (0, 2)]
+)
+def test_a_memory_of_0_is_half_the_computers_at_most_4_gib(host_memory_gib, memory_gib):
+    assert default_memory_gib(host_memory_gib) == memory_gib
+
+
+def test_a_new_machine_on_a_small_computer_takes_half_its_memory(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image("image.tar.zst")
+    rig.system.facts = (4, 6)
+
+    rig.runner.apply(dict(CONFIG, machine=dict(MACHINE, cpus=0, memory_gib=0)))
+    details = rig.runner.details({})
+
+    assert rig.system.calls[0] == ("resources", "me", 2, 3)
+    assert details["machine"]["default_memory_gib"] == 3
+
+
+def test_a_made_machine_keeps_its_size_while_the_run_settings_stay(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image("image.tar.zst")
+    config = dict(CONFIG, machine=dict(MACHINE, memory_gib=0))
+    rig.system.facts = (8, 4)
+    rig.runner.apply(config)
+    rig.system.calls.clear()
+    rig.system.facts = (8, 16)
+
+    rig.runner.apply(config)
+
+    assert not [call for call in rig.system.calls if call[0] == "resources"]
 
 
 def test_a_failed_sizing_after_the_init_removes_the_new_machine(tmp_path):
@@ -880,6 +915,7 @@ def test_details_read_the_machine_through_the_ssh_url(tmp_path, _reads):
         "cpus": 2,
         "memory_gib": 4,
         "disk_gib": 120,
+        "default_memory_gib": 4,
     }
     assert details["is_active"] is True
     assert details["version"] == "6.1.4"
@@ -963,6 +999,7 @@ def test_before_any_apply_nothing_runs_as_an_account(rig):
         "cpus": 0,
         "memory_gib": 0,
         "disk_gib": 0,
+        "default_memory_gib": 4,
     }
     assert rig.world.calls == []
 

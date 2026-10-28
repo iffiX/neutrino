@@ -320,7 +320,7 @@ class PodmanMachineSettings:
     Attributes:
         account: The account whose default machine runs them.
         cpus: Its processors; 0 is half the computer's.
-        memory_gib: Its memory in GiB; 0 is 2.
+        memory_gib: Its memory in GiB; 0 is half the computer's, at most 4.
         disk_gib: Its disk in GiB, at least 1 on Windows; on macOS 0 is 100
             at an init and leaves a machine taken over as it is.
         password: The account's login, which Windows runs the account's
