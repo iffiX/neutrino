@@ -201,7 +201,7 @@ at most `ConnectStreamsMax`, 256, `connect` streams.
 | Limit | On the guest path |
 | --- | --- |
 | the first 4 bytes | `KnockFirstByteTimeout`, 3 seconds from the accept |
-| the first check, DTLS, SCTP, the data channel and the open record | `HandshakeTimeout`, 10 seconds from the accept |
+| the first check, DTLS, SCTP, the data channel and the open record | `GateHandshakeTimeout`, 20 seconds from the accept |
 | the `hello` | `HelloTimeout`, 10 seconds from the `accept` record |
 | admission, from the accept to an admitted `hello` | `AdmissionTimeout`, 30 seconds |
 | connections not yet admitted | a guest's counts in `UnadmittedMax` from its accept, and in `HandshakesInFlightMax` from its first check until its open record is answered |
@@ -219,6 +219,7 @@ at most `ConnectStreamsMax`, 256, `connect` streams.
 | The first message is one record in the layout every stream uses, and its `protocol` is the member header's number. Its `accept` carries the share's id, the one `accept` with a payload. | One record layout and one version number serve both paths, and the page's `hello` names the share it was admitted to. |
 | A yamux session runs inside the data channel. | An app makes many requests at once, and each is a stream of its own. |
 | A guest opens streams to the shared entry alone. | A share link reaches one app and nothing else behind the hub. |
+| A guest's handshake, from its first check through its open record, has `GateHandshakeTimeout`, 20 seconds, where a member's knock and answer have `HandshakeTimeout`, 10. | On congested lines a browser's DTLS handshake often missed 10 seconds. `AdmissionTimeout` still bounds the whole admission at 30 seconds. |
 | A refused guest counts as no failed admission, and the guest path has no cookie reply. | A guest's first check costs a lookup and one HMAC before any answer, and only the holder of a live link passes it; a pause of joins for a share's visitors stops a member's enrolment too. |
 | A share that ends closes its sessions: the hub's Python sends `shares_set` without it, then `session_close {session, code: share_unknown}` for each of its sessions. | A revoked or expired share leaves no page open on it. |
 
@@ -467,6 +468,7 @@ which the hub's Python counts in `modules/channel/constants.py`.
 | --- | --- | --- | --- |
 | a connection that has not sent its first 4 bytes, on any door | `KnockFirstByteTimeout` 3 s | the connection is closed | A peer sends its knock, and a browser its Binding Request, within a round trip. A connection held open and silent is the cheapest way to fill the port. |
 | the knock and the answer | `HandshakeTimeout` 10 s | the connection is closed | A handshake over the slowest way in completes in under a second. |
+| a guest's first check, DTLS, SCTP, the data channel and its open record | `GateHandshakeTimeout` 20 s | the connection is closed | On congested lines a browser's DTLS handshake often missed 10 seconds. |
 | the time from accept to an admitted `hello` | `AdmissionTimeout` 30 s | the connection is closed; a `join` or a `leave` in flight counts toward that time | It bounds how long one unadmitted connection holds a place. |
 | connections that have not passed `hello` | `UnadmittedMax` 128 | one of them is closed to make room: the oldest that has not finished its handshake, and the oldest of all when every one has | A peer that has finished its handshake has done work a flood of bare connections has not, so it keeps its place longest. |
 | knocks whose message 1 is being opened or whose question is open | `HandshakesInFlightMax` 64 | a further knock is closed with nothing written | The Diffie-Hellman and the question are the costly steps, and the limit bounds both at once. |
@@ -506,6 +508,7 @@ are in [protocol.md](protocol.md), "The timings".
 | --- | --- |
 | a connection's first 4 bytes, from the accept | `KnockFirstByteTimeout` 3 s |
 | the knock and the hub's answer, from the accept | `HandshakeTimeout` 10 s |
+| a guest's first check, DTLS, SCTP, the data channel and its open record, from the accept | `GateHandshakeTimeout` 20 s |
 | a session's first frame, from the answer | `HelloTimeout` 10 s |
 | a connection's admission, from the accept to an admitted `hello` | `AdmissionTimeout` 30 s |
 | a dial and the handshake on it | `DialTimeout` 10 s |
@@ -535,7 +538,8 @@ The transport's own TCP settings:
 
 The handshake time and the admission time both run: a connection closes
 when either ends first, so the knock, the answer and the `hello` together
-fit in 30 seconds and the knock and its answer alone in 10. The limits on
+fit in 30 seconds, the knock and its answer alone in 10, and a guest's
+handshake through its open record in 20. The limits on
 connections and sessions are in "What an unadmitted peer can cost the hub".
 A peer whose keepalive gets no answer
 within `KeepAliveTimeout` ends the session and starts a round. A refused
