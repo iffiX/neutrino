@@ -91,6 +91,7 @@ APPLY_ORDER = (
     "code_server",
     "cloudcli",
     "codeg",
+    "siyuan",
     "remote_desktop",
 )
 

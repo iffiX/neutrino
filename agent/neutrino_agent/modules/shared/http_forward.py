@@ -18,7 +18,9 @@ not loopback's or the instance's local name answered 421 and an ``Origin``
 that is not the ``Host``'s answered 403, and is passed on unchanged over one
 connection to the page kept for that browser's connection, its body cut at
 its ``Content-Length``; a WebSocket is passed on unchanged and relayed both
-ways until either side closes. Both of a forwarder's connections send at
+ways until either side closes. A page whose login is a cookie of its own
+with a fixed name gets it renamed both ways: the entry's cookie name toward
+the browser, the page's own toward the page. Both of a forwarder's connections send at
 once, with ``TCP_NODELAY``.
 
 Not pure: opens sockets.
@@ -405,6 +407,61 @@ def cookie_values(headers: list, name: str) -> list:
     return values
 
 
+def renamed_request_cookies(head: bytes, *, kept: str, page: str) -> bytes:
+    """A request's head with the browser's cookie renamed to the page's own name.
+
+    Args:
+        head: The request's head, through its blank line.
+        kept: The name the browser keeps the page's login under.
+        page: The page's own fixed name for it.
+
+    Returns:
+        The head with every ``kept`` cookie named ``page``, every ``page``
+        cookie the browser held dropped, and a ``Cookie`` header left with
+        none taken out.
+    """
+    lines = head[: -len(HEAD_END)].split(b"\r\n")
+    kept_lines = [lines[0]]
+    for line in lines[1:]:
+        name, separator, value = line.partition(b":")
+        if separator and name.strip().lower() == b"cookie":
+            pairs = []
+            for pair in value.decode("latin-1").split(";"):
+                key, equals, found = pair.strip().partition("=")
+                if not key or key == page:
+                    continue
+                pairs.append((page if key == kept else key) + equals + found)
+            if not pairs:
+                continue
+            line = b"Cookie: " + "; ".join(pairs).encode("latin-1")
+        kept_lines.append(line)
+    return b"\r\n".join(kept_lines) + HEAD_END
+
+
+def renamed_set_cookies(head: bytes, *, page: str, kept: str) -> bytes:
+    """An answer's head with the page's own cookie renamed to the name the browser keeps it under.
+
+    Args:
+        head: The answer's head, through its blank line.
+        page: The page's own fixed name for its login cookie.
+        kept: The name the browser keeps it under.
+
+    Returns:
+        The head with every ``Set-Cookie`` of ``page`` naming ``kept``;
+        every other line as it was.
+    """
+    lines = head[: -len(HEAD_END)].split(b"\r\n")
+    for index, line in enumerate(lines[1:], start=1):
+        name, separator, value = line.partition(b":")
+        if not separator or name.strip().lower() != b"set-cookie":
+            continue
+        text = value.decode("latin-1").strip()
+        cookie, equals, rest = text.partition("=")
+        if equals and cookie.strip() == page:
+            lines[index] = b"Set-Cookie: " + (kept + "=" + rest).encode("latin-1")
+    return b"\r\n".join(lines) + HEAD_END
+
+
 def split_target(target: str) -> tuple:
     """The path and the query of a request's target, in either form a client sends."""
     if "://" in target.split("?", 1)[0]:
@@ -531,7 +588,9 @@ def answer(
     client.sendall(b"\r\n".join(lines) + HEAD_END + body)
 
 
-def relay_answer(upstream: ConnectionReader, client: socket.socket, method: str):
+def relay_answer(
+    upstream: ConnectionReader, client: socket.socket, method: str, rename=None
+):
     """Pass the page's answer to one request back to the browser.
 
     An interim answer is passed on and the final one read after it. The
@@ -541,6 +600,8 @@ def relay_answer(upstream: ConnectionReader, client: socket.socket, method: str)
         upstream: The connection to the page, read through its buffer.
         client: The browser's connection.
         method: The request's method, ``HEAD`` taking an answer with no body.
+        rename: Called with each answer's head, returning the head the
+            browser is sent; None sends it as the page wrote it.
 
     Returns:
         True when both connections can carry the next request; False when
@@ -562,7 +623,7 @@ def relay_answer(upstream: ConnectionReader, client: socket.socket, method: str)
         if parsed is None:
             raise ConnectionError("the page answered with no status")
         version, status, headers = parsed
-        client.sendall(head)
+        client.sendall(rename(head) if rename is not None else head)
         if 100 <= status < 200 and status != 101:
             continue
         break
@@ -785,7 +846,8 @@ class InstanceForwarder:
             record: The instance's record: ``account``, ``port``, the
                 secret its tokens are signed with, and what the hooks read.
             hooks: The module's hooks: ``on_first_start``, ``admit``,
-                ``connect`` and ``forwarder_fields``.
+                ``connect`` and ``forwarder_fields``, and ``page_cookie``
+                where the page's login cookie has a fixed name of its own.
             listen_host: The address the forwarder listens on.
             clock: The hub's time in seconds since the epoch, which a
                 token's expiry is judged by.
@@ -934,6 +996,7 @@ class InstanceForwarder:
                 is_closing=is_ending,
             )
             return _CLOSED if is_ending else kept
+        head = self._passed_head(head)
         if is_upgrade(headers):
             if kept is not None:
                 kept.socket.close()
@@ -1001,7 +1064,26 @@ class InstanceForwarder:
             return None
         if not reader.copy_exact(length, upstream.socket):
             raise ConnectionError("the browser ended its request early")
-        return relay_answer(upstream, client, method)
+        rename = self._answer_head if self._cookie_names() else None
+        return relay_answer(upstream, client, method, rename)
+
+    def _cookie_names(self) -> tuple:
+        """``(page, kept)``: the page's own cookie name and the entry's, or empty when none is renamed."""
+        page = str(getattr(self._hooks, "page_cookie", "") or "")
+        kept = str(self.record.get("cookie_name", "") or "")
+        return (page, kept) if page and kept else ()
+
+    def _passed_head(self, head: bytes) -> bytes:
+        """A request's head as the page is sent it: the entry's cookie under the page's own name."""
+        names = self._cookie_names()
+        if not names:
+            return head
+        return renamed_request_cookies(head, kept=names[1], page=names[0])
+
+    def _answer_head(self, head: bytes) -> bytes:
+        """An answer's head as the browser is sent it: the page's cookie under the entry's name."""
+        page, kept = self._cookie_names()
+        return renamed_set_cookies(head, page=page, kept=kept)
 
     def _request(self, method: str, target: str, headers: list) -> ForwardRequest:
         """One request as the module's rule reads it."""

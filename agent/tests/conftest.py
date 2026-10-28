@@ -105,6 +105,7 @@ REFUSED_PROGRAMS = frozenset(
         "shutdown",
         "poweroff",
         "launchctl",
+        "hdiutil",
         "installer",
         "pkgutil",
         "dscl",

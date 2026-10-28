@@ -1,0 +1,17 @@
+[Unit]
+Description=SiYuan for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+EnvironmentFile=/etc/neutrino/agent/siyuan/%i.env
+WorkingDirectory=~
+UMask=077
+ExecStart=/var/lib/neutrino/agent/siyuan/app/resources/kernel/SiYuan-Kernel serve --wd=/var/lib/neutrino/agent/siyuan/app/resources --workspace=${NEUTRINO_SIYUAN_WORKSPACE} --home-dir=${NEUTRINO_SIYUAN_DATA} --port=${NEUTRINO_SIYUAN_PORT}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

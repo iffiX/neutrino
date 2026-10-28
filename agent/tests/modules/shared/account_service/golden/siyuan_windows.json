@@ -1,0 +1,4 @@
+{
+  "script": "@echo off\r\nset \"SIYUAN_ACCESS_AUTH_CODE=code\"\r\ncd /d \"%USERPROFILE%\"\r\nC:\\ProgramData\\Neutrino\\agent\\state\\siyuan\\app\\resources\\kernel\\SiYuan-Kernel.exe serve --wd=C:\\ProgramData\\Neutrino\\agent\\state\\siyuan\\app\\resources --workspace=C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\siyuan\\workspace --home-dir=C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\siyuan --port=41235\r\n",
+  "arguments": "/s /c \"C:\\ProgramData\\Neutrino\\agent\\state\\siyuan\\run\\ann.cmd >> C:\\ProgramData\\Neutrino\\agent\\state\\siyuan\\ann.log 2>&1\""
+}

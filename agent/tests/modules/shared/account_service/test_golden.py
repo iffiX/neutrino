@@ -1,12 +1,13 @@
-"""The service texts of VS Code, code-server, CloudCLI and Codeg, pinned byte for byte.
+"""The service texts of VS Code, code-server, CloudCLI, Codeg and SiYuan, pinned byte for byte.
 
 The fixtures under ``golden/`` were rendered by the code before the shared
 account service layer existed, and the hooks of each module through the
 layer render the same texts now, with two changes: CloudCLI's Node.js is
 its ``node`` artifact, so every path that named
 ``node-v<version>-<os>-<arch>`` names ``node``, and its npm runs with the
-registry the agent chose as ``--registry`` on its command line. Codeg's were
-rendered by its hooks through the layer when the module arrived. What these pin: the unit templates, the environment
+registry the agent chose as ``--registry`` on its command line. Codeg's and
+SiYuan's were rendered by their hooks through the layer when each module
+arrived. What these pin: the unit templates, the environment
 files, the LaunchDaemon plists, the Windows task arguments and scripts, and
 the install commands each module produces for fixed inputs.
 """
@@ -32,6 +33,8 @@ from neutrino_agent.modules.shared.account_service import windows as windows_lay
 from neutrino_agent.modules.shared.instances import NOBODY, TEMPLATE_ACCOUNT
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.modules.siyuan.config import SiyuanConfig
+from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
@@ -424,6 +427,57 @@ def test_codeg_windows_script_and_arguments():
     service = hooks.service(codeg_instance("login-pw"), WIN_ANN, CODEG_RECORD)
 
     assert masked(windows_layer.render_script(service)) == texts["script"]
+    assert windows_layer.arguments_of(service, machine) == texts["arguments"]
+
+
+# --- SiYuan ---
+
+SIYUAN_RECORD = {"account": "ann", "port": 6810, "kernel_port": 41235, "secret": "s"}
+
+
+def siyuan_instance(password=""):
+    config = SiyuanConfig.from_dict(
+        {
+            "instances": [
+                {
+                    "account": "ann",
+                    "secret": "s",
+                    "access_code": "code",
+                    "password": password,
+                }
+            ]
+        }
+    )
+    return config.instances[0]
+
+
+def test_siyuan_linux_unit_and_environment():
+    machine = machine_for("linux", "siyuan", LINUX_STATE, LINUX_CONFIG)
+    hooks = bound(SiyuanHooks, "linux", machine)
+
+    service = hooks.service(siyuan_instance(), ANN, SIYUAN_RECORD)
+
+    assert unit_text(hooks, machine) == golden_text("siyuan_linux_unit.service")
+    assert environment_text(service) == golden_text("siyuan_linux_environment.env")
+
+
+def test_siyuan_darwin_plist():
+    machine = machine_for("darwin", "siyuan", MAC_STATE, MAC_CONFIG)
+    hooks = bound(SiyuanHooks, "darwin", machine)
+
+    service = hooks.service(siyuan_instance(), MAC_ANN, SIYUAN_RECORD)
+
+    assert plist_text(service, machine, MAC_ANN) == golden_text("siyuan_darwin.plist")
+
+
+def test_siyuan_windows_script_and_arguments():
+    machine = machine_for("windows", "siyuan", WIN_STATE, WIN_CONFIG)
+    hooks = bound(SiyuanHooks, "windows", machine)
+    texts = golden_json("siyuan_windows.json")
+
+    service = hooks.service(siyuan_instance("login-pw"), WIN_ANN, SIYUAN_RECORD)
+
+    assert windows_layer.render_script(service) == texts["script"]
     assert windows_layer.arguments_of(service, machine) == texts["arguments"]
 
 

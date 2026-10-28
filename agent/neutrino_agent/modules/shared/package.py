@@ -1,8 +1,9 @@
 """Installing, removing and verifying one ``hub`` module.
 
 Execution, and nothing else. The recipe the hub resolved for this machine
-names the module's artifacts, each ``{name, kind, digest, directory}``,
-whose bytes come down a ``package {module, artifact, digest}`` stream. Each
+names the module's artifacts, each ``{name, kind, digest, directory}`` and a
+``dmg`` its ``member``, whose bytes come down a ``package {module, artifact,
+digest}`` stream. Each
 artifact lands as its kind says, the same way for every module: an archive
 unpacked under ``<directory>`` in the module's own directory and sealed, or
 directly in the module's directory when it names none; an installer package
@@ -214,7 +215,8 @@ def unpack_artifact(artifact: dict, path: str, *, module_dir: str, join) -> str:
     """Unpack an archive artifact under its directory in the module's, sealed.
 
     Args:
-        artifact: The recipe's artifact, of kind ``tar_gz`` or ``zip``.
+        artifact: The recipe's artifact, of kind ``tar_gz``, ``zip``,
+            ``dmg``, with the ``member`` it copies out, or ``nsis``.
         path: The archive on disk.
         module_dir: The module's directory under the state root.
         join: How the system joins a path.
@@ -230,16 +232,17 @@ def unpack_artifact(artifact: dict, path: str, *, module_dir: str, join) -> str:
     """
     kind = str(artifact.get("kind", "") or "")
     directory = str(artifact.get("directory", "") or "")
+    member = str(artifact.get("member", "") or "")
     if directory and not is_plain_name(directory):
         raise ModuleApplyError(
             "install_failed", {"detail": f"artifact directory {directory!r}"}
         )
     try:
         if not directory:
-            unpack_beside(path, kind, module_dir)
+            unpack_beside(path, kind, module_dir, member=member)
             return module_dir
         target = join(module_dir, directory)
-        unpack_into(path, kind, target)
+        unpack_into(path, kind, target, member=member)
         return target
     except (ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
         raise ModuleApplyError(
@@ -411,6 +414,7 @@ def stage_artifact(
     kind = str(artifact.get("kind", "") or "")
     name = str(artifact.get("name", "") or "")
     directory = str(artifact.get("directory", "") or "")
+    member = str(artifact.get("member", "") or "")
     if kind == AGENT_ARTIFACT_KIND_BINARY and binary_target:
         staged = binary_target + STAGED_SUFFIX
         shutil.copyfile(path, staged)
@@ -427,10 +431,10 @@ def stage_artifact(
     try:
         if directory:
             target = join(module_dir, directory)
-            unpack_into(path, kind, target + STAGED_SUFFIX)
+            unpack_into(path, kind, target + STAGED_SUFFIX, member=member)
             return [(target, target + STAGED_SUFFIX)]
         staging = join(module_dir, "." + name + STAGED_SUFFIX)
-        unpack_into(path, kind, staging)
+        unpack_into(path, kind, staging, member=member)
     except (ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
         raise ModuleApplyError(
             "install_failed", {"detail": str(error)[:200]}

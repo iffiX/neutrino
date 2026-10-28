@@ -1,7 +1,9 @@
 """A module's software from the hub, unpacked under the module's own directory.
 
 The archive comes down a package stream, a tarball or a zip as its
-publisher ships it. It is unpacked whole into a directory, refusing any
+publisher ships it, a macOS disk image whose one folder is copied out of it
+while it is attached read-only, or a Windows NSIS installer whose 7z archive
+the agent reads itself. It is unpacked whole into a directory, refusing any
 member that would land outside it, then sealed: owned by the agent's own
 account with every write bit taken away, so every account may read and run
 it and none may change it. An artifact's archive lands under the artifact's
@@ -20,30 +22,47 @@ import contextlib
 import os
 import shutil
 import stat
+import subprocess
 import tarfile
 import tempfile
 import zipfile
 
 from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KIND_DMG,
+    AGENT_ARTIFACT_KIND_NSIS,
     AGENT_ARTIFACT_KIND_TAR_GZ,
     AGENT_ARTIFACT_KIND_ZIP,
 )
+from neutrino_agent.modules.shared.seven_zip import extract_embedded
+
+# How long attaching, copying out of and detaching a disk image may take.
+DMG_STEP_TIMEOUT_S = 600
 
 
-def extract_archive(path: str, kind: str, directory: str) -> None:
+def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -> None:
     """Unpack an archive whole into a directory, refusing a path outside it.
 
     Args:
         path: The archive on disk.
-        kind: ``tar_gz`` or ``zip``.
+        kind: ``tar_gz``, ``zip``, ``dmg`` or ``nsis``.
         directory: Where it is unpacked.
+        member: The folder a ``dmg`` holds the program in, relative to the
+            image's root; unread for the other kinds.
 
     Raises:
-        ValueError: For an unknown kind or a member outside the directory.
+        ValueError: For an unknown kind, a member outside the directory, an
+            image that does not attach or holds no such folder, or an
+            installer whose archive does not read.
         tarfile.TarError: When a tarball cannot be read.
         zipfile.BadZipFile: When a zip cannot be read.
-        OSError: When the directory cannot be written.
+        OSError: When the directory cannot be written or a tool cannot run.
     """
+    if kind == AGENT_ARTIFACT_KIND_NSIS:
+        extract_embedded(path, directory)
+        return
+    if kind == AGENT_ARTIFACT_KIND_DMG:
+        copy_out_of_image(path, member, directory)
+        return
     if kind == AGENT_ARTIFACT_KIND_TAR_GZ:
         with tarfile.open(path, "r:*") as archive:
             if hasattr(tarfile, "data_filter"):
@@ -66,7 +85,45 @@ def extract_archive(path: str, kind: str, directory: str) -> None:
         raise ValueError(f"unknown archive kind {kind!r}")
 
 
-def unpack_into(path: str, kind: str, directory: str) -> None:
+def copy_out_of_image(path: str, member: str, directory: str) -> None:
+    """Copy one folder out of a macOS disk image attached read-only.
+
+    The image is attached at a mount point of its own with ``hdiutil
+    attach -nobrowse -readonly``, the folder's contents are copied with
+    ``ditto``, and the image is detached whatever happened.
+
+    Args:
+        path: The disk image.
+        member: The folder, relative to the image's root.
+        directory: Where its contents go.
+
+    Raises:
+        ValueError: For a member outside the image, an image that does not
+            attach, or a copy that fails.
+        OSError: When a tool cannot run.
+    """
+    parts = [part for part in member.split("/") if part]
+    if not parts or any(part in (".", "..") for part in parts):
+        raise ValueError(f"the image's folder {member!r} is outside it")
+    mount = tempfile.mkdtemp(prefix="neutrino_dmg_")
+    try:
+        _run_image_tool(
+            ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mount, path]
+        )
+        try:
+            source = os.path.join(mount, *parts)
+            if not os.path.isdir(source):
+                raise ValueError(f"the image holds no folder {member}")
+            _run_image_tool(["ditto", source, directory])
+        finally:
+            with contextlib.suppress(ValueError, OSError):
+                _run_image_tool(["hdiutil", "detach", mount])
+    finally:
+        with contextlib.suppress(OSError):
+            os.rmdir(mount)
+
+
+def unpack_into(path: str, kind: str, directory: str, *, member: str = "") -> None:
     """Unpack an artifact's archive under its directory and seal it.
 
     An archive whose members all sit under one top directory is unpacked
@@ -76,8 +133,9 @@ def unpack_into(path: str, kind: str, directory: str) -> None:
 
     Args:
         path: The archive on disk.
-        kind: ``tar_gz`` or ``zip``.
+        kind: ``tar_gz``, ``zip``, ``dmg`` or ``nsis``.
         directory: The artifact's directory.
+        member: The folder a ``dmg`` holds the program in.
 
     Raises:
         ValueError: For an unknown kind or a member outside the directory.
@@ -89,7 +147,7 @@ def unpack_into(path: str, kind: str, directory: str) -> None:
     os.makedirs(parent, mode=0o755, exist_ok=True)
     staging = tempfile.mkdtemp(prefix=".unpack_", dir=parent)
     try:
-        source = _unpacked_top(path, kind, staging)
+        source = _unpacked_top(path, kind, staging, member)
         remove_tree(directory)
         os.replace(source, directory)
     finally:
@@ -97,7 +155,7 @@ def unpack_into(path: str, kind: str, directory: str) -> None:
     seal_tree(directory)
 
 
-def unpack_beside(path: str, kind: str, directory: str) -> list:
+def unpack_beside(path: str, kind: str, directory: str, *, member: str = "") -> list:
     """Unpack an archive's files directly into a directory, each sealed.
 
     The archive's single top directory is dropped as :func:`unpack_into`
@@ -106,8 +164,9 @@ def unpack_beside(path: str, kind: str, directory: str) -> list:
 
     Args:
         path: The archive on disk.
-        kind: ``tar_gz`` or ``zip``.
+        kind: ``tar_gz``, ``zip``, ``dmg`` or ``nsis``.
         directory: The module's directory, made readable by every account.
+        member: The folder a ``dmg`` holds the program in.
 
     Returns:
         The paths placed, in name order.
@@ -123,7 +182,7 @@ def unpack_beside(path: str, kind: str, directory: str) -> list:
     staging = tempfile.mkdtemp(prefix=".unpack_", dir=directory)
     placed = []
     try:
-        source = _unpacked_top(path, kind, staging)
+        source = _unpacked_top(path, kind, staging, member)
         for name in sorted(os.listdir(source)):
             target = os.path.join(directory, name)
             if os.path.isdir(target) and not os.path.islink(target):
@@ -143,9 +202,9 @@ def unpack_beside(path: str, kind: str, directory: str) -> list:
     return placed
 
 
-def _unpacked_top(path: str, kind: str, staging: str) -> str:
+def _unpacked_top(path: str, kind: str, staging: str, member: str = "") -> str:
     """Unpack into staging and answer where the archive's files sit there."""
-    extract_archive(path, kind, staging)
+    extract_archive(path, kind, staging, member=member)
     names = os.listdir(staging)
     if len(names) == 1:
         top = os.path.join(staging, names[0])
@@ -224,3 +283,23 @@ def _check_member(name: str, directory: str) -> None:
     target = os.path.realpath(os.path.join(directory, name))
     if target != root and not target.startswith(root + os.sep):
         raise ValueError(f"the archive names a path outside it: {name}")
+
+
+def _run_image_tool(command: list) -> None:
+    """Run one of macOS's disk image tools; a failure is a ValueError with its last words.
+
+    Raises:
+        ValueError: When the tool exits other than 0 or does not finish.
+        OSError: When it cannot run.
+    """
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=DMG_STEP_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(f"{command[0]} did not finish") from error
+    if result.returncode != 0:
+        said = (result.stderr or result.stdout or "").strip()[-200:]
+        raise ValueError(
+            f"{command[0]} {command[1]} failed: {said or result.returncode}"
+        )

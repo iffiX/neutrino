@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>SIYUAN_ACCESS_AUTH_CODE</key>
+		<string>code</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.neutrino.siyuan.ann</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Application Support/Neutrino/agent/state/siyuan/app/kernel/SiYuan-Kernel</string>
+		<string>serve</string>
+		<string>--wd=/Library/Application Support/Neutrino/agent/state/siyuan/app</string>
+		<string>--workspace=/Users/ann/Library/Application Support/Neutrino/agent/siyuan/workspace</string>
+		<string>--home-dir=/Users/ann/Library/Application Support/Neutrino/agent/siyuan</string>
+		<string>--port=41235</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Neutrino/agent/siyuan_ann.log</string>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/Neutrino/agent/siyuan_ann.log</string>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>UserName</key>
+	<string>ann</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/ann</string>
+</dict>
+</plist>

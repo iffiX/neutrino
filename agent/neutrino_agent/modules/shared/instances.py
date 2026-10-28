@@ -139,6 +139,9 @@ class InstanceHooks:
             each instance; False for a page that admits the browser itself.
         base_port: The port the runner takes each instance's port from,
             the first free one from it up on loopback.
+        page_cookie: The fixed name of the page's own login cookie, which
+            the forwarder renames to the record's ``cookie_name`` toward the
+            browser and back toward the page; empty for a page with none.
         installing: The accounts whose install the module runs or waits on.
     """
 
@@ -151,6 +154,7 @@ class InstanceHooks:
     secret_field = "secret"
     is_forwarded = True
     base_port = 0
+    page_cookie = ""
 
     def __init__(self, *, platform, log=print):
         """

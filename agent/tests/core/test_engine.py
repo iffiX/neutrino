@@ -1510,6 +1510,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "vscode",
         "cloudcli",
         "codeg",
+        "siyuan",
         "terminal",
         "remote_desktop",
         "ssh_server",
@@ -1540,6 +1541,8 @@ def test_code_server_runs_on_a_mac_beside_vs_code_and_not_on_windows(tmp_path):
     assert "code_server" not in windows.module_runners
     assert "codeg" in mac.module_runners
     assert "codeg" in windows.module_runners
+    assert "siyuan" in mac.module_runners
+    assert "siyuan" in windows.module_runners
 
 
 def test_containers_run_in_a_podman_machine_on_windows_and_macos_alone(tmp_path):
@@ -1580,6 +1583,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "code_server",
         "cloudcli",
         "codeg",
+        "siyuan",
         "terminal",
         "remote_desktop",
         "ssh_server",
@@ -1593,6 +1597,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "code_server",
         "cloudcli",
         "codeg",
+        "siyuan",
         "terminal",
         "remote_desktop",
         "ssh_server",

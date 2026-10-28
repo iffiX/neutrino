@@ -26,7 +26,7 @@ SCHEME_PORTS = {"http": 80, "https": 443}
 CONFIGURED_STATES = ("stopped", "running")
 # The modules whose configured instances each answer on the port the agent
 # took for them, which their details report.
-INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg")
+INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg", "siyuan")
 # The modules whose instances publish their port only while they run.
 RUNNING_INSTANCE_MODULES = ("ssh_server",)
 # The container modules whose page the agent's forwarder serves at the port
@@ -55,7 +55,7 @@ def published_ports(
         Port to address. On TCP: 445 while the file share reports a share,
         the desktop's direct port while it is shared, the Gitea module's
         port and its own SSH server's while it reports a url, each
-        configured VS Code, code-server, CloudCLI or Codeg instance's port,
+        configured VS Code, code-server, CloudCLI, Codeg or SiYuan instance's port,
         each running SSH server instance's port, the port of a container
         module's forwarder, and each port a running container publishes on
         TCP. On UDP: each port a running container publishes on UDP, and

@@ -376,7 +376,7 @@ AGENT_DARWIN_PROGRAM_DIR = "/Library/Application Support/Neutrino/agent/app"
 AGENT_DARWIN_LINK_PATH = "/usr/local/bin/nagent"
 AGENT_DARWIN_PACKAGE_ID = "com.neutrino.agent"
 # The forwarders the agent keeps in front of a module's page (CloudCLI,
-# code-server, Codeg): how one request's head is read, how bytes are
+# code-server, Codeg, SiYuan): how one request's head is read, how bytes are
 # relayed, and how long a relayed connection may stay quiet.
 AGENT_FORWARD_HEAD_LIMIT_BYTES = 65536
 AGENT_FORWARD_CHUNK_BYTES = 65536
@@ -414,17 +414,26 @@ AGENT_METHOD_CONTAINER = "container"
 # that runs its containers.
 AGENT_CONTAINER_RUNNER = "container"
 AGENT_CONTAINERS_MODULE = "podman"
-# The kinds of artifact a ``hub`` recipe names: the two archives unpacked
-# under the module's directory, a program kept as the publisher's bytes, the
-# two installer packages, the two zstd files kept as they came, and an npm
-# package the module's runner installs.
+# The kinds of artifact a ``hub`` recipe names: the four kinds unpacked
+# under the module's directory, two archives, a macOS disk image whose one
+# folder is copied out and a Windows installer whose 7z archive is read, a
+# program kept as the publisher's bytes, the two installer packages, the two
+# zstd files kept as they came, and an npm package the module's runner
+# installs.
 AGENT_ARTIFACT_KIND_TAR_GZ = "tar_gz"
 AGENT_ARTIFACT_KIND_ZIP = "zip"
+AGENT_ARTIFACT_KIND_DMG = "dmg"
+AGENT_ARTIFACT_KIND_NSIS = "nsis"
 AGENT_ARTIFACT_KIND_BINARY = "binary"
 AGENT_ARTIFACT_KIND_MSI = "msi"
 AGENT_ARTIFACT_KIND_PKG = "pkg"
 AGENT_ARTIFACT_KIND_NPM = "npm"
-AGENT_ARTIFACT_ARCHIVE_KINDS = (AGENT_ARTIFACT_KIND_TAR_GZ, AGENT_ARTIFACT_KIND_ZIP)
+AGENT_ARTIFACT_ARCHIVE_KINDS = (
+    AGENT_ARTIFACT_KIND_TAR_GZ,
+    AGENT_ARTIFACT_KIND_ZIP,
+    AGENT_ARTIFACT_KIND_DMG,
+    AGENT_ARTIFACT_KIND_NSIS,
+)
 # What a kept artifact's file is named after its artifact, by kind. Podman
 # reads an image's compression from the end of its name.
 AGENT_ARTIFACT_KEPT_SUFFIXES = {

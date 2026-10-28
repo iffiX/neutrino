@@ -15,7 +15,10 @@ the hooks' decision; requests on one browser connection reach the page over
 one kept connection, their heads unchanged and each judged again; a chunked
 body is 411 and a page that does not answer 502; both sockets send at once;
 a WebSocket is relayed both ways; a taken port is reported until it frees;
-a forwarder follows the record fields the hooks name; and a token's expiry
+a forwarder follows the record fields the hooks name; a page's own fixed
+login cookie is renamed to the entry's name in every ``Set-Cookie`` it
+returns and back to its own in every request, a WebSocket's included, the
+browser's own cookie of that name dropped; and a token's expiry
 is judged by the hub's time, so a machine whose clock is hours off, or is
 set while the socket stays open, accepts a fresh one.
 """
@@ -49,6 +52,8 @@ from neutrino_agent.modules.shared.http_forward import (
     read_head,
     refused,
     relay_answer,
+    renamed_request_cookies,
+    renamed_set_cookies,
     split_target,
     take_token,
 )
@@ -756,3 +761,116 @@ def test_a_token_works_after_the_machines_clock_is_set_while_the_socket_stays_op
 
     assert forwarder.take_token(hub_minted_token()) is True
     assert abs(clock.offset) < 1.0
+
+
+# --- a page's own login cookie, renamed both ways ---
+
+
+def test_a_requests_cookie_is_renamed_to_the_pages_own_and_its_namesake_dropped():
+    head = (
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        b"Cookie: a=1; siyuan=theirs; neutrino_abc=mine\r\n"
+        b"cookie: siyuan=other\r\nAccept: */*\r\n\r\n"
+    )
+
+    renamed = renamed_request_cookies(head, kept="neutrino_abc", page="siyuan")
+
+    assert renamed == (
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        b"Cookie: a=1; siyuan=mine\r\nAccept: */*\r\n\r\n"
+    )
+
+
+def test_a_set_cookie_of_the_pages_own_name_is_renamed_and_others_kept():
+    head = (
+        b"HTTP/1.1 200 OK\r\nSet-Cookie: siyuan=v1; Path=/; HttpOnly\r\n"
+        b"set-cookie: siyuanx=v2\r\nSet-Cookie: other=v3\r\n\r\n"
+    )
+
+    renamed = renamed_set_cookies(head, page="siyuan", kept="neutrino_abc")
+
+    assert renamed == (
+        b"HTTP/1.1 200 OK\r\nSet-Cookie: neutrino_abc=v1; Path=/; HttpOnly\r\n"
+        b"set-cookie: siyuanx=v2\r\nSet-Cookie: other=v3\r\n\r\n"
+    )
+
+
+def test_a_relayed_answer_takes_the_rename():
+    left, right = socket.socketpair()
+    page_left, page_right = socket.socketpair()
+    with left, right, page_left, page_right:
+        page_left.sendall(
+            b"HTTP/1.1 200 OK\r\nSet-Cookie: siyuan=v; Path=/\r\n"
+            b"Content-Length: 2\r\n\r\nok"
+        )
+        assert relay_answer(
+            ConnectionReader(page_right),
+            left,
+            "GET",
+            lambda head: renamed_set_cookies(head, page="siyuan", kept="neutrino_x"),
+        )
+        received = right.recv(65536)
+    assert b"Set-Cookie: neutrino_x=v; Path=/\r\n" in received
+    assert received.endswith(b"\r\n\r\nok")
+
+
+class RenamingHooks(DemoHooks):
+    """Hooks whose page keeps its login in a cookie of its own fixed name."""
+
+    page_cookie = "siyuan"
+
+    def admit(self, request, record):
+        if request.cookie_values(record["cookie_name"]):
+            return RELAY
+        return refused()
+
+
+def test_the_forwarder_renames_the_cookie_toward_the_page_websocket_included():
+    page = FakePage()
+    forwarder = InstanceForwarder(
+        name="demo",
+        record={
+            "account": "ann",
+            "port": free_port(),
+            "secret": SECRET,
+            "cookie_name": "neutrino_abc",
+        },
+        hooks=RenamingHooks(page.port),
+        log=lambda line: None,
+        ready_poll_s=0.01,
+        retry_s=0.01,
+    )
+    try:
+        forwarder.start()
+        wait_until(lambda: forwarder.is_listening)
+
+        answer = exchange(
+            forwarder.port,
+            b"GET /stage HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Cookie: siyuan=forged; neutrino_abc=v\r\nConnection: close\r\n\r\n",
+        )
+        with socket.create_connection(("127.0.0.1", forwarder.port), timeout=5) as ws:
+            ws.sendall(
+                b"GET /ws?type=main HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                b"Origin: http://127.0.0.1\r\nCookie: neutrino_abc=v\r\n"
+                b"Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
+            )
+            received = b""
+            while b"\r\n\r\n" not in received:
+                received += ws.recv(65536)
+        refused_answer = exchange(
+            forwarder.port,
+            b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: siyuan=v\r\n"
+            b"Connection: close\r\n\r\n",
+        )
+    finally:
+        forwarder.close()
+        page.stop()
+
+    assert answer.startswith(b"HTTP/1.1 200")
+    assert b"Cookie: siyuan=v\r\n" in page.requests[0]
+    assert b"forged" not in page.requests[0]
+    assert b"neutrino_abc" not in page.requests[0]
+    assert received.startswith(b"HTTP/1.1 101")
+    assert b"Cookie: siyuan=v\r\n" in page.requests[1]
+    assert refused_answer.startswith(b"HTTP/1.1 401")

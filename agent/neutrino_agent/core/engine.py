@@ -99,6 +99,7 @@ from neutrino_agent.modules.shared.package import (
     verify_detail,
     verify_passes,
 )
+from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
@@ -129,6 +130,7 @@ CloudcliModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=CloudcliHooks
 )
 CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHooks)
+SiyuanModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=SiyuanHooks)
 SshServerModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=SshServerHooks
 )
@@ -295,6 +297,7 @@ class ModuleEngine(ReconcileWorker):
                 CodeServerModuleRunner,
                 CloudcliModuleRunner,
                 CodegModuleRunner,
+                SiyuanModuleRunner,
             ]
         else:
             if "smb_server" in platform.capabilities:
@@ -306,6 +309,7 @@ class ModuleEngine(ReconcileWorker):
                     kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
                 kinds.append(CodegModuleRunner)
+                kinds.append(SiyuanModuleRunner)
                 if platform.os_name in ("windows", "darwin"):
                     kinds.append(PodmanMachineModuleRunner)
         kinds.append(TerminalModuleRunner)

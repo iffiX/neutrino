@@ -3,7 +3,11 @@
 What these pin: a tarball and a zip land whole; an unknown kind and a
 member outside the directory are refused; a sealed tree has no write bit
 left; removing a sealed tree takes all of it; and an archive placed beside
-what a directory holds replaces its namesakes and leaves the rest.
+what a directory holds replaces its namesakes and leaves the rest. A disk
+image, against faked ``hdiutil`` and ``ditto`` on ``PATH``, is attached
+read-only at a mount point of its own, its one folder copied out and sealed,
+and detached also when the folder is missing; an installer's 7z archive
+lands whole under the artifact's directory.
 """
 
 import io
@@ -200,3 +204,115 @@ def test_an_archive_placed_beside_drops_its_one_top_directory(tmp_path):
     unpack_beside(str(tmp_path / "cli.zip"), "zip", str(tmp_path / "module"))
 
     assert os.listdir(tmp_path / "module") == ["code.exe"]
+
+
+# --- a disk image and an installer ---
+
+FAKE_HDIUTIL = """#!/bin/sh
+echo "hdiutil $*" >> "$FAKE_LOG"
+if [ "$1" = attach ]; then
+    [ -n "$FAKE_ATTACH_FAILS" ] && { echo "hdiutil: attach failed - corrupt image" >&2; exit 1; }
+    for last; do :; done
+    mount=""
+    while [ $# -gt 0 ]; do
+        [ "$1" = -mountpoint ] && mount="$2"
+        shift
+    done
+    cp -R "$FAKE_IMAGE/." "$mount/"
+    exit 0
+fi
+if [ "$1" = detach ]; then
+    rm -rf "$2"/*
+    exit 0
+fi
+exit 2
+"""
+FAKE_DITTO = """#!/bin/sh
+echo "ditto $*" >> "$FAKE_LOG"
+mkdir -p "$2" && cp -R "$1/." "$2/"
+"""
+
+
+def _fake_image_tools(tmp_path, monkeypatch) -> str:
+    """hdiutil and ditto on PATH, an image holding SiYuan's app layout; the log they write."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    for name, text in (("hdiutil", FAKE_HDIUTIL), ("ditto", FAKE_DITTO)):
+        (tools / name).write_text(text)
+        (tools / name).chmod(0o755)
+    image = tmp_path / "image" / "SiYuan.app" / "Contents" / "Resources" / "kernel"
+    image.mkdir(parents=True)
+    (image / "SiYuan-Kernel").write_text("kernel")
+    (image.parent / "stage").mkdir()
+    log = tmp_path / "tools.log"
+    monkeypatch.setenv("PATH", f"{tools}:{os.environ['PATH']}")
+    monkeypatch.setenv("FAKE_IMAGE", str(tmp_path / "image"))
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    return str(log)
+
+
+def test_a_disk_image_is_attached_read_only_and_its_folder_copied_out(
+    tmp_path, monkeypatch
+):
+    log = _fake_image_tools(tmp_path, monkeypatch)
+    dmg = tmp_path / "siyuan.dmg"
+    dmg.write_bytes(b"image")
+    target = tmp_path / "state" / "siyuan" / "app"
+
+    unpack_into(str(dmg), "dmg", str(target), member="SiYuan.app/Contents/Resources")
+
+    assert (target / "kernel" / "SiYuan-Kernel").read_text() == "kernel"
+    assert (target / "stage").is_dir()
+    assert (
+        stat.S_IMODE(os.stat(target / "kernel" / "SiYuan-Kernel").st_mode) & 0o222 == 0
+    )
+    lines = open(log).read().splitlines()
+    attach = lines[0].split()
+    assert attach[:5] == ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint"]
+    assert attach[6] == str(dmg)
+    mount = attach[5]
+    assert (
+        lines[1] == f"ditto {mount}/SiYuan.app/Contents/Resources {lines[1].split()[2]}"
+    )
+    assert lines[2] == f"hdiutil detach {mount}"
+    assert not os.path.exists(mount)
+
+
+def test_an_image_without_the_folder_is_refused_and_detached(tmp_path, monkeypatch):
+    log = _fake_image_tools(tmp_path, monkeypatch)
+    dmg = tmp_path / "siyuan.dmg"
+    dmg.write_bytes(b"image")
+
+    with pytest.raises(ValueError, match="no folder Other.app"):
+        extract_archive(str(dmg), "dmg", str(tmp_path / "out"), member="Other.app")
+
+    assert open(log).read().splitlines()[-1].startswith("hdiutil detach ")
+
+
+def test_an_image_that_does_not_attach_or_a_member_outside_is_refused(
+    tmp_path, monkeypatch
+):
+    _fake_image_tools(tmp_path, monkeypatch)
+    dmg = tmp_path / "siyuan.dmg"
+    dmg.write_bytes(b"image")
+
+    with pytest.raises(ValueError, match="outside"):
+        extract_archive(str(dmg), "dmg", str(tmp_path / "out"), member="../x")
+    monkeypatch.setenv("FAKE_ATTACH_FAILS", "1")
+    with pytest.raises(ValueError, match="corrupt image"):
+        extract_archive(str(dmg), "dmg", str(tmp_path / "out"), member="SiYuan.app")
+
+
+def test_an_installer_lands_whole_under_the_artifacts_directory(tmp_path):
+    archive = (
+        os.path.dirname(__file__) + os.sep + "seven_zip_archives" + os.sep + "copy.7z"
+    )
+    installer = tmp_path / "siyuan-win.exe"
+    installer.write_bytes(b"MZ" + b"\x00" * 600 + open(archive, "rb").read())
+    target = tmp_path / "state" / "siyuan" / "app"
+
+    unpack_into(str(installer), "nsis", str(target))
+
+    assert (target / "top.txt").read_bytes() == b"top level\n"
+    assert (target / "dir" / "sub" / "notes.md").exists()
+    assert stat.S_IMODE(os.stat(target / "top.txt").st_mode) & 0o222 == 0
