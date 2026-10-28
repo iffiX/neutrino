@@ -6,6 +6,13 @@
   "publisher": "podman-container-tools/podman",
   "license": "Apache-2.0",
   "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v{version}", "_source_scan": "scan: allow",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "The declared containers' volumes stay, and on Windows and macOS so does the Podman machine.",
+      "zh-CN": "声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。"
+    }
+  },
   "platforms": {
     "linux-debian": {
       "runner": "podman",

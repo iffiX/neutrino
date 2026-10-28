@@ -6,6 +6,13 @@
   "publisher": "siteboon/claudecodeui",
   "license": "AGPL-3.0",
   "corresponding_source": "https://github.com/siteboon/claudecodeui/tree/v{version}", "_source_scan": "scan: allow",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's CloudCLI data stays in {data_dir}.",
+      "zh-CN": "每个账户的 CloudCLI 数据留在 {data_dir}。"
+    }
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "cloudcli",

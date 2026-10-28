@@ -6,6 +6,13 @@
   "publisher": "Microsoft",
   "license": "Microsoft Software License Terms",
   "corresponding_source": "https://github.com/microsoft/vscode/tree/{version}/cli",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's settings and extensions stay in its home folder.",
+      "zh-CN": "每个账户的设置和扩展都留在它的主目录里。"
+    }
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "vscode",

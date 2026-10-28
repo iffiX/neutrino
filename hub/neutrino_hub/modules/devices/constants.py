@@ -290,6 +290,15 @@ DEVICE_AGENT_MODULES = (
 # The system whose accounts start a process only with their password, so
 # every feature of an account there is sent the account's login.
 DEVICE_PASSWORD_OS = "windows"
+# A module's per-account data directory on each system (module_template.md,
+# "Disk layout"). An uninstall line's ``{data_dir}`` names it. A machine that
+# has not reported its system takes the Linux one.
+DEVICE_ACCOUNT_DATA_DIRS = {
+    "linux": "~/.local/share/neutrino/agent/{module}/",
+    "darwin": "~/Library/Application Support/Neutrino/agent/{module}/",
+    "windows": "%LOCALAPPDATA%\\Neutrino\\agent\\{module}\\",
+}
+DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS = "linux"
 # The file share's SMB user of an enabled account (agent.md, "The file
 # share's accounts"): ``neutrino-<account>`` on every system, cut to 20
 # characters on Windows; its generated password, 24 random bytes in

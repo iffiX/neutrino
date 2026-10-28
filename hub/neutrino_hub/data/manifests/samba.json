@@ -1,9 +1,16 @@
 {
-  "_comment": "The file share. On Linux the machine's own package manager installs Samba; Windows and macOS hold their own SMB server, so their entries are builtin. The shares, users and allowed subnets come from the hub's state for the device.",
+  "_comment": "The file share. On Linux the machine's own package manager installs Samba; Windows and macOS hold their own SMB server, so their entries are builtin. The shares, the SMB users and their passwords come from the hub's state for the device.",
   "name": "samba",
   "title": "File share",
   "description": "Serves shares over SMB from this machine",
   "publisher": "Samba Team",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "The shared folders and the files in them stay where they are.",
+      "zh-CN": "共享的文件夹和里面的文件都原样保留。"
+    }
+  },
   "platforms": {
     "linux-debian": {
       "runner": "samba",

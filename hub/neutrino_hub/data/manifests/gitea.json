@@ -7,6 +7,13 @@
   "license": "MIT",
   "corresponding_source": "https://github.com/go-gitea/gitea/tree/v{version}",
   "is_data_forward_only": true,
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "The repositories, Gitea's accounts and its database stay in its data directory.",
+      "zh-CN": "仓库、Gitea 的账户和数据库都留在它的数据目录里。"
+    }
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "gitea",

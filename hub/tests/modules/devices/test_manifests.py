@@ -29,6 +29,7 @@ from neutrino_hub.modules.devices.manifests import (
     entry_version,
     load_module_manifests,
     load_tool_manifests,
+    manifest_methods,
     module_recipe,
     platform_keys,
     resolve_platform_entry,
@@ -315,6 +316,10 @@ def sample_manifest() -> dict:
         "publisher": "vendor/sample",
         "license": "MIT",
         "corresponding_source": "https://vendor.example/tree/v{version}",
+        "uninstall_data": {
+            "is_deleted": False,
+            "text": {"en": "Data stays.", "zh-CN": "数据留下。"},
+        },
         "platforms": {
             "linux-debian": {
                 "runner": "sample",
@@ -889,6 +894,81 @@ def test_siyuan_pins_the_publishers_desktop_build_per_platform_from_two_sources(
     assert "sources" not in recipe["params"]["artifacts"][0]
 
 
+# The line each shipped module's uninstall dialog shows (ui_text.md, "The
+# uninstall dialog's words"), and whether it is in the error tone.
+SHIPPED_UNINSTALL_LINES = {
+    "samba": (
+        False,
+        "The shared folders and the files in them stay where they are.",
+        "共享的文件夹和里面的文件都原样保留。",
+    ),
+    "podman": (
+        False,
+        "The declared containers' volumes stay, and on Windows and macOS so does "
+        "the Podman machine.",
+        "声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。",
+    ),
+    "gitea": (
+        False,
+        "The repositories, Gitea's accounts and its database stay in its data "
+        "directory.",
+        "仓库、Gitea 的账户和数据库都留在它的数据目录里。",
+    ),
+    "vscode": (
+        False,
+        "Each account's settings and extensions stay in its home folder.",
+        "每个账户的设置和扩展都留在它的主目录里。",
+    ),
+    "code_server": (
+        False,
+        "Each account's code-server settings and extensions stay in its home folder.",
+        "每个账户的 code-server 设置和扩展都留在它的主目录里。",
+    ),
+    "cloudcli": (
+        False,
+        "Each account's CloudCLI data stays in {data_dir}.",
+        "每个账户的 CloudCLI 数据留在 {data_dir}。",
+    ),
+    "codeg": (
+        False,
+        "Each account's Codeg data stays in {data_dir}.",
+        "每个账户的 Codeg 数据留在 {data_dir}。",
+    ),
+    "siyuan": (
+        False,
+        "Each account's notes stay in {data_dir}.",
+        "每个账户的笔记留在 {data_dir}。",
+    ),
+    "hermes_webui": (
+        True,
+        "The conversations, settings and workspace files are deleted and cannot be "
+        "recovered.",
+        "对话、设置和工作区里的文件都会删除，无法恢复。",
+    ),
+    "ayakaleaf": (
+        True,
+        "The papers and projects are deleted and cannot be recovered.",
+        "论文和项目都会删除，无法恢复。",
+    ),
+}
+
+
+def test_every_shipped_module_a_person_can_uninstall_names_its_line():
+    """Each manifest with an entry of another method than ``agent`` carries
+    the line of ui_text.md; the agent's own modules carry none."""
+    manifests = load_module_manifests()
+
+    for name, manifest in manifests.items():
+        if manifest_methods(manifest) == ["agent"]:
+            assert "uninstall_data" not in manifest, name
+            continue
+        is_deleted, english, chinese = SHIPPED_UNINSTALL_LINES[name]
+        assert manifest["uninstall_data"] == {
+            "is_deleted": is_deleted,
+            "text": {"en": english, "zh-CN": chinese},
+        }, name
+
+
 def test_every_shipped_uninstall_data_agrees_with_its_entries(manifests_dir):
     manifest = valid_manifest()
     manifest["uninstall_data"] = {
@@ -1225,6 +1305,7 @@ def test_the_loader_takes_an_agent_and_a_builtin_entry_with_empty_params(manifes
 
 def test_the_loader_takes_a_container_entry_of_images(manifests_dir):
     manifest = valid_manifest()
+    manifest["uninstall_data"]["is_deleted"] = True
     manifest["platforms"] = {
         "linux": {
             "runner": "container",
@@ -1413,6 +1494,16 @@ def _uninstall_data_deleted_beside_kept_data(manifest):
     }
 
 
+def _without_uninstall_data(manifest):
+    del manifest["uninstall_data"]
+
+
+def _uninstall_data_on_an_agent_module(manifest):
+    manifest["platforms"] = {
+        "linux": {"runner": "sample", "install": {"method": "agent", "params": {}}}
+    }
+
+
 @pytest.mark.parametrize(
     "spoil, said",
     [
@@ -1450,6 +1541,8 @@ def _uninstall_data_deleted_beside_kept_data(manifest):
         (_uninstall_data_of_another_shape, "uninstall_data"),
         (_uninstall_data_in_one_language, "zh-CN"),
         (_uninstall_data_deleted_beside_kept_data, "disagrees"),
+        (_without_uninstall_data, "uninstall_data is missing"),
+        (_uninstall_data_on_an_agent_module, "carries"),
     ],
 )
 def test_the_loader_refuses_a_manifest_outside_the_shapes(spoil, said, manifests_dir):
@@ -1539,6 +1632,7 @@ def test_the_loader_refuses_a_tool_manifest_outside_its_shape(
 def container_manifest(**params) -> dict:
     """The sample module with one ``container`` entry on Linux of these params."""
     manifest = valid_manifest()
+    manifest["uninstall_data"]["is_deleted"] = True
     manifest["platforms"] = {
         "linux": {
             "runner": "container",

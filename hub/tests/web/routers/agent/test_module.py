@@ -299,48 +299,70 @@ def test_a_builtin_entry_reads_builtin_where_the_system_holds_the_software(
     assert package["method"] == "system"
 
 
-def test_whether_an_uninstall_keeps_the_data_reaches_the_row(api, monkeypatch):
-    """The confirmation says which, so the row carries the entry's word; a
-    ``system`` entry keeps the data."""
+@pytest.mark.parametrize(
+    "platform, data_dir",
+    [
+        (
+            {"os": "linux", "family": "debian", "arch": "amd64"},
+            "~/.local/share/neutrino/agent/cloudcli/",
+        ),
+        (
+            {"os": "darwin", "arch": "arm64"},
+            "~/Library/Application Support/Neutrino/agent/cloudcli/",
+        ),
+        (
+            {"os": "windows", "arch": "amd64"},
+            "%LOCALAPPDATA%\\Neutrino\\agent\\cloudcli\\",
+        ),
+    ],
+)
+def test_the_uninstall_line_names_the_machine_s_data_directory(
+    api, monkeypatch, platform, data_dir
+):
+    """The row carries the manifest's line with ``{data_dir}`` written in for
+    the machine's system, in both languages."""
     client, runtime = api
-    hub_entry = {
-        "runner": "sample",
-        "install": {
-            "method": "hub",
-            "params": {
-                "version": "1.0",
-                "releases": [],
-                "artifacts": [],
-                "verify": "sample --version",
-                "uninstall": {"post_uninstall": [], "is_data_kept": False},
-            },
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.device_platform[DEVICE] = platform
+
+    rows = {
+        row["name"]: row
+        for row in client.get(MODULE_PATH, params={"device_id": DEVICE}).json()[
+            "modules"
+        ]
+    }
+
+    assert rows["cloudcli"]["uninstall_data"] == {
+        "is_deleted": False,
+        "text": {
+            "en": f"Each account's CloudCLI data stays in {data_dir}.",
+            "zh-CN": f"每个账户的 CloudCLI 数据留在 {data_dir}。",
         },
     }
-    monkeypatch.setattr(
-        device_modules,
-        "load_module_manifests",
-        lambda: {
-            "sample": {
-                "title": "Sample",
-                "platforms": {
-                    "linux-debian": hub_entry,
-                    "linux-rhel": system_entry("sample", ["sample"]),
-                },
-            }
-        },
-    )
 
+
+def test_the_uninstall_line_says_whether_the_data_goes(api, monkeypatch):
+    """A container module's data goes with it, a system module's stays, and
+    a module the agent carries has no line."""
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
     runtime.device_platform[DEVICE] = {
         "os": "linux",
         "family": "debian",
         "arch": "amd64",
     }
-    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
-    assert row["is_data_kept"] is False
 
-    runtime.device_platform[DEVICE] = {"os": "linux", "family": "rhel", "arch": "amd64"}
-    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
-    assert row["is_data_kept"] is True
+    rows = {
+        row["name"]: row
+        for row in client.get(MODULE_PATH, params={"device_id": DEVICE}).json()[
+            "modules"
+        ]
+    }
+
+    assert rows["hermes_webui"]["uninstall_data"]["is_deleted"] is True
+    assert rows["samba"]["uninstall_data"]["is_deleted"] is False
+    assert rows["terminal"]["uninstall_data"] is None
+    assert "is_data_kept" not in rows["samba"]
 
 
 def test_the_method_reaches_the_row(api):

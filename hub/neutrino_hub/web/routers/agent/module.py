@@ -72,11 +72,11 @@ from neutrino_hub.modules.devices.module_table import (
     gateway_module_names,
 )
 from neutrino_hub.modules.devices.manifests import (
-    entry_params,
     load_module_manifests,
     manifest_methods,
     platform_keys,
     resolve_platform_entry,
+    uninstall_line,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
@@ -213,7 +213,7 @@ def list_modules(
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(entry is not None if keys and not is_carried else True),
-                is_data_kept=_is_data_kept(entry),
+                uninstall_data=uninstall_line(manifest, platform),
                 publisher=resolved["publisher"],
                 license=resolved["license"],
                 corresponding_source=resolved["corresponding_source"],
@@ -417,23 +417,6 @@ def _version_view(
         is_data_forward_only=manifest.get("is_data_forward_only") is True,
         read_at=runtime.module_releases.read_at(),
     )
-
-
-def _is_data_kept(entry) -> bool:
-    """Whether the entry's uninstall leaves the module's data.
-
-    Args:
-        entry: The platform entry, or None for a platform the manifest
-            does not cover.
-
-    Returns:
-        What the entry's ``uninstall`` says; True where it says nothing, as
-        a ``system`` entry keeps the data.
-    """
-    removal = entry_params(entry).get("uninstall")
-    if not isinstance(removal, dict):
-        return True
-    return bool(removal.get("is_data_kept", True))
 
 
 @router.post("/install", response_model=DeviceModuleListView)

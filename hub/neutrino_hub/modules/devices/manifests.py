@@ -26,6 +26,8 @@ import re
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS,
+    DEVICE_ACCOUNT_DATA_DIRS,
     DEVICE_ARTIFACT_DIRECTORY_KINDS,
     DEVICE_ARTIFACT_FILE_KINDS,
     DEVICE_ARTIFACT_KIND_DMG,
@@ -378,6 +380,34 @@ def manifest_methods(manifest: dict) -> list:
     return methods
 
 
+def uninstall_line(manifest: dict, platform: dict) -> "dict | None":
+    """The line one machine's uninstall dialog shows for a module's data.
+
+    Args:
+        manifest: The module's manifest.
+        platform: The tuple the machine reported, whose ``os`` picks the
+            per-account data directory.
+
+    Returns:
+        ``{is_deleted, text}``, each line with ``{data_dir}`` written in for
+        the machine's system. None for a module the agent carries.
+    """
+    held = manifest.get("uninstall_data")
+    if not isinstance(held, dict):
+        return None
+    os_name = platform.get("os")
+    if os_name not in DEVICE_ACCOUNT_DATA_DIRS:
+        os_name = DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS
+    data_dir = DEVICE_ACCOUNT_DATA_DIRS[os_name].format(module=manifest["name"])
+    return {
+        "is_deleted": held["is_deleted"] is True,
+        "text": {
+            language: line.replace("{data_dir}", data_dir)
+            for language, line in held["text"].items()
+        },
+    }
+
+
 def manifests_stamp() -> tuple:
     """A cheap fingerprint of the manifest files, for cache keys.
 
@@ -523,6 +553,13 @@ def _check_module(file_name: str, manifest: dict) -> None:
         if isinstance(entry, dict)
     )
     _check_identity(file_name, manifest, is_licensed=is_licensed)
+    is_carried = manifest_methods(manifest) == [DEVICE_METHOD_AGENT]
+    if is_carried and "uninstall_data" in manifest:
+        _refuse(
+            file_name, "uninstall_data", "is not named by a module the agent carries"
+        )
+    if not is_carried and "uninstall_data" not in manifest:
+        _refuse(file_name, "uninstall_data", "is missing")
     if "uninstall_data" in manifest:
         _check_uninstall_data(file_name, manifest)
     for key, entry in platforms.items():

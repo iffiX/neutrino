@@ -6,6 +6,13 @@
   "publisher": "coder/code-server",
   "license": "MIT",
   "corresponding_source": "https://github.com/coder/code-server/tree/v{version}",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's code-server settings and extensions stay in its home folder.",
+      "zh-CN": "每个账户的 code-server 设置和扩展都留在它的主目录里。"
+    }
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "code_server",

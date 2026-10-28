@@ -6,6 +6,13 @@
   "publisher": "nesquena/hermes-webui and NousResearch/hermes-agent",
   "license": "MIT",
   "corresponding_source": "https://github.com/nesquena/hermes-webui/tree/v{version}", "_corresponding_scan": "scan: allow",
+  "uninstall_data": {
+    "is_deleted": true,
+    "text": {
+      "en": "The conversations, settings and workspace files are deleted and cannot be recovered.",
+      "zh-CN": "对话、设置和工作区里的文件都会删除，无法恢复。"
+    }
+  },
   "platforms": {
     "linux": {
       "runner": "container",

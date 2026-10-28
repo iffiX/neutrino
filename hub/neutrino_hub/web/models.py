@@ -2191,6 +2191,16 @@ class ChannelClientReport(BaseModel):
     is_refresh: bool = False
 
 
+class ModuleUninstallDataView(BaseModel):
+    """What an uninstall does to a module's data, as its dialog says it."""
+
+    # True when the data goes with the module.
+    is_deleted: bool = False
+    # The dialog's line in each language of the panel, keyed ``en`` and
+    # ``zh-CN``, the machine's data directory written in.
+    text: dict[str, str] = Field(default_factory=dict)
+
+
 class DeviceModuleView(BaseModel):
     """One managed module, as the panel shows it for a device."""
 
@@ -2206,9 +2216,9 @@ class DeviceModuleView(BaseModel):
     # container (its images run on Containers).
     method: str = ""
     is_supported: bool = True
-    # Whether an uninstall leaves the module's data: pools, share
-    # directories, repositories, volumes. The confirmation says which.
-    is_data_kept: bool = True
+    # The line the uninstall dialog shows under its body. None for a module
+    # the agent carries.
+    uninstall_data: ModuleUninstallDataView | None = None
     # Who publishes the software.
     publisher: str = ""
     # The licence and the address of the source it asks for, for a hub or a

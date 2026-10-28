@@ -58,7 +58,10 @@ AGENT_ENTRY = {"install": {"method": "agent", "params": {}}}
 
 
 def write_manifest(manifests, name: str, platforms: "dict | None" = None, **top):
-    """One manifest of the loader's shape; an agent entry on Linux by default."""
+    """One manifest of the loader's shape; an agent entry on Linux by default.
+
+    A manifest with an entry of another method keeps its data at an uninstall.
+    """
     manifest = {
         "name": name,
         "title": name.title(),
@@ -67,6 +70,11 @@ def write_manifest(manifests, name: str, platforms: "dict | None" = None, **top)
         "platforms": platforms or {"linux": {"runner": name, **AGENT_ENTRY}},
         **top,
     }
+    if platforms and "uninstall_data" not in top:
+        manifest["uninstall_data"] = {
+            "is_deleted": False,
+            "text": {"en": "Data stays.", "zh-CN": "数据留下。"},
+        }
     (manifests / f"{name}.json").write_text(json.dumps(manifest))
 
 
