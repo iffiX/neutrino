@@ -5,7 +5,7 @@ The transport is the Go program `neutrino_transport`, built from
 **Network** page sets another. The hub runs it as a process of its own,
 which holds the port. An agent and a desktop client run it to dial the port,
 and the Android and iOS apps embed it as a library
-([../coding_style/go_style.md](../coding_style/go_style.md)). A member holds
+([../coding_style/go.md](../coding_style/go.md)). A member holds
 one TCP connection to the port, which carries a knock, a Noise handshake and
 then a go-yamux session. A guest reaches one shared app on the same port
 through WebRTC. Every service a client uses is a stream, and the hub dials
@@ -154,7 +154,7 @@ an address and a port the page names and trusts a certificate by the
 fingerprint the page gives it. The guest door is the hub's transport's alone,
 in the package `transport/gate/`, built on pion's `stun`, `dtls`, `sctp` and
 `datachannel` packages and on no ICE agent
-([../coding_style/go_style.md](../coding_style/go_style.md)).
+([../coding_style/go.md](../coding_style/go.md)).
 
 | Step | What crosses the connection | Rule |
 | --- | --- | --- |
