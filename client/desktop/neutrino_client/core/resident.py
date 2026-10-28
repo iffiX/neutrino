@@ -121,9 +121,9 @@ ANNOUNCE_SETTLE_S = 0.05
 # it, and how many of its calls may be held at once before it is skipped.
 ANNOUNCE_WATCHER_WAIT_S = 5
 ANNOUNCE_WATCHER_HELD_MAX = 4
-# The fields of a binding that make it another hub, or another join: a
-# session outlives a change to any other field, the addresses and the keys
-# of a 0.5 binding's move included, which the session itself writes.
+# The fields of a binding that make it another hub, or another join. A
+# session outlives a change to any other field, the addresses it writes
+# itself included.
 BINDING_IDENTITY_KEYS = ("id", "token", "ticket")
 # The step a press on a service entry starts, by its type and action, as
 # the page words it under ``ui.job.``.

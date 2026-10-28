@@ -27,7 +27,7 @@ each, the secret among them, which is why the file is 0600.
 ``is_overlay_on`` is whether the hub's virtual network was last ``on``,
 which a start connects once, and ``overlay_pick`` the provider the person
 chose, empty for the first. A binding a 0.5 client kept holds the hub's
-certificate ``fingerprint`` and no ``hub_key`` until it is moved.
+certificate ``fingerprint`` and no ``hub_key``, and nothing dials it.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -52,7 +52,6 @@ from neutrino_client.constants import (
     CLIENT_ADDRESS_SCHEME,
     CLIENT_CONFIG_FILE_NAME,
     CLIENT_HUB_NAME,
-    CLIENT_LEGACY_SCHEME,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STATE_FILE_NAME,
@@ -739,41 +738,6 @@ def joined_binding(binding: dict, binding_id: str, token: str) -> dict:
     if not completed["id"] or not completed["token"]:
         raise EnrollmentError("enroll_no_token")
     return completed
-
-
-def moved_binding(binding: dict, hub_key: str, private_key: str) -> dict:
-    """A 0.5 binding as it stands once moved to the transport.
-
-    Args:
-        binding: The binding, pinned by a certificate fingerprint.
-        hub_key: The hub's static public key the move returned.
-        private_key: This client's static private key the move recorded.
-
-    Returns:
-        The binding with the hub's key and its own, no fingerprint, and
-        every ``https://`` address written as ``tcp://`` at the same host
-        and port.
-    """
-    return _binding(
-        dict(
-            binding,
-            hub_key=hub_key,
-            private_key=private_key,
-            fingerprint="",
-            gateway_url=_moved_url(str(binding.get("gateway_url", ""))),
-            gateway_urls=[
-                _moved_url(url) for url in binding.get(BINDING_URLS_KEY) or []
-            ],
-        )
-    )
-
-
-def _moved_url(url: str) -> str:
-    """An ``https://`` address as ``tcp://`` at the same host and port; any other as it is."""
-    prefix = CLIENT_LEGACY_SCHEME + "://"
-    if url.startswith(prefix):
-        return CLIENT_ADDRESS_SCHEME + "://" + url[len(prefix) :]
-    return url
 
 
 @_one_writer

@@ -310,23 +310,6 @@ def test_a_binding_with_a_fingerprint_and_no_key_is_one_of_0_5():
     assert not enrollment.is_legacy(BINDING)
 
 
-def test_a_moved_binding_takes_the_keys_and_its_addresses_as_tcp():
-    legacy = dict(
-        BINDING,
-        hub_key="",
-        private_key="",
-        fingerprint="ab" * 32,
-        gateway_url="https://hub.lan:8443",
-        gateway_urls=["https://hub.lan:8443", "https://[2001:db8::1]:8443"],
-    )
-    moved = enrollment.moved_binding(legacy, "33" * 32, "44" * 32)
-    assert moved["hub_key"] == "33" * 32 and moved["private_key"] == "44" * 32
-    assert moved["fingerprint"] == ""
-    assert moved["gateway_url"] == "tcp://hub.lan:8443"
-    assert moved["gateway_urls"] == ["tcp://hub.lan:8443", "tcp://[2001:db8::1]:8443"]
-    assert moved["token"] == "tok" and moved["id"] == "c1"
-
-
 def test_a_binding_with_neither_a_key_nor_a_fingerprint_is_not_one(config_path):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps({"bindings": [dict(BINDING, hub_key="")]}))

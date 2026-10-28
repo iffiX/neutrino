@@ -22,8 +22,8 @@ A pending join is the transport's ``join``: it dials as a round does and
 spends the ticket at the first address whose handshake completes under the
 link's key; the binding then takes the hub's id and token, and is dialled.
 The transport answers a join once, and the session tries it again by the
-code. A binding a 0.5 client kept is moved first, over the hub's legacy
-listener, when that is on.
+code. A binding a 0.5 client kept waits on ``join_refused`` with
+``hub_key_missing`` and dials nothing.
 
 The connection is one of five states: ``connected``, ``connecting`` while a
 round dials, ``waiting`` once a round ended and the session waits for what
@@ -56,14 +56,12 @@ from neutrino_client.constants import (
     CLIENT_JOIN_RETRY_MIN_S,
     CLIENT_JOIN_TIMEOUT_S,
     CLIENT_LEAVE_TELL_TIMEOUT_S,
-    CLIENT_LEGACY_KEY_PATH,
     CLIENT_PING_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
-    CLIENT_REQUEST_TIMEOUT_S,
     CLIENT_ROLE,
     CLIENT_SERVER_PATHS,
     CLIENT_SOFTWARE_PREFIX,
@@ -74,12 +72,9 @@ from neutrino_client.constants import (
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
-from neutrino_client.core.channel import GatewayHttpChannel
-from neutrino_client.core.static_key import public_key_of
 from neutrino_client.core.streams import ClientStream
 from neutrino_client.exceptions import (
     EnrollmentError,
-    GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
@@ -158,10 +153,6 @@ def channel_error(error: Exception) -> dict:
         return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": CODE_HUB_UNTRUSTED, "params": {}}
-    if isinstance(error, GatewayRefused):
-        if error.code:
-            return {"code": error.code, "params": dict(error.params)}
-        return {"code": "hub_refused", "params": {}}
     return {"code": CODE_HUB_UNREACHABLE, "params": {"detail": str(error)}}
 
 
@@ -372,7 +363,6 @@ class ClientHubSession:
         refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
         clock=time.monotonic,
         wall_clock=time.time,
-        legacy_channel=None,
     ):
         """
         Args:
@@ -411,9 +401,6 @@ class ClientHubSession:
             wall_clock: The wall clock, read beside it, so a jump of either
                 clock, as a machine waking from sleep makes, ends the
                 refresh instead of holding it.
-            legacy_channel: ``legacy_channel(url, fingerprint)`` makes the
-                pinned channel a 0.5 binding is moved over, with ``post``;
-                None makes a :class:`GatewayHttpChannel`.
         """
         self._log = log
         self._lock = threading.Lock()
@@ -431,9 +418,6 @@ class ClientHubSession:
         self._local_networks = (
             local_networks if local_networks is not None else _no_networks
         )
-        self._legacy_channel = (
-            legacy_channel if legacy_channel is not None else _pinned_channel
-        )
         self._clock = clock
         self._wall_clock = wall_clock
         # The binding's id when the session began, the same for its life,
@@ -446,8 +430,8 @@ class ClientHubSession:
         self._thread: "threading.Thread | None" = None
         # What the session thread has to do: the transport given the
         # binding, a dial to send again with new candidates, a round to ask
-        # for, and when the next join or move of a pending or 0.5 binding
-        # is due on the monotonic clock.
+        # for, and when the next join of a pending binding is due on the
+        # monotonic clock.
         self._is_dialed = False
         self._is_dial_due = False
         self._is_round_due = False
@@ -497,6 +481,9 @@ class ClientHubSession:
         # The members of the state's ``urls`` that are a server's address,
         # by the path each reaches the hub by.
         self._server_urls: dict = {path: "" for path in CLIENT_SERVER_PATHS}
+        if enrollment.is_legacy(binding):
+            self._wait_reason = WAIT_JOIN_REFUSED
+            self._wait_code = {"code": CODE_HUB_KEY_MISSING, "params": {}}
 
     # --- what the resident reads ---
 
@@ -1053,6 +1040,8 @@ class ClientHubSession:
             binding = dict(self._binding)
         if binding.get("is_pending") or not binding.get("token"):
             return {}
+        if enrollment.is_legacy(binding):
+            return {}
         try:
             return self._transport.command(
                 "leave",
@@ -1152,7 +1141,7 @@ class ClientHubSession:
             self._news.wait(timeout=SESSION_TICK_S)
 
     def run_once(self) -> None:
-        """One turn: a join, a move or a dial when due, then the interval's reports and pings."""
+        """One turn: a join or a dial when due, then the interval's reports and pings."""
         if not self._transport.is_ready():
             return
         with self._lock:
@@ -1168,8 +1157,6 @@ class ClientHubSession:
                 self._join()
             return
         if is_legacy:
-            if is_due and not is_held:
-                self._move_legacy()
             return
         if not is_dialed or is_dial_due:
             if not is_held or is_dialed:
@@ -1289,49 +1276,6 @@ class ClientHubSession:
         else:
             self._wait(WAIT_JOIN_REFUSED, code, None)
             self._log(f"the hub refused the join: {name}")
-
-    def _move_legacy(self) -> None:
-        """Move a 0.5 binding to the transport over the hub's legacy listener.
-
-        The hub's static key comes back for this client's own; a hub whose
-        legacy listener is off answers nothing, and the binding waits on
-        ``hub_key_missing``.
-        """
-        with self._lock:
-            binding = dict(self._binding)
-        private_key = enrollment.make_private_key()
-        body = {
-            "id": binding.get("id", ""),
-            "token": binding.get("token", ""),
-            "public_key": public_key_of(private_key),
-        }
-        for url in enrollment.stored_urls(binding):
-            try:
-                answer = self._legacy_channel(url, binding.get("fingerprint", "")).post(
-                    CLIENT_LEGACY_KEY_PATH, body
-                )
-            except GatewayRefused as error:
-                if error.code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
-                    self._unbind({"code": error.code, "params": dict(error.params)})
-                    return
-                continue
-            except (GatewayUnreachable, GatewayUntrusted, ValueError):
-                continue
-            hub_key = str(answer.get("key", "") or "").strip().lower()
-            if not enrollment.is_key(hub_key):
-                continue
-            moved = enrollment.moved_binding(binding, hub_key, private_key)
-            try:
-                enrollment.add_binding(moved)
-            except (OSError, ValueError) as error:
-                self._log(f"the moved binding could not be kept: {error}")
-                return
-            with self._lock:
-                self._binding = moved
-            self._log(f"the binding moved to the transport at {url}")
-            self._news.set()
-            return
-        self._unreachable({"code": CODE_HUB_KEY_MISSING, "params": {}}, None)
 
     def _keep_up(self) -> None:
         """Report and ping on their intervals, and look at the route to the hub."""
@@ -1904,7 +1848,7 @@ class ClientHubSession:
         return WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
 
     def _unreachable(self, code: dict, next_round_s: "float | None") -> None:
-        """Wait after a round, a join or a move that reached no address.
+        """Wait after a round or a join that reached no address.
 
         A device with no network at all waits for one with no countdown.
         Otherwise the countdown is the transport's next round, or the
@@ -1943,8 +1887,8 @@ class ClientHubSession:
             code: The ``{"code", "params"}`` the last round ended in.
             delay: Seconds until the next round; None while no countdown
                 runs.
-            is_retried: Whether the session itself tries again after the
-                delay, a join or a move, rather than the transport.
+            is_retried: Whether the session itself tries the join again
+                after the delay.
         """
         with self._lock:
             self._wait_reason = reason
@@ -1966,10 +1910,3 @@ def _params_of(line: dict) -> dict:
     """A line's ``params``, empty when it carries none."""
     params = line.get("params")
     return dict(params) if isinstance(params, dict) else {}
-
-
-def _pinned_channel(url: str, fingerprint: str) -> GatewayHttpChannel:
-    """The pinned channel a 0.5 binding is moved over."""
-    return GatewayHttpChannel(
-        gateway_url=url, fingerprint=fingerprint, timeout=CLIENT_REQUEST_TIMEOUT_S
-    )

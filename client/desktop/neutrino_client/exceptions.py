@@ -60,55 +60,6 @@ class SocketClosed(ConnectionError):
         self.reason = reason
 
 
-class GatewayRefused(PermissionError):
-    """Raised when the hub answered but rejected this client's binding.
-
-    Attributes:
-        code: The hub's code, empty when the refusal named none.
-        params: What its wording names.
-    """
-
-    def __init__(self, message: str, *, code: str = "", params: "dict | None" = None):
-        """
-        Args:
-            message: What was refused.
-            code: The hub's code, empty when the refusal named none.
-            params: Its parameters.
-        """
-        super().__init__(message)
-        self.code = code
-        self.params = dict(params or {})
-
-
-class GatewayProtocolRefused(GatewayRefused):
-    """Raised when the hub refused the protocol number this client speaks.
-
-    Attributes:
-        code: ``protocol_too_old`` or ``protocol_too_new``.
-        peer: The number this client sent.
-        hub: The number the hub speaks.
-        minimum: The oldest number the hub still accepts.
-    """
-
-    def __init__(self, *, code: str, peer: int, hub: int, minimum: int):
-        """
-        Args:
-            code: ``protocol_too_old`` or ``protocol_too_new``.
-            peer: The number this client sent.
-            hub: The number the hub speaks.
-            minimum: The oldest number the hub still accepts.
-        """
-        super().__init__(
-            f"{code}: this client speaks protocol {peer}, the hub {hub} "
-            f"and accepts {minimum} and up",
-            code=code,
-            params={"peer": peer, "hub": hub, "min": minimum},
-        )
-        self.peer = peer
-        self.hub = hub
-        self.minimum = minimum
-
-
 class ShareAttachError(OSError):
     """Raised when a share cannot be attached or detached.
 

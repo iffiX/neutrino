@@ -15,8 +15,8 @@ the Hubs table words it, with the transport's next round as the countdown;
 the one refusal that unbinds; another client's ``replaced`` and a
 Reconnect; a pending join spent through the transport with the pending id
 as its label, the binding's id taken from the answer, and each refusal
-waited by its code; a 0.5 binding moved over the legacy listener; a refresh
-and a network change as a ``round``; a transport that ends and comes back;
+waited by its code; a 0.5 binding waiting on ``hub_key_missing`` with
+nothing dialled; a refresh and a network change as a ``round``; a transport that ends and comes back;
 the open records of a shell and an exec naming their account; and a stop
 that undials.
 """
@@ -48,11 +48,7 @@ from neutrino_client.core.session import (
     is_on_local_network,
 )
 from neutrino_client.core.transport import ClientTransportChannel
-from neutrino_client.exceptions import (
-    GatewayRefused,
-    GatewayRefusedDetail,
-    GatewayUnreachable,
-)
+from neutrino_client.exceptions import GatewayRefusedDetail, GatewayUnreachable
 from tests.conftest import BINDING, HUB_KEY, HUB_SERVICES, PRIVATE_KEY, bind
 from tests.fake_transport import RECORD_DATA, FakeTransport, unix_connect
 
@@ -773,29 +769,6 @@ def test_a_join_on_another_key_waits_untrusted_a_minute(config_path):
 # --- a binding of 0.5 ---
 
 
-class FakeLegacyChannel:
-    """The pinned channel a 0.5 binding moves over, answering by address."""
-
-    def __init__(self, answers: dict):
-        self.answers = answers
-        self.posts = []
-
-    def __call__(self, url: str, fingerprint: str):
-        outer = self
-
-        class Channel:
-            def post(self, path, body):
-                outer.posts.append((url, fingerprint, path, dict(body)))
-                answer = outer.answers.get(url)
-                if isinstance(answer, Exception):
-                    raise answer
-                if answer is None:
-                    raise GatewayUnreachable("silence")
-                return answer
-
-        return Channel()
-
-
 def legacy(config_path) -> dict:
     binding = dict(
         BINDING,
@@ -809,46 +782,18 @@ def legacy(config_path) -> dict:
     return enrollment._binding(binding)
 
 
-def test_a_binding_of_05_moves_over_the_legacy_listener_and_is_dialled(config_path):
-    channel = FakeLegacyChannel({"https://192.168.1.2:8443": {"key": "33" * 32}})
-    made = Harness(legacy(config_path), legacy_channel=channel)
+def test_a_binding_of_05_waits_on_hub_key_missing_and_dials_nothing(config_path):
+    made = Harness(legacy(config_path))
     try:
-        dial = made.transport.next_command("dial")
-        assert dial["hub_key"] == "33" * 32
-        assert dial["candidates"][-1]["address"] == HUB_URL
-        url, fingerprint, path, body = channel.posts[0]
-        assert (url, fingerprint, path) == (
-            "https://192.168.1.2:8443",
-            "ff" * 32,
-            "/api/channel/key/set",
-        )
-        assert body["id"] == "c1" and body["token"] == "tok"
-        assert len(body["public_key"]) == 64
-        kept = enrollment.load_config()["bindings"][0]
-        assert kept["fingerprint"] == "" and kept["hub_key"] == "33" * 32
-        assert kept["gateway_url"] == HUB_URL
-    finally:
-        made.close()
-
-
-def test_a_binding_of_05_the_hub_does_not_move_waits_on_hub_key_missing(
-    config_path,
-):
-    made = Harness(legacy(config_path), legacy_channel=FakeLegacyChannel({}))
-    try:
-        assert wait_for(lambda: made.session.waiting() is not None)
-        assert made.session.waiting()["code"]["code"] == "hub_key_missing"
-    finally:
-        made.close()
-
-
-def test_a_binding_of_05_the_hub_forgot_is_unbound(config_path):
-    refusal = GatewayRefused("no", code="binding_unknown")
-    made = Harness(
-        legacy(config_path),
-        legacy_channel=FakeLegacyChannel({"https://192.168.1.2:8443": refusal}),
-    )
-    try:
-        assert wait_for(lambda: made.unbound == [made.session])
+        assert made.session.waiting() == {
+            "reason": "join_refused",
+            "code": {"code": "hub_key_missing", "params": {}},
+            "next_round_at": None,
+        }
+        assert not made.session.refresh()
+        made.session.change_network()
+        with pytest.raises(queue.Empty):
+            made.transport.next_command(timeout_s=1.5)
+        assert made.session.tell_left() == {}
     finally:
         made.close()

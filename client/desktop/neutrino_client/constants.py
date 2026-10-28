@@ -71,12 +71,6 @@ CLIENT_JOIN_TIMEOUT_S = 30
 # The address scheme every link and state names; an address of any other
 # scheme is skipped.
 CLIENT_ADDRESS_SCHEME = "tcp"
-# The binding a 0.5 client kept holds a certificate fingerprint and no hub
-# key; while the hub's legacy listener is on it is moved over that pinned
-# TLS listener, at this route, on the agent port.
-CLIENT_LEGACY_KEY_PATH = "/api/channel/key/set"
-CLIENT_LEGACY_SCHEME = "https"
-CLIENT_REQUEST_TIMEOUT_S = 10
 
 # The stream kinds a client opens: a ``shell`` carries terminal bytes both
 # ways, an ``exec`` runs one command, and a ``connect`` carries one TCP
