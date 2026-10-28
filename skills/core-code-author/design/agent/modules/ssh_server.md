@@ -38,6 +38,7 @@ every apply.
 | An instance admits public-key authentication by the account's key alone. It offers no password and no keyboard-interactive method, and it reads no `sshd_config` and no `authorized_keys` of the account's. | The hub's key is the one credential, and nothing the person set up for the machine's own sshd changes what this server admits. |
 | The host key stays on the machine; the hub holds only its public half. | A copy of the private half elsewhere is a second machine that can answer as this one. |
 | Removing an available account deletes its key; enabling it again makes a new one. | A key outlives no account the person took away. |
+| **Rotate** on the Credentials page makes a new pair for that account: the state carries the new public half, which replaces the instance's one authorized key at the apply, and the `ssh` entry's `account_key_fingerprint` changes, so each client reads the new private half ([../../ui_behavior.md](../../ui_behavior.md), "The Credentials page"). | A key copied off a client stops opening the machine at once. |
 
 ## Sessions
 

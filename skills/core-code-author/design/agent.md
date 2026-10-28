@@ -410,7 +410,10 @@ the share's `file` entry ([protocol.md](protocol.md), "The service frame").
 On Windows and macOS the module grants the SMB user the share's folder, as it
 grants its accounts today, so the files a client writes there are written
 through that user; on Linux `force user` writes them as the account.
-Disabling an account removes its SMB user and its Samba credential on every
+**Rotate** on the Credentials page generates the password again and pushes
+the state, and the agent sets the new one on the SMB user; a client reads it
+at its next mount ([ui_behavior.md](ui_behavior.md), "The Credentials
+page"). Disabling an account removes its SMB user and its Samba credential on every
 system; removing the agent's package leaves them, as
 [modules/file_share.md](agent/modules/file_share.md) says.
 

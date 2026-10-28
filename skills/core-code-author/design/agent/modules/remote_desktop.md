@@ -83,8 +83,11 @@ writes it into RustDesk's settings whenever it changed and keeps it in a
 root-only file so it knows what it already set. It enters neither the
 agent's store nor any report.
 
-The panel never shows it: the machine page's Remote desktop tab offers **Reset seat password**,
-which generates a new one and disconnects every viewer. A client that presses
+The panel shows it on the Credentials page, masked until **Reveal**, beside
+**Copy** and **Rotate** ([../../ui_behavior.md](../../ui_behavior.md), "The
+Credentials page"); the machine page's Remote desktop tab offers **Reset
+seat password**, which generates a new one and disconnects every viewer, as
+**Rotate** does. A client that presses
 **Connect** sends a `service` frame, the hub unseals the password for that
 one reply, and the viewer is spawned with it.
 
