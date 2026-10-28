@@ -19,7 +19,6 @@
     {"name": "siyuan", "category": "notes"},
     {"name": "samba", "category": "files"},
     {"name": "openlist", "category": "files"},
-    {"name": "zfs", "category": "files"},
     {"name": "remote_desktop", "category": "remote"},
     {"name": "podman", "category": "other"},
     {"name": "qinglong", "category": "other"}

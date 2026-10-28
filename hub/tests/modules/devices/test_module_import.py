@@ -147,7 +147,7 @@ def test_a_module_is_imported_by_name_and_one_with_no_import_answers_empty():
         "shares": [],
         "users": [],
     }
-    assert import_module_config("zfs", {"pools": [{"name": "tank"}]}) == {}
+    assert import_module_config("vscode", {"instances": []}) == {}
     assert import_module_config("rustdesk", {}) == {}
 
 

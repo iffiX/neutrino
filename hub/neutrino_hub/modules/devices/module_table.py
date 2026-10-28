@@ -342,7 +342,6 @@ DEVICE_MODULE_ROWS = (
         is_token_minted=True,
         is_gateway_used=True,
     ),
-    _row("zfs", DEVICE_MODULE_KIND_SYSTEM_PACKAGE),
 )
 _ROWS_BY_NAME = {row.name: row for row in DEVICE_MODULE_ROWS}
 

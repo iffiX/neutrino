@@ -3,8 +3,8 @@
 The panel's unit is root with `NoNewPrivileges` and systemd's sandboxing, and
 under those the effective capability set loses `CAP_SETUID`. apt drops to the
 `_apt` account to fetch and cannot, so every download dies with
-`seteuid 42 failed` — measured on Debian 12, panel-driven installs of netbird,
-podman and zfs all failing that way while the same installs from a shell
+`seteuid 42 failed` — measured on Debian 12, panel-driven installs of netbird
+and podman both failing that way while the same installs from a shell
 succeeded.
 """
 

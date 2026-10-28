@@ -1,5 +1,5 @@
 {
-  "_comment": "One device's file share, under config/devices/<id>/. accounts are the available accounts the share is enabled for, in the order they were enabled, each with its SMB password sealed under the vault's data key; the hub makes one share and one user per account and fills in the share's path from the machine's account_details when the account row names none. shares are the shares the file names itself, a ZFS dataset's among them, each open to the enabled accounts' users it names. The hub adds allowed_subnets when it composes the desired state.",
+  "_comment": "One device's file share, under config/devices/<id>/. accounts are the available accounts the share is enabled for, in the order they were enabled, each with its SMB password sealed under the vault's data key; the hub makes one share and one user per account and fills in the share's path from the machine's account_details when the account row names none. shares are the shares the file names itself, each open to the enabled accounts' users it names. The hub adds allowed_subnets when it composes the desired state.",
   "accounts": [
     {
       "account": "ann",
@@ -9,7 +9,7 @@
   "shares": [
     {
       "name": "media",
-      "path": "/tank/media",
+      "path": "/srv/media",
       "comment": "Shared space",
       "is_read_only": false,
       "valid_users": ["ann"]

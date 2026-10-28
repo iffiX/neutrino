@@ -41,8 +41,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
 #                         dozen files under /etc
 #   ProtectHome         — config/ still lives in the checkout
 #   ProtectKernelTunables — sets net.ipv4.ip_forward
-#   ProtectKernelModules  — the ZFS module loads on demand
-#   RestrictNamespaces, ProtectControlGroups, PrivateDevices — podman and ZFS
+#   RestrictNamespaces, ProtectControlGroups, PrivateDevices — podman
 # Tightening these needs package installs moved out of this process first.
 
 [Install]

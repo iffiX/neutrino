@@ -168,7 +168,7 @@ def test_the_optional_modules_are_left_running(systemd):
     stop_module.stop(list(stop_module.STOP_ORDER))
 
     stopped = {name for name, _ in asked}
-    assert stopped.isdisjoint({"samba", "gitea", "netbird", "podman", "zfs"})
+    assert stopped.isdisjoint({"samba", "gitea", "netbird", "podman"})
 
 
 def test_a_unit_this_box_does_not_have_is_not_asked_about(systemd):

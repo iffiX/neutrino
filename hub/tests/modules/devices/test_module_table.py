@@ -50,7 +50,6 @@ def test_the_rows_come_in_the_order_the_machine_page_lists_them():
         "codeg",
         "podman",
         "hermes_webui",
-        "zfs",
     ]
 
 
@@ -74,7 +73,6 @@ def test_every_row_is_one_of_the_five_kinds():
         "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
-        "zfs": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     }
 
 
@@ -191,7 +189,6 @@ def test_each_row_names_its_published_entry():
         "codeg": ("codeg_module", "Codeg ({account})"),
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
-        "zfs": ("", ""),
     }
 
 

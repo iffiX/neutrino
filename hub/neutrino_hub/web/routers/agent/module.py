@@ -8,7 +8,7 @@ The state is pushed at once, and what the machine reports afterwards is
 shown; an install's or an uninstall's lines arrive on a ``log`` stream the
 agent opens, which the list names by its task.
 
-The file share, the git server, the container engine and ZFS are hosted by
+The file share, the git server and the container engine are hosted by
 devices, one desired state per device per module under ``config/``, and
 each module's block is built here: the per-device read, the push, and the
 import that turns what the machine's latest report carries into the hub's

@@ -56,8 +56,6 @@ WEB_PATH_VERBS = frozenset(
         "logout",
         "backup",
         "restore",
-        "online",
-        "offline",
         "download",
         "upload",
         "import",
@@ -74,9 +72,6 @@ WEB_PATH_VERBS = frozenset(
         "restart",
         "kill",
         "rename",
-        "expand",
-        "replace",
-        "scrub",
     }
 )
 # The one code for input that does not validate, whichever route it reached:

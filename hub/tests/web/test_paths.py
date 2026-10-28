@@ -35,14 +35,13 @@ SEGMENT_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 # Singular nouns that end in an ``s``; every other ``s`` ending is a plural.
 # ``terms`` names one document, a publisher's license terms.
 SINGULAR_S_NOUNS = frozenset(
-    {"status", "access", "address", "process", "dns", "zfs", "https", "terms"}
+    {"status", "access", "address", "process", "dns", "https", "terms"}
 )
 # Reads whose last segment is a word of the verb table used as a noun, each
 # a row of protocol.md's route tables.
 NOUN_READS = frozenset(
     {
         "/api/hub/credential/login",
-        "/api/hub/device/online",
         "/api/hub/service/share",
         "/api/hub/network/interface/wifi/scan",
         "/api/hub/setting/https/probe",
@@ -209,7 +208,6 @@ MODULE_NAMES = (
     "remote_desktop",
     "gitea",
     "podman",
-    "zfs",
     "vscode",
     "code_server",
     "cloudcli",

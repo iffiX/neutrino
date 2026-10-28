@@ -412,7 +412,6 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "terminal",
         "podman",
         "samba",
-        "zfs",
         "cloudcli",
         "code_server",
         "codeg",
@@ -442,7 +441,6 @@ def test_every_shipped_entry_names_its_runner_and_method():
         "windows": ("samba_native", "builtin"),
         "darwin": ("samba_native", "builtin"),
     }
-    assert shipped["zfs"] == {key: ("zfs", "system") for key in families}
     assert shipped["podman"] == {
         **{key: ("podman", "system") for key in families},
         **{key: ("podman_machine", "hub") for key in PODMAN_PINS},
@@ -469,7 +467,6 @@ def test_every_shipped_manifest_names_its_publisher():
         "terminal": "Neutrino",
         "podman": "podman-container-tools/podman",
         "samba": "Samba Team",
-        "zfs": "OpenZFS",
         "gitea": "go-gitea/gitea",
         "vscode": "Microsoft",
         "code_server": "coder/code-server",
@@ -491,11 +488,6 @@ def test_the_modules_that_left_are_not_shipped_any_more(name):
     "name, debian, rhel",
     [
         ("samba", ["samba"], ["samba", "samba-client"]),
-        (
-            "zfs",
-            ["zfsutils-linux", "zfs-zed", "smartmontools"],
-            ["zfs", "smartmontools"],
-        ),
     ],
 )
 def test_a_system_module_names_its_packages_per_family(name, debian, rhel):
@@ -523,22 +515,6 @@ def test_containers_on_linux_names_podman_and_runc_and_keeps_runc():
         }, key
     shipped = json.dumps(load_module_manifests())
     assert "podman-docker" not in shipped
-
-
-def test_zfs_adds_the_repository_each_family_keeps_it_in_before_its_packages():
-    manifest = load_module_manifests()["zfs"]
-
-    debian_steps = entry_params(manifest["platforms"]["linux-debian"])["pre_install"]
-    rhel_steps = entry_params(manifest["platforms"]["linux-rhel"])["pre_install"]
-    arch_steps = entry_params(manifest["platforms"]["linux-arch"])["pre_install"]
-    assert any("contrib" in step for step in debian_steps)
-    assert any("apt-get update" in step for step in debian_steps)
-    assert any("zfs-dkms" in step for step in debian_steps)
-    assert any("zfsonlinux.org" in step for step in rhel_steps)
-    assert arch_steps
-    assert entry_params(manifest["platforms"]["linux-debian"])["verify"] == (
-        "modprobe zfs && zpool --version"
-    )
 
 
 @pytest.mark.parametrize("platform", [WINDOWS, MAC])
@@ -956,7 +932,7 @@ def test_only_a_hub_entry_shows_a_licence_and_its_source_with_the_version():
 
 
 def test_a_platform_with_no_entry_resolves_to_no_runner_and_no_recipe():
-    resolved = resolve_module(load_module_manifests()["zfs"], WINDOWS)
+    resolved = resolve_module(load_module_manifests()["code_server"], WINDOWS)
 
     assert (resolved["runner"], resolved["method"], resolved["recipe"]) == ("", "", {})
     assert resolved["platform_key"] == ""

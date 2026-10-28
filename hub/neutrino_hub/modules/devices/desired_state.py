@@ -304,10 +304,9 @@ def _samba_config(
 ) -> dict:
     """The file share's section: one share and one user per enabled account,
     the share's files written as the account, then the shares the file names
-    itself, a ZFS dataset's among them, each open to the enabled accounts'
-    users it names, by the SMB user's name or by the account's. An enabled
-    account with no share path whose home the machine has not reported is
-    left out."""
+    itself, each open to the enabled accounts' users it names, by the SMB
+    user's name or by the account's. An enabled account with no share path
+    whose home the machine has not reported is left out."""
     sealed = row.sealed_fields[0]
     shares = []
     users = []

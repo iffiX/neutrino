@@ -49,7 +49,6 @@ from neutrino_hub.web.routers.agent import (
     module_remote_desktop,
     module_samba,
     module_vscode_terms,
-    module_zfs,
 )
 from neutrino_hub.web.routers.hub import (
     ai,
@@ -103,7 +102,6 @@ API_ROUTERS = (
     module_gitea.router,
     module_podman.router,
     module_hermes_webui.router,
-    module_zfs.router,
     *module_instances.ROUTERS.values(),
     module_vscode_terms.router,
 )

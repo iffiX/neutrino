@@ -166,7 +166,6 @@ DEVICE_INSTANCE_LOGIN_KEY = "login_id"
 # agent applies them, the SSH server the agent carries among them. One file
 # per module under the device's directory.
 DEVICE_MODULE_NAMES = (
-    "zfs",
     "samba",
     "ssh_server",
     "gitea",
@@ -288,8 +287,8 @@ DEVICE_SAMBA_MODULE = "samba"
 DEVICE_SAMBA_USER_PREFIX = "neutrino-"
 DEVICE_SAMBA_USER_CHARS_MAX = 20
 DEVICE_SAMBA_USER_CUT_OS = ("windows",)
-# The shares the file names beside the accounts': a ZFS dataset's, each with
-# its valid_users among the enabled accounts' SMB users.
+# The shares the file names beside the accounts', each with its valid_users
+# among the enabled accounts' SMB users.
 DEVICE_SAMBA_SHARES_KEY = "shares"
 DEVICE_SAMBA_PASSWORD_KEY = "password_sealed"  # scan: allow
 DEVICE_SAMBA_PASSWORD_AAD = b"device_samba:password"

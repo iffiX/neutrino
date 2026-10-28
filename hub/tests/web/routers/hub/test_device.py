@@ -1553,13 +1553,13 @@ def test_picking_module_tabs_stores_them_on_the_row_and_echoes_them(box_api):
     client, _ = box_api
 
     answer = client.post(
-        SET_PATH, json={"device_id": DEVICE, "shown_module": ["samba", "zfs"]}
+        SET_PATH, json={"device_id": DEVICE, "shown_module": ["samba", "podman"]}
     )
 
     assert answer.status_code == 200
     (row,) = answer.json()["devices"]
-    assert row["shown_module"] == ["samba", "zfs"]
-    assert BoxRegistry.device.shown_modules == ["samba", "zfs"]
+    assert row["shown_module"] == ["samba", "podman"]
+    assert BoxRegistry.device.shown_modules == ["samba", "podman"]
     assert BoxRegistry.device.name == "testbox"
 
 

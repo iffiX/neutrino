@@ -132,7 +132,7 @@ def test_a_module_names_the_distributions_it_installs_on(tmp_path, monkeypatch):
 
     assert machine.require_distribution({"arch": ("podman",)}, "podman") == ("podman",)
     with pytest.raises(RuntimeError, match="Arch Linux"):
-        machine.require_distribution({"debian": ("zfsutils-linux",)}, "ZFS")
+        machine.require_distribution({"debian": ("podman",)}, "podman")
 
 
 def test_a_family_listed_as_unsupported_is_refused(tmp_path, monkeypatch):
@@ -141,9 +141,7 @@ def test_a_family_listed_as_unsupported_is_refused(tmp_path, monkeypatch):
     release.write_text('ID=fedora\nPRETTY_NAME="Fedora 41"\n', encoding="utf-8")
     monkeypatch.setattr(machine, "OS_RELEASE_PATH", release)
     with pytest.raises(RuntimeError, match="Fedora 41"):
-        machine.require_distribution(
-            {"debian": ("zfsutils-linux",), "rhel": None}, "ZFS"
-        )
+        machine.require_distribution({"debian": ("podman",), "rhel": None}, "podman")
 
 
 def test_the_name_a_release_actually_carries_is_the_one_installed():

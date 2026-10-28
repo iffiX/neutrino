@@ -31,7 +31,7 @@ class TalkativeProvisioner:
             consents=(
                 ProvisionConsent(
                     code=SYSTEM_CONSENT_KERNEL_MODULE_BUILD,
-                    detail={"packages": ["zfs-dkms"], "kernel": "6.1.0-18-amd64"},
+                    detail={"packages": ["wireguard-dkms"], "kernel": "6.1.0-18-amd64"},
                 ),
             )
         )
