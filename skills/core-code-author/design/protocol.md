@@ -202,6 +202,8 @@ segment of a write, which is a verb.
 | `reinstall` | none | the agent, installed again over SSH |
 | `restart` | none | a container stopped and started |
 | `kill` | none | a process |
+| `reveal` | none | nothing; the read of a secret the hub generated, logged |
+| `rotate` | none | a secret the hub generated, made afresh |
 | `rename` | none | a name |
 
 The whole design is symmetric where a thing has an opposite and single where
@@ -209,7 +211,7 @@ it has none:
 
 | Layer | Paired | Single, and why |
 | --- | --- | --- |
-| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`: none has a reverse operation |
+| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `reveal`, `rotate`: none has a reverse operation |
 | Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `podman/container/start`/`stop` | |
 | Channel frames and records | `hello`/`welcome`; `join`/`joined`; `leave`/`left`; `state`/`report`; `ping`/`pong`; a question frame and its `reply`; the `open` and `close` records, `accept` between them | `refused`; the records `data`, `stderr`, `eof`, `resize`, `datagram` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `control`, `shell`, `exec`, `file`, `command`, `package`, `log`, `connect` |
