@@ -142,7 +142,7 @@ func (g *guestSide) echo(t *testing.T) {
 func TestGuestThroughTheGate(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	hub := startHub(t, dir, port, 0)
+	hub := startHub(t, dir, port)
 	echoPort := echoServer(t)
 	hub.records.mu.Lock()
 	hub.records.tickets["ticket-agent"] = "dev-1"

@@ -49,8 +49,6 @@ type HubConfig struct {
 	ListenPort int
 	// FrpListeners are the loopback listeners, one per vendor.
 	FrpListeners []FrpListener
-	// LegacyTLSPort is the legacy listener's loopback port, 0 while off.
-	LegacyTLSPort int
 	// Certificate is the DTLS certificate of the WebRTC gate; nil keeps the
 	// gate shut.
 	Certificate *tls.Certificate
@@ -72,7 +70,6 @@ type Hub struct {
 	memory  *session.TransportMemory
 	now     func() time.Time
 	log     EventFunc
-	legacy  int
 	gate    *gate.Gate
 	ledger  *knock.KnockLedger
 	replay  *knock.ReplayWindow
@@ -132,7 +129,6 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 		memory:          memory,
 		now:             now,
 		log:             logger,
-		legacy:          config.LegacyTLSPort,
 		ledger:          knock.NewKnockLedger(),
 		replay:          knock.NewReplayWindow(knock.KnockReplayKeysMax),
 		handOff:         NewHandOff(ControlQuestionTimeout),
@@ -196,7 +192,7 @@ func (h *Hub) Listen() error {
 		return fmt.Errorf("listen on port %s: %w", port, err4)
 	}
 	for _, frp := range h.config.FrpListeners {
-		listener, err := net.Listen("tcp4", net.JoinHostPort(RelayLegacyLoopback, strconv.Itoa(frp.Port)))
+		listener, err := net.Listen("tcp4", net.JoinHostPort(RelayLoopback, strconv.Itoa(frp.Port)))
 		if err != nil {
 			h.log("listen_failed", "listener", frp.Listener, "port", strconv.Itoa(frp.Port), "error", err.Error())
 			continue

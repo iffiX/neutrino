@@ -35,7 +35,7 @@ func rawLine(t *testing.T, path string, first map[string]any) net.Conn {
 // and expects the agent's side to read every byte and then the close.
 func TestACloseRecordFollowsALargeBody(t *testing.T) {
 	dir := shortTempDir(t)
-	hub := startHub(t, dir, freePort(t), 0)
+	hub := startHub(t, dir, freePort(t))
 	hub.records.mu.Lock()
 	hub.records.tickets["ticket-agent"] = "dev-9"
 	hub.records.mu.Unlock()

@@ -147,7 +147,7 @@ type hubSide struct {
 	keyHex  string
 }
 
-func startHub(t *testing.T, dir string, port int, legacyPort int) *hubSide {
+func startHub(t *testing.T, dir string, port int) *hubSide {
 	t.Helper()
 	keyDir := filepath.Join(dir, "transport")
 	key, err := relay.LoadOrCreateKey(keyDir)
@@ -164,7 +164,7 @@ func startHub(t *testing.T, dir string, port int, legacyPort int) *hubSide {
 		t.Fatal(err)
 	}
 	hubControl := control.NewHubControl(listener, hubSecret, keyDir, nil)
-	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, LegacyTLSPort: legacyPort, Certificate: &certificate, Timings: timings}, hubControl)
+	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, Certificate: &certificate, Timings: timings}, hubControl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func echoServer(t *testing.T) int {
 func TestEndToEnd(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	hub := startHub(t, dir, port, 0)
+	hub := startHub(t, dir, port)
 	echoPort := echoServer(t)
 	hub.records.mu.Lock()
 	hub.records.tickets["ticket-agent"] = "dev-1"
@@ -450,7 +450,7 @@ func TestEndToEnd(t *testing.T) {
 func TestBoundReconnectAfterAHubRestart(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	hub := startHub(t, dir, port, 0)
+	hub := startHub(t, dir, port)
 	hub.records.mu.Lock()
 	hub.records.tickets["ticket-agent"] = "dev-2"
 	hub.records.mu.Unlock()
@@ -476,7 +476,7 @@ func TestBoundReconnectAfterAHubRestart(t *testing.T) {
 		t.Fatalf("round_end %v", roundEnd)
 	}
 
-	restored := startHub(t, dir, port, 0)
+	restored := startHub(t, dir, port)
 	if restored.keyHex != hub.keyHex {
 		t.Fatal("the restarted hub lost its key")
 	}
@@ -486,51 +486,28 @@ func TestBoundReconnectAfterAHubRestart(t *testing.T) {
 	agent.hello(t, restored, binding)
 }
 
-func TestLegacyByteReachesTheLegacyListener(t *testing.T) {
-	legacy, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer legacy.Close()
-	received := make(chan []byte, 1)
-	go func() {
-		conn, err := legacy.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		buffer := make([]byte, 6)
-		_, _ = io.ReadFull(conn, buffer)
-		received <- buffer
-		_, _ = conn.Write([]byte("hello from 0.5"))
-	}()
+// TestATLSRecordMeetsSilence checks that a 0.5 peer's TLS ClientHello gets
+// no byte back.
+func TestATLSRecordMeetsSilence(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	startHub(t, dir, port, legacy.Addr().(*net.TCPAddr).Port)
+	startHub(t, dir, port)
 	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_, _ = conn.Write([]byte{22, 3, 1, 0, 2, 9})
-	select {
-	case got := <-received:
-		if string(got) != "\x16\x03\x01\x00\x02\x09" {
-			t.Fatalf("legacy listener got %x", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the legacy listener got nothing")
-	}
-	buffer := make([]byte, 14)
-	if _, err := io.ReadFull(conn, buffer); err != nil || string(buffer) != "hello from 0.5" {
-		t.Fatalf("answer %q %v", buffer, err)
+	_, _ = conn.Write([]byte{0x16, 0x03, 0x01, 0x00, 0xa5, 0x01, 0x00, 0x00, 0xa1, 0x03, 0x03})
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if n, err := conn.Read(make([]byte, 64)); n != 0 || err == nil {
+		t.Fatalf("read %d bytes, %v; want nothing and a close", n, err)
 	}
 }
 
 func TestProbe(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	hub := startHub(t, dir, port, 0)
+	hub := startHub(t, dir, port)
 	static, _ := handshake.GenerateKey()
 	hubPublic, _ := handshake.DecodeKey(hub.keyHex)
 	result, err := session.Dial(t.Context(), hub.address(), session.DialOptions{Static: static, HubPublic: hubPublic, Psk: handshake.ZeroPsk, Protocol: knock.PROTOCOL, Role: "client", IsJoin: true, Timeout: knock.HandshakeTimeout})
@@ -619,7 +596,7 @@ func pendingConnection(t *testing.T, listen string) net.Conn {
 func TestForwardBindsBeforeTheFirstDial(t *testing.T) {
 	dir := shortTempDir(t)
 	port := freePort(t)
-	hub := startHub(t, dir, port, 0)
+	hub := startHub(t, dir, port)
 	echoPort := echoServer(t)
 	hub.records.mu.Lock()
 	hub.records.tickets["ticket-agent"] = "dev-3"

@@ -16,8 +16,7 @@ const (
 	// KnockMagicLabel keys the magic together with the hub's public key.
 	KnockMagicLabel = "magic---"
 	// KnockMagicForbiddenStun and KnockMagicForbiddenTLS are the first bytes
-	// a magic never has: a browser's STUN frame's and a 0.5 peer's TLS
-	// handshake's.
+	// a magic never has: a browser's STUN frame's and a TLS record's.
 	KnockMagicForbiddenStun = 0x00
 	KnockMagicForbiddenTLS  = 0x16
 	// KnockHeaderBytes is the header before every message of the member
@@ -45,11 +44,6 @@ const (
 	// KnockRoleAgent and KnockRoleClient are the two roles a knock names.
 	KnockRoleAgent  = "agent"
 	KnockRoleClient = "client"
-	// KnockLegacyTLSByte and KnockLegacyTLSVersionByte are the first two
-	// bytes of every TLS handshake record, which a 0.5 peer sends and the
-	// hub hands to its legacy listener.
-	KnockLegacyTLSByte        = KnockMagicForbiddenTLS
-	KnockLegacyTLSVersionByte = 0x03
 )
 
 const (

@@ -16,8 +16,8 @@ const (
 	// RelayKeepAliveLogInterval is the least time between two log lines for
 	// a lost keepalive from one peer address.
 	RelayKeepAliveLogInterval = time.Minute
-	// RelayLegacyLoopback is the address the legacy listener is reached at.
-	RelayLegacyLoopback = "127.0.0.1"
+	// RelayLoopback is the address the frp listeners listen on.
+	RelayLoopback = "127.0.0.1"
 	// RelayListenerMain names the agent port's own listener.
 	RelayListenerMain = "main"
 	// RelayDatagramSourceBytes is the source port in front of a datagram.
@@ -35,10 +35,9 @@ const (
 
 // The static key's files under the hub's configuration.
 const (
-	RelayStaticKeyFile   = "static_key"
-	RelayPublicKeyFile   = "public_key"
-	RelayKeyDirMode      = 0o700
-	RelayStaticKeyMode   = 0o600
-	RelayPublicKeyMode   = 0o644
-	RelayLegacyDialLimit = 5 * time.Second
+	RelayStaticKeyFile = "static_key"
+	RelayPublicKeyFile = "public_key"
+	RelayKeyDirMode    = 0o700
+	RelayStaticKeyMode = 0o600
+	RelayPublicKeyMode = 0o644
 )

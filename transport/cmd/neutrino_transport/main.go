@@ -40,7 +40,6 @@ var version = "dev"
 type transportFile struct {
 	ListenPort    int                 `json:"listen_port"`
 	FrpListeners  []relay.FrpListener `json:"frp_listeners"`
-	LegacyTLSPort int                 `json:"legacy_tls_port"`
 	ControlSocket string              `json:"control_socket"`
 }
 
@@ -177,7 +176,7 @@ func runHub(args []string) int {
 	hubControl := control.NewHubControl(listener, secret, *keyDir, logLine)
 	hub, err := relay.NewHub(relay.HubConfig{
 		Key: key, ListenPort: file.ListenPort, FrpListeners: file.FrpListeners,
-		LegacyTLSPort: file.LegacyTLSPort, Certificate: &certificate, Log: logLine,
+		Certificate: &certificate, Log: logLine,
 	}, hubControl)
 	if err != nil {
 		logLine("hub_failed", "error", err.Error())

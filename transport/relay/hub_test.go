@@ -161,11 +161,11 @@ type testHub struct {
 	key    noise.DHKey
 }
 
-func newTestHub(t *testing.T, legacyPort int) *testHub {
+func newTestHub(t *testing.T) *testHub {
 	t.Helper()
 	key, _ := handshake.GenerateKey()
 	python := newFakePython()
-	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, LegacyTLSPort: legacyPort, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
+	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func (p *peer) admit(t *testing.T, hub *testHub, address, id string) (*connected
 }
 
 func TestAdmissionAndFrames(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	agent := newPeer(t, hub, "dev1", "agent")
 	c, sessionID := agent.admit(t, hub, address, "dev1")
@@ -332,7 +332,7 @@ func TestAdmissionAndFrames(t *testing.T) {
 }
 
 func TestRefusalsAtTheDoor(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	unknown := &peer{role: "client"}
 	unknown.key, _ = handshake.GenerateKey()
@@ -391,14 +391,14 @@ func TestRefusalsAtTheDoor(t *testing.T) {
 }
 
 func TestSilenceForWrongKnocks(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	hostPort, _ := session.ParseAddress(address)
 	cases := []struct {
 		name  string
 		bytes []byte
 	}{
-		{"a TLS byte while the legacy listener is off", []byte{22, 3, 1, 0, 5, 1, 2, 3, 4, 5}},
+		{"a TLS record", []byte{22, 3, 1, 0, 5, 1, 2, 3, 4, 5}},
 		{"an unknown version", []byte{5, 0, 3, 1, 2, 3}},
 		{"a knock with a wrong mac1", func() []byte {
 			other, _ := handshake.GenerateKey()
@@ -428,7 +428,7 @@ func TestSilenceForWrongKnocks(t *testing.T) {
 }
 
 func TestReplayedKnockIsSilence(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	agent := newPeer(t, hub, "dev3", "agent")
 	fixed := time.Unix(1700000000, 0)
@@ -450,7 +450,7 @@ func TestReplayedKnockIsSilence(t *testing.T) {
 }
 
 func TestJoin(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	hub.python.mu.Lock()
 	hub.python.tickets["ticket-1"] = "dev9"
@@ -486,53 +486,8 @@ func TestJoin(t *testing.T) {
 	}
 }
 
-func TestLegacyHandOff(t *testing.T) {
-	legacy, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer legacy.Close()
-	go func() {
-		conn, err := legacy.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		buffer := make([]byte, 5)
-		if _, err := io.ReadFull(conn, buffer); err == nil {
-			_, _ = conn.Write(append([]byte("tls:"), buffer...))
-		}
-	}()
-	hub := newTestHub(t, legacy.Addr().(*net.TCPAddr).Port)
-	address := hub.listen(t)
-	hostPort, _ := session.ParseAddress(address)
-	conn, err := net.Dial("tcp", hostPort)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_, _ = conn.Write([]byte{22, 3, 1, 0, 1})
-	buffer := make([]byte, 9)
-	if _, err := io.ReadFull(conn, buffer); err != nil || string(buffer) != "tls:\x16\x03\x01\x00\x01" {
-		t.Fatalf("legacy answer %q %v", buffer, err)
-	}
-
-	stray, err := net.Dial("tcp", hostPort)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stray.Close()
-	_, _ = stray.Write([]byte{22, 4, 1, 0, 1})
-	_ = stray.SetReadDeadline(time.Now().Add(5 * time.Second))
-	n, err := stray.Read(buffer)
-	var netError net.Error
-	if n != 0 || err == nil || (errors.As(err, &netError) && netError.Timeout()) {
-		t.Fatalf("a stray 0x16 was not closed at the door: %q %v", buffer[:n], err)
-	}
-}
-
 func TestReplacedByASecondSession(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	agent := newPeer(t, hub, "dev4", "agent")
 	first, firstID := agent.admit(t, hub, address, "dev4")

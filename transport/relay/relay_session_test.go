@@ -101,7 +101,7 @@ func echoServer(t *testing.T) int {
 }
 
 func TestConnectRelayedToAnAgent(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	agent := newPeer(t, hub, "dev", "agent")
 	agentConn, agentSession := agent.admit(t, hub, address, "dev")
@@ -148,7 +148,7 @@ func TestConnectRelayedToAnAgent(t *testing.T) {
 }
 
 func TestConnectDialledByTheHubAndTheLimit(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	client := newPeer(t, hub, "cli", "client")
 	clientConn, clientSession := client.admit(t, hub, address, "cli")
@@ -208,7 +208,7 @@ func TestConnectDialledByTheHubAndTheLimit(t *testing.T) {
 }
 
 func TestStreamsCloseAndAgentOffline(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	agent := newPeer(t, hub, "dev", "agent")
 	agentConn, agentSession := agent.admit(t, hub, address, "dev")
@@ -272,7 +272,7 @@ func TestStreamsCloseAndAgentOffline(t *testing.T) {
 }
 
 func TestUdpConnectDialledByTheHub(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	client := newPeer(t, hub, "cli", "client")
 	clientConn, _ := client.admit(t, hub, address, "cli")
@@ -323,7 +323,7 @@ func TestUdpConnectDialledByTheHub(t *testing.T) {
 }
 
 func TestStreamsCloseByRow(t *testing.T) {
-	hub := newTestHub(t, 0)
+	hub := newTestHub(t)
 	address := hub.listen(t)
 	client := newPeer(t, hub, "cli", "client")
 	clientConn, _ := client.admit(t, hub, address, "cli")

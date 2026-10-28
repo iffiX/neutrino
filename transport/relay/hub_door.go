@@ -83,12 +83,10 @@ type peerFacts struct {
 }
 
 // ServeConn runs one accepted connection from its first bytes to its
-// admission or its end: the legacy hand-off, the knock or the gate, the
-// control stream and the first frame. The first four bytes pick the path:
-// the hub's magic is a member's, a frame length's zero byte is a browser's
-// while a share is live, a TLS handshake record's two bytes are a 0.5
-// peer's while the legacy listener is on, and anything else is closed with
-// no byte written.
+// admission or its end: the knock or the gate, the control stream and the
+// first frame. The first four bytes pick the path: the hub's magic is a
+// member's, a frame length's zero byte is a browser's while a share is live,
+// and anything else is closed with no byte written.
 func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	acceptedAt := h.now()
 	entry, victim := h.ledger.Accept(acceptedAt)
@@ -124,13 +122,6 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	switch {
 	case bytes.Equal(head, knock.Magic(key.Public)):
 		h.serveKnock(d, conn, reader, key, jar, address, listenerName)
-	case head[0] == knock.KnockLegacyTLSByte && head[1] == knock.KnockLegacyTLSVersionByte && h.legacy != 0:
-		h.ledger.Leave(entry)
-		d.admission.Stop()
-		closer.disarm()
-		d.isHandedOver = true
-		_ = conn.SetReadDeadline(time.Time{})
-		h.handOffLegacy(conn, reader)
 	case head[0] == gate.GateFrameFirstByte && h.gate != nil && h.gate.HasShares():
 		h.serveGuest(d, &bufferedConn{Conn: conn, reader: reader}, address, listenerName)
 	}
@@ -389,20 +380,6 @@ func (h *Hub) admit(d *door, conn net.Conn, facts peerFacts) {
 	go rs.readFrames()
 	go rs.acceptStreams()
 	go rs.watchEnd()
-}
-
-// handOffLegacy passes a connection whose first byte is a TLS handshake's to
-// the legacy listener on loopback, the bytes the reader holds first.
-func (h *Hub) handOffLegacy(conn net.Conn, reader *bufio.Reader) {
-	target := TargetAddress(RelayLegacyLoopback, h.legacy)
-	legacy, err := net.DialTimeout("tcp", target, RelayLegacyDialLimit)
-	if err != nil {
-		h.log("legacy_unreachable", "address", target, "error", err.Error())
-		conn.Close()
-		return
-	}
-	h.log("legacy_handoff", "address", FormatIP(PeerIP(conn.RemoteAddr())))
-	Splice(&bufferedConn{Conn: conn, reader: reader}, legacy)
 }
 
 // bufferedConn reads what its reader already holds before the connection.
