@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -92,8 +93,10 @@ func TestCertificateFiles(t *testing.T) {
 	if err != nil || string(written) != Fingerprint(first)+"\n" {
 		t.Fatalf("fingerprint file %q: %v", written, err)
 	}
+	// Windows keeps no mode bits. The installer's access list on the data
+	// folder protects the key there.
 	info, err := os.Stat(filepath.Join(dir, GateCertificateKeyFile))
-	if err != nil || info.Mode().Perm() != GateCertificateKeyMode {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != GateCertificateKeyMode) {
 		t.Fatalf("key file mode %v: %v", info.Mode(), err)
 	}
 	if first.Leaf.NotAfter.Before(time.Now().Add(9 * 365 * 24 * time.Hour)) {
