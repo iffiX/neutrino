@@ -6,9 +6,6 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT
 # number has one name in every package, so neither carries a package prefix.
 PROTOCOL = 4
 PROTOCOL_MIN = 4
-# The number an agent of 0.5 speaks, one below the floor: its hello is
-# admitted for its own update alone.
-CHANNEL_PROTOCOL_UPDATE_ONLY = 3
 
 # An enrolment ticket: its size in bytes before encoding, and how long it
 # lives, counted across hub restarts. The standard names both, so neither

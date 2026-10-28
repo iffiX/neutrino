@@ -1,10 +1,9 @@
-"""Admission: one number, one range, two refusals with the same params, and
-the hello of an agent of 0.5 let in for its own update alone."""
+"""Admission: one number, one range, two refusals with the same params."""
 
 import pytest
 
 from neutrino_hub.modules.channel import admission
-from neutrino_hub.modules.channel.admission import admit, is_update_only
+from neutrino_hub.modules.channel.admission import admit
 from neutrino_hub.modules.channel.constants import PROTOCOL, PROTOCOL_MIN
 
 
@@ -43,10 +42,3 @@ def test_a_peer_before_0_6_is_too_old(protocol):
     """0.6.0 speaks 4 and raises the floor to its own number."""
     assert (PROTOCOL, PROTOCOL_MIN) == (4, 4)
     assert admit(protocol)["code"] == "protocol_too_old"
-
-
-def test_only_an_agent_speaking_the_number_of_0_5_is_let_in_for_its_update():
-    assert is_update_only("agent", 3) is True
-    assert is_update_only("client", 3) is False
-    assert is_update_only("agent", 2) is False
-    assert is_update_only("agent", PROTOCOL) is False
