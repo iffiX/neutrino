@@ -16,7 +16,7 @@ side of a share is in [protocol.md](protocol.md), "Web shares", and
 | --- | --- |
 | `share_page/index.html` | the shell page: the screen and the app's frame |
 | `share_page/shell.js` | the connection: the session description, the data channel, the open record, a yamux client, the record layer, the control stream, an HTTP/1.1 client over `connect` streams, the cookie jar, the WebSocket bridge, and the screens with their words |
-| `share_page/sw.js` | the service worker: every request of the app's frame handed to its tab's shell |
+| `share_page/sw.js` | the service worker: every request of the app's frame handed to its tab's shell, and the cache of the app's files |
 | `share_page/shim.js` | the script put at the top of each HTML page of the app |
 
 | Rule | Reason |
@@ -73,11 +73,27 @@ of the browser's:
 | `WebSocket` | a socket the shell carries over a `connect` stream to the entry, framed by RFC 6455 in JavaScript |
 | `navigator.serviceWorker.register` | a call that does nothing; the worker also refuses every request whose destination is a service worker |
 
+## The cache of the app's files
+
+The worker keeps the app's static files in the browser's Cache Storage, and
+a later open of the same app loads them from there. The cache holds the
+app's public code alone, its scripts, styles, fonts and images, and no data,
+cookie or secret of the app or of the visitor.
+
+| Rule | Reason |
+| --- | --- |
+| The worker keeps the response to a GET when it is a 200 and the request's destination is `script`, `style`, `font` or `image`, or the response's `Content-Type` names a script, a style sheet, a font or an image. | These are the app's code and artwork, the same for every visitor. |
+| Nothing else is kept: no document, by the destination `document` or `iframe` or a `Content-Type` of `text/html`, no API answer, and no response with `Set-Cookie` or with `no-store` or `private` in its `Cache-Control`. A static file sent with the jar's cookies is kept unless its `Cache-Control` forbids it. | A page, an API answer and a response that sets a cookie belong to one visitor at one moment. A script fetched with the app's cookie is still the app's public code. |
+| There is one cache for each hub and app, named from the link's `hub.fp` and `app.entry`. | Every share a site serves has the site's one origin and so one Cache Storage, and a file kept for one hub's app never answers a request of another's. |
+| A later load is answered from the cache first. The worker then sends the request again through the shell with the kept `ETag` or `Last-Modified` as its condition: a `304` keeps the entry, a response that can be kept replaces it, and any other removes it. | A second open reads the app's files from the browser, and a changed app reaches the visitor at the next open. |
+| A cache holds at most 50 MB. Before a response that takes it past that is stored, the worker removes the responses stored earliest until it fits; a response larger than 50 MB is never kept. | The browser keeps a bounded amount of each app. |
+| When the page shows the link screen, it deletes the cache of the link's hub and app. | A share that has ended leaves nothing of its app in the browser. |
+
 ## What the page keeps
 
 | Rule | Reason |
 | --- | --- |
-| The link's facts stay after `#` in the address, and the shell keeps a copy in `sessionStorage`, which is per tab. The page writes nothing to `localStorage`, IndexedDB or a cookie of its own. | A refresh and a bookmark keep working, and a closed tab leaves nothing behind. |
+| The link's facts stay after `#` in the address, and the shell keeps a copy in `sessionStorage`, which is per tab. The page writes nothing to `localStorage`, IndexedDB or a cookie of its own, and the cache of the app's files is the one thing of the share it leaves in the browser after its tab closes. | A refresh and a bookmark keep working, and a closed tab leaves the app's public code behind and nothing else. |
 | The page shows nothing of the share beyond the screens below: no hub name, no machine, no link. | A visitor sees the app the owner shared and nothing else. |
 
 ## The screens
