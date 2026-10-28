@@ -8,7 +8,6 @@ from neutrino_hub.modules.clients.permissions import (
     client_permission,
     entry_device_id,
     entry_row_id,
-    file_row_id,
     is_device_permitted,
     is_permitted,
     is_row_of_device,
@@ -18,6 +17,12 @@ from neutrino_hub.modules.clients.permissions import (
     terminal_row_id,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.services.file_ids import (
+    file_row_id,
+    folder_share_entry_id,
+    folder_share_id,
+    home_share_entry_id,
+)
 
 
 @pytest.fixture
@@ -96,7 +101,8 @@ def test_a_kind_off_allows_only_the_rows_set_on():
             {
                 "id": "samba_folder_d1_data_lab",
                 "type": "file",
-                "payload": {"account": "lab"},
+                "device_id": "d1",
+                "payload": {"share": "data", "account": "lab"},
             },
             "samba_folder_d1_data",
         ),
@@ -111,6 +117,35 @@ def test_an_entry_is_judged_under_its_app_its_share_or_itself(entry, row_id):
 
 def test_a_home_share_entry_is_its_own_row():
     assert file_row_id({"id": "samba_d1_lab", "payload": {}}) == "samba_d1_lab"
+
+
+def share_entry(entry_id: str, share: str, account: str) -> dict:
+    return {
+        "id": entry_id,
+        "type": "file",
+        "app_id": "",
+        "device_id": "d1",
+        "payload": {"share": share, "account": account},
+    }
+
+
+def test_every_account_entry_of_a_folder_share_follows_the_share_row():
+    permission = ClientPermission(
+        kinds=frozenset({"file"}), entries={folder_share_id("d1", "lab"): False}
+    )
+    denied = [
+        share_entry(folder_share_entry_id("d1", "lab", account), "lab", account)
+        for account in ("ann", "bob")
+    ]
+    allowed = [
+        share_entry(folder_share_entry_id("d1", "data", "ann"), "data", "ann"),
+        share_entry(home_share_entry_id("d1", "ann"), "ann", ""),
+    ]
+
+    for entry in denied:
+        assert not is_permitted(permission, "file", "d1", entry_row_id(entry))
+    for entry in allowed:
+        assert is_permitted(permission, "file", "d1", entry_row_id(entry))
 
 
 def test_a_row_names_a_device_by_a_whole_part_of_its_id():

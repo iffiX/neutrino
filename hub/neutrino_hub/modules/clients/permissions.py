@@ -21,6 +21,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_TYPE_AI,
     SERVICES_TYPE_FILE,
 )
+from neutrino_hub.modules.services.file_ids import file_row_id
 
 
 def permission_kinds(kinds) -> list:
@@ -163,23 +164,6 @@ def entry_row_id(entry: dict) -> str:
     if entry.get("type") == SERVICES_TYPE_FILE:
         return file_row_id(entry)
     return str(entry.get("id", "") or "")
-
-
-def file_row_id(entry: dict) -> str:
-    """The row a ``file`` entry is judged under.
-
-    Args:
-        entry: The entry, with ``id`` and its payload's ``account``.
-
-    Returns:
-        A folder share's id for an entry of a folder share, else the
-        entry's own id.
-    """
-    entry_id = str(entry.get("id", "") or "")
-    account = str((entry.get("payload") or {}).get("account", "") or "")
-    if account and entry_id.endswith(f"_{account}"):
-        return entry_id[: -len(account) - 1]
-    return entry_id
 
 
 def terminal_row_id(device_id: str) -> str:
