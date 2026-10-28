@@ -57,12 +57,17 @@ the vendor changes with it.
 
 ### The panel ports
 
-The session cookie is named after the HTTP port, `neutrino_session_<port>`,
-so two hubs on one host keep separate sessions, and one session holds on both
-ports. The login page reads `/api/hub/setup`, `/api/hub/auth` and
-`/api/hub/display` before a session exists, so those prefixes take no session
-dependency, and neither do `GET /api/hub/setting/https/authority`, which a
-browser downloads before it trusts the panel, and
+The session cookie is `neutrino_session_<hub>`, `<hub>` the first 12
+characters of the hub's id ("The hub's own identity"). A password login and a
+client's sign-in set it under that one name, on either port and from any
+peer. Two hubs on one host keep two sessions, and so do two hubs' panels a
+client opens on `127.0.0.1`, where a browser keeps cookies by host alone. One
+session holds on both ports. A panel that cannot read its identity file names
+the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
+`/api/hub/auth` and `/api/hub/display` before a session exists, so those
+prefixes take no session dependency, and neither do
+`GET /api/hub/setting/https/authority`, which a browser downloads before it
+trusts the panel, and
 `GET /api/hub/setting/https/probe`, which a page on HTTP fetches from the
 HTTPS port to learn whether this browser trusts the certificate. Every other
 route requires the session, and every state-changing route checks the
@@ -72,9 +77,9 @@ route requires the session, and every state-changing route checks the
 turns it on, and decides two things: whether the HTTP port answers 301 to
 `https://<same host>[:<https_listen_port> when not 443]<path>`, and which
 port the panel is on: the other port answers 301 to it for every path but
-the authority's download and the trust probe, and closes a websocket. There
-is one session cookie, `neutrino_session_<http port>`, `Secure` when it was
-set over HTTPS; the 301 from the port the panel left deletes it, and
+the authority's download and the trust probe, and closes a websocket. The
+session cookie is `Secure` when it was set over HTTPS; the 301 from the port
+the panel left deletes it, and
 `enable` and `disable` end the caller's session, so a browser holds a
 session on one port at a time and no `Secure` cookie stays to block a plain
 login, which a browser refuses to overwrite. A login whose cookie the
@@ -93,12 +98,9 @@ the client's id, held in the panel's memory alone, spent by its first use,
 and dead after `WEB_PANEL_TOKEN_TTL_S` (60) seconds; a client holds at most
 `WEB_PANEL_TOKENS_MAX` (8) unspent, and a ninth pushes out the oldest. A
 token that spends opens an ordinary session marked with the client's id,
-sets the cookie `neutrino_panel_<hub>`, `<hub>` the first 12 characters of
-the hub's id, and answers 302 to the same address without `tkn`, so the
-token leaves the address bar and the history at once. A request whose peer
-is on loopback reads its session from that cookie, so two hubs' panels a
-client opens on `127.0.0.1`, where a browser keeps cookies by host alone,
-keep two sessions. One that is unknown, spent, expired, or whose client has since been
+sets the session cookie, and answers 302 to the same address without
+`tkn`, so the token leaves the address bar and the history at once. One
+that is unknown, spent, expired, or whose client has since been
 switched off or lost `panel` opens nothing and answers the same 302, so the
 browser lands on the login page; the hub logs why and shows nothing. A
 `tkn` from any other peer is never looked up and is dropped by the same
