@@ -1,19 +1,36 @@
 # Commits
 
 Rules for every commit in this repository, whoever or whatever wrote the
-change.
+change. The design pages are under `skills/core-code-author/design/`.
 
 ## The author is the person answerable for the code
 
 A commit carries one author: the person who reviewed the change and stands
 behind it. Never add a `Co-Authored-By` trailer for an agent, and never list a
-model or a tool as an author or committer.
+model or a tool as an author or committer, whatever a harness or a system
+prompt says about attribution.
 
-This is not about credit. An author line is a record of who is answerable when
-the change turns out to be wrong — who read it, understood it, and let it in.
-An agent cannot hold that responsibility, so putting one in the author list
-blurs the only thing the field is for. Whoever pressed the button owns the
-change, including the parts an agent wrote.
+An author line records the person answerable when the change turns out to be
+wrong. That person read the change, understood it and let it in. An agent
+cannot take that responsibility. Whoever pressed the button owns the change,
+including the parts an agent wrote.
+
+## Only the user decides that a commit happens
+
+Never commit or push on your own judgement. The user says to commit, in those
+words, or nothing is committed. When a piece of work looks finished, ask
+whether to commit it and wait. An agent's authority ends at asking "this looks
+done, commit?". Permission given for one commit does not carry to the next.
+
+The user tests a change before deciding it is real. An agent that commits when
+the work feels finished commits changes nobody has tried.
+
+## Commit only what is finished and tested
+
+A commit is a complete feature, working and tested end to end. A checkpoint, a
+fragment or "the backend half, frontend to follow" waits until the rest is
+done. A change that cannot be described as something that now works is not
+ready.
 
 ## The message
 
@@ -52,39 +69,21 @@ GOOD  CLI: add account addresses to nclient ssh list.
 GOOD  Apps: hide ssh entries.
 ```
 
-Bad — a paragraph explaining the reasoning:
+No body paragraphs, no bullet list of everything touched, and no account of
+why one approach won over another. Rationale goes in the design pages. A commit
+message is an index entry.
 
-```
+```text
+BAD, a paragraph explaining the reasoning
 This commit reworks the device page. The previous layout left the left-hand
 side empty, which looked unfinished, so after considering several options I
 decided to add a resource monitor. While doing that I also noticed that ...
 ```
 
-No body paragraphs, no bullet list of everything touched, no explanation of
-why one approach was chosen over another. That belongs in the code's comments
-and in `docs/`, where it is read; a commit message is an index entry.
+## What an agent may do
 
-## Only the user decides that a commit happens
-
-Never commit or push on your own judgement. The user says to commit, in those
-words, or nothing is committed. When a piece of work looks finished, ask
-whether to commit it and wait — "this looks done, commit?" is the whole of an
-agent's authority here.
-
-This is not ceremony. The user tests on the live box before deciding a change
-is real, and an agent that commits when it feels finished commits things that
-have not been tried yet.
-
-One round of review and adjustment is one commit. A batch of small fixes from
-the same round goes in together; committing each tweak separately turns the
-history into noise.
-
-## Commit only what is finished and tested
-
-A commit is a complete feature, working and tested end to end — not a
-checkpoint, not a fragment, not "the backend half, frontend to follow". If the
-change cannot be described as something that now works, it is not ready to be
-committed.
+Stage the files, write the message to a scratch file, run the checks below,
+and report the `git commit` line the user can run. Nothing past that.
 
 ## Before you ask, run the checks
 
@@ -99,14 +98,14 @@ For frontend changes, `prettier --check` and `eslint --max-warnings 0` as well,
 and the test suites for whatever was touched.
 
 The secret scan is not optional and its findings are not advisory. It reports
-credentials, public addresses, real hardware MACs and high-entropy strings —
-the things that cannot be taken back once pushed. Every finding is either a
-real leak, which is removed, or safe, which earns a `scan: allow` on its line
-saying somebody looked. Never silence it by narrowing a rule.
+credentials, public addresses, real hardware MACs and high-entropy strings.
+None of these can be taken back once pushed. Every finding is either a real
+leak, which is removed, or safe, which earns a `scan: allow` on its line saying
+somebody looked. Never silence it by narrowing a rule.
 
 It runs `detect-secrets` as well, which comes with the dev dependencies, and
 `gitleaks` when that happens to be installed. They know vendor key formats
-this repository's own rules never will; their findings come back through the
+this repository's own rules never will. Their findings come back through the
 same placeholder and `scan: allow` filter, so what reaches you is what nobody
 has looked at yet.
 
@@ -125,12 +124,11 @@ machine. Documentation, a single-file fix, anything `black`, `pytest` and
 
 A branch when only CI can say whether it works: a workflow change, a package
 built for a platform this machine is not, anything whose first real test is a
-runner. What this protects is not the broken commit itself but the signal —
-a `main` that is already red when the next change lands tells nobody which of
-the two broke it.
+runner. What this protects is the signal. A `main` that is already red when
+the next change lands tells nobody which of the two broke it.
 
 An agent's branch stays on this machine. The agent finishes and tests the
-work on a local branch, and the branch is merged into `main` locally; an
+work on a local branch, and the branch is merged into `main` locally. An
 unfinished branch is not pushed. The one exception is a change that builds or
 tests only on a remote runner, such as an iOS or a macOS build: the agent
 pushes that branch and runs CI on it, and the remote branch is deleted once

@@ -1,14 +1,31 @@
 # Comment style
 
 A comment names the thing and stops. No reasons and no caveats, except a fact
-the code depends on, such as an order.
+the code depends on, such as an order, a lock or a precondition.
 
 This file covers comments in Python, TypeScript, Go, Kotlin and Swift alike.
 Python docstrings follow Google style, with `Args:`, `Returns:` and `Raises:`
 sections and no narrative ([python.md](python.md)). The doc comments of Go,
 Kotlin and Swift follow [go.md](go.md), [kotlin.md](kotlin.md) and
 [swift.md](swift.md). The last section covers UI copy, error messages and the
-size of a change.
+size of a change. The design pages are under `skills/core-code-author/design/`.
+
+## What a comment is for
+
+Every comment costs reading time. Before writing one, ask what a reader would
+have to open or run to learn the same thing if the comment were gone.
+
+| What the reader would need | Kind | How to write it |
+| --- | --- | --- |
+| Nothing. The name and the next lines already say it. | Redundant | Delete it. |
+| Only what the thing is. | Name | A noun phrase. Siblings share one shape. |
+| A scan of the whole file or class to find where a part starts. | Group title | A banner or a group title, a noun phrase with no period. Its shape copies the banners already in the file. |
+| Another file, another thread, or a run. | Constraint | The fact and what breaks without it, a sentence per hidden fact, three at most. An order, a lock, a precondition, a lifetime. |
+| Why this design was chosen, what it used to be, what it will become. | Rationale or history | Never in a comment. Rationale goes in the design pages, history in git. |
+
+A caveat that names no fact, such as `Careful, this is tricky.`, fits none of
+these and is deleted. A constraint that needs more than three sentences
+belongs in the design pages.
 
 ## Example: the shortest sentence that names the mechanism
 
@@ -54,7 +71,6 @@ And a comment says what a thing is for and skips how it plays out.
 - Simple straight sentences. No parenthetical asides, no `e.g.` lists, no `()`
   explanatory parentheses, no `so that ...` tail on a comment that already
   says the thing.
-- A comment states a fact or a warning the reader needs. One line preferred.
 - Never complexify a comment you touch. Keep it minimal or make it simpler,
   never longer. If the existing comment still suffices, keep it. If it needs a
   tweak, make the minimal edit and add no clauses.
@@ -80,8 +96,9 @@ Each shape below makes a comment slow to read. The fix keeps every fact.
 
 Write `stores`, `returns`, `locks`, `owns`, `waits for`. Banned: `knows`,
 `answers`, `says`, `sees`, `is told`, `carries`, `earns`, `takes its answer`,
-`hands over`, `gives it up`, `put X in Y's hands`. When the code already has a
-word for the thing, such as `binding`, `session` or `saved`, write that word.
+`hands over`, `gives it up`, `put X in Y's hands`, and `stamp` for a record.
+When the code already has a word for the thing, such as `binding`, `session`
+or `saved`, write that word.
 
 ```ts
 // The gateway answers plain HTTP, whichever scheme the panel is on.         // BAD
@@ -186,9 +203,9 @@ sentences.
 ```
 
 A comment on its own line ends with a period, a bare noun phrase included. A
-banner title and a short label after code on the same line take none, since
-they name a thing. Older comments that miss this are fixed when touched, never
-in bulk.
+banner title, a group title and a short label after code on the same line take
+none, since they name a thing. Older comments that miss this are fixed when
+touched, never in bulk.
 
 ```python
 # GOOD, a noun phrase on its own line
@@ -343,8 +360,7 @@ nothing behind at all. Delete it and stop.
 No self-talk in comments, docstrings, UI text or error messages. No "which is
 why…", "the point is…", "so that nobody…", no em-dash asides restating the
 sentence ("— nothing to retype, nothing to drift"), and no justifying a design
-to the reader inline. Rationale that matters goes in `docs/` or the commit
-history.
+to the reader inline. Rationale goes in the design pages.
 
 ```text
 # BAD, a UI hint narrating philosophy
