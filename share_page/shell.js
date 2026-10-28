@@ -871,7 +871,7 @@ function openWebSocket(session, url, protocols, handlers) {
     send: (data) => {
       if (!isOpen || isClosed) return;
       if (typeof data === "string") sendFrame(WS.text, encoder.encode(data));
-      else sendFrame(WS.binary, data instanceof Uint8Array ? data : new Uint8Array(data));
+      else sendFrame(WS.binary, ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data));
     },
     close: (code, reason) => {
       if (isClosed) return;

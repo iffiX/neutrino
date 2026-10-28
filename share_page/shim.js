@@ -90,8 +90,12 @@
       this.handle = shell.wsOpen(this.url, protocols, {
         open: (protocol) => { this.readyState = NeutrinoWebSocket.OPEN; this.protocol = protocol; this.emit("open"); },
         message: (data) => {
+          // The shell's bytes belong to its own realm. A copy in this page's realm passes the app's type checks.
           let payload = data;
-          if (data instanceof Uint8Array) payload = this.binaryType === "arraybuffer" ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : new Blob([data]);
+          if (typeof data !== "string") {
+            const bytes = new Uint8Array(data);
+            payload = this.binaryType === "arraybuffer" ? bytes.buffer : new Blob([bytes]);
+          }
           this.emit("message", { data: payload });
         },
         close: (code, reason, wasClean) => { this.readyState = NeutrinoWebSocket.CLOSED; this.emit("close", { code, reason, wasClean }); },
