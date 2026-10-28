@@ -2,7 +2,7 @@
 
 How to decompose logic into classes. This is judgment, not surface formatting;
 the mechanical method order lives in
-[../coding_style/python_style.md](../coding_style/python_style.md).
+[../coding_style/python.md](../coding_style/python.md).
 
 ## Example: one cohesive concept, one class
 

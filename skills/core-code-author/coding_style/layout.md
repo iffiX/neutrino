@@ -33,11 +33,11 @@ neutrino_hub/cli/apply.py
   type it holds, in PascalCase (`ChannelSocketClient.kt`,
   `ChannelSocketClient.swift`). Their directories still use `under_score`,
   apart from the target directories Xcode names after each target.
-  Details: [kotlin_style.md](kotlin_style.md), [swift_style.md](swift_style.md).
+  Details: [kotlin.md](kotlin.md), [swift.md](swift.md).
 - Go files are `under_score` and Go package directories are lowercase with
   no underscore, as Go asks: `transport/knock/`, `agent/sshserver/`. A
   binary's directory under `cmd/` is the binary's name,
-  `cmd/neutrino_transport/`. Details: [go_style.md](go_style.md).
+  `cmd/neutrino_transport/`. Details: [go.md](go.md).
 - A directory name states a role, not a grab-bag: `modules/xray/`,
   `modules/router/`, `neutrino_hub/system/`. Do not create `utils2/`, `misc/`, `helpers/`, `common/`,
   `stuff/`, `new/`, or `tmp/` as source directories, and never name a directory

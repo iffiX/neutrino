@@ -2,9 +2,9 @@
 
 The iOS app (`client/ios/`) is written in Swift with SwiftUI, in three
 targets: the app, its unit tests and its UI tests. This file is its language surface. The
-shared intent is set by [naming_style.md](naming_style.md),
-[comment_style.md](comment_style.md) and
-[exception_style.md](exception_style.md), and applies here as it does to
+shared intent is set by [naming.md](naming.md),
+[comment.md](comment.md) and
+[exception.md](exception.md), and applies here as it does to
 Python.
 
 ## Example
@@ -68,7 +68,7 @@ final class ChannelSocketClient {
   Swift does: `ChannelSocketClient.swift`. A file holding one extension is
   `<Type>+<Concept>.swift`: `ChannelSocketClient+Frames.swift`.
 - Directories use `under_score`, like the rest of the repository
-  ([layout_style.md](layout_style.md)), except the target and bundle
+  ([layout.md](layout.md)), except the target and bundle
   directories Xcode names after the target.
 - No grab-bag files or groups: no `Helpers.swift`, no `Common/`.
 - Non-configurable constants live in one `Constants.swift` per target or
@@ -90,7 +90,7 @@ final class ChannelSocketClient {
 ## Comments
 
 - English only, stating the fact, with no narrated reasoning
-  ([comment_style.md](comment_style.md)).
+  ([comment.md](comment.md)).
 - Every public declaration has a `///` comment: what it is, `- Parameters:`
   with one entry per parameter, `- Returns:`, and `- Throws:` naming each case
   thrown on purpose, the same contract as Python's `Args:`, `Returns:` and

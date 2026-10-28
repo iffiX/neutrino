@@ -299,7 +299,7 @@ A field is spelled once. `is_ipv4_exposed` is the key in
 `web/models.py`, and the property on the TypeScript interface in
 `frontend/src/api_types.ts`. A path segment is spelled the way the model that
 returns it is, and booleans are questions in all three, `is_` and `has_`
-([coding_style/naming_style.md](../coding_style/naming_style.md)).
+([coding_style/naming.md](../coding_style/naming.md)).
 
 ### The principles behind every route
 
@@ -835,7 +835,7 @@ stream, one stream layer and one admission rule serve both roles. The role
 decides the contents of the two documents and which streams each side opens.
 Every machine carries the same transport: the hub, the agent and the desktop
 client run `neutrino_transport`, and the Android and iOS apps embed it as a
-library ([../coding_style/go_style.md](../coding_style/go_style.md)).
+library ([../coding_style/go.md](../coding_style/go.md)).
 
 ### The link and the binding
 
@@ -2133,7 +2133,7 @@ with the agent's code:
 | The `package` stream | The agent opens it and takes the bytes as it writes them to disk. The sha256 in the close's `params` is checked after the close, and only a matching file goes to `systemd-run`. A session that drops mid-transfer deletes the temporary file and locks no update target; only a failed install locks it. |
 | The two hashes | The fingerprint of the published service list is computed on the unresolved list and drives the push; the `state.hash` a client receives is computed on the list resolved for its scope. |
 | Config writes on the report path | `mac_addresses` is written only when the set grows, under `CONFIG_WRITE_LOCK` and through `asyncio.to_thread`. A peer address used as the fallback link address is recorded, so an overlay-only device keeps its row on the Services page. |
-| `PROTOCOL` | The constant has that name in all three packages and in the transport, with no package prefix, an exception to `naming_style.md` stated there: one number has one name. |
+| `PROTOCOL` | The constant has that name in all three packages and in the transport, with no package prefix, an exception to `naming.md` stated there: one number has one name. |
 
 ## The local channel
 

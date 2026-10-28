@@ -2,7 +2,7 @@
 
 Which exception a raise site uses, and the one place a package may declare a
 kind of its own. The docstring shape that names them lives in
-[python_style.md](python_style.md).
+[python.md](python.md).
 
 ## Example
 

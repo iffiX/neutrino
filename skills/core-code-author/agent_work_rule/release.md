@@ -5,7 +5,7 @@ hub, the agent, the desktop client and the two phone apps are versioned
 together and released together.
 
 Wording rules for the entries themselves are in
-[../coding_style/comment_style.md](../coding_style/comment_style.md); who may
+[../coding_style/comment.md](../coding_style/comment.md); who may
 commit and when is in [commit.md](commit.md).
 
 ## One tag, every package, compatibility by protocol number

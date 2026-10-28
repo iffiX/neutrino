@@ -304,7 +304,7 @@ running.
   does is [../../cli.md](../../../docs/cli.md).
 
 The mechanical placement rules are in
-[../coding_style/layout_style.md](../coding_style/layout_style.md).
+[../coding_style/layout.md](../coding_style/layout.md).
 
 ## A left-out feature is reached through one table
 

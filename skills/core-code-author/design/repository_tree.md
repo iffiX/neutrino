@@ -35,7 +35,7 @@ transport/           The Go module of the channel: knock/, handshake/,
                      session/, relay/, control/ the local channel,
                      cmd/neutrino_transport/ the binary, mobile/ the
                      library the phones embed, tests/ what crosses
-                     packages. Style: ../coding_style/go_style.md.
+                     packages. Style: ../coding_style/go.md.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
 docs/                guide/, the VitePress documentation site. Generated site
@@ -203,14 +203,14 @@ tests pin, so one commit changes the channel for all three clients.
 ```
 client/android/      Gradle project, Kotlin and Jetpack Compose, minSdk 26
                      (Android 8), applicationId `io.github.iffix.neutrino`.
-                     Style: ../coding_style/kotlin_style.md. NetBird's
+                     Style: ../coding_style/kotlin.md. NetBird's
                      Kotlin is in the main source set, in every edition.
 client/ios/          Swift and SwiftUI, iOS 16, bundle id
                      `io.github.iffix.neutrino`. project.yml, the XcodeGen
                      spec, is the committed project; the .xcodeproj is
                      generated from it and ignored. Two targets: Neutrino/
                      the app, NeutrinoTests/ its unit tests. Style:
-                     ../coding_style/swift_style.md.
+                     ../coding_style/swift.md.
   Neutrino.xcconfig  The app target's settings beside project.yml: it
                      includes cores/rustdesk/RustDesk.xcconfig when that
                      file is there.

@@ -42,7 +42,7 @@ cli file keeps the operator's walk.
 ## The go block
 
 Each Go package's tests sit beside its files, `relay_session_test.go` beside
-`relay_session.go` ([../coding_style/go_style.md](../coding_style/go_style.md),
+`relay_session.go` ([../coding_style/go.md](../coding_style/go.md),
 "Tests"), and `transport/tests/` holds what crosses packages:
 
 | Package | What its tests pin |
@@ -92,8 +92,8 @@ The same shape under `client/desktop/tests/`:
 The mirror rule holds per language. `src/main/kotlin/<package path>/<Type>.kt`
 is tested by `src/test/kotlin/<package path>/<Type>Test.kt`, and a Swift file
 `<dir>/<Type>.swift` in a target by `<dir>/<Type>Tests.swift` in that target's
-test bundle ([kotlin_style.md](../coding_style/kotlin_style.md),
-[swift_style.md](../coding_style/swift_style.md)).
+test bundle ([kotlin.md](../coding_style/kotlin.md),
+[swift.md](../coding_style/swift.md)).
 
 Both apps speak the channel of `docs/guide/protocol/channel.md` and share no
 code with the desktop client. Their channel tests read
@@ -101,7 +101,7 @@ code with the desktop client. Their channel tests read
 repository and never from a copy, so a change to a channel model fails the
 phones' tests in the same commit that fails the hub's. A golden that more
 than one package or app reads is always data like this schema, and no test
-compares two code files ([layout_style.md](../coding_style/layout_style.md)).
+compares two code files ([layout.md](../coding_style/layout.md)).
 What else each pins:
 enrollment from a scanned or pasted link with the fingerprint checked first,
 the binding stored in the Keystore or the Keychain, the overlay switch per

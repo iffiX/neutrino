@@ -6,8 +6,8 @@ relay between streams, and the local control channel the Python side talks
 to. The hub, the agent and the desktop client carry it as a binary; the
 Android and iOS apps embed it as a gomobile library. This file is its
 language surface. The shared intent is set by
-[naming_style.md](naming_style.md), [comment_style.md](comment_style.md) and
-[exception_style.md](exception_style.md), and applies here as it does to
+[naming.md](naming.md), [comment.md](comment.md) and
+[exception.md](exception.md), and applies here as it does to
 Python.
 
 ## Example
@@ -85,7 +85,7 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
   `transport/mobile/`, and `transport/tests/` for what crosses packages, a
   hub's and a peer's transports talking over loopback with the Python sides
   faked on their local channels. This is the one place the repository departs from
-  `under_score` directory names ([layout_style.md](layout_style.md)), because
+  `under_score` directory names ([layout.md](layout.md)), because
   a Go package name is its directory name.
 - A file is named after its one concept in `under_score`, as Go's own files
   are: `relay_session.go`, `cookie_jar.go`. One file holds one type and what
@@ -112,7 +112,7 @@ func (r *RelaySession) OpenEntry(ctx context.Context, entry EntryID) (net.Conn, 
 ## Comments
 
 - English only, stating the fact, with no narrated reasoning
-  ([comment_style.md](comment_style.md)).
+  ([comment.md](comment.md)).
 - Every exported identifier has a doc comment that starts with its name, as
   `go doc` expects. A function's comment says what it does, what it returns,
   and the errors it returns on purpose, in prose: `It returns ErrSessionClosed

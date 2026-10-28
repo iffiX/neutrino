@@ -2,8 +2,8 @@
 
 The Android app (`client/android/`) is a Gradle project in Kotlin with Jetpack
 Compose. This file is its language surface. The shared intent is set by
-[naming_style.md](naming_style.md), [comment_style.md](comment_style.md) and
-[exception_style.md](exception_style.md), and applies here as it does to
+[naming.md](naming.md), [comment.md](comment.md) and
+[exception.md](exception.md), and applies here as it does to
 Python.
 
 ## Example
@@ -46,7 +46,7 @@ class ChannelSocketClient(private val socket: WebSocket) {
   Kotlin does: `ChannelSocketClient.kt`. A file of top-level functions is
   named after their one concept: `LinkParsing.kt`.
 - Directories use `under_score`, like the rest of the repository
-  ([layout_style.md](layout_style.md)). A package segment is the directory
+  ([layout.md](layout.md)). A package segment is the directory
   name: `io.github.iffix.neutrino.overlay_driver`.
 - No grab-bag files or directories: no `Utils.kt`, no `common/`.
 - Non-configurable constants live in one `Constants.kt` per Gradle module,
@@ -65,7 +65,7 @@ class ChannelSocketClient(private val socket: WebSocket) {
 ## Comments
 
 - English only, stating the fact, with no narrated reasoning
-  ([comment_style.md](comment_style.md)).
+  ([comment.md](comment.md)).
 - Every public declaration has a KDoc comment: what it is, one `@param` per
   parameter, `@return`, and one `@throws` per kind thrown on purpose, the
   same contract as Python's `Args:`, `Returns:` and `Raises:`.

@@ -35,7 +35,7 @@ class XrayConfigRenderer:
 Within a file, the order is: file-local constants, then functions, then
 classes; within each group, public before private. Never interleave imports,
 constants, functions, and `main()`. A library file has no `main()` at all (see
-[layout_style.md](layout_style.md)).
+[layout.md](layout.md)).
 
 ## Method order within a class
 
@@ -92,7 +92,7 @@ def render(self, device=None, mode=None) -> dict:
   class docstring says what one instance is. A dataclass documents its fields
   under `Attributes:` instead.
 - `Raises:` names every kind the body raises on purpose and the condition for
-  each; which kind that is follows [exception_style.md](exception_style.md).
+  each; which kind that is follows [exception.md](exception.md).
 - A private method gets one line and no sections.
 - A module or class brief stays within 5 lines of prose; the structured
   sections do not count. State what the thing is and its one or two defining

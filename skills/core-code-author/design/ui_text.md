@@ -72,7 +72,7 @@ never the same word for two different actions on one page.
 
 **No narrated reasoning.** The panel says what is, not why the code does it.
 Rationale belongs in `docs/`. This is the same rule the comments obey
-([../coding_style/comment_style.md](../coding_style/comment_style.md)), and it
+([../coding_style/comment.md](../coding_style/comment.md)), and it
 is broken most often in descriptions that start explaining the implementation.
 
 **Sentence case, and a full stop on a sentence.** `Send LAN traffic through

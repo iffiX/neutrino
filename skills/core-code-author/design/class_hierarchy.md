@@ -3,7 +3,7 @@
 Class names must form a tree-like, semantically meaningful structure that a
 human can navigate from the name alone. This is the design counterpart to the
 mechanical identifier rules in
-[../coding_style/naming_style.md](../coding_style/naming_style.md).
+[../coding_style/naming.md](../coding_style/naming.md).
 
 ## Example
 
@@ -48,8 +48,8 @@ name is the role: `OverlayVpnService` and `FilesDocumentsProvider` on
 Android, `TerminalViewRepresentable` and `BrowserNavigationDelegate` on iOS.
 Each
 language's file rules are in
-[../coding_style/kotlin_style.md](../coding_style/kotlin_style.md) and
-[../coding_style/swift_style.md](../coding_style/swift_style.md).
+[../coding_style/kotlin.md](../coding_style/kotlin.md) and
+[../coding_style/swift.md](../coding_style/swift.md).
 
 When a genuinely new family appears, propose the name rather than inventing one
 silently — consistency beats brevity.

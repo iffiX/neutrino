@@ -2,7 +2,7 @@
 
 The frontend (`hub/frontend/`) is React + TypeScript + Vite. These rules keep it
 consistent with the rest of the repo and reviewer-legible. The Python rules in
-[python_style.md](python_style.md) and the naming rules in [naming_style.md](naming_style.md)
+[python.md](python.md) and the naming rules in [naming.md](naming.md)
 still set the shared intent; this file is the TypeScript-specific surface.
 
 ## Example

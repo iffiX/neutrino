@@ -74,7 +74,7 @@ enforced by the declaration itself.
 `neutrino_transport` and `neutrino_ssh_server` are built with Go 1.27.3,
 the toolchain `packaging/build` pins, and the Android and iOS libraries with
 gomobile from `golang.org/x/mobile` at the version `transport/go.mod` pins
-([../coding_style/go_style.md](../coding_style/go_style.md)).
+([../coding_style/go.md](../coding_style/go.md)).
 
 | Target | What sets the floor | Floor |
 | --- | --- | --- |
