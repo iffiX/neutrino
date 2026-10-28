@@ -102,13 +102,13 @@ root:
 | --- | --- | --- |
 | The replica set | `podman exec neutrino_ayakaleaf_mongo mongosh --quiet --eval <initiate>`, `<initiate>` being `db.isMaster().primary \|\| rs.initiate({_id: "overleaf", members: [{_id: 0, host: "neutrino_ayakaleaf_mongo:27017"}]})` | while mongo runs |
 | The administrator | `GET /launchpad` at the app's published port, for the session cookie and the `ol-csrfToken` the page holds, then `POST /launchpad/register_admin` with that cookie and the JSON body `{_csrf, email, password}`, `email` the address the module's `constants.py` fixes and `password` the module's | once `/status` returns 200 |
-| The Chinese TeX set | `podman exec neutrino_ayakaleaf tlmgr --repository <source>/systems/texlive/tlnet update --self`, then the same with `install collection-langchinese collection-xetex collection-latexrecommended` in place of `update --self`, `<source>` the fastest source of the `ctan` set, and the next source after one that fails ([module_install.md](../module_install.md), "Source sets") | after the administrator |
+| The Chinese TeX set | `podman exec neutrino_ayakaleaf tlmgr --repository <source>/systems/texlive/tlnet update --self`, then the same with `install collection-langchinese collection-xetex collection-latexrecommended collection-pictures` in place of `update --self`, `<source>` the fastest source of the `ctan` set, and the next source after one that fails ([module_install.md](../module_install.md), "Source sets") | after the administrator |
 
 | Rule | Reason |
 | --- | --- |
 | The TeX step updates `tlmgr` itself from the source before it installs from it. | `tlmgr` refuses a repository newer than itself: in the lab every `ctan` source ended `tlmgr itself needs to be updated` on 6.3.1, whose `tlmgr` dated from 2026-10-12, and `update --self` took 3 seconds. Each image's `tlmgr` ages the same way. |
 | The app's unit starts the app again until the replica set exists. | The app's start check polls for a primary for 60 seconds and then exits, and its unit's `Restart=` starts it again. In the lab `rs.initiate` took 0.4 seconds, and the next start passed. |
-| From the install, and after a version change, the module reads `installing` until the three steps are done and `/status` returns 200. The state is applied again every 30 seconds meanwhile. | The app was ready 8 to 18 seconds after a start on Linux and 44 seconds after the first start on Windows, and the TeX set took 74 seconds. The page's `web` entry appears ("The page") once the editor compiles Chinese. |
+| From the install, and after a version change, the module reads `installing` until the three steps are done and `/status` returns 200. The state is applied again every 30 seconds meanwhile. | The app was ready 8 to 18 seconds after a start on Linux and 44 seconds after the first start on Windows, and the TeX set took 4 to 5 minutes. The page's `web` entry appears ("The page") once the editor compiles Chinese. |
 | A step that fails ends the install `install_failed` with `ayakaleaf_setup_failed {step, detail}`, `step` being `replica_set`, `admin` or `tex`, and `detail` the tool's own last line. **Install** runs the steps the record does not hold. | The forwarder signs in as the administrator, and the editor compiles Chinese only with the set; a step done once is never repeated. |
 | The administrator step fails `ayakaleaf_setup_failed {step: admin}` when `/launchpad` already sends the browser to `/login`. | An administrator the module did not make exists, so the module's password does not open the app. |
 
@@ -117,9 +117,9 @@ root:
 | Rule | Reason |
 | --- | --- |
 | The app image carries TeX Live 2026's basic scheme, 205 MB, with latexmk, XeTeX and the tools around them. An English article compiles with no network. | The kernel log showed no connection from the app while every outside connection was refused. |
-| The TeX volume holds that tree, and the first start adds the collections `collection-langchinese`, `collection-xetex` and `collection-latexrecommended` with `tlmgr`. | The basic scheme has no `ctexart.cls` and no `xeCJK.sty`. In the lab `tlmgr` installed about 230 packages in 74 seconds, the volume grew from 205 MB to 674 MB, and `ctexart` and `xeCJK` then compiled with no network. |
+| The TeX volume holds that tree, and the first start adds the collections `collection-langchinese`, `collection-xetex`, `collection-latexrecommended` and `collection-pictures` with `tlmgr`. | The basic scheme has no `ctexart.cls`, no `xeCJK.sty` and no `pgfplots.sty`. In the lab `tlmgr` installed the first three, about 230 packages, in 127 to 137 seconds, and the volume grew from 205 MB to 673 MB. `collection-pictures` added 326 packages, a 26 MB download and 104 MB on the volume, in 119 to 128 seconds. A `ctexart` page with a pgfplots figure then compiled with no network. |
 | A version change removes the TeX volume and makes it again, and the TeX step runs again. | Podman copies an image's files into a new volume alone, so a kept volume holds the TeX Live of the old image. |
-| The module installs those three collections and no scheme. | The full scheme took 991 seconds and 4.8 GB in the lab. The publisher's `texlive-full` image is a 9.4 GB download, 18.8 GB on disk, and its pull failed twice on Podman 3.4. |
+| The module installs those four collections and no scheme. | The full scheme took 991 seconds and 4.8 GB in the lab. The publisher's `texlive-full` image is a 9.4 GB download, 18.8 GB on disk, and its pull failed twice on Podman 3.4. |
 
 ## The page
 
@@ -224,4 +224,4 @@ swapping. The manifest names 2600 as `memory_mib`
 ([containers.md](containers.md), "Memory for the container modules";
 [../../min_support.md](../../min_support.md), "What the agent drives"). The
 three images take 4.7 GB on the disk of Podman's storage, and the TeX volume
-674 MB after the first start.
+777 MB after the first start.
