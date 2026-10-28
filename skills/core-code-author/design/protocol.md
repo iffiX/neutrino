@@ -326,6 +326,7 @@ walk theirs. A new code and its wording are one change.
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
 | `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
 | `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/revoke` naming no share | added |
+| `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
@@ -1569,11 +1570,14 @@ version change, until the first such read. `details` is `{version, port}`,
 
 The `ayakaleaf` module runs Ayakaleaf as three hub containers, the app,
 MongoDB and Redis ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md)).
-Its configuration is `{secret, password, cookie_name, local_name}`: the token
-secret; the password of the administrator the module makes; the name of the
-app's session cookie, `ayakaleaf_sid_` and the first 12 characters of the
-device id, which the hub also sets in the app's `COOKIE_NAME`; and the app's
-local name. The agent takes the forwarder's port itself, from 8900 up. The
+Its configuration is `{secret, password, cookie_name, local_name, guests}`:
+the token secret; the password of the administrator the module makes; the
+name of the app's session cookie, `ayakaleaf_sid_` and the first 12
+characters of the device id, which the hub also sets in the app's
+`COOKIE_NAME`; the app's local name; and `guests`, `[{account, email,
+password, secret}]`, the guest account of each live Web share of the app,
+opened from the share's record ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md),
+"The guest account"). The agent takes the forwarder's port itself, from 8900 up. The
 hub generates the secret, the password and the app's session and invitation
 secrets the first time the module is installed, keeps them sealed in
 `config/devices/<id>/ayakaleaf.json` beside the module's gateway key and the
@@ -1584,7 +1588,11 @@ two in the app's environment. Its manifest names three `image` artifacts,
 containers run and the app's `/status` returns 200, and `installing` from the
 install, or a version change, until its first start's steps are done and the
 first such read; a step that fails ends the install `ayakaleaf_setup_failed
-{step, detail}`. `details` is `{version, port}`, `port` the forwarder's.
+{step, detail}`. `details` is `{version, port, guests}`, `port` the
+forwarder's and `guests` `[{account, code, params}]`, each guest the hooks
+made or tried, `code` empty once made and `ayakaleaf_guest_failed {step,
+detail}` while a step fails; a Web share of the app reads its state from it
+("Web shares").
 
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes

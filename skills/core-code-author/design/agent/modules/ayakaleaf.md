@@ -10,10 +10,11 @@ method ([module_install.md](../module_install.md), "From container images").
 `agent/neutrino_agent/modules/ayakaleaf/` holds `config.py`, `constants.py`
 and `hooks.py`: the steps of the first start, the forwarder's login and the
 health read, which the `container` runner calls. The configuration is
-`{secret, password, cookie_name, local_name}`: the token secret, the
+`{secret, password, cookie_name, local_name, guests}`: the token secret, the
 administrator's password, the name of the app's session cookie ("The
-page"), and the app's local name, which the forwarder checks the `Host`
-against ([../module_template.md](../module_template.md), "The run"). The hub
+page"), the app's local name, which the forwarder checks the `Host`
+against ([../module_template.md](../module_template.md), "The run"), and the
+guest accounts of the live Web shares of the app ("The guest account"). The hub
 generates the secret, the password, and the app's session and invitation
 secrets the first time the module is installed, and seals them in
 `config/devices/<id>/ayakaleaf.json`, beside the module's gateway key and the
@@ -135,7 +136,8 @@ The forwarder turns the hub's token into the app's own login:
 
 | A request | The forwarder |
 | --- | --- |
-| holds `?tkn=<token>` that verifies | sends `GET /login` to the app with the browser's `Host`, for a session cookie and the `ol-csrfToken` the page holds; sends `POST /login` with that cookie, `Accept: application/json` and the JSON body `{_csrf, email, password}`; sets the session cookie the app returns on the browser, and redirects to `/project` |
+| holds `?tkn=<token>` that verifies under the module's secret | sends `GET /login` to the app with the browser's `Host`, for a session cookie and the `ol-csrfToken` the page holds; sends `POST /login` with that cookie, `Accept: application/json` and the JSON body `{_csrf, email, password}`, the administrator's; sets the session cookie the app returns on the browser, and redirects to `/project` |
+| holds `?tkn=<token>` that verifies under a guest's secret, a guest the module's record holds as made | signs in the same way with that guest's e-mail and password, accepts every invitation waiting for the guest ("The guest account"), sets the session cookie on the browser, and redirects to `/project` |
 | holds `?tkn=<token>` that does not verify, has expired or was spent | 401 |
 | holds the session cookie | passed on unchanged, `Host` and `Origin` as the browser sent them, the editor's WebSocket included, and the app checks the cookie |
 | is a `POST /login`, or asks for a path under `/launchpad`, whatever else it holds | 401; the browser's login never reaches the app |
@@ -148,7 +150,53 @@ The forwarder turns the hub's token into the app's own login:
 | The hub sets `OVERLEAF_SESSION_SECRET` and `OVERLEAF_INVITE_TOKEN_SECRET`. | The image makes a new session secret at every start without one, which ends every login at a restart, and refuses to start without the invitation secret. |
 | The cookie is the app's, HttpOnly and SameSite=Lax, and lasts five days, longer with each use. | The app checks it on every request, and the forwarder keeps no login state of its own. |
 | The forwarder passes `Host` unchanged, and the module sets no site URL. | The login, the project list, the editor and its socket, the compile and the PDF view worked at the app's local name and at `127.0.0.1` with `OVERLEAF_SITE_URL` at its default. The site URL serves e-mail and invitation links, the Git, Dropbox and SSO callbacks and the per-project MCP endpoint, which the module turns on none of. |
-| The forwarder signs every browser in as the administrator. | The hub admits the owner's clients alone, so one account in the app serves each of them. The app's own accounts and invitations stay the person's to make. |
+| A token under the module's secret signs the browser in as the administrator, and a token under a guest's secret as that guest; nothing else signs a browser in. | The owner's clients are the owner, so one account serves each of them. A share's visitors are not, so each share has an account of its own ("The guest account"). The app's other accounts and invitations stay the person's to make. |
+
+## The guest account
+
+A Web share of the app's page signs its visitors in as an account of the
+app's own, one per share, and never as the administrator: the module's
+manifest names `web_share: {guest_login: guest_account}`
+([../module_install.md](../module_install.md), "The manifest"). The hub makes
+the account's facts when the share is made and seals them in the share's
+record ([../../protocol.md](../../protocol.md), "Web shares"):
+
+| Fact | What it is |
+| --- | --- |
+| the account | `guest-` and 4 characters from `a` to `z` and `0` to `9`, which the hub picks unlike every other guest of the module on that machine |
+| its e-mail | `<account>@share.neutrino`, a domain no mail reaches; the app sends none, `EMAIL_CONFIRMATION_DISABLED` being true |
+| its password | 18 random bytes as `secrets.token_urlsafe` gives them |
+| its token secret | 32 random bytes, which a visitor's token is minted with ([../../protocol.md](../../protocol.md), "The service frame") |
+
+The state carries each live share's guest, opened, in the module's
+`guests`, `[{account, email, password, secret}]`. The hooks make each guest
+the module's record does not hold, over the app's published port, as the
+administrator, in four steps:
+
+1. `GET /login` and `POST /login` with the administrator's e-mail and
+   password, for the session and its CSRF token, as the forwarder's own
+   login does ("The page").
+1. `POST /admin/register` with the JSON body `{_csrf, email}`, whose answer's
+   `setNewPasswordUrl` holds the guest's `user_id` and a `token`.
+1. `GET /user/activate?token=<token>&user_id=<user_id>`, then `POST
+   /user/password/set` with `{_csrf, passwordResetToken, password}`, the
+   guest's password.
+1. As the guest, `GET /login` and `POST /login`, then `POST /user/settings`
+   with `{_csrf, first_name, last_name}`, the account's name and an empty
+   last name.
+
+The record keeps each guest made, with its `user_id`, and the hooks report
+`details.guests`, `[{account, code, params}]`, `code` empty for a guest
+made. A guest the state no longer names is deleted through the
+administrator's routes by its `user_id`, and leaves the record.
+
+| Rule | Reason |
+| --- | --- |
+| The hooks make a guest through the app's own routes, as a browser of the administrator does, and run nothing inside the container. | The image's `create-user.mjs` fails in the version the module installs, and the routes are the ones the app's own pages use. |
+| A step that fails reports the guest `ayakaleaf_guest_failed {step, detail}`, `step` being `admin_login`, `register`, `password` or `name`, and the hooks run it again at the next apply of the state. The share reads `failed` meanwhile. | A visitor reaches no app whose guest is half made, and the owner sees why on the Web shares panel. |
+| A guest sees the projects the owner shares with it and nothing else. The owner invites the guest's e-mail in the app's own Share dialog, the e-mail the Web shares panel shows to copy, and the forwarder accepts every invitation waiting for the guest at each sign-in: it reads them from the `ol-notifications` of `GET /project`, then sends `GET /project/<id>/invite/token/<token>` and `POST /project/<id>/invite/token/<token>/accept` for each. | The owner's one step is the invitation, and a visitor never meets one to accept. |
+| When the share is revoked or expires, the hub takes its guest out of the state, and the hooks delete the account. The owner's projects stay, with what the guest edited in them. An uninstall removes every guest with every other datum of the app. | The account lives as long as its share, and ending the share is the person's one press. |
+| The owner's own clients keep signing in as the administrator. | The owner's clients are the owner, and a share changes nothing for them. |
 
 ## The model
 

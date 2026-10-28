@@ -457,6 +457,7 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 | `ui.ayakaleaf.apply` | Apply Ayakaleaf | 应用 Ayakaleaf 设置 |
 | `ui.ayakaleaf.apply_warning` | Ayakaleaf restarts, and open editors connect again. | Ayakaleaf 会重启，打开着的编辑器会重新连接。 |
 | `code.ayakaleaf_setup_failed` | Ayakaleaf's first start stopped at {step}: {detail} | Ayakaleaf 首次启动停在 {step} 这一步：{detail} |
+| `code.ayakaleaf_guest_failed`, under a Web share's row | Ayakaleaf could not make the guest account at {step}: {detail} | Ayakaleaf 在 {step} 这一步没能建好访客账户：{detail} |
 
 ## The Containers tab's words
 
