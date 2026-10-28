@@ -51,3 +51,33 @@
   align-items: center;
   font-size: 13px;
 }
+
+/* --- Choose per app: a kind's rows under its line --- */
+
+.client_permission_apps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-left: var(--space-5);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.client_permission_app {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.client_permission_app_name {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

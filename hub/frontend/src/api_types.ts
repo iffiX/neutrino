@@ -929,6 +929,20 @@ export interface ClientView {
   permission: string[] | null;
   /** With a permission of its own, the device ids each kind is narrowed to. */
   permission_devices: Record<string, string[]>;
+  /** With a permission of its own, row id to on or off. */
+  permission_entries: Record<string, boolean>;
+  /** The seconds its link still works while it waits to join; null once it
+   * joined. */
+  link_expires_in_s: number | null;
+}
+
+/** A row the fine mode lists under a kind. */
+export interface PermissionRowView {
+  id: string;
+  title: string;
+  /** The machine providing it; empty for none known. */
+  device_id: string;
+  device_name: string;
 }
 
 export interface ClientListView {
@@ -937,8 +951,12 @@ export interface ClientListView {
   default_permission: string[];
   /** The device ids each kind of the default is narrowed to. */
   default_permission_devices: Record<string, string[]>;
+  /** The default's rows, row id to on or off. */
+  default_permission_entries: Record<string, boolean>;
   /** Every kind, in the order the switches are drawn. */
   permission_kinds: string[];
+  /** The rows the fine mode lists, by kind, in the Services page's order. */
+  permission_rows: Record<string, PermissionRowView[]>;
 }
 
 /** A client's new name. */
@@ -947,22 +965,37 @@ export interface ClientUpdate {
   name: string;
 }
 
-export interface ClientDefaultPermissionRequest {
+/** A permission as a form sends it. */
+export interface ClientPermissionFields {
   kinds: string[];
   /** Device ids by kind; a kind not named allows every device. */
   devices: Record<string, string[]> | null;
+  /** Row id to on or off; a row not named follows its kind. */
+  entries: Record<string, boolean> | null;
 }
+
+export type ClientDefaultPermissionRequest = ClientPermissionFields;
 
 export interface ClientPermissionRequest {
   client_id: string;
   kinds: string[] | null;
   /** Device ids by kind; a kind not named allows every device. */
   devices: Record<string, string[]> | null;
+  /** Row id to on or off; a row not named follows its kind. */
+  entries: Record<string, boolean> | null;
+}
+
+/** A client's name and the permission it joins with; null follows the
+ * default. */
+export interface ClientEnrollmentRequest {
+  name: string;
+  permission: ClientPermissionFields | null;
 }
 
 /** The link a named client joins with, and when it lapses. */
 export interface ClientEnrollmentView {
   link: string;
+  client_id: string;
   expires_at: string;
   expires_in_s: number;
 }

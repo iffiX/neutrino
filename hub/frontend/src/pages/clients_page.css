@@ -1,3 +1,8 @@
+/* The panel's own button stands at the right of its title. */
+.clients_panel_action {
+  margin-left: auto;
+}
+
 .clients_add_actions {
   display: flex;
   gap: var(--space-2);
