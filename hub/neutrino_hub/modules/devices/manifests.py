@@ -34,6 +34,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_KIND_IMAGE,
     DEVICE_ARTIFACT_KIND_NPM,
     DEVICE_FEED_KEYS,
+    DEVICE_GUEST_LOGINS,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_BUILTIN,
     DEVICE_METHOD_CONTAINER,
@@ -69,15 +70,18 @@ MODULE_KEYS = {
     "corresponding_source",
     "is_data_forward_only",
     "uninstall_data",
+    "web_share",
     "platforms",
 }
-TOOL_KEYS = (MODULE_KEYS - {"is_data_forward_only", "uninstall_data"}) | {
+TOOL_KEYS = (MODULE_KEYS - {"is_data_forward_only", "uninstall_data", "web_share"}) | {
     "is_module",
     "version",
 }
 # What ``uninstall_data`` holds, and the languages its line is in.
 UNINSTALL_DATA_KEYS = {"is_deleted", "text"}
 UNINSTALL_DATA_LANGUAGES = {"en", "zh-CN"}
+# What ``web_share`` holds.
+WEB_SHARE_KEYS = {"guest_login"}
 ENTRY_KEYS = {"runner", "min_version", "install"}
 # What each method's params hold: the keys it must name, and those it may.
 PARAMS_REQUIRED = {
@@ -132,6 +136,24 @@ def load_module_manifests() -> dict:
         loaded.append((manifest["name"], manifest))
     loaded.sort(key=_display_order)
     return dict(loaded)
+
+
+def guest_login_of(manifests: dict, module: str) -> str:
+    """How a Web share's visitor is signed in to one module's page.
+
+    Args:
+        manifests: The module manifests, as :func:`load_module_manifests`
+            returns them.
+        module: The module name.
+
+    Returns:
+        The ``guest_login`` its manifest's ``web_share`` names, empty for a
+        module with no page or no manifest.
+    """
+    web_share = (manifests.get(module) or {}).get("web_share")
+    if not isinstance(web_share, dict):
+        return ""
+    return str(web_share.get("guest_login", "") or "")
 
 
 def load_tool_manifests() -> dict:
@@ -562,6 +584,8 @@ def _check_module(file_name: str, manifest: dict) -> None:
         _refuse(file_name, "uninstall_data", "is missing")
     if "uninstall_data" in manifest:
         _check_uninstall_data(file_name, manifest)
+    if "web_share" in manifest:
+        _check_web_share(file_name, manifest["web_share"])
     for key, entry in platforms.items():
         where = f"platform {key}"
         _check_keys(file_name, where, entry, ENTRY_KEYS, {"runner", "install"})
@@ -587,6 +611,22 @@ def _check_module(file_name: str, manifest: dict) -> None:
                 file_name, f"{where} method", f"is no install method, not {method!r}"
             )
         _check_params(file_name, where, method, install["params"])
+
+
+def _check_web_share(file_name: str, web_share) -> None:
+    """Refuse a ``web_share`` of another shape.
+
+    Raises:
+        ValueError: For keys outside ``{guest_login}``, or a ``guest_login``
+            outside the three.
+    """
+    _check_keys(file_name, "web_share", web_share, WEB_SHARE_KEYS, WEB_SHARE_KEYS)
+    if web_share["guest_login"] not in DEVICE_GUEST_LOGINS:
+        _refuse(
+            file_name,
+            "web_share guest_login",
+            f"is no guest login, not {web_share['guest_login']!r}",
+        )
 
 
 def _check_uninstall_data(file_name: str, manifest: dict) -> None:

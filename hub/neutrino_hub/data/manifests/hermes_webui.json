@@ -13,6 +13,9 @@
       "zh-CN": "对话、设置和工作区里的文件都会删除，无法恢复。"
     }
   },
+  "web_share": {
+    "guest_login": "run_account"
+  },
   "platforms": {
     "linux": {
       "runner": "container",

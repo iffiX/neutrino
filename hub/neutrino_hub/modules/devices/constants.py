@@ -487,6 +487,17 @@ DEVICE_INSTANCE_GATEWAY_FORWARD_URL = "http://127.0.0.1:8317"
 DEVICE_FORWARDER_TOKEN_LIFETIME_S = 60
 DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES = 8
 DEVICE_FORWARDER_TOKEN_NONCE_BYTES = 16
+# How a Web share's visitor is signed in to a module's page, as its
+# manifest's ``web_share`` names it: the app's own login page, one account of
+# the app per share, or the account the app runs as.
+DEVICE_GUEST_LOGIN_APP = "app"
+DEVICE_GUEST_LOGIN_GUEST_ACCOUNT = "guest_account"
+DEVICE_GUEST_LOGIN_RUN_ACCOUNT = "run_account"
+DEVICE_GUEST_LOGINS = (
+    DEVICE_GUEST_LOGIN_APP,
+    DEVICE_GUEST_LOGIN_GUEST_ACCOUNT,
+    DEVICE_GUEST_LOGIN_RUN_ACCOUNT,
+)
 # The remote desktop host every agent package carries, as the module report
 # names it, and the two states its row can take.
 DEVICE_RDP_MODULE = "rustdesk"

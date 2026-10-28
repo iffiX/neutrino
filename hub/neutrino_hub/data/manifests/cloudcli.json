@@ -13,6 +13,9 @@
       "zh-CN": "每个账户的 CloudCLI 数据留在 {data_dir}。"
     }
   },
+  "web_share": {
+    "guest_login": "run_account"
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "cloudcli",

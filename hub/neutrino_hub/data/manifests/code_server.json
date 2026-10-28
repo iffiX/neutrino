@@ -13,6 +13,9 @@
       "zh-CN": "每个账户的 code-server 设置和扩展都留在它的主目录里。"
     }
   },
+  "web_share": {
+    "guest_login": "run_account"
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "code_server",

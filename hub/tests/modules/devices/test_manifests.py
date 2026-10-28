@@ -27,6 +27,7 @@ from neutrino_hub.modules.devices.manifests import (
     entry_artifacts,
     entry_params,
     entry_version,
+    guest_login_of,
     load_module_manifests,
     load_tool_manifests,
     manifest_methods,
@@ -851,7 +852,7 @@ def test_siyuan_pins_the_publishers_desktop_build_per_platform_from_two_sources(
             "zh-CN": "每个账户的笔记留在 {data_dir}。",
         },
     }
-    assert "web_share" not in manifest
+    assert manifest["web_share"] == {"guest_login": "run_account"}
     assert set(manifest["platforms"]) == set(SIYUAN_BUILDS)
     for key, (file, kind, digest) in SIYUAN_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -1718,3 +1719,62 @@ def test_every_shipped_npm_artifact_names_the_npm_set():
                 if artifact["kind"] == "npm":
                     assert artifact["source_set"] == "npm"
                     assert "sources" not in artifact
+
+
+# The guest login each shipped module with a page names; Ayakaleaf's
+# manifest comes with its module.
+SHIPPED_GUEST_LOGINS = {
+    "gitea": "app",
+    "vscode": "run_account",
+    "code_server": "run_account",
+    "cloudcli": "run_account",
+    "codeg": "run_account",
+    "hermes_webui": "run_account",
+    "siyuan": "run_account",
+}
+
+
+def test_every_shipped_module_with_a_page_names_its_guest_login():
+    manifests = load_module_manifests()
+
+    named = {
+        name: manifest["web_share"]["guest_login"]
+        for name, manifest in manifests.items()
+        if "web_share" in manifest and name != "ayakaleaf"
+    }
+
+    assert named == SHIPPED_GUEST_LOGINS
+    for name, login in SHIPPED_GUEST_LOGINS.items():
+        assert guest_login_of(manifests, name) == login
+    assert guest_login_of(manifests, "samba") == ""
+
+
+@pytest.mark.parametrize(
+    "web_share, said",
+    [
+        ({"guest_login": "owner"}, "guest login"),
+        ({"guest_login": "app", "is_open": True}, "web_share"),
+        ({}, "guest_login"),
+        ("app", "web_share"),
+    ],
+)
+def test_the_loader_refuses_a_web_share_of_another_shape(
+    web_share, said, manifests_dir
+):
+    manifest = valid_manifest()
+    manifest["web_share"] = web_share
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "sample.json" in str(refusal.value) and said in str(refusal.value)
+
+
+def test_the_loader_takes_each_guest_login(manifests_dir):
+    for login in ("app", "guest_account", "run_account"):
+        manifest = valid_manifest()
+        manifest["web_share"] = {"guest_login": login}
+        write_manifest(manifests_dir, "sample", manifest)
+
+        assert guest_login_of(load_module_manifests(), "sample") == login

@@ -13,6 +13,9 @@
       "zh-CN": "每个账户的笔记留在 {data_dir}。"
     }
   },
+  "web_share": {
+    "guest_login": "run_account"
+  },
   "platforms": {
     "linux-amd64": {
       "runner": "siyuan",

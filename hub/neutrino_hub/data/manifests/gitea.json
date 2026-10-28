@@ -6,6 +6,9 @@
   "publisher": "go-gitea/gitea",
   "license": "MIT",
   "corresponding_source": "https://github.com/go-gitea/gitea/tree/v{version}",
+  "web_share": {
+    "guest_login": "app"
+  },
   "is_data_forward_only": true,
   "uninstall_data": {
     "is_deleted": false,
