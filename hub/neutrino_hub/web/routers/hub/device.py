@@ -15,6 +15,7 @@ from neutrino_hub.exceptions import (
     TaskExitStatusError,
 )
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_CODE_HUB_KEY_MISSING,
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
@@ -197,7 +198,9 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
 
     Returns:
         The view, carrying the platform and the agent version on a device
-        whose agent has beaten since the panel started.
+        whose agent has beaten since the panel started. A row that joined
+        under 0.5, with a token and no static key, carries ``last_error``
+        ``hub_key_missing``.
     """
     key = device.id
     is_agent_online = runtime.agent_sessions.is_online(key)
@@ -219,6 +222,8 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         view.client.platform_arch = platform.get("arch") or None
         view.client.hostname = runtime.device_hostname.get(key) or None
         error = runtime.device_last_error.get(key)
+        if not device.client.public_key:
+            error = {"code": CHANNEL_CODE_HUB_KEY_MISSING, "params": {}}
         if error is not None:
             view.client.last_error = DeviceClientErrorView(
                 code=error.get("code", ""), params=error.get("params", {})

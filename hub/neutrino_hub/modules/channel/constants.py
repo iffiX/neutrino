@@ -216,6 +216,8 @@ CHANNEL_CODE_HELLO_INVALID = "hello_invalid"
 # admissions are at their limit.
 CHANNEL_CODE_CHANNEL_FULL = "channel_full"
 CHANNEL_CODE_ADMISSION_PAUSED = "admission_paused"
+# A device row that joined under 0.5: a token and no static key.
+CHANNEL_CODE_HUB_KEY_MISSING = "hub_key_missing"
 # What a request gets when the machine it went to never answered it: the
 # stream ran out of time, or the loop did. It is a display code, worded by
 # the panel as the word for a machine that has not reported.

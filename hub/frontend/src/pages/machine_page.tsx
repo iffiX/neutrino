@@ -10,7 +10,7 @@ import { MachineModules } from "../components/machine_modules";
 import { Spinner } from "../components/spinner";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
-import { toDeviceLabel } from "../device_level";
+import { describeJoinedUnder05, toDeviceLabel } from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -137,6 +137,7 @@ function MachineView({ device, onReinstalled }: MachineViewProps) {
   const client = device.client;
   const isOnline = device.is_agent_online;
   const name = toDeviceLabel(device);
+  const joinedUnder05 = describeJoinedUnder05(device);
   const platform = [client?.platform_os, client?.platform_arch]
     .filter((part): part is string => part != null && part !== "")
     .join(" · ");
@@ -175,7 +176,14 @@ function MachineView({ device, onReinstalled }: MachineViewProps) {
       <section className="machine_section">
         <h2 className="machine_section_title">{t("ui.machine.monitor")}</h2>
         <div className="card">
-          <DeviceMonitor device={device} />
+          {joinedUnder05 === null ? (
+            <DeviceMonitor device={device} />
+          ) : (
+            <div className="device_monitor_empty">
+              <Icon name="devices" size={22} />
+              <span>{joinedUnder05}</span>
+            </div>
+          )}
         </div>
       </section>
 

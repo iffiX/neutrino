@@ -914,6 +914,9 @@ export interface DeviceClientInfo {
   is_version_mismatched: boolean;
   /** The readings of its last report; null before its first. */
   metrics: DeviceMetricsView | null;
+  /** The error its agent last reported, or `hub_key_missing` for a row that
+   * joined under 0.5; null for none. */
+  last_error: ApplyChange | null;
 }
 
 /** One install on a device, whatever asked for it: the agent's own over

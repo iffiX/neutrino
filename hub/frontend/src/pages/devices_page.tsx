@@ -11,7 +11,7 @@ import { StatusDot } from "../components/status_dot";
 import type { IconName } from "../components/icon";
 import { ApiError, apiPost, describeCode, describeError } from "../api_client";
 import { toDeviceIconName } from "../device_icon";
-import { toDeviceLabel } from "../device_level";
+import { describeJoinedUnder05, toDeviceLabel } from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -582,6 +582,14 @@ interface StatusCellProps {
 
 /** Five rings for a machine that reports, or how long ago it was seen. */
 function StatusCell({ device }: StatusCellProps) {
+  const joinedUnder05 = describeJoinedUnder05(device);
+  if (!device.is_agent_online && joinedUnder05 !== null) {
+    return (
+      <span className="devices_offline" title={joinedUnder05}>
+        {joinedUnder05}
+      </span>
+    );
+  }
   if (!device.is_agent_online) {
     return (
       <span className="devices_offline">

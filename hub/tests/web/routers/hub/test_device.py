@@ -141,7 +141,7 @@ def listed(monkeypatch):
         mac_addresses=[LINK_MAC, "11:22:33:44:55:66"],
         link_mac=LINK_MAC,
         ipv4_address="192.168.100.2",
-        client=DeviceClientInfo(token_sha256="t" * 64),
+        client=DeviceClientInfo(token_sha256="t" * 64, public_key="a" * 64),
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", ListRegistry)
     app = FastAPI()
@@ -249,6 +249,26 @@ def test_a_device_not_seen_since_the_panel_started_has_no_version_or_stamp(liste
     assert device["client"]["version"] is None
     assert device["client"]["last_seen"] is None
     assert device["client"]["is_version_mismatched"] is False
+
+
+def test_a_row_that_joined_under_0_5_reads_hub_key_missing(listed):
+    """A token and no static key: the agent of 0.5 can no longer connect,
+    and the row says to join again."""
+    client, _ = listed
+    ListRegistry.device.client = DeviceClientInfo(token_sha256="t" * 64)
+
+    (device,) = client.get(DEVICE_PATH).json()["devices"]
+
+    assert device["client"]["is_online"] is False
+    assert device["client"]["last_error"] == {"code": "hub_key_missing", "params": {}}
+
+
+def test_a_row_that_joined_under_0_6_reads_no_error(listed):
+    client, _ = listed
+
+    (device,) = client.get(DEVICE_PATH).json()["devices"]
+
+    assert device["client"]["last_error"] is None
 
 
 def test_a_device_is_at_the_address_its_channel_comes_from(listed):
