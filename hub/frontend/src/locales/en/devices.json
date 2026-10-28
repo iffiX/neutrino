@@ -325,6 +325,7 @@
   "ui.services.description_device_share": "shared from {device}",
   "ui.services.description_gitea_module": "published by the Gitea module on {host}",
   "ui.services.description_hermes_webui_module": "published by the Hermes WebUI module on {host}",
+  "ui.services.description_ayakaleaf_module": "published by the Ayakaleaf module on {host}",
   "ui.services.description_samba_module": "published by the {module} module on {host}",
   "ui.services.description_vscode_module": "published by the VS Code module on {host} for {account}",
   "ui.services.field_description": "Description",

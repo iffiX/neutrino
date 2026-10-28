@@ -35,6 +35,8 @@
   "code.codeg_port_taken": "Port {port} on the machine is taken, so Codeg of {account} has nowhere to listen.",
   "code.generated_credential_unknown": "The machine no longer has this secret.",
   "code.siyuan_port_taken": "Port {port} on the machine is taken, so SiYuan of {account} has nowhere to listen.",
+  "code.ayakaleaf_setup_failed": "Ayakaleaf's first start stopped at {step}: {detail}",
+  "code.ayakaleaf_guest_failed": "Ayakaleaf could not make the guest account at {step}: {detail}",
   "code.command_failed": "{detail}",
   "code.config_unwritable": "The hub could not save this to its own disk: {detail}",
   "code.connect_failed": "The host did not answer.",

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
+import { AyakaleafPanels } from "./ayakaleaf_panels";
 import { ContainersPanels } from "./containers_panels";
 import { ErrorPanel } from "./error_panel";
 import { FolderSharesPanel } from "./folder_shares_panel";
@@ -131,6 +132,13 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
     />
   ),
+  ayakaleaf: (target) => (
+    <AyakaleafPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+    />
+  ),
 };
 
 /** The tabs' order: the modules every system runs first. A module not
@@ -148,6 +156,7 @@ const TAB_ORDER = [
   "siyuan",
   "podman",
   "hermes_webui",
+  "ayakaleaf",
 ];
 
 /** The module whose tab opens only once its terms are accepted. */
@@ -155,6 +164,9 @@ const TERMS_MODULE = "vscode";
 
 /** The module whose tab says the owner installs it, with its version. */
 const HERMES_MODULE = "hermes_webui";
+
+/** The module whose tab says the owner installs it and its two databases. */
+const AYAKALEAF_MODULE = "ayakaleaf";
 
 /** The modules whose first Configure imports what the machine already has. */
 const IMPORTING_MODULES = ["gitea", "podman"];
@@ -510,6 +522,9 @@ export function MachineModules({
                     version: activeRow.version,
                   })}
             </p>
+          )}
+          {activeRow.name === AYAKALEAF_MODULE && (
+            <p className="field_hint">{t("ui.ayakaleaf.owner_notice")}</p>
           )}
 
           {activeModule === TERMS_MODULE && (

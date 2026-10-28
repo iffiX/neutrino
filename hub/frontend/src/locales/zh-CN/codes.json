@@ -35,6 +35,8 @@
   "code.codeg_port_taken": "这台机器的端口 {port} 已被占用，{account} 的 Codeg 无法在上面监听。",
   "code.generated_credential_unknown": "这台机器已没有这个密钥。",
   "code.siyuan_port_taken": "这台机器的端口 {port} 已被占用，{account} 的思源笔记无法在上面监听。",
+  "code.ayakaleaf_setup_failed": "Ayakaleaf 首次启动停在 {step} 这一步：{detail}",
+  "code.ayakaleaf_guest_failed": "Ayakaleaf 在 {step} 这一步没能建好访客账户：{detail}",
   "code.command_failed": "{detail}",
   "code.config_unwritable": "中枢无法把这项写到自己的磁盘上：{detail}",
   "code.connect_failed": "主机没有响应。",

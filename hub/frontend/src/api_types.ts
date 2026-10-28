@@ -1743,6 +1743,31 @@ export interface HermesWebuiDeviceView extends ModuleDeviceState {
   details: Record<string, unknown>;
 }
 
+/** One machine's Ayakaleaf: the forwarder's port, the AI model and where the
+ * module stands. */
+export interface AyakaleafDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The forwarder's port as the machine reports it. */
+  port: number;
+  /** The tab's AI model; empty for the gateway's first. */
+  model: string;
+  /** The names the gateway serves, for the picker. */
+  models: string[];
+  is_gateway_serving: boolean;
+  /** The version the machine reports; empty before it reports one. */
+  version: string;
+  /** What the machine last reported: `{version, port, guests}`. */
+  details: Record<string, unknown>;
+}
+
+/** The AI model Ayakaleaf's app uses on one machine; empty for the gateway's
+ * first. */
+export interface AyakaleafModelUpdate {
+  device_id: string;
+  model: string;
+}
+
 export interface GiteaConfigUpdate {
   device_id: string;
   listen_port: number;

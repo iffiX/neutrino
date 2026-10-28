@@ -117,6 +117,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   codeg_module: "ui.services.description_codeg_module",
   siyuan_module: "ui.services.description_siyuan_module",
   hermes_webui_module: "ui.services.description_hermes_webui_module",
+  ayakaleaf_module: "ui.services.description_ayakaleaf_module",
   ssh_server_module: "ui.services.description_ssh_server_module",
 };
 // The module a description names by the module's title.

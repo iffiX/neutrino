@@ -325,6 +325,7 @@
   "ui.services.description_device_share": "来自 {device} 的共享",
   "ui.services.description_gitea_module": "由 {host} 上的 Gitea 模块发布",
   "ui.services.description_hermes_webui_module": "由 {host} 上的 Hermes WebUI 模块发布",
+  "ui.services.description_ayakaleaf_module": "由 {host} 上的 Ayakaleaf 模块发布",
   "ui.services.description_samba_module": "由 {host} 上的{module}模块发布",
   "ui.services.description_vscode_module": "由 {host} 上的 VS Code 模块为 {account} 发布",
   "ui.services.field_description": "描述",
