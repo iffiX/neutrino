@@ -31,6 +31,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SSH_SERVER_MODULE,
 )
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore, smb_user
+from neutrino_hub.modules.devices.folder_shares import folder_shares
 from neutrino_hub.modules.devices.module_table import account_program_names
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -398,11 +399,23 @@ class PublishedServiceCache:
                 return None
             return {"port": port, "is_healthy": True}
         if name == DEVICE_SAMBA_MODULE:
+            enabled = self._desired_states.enabled_accounts(key, name)
             return {
                 "is_healthy": bool(details.get("is_active")),
                 "shares": [
                     {"name": account, "user": smb_user(account, platform)}
-                    for account in self._desired_states.enabled_accounts(key, name)
+                    for account in enabled
+                ],
+                "folder_shares": [
+                    {
+                        "name": share["name"],
+                        "accounts": [
+                            {"account": account, "user": smb_user(account, platform)}
+                            for account in share["accounts"]
+                            if account in enabled
+                        ],
+                    }
+                    for share in folder_shares(self._desired_states.read(key, name))
                 ],
             }
         if name == "gitea":

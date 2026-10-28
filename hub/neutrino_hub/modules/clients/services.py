@@ -464,8 +464,10 @@ def _ssh_material(runtime, raw: dict, entry: dict) -> tuple:
 def _share_material(runtime, raw: dict, entry: dict) -> tuple:
     """The SMB login a machine's share is mounted with.
 
-    A declared app's ``file`` entry has no login the hub knows: its reply is
-    empty, and the person types the login on the client.
+    A folder share's entry logs in as the account its payload names, and a
+    Home share's as the account the share is named after. A declared app's
+    ``file`` entry has no login the hub knows: its reply is empty, and the
+    person types the login on the client.
 
     Returns:
         ``("", {user, password})`` for a machine's share, ``("", {})`` for a
@@ -475,7 +477,7 @@ def _share_material(runtime, raw: dict, entry: dict) -> tuple:
     if raw.get("source") != SERVICES_SOURCE_MODULE or not device_id:
         return "", {}
     payload = entry["payload"]
-    account = str(payload.get("share", "") or "")
+    account = str(payload.get("account", "") or payload.get("share", "") or "")
     users = payload.get("users") or []
     password = runtime.desired_states.account_secret(
         device_id, DEVICE_SAMBA_MODULE, account, DEVICE_SAMBA_PASSWORD_KEY

@@ -33,6 +33,7 @@ from neutrino_hub.modules.services.collector import (
 )
 from neutrino_hub.modules.services.config import DeclaredApp, DeclaredEntry
 from neutrino_hub.modules.services.device_shares import DeviceShare
+from neutrino_hub.modules.services.file_ids import file_row_id
 from neutrino_hub.modules.services.probe import DeclaredEntryHealth
 
 DEVICE = "d1d1d1d1d1d1d1d1"
@@ -311,6 +312,55 @@ def test_a_declared_apps_entries_are_named_by_their_type_and_port():
     (declared,) = held.apps()
     assert declared["source"] == "declared"
     assert declared["local_name"] == "nas.machine.localhost"
+
+
+def test_a_folder_share_has_an_entry_per_account_each_logging_in_as_it():
+    """A Home share's entry names no account; a folder share's entries are
+    ``samba_folder_<device>_<share>_<account>``, each with its account's SMB
+    user, and its row in a permission is the folder share's id."""
+    held = collector(
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "samba": {
+                    "is_healthy": True,
+                    "shares": [{"name": "ann", "user": "neutrino-ann"}],
+                    "folder_shares": [
+                        {
+                            "name": "lab",
+                            "accounts": [
+                                {"account": "ann", "user": "neutrino-ann"},
+                                {"account": "bob", "user": "neutrino-bob"},
+                            ],
+                        },
+                        {"name": "nobody", "accounts": []},
+                    ],
+                },
+            }
+        ],
+    )
+
+    entries = by_id(held.render())
+
+    assert set(entries) == {
+        f"samba_{DEVICE}_ann",
+        f"samba_folder_{DEVICE}_lab_ann",
+        f"samba_folder_{DEVICE}_lab_bob",
+    }
+    assert entries[f"samba_{DEVICE}_ann"]["payload"]["account"] == ""
+    bob = entries[f"samba_folder_{DEVICE}_lab_bob"]
+    assert bob["title"] == "lab"
+    assert bob["app_id"] == ""
+    assert bob["payload"] == {
+        "protocol": "smb",
+        "host": HOST,
+        "share": "lab",
+        "users": ["neutrino-bob"],
+        "account": "bob",
+    }
+    assert file_row_id(bob) == f"samba_folder_{DEVICE}_lab"
+    assert file_row_id(entries[f"samba_{DEVICE}_ann"]) == f"samba_{DEVICE}_ann"
 
 
 def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():

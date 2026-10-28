@@ -297,6 +297,51 @@ def test_a_vscode_token_that_does_not_open_is_vault_locked(config_dir):
     )
 
 
+class SambaDesiredStates(StubDesiredStates):
+    def account_secret(self, key, module, account, field):
+        return {"ann": "pw-ann", "bob": "pw-bob"}.get(account, "")
+
+
+def samba_entry(entry_id: str, share: str, user: str, account: str) -> dict:
+    return {
+        **ENTRY,
+        "id": entry_id,
+        "type": "file",
+        "title": share,
+        "payload": {
+            "protocol": "smb",
+            "host": "192.168.100.7",
+            "share": share,
+            "users": [user],
+            "account": account,
+        },
+        "source": "module",
+        "device_id": "dev",
+    }
+
+
+def test_a_shares_material_is_the_login_of_the_account_it_logs_in_as(config_dir):
+    """A Home share logs in as the account it is named after, and each entry
+    of a folder share as the account its payload names."""
+    runtime = FakeRuntime(
+        entries=(
+            samba_entry("samba_dev_ann", "ann", "neutrino-ann", ""),
+            samba_entry("samba_folder_dev_lab_bob", "lab", "neutrino-bob", "bob"),
+        )
+    )
+    runtime.desired_states = SambaDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    assert service_material(runtime, client_id, "samba_dev_ann") == (
+        "",
+        {"user": "neutrino-ann", "password": "pw-ann"},
+    )
+    assert service_material(runtime, client_id, "samba_folder_dev_lab_bob") == (
+        "",
+        {"user": "neutrino-bob", "password": "pw-bob"},
+    )
+
+
 CLOUDCLI_ENTRY = {
     **ENTRY,
     "id": "cloudcli_dev_alice",

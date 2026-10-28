@@ -30,6 +30,10 @@ from neutrino_hub.modules.services.apps import (
     local_port,
 )
 from neutrino_hub.modules.services.config import DeclaredApp
+from neutrino_hub.modules.services.file_ids import (
+    folder_share_entry_id,
+    home_share_entry_id,
+)
 from neutrino_hub.modules.services.constants import (
     SERVICES_AI_DESCRIPTION,
     SERVICES_AI_ID,
@@ -504,37 +508,76 @@ class ServiceListCollector:
         ]
 
     def _file_entries(self) -> list:
-        """One entry per share of each device's file share."""
+        """One entry per Home share of each device's file share, and one per
+        account of each folder share."""
         entries = []
         for device in self._device_modules:
             samba = device.get("samba")
             host = device.get("host", "")
             if not samba or not host:
                 continue
+            device_id = _device_id(device)
             for share in samba.get("shares") or []:
                 name = str(share.get("name", "") or "")
                 if not name:
                     continue
                 entries.append(
-                    _entry(
-                        id=f"samba_{_device_id(device)}_{name}",
-                        type=SERVICES_TYPE_FILE,
-                        title=name,
-                        payload={
-                            "protocol": SERVICES_FILE_PROTOCOL,
-                            "host": host,
-                            "share": name,
-                            "users": [str(share.get("user", "") or "")],
-                        },
-                        is_healthy=bool(samba.get("is_healthy")),
-                        description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
-                        description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
-                        description_params={"host": host},
-                        source=SERVICES_SOURCE_MODULE,
-                        device_id=_device_id(device),
+                    self._file_entry(
+                        home_share_entry_id(device_id, name),
+                        samba,
+                        device,
+                        share=name,
+                        user=str(share.get("user", "") or ""),
                     )
                 )
+            for share in samba.get("folder_shares") or []:
+                name = str(share.get("name", "") or "")
+                for held in share.get("accounts") or []:
+                    account = str(held.get("account", "") or "")
+                    if not name or not account:
+                        continue
+                    entries.append(
+                        self._file_entry(
+                            folder_share_entry_id(device_id, name, account),
+                            samba,
+                            device,
+                            share=name,
+                            user=str(held.get("user", "") or ""),
+                            account=account,
+                        )
+                    )
         return entries
+
+    def _file_entry(
+        self,
+        entry_id: str,
+        samba: dict,
+        device: dict,
+        *,
+        share: str,
+        user: str,
+        account: str = "",
+    ) -> dict:
+        """One ``file`` entry of a device's file share, logging in as ``user``."""
+        host = device.get("host", "")
+        return _entry(
+            id=entry_id,
+            type=SERVICES_TYPE_FILE,
+            title=share,
+            payload={
+                "protocol": SERVICES_FILE_PROTOCOL,
+                "host": host,
+                "share": share,
+                "users": [user],
+                "account": account,
+            },
+            is_healthy=bool(samba.get("is_healthy")),
+            description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
+            description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
+            description_params={"host": host},
+            source=SERVICES_SOURCE_MODULE,
+            device_id=_device_id(device),
+        )
 
     def _app(
         self, app_id: str, title: str, source: str, device: dict, *, description=""
