@@ -202,9 +202,9 @@ export function ModuleVersionBlock({
               </button>
             ))}
           </div>
+          {confirm.modal}
         </DialogFrame>
       )}
-      {confirm.modal}
     </div>
   );
 }
