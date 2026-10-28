@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -305,9 +304,4 @@ type readerConn struct {
 
 func (c *readerConn) Read(p []byte) (int, error) {
 	return c.reader.Read(p)
-}
-
-// isClosed reports whether an error is the end of a closed connection.
-func isClosed(err error) bool {
-	return errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
 }
