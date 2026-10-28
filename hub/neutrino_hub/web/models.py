@@ -1732,7 +1732,7 @@ class WebShareCreatedView(BaseModel):
     share: WebShareView
 
 
-class WebShareRevokeRequest(BaseModel):
+class WebShareDestroyRequest(BaseModel):
     """A request naming one Web share."""
 
     share_id: str

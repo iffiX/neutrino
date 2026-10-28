@@ -1,4 +1,4 @@
-"""The Clients page's Web shares: make one, and revoke one.
+"""The Clients page's Web shares: make one, and destroy one.
 
 A share offers one app's ``web`` entry to anyone who holds its link. Its
 link is returned once, by the make; the hub keeps a hash of the ticket alone
@@ -29,7 +29,7 @@ from neutrino_hub.web.models import (
     ClientListView,
     WebShareCreatedView,
     WebShareCreateRequest,
-    WebShareRevokeRequest,
+    WebShareDestroyRequest,
     WebShareView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -143,9 +143,9 @@ def create_share(
     return WebShareCreatedView(link=link, share=WebShareView(**view))
 
 
-@router.post("/revoke", response_model=ClientListView)
-def revoke_share(
-    request: WebShareRevokeRequest, runtime: PanelRuntime = Depends(get_runtime)
+@router.post("/destroy", response_model=ClientListView)
+def destroy_share(
+    request: WebShareDestroyRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
     """End a share at once: its link stops working and its pages close.
 

@@ -1,4 +1,4 @@
-"""The Clients page's Web shares: the list fields, the make and the revoke.
+"""The Clients page's Web shares: the list fields, the make and the destroy.
 
 The shares file and the vault are real over a config root of their own; the
 published list, the machines' sessions and the transport are played by the
@@ -9,7 +9,7 @@ with no certificate or no address, and a locked vault; it returns the link
 once and stores no copy of it; the link names the public address first; a
 guest account's app gets a guest, and its module's state holds the guest;
 the machine's ``details.guests`` moves the share from preparing to failed or
-active; the list draws each share's state and count; a revoke ends the share
+active; the list draws each share's state and count; a destroy ends the share
 and closes its pages; and each end pushes a guest's machine its state.
 """
 
@@ -420,7 +420,7 @@ def test_a_guest_account_share_puts_its_guest_in_the_module_s_state(
     assert drawn([made]) == ("active", "", {})
 
 
-def test_a_revoke_ends_the_share_and_closes_its_pages(api, monkeypatch):
+def test_a_destroy_ends_the_share_and_closes_its_pages(api, monkeypatch):
     client, runtime = api
     share_id = create(client).json()["share"]["id"]
     runtime.web_share_guests.add(share_id, FakeSession("g1"))
@@ -434,7 +434,7 @@ def test_a_revoke_ends_the_share_and_closes_its_pages(api, monkeypatch):
     runtime.pushed.clear()
 
     response = client.post(
-        "/api/hub/client/web_share/revoke", json={"share_id": share_id}
+        "/api/hub/client/web_share/destroy", json={"share_id": share_id}
     )
 
     assert response.status_code == 200 and response.json()["web_shares"] == []
@@ -446,7 +446,7 @@ def test_a_revoke_ends_the_share_and_closes_its_pages(api, monkeypatch):
     }
     assert runtime.pushed == [DEVICE]
     missing = client.post(
-        "/api/hub/client/web_share/revoke", json={"share_id": share_id}
+        "/api/hub/client/web_share/destroy", json={"share_id": share_id}
     )
     assert missing.status_code == 404
     assert missing.json()["detail"]["code"] == "web_share_unknown"
