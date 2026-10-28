@@ -1,0 +1,11 @@
+/* The guest account's e-mail under a new share's link, as the link is
+   drawn. */
+.web_share_guest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.web_share_guest .field_hint {
+  margin: 0;
+}

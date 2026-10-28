@@ -1,10 +1,12 @@
 import { useState } from "react";
 
 import { DeclareServiceModal } from "../components/declare_service_modal";
+import { DialogFrame } from "../components/dialog_frame";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
+import { WebShareModal } from "../components/web_share_modal";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
@@ -15,6 +17,7 @@ import type {
   AppEntryView,
   AppSource,
   AppView,
+  ClientListView,
   DeclaredAppRequest,
   PublishedService,
   PublishedServicePayload,
@@ -32,7 +35,9 @@ import "./services_page.css";
  * share's address, and its status dot, and at the row's right the chip of
  * where it comes from. A module the hub manages is one app however many
  * containers it runs; a container the hub does not manage is one app of its
- * own. An app declared here carries Test and Delete. The entries of no app
+ * own. An app declared here carries Test and Delete, and an app with a web
+ * entry carries Share, which opens the Web share dialog with that entry
+ * chosen. The entries of no app
  * follow in their own sections: the AI gateway, the machines' file shares
  * and the shared desktops. A machine's SSH server is no app, and the hub
  * sends none of its entries here. **Declare service** opens the dialog that
@@ -149,6 +154,8 @@ const INVALIDATE_ON = [
 ];
 
 const SERVICE_PATH = "/hub/service";
+/** The Clients page's list, which holds what a Web share can offer. */
+const CLIENTS_PATH = "/hub/client";
 
 export function ServicesPage() {
   // Redrawn when the panel's language changes.
@@ -157,6 +164,11 @@ export function ServicesPage() {
     invalidateOn: INVALIDATE_ON,
   });
   const [isDeclaring, setIsDeclaring] = useState(false);
+  // The web entry whose Share is open, read with the clients' list.
+  const [sharedEntryId, setSharedEntryId] = useState<string | null>(null);
+  const clientsResource = useApiResource<ClientListView>(
+    sharedEntryId === null ? null : CLIENTS_PATH,
+  );
   const view = resource.data;
 
   if (resource.error !== null && view === null) {
@@ -222,7 +234,12 @@ export function ServicesPage() {
         ) : (
           <div className="published_rows">
             {view.apps.map((app) => (
-              <AppRow key={app.id} app={app} onChanged={resource.setData} />
+              <AppRow
+                key={app.id}
+                app={app}
+                onChanged={resource.setData}
+                onShare={setSharedEntryId}
+              />
             ))}
           </div>
         )}
@@ -236,6 +253,28 @@ export function ServicesPage() {
         />
       ))}
 
+      {sharedEntryId !== null && clientsResource.data !== null && (
+        <WebShareModal
+          listView={clientsResource.data}
+          entryId={sharedEntryId}
+          onCreated={() => {}}
+          onClose={() => setSharedEntryId(null)}
+        />
+      )}
+      {sharedEntryId !== null &&
+        clientsResource.data === null &&
+        clientsResource.error !== null && (
+          <DialogFrame
+            title={t("ui.web_shares.new_link")}
+            icon="link"
+            onClose={() => setSharedEntryId(null)}
+          >
+            <ErrorPanel
+              message={clientsResource.error}
+              onRetry={clientsResource.reload}
+            />
+          </DialogFrame>
+        )}
       {isDeclaring && (
         <DeclareServiceModal
           onDeclared={(next) => {
@@ -252,10 +291,12 @@ export function ServicesPage() {
 interface AppRowProps {
   app: AppView;
   onChanged: (view: ServiceListView) => void;
+  /** Opens the Web share dialog with a web entry chosen. */
+  onShare: (entryId: string) => void;
 }
 
 /** One app: its title, its machine, its entries, and where it comes from. */
-function AppRow({ app, onChanged }: AppRowProps) {
+function AppRow({ app, onChanged, onShare }: AppRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const confirm = useConfirm();
@@ -263,6 +304,7 @@ function AppRow({ app, onChanged }: AppRowProps) {
   const [error, setError] = useState<string | null>(null);
   const isDeclared =
     app.source === "declared" && !app.id.startsWith(CONTAINER_APP_PREFIX);
+  const webEntry = app.entries.find((entry) => entry.type === "web");
   const details = app.entries
     .map((entry) =>
       entry.detail_code === null
@@ -305,6 +347,16 @@ function AppRow({ app, onChanged }: AppRowProps) {
           {app.device_name || hostOf(app)}
         </span>
         <span className="app_row_end">
+          {webEntry !== undefined && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => onShare(webEntry.id)}
+            >
+              <Icon name="link" size={13} />
+              {t("ui.web_shares.share")}
+            </button>
+          )}
           {isDeclared && (
             <span className="published_row_actions">
               <button

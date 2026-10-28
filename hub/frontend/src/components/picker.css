@@ -33,6 +33,11 @@
   color: var(--color-text-faint);
 }
 
+/* A control with nothing chosen and no placeholder keeps one line's height. */
+.picker_value:empty::before {
+  content: "\00a0";
+}
+
 /* Fixed to the viewport, so no scrolling container can clip the open list.
    It carries the ground, border and radius of .input, so the open list reads
    as the control it came out of. */

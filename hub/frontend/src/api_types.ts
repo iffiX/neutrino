@@ -991,6 +991,71 @@ export interface ClientListView {
   permission_kinds: string[];
   /** The rows the fine mode lists, by kind, in the Services page's order. */
   permission_rows: Record<string, PermissionRowView[]>;
+  /** Newest first. */
+  web_shares: WebShareView[];
+  web_share_entries: WebShareEntryView[];
+  web_share_sites: WebShareSiteView[];
+}
+
+/** How a Web share's visitor signs in to a web entry. */
+export type WebShareGuestLogin = "app" | "guest_account" | "run_account";
+
+/** Where a Web share stands. */
+export type WebShareState = "active" | "preparing" | "unavailable" | "failed";
+
+/** A Web share on the Clients page. */
+export interface WebShareView {
+  id: string;
+  name: string;
+  app_id: string;
+  entry_id: string;
+  app_title: string;
+  device_name: string;
+  /** ISO stamp of its end; null for a share that lasts until it is revoked. */
+  expires_at: string | null;
+  expires_in_s: number | null;
+  state: WebShareState;
+  code: string;
+  params: Record<string, unknown>;
+  online_count: number;
+  /** The guest account's e-mail, empty for an entry with no guest account. */
+  guest_email: string;
+}
+
+/** A web entry a new share can offer now. */
+export interface WebShareEntryView {
+  entry_id: string;
+  app_id: string;
+  title: string;
+  device_name: string;
+  guest_login: WebShareGuestLogin;
+  /** The account a visitor uses the app as, for run_account; else empty. */
+  visitor_account: string;
+}
+
+/** A site that serves the share page. */
+export interface WebShareSiteView {
+  url: string;
+  title: string;
+}
+
+/** A new Web share; `days` null lasts until it is revoked. */
+export interface WebShareCreateRequest {
+  name: string;
+  entry_id: string;
+  days: number | null;
+  site: string;
+}
+
+/** A new share and its link, which the hub returns this once. */
+export interface WebShareCreatedView {
+  link: string;
+  share: WebShareView;
+}
+
+/** A request naming one Web share. */
+export interface WebShareRevokeRequest {
+  share_id: string;
 }
 
 /** A client's new name. */
@@ -1449,6 +1514,9 @@ export interface AppEntryView {
   local_port: number;
   /** What a declared entry's last probe measured, null when it answered. */
   detail_code: string | null;
+  /** How a Web share's visitor signs in to a web entry; empty on an entry
+   * of another type. */
+  guest_login: WebShareGuestLogin | "";
 }
 
 /** One program on one machine, with one or more entries. */
