@@ -810,6 +810,40 @@ machine the File share tab shows `ui.samba.replace_notice` as a notice
 above its apply bar while the module has no `want`, the state a Samba set up
 by hand is in ([agent/modules/file_share.md](agent/modules/file_share.md)).
 
+The File share tab's panel holds two panels, one under the other, one for
+each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
+
+| Panel | Idiom |
+| --- | --- |
+| **Home shares** (`ui.samba.home_shares`) | the tab's **Enabled accounts** under this title, with `ui.samba.home_shares_hint` under it: one check row per available account showing its share path, one Home share per checked account; configurable, with its apply bar |
+| **Folder shares** (`ui.samba.folder_shares`) | one row per folder share, with `ui.samba.folder_shares_hint` under the title, and **Add** (`ui.samba.folder_add`), a bordered `button` at the panel's top right that opens the inline form under the list, the panel add of "Inline forms", lit with the accent frame |
+
+| Field of the folder share form | Idiom |
+| --- | --- |
+| **Name** (`ui.samba.folder_name`) | a text field; an edit shows the name and does not change it |
+| **Folder** (`ui.samba.folder_path`) | a text field with **Browse…** beside it, opening the path window in its folder mode |
+| **Accounts** (`ui.samba.folder_accounts`) | one checkbox per account **Home shares** enables, in its order |
+
+**Cancel** and **Save** sit at the form's bottom right, and **Save** is
+disabled while the name or the folder is empty or no account is checked.
+**Save** writes at once, `folder_share/add` or `folder_share/set`
+([protocol.md](protocol.md), "`/api/agent/module`"), as the form of
+**Available accounts** does. A row shows the share's name, its folder in
+mono and its accounts, with **Edit** (`ui.samba.folder_edit`) and **Remove**
+(`ui.samba.folder_remove`) at its right; **Edit** opens the same form in the
+row's place. **Remove** asks through `useConfirm`, the title
+`ui.samba.folder_remove_title {name}` and the body
+`ui.samba.folder_remove_body {path}`, and acts at once. With no folder share
+the panel shows `ui.samba.folder_empty`. While **Home shares** has no
+account applied, **Add** is disabled with `ui.samba.folder_no_accounts` as
+its reason.
+
+| Rule | Reason |
+| --- | --- |
+| **Folder shares** writes each add, edit and remove at once and has no apply bar, while **Home shares** stages. | A folder share is a record the person adds, as an available account is; the Home shares are the module's one setting. |
+| The checkboxes list the accounts **Home shares** enables as applied, not the draft. | A folder share's account logs in with the SMB user that enabling the account makes. |
+| A folder share's name does not change after **Save**. | A permission's row and a client's mount name the share by it ([protocol.md](protocol.md), `/api/hub/client`). |
+
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
 that kept its modules, has **Start** live, whatever its state; the press

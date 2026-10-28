@@ -291,9 +291,9 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `declared_service_invalid {field}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `declared_service_invalid {field}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}`, `share_name_taken {name}`, `share_name_invalid {name}`, `share_account_not_enabled {account}` |
 | 401 | a missing session, or on the legacy listener a token that names no binding | `binding_unknown` |
-| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown` |
+| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown`, `folder_share_unknown {name}` |
 | 413 | a body past the legacy listener's limit, `CHANNEL_REQUEST_BYTES_MAX` 64 KiB | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `transport_key_missing` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
@@ -321,7 +321,9 @@ walk theirs. A new code and its wording are one change.
 | `account_not_enabled` | `{account}` | a `shell` or an `exec` naming an account the Terminal module does not enable | added |
 | `account_home_unknown` | `{account}` | the `code` of a `samba` row of `GET /api/agent/module/samba`, an enabled account with no `share_path` whose machine reports no home for it ("The account layer in the state") | added |
 | `samba_hosts_allow_no_loopback`, `samba_interfaces_no_loopback`, `samba_domain_member` | none | the `code` of the `samba` module row on Linux, a `hosts allow` of the person's `[global]` that leaves out the loopback, a `bind interfaces only` whose `interfaces` leaves out `lo`, and a domain member's `security` or `server role`, each a setting of the person's the module never changes ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
-| `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row on Linux, the shares of the hub's own list that admit no enabled account's SMB user and are left out of the module's file ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
+| `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row, the folder shares with no account, which the module leaves off the server ([agent/modules/file_share.md](agent/modules/file_share.md)) | added |
+| `share_name_taken` | `{name}` | an apply of the `samba` module, a share of the person's that has the name of a Home share or a folder share; and the folder share routes and `samba/set`, a name another share of the machine has, compared without case ("`/api/agent/module`") | widened to folder shares |
+| `share_name_invalid`, `share_account_not_enabled`, `folder_share_unknown` | `{name}`, `{account}`, `{name}` | the folder share routes: a name outside the form a folder share's name takes, an account the file share does not enable, and a name no folder share of the machine has | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
 | `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
@@ -597,7 +599,7 @@ A row is one thing a client reaches under one kind:
 | --- | --- | --- |
 | `web`, `port` | an app with an entry of that kind ("Apps") | the app's id |
 | `ssh` | a machine's SSH server | its app's id, `ssh_server_<device id>` |
-| `file` | a machine's share, one per enabled account of its file share; a declared app with a `file` entry | the share's entry id, `samba_<device id>_<share>`; the app's id |
+| `file` | a machine's Home share, one per enabled account of its file share; a machine's folder share, one row for the entries of all its accounts; a declared app with a `file` entry | the Home share's entry id, `samba_<device id>_<share>`; the folder share's id, `samba_folder_<device id>_<share>`; the app's id |
 | `rdp` | a machine's desktop | its entry's id, `rdp_<device id>` |
 | `terminal` | a managed machine | `terminal_<device id>` |
 | `ai`, `overlay`, `panel` | none | |
@@ -606,7 +608,8 @@ One function, `is_permitted` in `modules/clients/permissions.py`, judges
 every use against the client's permission, or against the default while
 the client has none of its own. It takes the kind, the device that provides
 the thing, and the thing's row id: the app's id for an entry of an app, the
-entry's own id for an entry of no app, `terminal_<device id>` for a shell or
+folder share's id for an entry of a folder share, the entry's own id for
+any other entry of no app, `terminal_<device id>` for a shell or
 a command, and none for `ai`, `overlay` and `panel`.
 
 1. A row id that `entries` names is allowed or refused by its value.
@@ -625,7 +628,7 @@ address passes only a kind with no list, or its own row.
 | A row in `entries` wins over its kind both ways: a row set on is allowed while its kind is off, and a row set off is refused while its kind is on. | A person gives one app to a client that has nothing else, or keeps one app from a client that has the rest. |
 | A row is one app whatever its entries' kinds. An app with entries of two kinds, Gitea's `web` and its SSH `port`, is a row under each, and both read and write its one id. | An app is one thing to the person ("Apps"). |
 | A row absent from `entries` follows its kind, so an app published later is allowed or refused by its kind and its machines alone. | The coarse setting stays the rule, and the fine one names its exceptions. |
-| `entries` keeps a row whose app or entry is not published now, and the function reads it again when the app comes back. Forgetting a device takes the rows its id names out of every permission, and removing a declared app takes its row out. | A module stopped for a while comes back with the setting the person made, and a row of something gone for good is not kept. |
+| `entries` keeps a row whose app or entry is not published now, and the function reads it again when the app comes back. Forgetting a device takes the rows its id names out of every permission, and removing a declared app or a folder share takes its row out. | A module stopped for a while comes back with the setting the person made, and a row of something gone for good is not kept. |
 | A new permission, a fresh hub's default among them, has `entries` empty. | The coarse mode is the one a person meets first. |
 
 `config/clients/clients.json` holds `default_permission: {kinds, devices,
@@ -747,11 +750,15 @@ to pick one.
 | `GET /api/agent/module/account` | `?device_id=` | `AccountListView`: `accounts`, the available accounts in the order they were added, each `{account, has_login, share_path, shell_path, is_ai_tools_enabled, tool_configs, modules, ai_tools}`, `modules` the module names that enable it and `ai_tools` its last AI tools result as reported, `{state, code, params}`, `state` empty before the machine reported it; `system_accounts`, the machine's `account_details` for the form's picker and its defaults; `platform_os`; `models`, the names the gateway serves, for the model pickers; and `is_gateway_serving` |
 | `POST /api/agent/module/account/add` | `{device_id, account, password, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `password` on a Windows machine alone, `share_path` and `shell_path` empty for the defaults, each `tool_configs` slot empty for the gateway's default | adds the account: on Windows stores `password` as a vault login and names it `login_id`, turns the AI tools on for it when asked, and pushes the state; `AccountListView`; 400 `account_unknown {account}` for an account the machine does not report, `account_duplicate {account}`, `credential_missing {account}` for a Windows account with no password, `path_invalid {path}` for a path that is not absolute, the agent's own `shell_program_unusable {path}`, `vault_locked`; 409 `gateway_not_serving` for the AI tools turned on while the gateway serves no model, `agent_offline` |
 | `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; `AccountListView`; the refusals of `add` |
-| `POST /api/agent/module/account/remove` | `{device_id, account}` | removes the account from every module that enables it, switches its AI tools back, deletes its login and the secrets its modules generated, and pushes the state; `AccountListView` |
+| `POST /api/agent/module/account/remove` | `{device_id, account}` | removes the account from every module that enables it and from every folder share, switches its AI tools back, deletes its login and the secrets its modules generated, and pushes the state; `AccountListView` |
 | `GET /api/agent/module/<name>` for `terminal`, `samba`, `ssh_server`, `vscode`, `code_server`, `cloudcli`, `codeg` and `siyuan` | `?device_id=` | `EnabledAccountsView`: the fields of every module view; and `accounts`, every available account in the machine page's order, each `{account, is_enabled, port, is_running, code, params}` with the last four as last reported, and on each row the module's own field: `shell_path` on `terminal`, `share_path` and `user`, the SMB user, on `samba`, where the row of an enabled account left out of the state for a missing home carries `account_home_unknown {account}` as its `code` and `params` ("The account layer in the state"); `ssh_server` adds `host_key_fingerprint` to the view, and `vscode` `is_terms_accepted` and `terms_url` |
-| `POST /api/agent/module/<name>/set` for the same eight | `{device_id, accounts}`, the names of the enabled accounts, in the order they were checked | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("The modules section, one entry per module"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400 |
+| `POST /api/agent/module/<name>/set` for the same eight | `{device_id, accounts}`, the names of the enabled accounts, in the order they were checked | replaces the module's enabled accounts, generating each newly enabled account's secrets, and writes `want: running` with it as an apply of a configuration does ("The modules section, one entry per module"); `EnabledAccountsView`; 400 `account_unknown {account}` for an account that is not available, `account_duplicate {account}`; 409 `terms_not_accepted {module}` for `vscode` before its terms, `agent_offline`; the agent's own refusals as 400. On `samba` an account left unchecked leaves every folder share in the same write, and an account checked whose name a folder share has is refused 400 `share_name_taken {name}` |
 | `POST /api/agent/module/vscode/terms/set` | `{device_id, is_accepted}` | records, with `is_accepted` true, that the person accepted the terms for this machine, as `terms_accepted_at` in `config/devices/<id>/vscode.json`; false deletes the record; `EnabledAccountsView`. The panel sends true alone, from the press that opens the terms. Until the record exists, `module/install`, `module/start` and `vscode/set` naming `vscode` on that machine are refused 409 `terms_not_accepted {module}` |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
+| `GET /api/agent/module/samba/folder_share` | `?device_id=` | `FolderShareListView`: `shares`, the machine's folder shares in the order they were added, each `{name, path, accounts}`, `accounts` the accounts checked for it in the file share's order; and `accounts`, the file share's enabled accounts in their order, the ones a folder share can name |
+| `POST /api/agent/module/samba/folder_share/add` | `{device_id, name, path, accounts}`, `accounts` one enabled account at least | adds the folder share to `samba.json`, writes `want: running` with it as an apply of a configuration does, and pushes the state; `FolderShareListView`; 400 `share_name_invalid {name}`, `share_name_taken {name}`, `path_invalid {path}` for a path that is not absolute, `share_account_not_enabled {account}`, `body_invalid` for an empty `accounts`, then the agent's own refusals; 409 `agent_offline` |
+| `POST /api/agent/module/samba/folder_share/set` | `{device_id, name, path, accounts}` | replaces the path and the accounts of the folder share `name`, whose name stays; the same answer and refusals, and 404 `folder_share_unknown {name}` |
+| `POST /api/agent/module/samba/folder_share/remove` | `{device_id, name}` | removes the folder share from `samba.json`, takes its row out of every permission, and pushes the state; the agent removes the share and leaves the folder and its files ([agent/modules/file_share.md](agent/modules/file_share.md)); `FolderShareListView`; 404 `folder_share_unknown {name}`, 409 `agent_offline` |
 | `GET /api/agent/module/gitea` | `?device_id=` | |
 | `POST /api/agent/module/gitea/import` | `{device_id}` | |
 | `POST /api/agent/module/gitea/set` | `{device_id, ...}` | |
@@ -793,6 +800,17 @@ carries are "The account layer in the state". VS Code's terms acceptance,
 `device_keys` ([hub_components/ai.md](hub_components/ai.md), "A key per
 device as well as per client"): the first account whose AI tools switch goes
 on mints it, and the last one turned off and removing the device revoke it.
+
+The folder shares are `routers/agent/module_samba.py`'s, beside the
+module's status. A folder share's name is 1 to 64 characters, each a
+letter, a digit, `-`, `_` or `.`, and is none of `global`, `homes` and
+`printers`; any other is refused `share_name_invalid {name}`. A name is
+refused `share_name_taken {name}` when, compared without case, an
+available account of the machine has it, another folder share has it, or
+one of its entries' ids would be another folder share entry's ("The
+services section, one entry per published service"); a share of the
+person's own of that name is refused by the agent's apply, as for a Home
+share ([agent/modules/file_share.md](agent/modules/file_share.md)).
 
 The module catalog is `data/module_catalog.json`: every module by the
 activity it serves, in the order of the catalog's dialog, `{categories:
@@ -1343,7 +1361,7 @@ the whole file back.
 
 | Module | What `details` reports, and what import reads |
 | --- | --- |
-| Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts |
+| Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts and the folder shares |
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
@@ -1628,7 +1646,7 @@ the hub generated for each, sealed under the vault's data key:
 | Module | `config/devices/<id>/<module>.json` | The module's `config` in the state |
 | --- | --- | --- |
 | `terminal` | `{accounts: [{account}]}` | `{accounts: [{account, shell_path, password}]}` |
-| `samba` | `{accounts: [{account, password_sealed}], shares}`, `shares` the shares the file names itself, a ZFS dataset's among them, each `{name, path, comment, is_read_only, valid_users}` | `{shares, users, passwords, allowed_subnets}`: for each enabled account a share `{name: <account>, path, comment: "", is_read_only: false, valid_users: [<user>], force_user: <account>}`, its user's name in `users`, and `passwords`, `{<user>: <password>}`, the user being the account's SMB user `neutrino-<account>` ([agent.md](agent.md), "The file share's accounts"), and `force_user` the account the share's files are written as on Linux, which a share the file names itself does not carry, its files being written as the connected user's account through the per-user include ([agent/modules/file_share.md](agent/modules/file_share.md)); a stored share's `valid_users` may name an account in place of its SMB user, from 0.5, and the hub composes the SMB user; the agent sets each user's password from `passwords` at every apply whose password differs, in place of the `set_password` verb of 0.5 |
+| `samba` | `{accounts: [{account, password_sealed}], shares}`, `shares` the folder shares in the order they were added, each `{name, path, accounts}`, `accounts` the enabled accounts checked for it | `{shares, users, passwords, allowed_subnets}`: for each enabled account a Home share `{name: <account>, path, comment: "", is_read_only: false, valid_users: [<user>], force_user: <account>}`, its user's name in `users`, and `passwords`, `{<user>: <password>}`, the user being the account's SMB user `neutrino-<account>` ([agent.md](agent.md), "The file share's accounts"), and `force_user` the account the share's files are written as on Linux; then each folder share `{name, path, comment: "", is_read_only: false, valid_users}`, `valid_users` the SMB users of its accounts in their order and empty when it has none, with no `force_user`, its files being written as the connected user's account through the per-user include ([agent/modules/file_share.md](agent/modules/file_share.md)); the agent sets each user's password from `passwords` at every apply whose password differs, in place of the `set_password` verb of 0.5 |
 | `vscode` | `{terms_accepted_at, accounts: [{account, token_sealed}]}` | `{address, instances: [{account, token, password}]}` |
 | `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, local_name, cookie_name}]}` |
 | `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password, local_name, cookie_name}]}`, `token_secret` being the secret its tokens are minted from |
@@ -1658,15 +1676,20 @@ what the entry's `payload` names:
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint, account_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, `host_key_fingerprint` the machine's host key and `account_key_fingerprint` the account's key the hub made, each as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
-| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared app's entry | a device's Samba module reports the share, or a declared app names a `file` entry |
+| `file` | `{protocol, host, share, users, account}`, `protocol` being `smb`; `users` is `[<user>]`, the SMB user the entry logs in as, and empty on a declared app's entry; `account` is the account a folder share's entry logs in as, and empty on a Home share's entry, whose share has the account's name, and on a declared app's | a device's Samba module reports the share, one entry for a Home share and one for each account of a folder share, or a declared app names a `file` entry |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
 
 The six types are closed, `SERVICES_TYPES` in
 `modules/services/constants.py`; a seventh is a row here in the same change.
 The `ai` entry's id is `ai` on every hub, an `rdp` entry's `rdp_<device id>`
-of the machine sharing its desktop, and a machine's `file` entry's
+of the machine sharing its desktop, and a Home share's `file` entry's
 `samba_<device id>_<share>`; each is its row's id in a permission
-(`/api/hub/client`).
+(`/api/hub/client`). A folder share's entries are
+`samba_folder_<device id>_<share>_<account>`, one per account checked for
+it, and their one row in a permission is the folder share's id,
+`samba_folder_<device id>_<share>`. Two entries of one machine never have
+one id: a folder share whose entry would take another's id is refused
+("`/api/agent/module`").
 Every `host`, `port`, `url` and `endpoint` in a payload is where the
 service is on the hub's networks, resolved for the client's scope ("The
 address a caller is given"). A client shows it to the person and dials none
@@ -1904,7 +1927,7 @@ first that fails gives the reply its code; the panel's are
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
 | `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module`, `siyuan_module`, `hermes_webui_module` or `ayakaleaf_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or the container module's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
 | `ssh` | `{account, private_key, host_key}`: the private half of the key the hub made for that account on that machine, in OpenSSH form, and the machine's host public key in OpenSSH form, which the client writes into Neutrino's own known_hosts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md), "Keys") |
-| `file` of a device's Samba module | `{user, password}`: the share's SMB user and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
+| `file` of a device's Samba module | `{user, password}`: the SMB user of the entry's account, the Home share's own account or a folder share entry's `account`, and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 

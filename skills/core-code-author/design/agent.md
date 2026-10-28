@@ -387,7 +387,7 @@ instance for each.
 | Every feature that runs as an account reads that account's row: the file share its `share_path`, the terminal and the SSH server its `shell_path`, every program its login on Windows. | One form per account holds it, so no module asks again and two modules never disagree. |
 | On Windows the account's password is the one login every feature of the account signs in with: the scheduled tasks of the programs and of the SSH server, the terminal's logon, and the AI tools' one-shot tasks. A changed password is a new login; the old one is deleted ([ui_behavior.md](ui_behavior.md), "Secrets"). | Windows starts a process as another account only with its password, and one password per account is the one a person can keep up to date. |
 | A terminal and a command run as an enabled account of the Terminal module, never as root or SYSTEM. With no account enabled, the module opens no shell. | A shell the hub opens is a person's own; root's work is the agent's alone. |
-| The file share serves one share per enabled account, named after the account, at its `share_path`, to one SMB user per enabled account whose password the hub generates and seals ("The file share's accounts"). | The person mounts without a password, and a client holds a password that opens that share alone. |
+| The file share serves one Home share per enabled account, named after the account, at its `share_path`, and the folder shares the person names, each open to the enabled accounts checked for it; every enabled account has one SMB user, whose password the hub generates and seals ("The file share's accounts", [modules/file_share.md](agent/modules/file_share.md)). | The person mounts without a password, and a client holds a password that opens only the shares of that account. |
 | Removing an available account takes it out of every module's enabled accounts, switches its AI tools back, and deletes its login and the generated passwords of its features, in one write; on Windows the agent switches the tools back with the login it kept from the switch ([ai_tools.md](agent/ai_tools.md)). | A module never runs for an account the machine page no longer lists. |
 
 ### The file share's accounts
@@ -407,14 +407,18 @@ time the account is enabled, and keeps it sealed under the vault's data key
 in `config/devices/<id>/samba.json`. The state carries it opened in the
 module's `users`, and a client reads it only through the `service` frame of
 the share's `file` entry ([protocol.md](protocol.md), "The service frame").
-On Windows and macOS the module grants the SMB user the share's folder, as it
-grants its accounts today, so the files a client writes there are written
-through that user; on Linux `force user` writes them as the account.
+On Windows and macOS the module grants the SMB user the folder of the
+account's Home share and of each folder share checked for the account, so
+the files a client writes there are written through that user; on Linux
+`force user` writes them as the account, on a folder share through the
+per-user include ([modules/file_share.md](agent/modules/file_share.md),
+"Linux").
 **Rotate** on the Credentials page generates the password again and pushes
 the state, and the agent sets the new one on the SMB user; a client reads it
 at its next mount ([ui_behavior.md](ui_behavior.md), "The Credentials
 page"). Disabling an account removes its SMB user and its Samba credential on every
-system; removing the agent's package leaves them, as
+system, and takes the account out of every folder share; removing the
+agent's package leaves them, as
 [modules/file_share.md](agent/modules/file_share.md) says.
 
 ## The connect stream

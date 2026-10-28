@@ -517,9 +517,12 @@ A phone has no AI page.
 
 ## The Files page
 
-A row per `file` entry: the share's name, `//host/share` as the mono line,
-where the share is on the hub's networks, and the provider line. A share a
-machine's file share serves comes with its login: the client reads the
+A row per `file` entry: the share's name as the title, `<share>
+(<account>)` for a folder share's entry, which carries `account`, so a folder
+share has a row for each of its accounts ([protocol.md](protocol.md), "The
+services section, one entry per published service"); `//host/share` as the
+mono line, where the share is on the hub's networks; and the provider line. A share a machine's file share serves, a
+Home share or a folder share, comes with its login: the client reads the
 share's `{user, password}` with the `service` frame at every mount and asks
 the person nothing ([protocol.md](protocol.md), "The service frame"). A
 declared share, a NAS the hub does not manage, keeps the person's own login,
@@ -547,12 +550,13 @@ document):
 
 | System | Shape | The form's control | The mounted row |
 | --- | --- | --- | --- |
-| Linux | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>` | the path |
+| Linux | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>`, and `~/remote/<machine>-<share>-<account>` for an entry whose `account` is set | the path |
 | Windows | `drive_letter`: a drive | a picker over the free letters, the first free one by default, with the caption that the share appears as that drive in File Explorer | the letter |
-| macOS | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>` | the path, and `ui.mount_finder` under it with the server's address |
+| macOS | `path`: a directory under the home | the path with **Browse…**; the default is `~/remote/<machine>-<share>`, and `~/remote/<machine>-<share>-<account>` for an entry whose `account` is set | the path, and `ui.mount_finder` under it with the server's address |
 
-`<machine>` and `<share>` are the entry's `device_name` and share name, each
-with every character outside letters, digits, `-` and `_` turned into `-`.
+`<machine>`, `<share>` and `<account>` are the entry's `device_name`, share
+name and `account`, each with every character outside letters, digits, `-`
+and `_` turned into `-`.
 **Mount** needs no form: every field has its default, so a machine's share
 mounts at the first press. The form is a configurable panel with a dirty
 frame, **Save** and **Cancel**, and **Mount** on a declared share is
@@ -896,9 +900,9 @@ follow the window's pages, with the program itself and `ssh` above them:
 | `app set <app> --port <entry>=<port>` | sets an entry's local port on this client, as **Configure** does; `--port` repeats; an empty port goes back to the hub's | 0, 1 for a refusal |
 | `ai show` | prints each AI tool's gateway address and whether it is the hub's; a desktop alone | 0 |
 | `ai set` | points the AI tools at the hub's gateway, as the AI page's chip does, and again to refresh them; a desktop alone | 0, 1 for a refusal |
-| `file list` | prints each machine's shares: the share, where it is mounted here, and whether it is mounted | 0 |
-| `file mount <machine>[/<share>] [--path <path> \| --drive <letter>]` | mounts a share, as **Mount** does, at the place given or the default ("The Files page"); the share's name can be left out where the machine has one share | 0, 1 for a refusal |
-| `file unmount <machine>[/<share>]` | unmounts it | 0, 1 for a refusal |
+| `file list` | prints each machine's shares: the share, with its account for a folder share's entry, where it is mounted here, and whether it is mounted | 0 |
+| `file mount <machine>[/<share>] [--account <account>] [--path <path> \| --drive <letter>]` | mounts a share, as **Mount** does, at the place given or the default ("The Files page"); the share's name can be left out where the machine has one share, and `--account`, which picks a folder share's entry, where the share has one account | 0, 1 for a refusal |
+| `file unmount <machine>[/<share>] [--account <account>]` | unmounts it | 0, 1 for a refusal |
 | `terminal list <machine>` | prints the machine's sessions: the session id's first eight characters, the account, how long it has been open, whether it is persistent, whether it is shared, and who is attached | 0 |
 | `terminal open <machine> [--account <account>]` | opens a new shell in this terminal, as the account named or the first enabled one; the shell ending ends the command | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
 | `terminal attach <machine> <session>` | attaches to a kept session, one this client owns or a shared one, its kept output first; Ctrl+] leaves it running | as `open`, and 2 for a session the machine does not list |

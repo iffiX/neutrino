@@ -355,6 +355,19 @@ where they fit.
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
 | `ui.modules.no_accounts` | Add an account under Available accounts first. | 先在“可用账户”里添加账户。 |
 | `ui.samba.replace_notice` | Applying replaces this machine's smb.conf. The old file is kept as /etc/samba/smb.conf.before_neutrino. | 应用会替换这台机器的 smb.conf，原文件保存为 /etc/samba/smb.conf.before_neutrino。 |
+| `ui.samba.home_shares`, `ui.samba.folder_shares`, the File share tab's two panels | Home shares, Folder shares | Home 共享、文件夹共享 |
+| `ui.samba.home_shares_hint` | One share for each checked account, named after it, at its share path. | 每个勾选的账户一个共享，以账户命名，位置是它的文件共享路径。 |
+| `ui.samba.folder_shares_hint` | A folder you name, shared with the accounts you check. Each account's files are written as that account. | 你命名的一个文件夹，共享给勾选的账户。每个账户写入的文件都归它自己。 |
+| `ui.samba.folder_add` | Add | 添加 |
+| `ui.samba.folder_name`, `ui.samba.folder_path`, `ui.samba.folder_accounts` | Name, Folder, Accounts | 名称、文件夹、账户 |
+| `ui.samba.folder_edit`, `ui.samba.folder_remove` | Edit, Remove | 编辑、移除 |
+| `ui.samba.folder_remove_title` | Remove {name} | 移除 {name} |
+| `ui.samba.folder_remove_body` | The share goes away. The folder {path} and its files stay. | 共享会移除，文件夹 {path} 和里面的文件都保留。 |
+| `ui.samba.folder_empty` | No folder shares yet. | 还没有文件夹共享。 |
+| `ui.samba.folder_no_accounts` | Enable an account under Home shares first. | 先在“Home 共享”里启用账户。 |
+| `code.share_name_invalid` | {name} cannot name a share: use 1 to 64 letters, digits, -, _ and ., other than global, homes and printers. | {name} 不能用作共享名：只能用 1 到 64 个字母、数字、-、_ 和 .，也不能是 global、homes 或 printers。 |
+| `code.share_account_not_enabled` | {account} is not enabled for this machine's file share. | 这台机器的文件共享没有启用 {account}。 |
+| `code.folder_share_unknown` | This machine has no folder share named {name}. | 这台机器没有叫 {name} 的文件夹共享。 |
 | `ui.modules.add_module` | + Add module | + 添加模块 |
 | `ui.module_catalog.title` | Add module | 添加模块 |
 | `ui.module_catalog.search` | Search names and descriptions | 搜索名称或说明 |
@@ -763,11 +776,11 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.transport_key_missing` | The transport has not written its key yet; try again in a moment. | 传输层还没有写出密钥，稍后再试。 |
 | `code.transport_apply_failed` | The transport could not be started: {detail} | 传输层没能启动：{detail} |
 | `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这台机器还没有报告 {account} 的家目录，请填写它的共享路径。 |
-| `code.share_name_taken` | The machine already has a share named {name} that is not the module's; rename that share. | 这台机器上已有一个不是本模块建立的共享叫 {name}，请改掉它的名字。 |
+| `code.share_name_taken` | The machine already has a share named {name}. Give the new share another name, or rename or remove the other one. | 这台机器上已经有一个叫 {name} 的共享。请给新的共享换个名字，或者把原来那个改名或删掉。 |
 | `code.samba_hosts_allow_no_loopback` | Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer; add it there. | 这台机器的 Samba hosts allow 没有 127.0.0.1，本模块的共享无法应答；请在那里加上它。 |
 | `code.samba_interfaces_no_loopback` | Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there. | 这台机器的 Samba 只绑定了不含 lo 的网卡，本模块的共享无法应答；请在那里加上 lo。 |
 | `code.samba_domain_member` | Samba on this machine is a domain member, which the module's local users cannot sign in to. | 这台机器的 Samba 是域成员，本模块的本地用户无法登录。 |
-| `code.share_users_unknown` | The shares {shares} admit no user of the module's and are not served; enable an account they name, or remove them. | 共享 {shares} 没有本模块的任何用户可以访问，所以没有提供；请启用它们所列的账户，或删掉它们。 |
+| `code.share_users_unknown` | The folder shares {shares} have no account and are not served; check an account for them, or remove them. | 文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。 |
 | `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这台机器的文件共享。 |
 | `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |
 | `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这台机器的终端没有启用 {account}。 |
