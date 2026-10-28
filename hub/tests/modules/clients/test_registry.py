@@ -434,39 +434,3 @@ def test_the_sweep_removes_waiting_rows_whose_link_expired_and_nothing_else(
 
     assert [client.id for client in ClientRegistry().all()] == [open_link, joined]
     assert ClientRegistry().sweep_waiting(200.0) == []
-
-
-def test_forgetting_rows_takes_them_out_of_every_permissions_entries(config_dir):
-    """The default's and each client's ``entries`` lose the rows, an empty
-    map goes, and a permission naming none of them is written as it was."""
-    path = config_dir / "clients" / "clients.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {
-                "default_permission": {
-                    "kinds": ["file"],
-                    "entries": {"samba_folder_dev_lab": True},
-                },
-                "clients": {
-                    "c1": {
-                        "name": "phone",
-                        "permission": {
-                            "kinds": ["web"],
-                            "entries": {
-                                "samba_folder_dev_lab": False,
-                                "gitea_dev": True,
-                            },
-                        },
-                    },
-                    "c2": {"name": "laptop", "permission": None},
-                },
-            }
-        )
-    )
-
-    assert ClientRegistry().forget_permission_rows(["samba_folder_dev_lab"])
-    written = json.loads(path.read_text())
-    assert written["default_permission"] == {"kinds": ["file"]}
-    assert written["clients"]["c1"]["permission"]["entries"] == {"gitea_dev": True}
-    assert not ClientRegistry().forget_permission_rows(["samba_folder_dev_lab"])

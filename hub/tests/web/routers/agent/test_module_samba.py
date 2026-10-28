@@ -13,8 +13,10 @@ import json
 
 import pytest
 
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.services.file_ids import folder_share_id
 from neutrino_hub.web.routers.agent import module_instances, module_samba
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
@@ -199,19 +201,12 @@ def test_a_set_replaces_the_folder_and_the_accounts_and_keeps_the_name(api, tmp_
 def test_a_remove_takes_the_share_and_its_permission_row_away(api, tmp_path):
     client, runtime = api
     add(client)
-    clients = tmp_path / "clients" / "clients.json"
-    clients.parent.mkdir(parents=True, exist_ok=True)
-    clients.write_text(
-        json.dumps(
-            {
-                "default_permission": {
-                    "kinds": ["file"],
-                    "entries": {f"samba_folder_{DEVICE}_lab": True},
-                },
-                "clients": {},
-            }
-        )
-    )
+    row = folder_share_id(DEVICE, "lab")
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    bob = registry.create("bob")
+    registry.set_default_permission(["file"], entries={row: True})
+    registry.set_permission(alice, ["web"], entries={row: False, "gitea_d1": True})
 
     answer = client.post(f"{PATH}/remove", json={"device_id": DEVICE, "name": "lab"})
     again = client.post(f"{PATH}/remove", json={"device_id": DEVICE, "name": "lab"})
@@ -219,7 +214,10 @@ def test_a_remove_takes_the_share_and_its_permission_row_away(api, tmp_path):
     assert answer.status_code == 200
     assert answer.json()["shares"] == []
     assert stored(tmp_path)["shares"] == []
-    assert json.loads(clients.read_text())["default_permission"] == {"kinds": ["file"]}
+    registry = ClientRegistry()
+    assert registry.default_permission_entries() == {}
+    assert registry.get(alice).permission_entries == {"gitea_d1": True}
+    assert registry.get(bob).permission is None
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE, DEVICE]
     assert again.status_code == 404
 
