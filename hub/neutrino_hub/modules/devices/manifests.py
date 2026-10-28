@@ -71,9 +71,12 @@ MODULE_KEYS = {
     "is_data_forward_only",
     "uninstall_data",
     "web_share",
+    "memory_mib",
     "platforms",
 }
-TOOL_KEYS = (MODULE_KEYS - {"is_data_forward_only", "uninstall_data", "web_share"}) | {
+TOOL_KEYS = (
+    MODULE_KEYS - {"is_data_forward_only", "uninstall_data", "web_share", "memory_mib"}
+) | {
     "is_module",
     "version",
 }
@@ -586,6 +589,8 @@ def _check_module(file_name: str, manifest: dict) -> None:
         _check_uninstall_data(file_name, manifest)
     if "web_share" in manifest:
         _check_web_share(file_name, manifest["web_share"])
+    if "memory_mib" in manifest:
+        _check_memory(file_name, manifest)
     for key, entry in platforms.items():
         where = f"platform {key}"
         _check_keys(file_name, where, entry, ENTRY_KEYS, {"runner", "install"})
@@ -670,6 +675,19 @@ def _check_uninstall_data(file_name: str, manifest: dict) -> None:
                 "uninstall_data is_deleted",
                 f"disagrees with platform {key}",
             )
+
+
+def _check_memory(file_name: str, manifest: dict) -> None:
+    """Refuse a ``memory_mib`` of another shape, or on a module with no ``container`` entry.
+
+    Raises:
+        ValueError: Naming the field and what is wrong.
+    """
+    held = manifest["memory_mib"]
+    if isinstance(held, bool) or not isinstance(held, int) or held <= 0:
+        _refuse(file_name, "memory_mib", "must be a whole number above 0")
+    if DEVICE_METHOD_CONTAINER not in manifest_methods(manifest):
+        _refuse(file_name, "memory_mib", "is named by a container module alone")
 
 
 def _check_params(file_name: str, where: str, method: str, params) -> None:

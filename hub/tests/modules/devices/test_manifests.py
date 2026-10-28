@@ -1680,6 +1680,36 @@ def test_a_container_entry_naming_a_set_the_file_does_not_define_is_refused(
     assert "conda" in str(refusal.value)
 
 
+def test_a_container_module_may_name_the_memory_it_needs(manifests_dir):
+    write_manifest(manifests_dir, "sample", dict(container_manifest(), memory_mib=2600))
+
+    assert load_module_manifests()["sample"]["memory_mib"] == 2600
+
+
+@pytest.mark.parametrize("memory_mib", [0, -1, 2.5, "2600", True])
+def test_a_memory_that_is_no_positive_whole_number_is_refused(
+    manifests_dir, memory_mib
+):
+    manifest = dict(container_manifest(), memory_mib=memory_mib)
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "memory_mib" in str(refusal.value)
+
+
+def test_a_memory_named_by_a_module_without_a_container_entry_is_refused(
+    manifests_dir,
+):
+    write_manifest(manifests_dir, "sample", dict(valid_manifest(), memory_mib=512))
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "container module alone" in str(refusal.value)
+
+
 def _npm_with_sources(manifest):
     artifact = hub_params(manifest)["artifacts"][1]
     artifact["sources"] = ["https://registry.example"]

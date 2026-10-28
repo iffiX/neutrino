@@ -7,7 +7,8 @@ device id's first 12 characters, and the app's local name;
 the two hub containers as the module's page lists them, the cookie's name in
 the webui's environment, with the gateway's address on a
 managed machine and on the hub's own; no container while the password does
-not open; and the manifest's four entries naming the tested pair by digest.
+not open; and the manifest's four entries naming the tested pair by digest,
+and its memory of 1024 MiB.
 """
 
 import pytest
@@ -195,6 +196,7 @@ def test_every_entry_names_the_tested_pair_by_digest_and_the_pypi_set():
     manifest = load_module_manifests()["hermes_webui"]
 
     assert manifest["license"] == "MIT"
+    assert manifest["memory_mib"] == 1024
     assert set(manifest["platforms"]) == {
         "linux",
         "windows-amd64",
