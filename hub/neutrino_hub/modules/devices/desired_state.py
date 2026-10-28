@@ -61,10 +61,15 @@ from neutrino_hub.modules.devices.ai_tools import resolved_tool_configs
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.manifests import (
     entry_artifacts,
+    guest_login_of,
+    load_module_manifests,
     load_tool_manifests,
     resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_GUEST_FIELDS,
+    DEVICE_GUEST_LOGIN_GUEST_ACCOUNT,
+    DEVICE_GUESTS_KEY,
     DEVICE_ACCOUNTS_NAME,
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
@@ -190,6 +195,34 @@ def smb_user(account: str, platform: dict) -> str:
 def instance_app_id(module: str, device_id: str, account: str) -> str:
     """The id of the app one instance of an account-layer module is."""
     return f"{module}_{device_id}_{account}"
+
+
+def module_app_id(module: str, device_id: str) -> str:
+    """The id of the app a container module's page is on one device."""
+    return f"{module}_{device_id}"
+
+
+def share_guests(device_id: str, app_id: str) -> list:
+    """The guest accounts of one app's live Web shares, as a module's state carries them.
+
+    Args:
+        device_id: The machine the app runs on.
+        app_id: The app.
+
+    Returns:
+        ``[{account, email, password, secret}]`` opened, in the shares'
+        order; none while the hub has no Web share module or the vault is
+        locked.
+    """
+    try:
+        from neutrino_hub.modules.clients import web_shares
+    except ImportError:
+        return []
+    return [
+        {name: str(guest.get(name, "") or "") for name in DEVICE_GUEST_FIELDS}
+        for guest in web_shares.guest_accounts(device_id, app_id)
+        if isinstance(guest, dict)
+    ]
 
 
 def machine_apps(store: "DesiredStateStore", key: str) -> dict:
@@ -1261,6 +1294,7 @@ class DesiredStateStore:
         app_slug_of: "dict | None" = None,
         ai_models: "list | tuple" = (),
         releases: "ModuleReleaseStore | None" = None,
+        manifests: "dict | None" = None,
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -1288,6 +1322,7 @@ class DesiredStateStore:
             releases: The publishers' feeds as last read, which name the
                 digest of a hub container's image at the version the machine
                 chose; None takes the tested digests.
+            manifests: The module manifests; None reads them.
 
         Returns:
             The configuration: an account-layer module as
@@ -1296,8 +1331,10 @@ class DesiredStateStore:
             secrets it signs with and its SSH entry's local port, Containers
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes WebUI
-            and Ayakaleaf with their secrets opened and their names,
-            Ayakaleaf with the guests of its app's live Web shares.
+            and Ayakaleaf with their secrets opened and their names. A
+            module whose manifest's ``web_share`` names ``guest_login``
+            ``guest_account`` also carries ``guests``, the guest account of
+            each live Web share of its page.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -1344,11 +1381,14 @@ class DesiredStateStore:
                 config, key, local_name=local_name(made, machine_slug)
             )
         elif name == DEVICE_AYAKALEAF_MODULE:
-            app_id = ayakaleaf.app_id(key)
+            app_id = module_app_id(name, key)
             made = (app_slug_of or {}).get(app_id) or slug(SERVICES_AYAKALEAF_TITLE)
             config = ayakaleaf.agent_config(
                 config, key, local_name=local_name(made, machine_slug)
             )
+        held = load_module_manifests() if manifests is None else manifests
+        if guest_login_of(held, name) == DEVICE_GUEST_LOGIN_GUEST_ACCOUNT:
+            config[DEVICE_GUESTS_KEY] = share_guests(key, module_app_id(name, key))
         return config
 
     def compose(
@@ -1410,6 +1450,7 @@ class DesiredStateStore:
             "app_slug_of": slugs,
             "ai_models": tuple(ai_models),
             "releases": releases,
+            "manifests": load_module_manifests(),
         }
         modules = {}
         for name, entry in self.modules(key).items():

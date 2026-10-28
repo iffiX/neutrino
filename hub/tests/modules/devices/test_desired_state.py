@@ -14,6 +14,8 @@ from every module, and the Containers Run settings naming an account.
 """
 
 import json
+import sys
+import types
 
 import pytest
 
@@ -33,6 +35,12 @@ DEVICE = "device-one"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64"}
 AGENT_RECIPE = {"method": "agent", "params": {}}
+GUEST = {
+    "account": "guest-k3f9",
+    "email": "guest-k3f9@share.neutrino",
+    "password": "p",
+    "secret": "s",
+}
 
 
 @pytest.fixture
@@ -428,6 +436,51 @@ def test_a_machine_with_ayakaleaf_reads_the_gateway_s_models_until_it_goes(unloc
     assert store.uses_gateway_models(DEVICE)
     store.set_want(DEVICE, "ayakaleaf", "absent")
     assert not store.uses_gateway_models(DEVICE)
+
+
+@pytest.fixture
+def shares(monkeypatch):
+    """A Web share module holding the guests the test sets, by machine and app id."""
+    held: dict = {}
+    module = types.ModuleType("neutrino_hub.modules.clients.web_shares")
+    module.guest_accounts = lambda device_id, app_id: list(
+        held.get((device_id, app_id), [])
+    )
+    monkeypatch.setitem(sys.modules, "neutrino_hub.modules.clients.web_shares", module)
+    import neutrino_hub.modules.clients as clients_package
+
+    monkeypatch.setattr(clients_package, "web_shares", module, raising=False)
+    return held
+
+
+def test_a_guest_account_module_carries_the_guests_of_its_page_s_shares(
+    unlocked, shares
+):
+    store = DesiredStateStore()
+    manifests = {
+        "penpot": {"web_share": {"guest_login": "guest_account"}},
+        "gitea": {"web_share": {"guest_login": "app"}},
+    }
+    shares[(DEVICE, f"penpot_{DEVICE}")] = [{**GUEST, "user_id": "u1"}]
+    shares[(DEVICE, f"gitea_{DEVICE}")] = [GUEST]
+    shares[("device-two", "penpot_device-two")] = [{**GUEST, "account": "guest-zz"}]
+
+    penpot = store.agent_config(DEVICE, "penpot", {}, PLATFORM, manifests=manifests)
+    gitea = store.agent_config(DEVICE, "gitea", {}, PLATFORM, manifests=manifests)
+
+    assert penpot == {"guests": [GUEST]}
+    assert "guests" not in gitea
+
+
+def test_a_hub_with_no_web_share_module_sends_no_guest(unlocked, monkeypatch):
+    monkeypatch.setitem(sys.modules, "neutrino_hub.modules.clients.web_shares", None)
+    manifests = {"penpot": {"web_share": {"guest_login": "guest_account"}}}
+
+    config = DesiredStateStore().agent_config(
+        DEVICE, "penpot", {}, PLATFORM, manifests=manifests
+    )
+
+    assert config == {"guests": []}
 
 
 def test_the_state_sends_ayakaleaf_its_secrets_names_and_container_digests(

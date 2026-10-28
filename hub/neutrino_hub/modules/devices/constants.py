@@ -334,6 +334,10 @@ DEVICE_MODULE_RELEASES_VERSIONS_MAX = 50
 # are sent the Run settings, ``machine`` in ``podman.json``.
 DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")
 DEVICE_PODMAN_MACHINE_KEY = "machine"
+# The key a guest_account module's state holds its guests under, and the
+# fields of each guest.
+DEVICE_GUESTS_KEY = "guests"
+DEVICE_GUEST_FIELDS = ("account", "email", "password", "secret")
 # The Containers module, which runs every container module's containers; the
 # key its state holds them under, the start of every name the hub keeps for
 # them, and the declared containers' key in ``podman.json``.

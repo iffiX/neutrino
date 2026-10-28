@@ -5,10 +5,10 @@ administrator's password and the app's session and invitation secrets,
 generated the first time the module is installed and sealed under the
 vault's data key, the module's gateway key, and ``model``, the tab's AI
 model, empty for the gateway's first. The state carries ``{secret,
-password, cookie_name, local_name, guests}`` opened: the name of the app's
-session cookie on the device, the app's local name, which its forwarder
-checks the ``Host`` against, and the guest account of each live Web share
-of the app. The forwarder's port is the agent's. The module runs three hub
+password, cookie_name, local_name}`` opened: the name of the app's session
+cookie on the device and the app's local name, which its forwarder checks
+the ``Host`` against; the desired state adds the guests of the app's Web
+shares. The forwarder's port is the agent's. The module runs three hub
 containers on Containers: MongoDB and Redis first, then the app, which
 starts after both and whose 80 the module's forwarder serves.
 
@@ -52,7 +52,6 @@ from neutrino_hub.modules.devices.hub_containers import (
     HubContainerRequest,
 )
 from neutrino_hub.modules.devices.module_table import module_row
-from neutrino_hub.modules.services.constants import SERVICES_AYAKALEAF_ID
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 
 # The sealed fields the state carries opened; the session and invitation
@@ -103,41 +102,7 @@ def cookie_name(key: str) -> str:
     return DEVICE_AYAKALEAF_COOKIE_PREFIX + key[:DEVICE_AYAKALEAF_COOKIE_ID_CHARS]
 
 
-def app_id(key: str) -> str:
-    """The id of the app the module's page is on one device, ``ayakaleaf_<device id>``."""
-    return f"{SERVICES_AYAKALEAF_ID}_{key}"
-
-
-def share_guests(key: str) -> list:
-    """The guest accounts of the live Web shares of the app on one device.
-
-    Args:
-        key: The device.
-
-    Returns:
-        ``[{account, email, password, secret}]`` opened, in the shares'
-        order; none while the hub has no Web share module or the vault is
-        locked.
-    """
-    try:
-        from neutrino_hub.modules.clients import web_shares
-    except ImportError:
-        return []
-    return [
-        {
-            "account": str(guest.get("account", "") or ""),
-            "email": str(guest.get("email", "") or ""),
-            "password": str(guest.get("password", "") or ""),
-            "secret": str(guest.get("secret", "") or ""),
-        }
-        for guest in web_shares.guest_accounts(key, app_id(key))
-        if isinstance(guest, dict)
-    ]
-
-
-def agent_config(
-    stored: dict, key: str, *, local_name: str = "", guests: "list | None" = None
-) -> dict:
+def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
     """What the agent is sent for Ayakaleaf.
 
     Args:
@@ -145,13 +110,10 @@ def agent_config(
         key: The device.
         local_name: The app's local name, which the forwarder checks the
             ``Host`` against.
-        guests: The guest accounts of the app's live Web shares; None
-            reads them from the Web share module.
 
     Returns:
-        ``{secret, password, cookie_name, local_name, guests}``, each
-        secret opened, empty when the file holds none or the vault cannot
-        open it.
+        ``{secret, password, cookie_name, local_name}``, each secret opened,
+        empty when the file holds none or the vault cannot open it.
     """
     row = module_row(DEVICE_AYAKALEAF_MODULE)
     config = {}
@@ -160,7 +122,6 @@ def agent_config(
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
-    config["guests"] = list(guests) if guests is not None else share_guests(key)
     return config
 
 

@@ -4,16 +4,12 @@ What these pin: the first install generates the token secret, the
 administrator's password and the app's session and invitation secrets once
 and keeps them; the state carries ``{secret, password}`` opened, the session
 cookie's name, ``ayakaleaf_sid_`` and the device id's first 12 characters,
-the app's local name and the guests of the app's live Web shares, and never
-the session or invitation secret; the three hub containers as the module's
+the app's local name, and never the session or invitation secret; the three hub containers as the module's
 page lists them, the app after the other two with its 60-second stop; the
 four ``AI_`` variables while the gateway serves a model and none while it
 serves none; no container while a secret does not open; and the manifest's
 four entries naming the three images, the ``oci`` feed and the ``ctan`` set.
 """
-
-import sys
-import types
 
 import pytest
 
@@ -38,12 +34,6 @@ APP_SOURCES = [
     "ghcr.nju.edu.cn/ayaka-notes/overleaf-pro",
     "ghcr.m.daocloud.io/ayaka-notes/overleaf-pro",
 ]
-GUEST = {
-    "account": "guest-k3f9",
-    "email": "guest-k3f9@share.neutrino",
-    "password": "p",
-    "secret": "s",
-}
 FIXED = [
     "OVERLEAF_MONGO_URL=mongodb://neutrino_ayakaleaf_mongo/sharelatex",
     "OVERLEAF_REDIS_HOST=neutrino_ayakaleaf_redis",  # scan: allow
@@ -73,23 +63,6 @@ def config_dir(tmp_path, monkeypatch):
 def store(config_dir, monkeypatch):
     unlock_vault(monkeypatch, config_dir)
     return DesiredStateStore()
-
-
-@pytest.fixture
-def shares(monkeypatch):
-    """A Web share module holding the guests the test sets, by app id."""
-    held: dict = {}
-    module = types.ModuleType("neutrino_hub.modules.clients.web_shares")
-
-    def guest_accounts(device_id, app_id):
-        return list(held.get(app_id, []))
-
-    module.guest_accounts = guest_accounts
-    monkeypatch.setitem(sys.modules, "neutrino_hub.modules.clients.web_shares", module)
-    import neutrino_hub.modules.clients as clients_package
-
-    monkeypatch.setattr(clients_package, "web_shares", module, raising=False)
-    return held
 
 
 def opened(stored: dict, key: str, aad: bytes) -> str:
@@ -127,13 +100,11 @@ def test_the_install_keeps_the_model_beside_the_secrets(store):
     assert written["model"] == "gpt-x"
 
 
-def test_the_state_carries_two_secrets_opened_the_names_and_the_guests(store, shares):
+def test_the_state_carries_two_secrets_opened_and_the_names(store):
     stored = ayakaleaf.ensure_config(store, DEVICE)
-    shares[f"ayakaleaf_{DEVICE}"] = [GUEST]
-    shares["ayakaleaf_dev-2"] = [{**GUEST, "account": "guest-zzzz"}]
 
-    config = store.agent_config(
-        DEVICE, "ayakaleaf", stored, LINUX, machine_slug="argon"
+    config = ayakaleaf.agent_config(
+        stored, DEVICE, local_name="ayakaleaf.argon.localhost"
     )
 
     opened_values = secrets_of(stored)
@@ -142,24 +113,15 @@ def test_the_state_carries_two_secrets_opened_the_names_and_the_guests(store, sh
         "password": opened_values["password"],
         "cookie_name": "ayakaleaf_sid_dev-1",
         "local_name": "ayakaleaf.argon.localhost",
-        "guests": [GUEST],
     }
 
 
-def test_a_hub_with_no_web_share_module_sends_no_guest(monkeypatch):
-    monkeypatch.setitem(sys.modules, "neutrino_hub.modules.clients.web_shares", None)
-
-    assert ayakaleaf.share_guests(DEVICE) == []
-    assert ayakaleaf.agent_config({}, DEVICE)["guests"] == []
-
-
 def test_a_file_with_nothing_sealed_sends_empty_secrets():
-    assert ayakaleaf.agent_config({}, DEVICE, guests=[]) == {
+    assert ayakaleaf.agent_config({}, DEVICE) == {
         "secret": "",
         "password": "",
         "cookie_name": "ayakaleaf_sid_dev-1",
         "local_name": "",
-        "guests": [],
     }
 
 
