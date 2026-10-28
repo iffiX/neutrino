@@ -30,26 +30,27 @@ conventions explicit so nobody drifts.
 
 1. **Coding style** — the mechanical surface rules. Where files go, how things
    are named, how a file is laid out and formatted.
-   - [coding_style/layout_style.md](coding_style/layout_style.md) — directory layout, the
+   - [coding_style/layout.md](coding_style/layout.md) — directory layout, the
      underscore rule, the library-vs-`neutrino_hub/cli/` split, `config/` as data,
      `constants.py`, and why `neutrino_hub/cli/` has no `__init__.py`.
-   - [coding_style/naming_style.md](coding_style/naming_style.md) — identifiers: module
+   - [coding_style/naming.md](coding_style/naming.md) — identifiers: module
      legibility, `is_`/`has_` bools, constant prefixes, banned terms.
-   - [coding_style/python_style.md](coding_style/python_style.md) — file
+   - [coding_style/python.md](coding_style/python.md) — file
      internal order, method order, black, Google docstrings, no helper lambdas,
      no shouting caps.
-   - [coding_style/exception_style.md](coding_style/exception_style.md) — Python's
+   - [coding_style/exception.md](coding_style/exception.md) — Python's
      own exceptions first, one exceptions table per package in one module,
      never a kind declared elsewhere, `Raises:` on every public docstring.
-   - [coding_style/comment_style.md](coding_style/comment_style.md) — comments,
-     UI copy and commit messages: state the fact, no narrated reasoning.
-   - [coding_style/typescript_style.md](coding_style/typescript_style.md) — the
+   - [coding_style/comment.md](coding_style/comment.md) — comments,
+     UI copy and error messages. A comment names the thing and stops, except
+     a fact the code depends on, such as an order. No narrated reasoning.
+   - [coding_style/typescript.md](coding_style/typescript.md) — the
      React + TypeScript frontend: prettier/eslint, under_score files, no `any`,
      component order.
-   - [coding_style/kotlin_style.md](coding_style/kotlin_style.md) and
-     [coding_style/swift_style.md](coding_style/swift_style.md): the Android
+   - [coding_style/kotlin.md](coding_style/kotlin.md) and
+     [coding_style/swift.md](coding_style/swift.md): the Android
      and iOS apps: formatters, PascalCase files, errors, no force unwrap.
-   - [coding_style/go_style.md](coding_style/go_style.md): the transport
+   - [coding_style/go.md](coding_style/go.md): the transport
      module shared by the three sides: gofmt and vet, lowercase package
      directories, one `errors.go` per package, no panic, every goroutine
      owned by a context.
@@ -128,8 +129,8 @@ conventions explicit so nobody drifts.
 4. **Agent work rules** — how work enters the repository, as opposed to what
    the code looks like.
    - [agent_work_rule/commit.md](agent_work_rule/commit.md) — one author, who
-     is answerable for the change; one sentence of at most 30 words; no agent
-     co-author trailers.
+     is answerable for the change; one line `Section: text` of at most twenty
+     words with no clause where a phrase will do; no agent co-author trailers.
    - [agent_work_rule/release.md](agent_work_rule/release.md) — one tag builds
      all three packages; hub, agent and client share a version and are
      compatible by protocol number; changelog lines are `feature:` / `fix:` /

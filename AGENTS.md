@@ -24,11 +24,11 @@ and leave this pointing at it.**
 
 | Document | What it settles |
 | --- | --- |
-| [coding_style/layout_style.md](skills/core-code-author/coding_style/layout_style.md) | Where a file goes. `under_score` everywhere, no grab-bag dirs, library packages vs. `neutrino_hub/cli/<name>.py`, one `constants.py` per package. |
+| [coding_style/layout.md](skills/core-code-author/coding_style/layout.md) | Where a file goes. `under_score` everywhere, no grab-bag dirs, library packages vs. `neutrino_hub/cli/<name>.py`, one `constants.py` per package. |
 | [design/architecture.md](skills/core-code-author/design/architecture.md) | `config/` is the only source of truth; render → validate → apply; renderers are pure, appliers touch the system. |
-| [coding_style/comment_style.md](skills/core-code-author/coding_style/comment_style.md) | KISS, English only, no narrated reasoning anywhere, commit message shape. |
-| [coding_style/exception_style.md](skills/core-code-author/coding_style/exception_style.md) | Python's own exceptions first; a package's own kinds live in its one `exceptions.py`; `Raises:` on every public docstring. |
-| [agent_work_rule/commit.md](skills/core-code-author/agent_work_rule/commit.md) | Only the user decides a commit happens. One answerable author, no agent `Co-Authored-By`. |
+| [coding_style/comment.md](skills/core-code-author/coding_style/comment.md) | A comment names the thing and stops, the sentence shapes, KISS, English only, no narrated reasoning anywhere. |
+| [coding_style/exception.md](skills/core-code-author/coding_style/exception.md) | Python's own exceptions first; a package's own kinds live in its one `exceptions.py`; `Raises:` on every public docstring. |
+| [agent_work_rule/commit.md](skills/core-code-author/agent_work_rule/commit.md) | Only the user decides a commit happens. One answerable author, no agent `Co-Authored-By`. One line `Section: text` of at most twenty words. |
 | [design/files.md](skills/core-code-author/design/files.md) | The five roots an installed hub uses on each system, the one question each answers, and the one Neutrino tree on macOS and Windows. |
 | [design/development.md](skills/core-code-author/design/development.md) | Running the hub from a checkout: `--dev` against a root of its own, what it changes on the machine, and why a checkout installs nothing. |
 | [design/privilege.md](skills/core-code-author/design/privilege.md) | Why the panel is root, what the unit narrows, why stepping down uses `runuser` and never `sudo`, and what holds on macOS and Windows. |
@@ -38,12 +38,12 @@ and leave this pointing at it.**
 
 | Document | Open it when |
 | --- | --- |
-| [coding_style/naming_style.md](skills/core-code-author/coding_style/naming_style.md) | Naming anything: `is_`/`has_` bools, constant prefixes, banned terms. |
-| [coding_style/python_style.md](skills/core-code-author/coding_style/python_style.md) | Writing Python: file and method order, black, Google docstrings. |
-| [coding_style/typescript_style.md](skills/core-code-author/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
-| [coding_style/kotlin_style.md](skills/core-code-author/coding_style/kotlin_style.md) | Touching `client/android/`: PascalCase files, ktlint, one `Exceptions.kt`, refusals as sealed results, no `!!`. |
-| [coding_style/swift_style.md](skills/core-code-author/coding_style/swift_style.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
-| [coding_style/go_style.md](skills/core-code-author/coding_style/go_style.md) | Touching `transport/` or `agent/sshserver/`: gofmt and vet, lowercase package directories, one `errors.go` per package, errors wrapped with `%w`, no panic, every goroutine owned by a context. |
+| [coding_style/naming.md](skills/core-code-author/coding_style/naming.md) | Naming anything: `is_`/`has_` bools, constant prefixes, banned terms. |
+| [coding_style/python.md](skills/core-code-author/coding_style/python.md) | Writing Python: file and method order, black, Google docstrings. |
+| [coding_style/typescript.md](skills/core-code-author/coding_style/typescript.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
+| [coding_style/kotlin.md](skills/core-code-author/coding_style/kotlin.md) | Touching `client/android/`: PascalCase files, ktlint, one `Exceptions.kt`, refusals as sealed results, no `!!`. |
+| [coding_style/swift.md](skills/core-code-author/coding_style/swift.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
+| [coding_style/go.md](skills/core-code-author/coding_style/go.md) | Touching `transport/` or `agent/sshserver/`: gofmt and vet, lowercase package directories, one `errors.go` per package, errors wrapped with `%w`, no panic, every goroutine owned by a context. |
 | [design/protocol.md](skills/core-code-author/design/protocol.md) | Adding or renaming any endpoint, frame, kind or code: the three ports, path rules and the verb table, refusals as `{code, params}`, every route, the channel, admission, versioning by protocol number. |
 | [design/connection.md](skills/core-code-author/design/connection.md) | Touching the agent port or anything a client reaches through it: what the hub spends on a peer before it is admitted and the limits on it, the ways the port is reached, what an admitted client can open, what a client opens on its own machine, and why the hub relays every stream. |
 | [design/hub_components/network.md](skills/core-code-author/design/hub_components/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, server mode and the system firewall on macOS and Windows, and why it does not build on NetworkManager. |
@@ -176,20 +176,20 @@ examples in the document named beside it.
   separation. ([design/architecture.md](skills/core-code-author/design/architecture.md))
 - **Bools read as questions.** `is_` / `has_` on variables, attributes,
   Pydantic fields, `config/` JSON keys and TypeScript fields alike.
-  ([coding_style/naming_style.md](skills/core-code-author/coding_style/naming_style.md))
+  ([coding_style/naming.md](skills/core-code-author/coding_style/naming.md))
 - **No narrated reasoning.** Not in comments, docstrings, UI copy, or error
   messages. Rationale goes in `docs/`.
-  ([coding_style/comment_style.md](skills/core-code-author/coding_style/comment_style.md))
+  ([coding_style/comment.md](skills/core-code-author/coding_style/comment.md))
 - **One exceptions table per package.** A raise site uses Python's own kind
   when one says it; a kind of the package's own is declared in
   `<package>/exceptions.py` and nowhere else, and every public docstring
   carries `Raises:`.
-  ([coding_style/exception_style.md](skills/core-code-author/coding_style/exception_style.md))
+  ([coding_style/exception.md](skills/core-code-author/coding_style/exception.md))
 - **English only**, including when translating comments you find.
-  ([coding_style/comment_style.md](skills/core-code-author/coding_style/comment_style.md))
+  ([coding_style/comment.md](skills/core-code-author/coding_style/comment.md))
 - **Smallest change that works.** No restructuring you were not asked for, no
   layer for a case nobody has.
-  ([coding_style/comment_style.md](skills/core-code-author/coding_style/comment_style.md))
+  ([coding_style/comment.md](skills/core-code-author/coding_style/comment.md))
 - **A reset hands the network back before it replaces `config/`, and takes no
   address off anything.** `config/` is the only record of which interfaces had
   units on them, and an interface losing its address mid-reset drops the

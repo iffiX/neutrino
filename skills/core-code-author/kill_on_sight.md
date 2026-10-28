@@ -5,7 +5,7 @@ the moment you see them.
 
 - **Helper lambdas.** A lambda used merely as a helper — flatten it into a named
   function or a class method. See
-  [coding_style/python_style.md](coding_style/python_style.md).
+  [coding_style/python.md](coding_style/python.md).
 - **Speckled classes.** One cohesive concept shattered into a config class plus
   a data class plus a renderer plus an applier. Merge into one cohesive class
   with clear `__init__` kwargs (rendering and applying are genuinely separate
@@ -15,10 +15,10 @@ the moment you see them.
   `loader.py`, `config_thing.py`) that a reviewer cannot decode from the name
   alone. See
   [design/class_hierarchy.md](design/class_hierarchy.md)
-  and [coding_style/naming_style.md](coding_style/naming_style.md).
+  and [coding_style/naming.md](coding_style/naming.md).
 - **Grab-bag directories.** `utils2/`, `misc/`, `helpers/`, `common/` as source
   directories, or `helpers.py` / `misc.py` dumping grounds inside a package. See
-  [coding_style/layout_style.md](coding_style/layout_style.md).
+  [coding_style/layout.md](coding_style/layout.md).
 - **Execution in a library.** `main()`, `argparse`, `if __name__ == "__main__"`,
   or a wiring-config class inside a library package. It belongs in `neutrino_hub/cli/`.
   See [design/architecture.md](design/architecture.md).
@@ -40,8 +40,12 @@ the moment you see them.
   Python or in a `config/` JSON key or a TypeScript field.
 - **Shouting caps.** Uppercase words for emphasis in comments, docstrings, or
   prose.
+- **A comment that makes code act like a person, or hangs a tail on a fact.**
+  `the gateway answers`, `the box knows`, a `, which ...` tail, more than one
+  `, so`, or more than three comma pieces in a sentence. See "Sentence shapes"
+  in [coding_style/comment.md](coding_style/comment.md).
 - **`any` in TypeScript.** Reach for `unknown` and narrow, or write the real
-  type. See [coding_style/typescript_style.md](coding_style/typescript_style.md).
+  type. See [coding_style/typescript.md](coding_style/typescript.md).
 - **black / prettier / eslint not run.** `black --check` must pass on Python;
   `prettier --check` and `eslint` must pass on the frontend.
 - **Unasked survival machinery.** Persistence, reconciliation, or migration
@@ -52,4 +56,4 @@ the moment you see them.
   something else.
 
 - A comment, hint, or error message that narrates reasoning instead of
-  stating the fact — see coding_style/comment_style.md.
+  stating the fact — see coding_style/comment.md.
