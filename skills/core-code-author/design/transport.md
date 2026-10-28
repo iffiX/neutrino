@@ -38,25 +38,51 @@ one enrolled peer.
 ## The doors
 
 The agent port is one TCP port, and the first bytes of a connection pick the
-door it goes through. The transport reads them as they arrive and closes the
-connection at the first byte that fits no door, with nothing written. Every
-listener of the transport has the same doors, the frp loopback listeners
-included.
+door it goes through. Every listener of the transport has the same doors,
+the frp loopback listeners included.
 
 | The first bytes | The door | Who comes through it |
 | --- | --- | --- |
 | the hub's magic, 4 bytes ("The header and the magic") | the member path | an agent or a client, which has the magic from its link |
 | a STUN Binding Request in RFC 4571 framing, its 2-byte length starting with `0x00` ("The guest path") | the guest path, while a Web share is live | a browser opening a Web share |
 | `0x16` followed by `0x03`, the start of a TLS handshake record, while the legacy switch is on | the 0.5 TLS listener ("An agent of 0.5") | an agent of 0.5 updating itself |
-| anything else | none: the connection closes with nothing written | |
+| anything else | none: the connection is refused ("A refused connection") | |
 
 | Rule | Reason |
 | --- | --- |
 | One TCP port carries every door. | A home has one reachable port, and through the SSH relay and the frp nodes one forwarded port is all a sender reaches. A member and a guest reach the hub at the same address. |
-| The transport closes a connection at the first byte that fits no door, and writes nothing to it. | The cheapest test runs first, before any crypto, and a scan of the port reads silence on every connection. |
+| The transport checks the first bytes as they arrive, and refuses a connection only after it has read a length drawn at random for that connection, `DoorReadBytesMin` 20 to `DoorReadBytesMax` 100 bytes, or after the peer stopped sending. The member path decides at the fourth byte and still reads to that length. The guest path decides at the end of the USERNAME, byte 55 to 59 of a browser's first frame, and cuts at the later of its decision and that length. | The door never stops reading at a byte of the magic, so the magic cannot be found byte by byte. How far the transport reads before it cuts has the same spread on both paths. A connection that passes its checks never waits for that length. |
 | The magic's first byte is never `0x00` or `0x16`. | The first byte alone then tells the doors apart, so no connection fits two of them. |
 | The TLS door tests two bytes, `0x16` and `0x03`. | Every TLS handshake record starts with both, and the second byte closes a stray `0x16` before the legacy listener spends anything on it. |
-| A connection that has not sent its first 4 bytes within `KnockFirstByteTimeout`, 3 seconds from the accept, is closed, whichever door it is bound for. | Four bytes pick the door, and a connection held open and silent is the cheapest way to fill the port. |
+
+### A refused connection
+
+A connection the transport refuses gets one reaction, whatever it sent. The
+transport stops reading it and writes nothing to it. It holds the connection
+open until a deadline drawn at random for that connection, `DoorHoldMin` 5
+to `DoorHoldMax` 30 seconds after the accept, and then closes it with a
+reset, `SO_LINGER` 0. A refusal after that deadline closes at once.
+
+The transport refuses:
+
+- a connection whose first bytes fit no door, a first byte of `0x00` among
+  them while no share is live;
+- a knock whose magic, version, message type, length or `mac1` is wrong,
+  whose message 1 does not open, or whose `time` the replay window refuses;
+- a guest's first frame at any check of the guest path's cut-off order;
+- a connection that has not sent what its door checks by its hold deadline,
+  or by its door's handshake time when that is earlier, an empty one among
+  them.
+
+| Rule | Reason |
+| --- | --- |
+| Every refusal is the same: silence, a hold to a deadline drawn at random, and a reset. | A prober reads one reaction whatever it sends. Nothing it reads tells a wrong magic from a wrong `mac1`, or a shut guest door from an open one. |
+| Every read before the hub's first byte on a connection ends by the hold deadline, and by the door's own handshake time when that is earlier. | A connection with the right magic that then stays silent is held as long as one with a wrong magic. |
+| The transport stops reading a refused connection and drains none of its bytes. | Once the kernel's receive buffer fills, TCP flow control stops the sender, so a held connection costs at most one buffer. A reset needs no draining. |
+| The close is a reset. | Linux closes with a reset or with a FIN by whether unread bytes are left, and a prober reads the difference. |
+| The door reads into a buffer the size of what it checks: a knock of at most `KnockBytesMax`, or a guest's first frame of at most 257 bytes. | A held connection costs the hub no more memory than its first bytes. |
+| A held connection counts among the unadmitted ones until it closes, and at `UnadmittedMax` the held ones are closed first ("What an unadmitted peer can cost the hub"). | Refused connections that fill every place cannot shut out a peer with the link. |
+| The hub writes its first byte to a connection only after a knock's `mac1` verifies, as an answer or a cookie reply, or after a guest's MESSAGE-INTEGRITY and FINGERPRINT verify. A sender without a link or a live share's pwd gets nothing back beyond TCP's own segments. | A flood from a sender without the link draws no traffic out of the hub: no amplification, and no byte of its own. |
 
 ## The member path
 
@@ -96,26 +122,31 @@ hub from its own public half, by `knock.Magic`.
 
 | Rule | Reason |
 | --- | --- |
-| The magic is per hub, derived from the hub's static public key. | A member derives it from the key its link already holds, so the link gains no field. A scanner without the link is cut at the fourth byte, with no crypto spent. A firewall rule written against one hub's first bytes matches no other hub. |
-| The version is the protocol number, 4, and the transport picks the handshake that follows by it. A connection whose version the transport does not speak is closed with nothing written. | A later number can bring another handshake to the same port, and the transport tells the two apart before any crypto. |
+| The magic is per hub, derived from the hub's static public key. | A member derives it from the key its link already holds, so the link gains no field. A scanner without the link is refused with no crypto spent. A firewall rule written against one hub's first bytes matches no other hub. |
+| The version is the protocol number, 4, and the transport picks the handshake that follows by it. A connection whose version the transport does not speak is refused ("A refused connection"). | A later number can bring another handshake to the same port, and the transport tells the two apart before any crypto. |
 | One header opens the knock, the answer and the cookie reply, and the message type tells them apart. | A peer reads every message of the handshake by one shape, and an answer and a cookie reply differ in one named byte. |
 | The reserved byte is sent as 0 and ignored on receipt. | A later release can give it a meaning, and an older hub reads past it. |
 | `mac1` covers the header. | A header altered on the way fails `mac1`, so the hub acts on the version and the type the peer wrote. |
 
 ### The knock and the answer
 
-The transport checks a knock in the order its bytes arrive and closes the
-connection at the first mismatch: the magic at the fourth byte, then the
-version, the message type, the length and `mac1`. It opens message 1 only
+The transport checks a knock in the order its bytes arrive: the magic, the
+version, the message type, the length and `mac1`. It refuses the connection
+at the first mismatch ("A refused connection"), and opens message 1 only
 after all of them pass.
 
 | Step | On the wire | Rule |
 | --- | --- | --- |
-| Knock | the peer's first bytes: the header with type 1, then `<u16 length><Noise message 1><mac1, 16 bytes><mac2, 16 bytes>`, `length` counting message 1 alone, big-endian, at most `KnockBytesMax`, 1024 | `mac1` is BLAKE2s-128 keyed by BLAKE2s-256 of the ASCII `mac1----` followed by the hub's public key's 32 bytes, over every byte before `mac1`, the header's included. `mac2` is BLAKE2s-128 keyed by the cookie the peer holds, over every byte before `mac2`, or 16 zero bytes while it holds none. Message 1's payload is JSON `{protocol, role, is_join, time}`, `time` being the peer's clock in Unix nanoseconds, an integer. |
-| Silence | nothing | A knock whose magic, version, type, length or `mac1` is wrong, whose message 1 does not open, or whose `time` is not later than the last one the transport accepted for the same static key is answered with no byte: the transport closes the connection. |
+| Knock | the peer's first bytes: the header with type 1, then `<u16 length><Noise message 1><mac1, 16 bytes><mac2, 16 bytes>`, `length` counting message 1 alone, big-endian, and the whole knock at most `KnockBytesMax`, 1088 bytes: 1024 and the padding's 64 | `mac1` is BLAKE2s-128 keyed by BLAKE2s-256 of the ASCII `mac1----` followed by the hub's public key's 32 bytes, over every byte before `mac1`, the header's included. `mac2` is BLAKE2s-128 keyed by the cookie the peer holds, over every byte before `mac2`, or 16 zero bytes while it holds none. Message 1's payload is JSON `{protocol, role, is_join, time}` followed by its padding, `time` being the peer's clock in Unix nanoseconds, an integer. |
+| Silence | nothing | A knock whose magic, version, type, length or `mac1` is wrong, whose message 1 does not open, or whose `time` is not later than the last one the transport accepted for the same static key is answered with no byte: the transport refuses the connection. |
 | Cookie | under load, the answer to a knock with a valid `mac1` and no valid `mac2`: the header with type 3, then `<24-byte nonce><the cookie sealed, 32 bytes>`, after which the transport closes the connection | The cookie is BLAKE2s-128 keyed by the transport's cookie secret, made afresh every `CookieSecretLifetime`, over the peer's address as the connection gives it. It is sealed with XChaCha20-Poly1305 under BLAKE2s-256 of the ASCII `cookie--` followed by the hub's public key, with the knock's `mac1` as associated data. The peer keeps the cookie for `CookieSecretLifetime` and knocks again on a new connection with `mac2` set; a cookie made under the secret before the current one no longer verifies, and the peer is sent a new one. |
-| Answer | the header with type 2, then `<u16 length><Noise message 2>`, its payload empty | The transport mixes in the psk the table in "The handshake" names, after it asked the hub's Python whose the peer's static key is ("The local channel"). |
+| Answer | the header with type 2, then `<u16 length><Noise message 2>`, its payload the padding | The transport mixes in the psk the table in "The handshake" names, after it asked the hub's Python whose the peer's static key is ("The local channel"). |
 | Session | every byte after the answer: Noise transport messages, each `<u16 length><ciphertext>` of at most 65535 bytes, carrying one go-yamux session | The hub is yamux's server and the peer its client, so the hub's streams have even ids and the peer's odd ones. A session is not rekeyed: it keeps its handshake's keys until it ends. |
+
+| Rule | Reason |
+| --- | --- |
+| Message 1's payload is the JSON object followed by 0 to `KnockPaddingBytesMax`, 64, random bytes, and message 2's payload is 0 to 64 random bytes, each count drawn for its message. The hub reads the one JSON value and ignores the bytes after it, and the peer ignores message 2's payload. | The padding is inside the encryption, so only its length shows. The knock, 209 to 211 bytes without it, and the answer, 58, then differ from one connection to the next, and no fixed size marks the port. |
+| Data records and keepalives carry no padding. | The padding costs about 64 bytes for each connection and 320 for a round of five addresses. The traffic after the handshake carries every service, and its sizes say nothing about the port. |
 
 ### The handshake
 
@@ -165,8 +196,8 @@ in the package `transport/gate/`, built on pion's `stun`, `dtls`, `sctp` and
 | First message | one `open` record, type 1, in the layout of "The stream layer", its payload JSON `{protocol, ticket}`, at most `GateGuestOpenBytesMax`, 1024 bytes | `protocol` is the member header's version, 4, and `ticket` the share's ticket from the link. The transport asks the hub's Python `guest` ("The hub's local channel") and writes one `accept` record, type 2, whose payload is `{id}`, the share's id, or one `close` record, type 8, `{code, params}`, after which it closes the connection. |
 | yamux | a yamux session inside the data channel, the hub its server and the page its client | The page opens the control stream first and sends `hello {protocol, role: guest, id, name, software}`, `id` the share's id from the `accept`. The hub's Python answers `welcome` and sends no `state`. |
 
-The hub checks a guest's first bytes in this order, and closes the
-connection with nothing written at the first check that fails:
+The hub checks a guest's first bytes in this order, and refuses the
+connection at the first check that fails ("A refused connection"):
 
 1. The RFC 4571 frame's 2-byte length: its first byte `0x00`, and a length
    of at least 20, a STUN header's.
@@ -179,11 +210,12 @@ connection with nothing written at the first check that fails:
    and FINGERPRINT.
 
 The hub writes its first byte only after the last two checks pass. While no
-share is live the guest door is shut: a first byte of `0x00` meets silence,
-and the connection closes. A browser's first Binding Request is 118 bytes
+share is live the guest door is shut, and a first byte of `0x00` is refused
+as one that fits no door. A browser's first Binding Request is 118 bytes
 with a 24-character ufrag, and its USERNAME ends at byte 55 in Chrome,
-Chromium and Safari and at byte 59 in Firefox, so a sender without a live
-share's ufrag is cut there, before any hash.
+Chromium and Safari and at byte 59 in Firefox. A sender without a live
+share's ufrag is refused there, before any hash, and cut there or at the
+drawn length, whichever is later.
 
 An admitted guest session carries the frames and streams of one shared app
 and nothing else:
@@ -200,11 +232,11 @@ at most `ConnectStreamsMax`, 256, `connect` streams.
 
 | Limit | On the guest path |
 | --- | --- |
-| the first 4 bytes | `KnockFirstByteTimeout`, 3 seconds from the accept |
+| the first check, until the hub's first byte | the connection's hold deadline, 5 to 30 seconds from the accept ("A refused connection") |
 | the first check, DTLS, SCTP, the data channel and the open record | `GateHandshakeTimeout`, 20 seconds from the accept |
 | the `hello` | `HelloTimeout`, 10 seconds from the `accept` record |
 | admission, from the accept to an admitted `hello` | `AdmissionTimeout`, 30 seconds |
-| connections not yet admitted | a guest's counts in `UnadmittedMax` from its accept, and in `HandshakesInFlightMax` from its first check until its open record is answered |
+| connections not yet admitted | a guest's counts in `UnadmittedMax` from its accept, and in `HandshakesInFlightMax` from the moment its first check passes until its open record is answered |
 
 | Rule | Reason |
 | --- | --- |
@@ -443,35 +475,35 @@ Python is a local question.
 | Step | What the transport does | Why it comes before admission |
 | --- | --- | --- |
 | Accept | Counts the connection among the unadmitted ones and reads nothing from it yet. | The count is the bound on what unadmitted peers hold open. |
-| Door | Reads the first bytes and takes the member path at the hub's magic ("The doors"); a browser's connection takes the guest path, whose steps are its own ("The guest path"). | Four bytes compared cost nothing, and a sender without the link meets silence. |
-| Knock | Reads the knock and checks its version, its message type, its length and `mac1`, one keyed hash, then, while under load, `mac2` ("Under load"). A knock that fails is answered with nothing and the connection closes. | A knock costs the peer the hub's public key, which only a link carries, and costs the hub one hash before any Diffie-Hellman. A port that answers nothing to a scan is a port a scan does not find. |
-| Message 1 | Opens message 1, which costs two Diffie-Hellman operations, and checks `time` against the replay window. | The peer's static key and its intent are inside it. |
+| Door | Reads the first bytes and takes the member path at the hub's magic ("The doors"); a browser's connection takes the guest path, whose steps are its own ("The guest path"). | Bytes compared cost nothing, and a sender without the link meets silence and then a reset ("A refused connection"). |
+| Knock | Reads the knock and checks its version, its message type, its length and `mac1`, one keyed hash, then, while under load, `mac2` ("Under load"). A knock that fails is refused ("A refused connection"). | A knock costs the peer the hub's public key, which only a link carries, and costs the hub one hash before any Diffie-Hellman. A port that answers nothing to a scan is a port a scan does not find. |
+| Message 1 | Opens message 1, which costs two Diffie-Hellman operations, and checks `time` against the replay window. A message 1 that fails either is refused. | The peer's static key and its intent are inside it. |
 | Question | Asks the hub's Python whose the static key is (`peer`), or, for a join, nothing until the `join` frame (`ticket`). | The Python holds every binding. |
 | Answer | Writes message 2 under the psk the answer names, and starts the session. | A refusal is said under the hub's key, so the peer can trust it. |
 | `hello` | Reads the first frame on the control stream and passes it to the Python, which sends `welcome` or `refused`. | The binding id is checked against the key that made the session. |
 
 | Rule | Reason |
 | --- | --- |
-| The replay window is per static key: the transport keeps, for each key it accepted a knock from, the latest `time` it accepted, for at most `KnockReplayKeysMax`, 65536, keys, the one used longest ago giving way. A knock whose `time` is not later is answered with nothing. A transport that starts again keeps no window, and the first knock of each key is accepted. | A captured knock replayed costs the hub one Diffie-Hellman and no answer. The peer's clock is the only clock it has, so the window compares a key with itself and never with the hub's time. |
+| The replay window is per static key: the transport keeps, for each key it accepted a knock from, the latest `time` it accepted, for at most `KnockReplayKeysMax`, 65536, keys, the one used longest ago giving way. A knock whose `time` is not later is refused. A transport that starts again keeps no window, and the first knock of each key is accepted. | A captured knock replayed costs the hub one Diffie-Hellman and no answer. The peer's clock is the only clock it has, so the window compares a key with itself and never with the hub's time. |
 | A join's static key is new to the hub, so its knock is judged by the same window, and its ticket by the hub's Python in the `join` frame, inside the encrypted session. | The ticket never crosses the wire in a form a listener reads. |
 | A knock that names a key no binding holds is completed under the zero psk and refused `binding_unknown`, and counts as a failed admission. | The peer learns from a source it can trust that its binding is gone, and a search for keys pauses the joins like a search for tickets. |
 
 ## What an unadmitted peer can cost the hub
 
 Each limit is one count for the whole port, across every peer address and
-both sockets, and the frame cap holds on admitted sessions too. The
-first-byte time, the handshake time and the admission time start at the
-accept. The constants are the transport's, apart from the failed admissions,
-which the hub's Python counts in `modules/channel/constants.py`.
+both sockets, and the frame cap holds on admitted sessions too. The hold
+deadline, the handshake time and the admission time start at the accept.
+The constants are the transport's, apart from the failed admissions, which
+the hub's Python counts in `modules/channel/constants.py`.
 
 | Limit | Constant | At the limit | Reason |
 | --- | --- | --- | --- |
-| a connection that has not sent its first 4 bytes, on any door | `KnockFirstByteTimeout` 3 s | the connection is closed | A peer sends its knock, and a browser its Binding Request, within a round trip. A connection held open and silent is the cheapest way to fill the port. |
-| the knock and the answer | `HandshakeTimeout` 10 s | the connection is closed | A handshake over the slowest way in completes in under a second. |
-| a guest's first check, DTLS, SCTP, the data channel and its open record | `GateHandshakeTimeout` 20 s | the connection is closed | On congested lines a browser's DTLS handshake often missed 10 seconds. |
+| a connection the doors refuse, or one that has not sent what its door checks | `DoorHoldMin` 5 s to `DoorHoldMax` 30 s after the accept, drawn for each connection | the connection is held unread until that deadline and then reset ("A refused connection") | A peer sends its knock, and a browser its Binding Request, within a round trip. A deadline drawn at random gives an empty connection the same reaction as every other refusal. |
+| the knock and the answer | `HandshakeTimeout` 10 s | the connection is refused while the hub has written nothing ("A refused connection"), and closed after | A handshake over the slowest way in completes in under a second. |
+| a guest's first check, DTLS, SCTP, the data channel and its open record | `GateHandshakeTimeout` 20 s | the connection is refused while the hub has written nothing, and closed after | On congested lines a browser's DTLS handshake often missed 10 seconds. |
 | the time from accept to an admitted `hello` | `AdmissionTimeout` 30 s | the connection is closed; a `join` or a `leave` in flight counts toward that time | It bounds how long one unadmitted connection holds a place. |
-| connections that have not passed `hello` | `UnadmittedMax` 128 | one of them is closed to make room: the oldest that has not finished its handshake, and the oldest of all when every one has | A peer that has finished its handshake has done work a flood of bare connections has not, so it keeps its place longest. |
-| knocks whose message 1 is being opened or whose question is open | `HandshakesInFlightMax` 64 | a further knock is closed with nothing written | The Diffie-Hellman and the question are the costly steps, and the limit bounds both at once. |
+| connections that have not passed `hello` | `UnadmittedMax` 128 | one of them is closed to make room: the oldest held after a refusal, then the oldest that has not finished its handshake, and the oldest of all when every one has | A held connection has failed a check, and a peer that has finished its handshake has done work a flood of bare connections has not. A flood that fills the places cannot shut out a peer with the link. |
+| knocks whose message 1 is being opened or whose question is open, and guests from their first check passing until their open record is answered | `HandshakesInFlightMax` 64 | a further knock or guest is closed at once with nothing written | The Diffie-Hellman, the DTLS handshake and the questions are the costly steps, and the limit bounds them at once. Only a sender with a link or a live share's pwd reaches it. |
 | under load: knocks in flight past `CookieLoadThreshold`, 16 | `CookieSecretLifetime` 120 s, the cookie secret's life and the cookie's | a knock without a valid `mac2` is answered with a cookie reply and closed ("Under load") | WireGuard's answer to a flood of knocks: the peer proves it reads what the hub writes to its address before the hub spends a Diffie-Hellman on it. |
 | one control frame | `ControlFrameBytesMax` 2 MiB | the session is ended | Four times the largest frame a hub of 64 machines and 256 entries carries, a client's `state` of about 270 KB. |
 | one record | `RecordBytesMax` 64 KiB | the stream is reset | A record is a chunk of a stream, never a whole file. |
@@ -506,7 +538,7 @@ are in [protocol.md](protocol.md), "The timings".
 
 | What it bounds | The transport's constant |
 | --- | --- |
-| a connection's first 4 bytes, from the accept | `KnockFirstByteTimeout` 3 s |
+| a connection's first bytes until the hub's first byte, and a refused connection's hold, from the accept | `DoorHoldMin` 5 s to `DoorHoldMax` 30 s, drawn for each connection |
 | the knock and the hub's answer, from the accept | `HandshakeTimeout` 10 s |
 | a guest's first check, DTLS, SCTP, the data channel and its open record, from the accept | `GateHandshakeTimeout` 20 s |
 | a session's first frame, from the answer | `HelloTimeout` 10 s |
