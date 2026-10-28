@@ -245,6 +245,73 @@ def test_no_running_client_is_client_not_running(running, capsys, call):
     assert capsys.readouterr().err.strip() == wording.word_code("client_not_running")
 
 
+def _with_folder_share(running) -> None:
+    """A folder share ``lab`` on lab-gpu, an entry for ann and one for bob."""
+    for account in ("ann", "bob"):
+        running.state["services"].append(
+            {
+                "hub_id": "h1",
+                "id": f"samba_folder_d1_lab_{account}",
+                "type": "file",
+                "title": "lab",
+                "payload": {
+                    "protocol": "smb",
+                    "host": "192.168.1.5",
+                    "share": "lab",
+                    "users": [f"neutrino-{account}"],
+                    "account": account,
+                },
+                "is_healthy": True,
+                "source": "module",
+                "description": "",
+                "device_id": "d1",
+                "device_name": "lab-gpu",
+                "is_own_machine": False,
+                "job": "",
+                "last_error": None,
+                "mount_default": f"/home/alice/remote/lab-gpu-lab-{account}",
+                "is_declared": False,
+            }
+        )
+
+
+def test_list_prints_a_folder_share_once_per_account(running, capsys):
+    _with_folder_share(running)
+
+    assert file.main_list() == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "  lab (ann)  -  not mounted" in lines
+    assert "  lab (bob)  -  not mounted" in lines
+
+
+def test_a_folder_share_mounts_the_entry_of_the_account_named(running, capsys):
+    _with_folder_share(running)
+
+    assert file.main_mount("lab-gpu/lab", account="bob") == 0
+    assert file.main_mount("lab-gpu/lab") == 1
+    assert file.main_mount("lab-gpu/lab", account="eve") == 1
+
+    assert [body["id"] for body in running.posts("/api/services/file")] == [
+        "samba_folder_d1_lab_bob"
+    ]
+    errors = capsys.readouterr().err
+    assert "lab-gpu/lab --account ann" in errors
+    assert "lab-gpu/lab --account bob" in errors
+    assert "eve" in errors
+
+
+def test_a_folder_share_with_one_account_needs_no_account_named(running):
+    _with_folder_share(running)
+    running.state["services"].pop()
+
+    assert file.main_mount("lab-gpu/lab") == 0
+
+    assert [body["id"] for body in running.posts("/api/services/file")] == [
+        "samba_folder_d1_lab_ann"
+    ]
+
+
 def _never(prompt):
     raise AssertionError("a machine's share asks nothing")
 

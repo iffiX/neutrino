@@ -1088,10 +1088,12 @@ function isEntryFree(hub, entry) {
   return !entryWork(hub, entry) && hub.connection !== 'disabled';
 }
 
-function entryRow(hub, entry, mono, standing, actions, reason, extras) {
+// A row of one entry; `title` replaces the entry's own where a page names
+// the entry otherwise.
+function entryRow(hub, entry, mono, standing, actions, reason, extras, title) {
   return rowElement({
     tone: entryTone(hub, entry),
-    title: entry.title,
+    title: title || entry.title,
     word: entryWord(hub, entry, standing),
     mono: mono,
     provider: providerLine(hub, entry),
@@ -2475,8 +2477,16 @@ function drawFileEntry(card, state, hub, entry) {
   }
   row = entryRow(hub, entry,
     '//' + (payload.host || '') + '/' + (payload.share || ''),
-    '', [config, mount], mountReason(hub, entry, record, mount), extras);
+    '', [config, mount], mountReason(hub, entry, record, mount), extras,
+    fileTitle(entry));
   card.appendChild(row);
+}
+
+// A share's row title: the share's name, and `<share> (<account>)` for a
+// folder share's entry. Its payload names the account it logs in as.
+function fileTitle(entry) {
+  const account = (entry.payload || {}).account || '';
+  return account ? entry.title + ' (' + account + ')' : entry.title;
 }
 
 // Why Mount cannot run, empty while it can: the hub, the share's health, or
@@ -2723,7 +2733,8 @@ function userList(input, users, id) {
 }
 
 // A directory under the home, with a Browse button that lists it as this
-// person; the default is ~/remote/<machine>-<share>.
+// person. The default is ~/remote/<machine>-<share>, and
+// ~/remote/<machine>-<share>-<account> for a folder share's entry.
 function mountPathLine(staged, onChange) {
   const pathLine = document.createElement('div');
   pathLine.className = 'row';

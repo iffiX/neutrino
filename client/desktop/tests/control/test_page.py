@@ -1633,6 +1633,14 @@ def test_every_entry_is_one_row_with_its_provider_line():
         assert "entryRow(hub, entry," in body_of(build)
 
 
+def test_a_folder_share_entry_s_row_names_its_account():
+    assert "fileTitle(entry));" in body_of("drawFileEntry")
+    title = body_of("fileTitle")
+    assert "const account = (entry.payload || {}).account || '';" in title
+    assert "account ? entry.title + ' (' + account + ')' : entry.title" in title
+    assert "title: title || entry.title," in body_of("entryRow")
+
+
 def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     word = body_of("hubWord")
     assert "t('ui.state.connected_through'," in word

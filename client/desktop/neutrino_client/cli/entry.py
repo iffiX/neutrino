@@ -231,10 +231,13 @@ def _parser():
     _leaf(verbs, "file", "list")
     mount_parser = _leaf(verbs, "file", "mount")
     mount_parser.add_argument("share")
+    mount_parser.add_argument("--account", default="")
     place = mount_parser.add_mutually_exclusive_group()
     place.add_argument("--path", default="")
     place.add_argument("--drive", default="")
-    _leaf(verbs, "file", "unmount").add_argument("share")
+    unmount_parser = _leaf(verbs, "file", "unmount")
+    unmount_parser.add_argument("share")
+    unmount_parser.add_argument("--account", default="")
 
     terminal_parser = _group(commands, levels, "terminal")
     verbs = terminal_parser.add_subparsers(dest="verb")
@@ -368,12 +371,16 @@ def _run_file_list(arguments, hub_name: str, command: list) -> int:
 
 def _run_file_mount(arguments, hub_name: str, command: list) -> int:
     return file.main_mount(
-        arguments.share, path=arguments.path, drive=arguments.drive, hub=hub_name
+        arguments.share,
+        account=arguments.account,
+        path=arguments.path,
+        drive=arguments.drive,
+        hub=hub_name,
     )
 
 
 def _run_file_unmount(arguments, hub_name: str, command: list) -> int:
-    return file.main_unmount(arguments.share, hub=hub_name)
+    return file.main_unmount(arguments.share, account=arguments.account, hub=hub_name)
 
 
 def _run_terminal_list(arguments, hub_name: str, command: list) -> int:

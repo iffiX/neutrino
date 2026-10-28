@@ -247,14 +247,36 @@ def share_name(entry: dict) -> str:
     return str(payload.get("share", "") or entry.get("name", "") or "")
 
 
-def choose_share(state: dict, needle: str, hub: str = "") -> "dict | None":
-    """The one share a name means.
+def share_account(entry: dict) -> str:
+    """The account a folder share's entry logs in as; empty for any other share."""
+    payload = entry.get("payload") or {}
+    return str(payload.get("account", "") or "")
+
+
+def share_label(entry: dict) -> str:
+    """What ``file list`` prints for one entry: ``<share> (<account>)`` for a
+    folder share's entry, the share's name for any other."""
+    account = share_account(entry)
+    if account:
+        return f"{share_name(entry)} ({account})"
+    return share_name(entry)
+
+
+def choose_share(
+    state: dict, needle: str, hub: str = "", account: str = ""
+) -> "dict | None":
+    """The one share entry a name and an account mean.
+
+    A folder share has an entry per account. Its name picks the share, and
+    ``account`` picks the entry, which can be left out where the share has
+    one account.
 
     Args:
         state: The state payload.
         needle: ``<machine>/<share>``, or ``<machine>`` for a machine with
             one share.
         hub: What ``--hub`` named.
+        account: What ``--account`` named; empty for none.
 
     Returns:
         The share's entry, or None after the refusal was printed.
@@ -274,31 +296,80 @@ def choose_share(state: dict, needle: str, hub: str = "") -> "dict | None":
             slug(machine_label(entry)),
         )
     ]
-    if not share and len(on_machine) > 1:
+    groups = _share_groups(on_machine)
+    if not share and len(groups) > 1:
         wording.ambiguous_name(
             "what_share",
             needle,
-            [f"{machine_label(entry)}/{share_name(entry)}" for entry in on_machine],
+            [f"{machine_label(group[0])}/{share_name(group[0])}" for group in groups],
         )
         return None
-    if not share and len(on_machine) == 1:
-        return on_machine[0]
+    if not share and len(groups) == 1:
+        return _choose_account(needle, groups[0], account)
     candidates = [
         (
-            {f"{machine_label(entry)}/{share_name(entry)}"}
+            {f"{machine_label(group[0])}/{share_name(group[0])}"}
             | {
-                f"{name}/{share_name(entry)}"
+                f"{name}/{share_name(group[0])}"
                 for name in (
-                    str(entry.get("device_id", "")),
-                    slug(machine_label(entry)),
+                    str(group[0].get("device_id", "")),
+                    slug(machine_label(group[0])),
                 )
             },
-            f"{machine_label(entry)}/{share_name(entry)}",
-            entry,
+            f"{machine_label(group[0])}/{share_name(group[0])}",
+            group,
         )
-        for entry in shares
+        for group in _share_groups(shares)
     ]
-    return choose("what_share", needle, candidates)
+    chosen = choose("what_share", needle, candidates)
+    if chosen is None:
+        return None
+    return _choose_account(needle, chosen, account)
+
+
+def _share_groups(entries: list) -> list:
+    """The entries of each share, a folder share's accounts in one group.
+
+    Returns:
+        One list per share, in the order the state lists the shares.
+    """
+    groups: dict = {}
+    for entry in entries:
+        key = (
+            str(entry.get("hub_id", "")),
+            machine_label(entry),
+            str(entry.get("device_id", "")),
+            share_name(entry),
+        )
+        groups.setdefault(key, []).append(entry)
+    return list(groups.values())
+
+
+def _choose_account(needle: str, group: list, account: str) -> "dict | None":
+    """The entry of one share an account means.
+
+    Returns:
+        The entry, or None after the refusal was printed: an account the
+        share has no entry for, or none named where it has several.
+    """
+    if account:
+        named = [entry for entry in group if share_account(entry) == account]
+        if not named:
+            wording.unknown_name(
+                "what_account",
+                account,
+                [share_account(entry) for entry in group if share_account(entry)],
+            )
+            return None
+        return named[0]
+    if len(group) > 1:
+        wording.ambiguous_name(
+            "what_account",
+            needle,
+            [f"{needle} --account {share_account(entry)}" for entry in group],
+        )
+        return None
+    return group[0]
 
 
 def terminal_machines(state: dict, hub_id: str = "") -> list:

@@ -1290,6 +1290,18 @@ def test_the_logins_a_0_5_client_kept_are_deleted_at_start(tmp_path):
     assert sorted(os.listdir(str(tmp_path / "creds"))) == ["r2.login"]
 
 
+def test_a_folder_share_entry_mounts_by_default_under_its_account_s_name(tmp_path):
+    entry = entry_for(
+        {**PAYLOAD, "share": "lab", "users": ["neutrino-ann"], "account": "ann"},
+        entry_id="samba_folder_d1_lab_ann",
+    )
+    platform = ReadingPlatform()
+
+    assert default_place(entry, platform) == os.path.join(
+        platform.home(), "remote", "lab-lab-ann"
+    )
+
+
 def test_two_accounts_of_a_folder_share_mount_through_two_pairs(tmp_path):
     asked = []
 

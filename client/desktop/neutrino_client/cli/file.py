@@ -1,7 +1,7 @@
 """``nclient file``: the machines' shares, mounted on this computer.
 
-``list`` prints each machine's shares, where each is mounted here and
-whether it is. ``mount`` is the Files page's **Mount**: a machine's share
+``list`` prints each machine's shares, a folder share once per account,
+where each is mounted here and whether it is. ``mount`` is the Files page's **Mount**: a machine's share
 takes its login from the hub and asks nothing, and a declared share asks
 its user name and password at the terminal, never on the command line.
 Both wait for the record to settle and print how it ended.
@@ -49,15 +49,19 @@ def main_list(*, hub: str = "") -> int:
             heading = machine
         record = _record(state, entry)
         place = str((record or {}).get("path", "") or "") or wording.line("none")
-        wording.say(f"  {names.share_name(entry)}  {place}  {_standing(record)}")
+        wording.say(f"  {names.share_label(entry)}  {place}  {_standing(record)}")
     return 0
 
 
-def main_mount(share: str, *, path: str = "", drive: str = "", hub: str = "") -> int:
+def main_mount(
+    share: str, *, account: str = "", path: str = "", drive: str = "", hub: str = ""
+) -> int:
     """Mount one share, as **Mount** does, at the place given or the default.
 
     Args:
         share: ``<machine>[/<share>]`` as ``list`` names it.
+        account: The account a folder share is mounted as; empty where the
+            share has one.
         path: The folder to mount it at, on Linux and macOS.
         drive: The drive letter to mount it as, on Windows.
         hub: What ``--hub`` named.
@@ -68,7 +72,7 @@ def main_mount(share: str, *, path: str = "", drive: str = "", hub: str = "") ->
     state = wording.read_state()
     if state is None:
         return 1
-    entry = names.choose_share(state, share, hub)
+    entry = names.choose_share(state, share, hub, account)
     if entry is None:
         return 1
     record = _record(state, entry)
@@ -87,11 +91,13 @@ def main_mount(share: str, *, path: str = "", drive: str = "", hub: str = "") ->
     return _report(fresh, entry)
 
 
-def main_unmount(share: str, *, hub: str = "") -> int:
+def main_unmount(share: str, *, account: str = "", hub: str = "") -> int:
     """Unmount one share; its record stays for the next mount.
 
     Args:
         share: ``<machine>[/<share>]`` as ``list`` names it.
+        account: The account a folder share is mounted as; empty where the
+            share has one.
         hub: What ``--hub`` named.
 
     Returns:
@@ -101,7 +107,7 @@ def main_unmount(share: str, *, hub: str = "") -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    entry = names.choose_share(state, share, hub)
+    entry = names.choose_share(state, share, hub, account)
     if entry is None:
         return 1
     state = wording.settled_state(_settled(entry, FILE_MOUNT_WORKING))

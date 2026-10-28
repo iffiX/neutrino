@@ -204,19 +204,22 @@ The machines' file shares. No password: the client takes it from the hub.
 Example: nclient file mount lab-gpu""",
         "file list": """Usage: nclient file list
 
-List the shares by machine: the share's name, where it is mounted here, and
-whether it is mounted.""",
-        "file mount": """Usage: nclient file mount <machine>[/<share>] [--path <path> | --drive <letter>]
+List the shares by machine: the share's name, with its account for a folder
+share, where it is mounted here, and whether it is mounted.""",
+        "file mount": """Usage: nclient file mount <machine>[/<share>] [--account <account>] [--path <path> | --drive <letter>]
 
 Mount a share. With nothing else given it goes to the default place:
-~/remote/<machine>-<share> on Linux and macOS, the first free drive letter on Windows.
+~/remote/<machine>-<share> on Linux and macOS, with -<account> after it for a
+folder share, and the first free drive letter on Windows.
 
   machine/share   the machine's name; the share can be left out when the machine has one
+  --account       the account a folder share is mounted as; can be left out when one account can use it
   --path          mount it at this folder (Linux, macOS)
   --drive         mount it as this drive letter (Windows), such as Z:""",
-        "file unmount": """Usage: nclient file unmount <machine>[/<share>]
+        "file unmount": """Usage: nclient file unmount <machine>[/<share>] [--account <account>]
 
-Unmount it.""",
+Unmount it. Name the account with --account when a folder share is mounted
+as several.""",
         "terminal": """Usage: nclient terminal <command> <machine> [arguments]
 
 Terminal sessions on a machine, run as an enabled account, with no password.
@@ -474,17 +477,18 @@ Change one setting. The names and the values they take are in nclient settings s
         "file list": """用法：nclient file list
 
 按机器列出共享：共享名、挂在本机哪里、挂着没有。""",
-        "file mount": """用法：nclient file mount <机器>[/<共享>] [--path <路径> | --drive <盘符>]
+        "file mount": """用法：nclient file mount <机器>[/<共享>] [--account <账户>] [--path <路径> | --drive <盘符>]
 
 挂载一个共享。什么都不写就用默认位置：
-Linux 和 macOS 是 ~/remote/<机器-共享>，Windows 是第一个空盘符。
+Linux 和 macOS 是 ~/remote/<机器-共享>，文件夹共享再加 -<账户>，Windows 是第一个空盘符。
 
   机器/共享    机器名；机器只有一个共享时共享名可以不写
+  --account    文件夹共享以哪个账户挂载；只有一个账户能用时可以不写
   --path       挂到这个目录（Linux、macOS）
   --drive      挂到这个盘符（Windows），比如 Z:""",
-        "file unmount": """用法：nclient file unmount <机器>[/<共享>]
+        "file unmount": """用法：nclient file unmount <机器>[/<共享>] [--account <账户>]
 
-卸载。""",
+卸载。文件夹共享挂了几个账户时，用 --account 指定卸哪个。""",
         "terminal": """用法：nclient terminal <命令> <机器> [参数]
 
 被控端上的终端会话，以启用的账户运行，不用密码。

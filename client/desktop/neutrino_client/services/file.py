@@ -7,7 +7,8 @@ manage, keeps the person's own login, typed once, in a file only this
 person reads. Either way the login reaches the mount through a credentials
 file of that one mount, deleted once the mount answered. The place is the
 system's own shape: on Linux and macOS a directory under the home,
-``~/remote/<machine>-<share>`` by default; on Windows a drive letter, the
+``~/remote/<machine>-<share>`` by default, ``-<account>`` after it for a
+folder share's entry; on Windows a drive letter, the
 first free one by default. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
 
@@ -133,18 +134,20 @@ def default_place(entry: dict, platform) -> str:
 
     Returns:
         The first free drive letter where the system mounts at one;
-        ``~/remote/<machine>-<share>`` under the home otherwise.
+        ``~/remote/<machine>-<share>`` under the home otherwise, and
+        ``~/remote/<machine>-<share>-<account>`` for an entry that names an
+        ``account``, a folder share's.
     """
     if platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
         return platform.suggest_mount_location()
     payload = entry.get("payload") or {}
     machine = str(entry.get("device_name", "") or "") or str(payload.get("host", ""))
     share = str(payload.get("share", "") or "")
-    return os.path.join(
-        platform.home(),
-        MOUNT_DEFAULT_DIR,
-        f"{place_name(machine)}-{place_name(share)}",
-    )
+    account = str(payload.get("account", "") or "")
+    name = f"{place_name(machine)}-{place_name(share)}"
+    if account:
+        name = f"{name}-{place_name(account)}"
+    return os.path.join(platform.home(), MOUNT_DEFAULT_DIR, name)
 
 
 def _share_url(record: dict) -> str:
