@@ -10,7 +10,7 @@ import { t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import type {
   ClientListView,
-  WebShareRevokeRequest,
+  WebShareDestroyRequest,
   WebShareState,
   WebShareView,
 } from "../api_types";
@@ -26,7 +26,7 @@ import "./web_shares_panel.css";
  */
 
 const CLIENTS_PATH = "/hub/client";
-const REVOKE_PATH = "/hub/client/web_share/revoke";
+const DESTROY_PATH = "/hub/client/web_share/destroy";
 
 /** How often the panel reads the list while the tab is in front. */
 const WEB_SHARES_POLL_INTERVAL_MS = 10000;
@@ -92,9 +92,9 @@ export function WebSharesPanel({ listView, onChanged }: WebSharesPanelProps) {
   const revoke = async (share: WebShareView) => {
     setBusyId(share.id);
     setError(null);
-    const request: WebShareRevokeRequest = { share_id: share.id };
+    const request: WebShareDestroyRequest = { share_id: share.id };
     try {
-      onChanged(await apiPost<ClientListView>(REVOKE_PATH, request));
+      onChanged(await apiPost<ClientListView>(DESTROY_PATH, request));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {

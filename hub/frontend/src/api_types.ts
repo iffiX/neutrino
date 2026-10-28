@@ -1054,7 +1054,7 @@ export interface WebShareCreatedView {
 }
 
 /** A request naming one Web share. */
-export interface WebShareRevokeRequest {
+export interface WebShareDestroyRequest {
   share_id: string;
 }
 
