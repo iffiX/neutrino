@@ -392,7 +392,6 @@
   "ui.remote_desktop_module.switch_hint": "Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there.",
   "ui.samba.apply": "Apply file share",
   "ui.samba.apply_hint": "Serves one share per checked account at its share path.",
-  "ui.samba.replace_notice": "Applying replaces this machine's smb.conf. The old file is kept as /etc/samba/smb.conf.before_neutrino.",
   "ui.samba.status_empty": "Nobody is connected.",
   "ui.samba.status_no_share": "no share open",
   "ui.samba.status_title": "Now serving",

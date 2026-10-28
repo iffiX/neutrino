@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
-import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
@@ -28,9 +27,8 @@ import "./instances_panel.css";
  * One check row per available account; an account checked goes to the end
  * of the order, and the apply bar writes the whole list. A row shows the
  * module's own field of the account, whether its instance runs, and its
- * code's words. The SSH server shows the machine's host key under the rows,
- * and a Linux file share without a `want` says that applying replaces the
- * machine's smb.conf. The module's words come from its descriptor.
+ * code's words. The SSH server shows the machine's host key under the rows.
+ * The module's words come from its descriptor.
  */
 
 /** What an agent older than the module reports for it. */
@@ -38,11 +36,6 @@ const STATE_UNSUPPORTED = "unsupported";
 
 /** The module whose rows end with the machine's host key. */
 const SSH_SERVER_MODULE = "ssh_server";
-
-/** The module whose first Linux apply replaces a hand-made smb.conf. */
-const FILE_SHARE_MODULE = "samba";
-
-const LINUX_OS = "linux";
 
 /** What the apply asks of the module. */
 const WANT_RUNNING = "running";
@@ -66,10 +59,6 @@ interface InstancesPanelProps {
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
   isEditable: boolean;
-  /** What the hub asks of the module: `running`, `stopped`, or empty. */
-  want: string;
-  /** The system the machine's agent reports. */
-  platformOs: string;
 }
 
 export function InstancesPanel({
@@ -77,8 +66,6 @@ export function InstancesPanel({
   deviceId,
   basePath,
   isEditable,
-  want,
-  platformOs,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -107,10 +94,6 @@ export function InstancesPanel({
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const isLocked = !isEditable || isUnsupported;
   const version = saved.version ?? "";
-  const isReplaceNoticed =
-    descriptor.name === FILE_SHARE_MODULE &&
-    platformOs === LINUX_OS &&
-    want === "";
 
   const toggle = (account: string, isOn: boolean) => {
     setDraft({
@@ -183,12 +166,6 @@ export function InstancesPanel({
               })}
             </p>
           )}
-        {isReplaceNoticed && (
-          <div className="notice notice--warn">
-            <Icon name="alert" size={15} />
-            <div className="notice_body">{t("ui.samba.replace_notice")}</div>
-          </div>
-        )}
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy || settle.isSettling}

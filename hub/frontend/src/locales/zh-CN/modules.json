@@ -392,7 +392,6 @@
   "ui.remote_desktop_module.switch_hint": "是否让这台机器运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉机器上其它的 RustDesk 主机，关闭时还原原来的。",
   "ui.samba.apply": "应用文件共享",
   "ui.samba.apply_hint": "为每个勾选的账户在它的共享路径上提供一个共享。",
-  "ui.samba.replace_notice": "应用会替换这台机器的 smb.conf，原文件保存为 /etc/samba/smb.conf.before_neutrino。",
   "ui.samba.status_empty": "没有人连接。",
   "ui.samba.status_no_share": "没有打开共享",
   "ui.samba.status_title": "当前连接",

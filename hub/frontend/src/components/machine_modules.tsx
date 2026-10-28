@@ -88,8 +88,6 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
           deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
-          want={target.want}
-          platformOs={target.platformOs}
         />
       ),
     ]),
