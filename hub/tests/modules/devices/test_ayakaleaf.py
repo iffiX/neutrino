@@ -257,6 +257,7 @@ def test_every_entry_names_the_three_images_the_oci_feed_and_the_ctan_set():
         True,
     )
     assert manifest["uninstall_data"]["is_deleted"] is True
+    assert manifest["memory_mib"] == 2600
     assert set(manifest["platforms"]) == {
         "linux",
         "windows-amd64",

@@ -10,6 +10,7 @@
   "web_share": {
     "guest_login": "guest_account"
   },
+  "memory_mib": 2600,
   "is_data_forward_only": true,
   "platforms": {
     "linux": {
