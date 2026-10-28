@@ -109,6 +109,117 @@ def test_the_deb_names_both_spellings_of_the_dhcp_client(tmp_path):
     assert depends.startswith("Depends: systemd, ")
 
 
+DHCPCD_UNIT_PATH = "/lib/systemd/system/dhcpcd.service"
+
+
+@pytest.mark.parametrize(
+    "argument, auto, files, expected",
+    [
+        pytest.param(
+            "configure",
+            ("dhcpcd5",),
+            {"dhcpcd5": [DHCPCD_UNIT_PATH]},
+            ["systemctl disable dhcpcd.service"],
+            id="ubuntu_22_04_installed_for_the_hub",
+        ),
+        pytest.param(
+            "configure",
+            (),
+            {"dhcpcd5": [DHCPCD_UNIT_PATH]},
+            [],
+            id="dhcpcd5_installed_by_hand",
+        ),
+        pytest.param(
+            "configure",
+            ("dhcpcd-base",),
+            {"dhcpcd-base": ["/usr/sbin/dhcpcd"], "dhcpcd": [DHCPCD_UNIT_PATH]},
+            [],
+            id="debian_12_dhcpcd_base",
+        ),
+        pytest.param(
+            "abort-upgrade",
+            ("dhcpcd5",),
+            {"dhcpcd5": [DHCPCD_UNIT_PATH]},
+            [],
+            id="not_a_configure",
+        ),
+    ],
+)
+def test_the_deb_disables_the_dhcpcd_unit_its_dependency_installed(
+    tmp_path, argument, auto, files, expected
+):
+    """Ubuntu 22.04's `dhcpcd5` enables `dhcpcd.service`. From the next boot
+    it runs on every interface. A dhcpcd unit the machine had before the hub
+    is its own manager and stays."""
+    calls = _lease_client_calls(tmp_path, argument=argument, auto=auto, files=files)
+
+    assert calls == expected
+
+
+def test_the_deb_disables_the_dhcpcd_unit_on_an_upgrade_too(tmp_path):
+    """An upgrade from 0.5.2 leaves the configure branch at its `exit 0`."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+
+    assert postinst.index("systemctl disable dhcpcd.service") < postinst.index("exit 0")
+
+
+def test_the_deb_never_stops_the_dhcpcd_unit(tmp_path):
+    """A stop without `persistent` takes off the addresses dhcpcd set. The
+    session running the install can use one of them."""
+    lines = venv_tree.lease_client_lines()
+
+    assert "systemctl disable dhcpcd.service" in lines
+    assert "stop" not in lines
+    assert "--now" not in lines
+    assert "kill" not in lines
+
+
+def _lease_client_calls(tmp_path, *, argument: str, auto: tuple, files: dict) -> list:
+    """Run the deb postinst's dhcpcd lines against fake apt-mark and dpkg-query.
+
+    Args:
+        tmp_path: Where the script, the fakes and their record go.
+        argument: The postinst's first argument.
+        auto: The packages apt marks automatically installed.
+        files: Each installed package's file list.
+
+    Returns:
+        The systemctl commands the lines ran.
+    """
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+    postinst = (tmp_path / "tree/DEBIAN/postinst").read_text()
+    script = tmp_path / "lease_client.sh"
+    script.write_text(
+        postinst[
+            postinst.index("# The system's dhcpcd unit") : postinst.index(
+                "# An upgrade can"
+            )
+        ]
+    )
+    lists = tmp_path / "lists"
+    lists.mkdir()
+    for package, paths in files.items():
+        (lists / package).write_text("".join(f"{path}\n" for path in paths))
+    fakes = tmp_path / "fakes"
+    fakes.mkdir()
+    record = tmp_path / "calls"
+    marked = " ".join(auto)
+    (fakes / "apt-mark").write_text(
+        "#!/bin/sh\n"
+        f'for name in {marked}; do [ "$name" = "$2" ] && echo "$name"; done\n'
+        "exit 0\n"
+    )
+    (fakes / "dpkg-query").write_text(f'#!/bin/sh\ncat "{lists}/$2"\n')
+    (fakes / "systemctl").write_text(f'#!/bin/sh\necho "systemctl $*" >>"{record}"\n')
+    for fake in fakes.iterdir():
+        fake.chmod(0o755)
+    environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
+    subprocess.run(["sh", str(script), argument], env=environment, check=True)
+    return record.read_text().splitlines() if record.exists() else []
+
+
 def test_the_deb_brings_the_pkexec_its_entry_asks_for_rights_through(tmp_path):
     """`nhub open` asks through pkexec, which Debian 12's and Ubuntu's
     `polkitd` no longer carries; `policykit-1` carries it on older releases."""

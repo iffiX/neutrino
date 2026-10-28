@@ -192,8 +192,8 @@ SYSTEM_PACKAGE_NAMES = {
         # The same split again: `dhcpcd` pulls in a unit that runs the client
         # on every interface, `dhcpcd-base` is the binary and nothing else.
         # Debian has carried that name since 12 and Ubuntu since 24.04; before
-        # it Ubuntu has the same daemon in `dhcpcd5`, whose unit the takeover
-        # stands down with every other manager's.
+        # it Ubuntu has the same daemon in `dhcpcd5`, whose unit the hub's
+        # `.deb` disables.
         "dhcpcd": ("dhcpcd-base", "dhcpcd5"),
         # Its own package since Debian 12 and Ubuntu 22.04, whose `polkitd`
         # carries none; `policykit-1` carries it on older releases.

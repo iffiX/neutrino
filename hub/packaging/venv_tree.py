@@ -972,6 +972,35 @@ def stop_hub_lines(*, indent: str = "    ") -> str:
     return "".join(f"{indent}{line}\n" for line in lines)
 
 
+def lease_client_lines(*, indent: str = "    ") -> str:
+    """The deb's postinst lines that disable the system's dhcpcd unit.
+
+    The lines run the test of `stack.is_from_hub_dependency`. A package of
+    the hub's Debian names for dhcpcd ships the unit, and apt marks that
+    package automatically installed. They disable the unit and never stop it.
+
+    Args:
+        indent: What each line starts with.
+
+    Returns:
+        Shell lines, each ending in a newline.
+    """
+    from neutrino_hub.modules.router.stack import STACK_LEASE_CLIENT_UNIT
+    from neutrino_hub.system.package_manager import package_choices
+
+    names = " ".join(package_choices("debian", ("dhcpcd",))[0])
+    pattern = "/" + STACK_LEASE_CLIENT_UNIT.replace(".", "\\.") + "$"
+    lines = [
+        f"for name in {names}; do",
+        '    if apt-mark showauto "$name" 2>/dev/null | grep -qx "$name" &&',
+        f"        dpkg-query -L \"$name\" 2>/dev/null | grep -q '{pattern}'; then",
+        f"        systemctl disable {STACK_LEASE_CLIENT_UNIT} >/dev/null 2>&1 || true",
+        "    fi",
+        "done",
+    ]
+    return "".join(f"{indent}{line}\n" for line in lines)
+
+
 def panel_unit(documentation_url: str = "https://github.com/iffiX/neutrino") -> str:
     """The panel's systemd unit with the checkout's assumptions taken out.
 

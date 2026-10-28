@@ -38,6 +38,7 @@ from venv_tree import (
     build_environment,
     panel_unit,
     stop_hub_lines,
+    lease_client_lines,
     require_built_frontend,
     run,
     version,
@@ -82,6 +83,11 @@ install -d -m 755 /var/lib/neutrino/hub/generated
 install -d -m 755 /var/log/neutrino/hub
 
 systemctl daemon-reload || true
+
+# The system's dhcpcd unit, when the hub's dhcpcd dependency installed it. A
+# running client keeps running until the next boot.
+if [ "$1" = configure ]; then
+{lease_client}fi
 
 # An upgrade can change the unit files and the software they start, and
 # `nhub apply` is what writes them onto a box somebody already set up. An
@@ -238,6 +244,7 @@ def _lay_out(
             prefix=INSTALL_PREFIX,
             first_install=FIRST_INSTALL,
             is_set_up=HUB_IS_SET_UP,
+            lease_client=lease_client_lines(),
         ),
         is_executable=True,
     )
