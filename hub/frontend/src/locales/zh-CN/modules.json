@@ -489,5 +489,19 @@
   "ui.vscode.apply_hint": "在这台机器上为每个勾选的账户启动 VS Code。",
   "ui.vscode.terms_accept": "打开并接受条款",
   "ui.vscode.terms_accepted": "已接受条款",
-  "ui.vscode.terms_notice": "你在这台机器上按微软的许可条款安装 VS Code Server。打开条款即接受，之后才能在这里使用 VS Code。"
+  "ui.vscode.terms_notice": "你在这台机器上按微软的许可条款安装 VS Code Server。打开条款即接受，之后才能在这里使用 VS Code。",
+  "ui.samba.home_shares": "主目录共享",
+  "ui.samba.home_shares_hint": "每个勾选的账户一个共享，以账户命名，位置是它的文件共享路径。",
+  "ui.samba.folder_shares": "文件夹共享",
+  "ui.samba.folder_shares_hint": "你命名的一个文件夹，共享给勾选的账户。每个账户写入的文件都归它自己。",
+  "ui.samba.folder_add": "添加",
+  "ui.samba.folder_name": "名称",
+  "ui.samba.folder_path": "文件夹",
+  "ui.samba.folder_accounts": "账户",
+  "ui.samba.folder_edit": "编辑",
+  "ui.samba.folder_remove": "移除",
+  "ui.samba.folder_remove_title": "移除 {name}",
+  "ui.samba.folder_remove_body": "共享会移除，文件夹 {path} 和里面的文件都保留。",
+  "ui.samba.folder_empty": "还没有文件夹共享。",
+  "ui.samba.folder_no_accounts": "先在“主目录共享”里启用账户。"
 }

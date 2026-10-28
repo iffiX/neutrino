@@ -489,5 +489,19 @@
   "ui.vscode.apply_hint": "Starts VS Code for each checked account on this machine.",
   "ui.vscode.terms_accept": "Open and accept the terms",
   "ui.vscode.terms_accepted": "Terms accepted",
-  "ui.vscode.terms_notice": "You install VS Code Server on this machine under Microsoft's license terms. Open them to accept them and use VS Code here."
+  "ui.vscode.terms_notice": "You install VS Code Server on this machine under Microsoft's license terms. Open them to accept them and use VS Code here.",
+  "ui.samba.home_shares": "Home shares",
+  "ui.samba.home_shares_hint": "One share for each checked account, named after it, at its share path.",
+  "ui.samba.folder_shares": "Folder shares",
+  "ui.samba.folder_shares_hint": "A folder you name, shared with the accounts you check. Each account's files are written as that account.",
+  "ui.samba.folder_add": "Add",
+  "ui.samba.folder_name": "Name",
+  "ui.samba.folder_path": "Folder",
+  "ui.samba.folder_accounts": "Accounts",
+  "ui.samba.folder_edit": "Edit",
+  "ui.samba.folder_remove": "Remove",
+  "ui.samba.folder_remove_title": "Remove {name}",
+  "ui.samba.folder_remove_body": "The share goes away. The folder {path} and its files stay.",
+  "ui.samba.folder_empty": "No folder shares yet.",
+  "ui.samba.folder_no_accounts": "Enable an account under Home shares first."
 }

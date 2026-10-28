@@ -1,0 +1,73 @@
+.folder_shares_title {
+  justify-content: space-between;
+}
+
+.folder_shares_list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+/* A row's content is centred on its height, its buttons at the right. */
+.folder_shares_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.folder_shares_row + .folder_shares_row,
+.folder_shares_list > .inline_form + .folder_shares_row,
+.folder_shares_row + .inline_form {
+  border-top: 1px solid var(--color-border);
+}
+
+.folder_shares_row_name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.folder_shares_row_path {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.folder_shares_row_accounts {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.folder_shares_row_actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.folder_share_form_path {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.folder_share_form_path .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder_share_form_accounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.folder_share_form_account {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 13px;
+}

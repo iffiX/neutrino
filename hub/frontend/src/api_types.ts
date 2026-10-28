@@ -1346,6 +1346,36 @@ export interface EnabledAccountsUpdate {
   accounts: string[];
 }
 
+/** A folder share: a named share at a folder, open to the accounts checked. */
+export interface FolderShareView {
+  name: string;
+  path: string;
+  /** The accounts checked for it, in the file share's order. */
+  accounts: string[];
+}
+
+/** A machine's folder shares and the accounts a folder share can name. */
+export interface FolderShareListView {
+  /** In the order they were added. */
+  shares: FolderShareView[];
+  /** The file share's enabled accounts as applied, in their order. */
+  accounts: string[];
+}
+
+/** A folder share being added, or replaced under its name. */
+export interface FolderShareUpdate {
+  device_id: string;
+  name: string;
+  path: string;
+  accounts: string[];
+}
+
+/** A folder share being removed. */
+export interface FolderShareRemove {
+  device_id: string;
+  name: string;
+}
+
 // --- Services ---
 
 export type PublishedServiceType =
@@ -1366,7 +1396,8 @@ export interface PublishedServicePayload {
   attention?: string;
   /** rdp: the sharing machine's `linux`, `windows` or `darwin`. */
   platform_os?: string;
-  /** ssh: the account the instance runs as. */
+  /** ssh: the account the instance runs as; file: the account a folder
+   * share's entry logs in as, empty on any other share. */
   account?: string;
   /** ssh: the machine's host key, `SHA256:<base64>`. */
   host_key_fingerprint?: string;

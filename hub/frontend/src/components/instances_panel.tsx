@@ -154,8 +154,11 @@ export function InstancesPanel({
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
-          <h2>{t("ui.modules.enabled_accounts")}</h2>
+          <h2>{t(descriptor.title ?? "ui.modules.enabled_accounts")}</h2>
         </div>
+        {descriptor.titleHint !== undefined && (
+          <p className="field_hint">{t(descriptor.titleHint)}</p>
+        )}
         {saved.accounts.length === 0 ? (
           <p className="field_hint">{t("ui.modules.no_accounts")}</p>
         ) : (

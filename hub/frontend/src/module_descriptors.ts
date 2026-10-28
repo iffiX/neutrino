@@ -19,6 +19,10 @@ export interface ModuleDescriptor {
   applyHint: string;
   /** The account's field each row shows; none for most modules. */
   field: AccountField | null;
+  /** The panel's title and the line under it; **Enabled accounts** and
+   * none where a module names neither. */
+  title?: string;
+  titleHint?: string;
   /** The line above the accounts saying the owner installs the software,
    * and the same once the machine reports the installed `{version}`. */
   ownerNotice?: string;
@@ -31,6 +35,8 @@ export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
     apply: "ui.samba.apply",
     applyHint: "ui.samba.apply_hint",
     field: "share_path",
+    title: "ui.samba.home_shares",
+    titleHint: "ui.samba.home_shares_hint",
   },
   terminal: {
     name: "terminal",

@@ -6,6 +6,7 @@ import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { ContainersPanels } from "./containers_panels";
 import { ErrorPanel } from "./error_panel";
+import { FolderSharesPanel } from "./folder_shares_panel";
 import { GiteaPanels } from "./gitea_panels";
 import { Icon } from "./icon";
 import { InstancesPanel } from "./instances_panel";
@@ -100,6 +101,11 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   samba: (target) => (
     <>
       {ACCOUNT_LAYER_PANELS.samba?.(target)}
+      <FolderSharesPanel
+        deviceId={target.deviceId}
+        basePath={target.basePath}
+        isEditable={target.isEditable}
+      />
       <SambaStatusPanel deviceId={target.deviceId} basePath={target.basePath} />
     </>
   ),
