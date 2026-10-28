@@ -407,7 +407,7 @@ A refusal is `{code, params}` wherever it appears: `detail` on an HTTP error, a 
 
 ## Protocol numbers
 
-Each build declares one integer, `PROTOCOL`, and package versions take no part in admission. The hub also holds `PROTOCOL_MIN` and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`. An agent of 0.5 is the one exception.
+Each build declares one integer, `PROTOCOL`, and package versions take no part in admission. The hub also holds `PROTOCOL_MIN` and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`.
 
 | `PROTOCOL` | First minor |
 | ---------- | ----------- |
@@ -421,10 +421,7 @@ Each build declares one integer, `PROTOCOL`, and package versions take no part i
 | Program                         | At a 0.6 hub                                                                                                                                                                                                                                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | a client of 0.5                 | rejected with `protocol_too_old` at `join` and at `hello`. It keeps its binding, and a 0.6 client installed over it connects at its next round                                                                                                                                                      |
-| a bound agent of 0.5            | admitted at `hello` for its own update alone. The hub sends `welcome` naming its newer `software`, reads the platform from the agent's `report`, and streams the agent its `package`. It pushes no `state` and closes every other stream with `protocol_too_old`. The updated agent connects with 4 |
-| an agent of 0.5 with no binding | rejected with `protocol_too_old` at `join`; a 0.6 agent is installed in its place and joins                                                                                                                                                                                                         |
+| an agent of 0.5                 | gets no answer: it speaks TLS, which the agent port does not take, and the hub holds the connection and then resets it. A 0.6 agent is installed in its place and joins with a new link |
 | a 0.3 or 0.4 agent or client    | rejected with `protocol_too_old`; it does not update itself from the hub and is installed again by hand                                                                                                                                                                                             |
-
-While a bound agent of 0.5 updates, **Devices** shows **Updating the agent** on its tile. The session stays update-only when the hub has no package for the machine's platform, when the install fails, or when the hub's version ends in `+dev`. The tile then shows that the agent is a different version from the hub.
 
 Reading is tolerant and writing is strict. An unknown field is ignored, an unknown kind closes with `kind_unknown`, and a program sends only what its own number defines. Adding a kind, a field or a code keeps the number. Removing anything, changing its meaning, or changing the link, the ticket, the pin or the words `hello`, `state`, `report` and `open` raises it by one.

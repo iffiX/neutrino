@@ -80,7 +80,7 @@ Every part of one release speaks the same protocol number, and every 0.6.0 build
 
 | Program at a 0.6.0 hub       | What happens                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| a 0.5 agent joined to it     | the hub admits it to update itself to the hub's version and nothing else; it then connects as a 0.6.0 agent        |
+| a 0.5 agent                  | gets no answer; the machine takes the 0.6.0 agent package and joins with a new link, keeping its row              |
 | a 0.5 client                 | rejected; its hub row reads **Version too old · update the client**, and the new client installed over it connects |
 | a 0.3 or 0.4 agent or client | rejected, and it does not update itself; the machine takes the new package and joins with a new link               |
 

@@ -57,6 +57,6 @@ Windows and Macs run the file share, the terminal, the remote desktop, Gitea, VS
 
 The drawer and the tile show **This agent is a different version from the hub.** An agent updates itself to the hub's version when it connects. When that update fails, select **Reinstall agent** in the drawer.
 
-A 0.5 agent joined to a 0.6.0 hub updates itself the same way, and its tile reads **Updating the agent** until it connects as 0.6.0. When the hub has no package for that machine's system, or the install fails, the tile shows the version mismatch instead.
+A 0.5 agent gets no answer from a 0.6.0 hub, and its row reads **This binding is from 0.5 and the hub no longer moves it; join the hub again with a new link.** Install the 0.6.0 agent package on the machine and join it with a new link. The machine comes back on its old row with its settings.
 
 A 0.3 or 0.4 agent stays **Offline**, because the 0.6.0 hub rejects it, and it cannot update from the hub. Install the 0.6.0 agent package on the machine and join it with a new link.
