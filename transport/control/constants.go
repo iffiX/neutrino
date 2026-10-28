@@ -51,6 +51,7 @@ const (
 	CommandSessionClose = "session_close"
 	CommandStreamsClose = "streams_close"
 	CommandKeysReload   = "keys_reload"
+	CommandSharesSet    = "shares_set"
 	CommandDial         = "dial"
 	CommandUndial       = "undial"
 	CommandRound        = "round"
@@ -76,6 +77,7 @@ const (
 	QuestionEntry  = "entry"
 	QuestionToken  = "token"
 	QuestionPort   = "port"
+	QuestionGuest  = "guest"
 )
 
 // The codes the local channel says itself.

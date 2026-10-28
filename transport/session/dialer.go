@@ -125,14 +125,19 @@ func dialOnce(ctx context.Context, hostPort string, options DialOptions, cookie 
 		return nil, nil, fmt.Errorf("write knock: %w", deadlineError(ctx, err))
 	}
 	reader := bufio.NewReaderSize(conn, 2*NoiseMessageMax)
-	first, err := reader.ReadByte()
-	if err != nil {
+	header := make([]byte, knock.KnockHeaderBytes)
+	if _, err := io.ReadFull(reader, header); err != nil {
 		return nil, nil, fmt.Errorf("read answer: %w", deadlineError(ctx, err))
 	}
-	if knock.IsCookieReply(first) {
+	parsedHeader, err := knock.ParseHeader(header, options.HubPublic)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrAnswerMalformed, err)
+	}
+	switch parsedHeader.Type {
+	case knock.KnockTypeCookieReply:
 		reply := make([]byte, knock.CookieReplyBytes)
-		reply[0] = first
-		if _, err := io.ReadFull(reader, reply[1:]); err != nil {
+		copy(reply, header)
+		if _, err := io.ReadFull(reader, reply[knock.KnockHeaderBytes:]); err != nil {
 			return nil, nil, fmt.Errorf("read cookie reply: %w", deadlineError(ctx, err))
 		}
 		parsed, err := knock.Parse(raw)
@@ -144,9 +149,9 @@ func dialOnce(ctx context.Context, hostPort string, options DialOptions, cookie 
 			return nil, nil, err
 		}
 		return nil, newCookie, nil
-	}
-	if first != knock.KnockVersion {
-		return nil, nil, fmt.Errorf("%w: first byte %d", ErrAnswerMalformed, first)
+	case knock.KnockTypeAnswer:
+	default:
+		return nil, nil, fmt.Errorf("%w: type %d", ErrAnswerMalformed, parsedHeader.Type)
 	}
 	message2, err := ReadLengthPrefixed(reader)
 	if err != nil {

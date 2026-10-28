@@ -58,11 +58,14 @@ func (h *fakeHub) serve() {
 func (h *fakeHub) answer(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
-	first, err := reader.ReadByte()
-	if err != nil || first != knock.KnockVersion {
+	header := make([]byte, knock.KnockHeaderBytes)
+	if _, err := io.ReadFull(reader, header); err != nil {
 		return
 	}
-	parsed, err := knock.ReadBody(reader)
+	if parsedHeader, err := knock.ParseHeader(header, h.key.Public); err != nil || parsedHeader.Type != knock.KnockTypeKnock {
+		return
+	}
+	parsed, err := knock.ReadBody(reader, header)
 	if err != nil || !parsed.VerifyMac1(h.key.Public) {
 		return
 	}
@@ -85,7 +88,7 @@ func (h *fakeHub) answer(conn net.Conn) {
 	if err != nil {
 		return
 	}
-	_, _ = conn.Write([]byte{knock.KnockVersion})
+	_, _ = conn.Write(knock.EncodeHeader(h.key.Public, knock.KnockTypeAnswer))
 	if err := WriteLengthPrefixed(conn, message2); err != nil {
 		return
 	}

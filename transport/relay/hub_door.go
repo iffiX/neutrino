@@ -2,13 +2,19 @@ package relay
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/flynn/noise"
+
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/handshake"
 	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/session"
@@ -51,9 +57,37 @@ func (c *doorCloser) fire() bool {
 	return true
 }
 
-// ServeConn runs one accepted connection from its first byte to its
-// admission or its end: the legacy hand-off, the knock, the handshake, the
-// control stream and the first frame.
+// door is one accepted connection's place at the door: its ledger entry,
+// the closer that ends it and the admission timer.
+type door struct {
+	entry        *knock.Unadmitted
+	closer       *doorCloser
+	admission    *time.Timer
+	acceptedAt   time.Time
+	isHandedOver bool
+}
+
+// peerFacts is what the door learned about a peer before its session: the
+// binding the Python named, the role, where it came from, and the refusal
+// to write first, if any.
+type peerFacts struct {
+	bindingID    string
+	role         string
+	protocol     int
+	address      string
+	localAddress string
+	listener     string
+	publicKey    string
+	isJoin       bool
+	refusal      *session.Refusal
+}
+
+// ServeConn runs one accepted connection from its first bytes to its
+// admission or its end: the legacy hand-off, the knock or the gate, the
+// control stream and the first frame. The first four bytes pick the path:
+// the hub's magic is a member's, a frame length's zero byte is a browser's
+// while a share is live, a TLS handshake's byte is a 0.5 peer's while the
+// legacy listener is on, and anything else is closed with no byte written.
 func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	acceptedAt := h.now()
 	entry, victim := h.ledger.Accept(acceptedAt)
@@ -65,15 +99,15 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 		victimConn.Close()
 	}
 	closer := newDoorCloser(conn)
-	admission := time.AfterFunc(knock.AdmissionTimeout, func() { closer.fire() })
-	isHandedOver := false
+	d := &door{entry: entry, closer: closer, acceptedAt: acceptedAt}
+	d.admission = time.AfterFunc(knock.AdmissionTimeout, func() { closer.fire() })
 	defer func() {
 		h.ledger.Leave(entry)
 		h.mu.Lock()
 		delete(h.unadmitted, entry)
 		h.mu.Unlock()
-		if !isHandedOver {
-			admission.Stop()
+		if !d.isHandedOver {
+			d.admission.Stop()
 			closer.fire()
 		}
 	}()
@@ -81,33 +115,42 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	address := PeerIP(conn.RemoteAddr())
 	reader := bufio.NewReaderSize(conn, 2*session.NoiseMessageMax)
 	_ = conn.SetReadDeadline(acceptedAt.Add(knock.KnockFirstByteTimeout))
-	first, err := reader.ReadByte()
-	if err != nil {
-		return
-	}
-	switch first {
-	case knock.KnockLegacyTLSByte:
-		if h.legacy == 0 {
-			return
-		}
-		h.ledger.Leave(entry)
-		admission.Stop()
-		closer.disarm()
-		isHandedOver = true
-		_ = conn.SetReadDeadline(time.Time{})
-		h.handOffLegacy(conn, reader, first)
-		return
-	case knock.KnockVersion:
-	default:
-		return
-	}
-
-	_ = conn.SetReadDeadline(acceptedAt.Add(knock.HandshakeTimeout))
-	parsed, err := knock.ReadBody(reader)
+	head, err := reader.Peek(knock.KnockMagicBytes)
 	if err != nil {
 		return
 	}
 	key, jar := h.currentKey()
+	switch {
+	case bytes.Equal(head, knock.Magic(key.Public)):
+		h.serveKnock(d, conn, reader, key, jar, address, listenerName)
+	case head[0] == knock.KnockLegacyTLSByte && h.legacy != 0:
+		h.ledger.Leave(entry)
+		d.admission.Stop()
+		closer.disarm()
+		d.isHandedOver = true
+		_ = conn.SetReadDeadline(time.Time{})
+		h.handOffLegacy(conn, reader)
+	case head[0] == gate.GateFrameFirstByte && h.gate != nil && h.gate.HasShares():
+		h.serveGuest(d, &bufferedConn{Conn: conn, reader: reader}, address, listenerName)
+	}
+}
+
+// serveKnock runs the member path: the knock, the handshake and the
+// admission.
+func (h *Hub) serveKnock(d *door, conn net.Conn, reader *bufio.Reader, key noise.DHKey, jar *knock.CookieJar, address net.IP, listenerName string) {
+	_ = conn.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
+	header := make([]byte, knock.KnockHeaderBytes)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return
+	}
+	parsedHeader, err := knock.ParseHeader(header, key.Public)
+	if err != nil || parsedHeader.Type != knock.KnockTypeKnock {
+		return
+	}
+	parsed, err := knock.ReadBody(reader, header)
+	if err != nil {
+		return
+	}
 	if !parsed.VerifyMac1(key.Public) {
 		return
 	}
@@ -174,23 +217,88 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 	if err != nil {
 		return
 	}
-	if _, err := conn.Write([]byte{knock.KnockVersion}); err != nil {
+	if _, err := conn.Write(knock.EncodeHeader(key.Public, knock.KnockTypeAnswer)); err != nil {
 		return
 	}
 	if err := session.WriteLengthPrefixed(conn, message2); err != nil {
 		return
 	}
 	endHandshake()
-	h.ledger.HandshakeDone(entry)
+	h.ledger.HandshakeDone(d.entry)
 	_ = conn.SetReadDeadline(time.Time{})
+	h.admit(d, session.NewNoiseConn(conn, reader, keys), peerFacts{
+		bindingID: bindingID, role: role, protocol: payload.Protocol,
+		address: peerAddress, localAddress: FormatIP(PeerIP(conn.LocalAddr())), listener: listenerName,
+		publicKey: publicKey, isJoin: payload.IsJoin, refusal: refusal,
+	})
+}
 
-	noiseConn := session.NewNoiseConn(conn, reader, keys)
-	sess, err := session.NewHubSession(noiseConn, h.memory, h.timings)
+// serveGuest runs the guest path: the gate, the guest's open record with
+// the share ticket, the Python's answer to it, and the admission on the
+// data channel.
+func (h *Hub) serveGuest(d *door, conn net.Conn, address net.IP, listenerName string) {
+	peerAddress := FormatIP(address)
+	if !h.ledger.BeginHandshake() {
+		return
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), d.acceptedAt.Add(knock.HandshakeTimeout))
+	channel, share, decision, err := h.gate.Open(ctx, conn)
+	cancel()
+	h.ledger.EndHandshake()
+	if err != nil {
+		h.log("gate_closed", "address", peerAddress, "listener", listenerName, "error", err.Error())
+		return
+	}
+	h.log("gate_open", "address", peerAddress, "listener", listenerName, "share", share,
+		"frame_bytes", strconv.Itoa(decision.FrameBytes), "decided_at_byte", strconv.Itoa(decision.UsernameEndByte))
+	d.closer.set(channel)
+	_ = channel.SetReadDeadline(d.acceptedAt.Add(knock.HandshakeTimeout))
+	message := make([]byte, gate.GateGuestOpenBytesMax)
+	n, err := channel.ReadMessage(message)
 	if err != nil {
 		return
 	}
-	closer.set(sess)
-	hello := time.AfterFunc(session.HelloTimeout, func() { closer.fire() })
+	open, err := gate.ParseGuestOpen(message[:n])
+	if err != nil {
+		return
+	}
+	answer, refusal := h.ask("guest", map[string]any{
+		"ticket": open.Ticket, "share": share, "protocol": open.Protocol,
+		"address": peerAddress, "listener": listenerName,
+	})
+	bindingID := ""
+	if refusal == nil {
+		bindingID = stringField(answer, "binding_id")
+		if bindingID == "" {
+			refusal = session.NewRefusal(session.CodeControlUnavailable, nil)
+		}
+	}
+	if refusal != nil {
+		h.log("guest_refused", "address", peerAddress, "share", share, "code", refusal.Code)
+		_, _ = channel.Write(gate.GuestRefuseRecord(refusal))
+		channel.Flush(RelayEndGrace)
+		return
+	}
+	if _, err := channel.Write(gate.GuestAcceptRecord(bindingID)); err != nil {
+		return
+	}
+	h.ledger.HandshakeDone(d.entry)
+	_ = channel.SetReadDeadline(time.Time{})
+	h.admit(d, channel, peerFacts{
+		bindingID: bindingID, role: RelayRoleGuest, protocol: open.Protocol,
+		address: peerAddress, localAddress: FormatIP(PeerIP(conn.LocalAddr())), listener: listenerName,
+	})
+}
+
+// admit runs a session from its connection: the control stream, the first
+// frame and the registration, or the refusal the door decided on.
+func (h *Hub) admit(d *door, conn net.Conn, facts peerFacts) {
+	sess, err := session.NewHubSession(conn, h.memory, h.timings)
+	if err != nil {
+		return
+	}
+	d.closer.set(sess)
+	hello := time.AfterFunc(session.HelloTimeout, func() { d.closer.fire() })
 	defer hello.Stop()
 
 	stream, err := sess.AcceptStream()
@@ -211,15 +319,15 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 		return
 	}
 	rs := &RelaySession{
-		ID: h.newSessionID(), BindingID: bindingID, Role: role, Protocol: payload.Protocol,
-		Address: peerAddress, LocalAddress: FormatIP(PeerIP(conn.LocalAddr())), Listener: listenerName, PublicKey: publicKey,
+		ID: h.newSessionID(), BindingID: facts.bindingID, Role: facts.role, Protocol: facts.protocol,
+		Address: facts.address, LocalAddress: facts.localAddress, Listener: facts.listener, PublicKey: facts.publicKey,
 		hub: h, session: sess, control: control, streams: make(map[*relayStream]struct{}),
 	}
 	// From here the session ends itself: the admission timer closes it when
 	// the hello is late, and a refusal ends it after the peer read it.
-	isHandedOver = true
-	if refusal != nil {
-		rs.writeRefusedAndEnd(refusal)
+	d.isHandedOver = true
+	if facts.refusal != nil {
+		rs.writeRefusedAndEnd(facts.refusal)
 		return
 	}
 	frame, err := control.ReadFrame()
@@ -233,7 +341,7 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 		rs.writeRefusedAndEnd(session.NewRefusal(session.CodeHelloInvalid, nil))
 		return
 	}
-	if payload.IsJoin {
+	if facts.isJoin {
 		if frameType != session.FrameJoin {
 			rs.writeRefusedAndEnd(session.NewRefusal(session.CodeHelloInvalid, nil))
 			return
@@ -248,6 +356,10 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 			return
 		}
 	case session.FrameLeave:
+		if rs.Role == RelayRoleGuest {
+			rs.writeRefusedAndEnd(session.NewRefusal(session.CodeHelloInvalid, nil))
+			return
+		}
 	default:
 		rs.writeRefusedAndEnd(session.NewRefusal(session.CodeHelloInvalid, nil))
 		return
@@ -256,10 +368,10 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 		rs.writeRefusedAndEnd(session.NewRefusal(session.CodeChannelFull, map[string]any{"limit": session.SessionsMax}))
 		return
 	}
-	admission.Stop()
-	closer.disarm()
+	d.admission.Stop()
+	d.closer.disarm()
 	rs.hello = frame
-	h.log("session_open", "session", rs.ID, "binding", bindingID, "role", role, "address", peerAddress, "listener", listenerName)
+	h.log("session_open", "session", rs.ID, "binding", facts.bindingID, "role", facts.role, "address", facts.address, "listener", facts.listener)
 	h.python.Event("session_open", rs.openEvent())
 	h.python.Frame(rs.ID, frame)
 	go rs.readFrames()
@@ -268,17 +380,12 @@ func (h *Hub) ServeConn(conn net.Conn, listenerName string) {
 }
 
 // handOffLegacy passes a connection whose first byte is a TLS handshake's to
-// the legacy listener on loopback, the byte first.
-func (h *Hub) handOffLegacy(conn net.Conn, reader *bufio.Reader, first byte) {
+// the legacy listener on loopback, the bytes the reader holds first.
+func (h *Hub) handOffLegacy(conn net.Conn, reader *bufio.Reader) {
 	target := TargetAddress(RelayLegacyLoopback, h.legacy)
 	legacy, err := net.DialTimeout("tcp", target, RelayLegacyDialLimit)
 	if err != nil {
 		h.log("legacy_unreachable", "address", target, "error", err.Error())
-		conn.Close()
-		return
-	}
-	if _, err := legacy.Write([]byte{first}); err != nil {
-		legacy.Close()
 		conn.Close()
 		return
 	}
@@ -296,8 +403,8 @@ func (c *bufferedConn) Read(p []byte) (int, error) {
 	return c.reader.Read(p)
 }
 
-// isHelloValid checks a hello against the knock: its id is the binding's,
-// and its protocol and role are the knock's.
+// isHelloValid checks a hello against the door: its id is the binding's,
+// and its protocol and role are the ones the door admitted.
 func (rs *RelaySession) isHelloValid(frame []byte) bool {
 	var hello struct {
 		ID       string `json:"id"`

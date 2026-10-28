@@ -41,8 +41,9 @@ func TestCookieReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reply) != CookieReplyBytes || !IsCookieReply(reply[0]) {
-		t.Fatalf("reply of %d bytes starting %x", len(reply), reply[0])
+	header, err := ParseHeader(reply, hubPublic)
+	if err != nil || len(reply) != CookieReplyBytes || header.Type != KnockTypeCookieReply {
+		t.Fatalf("reply of %d bytes with header %+v: %v", len(reply), header, err)
 	}
 	cookie, err := OpenReply(reply, hubPublic, first.Mac1)
 	if err != nil {
@@ -51,7 +52,7 @@ func TestCookieReply(t *testing.T) {
 	if _, err := OpenReply(reply, hubPublic, bytes.Repeat([]byte{1}, 16)); !errors.Is(err, ErrCookieReplyMalformed) {
 		t.Fatalf("another mac1 opens the reply: %v", err)
 	}
-	if _, err := OpenReply([]byte{KnockVersion, 0, 0}, hubPublic, first.Mac1); !errors.Is(err, ErrNotCookieReply) {
+	if _, err := OpenReply(EncodeHeader(hubPublic, KnockTypeAnswer), hubPublic, first.Mac1); !errors.Is(err, ErrNotCookieReply) {
 		t.Fatalf("err %v, want not a cookie reply", err)
 	}
 	raw, err := Encode([]byte("message one"), hubPublic, cookie)

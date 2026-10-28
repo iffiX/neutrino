@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/relay"
 	"github.com/iffiX/neutrino/transport/session"
 )
@@ -144,6 +145,7 @@ type controlLine struct {
 	Kind      string          `json:"kind"`
 	DeviceID  string          `json:"device_id"`
 	SessionID string          `json:"session_id"`
+	Shares    []gate.Share    `json:"shares"`
 }
 
 func (c *HubControl) handleLine(line *LineConnection, raw []byte) {
@@ -173,7 +175,7 @@ func (c *HubControl) handleLine(line *LineConnection, raw []byte) {
 	}
 }
 
-// runCommand runs one of the three commands and returns its refusal, if any.
+// runCommand runs one of the four commands and returns its refusal, if any.
 func (c *HubControl) runCommand(parsed controlLine) *session.Refusal {
 	switch parsed.Command {
 	case CommandSessionClose:
@@ -186,6 +188,8 @@ func (c *HubControl) runCommand(parsed controlLine) *session.Refusal {
 		if err := c.hub.KeysReload(c.keyDir); err != nil {
 			return session.NewRefusal("keys_unreadable", map[string]any{"detail": err.Error()})
 		}
+	case CommandSharesSet:
+		c.hub.SetShares(parsed.Shares)
 	default:
 		return session.NewRefusal(CodeCommandUnknown, map[string]any{"command": parsed.Command})
 	}

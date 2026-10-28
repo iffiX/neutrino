@@ -50,6 +50,12 @@ type RelaySession struct {
 	connects   int
 }
 
+// isClientOrGuest reports whether the session opens connect streams of its
+// own and asks for material: a client's or a guest's.
+func (rs *RelaySession) isClientOrGuest() bool {
+	return rs.Role == RelayRoleClient || rs.Role == RelayRoleGuest
+}
+
 // Hello is the hello frame the session was admitted with.
 func (rs *RelaySession) Hello() []byte {
 	rs.mu.Lock()
@@ -178,7 +184,7 @@ func (rs *RelaySession) readFrames() {
 		switch {
 		case frameType == session.FramePing:
 			_ = rs.control.WriteFrame(session.PongFrame(frame))
-		case frameType == session.FrameService && rs.Role == "client":
+		case frameType == session.FrameService && rs.isClientOrGuest():
 			go rs.answerService(frame)
 		default:
 			rs.hub.python.Frame(rs.ID, frame)
@@ -251,13 +257,13 @@ func (rs *RelaySession) handleStream(stream *yamux.Stream) {
 		return
 	}
 	switch {
-	case rs.Role == "client" && kind == session.KindConnect:
+	case rs.isClientOrGuest() && kind == session.KindConnect:
 		rs.relayConnect(record, open.Payload)
-	case rs.Role == "client" && (kind == session.KindShell || kind == session.KindExec):
+	case rs.Role == RelayRoleClient && (kind == session.KindShell || kind == session.KindExec):
 		rs.relayRecords(record, open.Payload)
-	case rs.Role == "agent" && kind == session.KindConnect:
+	case rs.Role == RelayRoleAgent && kind == session.KindConnect:
 		rs.relayConnect(record, open.Payload)
-	case rs.Role == "agent" && (kind == session.KindLog || kind == session.KindPackage):
+	case rs.Role == RelayRoleAgent && (kind == session.KindLog || kind == session.KindPackage):
 		id := rs.hub.newStreamID()
 		rs.hub.handOff.Announce(id, record)
 		rs.hub.python.Event("stream", map[string]any{"stream": id, "session": rs.ID, "open": json.RawMessage(open.Payload)})
@@ -301,12 +307,12 @@ func (rs *RelaySession) askEntry(open []byte) (*entryTarget, *session.Refusal) {
 // socket the hub dials itself.
 func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 	stream := record.Stream
-	if rs.Role == "client" && !rs.takeConnect() {
+	if rs.isClientOrGuest() && !rs.takeConnect() {
 		_, _ = stream.Write(session.CloseRecord(session.CodeConnectLimit, map[string]any{"limit": session.ConnectStreamsMax}))
 		stream.Close()
 		return
 	}
-	if rs.Role == "client" {
+	if rs.isClientOrGuest() {
 		defer rs.releaseConnect()
 	}
 	target, refusal := rs.askEntry(open)

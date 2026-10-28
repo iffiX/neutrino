@@ -26,6 +26,13 @@ const (
 	RelayDatagramMaxBytes = 65507
 )
 
+// The roles a relay session runs under: the knock's two and the gate's one.
+const (
+	RelayRoleAgent  = "agent"
+	RelayRoleClient = "client"
+	RelayRoleGuest  = "guest"
+)
+
 // The static key's files under the hub's configuration.
 const (
 	RelayStaticKeyFile   = "static_key"

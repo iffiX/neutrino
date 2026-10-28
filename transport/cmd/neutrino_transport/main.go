@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/iffiX/neutrino/transport/control"
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/handshake"
 	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/relay"
@@ -163,6 +164,11 @@ func runHub(args []string) int {
 		logLine("key_unreadable", "dir", *keyDir, "error", err.Error())
 		return 1
 	}
+	certificate, err := gate.LoadOrCreateCertificate(*keyDir)
+	if err != nil {
+		logLine("certificate_unreadable", "dir", *keyDir, "error", err.Error())
+		return 1
+	}
 	listener, err := control.Listen(file.ControlSocket, false)
 	if err != nil {
 		logLine("control_listen_failed", "path", file.ControlSocket, "error", err.Error())
@@ -171,7 +177,7 @@ func runHub(args []string) int {
 	hubControl := control.NewHubControl(listener, secret, *keyDir, logLine)
 	hub, err := relay.NewHub(relay.HubConfig{
 		Key: key, ListenPort: file.ListenPort, FrpListeners: file.FrpListeners,
-		LegacyTLSPort: file.LegacyTLSPort, Log: logLine,
+		LegacyTLSPort: file.LegacyTLSPort, Certificate: &certificate, Log: logLine,
 	}, hubControl)
 	if err != nil {
 		logLine("hub_failed", "error", err.Error())
@@ -182,7 +188,7 @@ func runHub(args []string) int {
 		logLine("listen_failed", "error", err.Error())
 		return 1
 	}
-	logLine("started", "mode", "hub", "version", version, "public_key", handshake.EncodeKey(hub.PublicKey()), "control", file.ControlSocket)
+	logLine("started", "mode", "hub", "version", version, "public_key", handshake.EncodeKey(hub.PublicKey()), "dtls_fingerprint", hub.Fingerprint(), "control", file.ControlSocket)
 	done := make(chan struct{})
 	if *secretFile == "" {
 		go watchStdin(stdin, func() { close(done) })

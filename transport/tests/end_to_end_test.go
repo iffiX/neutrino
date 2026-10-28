@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/iffiX/neutrino/transport/control"
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/handshake"
 	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/relay"
@@ -30,14 +31,23 @@ const (
 
 var timings = session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}
 
-// hubRecords is the faked hub Python's memory: bindings by key, tickets and
-// the entries it publishes.
+// shareRecord is one Web share as the faked hub Python keeps it: its id,
+// its ticket and the one entry it opens.
+type shareRecord struct {
+	id     string
+	ticket string
+	entry  string
+}
+
+// hubRecords is the faked hub Python's memory: bindings by key, tickets,
+// the entries it publishes and the shares by ufrag.
 type hubRecords struct {
 	mu       sync.Mutex
 	bindings map[string]map[string]any
 	tickets  map[string]string
 	entries  map[string]map[string]any
 	sessions map[string]string // binding id -> session id
+	shares   map[string]shareRecord
 }
 
 func newHubRecords() *hubRecords {
@@ -46,7 +56,18 @@ func newHubRecords() *hubRecords {
 		tickets:  make(map[string]string),
 		entries:  make(map[string]map[string]any),
 		sessions: make(map[string]string),
+		shares:   make(map[string]shareRecord),
 	}
+}
+
+// shareOf is the share a binding id names, if any.
+func (r *hubRecords) shareOf(bindingID string) (shareRecord, bool) {
+	for _, share := range r.shares {
+		if share.id == bindingID {
+			return share, true
+		}
+	}
+	return shareRecord{}, false
 }
 
 func (r *hubRecords) answer(question string, fields map[string]any) map[string]any {
@@ -72,12 +93,29 @@ func (r *hubRecords) answer(question string, fields map[string]any) map[string]a
 		key, _ := fields["public_key"].(string)
 		r.bindings[key] = map[string]any{"id": id, "role": fields["role"], "psk": hex.EncodeToString(sum[:])}
 		return map[string]any{"binding_id": id, "token": token}
+	case "guest":
+		ufrag, _ := fields["share"].(string)
+		share, ok := r.shares[ufrag]
+		if !ok {
+			return map[string]any{"code": "share_unknown", "params": map[string]any{}}
+		}
+		if protocol, _ := fields["protocol"].(float64); int(protocol) != knock.PROTOCOL {
+			return map[string]any{"code": "protocol_unsupported", "params": map[string]any{"protocol": protocol}}
+		}
+		if ticket, _ := fields["ticket"].(string); ticket != share.ticket {
+			return map[string]any{"code": "ticket_invalid", "params": map[string]any{}}
+		}
+		return map[string]any{"binding_id": share.id}
 	case "entry":
 		open, _ := fields["open"].(map[string]any)
 		id, _ := open["id"].(string)
 		entry, ok := r.entries[id]
 		if !ok {
 			return map[string]any{"code": "service_unknown", "params": map[string]any{"service_id": id}}
+		}
+		bindingID, _ := fields["binding_id"].(string)
+		if share, isShare := r.shareOf(bindingID); isShare && share.entry != id {
+			return map[string]any{"code": "permission_denied", "params": map[string]any{"kind": entry["kind"]}}
 		}
 		answer := map[string]any{"kind": entry["kind"], "device_id": entry["device_id"]}
 		target := map[string]any{}
@@ -121,8 +159,12 @@ func startHub(t *testing.T, dir string, port int, legacyPort int) *hubSide {
 	if err != nil {
 		t.Fatal(err)
 	}
+	certificate, err := gate.LoadOrCreateCertificate(keyDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	hubControl := control.NewHubControl(listener, hubSecret, keyDir, nil)
-	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, LegacyTLSPort: legacyPort, Timings: timings}, hubControl)
+	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, LegacyTLSPort: legacyPort, Certificate: &certificate, Timings: timings}, hubControl)
 	if err != nil {
 		t.Fatal(err)
 	}

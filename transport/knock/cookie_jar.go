@@ -16,8 +16,9 @@ import (
 // cookie is BLAKE2s-128 keyed by the jar's secret over the peer's address,
 // and the secret is made afresh every CookieSecretLifetime.
 type CookieJar struct {
-	aead cipher.AEAD
-	now  func() time.Time
+	aead   cipher.AEAD
+	now    func() time.Time
+	header []byte
 
 	// mu guards secret and madeAt.
 	mu     sync.Mutex
@@ -32,7 +33,7 @@ func NewCookieJar(hubPublic []byte, now func() time.Time) (*CookieJar, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cookie cipher: %w", err)
 	}
-	jar := &CookieJar{aead: aead, now: now}
+	jar := &CookieJar{aead: aead, now: now, header: EncodeHeader(hubPublic, KnockTypeCookieReply)}
 	if err := jar.rotate(); err != nil {
 		return nil, err
 	}
@@ -57,15 +58,16 @@ func (j *CookieJar) IsMac2Valid(knock *Knock, address net.IP) bool {
 	return knock.VerifyMac2(j.Cookie(address))
 }
 
-// Reply is the cookie reply to a knock from address: the reply byte, a
-// nonce, and the cookie sealed with the knock's mac1 as associated data.
+// Reply is the cookie reply to a knock from address: the header with the
+// cookie reply's type, a nonce, and the cookie sealed with the knock's mac1
+// as associated data.
 func (j *CookieJar) Reply(knock *Knock, address net.IP) ([]byte, error) {
-	reply := make([]byte, 1+CookieNonceBytes, CookieReplyBytes)
-	reply[0] = CookieReplyByte
-	if _, err := rand.Read(reply[1:]); err != nil {
+	reply := make([]byte, KnockHeaderBytes+CookieNonceBytes, CookieReplyBytes)
+	copy(reply, j.header)
+	if _, err := rand.Read(reply[KnockHeaderBytes:]); err != nil {
 		return nil, fmt.Errorf("cookie nonce: %w", err)
 	}
-	return j.aead.Seal(reply, reply[1:], j.Cookie(address), knock.Mac1), nil
+	return j.aead.Seal(reply, reply[KnockHeaderBytes:], j.Cookie(address), knock.Mac1), nil
 }
 
 func (j *CookieJar) rotate() error {
@@ -80,10 +82,11 @@ func (j *CookieJar) rotate() error {
 
 // OpenReply opens a cookie reply the hub wrote under hubPublic to a knock
 // whose mac1 was mac1, and returns the cookie. It returns ErrNotCookieReply
-// when the first byte is another answer's and ErrCookieReplyMalformed when
-// the reply does not open.
+// when the header is not a cookie reply's under hubPublic and
+// ErrCookieReplyMalformed when the reply does not open.
 func OpenReply(reply, hubPublic, mac1 []byte) ([]byte, error) {
-	if len(reply) == 0 || reply[0] != CookieReplyByte {
+	header, err := ParseHeader(reply, hubPublic)
+	if err != nil || header.Type != KnockTypeCookieReply {
 		return nil, ErrNotCookieReply
 	}
 	if len(reply) != CookieReplyBytes {
@@ -93,16 +96,12 @@ func OpenReply(reply, hubPublic, mac1 []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cookie cipher: %w", err)
 	}
-	cookie, err := aead.Open(nil, reply[1:1+CookieNonceBytes], reply[1+CookieNonceBytes:], mac1)
+	nonceEnd := KnockHeaderBytes + CookieNonceBytes
+	cookie, err := aead.Open(nil, reply[KnockHeaderBytes:nonceEnd], reply[nonceEnd:], mac1)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCookieReplyMalformed, err)
 	}
 	return cookie, nil
-}
-
-// IsCookieReply reports whether an answer's first byte is a cookie reply's.
-func IsCookieReply(first byte) bool {
-	return first == CookieReplyByte
 }
 
 func cookieKey(hubPublic []byte) []byte {

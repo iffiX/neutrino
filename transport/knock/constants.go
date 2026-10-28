@@ -7,13 +7,33 @@ import "time"
 const PROTOCOL = 4
 
 const (
-	// KnockVersion is the first byte of a knock and of the hub's answer.
+	// KnockVersion is the version every message of the member path carries,
+	// a big-endian u16 after the magic; it picks the handshake.
 	KnockVersion = 4
-	// KnockBytesMax bounds a whole knock: the version, the length, message 1
+	// KnockMagicBytes is the size of the magic that opens every message of
+	// the member path.
+	KnockMagicBytes = 4
+	// KnockMagicLabel keys the magic together with the hub's public key.
+	KnockMagicLabel = "magic---"
+	// KnockMagicForbiddenStun and KnockMagicForbiddenTLS are the first bytes
+	// a magic never has: a browser's STUN frame's and a 0.5 peer's TLS
+	// handshake's.
+	KnockMagicForbiddenStun = 0x00
+	KnockMagicForbiddenTLS  = 0x16
+	// KnockHeaderBytes is the header before every message of the member
+	// path: the magic, the version, the type and a reserved byte.
+	KnockHeaderBytes = 8
+	// KnockLengthBytes is the big-endian u16 length after a knock's and an
+	// answer's header.
+	KnockLengthBytes = 2
+	// KnockTypeKnock, KnockTypeAnswer and KnockTypeCookieReply are the
+	// message types the header names.
+	KnockTypeKnock       = 1
+	KnockTypeAnswer      = 2
+	KnockTypeCookieReply = 3
+	// KnockBytesMax bounds a whole knock: the header, the length, message 1
 	// and the two macs.
 	KnockBytesMax = 1024
-	// KnockHeaderBytes is the version byte and the big-endian u16 length.
-	KnockHeaderBytes = 3
 	// KnockMacBytes is the size of mac1, of mac2 and of a cookie.
 	KnockMacBytes = 16
 	// KnockMac1Label keys mac1 together with the hub's public key.
@@ -27,11 +47,12 @@ const (
 	KnockRoleClient = "client"
 	// KnockLegacyTLSByte is the first byte of a TLS handshake, which a 0.5
 	// peer sends and the hub hands to its legacy listener.
-	KnockLegacyTLSByte = 22
+	KnockLegacyTLSByte = KnockMagicForbiddenTLS
 )
 
 const (
-	// KnockFirstByteTimeout bounds a connection that has sent no byte.
+	// KnockFirstByteTimeout bounds a connection that has sent fewer bytes
+	// than the magic.
 	KnockFirstByteTimeout = 3 * time.Second
 	// HandshakeTimeout bounds the knock and the hub's answer, from the accept.
 	HandshakeTimeout = 10 * time.Second
@@ -50,14 +71,13 @@ const (
 )
 
 const (
-	// CookieReplyByte is the first byte of a cookie reply.
-	CookieReplyByte = 0x84
 	// CookieNonceBytes is the XChaCha20-Poly1305 nonce in a cookie reply.
 	CookieNonceBytes = 24
 	// CookieSealedBytes is the cookie with its authentication tag.
 	CookieSealedBytes = KnockMacBytes + 16
-	// CookieReplyBytes is the whole reply.
-	CookieReplyBytes = 1 + CookieNonceBytes + CookieSealedBytes
+	// CookieReplyBytes is the whole reply: the header, the nonce and the
+	// sealed cookie.
+	CookieReplyBytes = KnockHeaderBytes + CookieNonceBytes + CookieSealedBytes
 	// CookieSecretBytes is the size of the hub's cookie secret.
 	CookieSecretBytes = 32
 )

@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/flynn/noise"
 
+	"github.com/iffiX/neutrino/transport/gate"
 	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/session"
 )
@@ -49,6 +51,9 @@ type HubConfig struct {
 	FrpListeners []FrpListener
 	// LegacyTLSPort is the legacy listener's loopback port, 0 while off.
 	LegacyTLSPort int
+	// Certificate is the DTLS certificate of the WebRTC gate; nil keeps the
+	// gate shut.
+	Certificate *tls.Certificate
 	// Timings are the session's keepalive settings; the defaults when zero.
 	Timings session.Timings
 	// Memory caps the stream windows; TransportMemoryMaxBytes when nil.
@@ -68,6 +73,7 @@ type Hub struct {
 	now     func() time.Time
 	log     EventFunc
 	legacy  int
+	gate    *gate.Gate
 	ledger  *knock.KnockLedger
 	replay  *knock.ReplayWindow
 	handOff *HandOff
@@ -115,8 +121,13 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 	if err != nil {
 		return nil, err
 	}
+	var webrtcGate *gate.Gate
+	if config.Certificate != nil {
+		webrtcGate = gate.New(*config.Certificate)
+	}
 	return &Hub{
 		python:          python,
+		gate:            webrtcGate,
 		timings:         timings,
 		memory:          memory,
 		now:             now,
@@ -143,6 +154,23 @@ func (h *Hub) PublicKey() []byte {
 	h.keyMu.RLock()
 	defer h.keyMu.RUnlock()
 	return h.key.Public
+}
+
+// Fingerprint is the gate's certificate fingerprint, empty while the gate
+// is shut.
+func (h *Hub) Fingerprint() string {
+	if h.gate == nil {
+		return ""
+	}
+	return h.gate.Fingerprint()
+}
+
+// SetShares replaces the live shares the gate answers for.
+func (h *Hub) SetShares(shares []gate.Share) {
+	if h.gate == nil {
+		return
+	}
+	h.gate.SetShares(shares)
 }
 
 // Listen opens the agent port on IPv4 and IPv6 and each frp loopback
@@ -274,8 +302,12 @@ func (h *Hub) WriteFrame(sessionID string, frame []byte, isLast bool) error {
 }
 
 // welcome records a session as admitted and ends the earlier session of its
-// binding with refused replaced.
+// binding with refused replaced; a share admits any number of guests.
 func (h *Hub) welcome(rs *RelaySession) {
+	if rs.Role == RelayRoleGuest {
+		rs.markWelcomed()
+		return
+	}
 	h.mu.Lock()
 	earlier := h.byBinding[rs.BindingID]
 	h.byBinding[rs.BindingID] = rs
@@ -312,11 +344,19 @@ func (h *Hub) StreamsClose(bindingID, kind, deviceID, shellSessionID, code strin
 }
 
 // KeysReload reads the static key again from dir, making a new pair when
-// the file is missing, writes the public half, and ends every session.
+// the file is missing, writes the public half, reads the gate's certificate
+// again the same way, and ends every session.
 func (h *Hub) KeysReload(dir string) error {
 	key, err := LoadOrCreateKey(dir)
 	if err != nil {
 		return err
+	}
+	if h.gate != nil {
+		certificate, err := gate.LoadOrCreateCertificate(dir)
+		if err != nil {
+			return err
+		}
+		h.gate.SetCertificate(certificate)
 	}
 	jar, err := knock.NewCookieJar(key.Public, h.now)
 	if err != nil {

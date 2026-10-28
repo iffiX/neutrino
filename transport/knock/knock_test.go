@@ -9,6 +9,7 @@ import (
 
 type vectors struct {
 	HubPublic string
+	Magic     string
 	Message1  string
 	Mac1Key   string
 	Mac1      string
@@ -38,6 +39,9 @@ func TestVectors(t *testing.T) {
 	cookie := unhex(t, v.Cookie)
 	if got := hex.EncodeToString(Mac1Key(hubPublic)); got != v.Mac1Key {
 		t.Fatalf("mac1 key %s, want %s", got, v.Mac1Key)
+	}
+	if got := hex.EncodeToString(Magic(hubPublic)); got != v.Magic {
+		t.Fatalf("magic %s, want %s", got, v.Magic)
 	}
 	raw, err := Encode(message1, hubPublic, cookie)
 	if err != nil {
@@ -69,7 +73,7 @@ func TestVectors(t *testing.T) {
 	if !bytes.Equal(noCookie[len(noCookie)-KnockMacBytes:], make([]byte, KnockMacBytes)) {
 		t.Fatal("mac2 without a cookie is not zero")
 	}
-	fromReader, err := ReadBody(bytes.NewReader(raw[1:]))
+	fromReader, err := ReadBody(bytes.NewReader(raw[KnockHeaderBytes:]), raw[:KnockHeaderBytes])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,22 +86,26 @@ func TestWrongKnocks(t *testing.T) {
 	v := loadVectors(t)
 	raw := unhex(t, v.Knock)
 	otherKey := unhex(t, v.Mac1Key)
-	wrongVersion := append([]byte{5}, raw[1:]...)
+	wrongVersion := append([]byte{}, raw...)
+	wrongVersion[KnockMagicBytes+1] = 5
+	wrongType := append([]byte{}, raw...)
+	wrongType[KnockMagicBytes+2] = KnockTypeAnswer
 	wrongLength := append([]byte{}, raw...)
-	wrongLength[2]++
-	short := raw[:KnockHeaderBytes+KnockMacBytes]
+	wrongLength[KnockHeaderBytes+1]++
+	short := raw[:KnockHeaderBytes+KnockLengthBytes+KnockMacBytes]
 	wrongMac1 := append([]byte{}, raw...)
 	wrongMac1[len(raw)-2*KnockMacBytes] ^= 1
 	tooLong := make([]byte, KnockBytesMax+1)
-	tooLong[0] = KnockVersion
-	tooLongLength := KnockBytesMax + 1 - KnockHeaderBytes - 2*KnockMacBytes
-	tooLong[1] = byte(tooLongLength >> 8)
-	tooLong[2] = byte(tooLongLength)
+	copy(tooLong, raw[:KnockHeaderBytes])
+	tooLongLength := KnockBytesMax + 1 - KnockHeaderBytes - KnockLengthBytes - 2*KnockMacBytes
+	tooLong[KnockHeaderBytes] = byte(tooLongLength >> 8)
+	tooLong[KnockHeaderBytes+1] = byte(tooLongLength)
 	cases := []struct {
 		name string
 		raw  []byte
 	}{
 		{"version", wrongVersion},
+		{"type", wrongType},
 		{"length", wrongLength},
 		{"short", short},
 		{"too long", tooLong},
@@ -120,8 +128,20 @@ func TestWrongKnocks(t *testing.T) {
 	if good.VerifyMac1(otherKey) {
 		t.Fatal("mac1 verifies under another key")
 	}
-	if _, err := ReadBody(bytes.NewReader([]byte{0x03, 0xff})); !errors.Is(err, ErrKnockMalformed) {
+	if _, err := ReadBody(bytes.NewReader([]byte{0x03, 0xff}), raw[:KnockHeaderBytes]); !errors.Is(err, ErrKnockMalformed) {
 		t.Fatalf("err %v, want malformed", err)
+	}
+	if _, err := ParseHeader(raw[:KnockHeaderBytes], otherKey); !errors.Is(err, ErrKnockMalformed) {
+		t.Fatalf("err %v, want malformed for another hub's magic", err)
+	}
+	header, err := ParseHeader(raw, unhex(t, v.HubPublic))
+	if err != nil || header.Type != KnockTypeKnock || header.Version != KnockVersion {
+		t.Fatalf("header %+v: %v", header, err)
+	}
+	for _, key := range [][]byte{unhex(t, v.HubPublic), otherKey, make([]byte, 32)} {
+		if magic := Magic(key); magic[0] == KnockMagicForbiddenStun || magic[0] == KnockMagicForbiddenTLS {
+			t.Fatalf("magic %x starts with a forbidden byte", magic)
+		}
 	}
 	if _, err := Encode(make([]byte, KnockBytesMax), nil, nil); !errors.Is(err, ErrKnockMalformed) {
 		t.Fatalf("err %v, want malformed", err)
