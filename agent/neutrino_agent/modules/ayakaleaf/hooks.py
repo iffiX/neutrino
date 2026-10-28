@@ -1165,8 +1165,10 @@ class AyakaleafHooks(ContainerHooks):
         return self._records.read(self._name)
 
     def _keep(self, record: dict) -> dict:
-        """Write the record whole and answer it; a failed write is a line in the log."""
+        """Write the record whole where it differs from the one kept, and answer it; a failed write is a line in the log."""
         kept = {**record, "account": self._name}
+        if {name: kept.get(name) for name in AYAKALEAF_RECORD_FIELDS} == self._record():
+            return kept
         try:
             self._records.write(kept)
         except OSError as error:

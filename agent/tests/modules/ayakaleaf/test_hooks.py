@@ -502,6 +502,17 @@ def test_a_guest_is_made_in_four_steps_and_kept_with_its_user_id(box, app):
     ]
 
 
+def test_an_apply_that_changes_nothing_writes_no_record(box, app):
+    ready(box)
+    path = os.path.join(box.record_dir, "ayakaleaf.json")
+    before = os.stat(path).st_mtime_ns
+    os.utime(path, ns=(before - 10**9, before - 10**9))
+
+    box.start()
+
+    assert os.stat(path).st_mtime_ns == before - 10**9
+
+
 def test_a_guest_the_record_holds_is_not_made_again(box, app):
     ready(box)
     box.start({**CONFIG, "guests": [GUEST]})
