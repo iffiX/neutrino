@@ -14,3 +14,18 @@ CREDENTIALS_SECRET_KINDS = {
     "login": {"required": ("password",), "optional": ("username",)},
     "ssh_key": {"required": ("private_key",), "optional": ("passphrase",)},
 }
+
+# The secrets the hub generates for the machines that the Credentials page
+# lists, by kind: an account's SMB password, a machine's seat password and an
+# account's SSH key.
+CREDENTIALS_GENERATED_SMB_PASSWORD = "smb_password"
+CREDENTIALS_GENERATED_SEAT_PASSWORD = "seat_password"
+CREDENTIALS_GENERATED_SSH_KEY = "ssh_key"
+CREDENTIALS_GENERATED_KINDS = (
+    CREDENTIALS_GENERATED_SMB_PASSWORD,
+    CREDENTIALS_GENERATED_SEAT_PASSWORD,
+    CREDENTIALS_GENERATED_SSH_KEY,
+)
+# The codes a generated secret is refused with.
+CREDENTIALS_CODE_GENERATED_UNKNOWN = "generated_credential_unknown"
+CREDENTIALS_CODE_UNSUPPORTED_KIND = "unsupported_kind"

@@ -6,10 +6,14 @@ and handed to a client through the ``service`` frame, the public half is
 the instance's one authorized key. Both halves are in OpenSSH form.
 """
 
+import base64
+import hashlib
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from neutrino_hub.modules.devices.constants import DEVICE_SSH_SERVER_KEY_COMMENT
+from neutrino_hub.modules.services.constants import SERVICES_SSH_FINGERPRINT_PREFIX
 
 
 def generate_private_key() -> str:
@@ -48,3 +52,21 @@ def public_key_of(private_key: str, *, comment: str = "") -> str:
         serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
     )
     return f"{line.decode('ascii')} {comment or DEVICE_SSH_SERVER_KEY_COMMENT}"
+
+
+def fingerprint_of(private_key: str) -> str:
+    """The fingerprint of one private key's public half.
+
+    Args:
+        private_key: The private key in OpenSSH form.
+
+    Returns:
+        ``SHA256:<base64>``, the SHA-256 of the public key blob without
+        padding, as ``ssh-keygen -l`` prints it.
+
+    Raises:
+        ValueError: When the text is not an OpenSSH private key.
+    """
+    blob = base64.b64decode(public_key_of(private_key).split()[1])
+    digest = base64.b64encode(hashlib.sha256(blob).digest()).decode()
+    return f"{SERVICES_SSH_FINGERPRINT_PREFIX}{digest.rstrip('=')}"

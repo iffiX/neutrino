@@ -78,6 +78,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SAMBA_USER_CHARS_MAX,
     DEVICE_SAMBA_USER_PREFIX,
     DEVICE_SAMBA_USER_CUT_OS,
+    DEVICE_SSH_SERVER_KEY_KEY,
     DEVICE_SSH_SERVER_MODULE,
     DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
@@ -109,6 +110,7 @@ from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
 from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.source_sets import state_source_sets
 from neutrino_hub.modules.devices.ssh_account_keys import (
+    fingerprint_of,
     generate_private_key,
     public_key_of,
 )
@@ -802,6 +804,17 @@ class DesiredStateStore:
         except ValueError:
             return ""
 
+    def has_seat_password(self, key: str) -> bool:
+        """Whether one device has a seat password, opened or not.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            True when ``rdp.json`` seals one.
+        """
+        return bool(self._sealed_seat_password(key))
+
     def ensure_seat_password(self, key: str) -> bool:
         """Give one device a seat password the first time it needs one.
 
@@ -995,6 +1008,58 @@ class DesiredStateStore:
             if isinstance(record, dict) and record.get("account") == account:
                 return _unsealed_text(record.get(sealed.key), sealed.aad)
         return ""
+
+    def account_key_fingerprint(self, key: str, account: str) -> str:
+        """The fingerprint of one enabled account's SSH key.
+
+        Args:
+            key: The device key.
+            account: The account the SSH server enables.
+
+        Returns:
+            ``SHA256:<base64>``; empty when the module does not enable the
+            account, when the vault is locked, or when the seal does not
+            open under this box's data key.
+        """
+        private_key = self.account_secret(
+            key, DEVICE_SSH_SERVER_MODULE, account, DEVICE_SSH_SERVER_KEY_KEY
+        )
+        if not private_key:
+            return ""
+        try:
+            return fingerprint_of(private_key)
+        except ValueError:
+            return ""
+
+    def rotate_account_secret(
+        self, key: str, module: str, account: str, field: str
+    ) -> None:
+        """Seal a fresh value into one enabled account's sealed field.
+
+        Args:
+            key: The device key.
+            module: The account-layer module.
+            account: The account.
+            field: The key the seal is stored under, one the module's row
+                names.
+
+        Raises:
+            KeyError: For a module the table does not hold, a field its row
+                does not seal, or an account the module does not enable.
+            VaultLockedError: If there is no data key to seal it under.
+            OSError: When the file cannot be written.
+        """
+        row = module_row(module)
+        sealed = row.sealed_field(field)
+        with CONFIG_WRITE_LOCK:
+            held = self.read(key, module)
+            records = held.get(DEVICE_ENABLED_ACCOUNTS_KEY) or []
+            for record in records:
+                if isinstance(record, dict) and record.get("account") == account:
+                    record[sealed.key] = _fresh_seal(sealed)
+                    write_config(self._path(key, row.config_file), held)
+                    return
+        raise KeyError(account)
 
     def instance_token(
         self, key: str, module: str, account: str, *, now: "float | None" = None
