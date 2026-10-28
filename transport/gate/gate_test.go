@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	testUfrag    = "0123456789abcdef01234567"
+	testUfrag    = "0123456789abcdef01234567"         // scan: allow
 	testPassword = "0123456789abcdef0123456789abcdef" // scan: allow
 )
 
@@ -154,7 +154,7 @@ func TestFirstCheckCutOffs(t *testing.T) {
 		{"a frame with another first byte", DialOptions{}, []byte{0x01, 0x60, 0x00, 0x01, 0x00, 0x4c, 0x21, 0x12, 0xa4, 0x42}, ErrNotStun},
 		{"a binding request with no username", DialOptions{}, stunFrame(t, stun.BindingRequest, stun.Fingerprint), ErrNotStun},
 		{"a ufrag no live share holds", DialOptions{Ufrag: "nobody", Password: testPassword}, nil, ErrShareUnknown},
-		{"a wrong password", DialOptions{Ufrag: testUfrag, Password: "fedcba9876543210fedcba9876543210"}, nil, ErrStunRefused},
+		{"a wrong password", DialOptions{Ufrag: testUfrag, Password: "fedcba9876543210fedcba9876543210"}, nil, ErrStunRefused}, // scan: allow
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	shareUfrag    = "0123456789abcdef01234567"
+	shareUfrag    = "0123456789abcdef01234567"         // scan: allow
 	sharePassword = "0123456789abcdef0123456789abcdef" // scan: allow
 	shareTicket   = "share-ticket-1"
 	shareID       = "share-1"
