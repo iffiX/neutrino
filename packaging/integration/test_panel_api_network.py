@@ -423,7 +423,7 @@ def test_exposure_follows_a_vlan_that_is_removed(panel, trunk):
     would refuse, which is the whole ruleset failing to load."""
     # A router exposes a port only with a role it keeps up; the VLAN was
     # made at its default, disabled, so it takes the uplink role with it.
-    status = panel.status(
+    status, answer = panel.call(
         "POST",
         "/hub/network/set",
         options_body(
@@ -432,7 +432,7 @@ def test_exposure_follows_a_vlan_that_is_removed(panel, trunk):
             interface_roles={f"{trunk}.1": "wan"},
         ),
     )
-    assert status == 200
+    assert status == 200, answer
     assert exposed_now(panel) == [f"{trunk}.1"]
 
     assert (
@@ -459,12 +459,10 @@ def test_one_vlan_can_be_removed(panel, trunk):
 def test_leaving_the_trunk_role_takes_every_vlan_with_it(panel, trunk):
     # A router refuses an exposed port with the role disabled.
     closed = [name for name in exposed_now(panel) if name != trunk]
-    assert (
-        panel.status(
-            "POST", "/hub/network/set", options_body(panel, exposed_interfaces=closed)
-        )
-        == 200
+    status, answer = panel.call(
+        "POST", "/hub/network/set", options_body(panel, exposed_interfaces=closed)
     )
+    assert status == 200, answer
     body = interface_body(panel, trunk, role="disabled")
 
     assert panel.status("POST", "/hub/network/interface/set", body) == 200
