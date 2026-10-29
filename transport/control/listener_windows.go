@@ -86,9 +86,9 @@ func (c *pipeConn) SetDeadline(t time.Time) error      { return c.file.SetDeadli
 func (c *pipeConn) SetReadDeadline(t time.Time) error  { return c.file.SetReadDeadline(t) }
 func (c *pipeConn) SetWriteDeadline(t time.Time) error { return c.file.SetWriteDeadline(t) }
 
+// Close closes the handle and never disconnects the instance. The other end
+// reads every byte written before the close, then the end of the stream.
 func (c *pipeConn) Close() error {
-	handle := syscall.Handle(c.file.Fd())
-	_, _, _ = procDisconnectNamedPipe.Call(uintptr(handle))
 	return c.file.Close()
 }
 

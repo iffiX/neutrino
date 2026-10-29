@@ -4,8 +4,10 @@ package control
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sync/atomic"
@@ -99,6 +101,49 @@ func TestPipeWritesWhileAReadWaits(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the server's read did not return")
+	}
+}
+
+func TestPipeKeepsTheBytesWrittenBeforeTheClose(t *testing.T) {
+	listener, err := Listen(testPipeName(t), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := acceptOne(t, listener)
+	client, err := DialPipe(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	server := <-accepted
+	if server == nil {
+		t.Fatal("no connection accepted")
+	}
+
+	// The server writes its last records and closes before the client reads,
+	// as the transport does at a stream's end.
+	written := bytes.Repeat([]byte("record\n"), 2048)
+	if _, err := server.Write(written); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- server.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the close waited for the client to read")
+	}
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	read, err := io.ReadAll(client)
+	if err != nil {
+		t.Fatalf("client read %d of %d bytes, then %v", len(read), len(written), err)
+	}
+	if !bytes.Equal(read, written) {
+		t.Fatalf("client read %d of %d bytes", len(read), len(written))
 	}
 }
 
