@@ -31,33 +31,34 @@
 
 /* Fixed column widths, one set for the header and every row, so a badge in
    the name cell wraps inside that cell and never moves the columns after it.
-   The name takes whatever the other columns leave. */
+   The name takes whatever the other columns leave. The minimum width leaves
+   the name room for its widest badge. */
 .clients_table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1002px;
   border-collapse: collapse;
   font-size: 12px;
   table-layout: fixed;
 }
 
 .clients_col--hostname {
-  width: 16%;
+  width: 136px;
 }
 
 .clients_col--platform {
-  width: 9%;
+  width: 76px;
 }
 
 .clients_col--version {
-  width: 8%;
+  width: 72px;
 }
 
 .clients_col--status {
-  width: 12%;
+  width: 108px;
 }
 
 .clients_col--seen {
-  width: 11%;
+  width: 100px;
 }
 
 .clients_col--actions {
