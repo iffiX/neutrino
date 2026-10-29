@@ -55,6 +55,17 @@ def test_the_panel_is_stopped_before_what_it_serves(systemd):
     assert names.index("web") < names.index("dnsmasq")
 
 
+def test_the_transport_stops_after_the_units_that_publish_its_port(systemd):
+    """A running transport keeps every client's and agent's session."""
+    asked, _ = systemd
+    stop_module.stop(list(stop_module.STOP_ORDER))
+
+    names = [name for name, _ in asked]
+    assert "transport" in names
+    for name in ("web", "relay", "sakurafrp", "openfrp"):
+        assert names.index(name) < names.index("transport")
+
+
 def test_one_service_can_be_named(systemd):
     asked, _ = systemd
 
@@ -75,7 +86,7 @@ def test_every_service_run_starts_can_be_stopped_by_the_same_flag(monkeypatch):
         lambda name, interface: chosen.append(f"{name}@{interface}") or 0,
     )
 
-    for name in ("web", *XRAY, "cliproxyapi", "dnsmasq"):
+    for name in ("web", *XRAY, "cliproxyapi", "transport", "dnsmasq"):
         monkeypatch.setattr("sys.argv", ["nhub-stop", f"--only-{name}", "--yes"])
         assert stop_module.main() == 0
     for name in ("supplicant", "dhcpcd"):
@@ -89,6 +100,7 @@ def test_every_service_run_starts_can_be_stopped_by_the_same_flag(monkeypatch):
         "web",
         *XRAY,
         "cliproxyapi",
+        "transport",
         "dnsmasq",
         "supplicant@eth0",
         "dhcpcd@eth0",

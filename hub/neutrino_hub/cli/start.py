@@ -4,6 +4,7 @@
     sudo nhub start --only-web                   # one of them
     sudo nhub start --only-relay                 # when it is enabled and configured
     sudo nhub start --only-sakurafrp             # when a tunnel is picked
+    sudo nhub start --only-transport
     sudo nhub start --only-xray                  # where the tree carries the proxy
     sudo nhub start --only-cliproxyapi
     sudo nhub start --only-dnsmasq

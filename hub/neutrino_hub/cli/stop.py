@@ -5,6 +5,7 @@
     sudo nhub stop --only-relay
     sudo nhub stop --only-sakurafrp
     sudo nhub stop --only-openfrp
+    sudo nhub stop --only-transport
     sudo nhub stop --only-xray                  # where the tree carries the proxy
     sudo nhub stop --only-cliproxyapi
     sudo nhub stop --only-dnsmasq
@@ -53,17 +54,16 @@ from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
 
-# The order they are stopped in, which is the order they sit on each other.
-# The panel first because it is what a person is holding: stopping it while
-# the proxy underneath is already gone means a page that hangs rather than one
-# that closes. The routing state last, because it is what the rest ran on.
-# The relay and the two frpc right after the panel whose port they publish.
+# Stop order, each unit before the units it runs on. A panel stopped after the
+# proxy leaves its open page hanging. The relay and the two frpc publish the
+# agent port. The transport owns that port and stops after them.
 # The proxy core's unit is the proxy's, from the edition table.
 STOP_ORDER = (
     "web",
     "relay",
     "sakurafrp",
     "openfrp",
+    "transport",
     "cliproxyapi",
     "dnsmasq",
     *edition.hooks("services"),
