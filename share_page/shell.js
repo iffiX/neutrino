@@ -1046,6 +1046,8 @@ const page = {
   // Whether the shared app is down: a connect close named one of APP_DOWN_CODES,
   // and no connect to the entry was accepted since.
   isAppDown: false,
+  // Whether the frame's last navigation failed.
+  isFrameFailed: false,
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
@@ -1094,11 +1096,13 @@ const page = {
 
   // Asks for the share's entry and shows the app, the app-unavailable screen or the link screen.
   // After the shared app was down, a connect to the entry must be accepted too, and the frame loads again.
+  // After the app-unavailable screen, the frame also loads again when its last navigation failed.
   async check(deadline) {
     const session = this.session;
     if (!session || this.isEnded) return;
     const serial = screen.serial;
     const wasAppDown = this.isAppDown;
+    const wasUnavailable = screen.kind === "unavailable";
     let reply, code;
     try {
       reply = await session.service(deadline);
@@ -1127,7 +1131,7 @@ const page = {
         this.drop(session);
         return;
       }
-    } else if (wasAppDown) {
+    } else if (wasAppDown || (wasUnavailable && this.isFrameFailed)) {
       await this.reload(deadline);
     }
     if (this.session === session && screen.serial === serial) screen.app();
@@ -1245,24 +1249,33 @@ const page = {
     if (message.type === "facts") { if (reply) reply.postMessage(this.isEnded ? null : this.facts); return; }
     if (message.type === "abort") { if (this.session) this.session.pool.abort(message.id); return; }
     if (message.type !== "fetch") return;
-    if (this.isEnded) { port.postMessage({ type: "error", id: message.id, code: "share_unknown" }); return; }
+    if (this.isEnded) { this.fail(message, port, "share_unknown"); return; }
     if (this.session && !this.connecting) this.serve(message, port);
-    else if (screen.kind === "hub") port.postMessage({ type: "error", id: message.id, code: "hub_offline" });
+    else if (screen.kind === "hub") this.fail(message, port, "hub_offline");
     else this.waiting.push([message, port]);
   },
 
   serve(message, port) {
     const { id, method, url, headers, body } = message;
     this.session.pool.request({ id, method, path: url, headers, body: body ? new Uint8Array(body) : null }, {
-      head: (head) => port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers, hasSetCookie: head.hasSetCookie }),
+      head: (head) => {
+        if (message.isNavigation) this.isFrameFailed = false;
+        port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers, hasSetCookie: head.hasSetCookie });
+      },
       body: (piece) => { const copy = piece.slice(); port.postMessage({ type: "chunk", id, data: copy.buffer }, [copy.buffer]); },
       end: () => port.postMessage({ type: "end", id }),
-      fail: (code) => port.postMessage({ type: "error", id, code: code || "stream" }),
+      fail: (code) => this.fail(message, port, code || "stream"),
     });
   },
 
+  // Fails a request of the worker, and marks a failed navigation of the frame.
+  fail(message, port, code) {
+    if (message.isNavigation) this.isFrameFailed = true;
+    port.postMessage({ type: "error", id: message.id, code });
+  },
+
   failWaiting() {
-    for (const [message, port] of this.waiting.splice(0)) port.postMessage({ type: "error", id: message.id, code: "hub_offline" });
+    for (const [message, port] of this.waiting.splice(0)) this.fail(message, port, "hub_offline");
   },
 };
 

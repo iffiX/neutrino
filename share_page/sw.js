@@ -175,12 +175,14 @@ function headerList(headers) {
 // --- requests through the shell ------------------------------------------------
 
 // Sends a request through a shell. It resolves with the response once its head arrives.
+// isNavigation marks a navigation of a frame.
 function send(shell, sent, isKept) {
   const id = nextID++;
   const body = sent.body ? sent.body.slice(0) : null;
+  const isNavigation = sent.destination === "iframe";
   return new Promise((resolve) => {
     pending.set(id, { id, resolve, shell, sent, isKept, controller: null, chunks: [], isHtml: false, isSettled: false });
-    shell.port.postMessage({ type: "fetch", id, method: sent.method, url: sent.url.pathname + sent.url.search, headers: sent.headers, body }, body ? [body] : []);
+    shell.port.postMessage({ type: "fetch", id, method: sent.method, url: sent.url.pathname + sent.url.search, headers: sent.headers, body, isNavigation }, body ? [body] : []);
   });
 }
 
