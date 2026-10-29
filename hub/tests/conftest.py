@@ -1221,13 +1221,14 @@ class FakePopen:
         self.output = output
         self.creation_flags: list = []
 
-    def __call__(self, argv, env, cwd, creation_flags):
+    def __call__(self, argv, env, cwd, creation_flags, stdin_text=""):
         if self.is_refusing:
             raise FileNotFoundError(argv[0])
         self.creation_flags.append(creation_flags)
         child = FakeChildProcess(
             list(argv), dict(env), cwd, self.output, 1000 + len(self.started)
         )
+        child.stdin_text = stdin_text
         self.started.append(child)
         return child
 

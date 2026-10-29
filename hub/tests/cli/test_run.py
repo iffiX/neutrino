@@ -16,6 +16,7 @@ import pytest
 
 from neutrino_hub import edition
 from neutrino_hub.cli import run
+from neutrino_hub.modules.transport import ops as transport_ops
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
@@ -170,10 +171,12 @@ class _Controller:
     def __init__(self):
         self.asked: list = []
         self.watcher = None
+        self.on_secret = None
 
-    def supervise(self, start_lines, *, watcher=None):
+    def supervise(self, start_lines, *, watcher=None, on_secret=None):
         self.asked.append(("supervise", sorted(start_lines)))
         self.watcher = watcher
+        self.on_secret = on_secret
 
     def is_active(self, name):
         return name == "tun2socks"
@@ -243,6 +246,24 @@ def test_the_service_hands_every_ended_child_to_the_tun_keeper(
     run._supervise(argparse.Namespace())
 
     assert type(controller.watcher).__name__ == "TunRouteKeeper"
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_the_service_hands_the_transports_secret_to_the_local_channel(
+    monkeypatch, service_roots, system
+):
+    controller = _Controller()
+    monkeypatch.setattr(run.sys, "platform", system)
+    monkeypatch.setattr(run, "process_controller", lambda: controller)
+    monkeypatch.setattr(run, "_serve_panel", lambda arguments: 0)
+    monkeypatch.setattr(
+        transport_ops, "SECRET_HOLDER", transport_ops.TransportSecretHolder()
+    )
+    run._supervise(argparse.Namespace())
+
+    controller.on_secret("transport", "ab" * 32)
+
+    assert transport_ops.transport_secret() == "ab" * 32
 
 
 def test_a_firewall_anchor_that_does_not_load_leaves_the_service_running(

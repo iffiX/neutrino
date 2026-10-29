@@ -197,6 +197,16 @@ class ChildProcessSupervisor:
         """
         self._watcher = watcher
 
+    def set_on_secret(self, on_secret) -> None:
+        """Hand every secret written to a child to one callable.
+
+        Args:
+            on_secret: Called with ``(name, secret)`` each time a child whose
+                secret rides its standard input is started; None tells
+                nobody.
+        """
+        self._on_secret = on_secret
+
     def set_start_line(self, name: str, line) -> None:
         """Hold one child's start line; None forgets it and stops the child.
 

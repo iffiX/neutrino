@@ -97,6 +97,17 @@ class TransportSecretHolder:
 SECRET_HOLDER = TransportSecretHolder()
 
 
+def hold_secret(name: str, secret: str) -> None:
+    """Keep the secret the supervisor wrote to the transport at its start.
+
+    Args:
+        name: The child's name; another child's secret is not kept.
+        secret: The secret.
+    """
+    if name == TRANSPORT_SERVICE_NAME:
+        SECRET_HOLDER.set(secret)
+
+
 def control_socket_address() -> str:
     """Where the transport listens for the hub's Python.
 

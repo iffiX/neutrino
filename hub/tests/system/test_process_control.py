@@ -152,6 +152,29 @@ def test_the_service_starts_every_enabled_child(tmp_path, controller, popen):
     assert not controller.status("netbird").is_installed
 
 
+def test_the_service_tells_on_secret_of_each_secret_written_to_a_child(
+    tmp_path, controller, popen
+):
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "services.json").write_text(
+        json.dumps({"enabled": ["transport"]})
+    )
+    told = []
+    transport = ChildStartLine(
+        argv=["/app/bin/neutrino_transport", "hub"], is_secret_on_stdin=True
+    )
+
+    controller.supervise(
+        {"transport": transport},
+        on_secret=lambda name, secret: told.append((name, secret)),
+    )
+
+    (child,) = popen.started
+    ((name, secret),) = told
+    assert name == "transport"
+    assert child.stdin_text == secret + "\n"
+
+
 def test_a_start_line_handed_over_is_kept_for_the_next_start(
     tmp_path, controller, popen
 ):

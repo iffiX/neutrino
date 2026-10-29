@@ -744,7 +744,9 @@ def _supervise_service(arguments) -> int:
     controller = process_controller()
     watcher = edition.hook("service_watcher")
     keeper = watcher(is_running=controller.is_active) if watcher is not None else None
-    controller.supervise(child_start_lines(), watcher=keeper)
+    controller.supervise(
+        child_start_lines(), watcher=keeper, on_secret=transport_ops.hold_secret
+    )
     try:
         return _serve_panel(arguments)
     finally:
