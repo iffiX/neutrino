@@ -189,6 +189,10 @@ AGENT_REPORT_INTERVAL_S = 5
 # that would not start, doubling to a minute.
 AGENT_BACKOFF_MIN_S = 5
 AGENT_BACKOFF_MAX_S = 60
+# The hub's refusal while its Python is away, and the least time between
+# two log lines for it.
+AGENT_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
+AGENT_REFUSAL_LOG_INTERVAL_S = 60
 # The name every network the hub serves resolves to the hub's address on that
 # network. It heads the addresses a round dials.
 AGENT_HUB_NAME = "hub.neutrino.internal"

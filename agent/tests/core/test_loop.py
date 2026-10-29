@@ -597,6 +597,47 @@ def test_a_round_that_found_no_session_says_why(fake, config_path, code, params)
     assert enrollment_module.is_bound()
 
 
+def test_thirty_control_unavailable_refusals_in_150_s_write_four_lines(
+    fake, config_path
+):
+    bind(config_path, url=LAN_URL)
+    lines: list = []
+    refused_at = iter(1000.0 + 5 * turn for turn in range(30))
+    agent = Agent(
+        log=lines.append,
+        platform=default_platform(),
+        transport_starter=starter_for(fake),
+        one_shot=one_shot_for(fake),
+        clock=lambda: next(refused_at),
+    )
+    agent.run_once()
+    lines.clear()
+
+    for _ in range(30):
+        fake.send_event(
+            "round_end",
+            code="control_unavailable",
+            params={"retry_after_s": 5},
+            next_round_s=5,
+        )
+    fake.send_event("marker")
+    until(lambda: any("'marker'" in line for line in lines))
+    fake.welcome(address=LAN_URL)
+    fake.wait_for(agent.is_online)
+    agent.run_once()
+
+    assert [line for line in lines if "control_unavailable" in line] == [
+        "refused: control_unavailable; the transport asks again",
+        "refused: control_unavailable 12 times since the last line;"
+        " the transport asks again",
+        "refused: control_unavailable 12 times since the last line;"
+        " the transport asks again",
+        f"the hub welcomed this machine at {LAN_URL};"
+        " refused control_unavailable 5 times since the last line",
+    ]
+    assert agent.last_error() is None
+
+
 def test_a_round_ended_by_binding_unknown_unbinds(fake, config_path):
     agent = agent_on(fake, config=config_path)
     agent._rdp = RecordedDesktop()

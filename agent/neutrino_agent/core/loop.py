@@ -41,6 +41,7 @@ from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_CODE_BINDING_UNKNOWN,
+    AGENT_CODE_CONTROL_UNAVAILABLE,
     AGENT_CODE_HUB_KEY_MISSING,
     AGENT_CODE_PORT_NOT_PUBLISHED,
     AGENT_CODE_REPLACED,
@@ -52,6 +53,7 @@ from neutrino_agent.constants import (
     AGENT_HUB_SOFTWARE_PREFIX,
     AGENT_PACKAGE_DIR_NAME,
     AGENT_PROBE_TIMEOUT_S,
+    AGENT_REFUSAL_LOG_INTERVAL_S,
     AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_REINSTALL_WAIT_S,
     AGENT_REPORT_INTERVAL_S,
@@ -216,6 +218,7 @@ class Agent:
         platform=None,
         transport_starter=None,
         one_shot=None,
+        clock=time.monotonic,
     ):
         """
         Args:
@@ -231,8 +234,10 @@ class Agent:
                 transport of this process's own, for a join, a leave or a
                 probe while the service's transport does not run here; None
                 starts one.
+            clock: The monotonic clock the refusal lines are spaced on.
         """
         self._log = log
+        self._clock = clock
         self._lock = threading.Lock()
         self._platform = platform if platform is not None else detect_platform()
         self._transport_starter = transport_starter or start_transport
@@ -315,6 +320,10 @@ class Agent:
         # Set by a ``replaced`` refusal: another session holds this binding,
         # and this one dials again only once a person acts.
         self._is_replaced = False
+        # The ``control_unavailable`` refusals since the line at
+        # ``_unavailable_logged_at``. It is None outside a run of them.
+        self._unavailable_count = 0
+        self._unavailable_logged_at: "float | None" = None
         # The hub version last acted on and how the attempt went, so a target
         # that failed is not retried on every session.
         self._update_target = ""
@@ -821,7 +830,17 @@ class Agent:
         with self._lock:
             self._backoff_s = AGENT_BACKOFF_MIN_S
             self._last_error = None
-        self._log(f"the hub welcomed this machine at {session.address or '?'}")
+            is_run = self._unavailable_logged_at is not None
+            count = self._unavailable_count
+            self._unavailable_count = 0
+            self._unavailable_logged_at = None
+        line = f"the hub welcomed this machine at {session.address or '?'}"
+        if is_run and count:
+            line += (
+                f"; refused {AGENT_CODE_CONTROL_UNAVAILABLE} {count} times"
+                " since the last line"
+            )
+        self._log(line)
 
     def _on_session_ended(self, session: AgentSession) -> float:
         """A session that ended: its refusal read by code, or the wire's end."""
@@ -879,8 +898,38 @@ class Agent:
             self._undial()
             self._log("replaced by another session; dialling again on nagent join")
             return IDLE_POLL_INTERVAL_S
-        self._log(f"refused: {code}; the transport asks again")
+        self._log_refusal(code)
         return IDLE_POLL_INTERVAL_S
+
+    def _log_refusal(self, code: str) -> None:
+        """Log a refusal the transport asks again after.
+
+        ``control_unavailable`` writes its line at the first refusal, then at
+        most once every ``AGENT_REFUSAL_LOG_INTERVAL_S`` with the count since
+        the line before.
+
+        Args:
+            code: The refusal's code.
+        """
+        if code != AGENT_CODE_CONTROL_UNAVAILABLE:
+            self._log(f"refused: {code}; the transport asks again")
+            return
+        now = self._clock()
+        with self._lock:
+            self._unavailable_count += 1
+            logged_at = self._unavailable_logged_at
+            if logged_at is not None and now - logged_at < AGENT_REFUSAL_LOG_INTERVAL_S:
+                return
+            count = self._unavailable_count
+            self._unavailable_count = 0
+            self._unavailable_logged_at = now
+        if logged_at is None:
+            self._log(f"refused: {code}; the transport asks again")
+        else:
+            self._log(
+                f"refused: {code} {count} times since the last line;"
+                " the transport asks again"
+            )
 
     def _note_unreadable(self, error: dict) -> None:
         """A frame this build cannot read is the error the report shows."""
