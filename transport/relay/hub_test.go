@@ -41,6 +41,7 @@ type fakePython struct {
 	events   chan map[string]any
 	frames   chan frameEvent
 	isSilent bool
+	isAway   bool
 }
 
 type binding struct {
@@ -74,6 +75,9 @@ func (p *fakePython) Ask(ctx context.Context, question string, fields map[string
 	defer p.mu.Unlock()
 	if p.isSilent {
 		<-ctx.Done()
+		return nil, ErrControlUnavailable
+	}
+	if p.isAway {
 		return nil, ErrControlUnavailable
 	}
 	switch question {
@@ -245,6 +249,33 @@ func TestMemoryCapLineAtMostOnceAMinute(t *testing.T) {
 	if got := lines.named("memory_cap_refused"); !slices.Equal(got, want) {
 		t.Fatalf("lines %q, want %q", got, want)
 	}
+}
+
+// TestControlUnavailableNamesItsRetry checks that a bound peer knocking
+// while the Python is away reads refused control_unavailable with
+// retry_after_s 5, and is admitted once the Python is back.
+func TestControlUnavailableNamesItsRetry(t *testing.T) {
+	hub := newTestHub(t)
+	address := hub.listen(t)
+	agent := newPeer(t, hub, "dev7", "agent")
+	hub.python.mu.Lock()
+	hub.python.isAway = true
+	hub.python.mu.Unlock()
+
+	c := agent.connect(t, address, hub.key.Public, agent.psk(), false)
+	if !c.result.IsRefusal {
+		t.Fatal("an away Python did not give a refusal under the zero psk")
+	}
+	kind, frame := c.readFrame(t)
+	refusal := session.ParseRefused(frame)
+	if kind != session.FrameRefused || refusal.Code != session.CodeControlUnavailable || refusal.Params["retry_after_s"] != RelayControlRetryAfter.Seconds() {
+		t.Fatalf("away python: %s %s", kind, frame)
+	}
+
+	hub.python.mu.Lock()
+	hub.python.isAway = false
+	hub.python.mu.Unlock()
+	agent.admit(t, hub, address, "dev7")
 }
 
 // listen opens one loopback listener served by the hub's door.

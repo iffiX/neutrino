@@ -313,11 +313,11 @@ func (rs *RelaySession) askEntry(open []byte) (*entryTarget, *session.Refusal) {
 	}
 	encoded, err := json.Marshal(answer)
 	if err != nil {
-		return nil, session.NewRefusal(session.CodeControlUnavailable, nil)
+		return nil, controlUnavailable()
 	}
 	var target entryTarget
 	if err := json.Unmarshal(encoded, &target); err != nil {
-		return nil, session.NewRefusal(session.CodeControlUnavailable, nil)
+		return nil, controlUnavailable()
 	}
 	return &target, nil
 }

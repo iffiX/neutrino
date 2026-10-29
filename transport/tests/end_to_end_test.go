@@ -161,11 +161,21 @@ type hubSide struct {
 	control *control.HubControl
 	python  *pythonSide
 	records *hubRecords
+	socket  string
 	port    int
 	keyHex  string
 }
 
 func startHub(t *testing.T, dir string, port int) *hubSide {
+	t.Helper()
+	hub := startHubAway(t, dir, port, nil)
+	hub.connectPython(t)
+	return hub
+}
+
+// startHubAway starts a hub transport whose faked Python has not connected
+// yet, its lines written to log.
+func startHubAway(t *testing.T, dir string, port int, log relay.EventFunc) *hubSide {
 	t.Helper()
 	keyDir := filepath.Join(dir, "transport")
 	key, err := relay.LoadOrCreateKey(keyDir)
@@ -181,8 +191,8 @@ func startHub(t *testing.T, dir string, port int) *hubSide {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hubControl := control.NewHubControl(listener, hubSecret, keyDir, nil)
-	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, Certificate: &certificate, Timings: timings, Draws: &doorDraws}, hubControl)
+	hubControl := control.NewHubControl(listener, hubSecret, keyDir, log)
+	hub, err := relay.NewHub(relay.HubConfig{Key: key, ListenPort: port, Certificate: &certificate, Timings: timings, Draws: &doorDraws, Log: log}, hubControl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,9 +205,13 @@ func startHub(t *testing.T, dir string, port int) *hubSide {
 		hub.Close()
 		hubControl.Close()
 	})
-	records := newHubRecords()
-	python := connectPython(t, socket, hubSecret, records.answer)
-	return &hubSide{hub: hub, control: hubControl, python: python, records: records, port: port, keyHex: handshake.EncodeKey(key.Public)}
+	return &hubSide{hub: hub, control: hubControl, records: newHubRecords(), socket: socket, port: port, keyHex: handshake.EncodeKey(key.Public)}
+}
+
+// connectPython opens the faked hub Python's control connection.
+func (h *hubSide) connectPython(t *testing.T) {
+	t.Helper()
+	h.python = connectPython(t, h.socket, hubSecret, h.records.answer)
 }
 
 // freePort picks a port no listener holds.

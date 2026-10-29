@@ -502,6 +502,12 @@ func (h *Hub) logMemoryRefused() {
 	h.log("memory_cap_refused", "count", strconv.Itoa(count))
 }
 
+// controlUnavailable is the control_unavailable refusal the hub's
+// transport makes, with its retry_after_s.
+func controlUnavailable() *session.Refusal {
+	return session.NewRefusal(session.CodeControlUnavailable, map[string]any{"retry_after_s": int(RelayControlRetryAfter / time.Second)})
+}
+
 // ask asks the Python one question within ControlQuestionTimeout. It returns
 // the answer, or the refusal to write: the Python's own, or
 // control_unavailable.
@@ -514,7 +520,7 @@ func (h *Hub) ask(question string, fields map[string]any) (map[string]any, *sess
 		if errors.As(err, &refusal) {
 			return nil, refusal
 		}
-		return nil, session.NewRefusal(session.CodeControlUnavailable, nil)
+		return nil, controlUnavailable()
 	}
 	return answer, nil
 }

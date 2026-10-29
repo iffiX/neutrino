@@ -263,7 +263,7 @@ func (h *Hub) serveKnock(d *door, conn net.Conn, head []byte, key noise.DHKey, j
 			pskText, _ := answer["psk"].(string)
 			decoded, err := handshake.DecodeKey(pskText)
 			if err != nil || bindingID == "" {
-				refusal = session.NewRefusal(session.CodeControlUnavailable, nil)
+				refusal = controlUnavailable()
 			} else {
 				psk = decoded
 			}
@@ -349,7 +349,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, head []byte, address net.IP, li
 	if refusal == nil {
 		bindingID = stringField(answer, "binding_id")
 		if bindingID == "" {
-			refusal = session.NewRefusal(session.CodeControlUnavailable, nil)
+			refusal = controlUnavailable()
 		}
 	}
 	if refusal != nil {
