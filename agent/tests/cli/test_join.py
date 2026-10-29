@@ -80,6 +80,23 @@ def test_a_fresh_join_stores_the_binding_and_names_the_hub(joined_hub, capsys):
     assert stored["hub_key"] == HUB_KEY
 
 
+def test_the_agents_own_log_stays_out_of_the_terminal(monkeypatch, capsys, fake):
+    opener = one_shot_for(fake)
+
+    def logging_one_shot(platform, log=print, **keywords):
+        log("transport: hub transport started")
+        log("transport: control_connected")
+        return opener(**keywords)
+
+    monkeypatch.setattr(loop_module, "one_shot_transport", logging_one_shot)
+    monkeypatch.setattr(join_cli, "service_state", running_service_word)
+    answer_with(fake)
+
+    assert join_cli.main(LINK, is_forced=False) == 0
+
+    assert capsys.readouterr().out.splitlines() == [f"joined {GATEWAY_URL} as 3f9c"]
+
+
 def test_the_join_carries_the_seven_fields_the_key_and_the_addresses(joined_hub):
     join_cli.main(LINK, is_forced=False)
 

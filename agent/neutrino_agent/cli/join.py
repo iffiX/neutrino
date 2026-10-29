@@ -4,7 +4,7 @@ import os
 import sys
 
 from neutrino_agent.cli.start import is_confirmed
-from neutrino_agent.cli.status import service_state
+from neutrino_agent.cli.status import discard_log, service_state
 from neutrino_agent.cli.wording import word_code
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
@@ -38,7 +38,7 @@ def main(link: str, *, is_forced: bool) -> int:
             print("nothing changed")
             return 1
     try:
-        Agent().join(link)
+        Agent(log=discard_log).join(link)
     except EnrollmentError as error:
         print(f"error: {word_join_error(error)}", file=sys.stderr)
         return 1

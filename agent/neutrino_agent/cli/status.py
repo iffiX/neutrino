@@ -107,7 +107,7 @@ def main() -> int:
     tail = f"; start it: {hint}" if hint else ""
     print(f"service    {current}. The machine reports only while it runs{tail}")
 
-    agent = Agent(log=_discard)
+    agent = Agent(log=discard_log)
     started_at = time.monotonic()
     agent.probe()
     elapsed_ms = round((time.monotonic() - started_at) * 1000)
@@ -172,6 +172,14 @@ def word_error(error: dict) -> str:
     if code in ERROR_WORDS:
         return ERROR_WORDS[code]
     return word_code(code, params)
+
+
+def discard_log(message: str) -> None:
+    """Drop a line of the agent's own log while a command prints its words.
+
+    Args:
+        message: The line dropped.
+    """
 
 
 def _print_binding(binding: dict) -> None:
@@ -272,7 +280,3 @@ def _status_from_service(state: dict) -> int:
         return 1
     print("heartbeat  ok. The service holds its session to the hub")
     return 0
-
-
-def _discard(message: str) -> None:
-    """Swallow the agent's own log while status does the talking."""
