@@ -5,6 +5,8 @@ The pass reads `config/` fresh, renders the ruleset for real, and drives the
 appliers, which are replaced here by recorders.
 """
 
+import json
+
 import pytest
 
 from neutrino_hub import edition
@@ -121,6 +123,7 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(controller, "RouterInterfaceApplier", Interfaces)
     monkeypatch.setattr(controller, "admin_up_interfaces", lambda: {"enp1s0", "wlp3s0"})
     monkeypatch.setattr(routes, "run", kernel)
+    monkeypatch.setattr(controller, "device_held_addresses", lambda: {})
     monkeypatch.setattr(firewall_ops, "device_held_addresses", lambda: {})
     monkeypatch.setattr(firewall_ops, "read_config", lambda name: {})
     gated(monkeypatch, _Gate)
@@ -393,6 +396,24 @@ def test_the_engine_cgroups_found_are_rendered_and_recorded(box, monkeypatch):
         in loaded
     )
     assert controller.rendered_engine_cgroups() == found
+
+
+def test_the_networks_the_firewall_is_rendered_from_are_recorded(box, monkeypatch):
+    """The router unit compares the networks held after a link event with
+    this record, so a pass that read an address mid-flap runs again."""
+    reads = []
+
+    def held() -> dict:
+        reads.append("read")
+        return {"enp1s0": ["192.168.110.1/24", "fe80::1/64"]}
+
+    monkeypatch.setattr(controller, "device_held_addresses", held)
+
+    pass_of().reconcile()
+
+    recorded = json.loads(firewall_ops.FIREWALL_NETWORKS_PATH.read_text())
+    assert recorded == {"enp1s0": ["192.168.110.0/24", "fe80::/64"]}
+    assert reads == ["read"]
 
 
 def test_an_engine_cgroup_started_again_loads_the_same_ruleset_again(box, monkeypatch):

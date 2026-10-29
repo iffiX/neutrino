@@ -5,6 +5,7 @@ journaled and the unit stays up; a stop ends it with nothing torn down; and
 the journal says what changed, not every pass.
 """
 
+import json
 import os
 import queue
 import sys
@@ -14,6 +15,7 @@ import time
 import pytest
 
 from neutrino_hub.cli import run
+from neutrino_hub.modules.firewall import ops as firewall_ops
 from neutrino_hub.modules.router.constants import (
     ROUTER_STEP_APPLIED,
     ROUTER_STEP_PENDING,
@@ -196,7 +198,52 @@ def test_a_link_that_changes_during_the_first_pass_is_applied_again(
                 monitors[0].on_change()
             return super().reconcile_locked(only)
 
-    def stop_after_two_passes():
+    monkeypatch.setattr(run, "RouterLinkMonitor", _TrackedMonitor)
+    monkeypatch.setattr(run, "RouterStateController", _MovingController)
+    monkeypatch.setattr(run, "link_fingerprint", lambda: (links[0],))
+    _stop_after_two_passes(handlers)
+
+    assert run._serve_router() == 0
+    assert _Controller.passes == 2
+
+
+def test_a_pass_that_read_an_address_mid_flap_is_run_again(monkeypatch, resident):
+    """NetworkManager took eth0's address off and put it back inside the first
+    pass of a Rocky boot. The links ended as they began, and the firewall the
+    pass wrote named no network of eth0."""
+    notified, handlers = resident
+    monkeypatch.setattr(run, "ROUTER_DEBOUNCE_QUIET_S", 0.01)
+    monitors = []
+    held = {"eth0": ["192.168.1.10/24"]}
+
+    class _TrackedMonitor(_Monitor):
+        def __init__(self, *, on_change, on_gone):
+            super().__init__(on_change=on_change, on_gone=on_gone)
+            monitors.append(self)
+
+    class _FlappingController(_Controller):
+        def reconcile_locked(self, only=None):
+            read = {} if _Controller.passes == 0 else held
+            firewall_ops.FIREWALL_NETWORKS_PATH.write_text(
+                json.dumps(firewall_ops.device_networks(read))
+            )
+            if _Controller.passes == 0:
+                monitors[0].on_change()
+            return super().reconcile_locked(only)
+
+    monkeypatch.setattr(run, "RouterLinkMonitor", _TrackedMonitor)
+    monkeypatch.setattr(run, "RouterStateController", _FlappingController)
+    monkeypatch.setattr(firewall_ops, "device_held_addresses", lambda: dict(held))
+    _stop_after_two_passes(handlers)
+
+    assert run._serve_router() == 0
+    assert _Controller.passes == 2
+
+
+def _stop_after_two_passes(handlers) -> None:
+    """Stop the unit once its second pass has run, or after three seconds."""
+
+    def stop():
         deadline = time.monotonic() + 3
         while run.signal.SIGTERM not in handlers or _Controller.passes < 2:
             if time.monotonic() > deadline and run.signal.SIGTERM in handlers:
@@ -204,13 +251,7 @@ def test_a_link_that_changes_during_the_first_pass_is_applied_again(
             time.sleep(0.001)
         handlers[run.signal.SIGTERM](run.signal.SIGTERM, None)
 
-    monkeypatch.setattr(run, "RouterLinkMonitor", _TrackedMonitor)
-    monkeypatch.setattr(run, "RouterStateController", _MovingController)
-    monkeypatch.setattr(run, "link_fingerprint", lambda: (links[0],))
-    threading.Thread(target=stop_after_two_passes, daemon=True).start()
-
-    assert run._serve_router() == 0
-    assert _Controller.passes == 2
+    threading.Thread(target=stop, daemon=True).start()
 
 
 def test_a_burst_settles_after_it_goes_quiet(monkeypatch):

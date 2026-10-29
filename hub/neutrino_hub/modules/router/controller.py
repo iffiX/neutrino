@@ -24,6 +24,7 @@ from neutrino_hub.modules.firewall.ops import (
     converge_firewall,
     converge_firewalld,
     firewall_exposure,
+    record_networks,
 )
 from neutrino_hub.modules.overlay.ops import overlay_devices, overlay_parts
 from neutrino_hub.platforms.detect import hub_platform, is_linux
@@ -48,7 +49,10 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_TRIGGER_APPLY,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
-from neutrino_hub.modules.router.link_status import admin_up_interfaces
+from neutrino_hub.modules.router.link_status import (
+    admin_up_interfaces,
+    device_held_addresses,
+)
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
@@ -160,8 +164,9 @@ class RouterStateController:
             return self._reconcile_firewall(network, routing)
         devices = overlay_devices(network)
         cgroups = engine_cgroups(routing)
+        held = device_held_addresses()
         exposure = firewall_exposure(
-            network.with_overlay_devices(devices), routing=routing
+            network.with_overlay_devices(devices), routing=routing, held=held
         )
         ruleset = RouterNftRenderer(
             network=network,
@@ -198,6 +203,7 @@ class RouterStateController:
         if not loaded.is_failed:
             write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
             write_generated(ROUTER_ENGINE_CGROUPS_PATH, json.dumps(cgroups))
+            record_networks(held)
         results.append(run_step("firewall", lambda: converge_firewalld(exposure)))
         if self._on_base_ready is not None:
             self._on_base_ready()

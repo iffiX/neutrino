@@ -131,7 +131,7 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
         notes = applier.apply(_programs(enabled_providers(network)))
         notes += applier.load_anchor(render_pf_anchor(exposure))
         refused = []
-    write_generated(FIREWALL_NETWORKS_PATH, json.dumps(device_networks(held)))
+    record_networks(held)
     return notes, refused
 
 
@@ -220,13 +220,24 @@ def is_firewalld_moved() -> bool:
         return False
 
 
+def record_networks(held: dict) -> None:
+    """Record the networks a routing pass wrote the firewall for.
+
+    Args:
+        held: Device name to every address it holds, as the pass read it.
+
+    Raises:
+        OSError: When the record cannot be written.
+    """
+    write_generated(FIREWALL_NETWORKS_PATH, json.dumps(device_networks(held)))
+
+
 def is_network_set_moved() -> bool:
     """Whether the networks the box's devices hold differ from the last pass's.
 
     Returns:
         True when a device came, went, was renamed or holds another network
-        since the firewall was last written on macOS or Windows, and when it
-        never was.
+        since a routing pass last wrote the firewall, and when none did.
     """
     try:
         recorded = json.loads(FIREWALL_NETWORKS_PATH.read_text(encoding="utf-8"))

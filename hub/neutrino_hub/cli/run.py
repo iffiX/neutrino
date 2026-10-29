@@ -81,7 +81,7 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
-from neutrino_hub.modules.firewall.ops import reload_firewall
+from neutrino_hub.modules.firewall.ops import is_network_set_moved, reload_firewall
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import is_linux, process_controller
@@ -832,9 +832,10 @@ def _serve_router() -> int:
     """Keep the routing state what `config/` says, from boot until stopped.
 
     One pass at start, then another whenever `ip monitor` reports a change
-    that moves the link fingerprint. systemd hears READY once the firewall
-    step has run, or at once when another apply holds the lock, so no unit
-    ordered after this one waits on a cable or a lease.
+    that moves the link fingerprint or the networks the last pass wrote the
+    firewall for. systemd hears READY once the firewall step has run, or at
+    once when another apply holds the lock, so no unit ordered after this one
+    waits on a cable or a lease.
 
     Returns:
         0 when stopped; 1 when the kernel's event stream cannot be read.
@@ -882,7 +883,7 @@ def _serve_router() -> int:
             if stopping.is_set():
                 break
             current = link_fingerprint()
-            if current == fingerprint:
+            if current == fingerprint and not is_network_set_moved():
                 continue
             fingerprint = current
             _reconcile_resident(controller, log, readiness, stopping, is_first=False)
