@@ -9,7 +9,8 @@ var (
 	ErrFrameTooLarge = errors.New("control frame too large")
 	// ErrNoiseMessageTooLarge is a Noise message past NoiseMessageMax.
 	ErrNoiseMessageTooLarge = errors.New("noise message too large")
-	// ErrMemoryExhausted is a window the transport's memory cap refuses.
+	// ErrMemoryExhausted is a window or a stream the transport's memory cap
+	// refuses.
 	ErrMemoryExhausted = errors.New("transport memory exhausted")
 	// ErrSchemeUnknown is an address whose scheme the transport does not dial.
 	ErrSchemeUnknown = errors.New("address scheme unknown")

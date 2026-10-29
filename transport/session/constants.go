@@ -11,6 +11,9 @@ const (
 	// TransportMemoryMaxBytes bounds the windows the hub's transport holds
 	// for every stream together: 16 streams at the largest window.
 	TransportMemoryMaxBytes = 256 * 1024 * 1024
+	// StreamOpenPriority is the priority go-yamux reserves a stream's first
+	// window at.
+	StreamOpenPriority = 255
 	// RecordBytesMax bounds one record's payload.
 	RecordBytesMax = 64 * 1024
 	// RecordHeaderBytes is a record's type and big-endian u32 length.

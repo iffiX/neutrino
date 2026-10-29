@@ -22,8 +22,9 @@ var DefaultTimings = Timings{KeepAliveInterval: KeepAliveInterval, KeepAliveTime
 
 // Session is one go-yamux session over a Noise connection.
 type Session struct {
-	yamux *yamux.Session
-	conn  net.Conn
+	yamux  *yamux.Session
+	conn   net.Conn
+	memory *TransportMemory
 }
 
 // NewHubSession starts the hub's side, yamux's server, so the hub's streams
@@ -37,7 +38,7 @@ func NewHubSession(conn net.Conn, memory *TransportMemory, timings Timings) (*Se
 	if err != nil {
 		return nil, fmt.Errorf("yamux server: %w", err)
 	}
-	return &Session{yamux: inner, conn: conn}, nil
+	return &Session{yamux: inner, conn: conn, memory: memory}, nil
 }
 
 // NewPeerSession starts a peer's side, yamux's client, so its streams take
@@ -50,24 +51,35 @@ func NewPeerSession(conn net.Conn, timings Timings) (*Session, error) {
 	return &Session{yamux: inner, conn: conn}, nil
 }
 
-// OpenStream opens a stream to the other side, or returns the session's
-// error when it is gone or the memory cap refuses the stream.
+// OpenStream opens a stream to the other side. It returns the session's
+// error when it is gone. It resets a stream whose first window takes the
+// memory cap's total past the cap and returns ErrMemoryExhausted.
 func (s *Session) OpenStream(ctx context.Context) (*yamux.Stream, error) {
 	stream, err := s.yamux.OpenStream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open stream: %w", err)
 	}
+	if s.memory != nil && s.memory.IsPastCap() {
+		_ = stream.Reset()
+		return nil, fmt.Errorf("open stream: %w", ErrMemoryExhausted)
+	}
 	return stream, nil
 }
 
 // AcceptStream returns the next stream the other side opened, or the
-// session's error once it ended.
+// session's error once it ended. It resets a stream whose first window
+// takes the memory cap's total past the cap and waits for the next.
 func (s *Session) AcceptStream() (*yamux.Stream, error) {
-	stream, err := s.yamux.AcceptStream()
-	if err != nil {
-		return nil, fmt.Errorf("accept stream: %w", err)
+	for {
+		stream, err := s.yamux.AcceptStream()
+		if err != nil {
+			return nil, fmt.Errorf("accept stream: %w", err)
+		}
+		if s.memory == nil || !s.memory.IsPastCap() {
+			return stream, nil
+		}
+		_ = stream.Reset()
 	}
-	return stream, nil
 }
 
 // Close ends the session and every stream on it.

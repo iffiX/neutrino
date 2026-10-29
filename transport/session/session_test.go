@@ -75,7 +75,8 @@ func TestSessionSettings(t *testing.T) {
 
 func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	peerConn, hubConn := noisePair(t)
-	memory := NewTransportMemory(StreamWindowInitialBytes + StreamWindowInitialBytes/2)
+	limit := int64(StreamWindowInitialBytes + StreamWindowInitialBytes/2)
+	memory := NewTransportMemory(limit)
 	hub, err := NewHubSession(hubConn, memory, DefaultTimings)
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +89,16 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	defer peer.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	accepted := make(chan *yamux.Stream, 4)
+	go func() {
+		for {
+			stream, err := hub.AcceptStream()
+			if err != nil {
+				return
+			}
+			accepted <- stream
+		}
+	}()
 
 	first, err := peer.OpenStream(ctx)
 	if err != nil {
@@ -99,12 +110,9 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	go func() {
 		_, _ = first.Write([]byte("hello"))
 	}()
-	accepted, err := hub.AcceptStream()
-	if err != nil {
-		t.Fatal(err)
-	}
+	hubFirst := <-accepted
 	buffer := make([]byte, 5)
-	if _, err := io.ReadFull(accepted, buffer); err != nil || string(buffer) != "hello" {
+	if _, err := io.ReadFull(hubFirst, buffer); err != nil || string(buffer) != "hello" {
 		t.Fatalf("read %q %v", buffer, err)
 	}
 
@@ -112,10 +120,10 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	go func() {
 		_, _ = first.Write(payload)
 	}()
-	if _, err := io.ReadFull(accepted, payload); err != nil {
+	if _, err := io.ReadFull(hubFirst, payload); err != nil {
 		t.Fatal(err)
 	}
-	if memory.Used() > StreamWindowInitialBytes+StreamWindowInitialBytes/2 {
+	if memory.Used() > limit {
 		t.Fatalf("the window grew past the cap: %d", memory.Used())
 	}
 
@@ -129,6 +137,37 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	second.SetReadDeadline(time.Now().Add(3 * time.Second))
 	if _, err := second.Read(buffer); !errors.Is(err, yamux.ErrStreamReset) {
 		t.Fatalf("a stream past the cap was not reset: %v", err)
+	}
+	if _, err := hub.OpenStream(ctx); !errors.Is(err, ErrMemoryExhausted) {
+		t.Fatalf("the hub's stream past the cap: %v", err)
+	}
+	select {
+	case stream := <-accepted:
+		t.Fatalf("stream %d past the cap was accepted", stream.StreamID())
+	default:
+	}
+
+	go func() {
+		_, _ = first.Write([]byte("again"))
+	}()
+	if _, err := io.ReadFull(hubFirst, buffer); err != nil || string(buffer) != "again" {
+		t.Fatalf("the first stream after the refusals read %q %v", buffer, err)
+	}
+	go func() {
+		_, _ = hubFirst.Write([]byte("reply"))
+	}()
+	if _, err := io.ReadFull(first, buffer); err != nil || string(buffer) != "reply" {
+		t.Fatalf("the first stream's reply read %q %v", buffer, err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for hub.NumStreams() != 1 || memory.Used() > limit {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d streams and %d bytes held after the refusals", hub.NumStreams(), memory.Used())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if hub.IsClosed() || peer.IsClosed() {
+		t.Fatal("a refusal at the cap ended the session")
 	}
 }
 
