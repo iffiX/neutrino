@@ -210,6 +210,9 @@ enum Channel {
     /// The longest wait between two rounds, and the wait after a refusal the binding survives.
     static let backoffMaxSeconds = 60.0
 
+    /// The least time between two log lines for a binding's `control_unavailable` refusals.
+    static let refusalLogIntervalSeconds = 60.0
+
     /// How long a refresh waits for a hub's state frame or a code before it ends.
     static let refreshTimeoutSeconds = 10.0
 
@@ -239,6 +242,9 @@ enum Channel {
 
     /// The refusal of a session whose binding another client took.
     static let codeReplaced = "replaced"
+
+    /// The hub's refusal while its Python is away.
+    static let codeControlUnavailable = "control_unavailable"
 
     /// A binding of 0.5's shape, which this build cannot move.
     static let codeHubKeyMissing = "hub_key_missing"

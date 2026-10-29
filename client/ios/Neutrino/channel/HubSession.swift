@@ -30,6 +30,7 @@ final class HubSession {
     private let hasNetwork: () -> Bool
     private let onJoined: (String, String) -> Void
     private let onWelcomed: (String, String) -> Void
+    private let writeLog: (String) -> Void
     private var isRunning = false
     private var isSuspended = false
     private var isJoining = false
@@ -47,6 +48,9 @@ final class HubSession {
     private var pingTimer: ClientTimer?
     private var pingNonce = ""
     private var pingSentNanos: UInt64 = 0
+    // The control_unavailable refusals since the line at unavailableLoggedAt. It is nil outside a run.
+    private var unavailableCount = 0
+    private var unavailableLoggedAt: Double?
     private var requests: [String: (Result<[String: JSONValue], ClientError>) -> Void] = [:]
 
     /// Called with the view after each change.
@@ -73,11 +77,13 @@ final class HubSession {
     ///   - onJoined: Called with the binding's id and the hub's id for it once its ticket is spent.
     ///   - onWelcomed: Called with the binding's id and the hub id after each welcome, before the binding takes that
     ///     id and before the session's first state is read.
+    ///   - writeLog: Writes one log line.
     init(
         bindingId: String, store: BindingStore, transport: ClientTransport, machine: ClientMachine, clock: ClientClock,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
         localNetworks: @escaping () -> [ChannelLocalNetwork], hasNetwork: @escaping () -> Bool,
-        onJoined: @escaping (String, String) -> Void, onWelcomed: @escaping (String, String) -> Void = { _, _ in }
+        onJoined: @escaping (String, String) -> Void, onWelcomed: @escaping (String, String) -> Void = { _, _ in },
+        writeLog: @escaping (String) -> Void = { ClientLog.info($0) }
     ) {
         self.bindingId = bindingId
         self.store = store
@@ -89,6 +95,7 @@ final class HubSession {
         self.hasNetwork = hasNetwork
         self.onJoined = onJoined
         self.onWelcomed = onWelcomed
+        self.writeLog = writeLog
         view = HubView(binding: store.get(bindingId) ?? HubBinding(id: bindingId, gatewayUrl: "", token: ""))
     }
 
@@ -474,6 +481,14 @@ final class HubSession {
     }
 
     private func welcomed(_ welcome: ChannelWelcome) {
+        if unavailableLoggedAt != nil {
+            let refused =
+                unavailableCount > 0
+                ? "; refused \(Channel.codeControlUnavailable) \(unavailableCount) times since the last line" : ""
+            log("the hub welcomed this client\(refused)")
+            unavailableCount = 0
+            unavailableLoggedAt = nil
+        }
         onWelcomed(bindingId, welcome.id)
         isLive = true
         backoff = Channel.backoffMinSeconds
@@ -636,7 +651,7 @@ final class HubSession {
 
     private func waitFor(_ reason: HubWaitReason, _ refusal: ClientError?, _ seconds: Double) -> Double {
         endRefresh()
-        log("waiting on \(reason.rawValue) for \(Int(seconds))s: \(refusal?.code ?? "")")
+        logWait(reason, refusal, seconds)
         let nextAt = seconds > 0 ? clock.now + seconds : 0
         view = waiting(view, reason, refusal, nextRoundAt: nextAt)
         countdown?.cancel()
@@ -660,8 +675,26 @@ final class HubSession {
         view = waiting(view, reason, refusal, nextRoundAt: 0)
     }
 
+    /// Log a wait. A wait after `control_unavailable` writes its line at the first refusal, then at most once every
+    /// `Channel.refusalLogIntervalSeconds` with the count since the line before.
+    private func logWait(_ reason: HubWaitReason, _ refusal: ClientError?, _ seconds: Double) {
+        let line = "waiting on \(reason.rawValue) for \(Int(seconds))s: \(refusal?.code ?? "")"
+        guard refusal?.code == Channel.codeControlUnavailable else {
+            log(line)
+            return
+        }
+        unavailableCount += 1
+        let now = clock.now
+        let loggedAt = unavailableLoggedAt
+        if let loggedAt, now - loggedAt < Channel.refusalLogIntervalSeconds { return }
+        let count = unavailableCount
+        unavailableCount = 0
+        unavailableLoggedAt = now
+        log(loggedAt == nil ? line : "\(line), \(count) times since the last line")
+    }
+
     private func log(_ text: String) {
-        ClientLog.info("hub \(view.binding.title): \(text)")
+        writeLog("hub \(view.binding.title): \(text)")
     }
 
     private func dialling(_ view: HubView) -> HubView {

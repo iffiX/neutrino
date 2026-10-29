@@ -61,6 +61,8 @@ from neutrino_client.constants import (
     CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
+    CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE,
+    CLIENT_REFUSAL_LOG_INTERVAL_S,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_SERVER_PATHS,
@@ -458,6 +460,10 @@ class ClientHubSession:
         self._source_address: "str | None" = None
         self._next_look_at = 0.0
         self._is_replaced = False
+        # The ``control_unavailable`` refusals since the line at
+        # ``_unavailable_logged_at``. It is None outside a run of them.
+        self._unavailable_count = 0
+        self._unavailable_logged_at: "float | None" = None
         self._wait_reason = ""
         self._wait_code: "dict | None" = None
         self._next_round_at: "float | None" = None
@@ -1396,6 +1402,10 @@ class ClientHubSession:
         with self._lock:
             self._is_welcomed = True
             self._hub_software = str(welcome.get("software", "") or "")
+            is_run = self._unavailable_logged_at is not None
+            unavailable_count = self._unavailable_count
+            self._unavailable_count = 0
+            self._unavailable_logged_at = None
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._rtt_ms = None
             self._ping_sent = None
@@ -1405,6 +1415,14 @@ class ClientHubSession:
             address = self._address
             has_services = bool(self._services_list) and not self._is_disabled
         self._channel_open.set()
+        if is_run:
+            line = "the hub welcomed this client"
+            if unavailable_count:
+                line += (
+                    f"; refused {CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE}"
+                    f" {unavailable_count} times since the last line"
+                )
+            self._log(line)
         if address:
             self._note_url(address)
         try:
@@ -1509,7 +1527,40 @@ class ClientHubSession:
             self._wait(
                 self._silent_reason(), code, next_round_s or CLIENT_BACKOFF_MAX_S
             )
+            self._log_refusal(name)
+
+    def _log_refusal(self, name: str) -> None:
+        """Log a refusal the transport dials again after.
+
+        ``control_unavailable`` writes its line at the first refusal, then at
+        most once every ``CLIENT_REFUSAL_LOG_INTERVAL_S`` with the count since
+        the line before.
+
+        Args:
+            name: The refusal's code.
+        """
+        if name != CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE:
             self._log(f"the hub refused the session: {name}")
+            return
+        now = self._clock()
+        with self._lock:
+            self._unavailable_count += 1
+            logged_at = self._unavailable_logged_at
+            if (
+                logged_at is not None
+                and now - logged_at < CLIENT_REFUSAL_LOG_INTERVAL_S
+            ):
+                return
+            count = self._unavailable_count
+            self._unavailable_count = 0
+            self._unavailable_logged_at = now
+        if logged_at is None:
+            self._log(f"the hub refused the session: {name}")
+        else:
+            self._log(
+                f"the hub refused the session: {name},"
+                f" {count} times since the last line"
+            )
 
     # --- the pieces ---
 

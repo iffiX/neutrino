@@ -209,6 +209,9 @@ const val CLIENT_BACKOFF_MIN_S = 5L
 /** The longest wait between two rounds, and the wait after a refusal the binding survives. */
 const val CLIENT_BACKOFF_MAX_S = 60L
 
+/** The least time between two log lines for a binding's `control_unavailable` refusals. */
+const val CLIENT_REFUSAL_LOG_INTERVAL_S = 60L
+
 /** How long a refresh waits for a hub's state frame or a code before it ends. */
 const val CLIENT_REFRESH_TIMEOUT_S = 10L
 
@@ -226,6 +229,9 @@ const val CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
 
 /** The refusal of a session whose binding another client took. */
 const val CLIENT_REFUSAL_CODE_REPLACED = "replaced"
+
+/** The hub's refusal while its Python is away. */
+const val CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
 
 /** The codes of a round, or a join, that no address answered: the next one runs at the backoff. */
 val CLIENT_ROUND_SILENT_CODES: List<String> = listOf("hub_unreachable", "transport_missing", "transport_failed")

@@ -167,6 +167,33 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.connection, .connecting)
     }
 
+    func testARunOfControlUnavailableRefusalsWritesFourLines() throws {
+        var lines: [String] = []
+        try store.put(Samples.binding)
+        let session = HubSession(
+            bindingId: "b1", store: store, transport: try XCTUnwrap(transport), machine: Samples.machine,
+            clock: clock, resolveHubName: { $0(nil) }, localNetworks: { [] }, hasNetwork: { true },
+            onJoined: { _, _ in }, writeLog: { lines.append($0) })
+        session.start()
+        XCTAssertTrue(RunLoopWait.until { !self.fake.sent("dial").isEmpty })
+        for turn in 0..<30 {
+            if turn > 0 { clock.advance(by: 5) }
+            let due = clock.now + 5
+            fake.event("round_end", "b1", ["code": .string("control_unavailable"), "next_round_s": .int(5)])
+            XCTAssertTrue(RunLoopWait.until { session.view.nextRoundAt == due })
+        }
+        connected(session)
+        let title = Samples.binding.title
+        XCTAssertEqual(
+            lines.filter { $0.contains("control_unavailable") },
+            [
+                "hub \(title): waiting on hub_silent for 5s: control_unavailable",
+                "hub \(title): waiting on hub_silent for 5s: control_unavailable, 12 times since the last line",
+                "hub \(title): waiting on hub_silent for 5s: control_unavailable, 12 times since the last line",
+                "hub \(title): the hub welcomed this client; refused control_unavailable 5 times since the last line",
+            ])
+    }
+
     func testAKeyThatOpensUnderNoPskIsAMismatch() throws {
         let session = try self.session()
         XCTAssertTrue(RunLoopWait.until { !self.fake.sent("dial").isEmpty })

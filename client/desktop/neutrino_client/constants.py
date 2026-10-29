@@ -38,6 +38,8 @@ CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 # The one refusal of a join that keeps the ticket: the hub paused new
 # enrolments, and the join runs again after the seconds it names.
 CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
+# The hub's refusal while its Python is away.
+CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
 
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"
@@ -89,6 +91,9 @@ CLIENT_LEAVE_TELL_TIMEOUT_S = 5
 # binding survives.
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
+# The least time between two log lines for a binding's
+# ``control_unavailable`` refusals.
+CLIENT_REFUSAL_LOG_INTERVAL_S = 60
 # How long a refresh waits for a hub's answer before it ends by itself.
 CLIENT_REFRESH_TIMEOUT_S = 10
 # How long a notice the page shows above the hubs stays.

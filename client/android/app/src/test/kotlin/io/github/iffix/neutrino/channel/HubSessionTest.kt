@@ -8,6 +8,7 @@ import io.github.iffix.neutrino.transport.ClientTransport
 import io.github.iffix.neutrino.transport.FakeTransport
 import java.net.InetAddress
 import java.security.MessageDigest
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -229,6 +230,43 @@ class HubSessionTest {
         fake.event("round_end", "b1", "code" to "hub_unreachable", "next_round_s" to 10)
         eventually("waiting") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
         assertEquals(CLOCK_MILLIS + 10_000, session.view.value.nextRoundAtMillis)
+    }
+
+    @Test
+    fun aRunOfControlUnavailableRefusalsWritesFourLines() {
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding)
+        val now = AtomicLong(CLOCK_MILLIS)
+        val lines = CopyOnWriteArrayList<String>()
+        val session = HubSession(
+            "b1",
+            store,
+            transport,
+            Samples.machine,
+            { null },
+            clock = { now.get() },
+            localNetworks = { listOf(lanNetwork) },
+            nanoClock = { nanos.get() },
+            writeLog = { lines += it },
+        )
+        session.start(scope)
+        fake.nextCommand("dial")
+        for (turn in 0 until 30) {
+            now.set(CLOCK_MILLIS + turn * 5_000L)
+            fake.event("round_end", "b1", "code" to "control_unavailable", "next_round_s" to 5)
+            eventually("refusal $turn") { session.view.value.nextRoundAtMillis == now.get() + 5_000 }
+        }
+        connected(session, isDialled = true)
+        val title = Samples.binding.title
+        assertEquals(
+            listOf(
+                "hub $title: waiting on hub_silent for 5s: control_unavailable",
+                "hub $title: waiting on hub_silent for 5s: control_unavailable, 12 times since the last line",
+                "hub $title: waiting on hub_silent for 5s: control_unavailable, 12 times since the last line",
+                "hub $title: the hub welcomed this client; refused control_unavailable 5 times since the last line",
+            ),
+            lines.filter { "control_unavailable" in it },
+        )
     }
 
     @Test

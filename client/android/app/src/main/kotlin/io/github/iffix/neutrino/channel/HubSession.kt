@@ -13,7 +13,9 @@ import io.github.iffix.neutrino.CLIENT_PROTOCOL_REFUSAL_CODES
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_REPLACED
+import io.github.iffix.neutrino.CLIENT_REFUSAL_LOG_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_ROLE
 import io.github.iffix.neutrino.CLIENT_ROUND_RETRIED_CODES
@@ -89,6 +91,7 @@ import kotlinx.serialization.json.put
  * @param localNetworks The networks this phone holds an address in, read for each candidate's path.
  * @param nanoClock The time in nanoseconds, by which each ping's round trip is measured.
  * @param hasNetwork Whether the phone has a network at all, read when a round ended with no session.
+ * @param writeLog Writes one log line.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
@@ -103,6 +106,7 @@ class HubSession(
     private val localNetworks: () -> List<ChannelLocalNetwork> = ChannelPath::deviceNetworks,
     private val nanoClock: () -> Long = SystemClock::elapsedRealtimeNanos,
     private val hasNetwork: () -> Boolean = { true },
+    private val writeLog: (String) -> Unit = { Log.i(CLIENT_LOG_TAG, it) },
 ) {
     private val current = MutableStateFlow(HubView(requireNotNull(store.get(bindingId))))
     private val news = Channel<Unit>(Channel.CONFLATED)
@@ -116,6 +120,10 @@ class HubSession(
     private var stateHash = ""
     private var sessionAddress = ""
     private var dialled: List<ChannelCandidate>? = null
+
+    // The control_unavailable refusals since the line at unavailableLoggedAtMillis. It is null outside a run.
+    private var unavailableCount = 0
+    private var unavailableLoggedAtMillis: Long? = null
 
     @Volatile
     private var held: HubWaitReason? = null
@@ -501,6 +509,16 @@ class HubSession(
     }
 
     private fun welcome(welcome: ChannelInbound.Welcome) {
+        if (unavailableLoggedAtMillis != null) {
+            val refused = if (unavailableCount > 0) {
+                "; refused $CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE $unavailableCount times since the last line"
+            } else {
+                ""
+            }
+            log("the hub welcomed this client$refused")
+            unavailableCount = 0
+            unavailableLoggedAtMillis = null
+        }
         onWelcomed(bindingId, welcome.id)
         isLive = true
         backoffS = CLIENT_BACKOFF_MIN_S
@@ -698,7 +716,7 @@ class HubSession(
     /** Wait [waitS] seconds on [reason], the next round's moment on the view, and show `connecting` at 0. */
     private fun waitFor(reason: HubWaitReason, refusal: ChannelResult.Refused?, waitS: Long): Long {
         endRefresh()
-        log("waiting on ${reason.wireName} for ${waitS}s: ${refusal?.code.orEmpty()}")
+        logWait(reason, refusal, waitS)
         val nextAt = if (waitS > 0) clock() + waitS * 1000 else 0
         current.update { it.waiting(reason, refusal, nextAt) }
         countdown?.cancel()
@@ -720,8 +738,28 @@ class HubSession(
         current.update { it.waiting(reason, refusal, 0) }
     }
 
+    /**
+     * Log a wait. A wait after `control_unavailable` writes its line at the first refusal, then at most once every
+     * [CLIENT_REFUSAL_LOG_INTERVAL_S] with the count since the line before.
+     */
+    private fun logWait(reason: HubWaitReason, refusal: ChannelResult.Refused?, waitS: Long) {
+        val line = "waiting on ${reason.wireName} for ${waitS}s: ${refusal?.code.orEmpty()}"
+        if (refusal?.code != CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE) {
+            log(line)
+            return
+        }
+        unavailableCount += 1
+        val now = clock()
+        val loggedAt = unavailableLoggedAtMillis
+        if (loggedAt != null && now - loggedAt < CLIENT_REFUSAL_LOG_INTERVAL_S * 1000) return
+        val count = unavailableCount
+        unavailableCount = 0
+        unavailableLoggedAtMillis = now
+        log(if (loggedAt == null) line else "$line, $count times since the last line")
+    }
+
     private fun log(text: String) {
-        Log.i(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: $text")
+        writeLog("hub ${current.value.binding.title}: $text")
     }
 
     private fun HubView.dialling(): HubView = copy(

@@ -505,6 +505,48 @@ def test_each_code_waits_as_the_hubs_table_words_it(
     assert (waiting["next_round_at"] is not None) is has_countdown
 
 
+def test_thirty_control_unavailable_refusals_in_150_s_write_four_lines(config_path):
+    bind(config_path, url=HUB_URL)
+    now = [1000.0]
+    made = Harness(dict(BINDING, gateway_url=HUB_URL), clock=lambda: now[0])
+    try:
+        made.transport.next_command("dial")
+        for turn in range(30):
+            now[0] = 1000.0 + 5 * turn
+            made.session._take_round_end(
+                {
+                    "binding": "c1",
+                    "code": "control_unavailable",
+                    "params": {"retry_after_s": 5},
+                    "next_round_s": 5,
+                }
+            )
+        made.transport.emit(
+            {
+                "event": "session_open",
+                "binding": "c1",
+                "address": HUB_URL,
+                "path": "lan",
+                "handshake_ms": 3,
+            }
+        )
+        made.transport.next_frame("hello")
+        made.transport.frame("c1", WELCOME)
+        assert wait_for(lambda: made.session.connection() == CONNECTION_CONNECTED)
+
+        assert [line for line in made.lines if "control_unavailable" in line] == [
+            "the hub refused the session: control_unavailable",
+            "the hub refused the session: control_unavailable,"
+            " 12 times since the last line",
+            "the hub refused the session: control_unavailable,"
+            " 12 times since the last line",
+            "the hub welcomed this client;"
+            " refused control_unavailable 5 times since the last line",
+        ]
+    finally:
+        made.close()
+
+
 def test_binding_unknown_unbinds_once(harness):
     harness.connect()
     harness.transport.frame("c1", {"type": "refused", "code": "binding_unknown"})
