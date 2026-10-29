@@ -733,10 +733,8 @@ def test_a_closed_forwarder_ends_every_connection_it_serves_both_sockets():
 
         assert kept.recv(65536) == b""
         assert ws.recv(65536) == b""
-        for upstream in hooks.upstreams:
-            upstream.settimeout(5)
-            assert upstream.recv(65536) == b""
         assert len(hooks.upstreams) == 2
+        wait_until(lambda: all(up.fileno() == -1 for up in hooks.upstreams))
         with pytest.raises(ConnectionRefusedError):
             socket.create_connection(("127.0.0.1", port), timeout=5)
         assert forwarder._sockets == set()

@@ -939,7 +939,8 @@ class InstanceForwarder:
         The connection stays open across requests while both sides allow
         it, each request going through the checks and the module's rule
         again and on to the page over one connection kept for it. A
-        WebSocket is relayed both ways once passed on. A closed forwarder
+        WebSocket is relayed both ways once passed on. Every connection to
+        the page opened for it is closed when it ends. A closed forwarder
         serves nothing, and its close ends the connection.
 
         Args:
@@ -956,14 +957,13 @@ class InstanceForwarder:
             while True:
                 kept = self._serve_one(client, reader, kept, opened)
                 if kept is _CLOSED:
-                    kept = None
                     return
         except OSError:
             return
         finally:
-            if isinstance(kept, ConnectionReader):
+            for upstream in opened[1:]:
                 with contextlib.suppress(OSError):
-                    kept.socket.close()
+                    upstream.close()
             with self._lock:
                 self._sockets.difference_update(opened)
 
