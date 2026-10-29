@@ -162,3 +162,20 @@ def test_podman_leaves_out_a_container_with_a_module_s_label():
     names = [c["name"] for c in podman_import_config(details)["containers"]]
 
     assert names == ["web"]
+
+
+@pytest.mark.parametrize("image", ["", None, "bad image", "a\tb"])
+def test_podman_leaves_out_a_container_whose_image_the_agent_refuses(image):
+    """A machine that joined another hub ran a container started by hand
+    with an empty image, and the agent refused the whole configuration."""
+    details = {
+        "containers": [
+            {"name": "web", "image": "nginx"},
+            {"name": "r36hand", "image": image, "has_unit": False},
+        ],
+        "mirrors": [],
+    }
+
+    names = [c["name"] for c in podman_import_config(details)["containers"]]
+
+    assert names == ["web"]

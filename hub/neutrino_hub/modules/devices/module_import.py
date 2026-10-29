@@ -63,7 +63,8 @@ def podman_import_config(details: dict) -> dict:
         where a machine is reported; a container comes up with the machine
         where a unit already stands for it, and keeps its ``services``
         where they are reported. A container with a module's label is its
-        module's and is left out.
+        module's and is left out, as is a container whose image is empty or
+        holds a space.
     """
     containers = [
         imported_container(container)
@@ -71,6 +72,7 @@ def podman_import_config(details: dict) -> dict:
         if isinstance(container, dict)
         and container.get("name")
         and not container.get("module")
+        and _is_image_declarable(container.get("image"))
     ]
     config = {
         "containers": containers,
@@ -111,6 +113,12 @@ def imported_container(container: dict) -> dict:
     if isinstance(container.get("services"), list):
         imported["services"] = _imported_services(container["services"])
     return imported
+
+
+def _is_image_declarable(image) -> bool:
+    """Whether a reported image is one the agent renders: not empty, with no space."""
+    text = str(image or "")
+    return bool(text) and not any(character.isspace() for character in text)
 
 
 def _whole_gib(value) -> int:
