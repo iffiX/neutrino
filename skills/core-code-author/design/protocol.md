@@ -310,7 +310,7 @@ walk theirs. A new code and its wording are one change.
 
 | Code | `params` | Where | Change |
 | --- | --- | --- | --- |
-| `control_unavailable` | none | a session's `refused`, a stream's `close` or a `reply`, when the hub's Python did not answer its transport in time ([transport.md](transport.md), "The local channel") | added |
+| `control_unavailable` | `{retry_after_s}` from the hub's transport, 5; none from the hub's Python | a session's `refused`, a stream's `close` or a `reply`, when the hub's Python did not answer its transport in time ([transport.md](transport.md), "The local channel"); a bound peer refused it knocks again after `retry_after_s` ([transport.md](transport.md), "What a refusal does to the binding") | added |
 | `transport_key_missing` | none | 409 of `enrollment/create`, a link asked for while the transport has written no public key ([transport.md](transport.md), "The hub's static key") | added |
 | `transport_apply_failed` | `{detail}` | the converge step's failure, the transport's `transport.json` or its start refused; its change codes are `transport_started` and `transport_restarted` | added |
 | `replaced` | none | a session's `refused`, the session of a binding that opened a second one | added, in place of the close code 4010 |
@@ -1898,8 +1898,10 @@ first that fails gives the reply its code; the panel's are
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
 `service_id`, `permission_denied` puts the entry's type in `params` as
-`kind`, and the other four send empty params. A reply with no code makes
-`params` the material, and what the material is follows from the type:
+`kind`, the transport's `control_unavailable` puts 5 in `params` as
+`retry_after_s`, and the other three send empty params. A reply with no
+code makes `params` the material, and what the material is follows from the
+type:
 
 | `type` | The material |
 | --- | --- |

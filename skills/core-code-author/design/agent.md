@@ -943,9 +943,12 @@ machine's own clock, which also gave its expiry.
 
 A refusal at the door keeps the binding. The agent records it as
 `last_error`, `nagent status` says which no is being heard, and the agent
-knocks again a minute later. The one refusal that unbinds is
-`binding_unknown`, which arrives under the hub's own key and so only the hub
-can say. The agent then deletes its binding file, switches the AI tools back,
+knocks again a minute later, or after the refusal's `retry_after_s`, 5
+seconds after the hub transport's `control_unavailable`
+([transport.md](transport.md), "What a refusal does to the binding"). The
+one refusal that unbinds is `binding_unknown`, which arrives under the
+hub's own key and so only the hub can say. The agent then deletes its
+binding file, switches the AI tools back,
 turns the desktop share off
 ([modules/remote_desktop.md](agent/modules/remote_desktop.md), "The desktop
 is the hub's order") and is bound again by a fresh link.

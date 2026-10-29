@@ -460,7 +460,8 @@ address of the hub at once ("Where the port is reached").
 | The session ended | The transport |
 | --- | --- |
 | with no refusal: the connection dropped, a keepalive went unanswered | starts a round at once, then backs off from `RedialBackoffMin` doubling to `RedialBackoffMax` while rounds fail |
-| `refused` with any code but the two below | waits `RedialBackoffMax` and dials again |
+| `refused` with `retry_after_s` in its `params`, the hub transport's own `control_unavailable` among them | waits `retry_after_s` and dials again |
+| `refused` with any other code but the two below | waits `RedialBackoffMax` and dials again |
 | `refused` `replaced` or `binding_unknown` | dials no more until the next `dial`: `replaced` waits for a person, and `binding_unknown` ends the binding ("What a refusal does to the binding") |
 
 ## Before a peer is admitted
@@ -547,6 +548,7 @@ are in [protocol.md](protocol.md), "The timings".
 | keepalive | `KeepAliveInterval` 20 s between yamux pings, `KeepAliveTimeout` 60 s for the answer |
 | a refused session's end, after the peer acknowledged every byte written to it | `RelayEndGrace` 2 s |
 | redial backoff | `RedialBackoffMin` 5 s, doubled to `RedialBackoffMax` 60 s |
+| the `retry_after_s` of every `control_unavailable` the hub's transport makes | `RelayControlRetryAfter` 5 s |
 | a peer's redial of an address refused within a round, until `DialTimeout` from the round's start | `RedialInterval` 1 s |
 | a stream's window | `StreamWindowInitialBytes` 256 KiB, growing to `StreamWindowMaxBytes` 16 MiB |
 | one record's payload | `RecordBytesMax` 64 KiB |
@@ -575,9 +577,10 @@ handshake through its open record in 20. The limits on
 connections and sessions are in "What an unadmitted peer can cost the hub".
 A peer whose keepalive gets no answer
 within `KeepAliveTimeout` ends the session and starts a round. A refused
-`hello` is retried at the backoff's maximum, the minute named under the
-binding. A round through the whole address set with no answer backs off as
-one address failing does.
+knock or `hello` is retried after the refusal's `retry_after_s`, 5 seconds
+after the hub transport's `control_unavailable`, and otherwise at the
+backoff's maximum, the minute named under the binding. A round through the
+whole address set with no answer backs off as one address failing does.
 
 ## Admission and the binding
 
@@ -739,10 +742,15 @@ it was.
 ### What a refusal does to the binding
 
 A refusal of a bound peer's knock or `hello` keeps the binding. The agent or
-the client records it as `last_error` and knocks again a minute later.
+the client records it as `last_error` and knocks again a minute later, or
+after the refusal's `retry_after_s` when it names one.
 `protocol_too_old`, `protocol_too_new`, `channel_full`,
 `control_unavailable` and every other refusal of a bound peer except
 `binding_unknown` behave this way.
+
+| Rule | Reason |
+| --- | --- |
+| Every `control_unavailable` the hub's transport makes carries `retry_after_s`, `RelayControlRetryAfter`, 5 seconds, and a bound peer refused it knocks again after those 5 seconds. A `control_unavailable` the hub's Python answers itself carries no `retry_after_s`. | The hub's transport makes the refusal while its Python is away, as for a restart, and a peer that waits a minute comes back up to a minute after the Python. After a macOS hub's reboot its agents were back 71 seconds after the boot. |
 
 A refused `join` leaves no binding to keep. `nagent join` exits with the
 code, and a client's row reads the join's refusal ([client.md](client.md),
