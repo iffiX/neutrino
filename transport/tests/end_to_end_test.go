@@ -247,6 +247,8 @@ type peerSide struct {
 	key     string
 	private string
 	role    string
+	// leading are the addresses an agent lists ahead of the hub's own.
+	leading []string
 }
 
 func startAgent(t *testing.T, dir string, publishedPort int) *peerSide {
@@ -290,7 +292,7 @@ func startClient(t *testing.T, dir string) *peerSide {
 func (p *peerSide) join(t *testing.T, hub *hubSide, ticket, binding string) (string, string) {
 	t.Helper()
 	fields := map[string]any{
-		"hub_key": hub.keyHex, "private_key": p.private, "addresses": []string{hub.address()},
+		"hub_key": hub.keyHex, "private_key": p.private, "addresses": p.addresses(hub),
 		"ticket": ticket, "role": p.role, "protocol": knock.PROTOCOL, "machine_id": "m-" + binding,
 		"name": binding, "software": "neutrino_" + p.role + "/0.6.0", "platform": map[string]any{"os": "linux"},
 	}
@@ -315,11 +317,16 @@ func (p *peerSide) dial(t *testing.T, hub *hubSide, binding, psk string) {
 		fields["binding"] = binding
 		fields["candidates"] = []map[string]any{{"address": hub.address(), "path": "lan"}}
 	} else {
-		fields["addresses"] = []string{hub.address()}
+		fields["addresses"] = p.addresses(hub)
 	}
 	if answer := p.python.command("dial", fields); answer["code"] != nil {
 		t.Fatalf("dial refused: %v", answer)
 	}
+}
+
+// addresses are the addresses an agent's join and dial name.
+func (p *peerSide) addresses(hub *hubSide) []string {
+	return append(append([]string{}, p.leading...), hub.address())
 }
 
 // hello writes the hello once session_open came and waits for welcome.

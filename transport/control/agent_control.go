@@ -261,7 +261,7 @@ func (a *AgentControl) joinOrLeave(line *LineConnection, parsed peerLine) {
 		a.answer(line, parsed.ID, refusal, nil)
 		return
 	}
-	result := dialInOrder(a.ctx, command.Addresses, settings)
+	result := dialAtOnce(a.ctx, candidatesOf(command.Addresses), settings)
 	if result.refusal != nil {
 		a.answer(line, parsed.ID, result.refusal, nil)
 		return
@@ -379,7 +379,7 @@ func newAgentLink(control *AgentControl, settings dialSettings, addresses []stri
 func (l *agentLink) run() {
 	wait := newBackoff()
 	for l.ctx.Err() == nil {
-		result := dialInOrder(l.ctx, l.addresses, l.settings)
+		result := dialAtOnce(l.ctx, candidatesOf(l.addresses), l.settings)
 		if l.ctx.Err() != nil {
 			return
 		}

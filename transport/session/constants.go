@@ -31,9 +31,7 @@ const (
 	// RedialBackoffMin and RedialBackoffMax bound the wait between rounds.
 	RedialBackoffMin = 5 * time.Second
 	RedialBackoffMax = 60 * time.Second
-	// RotateDelay is an agent's pause before the next address of the set.
-	RotateDelay = time.Second
-	// RedialInterval is a client's redial of an address refused within a round.
+	// RedialInterval is a peer's redial of an address refused within a round.
 	RedialInterval = time.Second
 	// ConnectDialTimeout bounds dialling the far end of a connect stream.
 	ConnectDialTimeout = 10 * time.Second
