@@ -721,9 +721,10 @@ class HttpPool {
     this.acquire((connection) => {
       if (request.id !== undefined) this.byRequest.set(request.id, connection);
       connection.send({ method: request.method, path: request.path, headers, body: request.body }, wrapped);
-    });
+    }, () => wrapped.fail(""));
   }
   resend(request, sink) {
+    if (this.mux.isEnded) { sink.fail(""); return; }
     const connection = new HttpConnection(this);
     this.active.add(connection);
     connection.send(request, sink);
@@ -733,21 +734,23 @@ class HttpPool {
     const connection = this.byRequest.get(id);
     if (connection && connection.current) { connection.current.sink = { head() {}, body() {}, end() {}, fail() {} }; connection.fail(""); }
   }
-  acquire(use) {
+  // Gives a request a connection, or fails it once the session ended.
+  acquire(use, fail) {
+    if (this.mux.isEnded) { fail(); return; }
     while (this.idle.length) { const connection = this.idle.pop(); if (connection.isUsable) { this.active.add(connection); use(connection); return; } }
     if (this.active.size < HTTP.streamsMax) { const connection = new HttpConnection(this); this.active.add(connection); use(connection); return; }
-    this.waiting.push(use);
+    this.waiting.push([use, fail]);
   }
   release(connection) {
     this.active.delete(connection);
-    if (this.waiting.length) { this.active.add(connection); this.waiting.shift()(connection); return; }
+    if (this.waiting.length) { this.active.add(connection); this.waiting.shift()[0](connection); return; }
     this.idle.push(connection);
   }
   forget(connection) {
     this.active.delete(connection);
     const index = this.idle.indexOf(connection);
     if (index >= 0) this.idle.splice(index, 1);
-    if (this.waiting.length && this.active.size < HTTP.streamsMax) this.acquire(this.waiting.shift());
+    while (this.waiting.length && (this.mux.isEnded || this.active.size < HTTP.streamsMax)) this.acquire(...this.waiting.shift());
   }
   fetchWhole(method, path) {
     return new Promise((resolve, reject) => {
@@ -1058,6 +1061,10 @@ const page = {
   isAppDown: false,
   // Whether the frame's last navigation failed.
   isFrameFailed: false,
+  // Whether the page the shell last loaded into the frame reached its load event.
+  isPageLoaded: false,
+  // Whether a request of that page failed before its load event.
+  isPageBroken: false,
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
@@ -1107,6 +1114,7 @@ const page = {
   // Asks for the share's entry and shows the app, the app-unavailable screen or the link screen.
   // After the shared app was down, a connect to the entry must be accepted too, and the frame loads again.
   // After the app-unavailable screen, the frame also loads again when its last navigation failed.
+  // The frame also loads again when a request of its page failed before the page's load event.
   async check(deadline) {
     const session = this.session;
     if (!session || this.isEnded) return;
@@ -1141,7 +1149,7 @@ const page = {
         this.drop(session);
         return;
       }
-    } else if (wasAppDown || (wasUnavailable && this.isFrameFailed)) {
+    } else if (wasAppDown || (wasUnavailable && this.isFrameFailed) || this.isPageBroken) {
       await this.reload(deadline);
     }
     if (this.session === session && screen.serial === serial) screen.app();
@@ -1163,6 +1171,7 @@ const page = {
     this.isFrameLoaded = true;
     stats.appStartMs = performance.now() - stats.startedAt;
     await loaded;
+    this.isPageLoaded = true;
   },
 
   // Loads the frame's page again as a refresh does, and waits for it until the deadline.
@@ -1174,6 +1183,9 @@ const page = {
     } catch (e) {
       return;
     }
+    this.isPageLoaded = false;
+    this.isPageBroken = false;
+    loaded.then(() => { this.isPageLoaded = true; });
     await within(loaded, deadline).catch(() => {});
   },
 
@@ -1295,9 +1307,10 @@ const page = {
     });
   },
 
-  // Fails a request of the worker, and marks a failed navigation of the frame.
+  // Fails a request of the worker, and marks a failed navigation and a broken page of the frame.
   fail(message, port, code) {
     if (message.isNavigation) this.isFrameFailed = true;
+    if (this.isFrameLoaded && !this.isPageLoaded) this.isPageBroken = true;
     port.postMessage({ type: "error", id: message.id, code });
   },
 
