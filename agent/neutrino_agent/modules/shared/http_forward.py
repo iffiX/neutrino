@@ -49,6 +49,7 @@ from neutrino_agent.constants import (
     AGENT_FORWARD_HEAD_LIMIT_BYTES,
     AGENT_FORWARD_IDLE_TIMEOUT_S,
     AGENT_FORWARD_LISTEN_HOST,
+    AGENT_FORWARD_LISTEN_QUEUE,
     AGENT_FORWARD_READY_POLL_S,
     AGENT_FORWARD_RETRY_S,
     AGENT_FORWARD_TOKEN_EXPIRY_BYTES,
@@ -705,6 +706,7 @@ class ForwarderServer(socketserver.ThreadingTCPServer):
     # Windows lets a second socket take a port held with this set.
     allow_reuse_address = os.name != "nt"
     daemon_threads = True
+    request_queue_size = AGENT_FORWARD_LISTEN_QUEUE
 
     def __init__(self, address, handle):
         """

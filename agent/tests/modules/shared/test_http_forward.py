@@ -7,8 +7,9 @@ the standard names and works with its key before its expiry; a request's head is
 to its end and refused past the limit; a cookie's values are found across
 headers; a ``Host`` outside loopback and the instance's local name is 421,
 an ``Origin`` other than the ``Host``'s 403; the page's answer is passed on
-by its length, its chunks, or the end of its connection; and the server
-hands each connection to its callable. The forwarder in front of one
+by its length, its chunks, or the end of its connection; the server
+hands each connection to its callable; and 32 connections at once all
+connect within half a second. The forwarder in front of one
 instance: it listens on loopback once the hooks say the page is ready,
 trying again while it is not; a token is spent once and what follows is
 the hooks' decision; requests on one browser connection reach the page over
@@ -36,6 +37,7 @@ import pytest
 
 import neutrino_agent.modules.shared.http_forward as http_forward_module
 import neutrino_agent.modules.shared.hub_clock as hub_clock_module
+from neutrino_agent.constants import AGENT_FORWARD_LISTEN_QUEUE
 from neutrino_agent.modules.shared.hub_clock import HubClock
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
@@ -287,6 +289,47 @@ def test_the_server_hands_each_connection_to_its_callable():
         thread.join(timeout=5)
 
     assert handled == [b"hello"]
+
+
+def test_32_connections_at_once_all_connect_within_half_a_second():
+    count = 32
+    barrier = threading.Barrier(count)
+    lock = threading.Lock()
+    seconds = []
+    clients = []
+
+    def handle(client):
+        client.recv(1)
+
+    def connect():
+        barrier.wait()
+        started = time.monotonic()
+        client = socket.create_connection(server.server_address[:2], timeout=5)
+        with lock:
+            seconds.append(time.monotonic() - started)
+            clients.append(client)
+
+    server = ForwarderServer(("127.0.0.1", 0), handle)
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.05}
+    )
+    thread.start()
+    dialers = [threading.Thread(target=connect) for _ in range(count)]
+    try:
+        for dialer in dialers:
+            dialer.start()
+        for dialer in dialers:
+            dialer.join(timeout=10)
+    finally:
+        for client in clients:
+            client.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert len(seconds) == count
+    assert max(seconds) < 0.5
+    assert server.request_queue_size == AGENT_FORWARD_LISTEN_QUEUE
 
 
 # --- the forwarder in front of one instance ---
