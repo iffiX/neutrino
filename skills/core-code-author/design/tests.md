@@ -19,6 +19,12 @@ fake.
 | ios | `client/ios/NeutrinoTests/`, `client/ios/NeutrinoUITests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the `ios_core` job builds the app for a device with the RustDesk core, checks the app defines `_nd_attach_frames`, and keeps the unsigned `.ipa` as the run's artifact `client_ios_device_test` for a test on an iPhone | XCTest; a fake socket, a fake Keychain, a fake SMB client and a fake RustDesk core; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
+The `conftest.py` of the agent, client and hub blocks has two guards. A
+process guard fails a test on any program that changes the machine or asks
+for authorization, such as `systemctl`, `nft`, `apt` or `sudo`. An audit hook
+fails a test that writes, creates, renames or removes a file outside its
+temporary folders. Its failure message names the path and the test.
+
 ## The mirror rule
 
 Where a source file is testable on its own, its tests live in the file that
