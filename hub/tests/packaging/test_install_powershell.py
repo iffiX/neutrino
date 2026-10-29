@@ -580,13 +580,28 @@ def test_the_hub_without_a_terminal_names_its_next_step(run):
 def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
     config = tmp_path / "ProgramData" / "Neutrino" / "agent" / "config"
     config.mkdir(parents=True)
-    (config / "agent.json").write_text('{\n  "id": "d1",\n  "token": "t0k"\n}\n')
+    (config / "agent.json").write_text(
+        '{\n  "id": "d1",\n  "token": "t0k",\n  "hub_key": "k3y"\n}\n'
+    )
 
     outcome, _asked = run("agent")
 
     assert outcome == "ok"
     assert not any("nagent join" in line for line in run.said)
     assert run.said[-1] == "Installed neutrino-agent-9.9.9-windows-amd64.msi"
+
+
+def test_a_machine_with_a_binding_of_0_5_is_told_to_join(run, tmp_path):
+    config = tmp_path / "ProgramData" / "Neutrino" / "agent" / "config"
+    config.mkdir(parents=True)
+    (config / "agent.json").write_text(
+        '{\n  "id": "d1",\n  "token": "t0k",\n  "fingerprint": "AB:CD"\n}\n'
+    )
+
+    outcome, _asked = run("agent")
+
+    assert outcome == "ok"
+    assert run.said[-1].startswith("Next, in this window: nagent join ")
 
 
 # What a set-up hub's panel settings hold, and what a fresh one's do.
@@ -660,7 +675,9 @@ CLIENT_JOIN_LINE = (
     "Next, in a PowerShell of your own: nclient hub join "
     "'<client link from the hub's Clients page>'"
 )
-CLIENT_BINDINGS = '{\n  "bindings": [{"id": "c1", "token": "t0k"}]\n}\n'
+CLIENT_BINDINGS = (
+    '{\n  "bindings": [{"id": "c1", "token": "t0k", "hub_key": "k3y"}]\n}\n'
+)
 
 
 def _publish_client(served):
@@ -696,6 +713,16 @@ def test_a_person_who_has_joined_is_given_no_join_line(run, tmp_path):
 
     assert outcome == "ok"
     assert not any("nclient hub join" in line for line in run.said)
+
+
+def test_a_person_with_a_client_binding_of_0_5_is_told_to_join(run, tmp_path):
+    _publish_client(run.served)
+    old = '{\n  "bindings": [{"id": "c1", "token": "t0k", "fingerprint": "AB:CD"}]\n}\n'
+
+    outcome, _asked = run("client", env={"APPDATA": str(_roaming(tmp_path, old))})
+
+    assert outcome == "ok"
+    assert run.said[-1] == CLIENT_JOIN_LINE
 
 
 def test_the_elevated_window_reads_the_bindings_of_the_account_that_ran_it(

@@ -387,7 +387,8 @@ person_home() {
     fi
 }
 
-# Whether the person running the script holds a client binding.
+# Whether the person running the script holds a client binding. A binding of
+# 0.5 holds no hub key and counts as none.
 is_client_bound() {
     home=$(person_home)
     [ -n "$home" ] || return 1
@@ -398,7 +399,8 @@ is_client_bound() {
     else
         bindings="$home/$CLIENT_BINDINGS_LINUX"
     fi
-    grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$bindings" 2>/dev/null
+    grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$bindings" 2>/dev/null \
+        && grep -Eq '"hub_key"[[:space:]]*:[[:space:]]*"[^"]' "$bindings" 2>/dev/null
 }
 
 main() {
@@ -482,7 +484,8 @@ main() {
             else
                 binding=$AGENT_BINDING_LINUX
             fi
-            if $as_root ${as_root:+-n} grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$binding" 2>/dev/null; then
+            if $as_root ${as_root:+-n} grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$binding" 2>/dev/null \
+                && $as_root ${as_root:+-n} grep -Eq '"hub_key"[[:space:]]*:[[:space:]]*"[^"]' "$binding" 2>/dev/null; then
                 return 0
             fi
             echo "Next, join this machine to a hub: ${as_root:+$as_root }nagent join '<enrollment link from the hub's Agents page>'"

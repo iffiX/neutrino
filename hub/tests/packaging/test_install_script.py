@@ -1071,7 +1071,13 @@ def _publish_all(served):
 # --- a machine that has joined is not told to join ---
 
 BINDING = (
-    '{\n  "gateway_url": "https://hub:8443",\n  "id": "d1",\n  "token": "t0k"\n}\n'
+    '{\n  "gateway_url": "tcp://hub:8443",\n  "id": "d1",\n  "token": "t0k",'
+    '\n  "hub_key": "k3y"\n}\n'
+)
+# What an agent of 0.5 left: a certificate fingerprint and no hub key.
+BINDING_05 = (
+    '{\n  "gateway_url": "https://hub:8443",\n  "id": "d1",\n  "token": "t0k",'
+    '\n  "fingerprint": "AB:CD"\n}\n'
 )
 
 
@@ -1101,6 +1107,19 @@ def test_a_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
     )
 
 
+def test_a_binding_of_0_5_is_no_binding(stand_ins, tmp_path):
+    _publish_all(stand_ins.served)
+    (tmp_path / "agent.json").write_text(BINDING_05)
+
+    result, _asked = stand_ins("agent")
+
+    assert (
+        result.stdout.strip()
+        .splitlines()[-1]
+        .startswith("Next, join this machine to a hub: ")
+    )
+
+
 def test_the_script_reads_the_binding_where_the_agent_writes_it():
     sys.path.insert(0, str(SCRIPT.parents[2] / "agent"))
     constants = "agent/neutrino_agent/constants.py"
@@ -1118,8 +1137,13 @@ def test_the_script_reads_the_binding_where_the_agent_writes_it():
 # --- a person who has joined is not told to join ---
 
 CLIENT_BINDINGS = (
-    '{\n  "bindings": [{"id": "c1", "token": "t0k", "urls": ["https://hub:8443"]}],'
-    '\n  "exit_hub_id": ""\n}\n'
+    '{\n  "bindings": [{"id": "c1", "token": "t0k", "hub_key": "k3y",'
+    ' "gateway_urls": ["tcp://hub:8443"]}],\n  "exit_hub_id": ""\n}\n'
+)
+# What a client of 0.5 left: a certificate fingerprint and no hub key.
+CLIENT_BINDINGS_05 = (
+    '{\n  "bindings": [{"id": "c1", "token": "t0k", "fingerprint": "AB:CD",'
+    ' "urls": ["https://hub:8443"]}],\n  "exit_hub_id": ""\n}\n'
 )
 CLIENT_JOIN_LINE = (
     "Next, join this computer to a hub: nclient hub join "
@@ -1153,6 +1177,15 @@ def test_a_person_who_has_joined_is_given_no_join_line(
 def test_a_client_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
     _publish_all(stand_ins.served)
     _bind_client(tmp_path, "Linux", '{\n  "bindings": [{"token": ""}]\n}\n')
+
+    result, _asked = stand_ins("client")
+
+    assert result.stdout.strip().splitlines()[-1] == CLIENT_JOIN_LINE
+
+
+def test_a_client_binding_of_0_5_is_no_binding(stand_ins, tmp_path):
+    _publish_all(stand_ins.served)
+    _bind_client(tmp_path, "Linux", CLIENT_BINDINGS_05)
 
     result, _asked = stand_ins("client")
 

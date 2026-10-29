@@ -43,13 +43,14 @@ function Test-NeutrinoAdministrator {
 }
 
 # Whether this machine's agent holds a binding to a hub: a machine that has
-# joined is not told to join again.
+# joined is not told to join again. A binding of 0.5 holds no hub key and
+# counts as none.
 function Test-NeutrinoAgentBound {
     $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
     $binding = Join-Path $programData 'Neutrino\agent\config\agent.json'
     if (-not (Test-Path -LiteralPath $binding)) { return $false }
     $text = Get-Content -Raw -LiteralPath $binding -ErrorAction SilentlyContinue
-    return [bool]($text -match '"token"\s*:\s*"[^"]')
+    return [bool](($text -match '"token"\s*:\s*"[^"]') -and ($text -match '"hub_key"\s*:\s*"[^"]'))
 }
 
 # Whether this machine's hub has been set up: its panel settings hold a
@@ -63,14 +64,15 @@ function Test-NeutrinoHubSetUp {
 }
 
 # Whether the account that ran the script holds a client binding: a person
-# who has joined is not told to join again.
+# who has joined is not told to join again. A binding of 0.5 holds no hub key
+# and counts as none.
 function Test-NeutrinoClientBound {
     $roaming = if ($env:NEUTRINO_PERSON_APPDATA) { $env:NEUTRINO_PERSON_APPDATA } else { $env:APPDATA }
     if (-not $roaming) { return $false }
     $bindings = Join-Path $roaming 'Neutrino\client\client.json'
     if (-not (Test-Path -LiteralPath $bindings)) { return $false }
     $text = Get-Content -Raw -LiteralPath $bindings -ErrorAction SilentlyContinue
-    return [bool]($text -match '"token"\s*:\s*"[^"]')
+    return [bool](($text -match '"token"\s*:\s*"[^"]') -and ($text -match '"hub_key"\s*:\s*"[^"]'))
 }
 
 function Get-NeutrinoMachine {
