@@ -352,6 +352,23 @@ def test_the_journal_is_read_on_the_device(box):
     ]
 
 
+def test_a_container_journal_read_waits_for_no_report(box):
+    client, runtime = box
+    runtime.agent_sessions.outcome = {
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+        "output": "one",
+    }
+
+    response = client.get(
+        f"{BASE}/container/journal", params={"device_id": DEVICE, "name": "web"}
+    )
+
+    assert response.status_code == 200
+    assert runtime.agent_sessions.waited == []
+
+
 def test_an_offline_device_takes_no_verb(box):
     client, runtime = box
 

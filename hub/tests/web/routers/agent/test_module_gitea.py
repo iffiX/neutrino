@@ -169,6 +169,23 @@ def test_the_first_admin_is_made_on_the_device(box):
     assert response.json()["device_id"] == DEVICE
 
 
+def test_an_admin_made_waits_for_the_report_behind_it(box):
+    client, runtime = box
+
+    response = client.post(
+        f"{BASE}/admin/add",
+        json={
+            "device_id": DEVICE,
+            "username": "ann",
+            "password": "pw",  # scan: allow
+            "email": "a@x",
+        },
+    )
+
+    assert response.status_code == 200
+    assert [key for key, _, _ in runtime.agent_sessions.waited] == [DEVICE]
+
+
 def test_a_second_admin_the_agent_refuses_is_answered_with_its_code(box):
     client, runtime = box
     runtime.agent_sessions.outcome = {

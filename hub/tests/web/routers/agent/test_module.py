@@ -112,6 +112,24 @@ def test_the_journal_is_read_on_the_agent_under_the_modules_name(api):
     ]
 
 
+def test_a_journal_read_waits_for_no_report(api):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.outcome = {
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+        "output": "one\n",
+    }
+
+    answer = client.get(
+        f"{MODULE_PATH}/journal", params={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert answer.status_code == 200
+    assert runtime.agent_sessions.waited == []
+
+
 def test_a_journal_of_a_module_nobody_ships_is_refused_by_name(api):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)

@@ -40,6 +40,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_WANTS,
+    CHANNEL_READ_VERBS,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_JOURNAL,
     CHANNEL_VERB_VALIDATE,
@@ -961,7 +962,8 @@ def run_command(
 
     The agent reports at once after a command that took, and the context
     is read again from that report, so a view answered after this call
-    shows the machine as the command left it.
+    shows the machine as the command left it. A verb that reads waits for
+    no report.
 
     Args:
         runtime: The shared runtime.
@@ -1005,6 +1007,8 @@ def run_command(
             str(info.get("code") or CODE_COMMAND_FAILED),
             **params,
         )
+    if verb in CHANNEL_READ_VERBS:
+        return params
     runtime.agent_sessions.wait_for_report_from_thread(
         context.key, serial, DEVICE_MODULE_REPORT_WAIT_S
     )
