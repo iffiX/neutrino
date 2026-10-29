@@ -111,6 +111,7 @@ browser loads can send it requests:
 | A token on the address, `?tkn=`, is traded for the login at the first request and answered with a redirect to the same path without it. | The token leaves the address bar and the browser's history at once. |
 | A forwarder keeps the browser's connection open across requests: it passes each request on over a connection to the instance that it keeps for that browser connection, and never puts `Connection: close` in place of the request's own. Each request on a kept connection goes through the checks above, as the first did. | Every connection the browser opens is a new stream through the hub, and a stream costs at least one round trip before its first byte; measured on 2026-10-26 at a 100 ms round trip, code-server's first screen took 5.85 s through 0.5's channel, where every request closed its connection. |
 | Both of a forwarder's sockets, the one the agent's transport dialled and the one to the instance, set `TCP_NODELAY`. | A small response is sent at once and never waits for the acknowledgement of the one before it. |
+| A forwarder's listening socket queues up to 128 connections before it accepts them. | A page's first load opens many streams at once, and each reaches the forwarder as a new connection. Measured on Linux with Python's default queue of 5, 22 to 25 of 32 connections opened at once waited 1 to 2 seconds for the kernel to send them again. |
 
 The per-account data, what the program writes for that account, is under
 the account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on
