@@ -520,10 +520,38 @@ def test_a_disk_smaller_than_the_machines_now_is_refused(rig):
     )
 
 
-def test_a_folder_the_machine_cannot_reach_is_refused_before_anything_runs(rig):
+def test_a_folder_the_machine_cannot_reach_leaves_its_container_out(rig):
+    rig.keep_image()
+    far = dict(CONTAINERS[0], name="far", volumes=["/opt/www:/srv"])
+    config = dict(CONFIG, containers=[*CONTAINERS, far])
+
+    found = refusal(lambda: rig.runner.apply(config))
+
+    assert (found.code, found.params) == (
+        "volume_not_shared",
+        {"name": "far", "volume": "/opt/www:/srv"},
+    )
+    expected = PodmanMachineScriptRenderer(
+        config=PodmanConfig.from_dict(CONFIG), os_name="darwin"
+    ).render()
+    assert rig.world.scripts == [("me", "", expected)]
+    assert rig.record()[0]["names"] == ["web"]
+    assert rig.lines[-1] == "podman: left out far"
+
+
+def test_validate_refuses_a_folder_the_machine_cannot_reach(rig):
     config = dict(CONFIG, containers=[dict(CONTAINERS[0], volumes=["/opt/www:/srv"])])
 
-    assert refusal(lambda: rig.runner.apply(config)).code == "volume_not_shared"
+    assert refusal(lambda: rig.runner.validate(config)).code == "volume_not_shared"
+    assert rig.world.calls == []
+
+
+def test_with_no_account_a_left_out_container_is_still_refused(rig):
+    config = {"containers": [dict(CONTAINERS[0], image="")], "mirrors": []}
+
+    found = refusal(lambda: rig.runner.apply(config))
+
+    assert (found.code, found.params) == ("image_invalid", {"name": "web", "image": ""})
     assert rig.world.calls == []
 
 

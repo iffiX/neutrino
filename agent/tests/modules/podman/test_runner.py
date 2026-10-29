@@ -684,6 +684,55 @@ def test_dropping_a_module_removes_its_units_and_forgets_it(hub_runner):
     assert hub_runner._page_ports.ports("demo") == {}
 
 
+def test_a_refused_declared_container_is_left_out_and_the_rest_applied(hub_runner):
+    """A hand-started container with no image, imported by a hub the machine
+    joined, leaves the module's containers to be applied."""
+    lines: list = []
+    hub_runner._log = lines.append
+    config = dict(
+        HUB_CONFIG,
+        containers=[{"name": "r36hand", "image": ""}, *HUB_CONFIG["containers"]],
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        hub_runner.apply(config)
+
+    assert (refused.value.code, refused.value.params) == (
+        "image_invalid",
+        {"name": "r36hand", "image": ""},
+    )
+    assert FakeUnitApplier.applied == [
+        (["neutrino_demo.service", "web.service"], ["web", "neutrino_demo"])
+    ]
+    assert hub_runner._declared_names() == ["web"]
+    assert lines[-1] == "podman: containers: web; mirrors updated; left out r36hand"
+
+
+def test_a_declared_container_named_like_a_hub_container_is_the_one_left_out(
+    hub_runner,
+):
+    config = dict(HUB_CONFIG, containers=[{"name": "neutrino_demo", "image": "x"}])
+
+    with pytest.raises(ModuleApplyError) as refused:
+        hub_runner.apply(config)
+
+    assert (refused.value.code, refused.value.params) == (
+        "container_name_duplicate",
+        {"name": "neutrino_demo"},
+    )
+    assert FakeUnitApplier.applied == [(["neutrino_demo.service"], ["neutrino_demo"])]
+
+
+def test_validate_refuses_a_configuration_holding_a_refused_container(runner):
+    config = dict(
+        CONFIG, containers=[{"name": "r36hand", "image": ""}, *CONFIG["containers"]]
+    )
+
+    outcome = runner.command("validate", {"config": config})
+
+    assert (outcome["exit_code"], outcome["code"]) == (1, "image_invalid")
+
+
 def test_a_container_module_reaches_podman_through_the_runner(runner):
     assert runner.podman_command() == ("/usr/bin/podman",)
     assert runner.is_engine_active() is True

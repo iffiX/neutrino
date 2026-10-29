@@ -419,6 +419,39 @@ class PodmanConfig:
             names.setdefault(container.module, []).append(container.name)
         return names
 
+    def without_refused(self, *, os_name: str = "linux") -> tuple:
+        """The configuration without each declared container its checks refuse.
+
+        The hub containers' names are taken first. A declared container
+        with a hub container's name is refused ``container_name_duplicate``.
+
+        Args:
+            os_name: The computer's system.
+
+        Returns:
+            ``(config, refused)``: a new configuration with the other
+            declared containers, the hub containers, the mirrors and the Run
+            settings, and ``(name, error)`` for each declared container left
+            out, in order.
+        """
+        seen = {container.name for container in self.hub_containers}
+        kept = []
+        refused = []
+        for container in self.containers:
+            try:
+                self._validate_declared(container, seen, os_name=os_name)
+            except ModuleApplyError as error:
+                refused.append((container.name, error))
+                continue
+            kept.append(container)
+        config = PodmanConfig(
+            containers=kept,
+            mirrors=list(self.mirrors),
+            machine=self.machine,
+            hub_containers=list(self.hub_containers),
+        )
+        return config, refused
+
     def with_hub_containers(self, hub_containers: list) -> "PodmanConfig":
         """The same configuration with another list of hub containers.
 
@@ -461,51 +494,56 @@ class PodmanConfig:
         Raises:
             ModuleApplyError: Naming the first problem found.
         """
-        is_machine = os_name in ("windows", "darwin")
         seen: set = set()
         for container in self.containers:
-            name = container.name
-            if not CONTAINER_NAME_PATTERN.match(name):
-                raise ModuleApplyError("container_name_invalid", {"name": name})
-            if name in seen:
-                raise ModuleApplyError("container_name_duplicate", {"name": name})
-            seen.add(name)
-            if not container.image or any(c.isspace() for c in container.image):
-                raise ModuleApplyError(
-                    "image_invalid", {"name": name, "image": container.image}
-                )
-            for port in container.ports:
-                if not PORT_MAPPING_PATTERN.match(port):
-                    raise ModuleApplyError(
-                        "port_mapping_invalid", {"name": name, "port": port}
-                    )
-            for volume in container.volumes:
-                if is_machine:
-                    self._validate_machine_volume(name, volume, os_name)
-                else:
-                    self._validate_volume(name, volume)
-            for line in container.environment:
-                if not ENVIRONMENT_PATTERN.match(line):
-                    raise ModuleApplyError(
-                        "environment_invalid", {"name": name, "entry": line}
-                    )
-            if "\n" in container.command:
-                raise ModuleApplyError("command_invalid", {"name": name})
-            self._validate_services(container)
-            if os_name == "windows":
-                self._validate_windows_ports(container)
+            self._validate_declared(container, seen, os_name=os_name)
         for container in self.hub_containers:
             self._validate_hub_container(container, seen, os_name=os_name)
         for mirror in self.mirrors:
             if not MIRROR_PATTERN.match(mirror):
                 raise ModuleApplyError("mirror_invalid", {"mirror": mirror})
-        if is_machine:
+        if os_name in ("windows", "darwin"):
             self._validate_machine(
                 os_name=os_name,
                 host_cpus=host_cpus,
                 host_memory_gib=host_memory_gib,
                 disk_gib_now=disk_gib_now,
             )
+
+    def _validate_declared(
+        self, container: PodmanContainer, seen: set, *, os_name: str
+    ) -> None:
+        """Refuse a declared container the agent cannot render; its name joins ``seen``."""
+        name = container.name
+        if not CONTAINER_NAME_PATTERN.match(name):
+            raise ModuleApplyError("container_name_invalid", {"name": name})
+        if name in seen:
+            raise ModuleApplyError("container_name_duplicate", {"name": name})
+        seen.add(name)
+        if not container.image or any(c.isspace() for c in container.image):
+            raise ModuleApplyError(
+                "image_invalid", {"name": name, "image": container.image}
+            )
+        for port in container.ports:
+            if not PORT_MAPPING_PATTERN.match(port):
+                raise ModuleApplyError(
+                    "port_mapping_invalid", {"name": name, "port": port}
+                )
+        for volume in container.volumes:
+            if os_name in ("windows", "darwin"):
+                self._validate_machine_volume(name, volume, os_name)
+            else:
+                self._validate_volume(name, volume)
+        for line in container.environment:
+            if not ENVIRONMENT_PATTERN.match(line):
+                raise ModuleApplyError(
+                    "environment_invalid", {"name": name, "entry": line}
+                )
+        if "\n" in container.command:
+            raise ModuleApplyError("command_invalid", {"name": name})
+        self._validate_services(container)
+        if os_name == "windows":
+            self._validate_windows_ports(container)
 
     def _validate_hub_container(
         self, container: PodmanHubContainer, seen: set, *, os_name: str

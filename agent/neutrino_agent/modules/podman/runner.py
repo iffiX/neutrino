@@ -157,16 +157,18 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         images is in the store, on its network, which is made when missing,
         with the gateway of each container's network as
         ``host.containers.internal``, its page port on loopback and its
-        source sets' fastest sources in its environment.
+        source sets' fastest sources in its environment. A declared
+        container the checks refuse is left out, and the rest is applied.
 
         Args:
             config: The desired configuration.
 
         Raises:
             ModuleApplyError: When the configuration is refused or systemd
-                refuses a unit.
+                refuses a unit; the first left-out container's refusal once
+                the rest is applied.
         """
-        parsed = PodmanConfig.from_dict(config)
+        parsed, refused = PodmanConfig.from_dict(config).without_refused()
         parsed.validate()
         # Held before the units are started: a start waits on the image
         # pull, and a report taken meanwhile lists the declared container
@@ -194,7 +196,12 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
-        self._log(f"podman: {note}; {mirror_note}")
+        line = f"podman: {note}; {mirror_note}"
+        if refused:
+            line += "; left out " + ", ".join(name for name, _ in refused)
+        self._log(line)
+        if refused:
+            raise refused[0][1]
 
     def start(self) -> None:
         """Turn ``podman.socket`` on, so Podman starts with the machine.

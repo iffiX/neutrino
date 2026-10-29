@@ -427,10 +427,13 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 ``account_unknown {account}`` and on Windows
                 ``credential_missing {account}`` among them.
         """
-        self._checked(config)
+        self._checked(PodmanConfig.from_dict(config))
 
     def apply(self, config: dict) -> None:
         """Make the account's machine run the declared containers.
+
+        A declared container the checks refuse is left out, and the rest is
+        applied.
 
         Args:
             config: The desired configuration.
@@ -438,11 +441,15 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Raises:
             ModuleApplyError: When the configuration is refused, the machine
                 cannot be made, sized or reached, or systemd in the machine
-                refuses a unit.
+                refuses a unit; the first left-out container's refusal once
+                the rest is applied.
             ModuleInstallPending: While the computer owes a restart.
         """
         with self._apply_lock:
-            parsed, settings = self._checked(config)
+            parsed, refused = PodmanConfig.from_dict(config).without_refused(
+                os_name=self._platform.os_name
+            )
+            settings = self._checked(parsed)
             if self._system.is_reboot_pending():
                 raise ModuleInstallPending("reboot_required")
             record = self._record()
@@ -454,6 +461,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             self._config = parsed
             if not settings.account:
                 self._log("podman: no account is named; no machine runs")
+                self._refuse_left_out(refused)
                 return
             machine = self._machine_of(settings.account, settings.password)
             try:
@@ -494,6 +502,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 else "containers unchanged"
             )
             self._log(f"podman: {'; '.join(notes)}")
+            self._refuse_left_out(refused)
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.
@@ -858,17 +867,15 @@ class PodmanMachineModuleRunner(ModuleRunner):
             provider=self._system.provider,
         )
 
-    def _checked(self, config: dict) -> tuple:
-        """The configuration parsed and checked against this computer.
+    def _checked(self, parsed: PodmanConfig) -> PodmanMachineSettings:
+        """Check a parsed configuration against this computer.
 
         Returns:
-            ``(parsed, settings)``, the settings empty where the state named
-            none.
+            Its Run settings, empty where the state named none.
 
         Raises:
             ModuleApplyError: Naming the first problem found.
         """
-        parsed = PodmanConfig.from_dict(config)
         settings = parsed.machine or PodmanMachineSettings()
         host_cpus, host_memory_gib = self._system.host_facts()
         disk_gib_now = 0
@@ -895,7 +902,21 @@ class PodmanMachineModuleRunner(ModuleRunner):
             and not settings.password
         ):
             raise ModuleApplyError("credential_missing", {"account": settings.account})
-        return parsed, settings
+        return settings
+
+    def _refuse_left_out(self, refused: list) -> None:
+        """Log the declared containers an apply left out, and raise the first one's refusal.
+
+        Args:
+            refused: ``(name, error)`` per container left out.
+
+        Raises:
+            ModuleApplyError: The first container's refusal.
+        """
+        if not refused:
+            return
+        self._log("podman: left out " + ", ".join(name for name, _ in refused))
+        raise refused[0][1]
 
     def _prepare(
         self, machine: PodmanMachine, settings: PodmanMachineSettings, record: dict

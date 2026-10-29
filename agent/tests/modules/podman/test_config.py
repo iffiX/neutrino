@@ -523,3 +523,65 @@ def test_with_hub_containers_leaves_the_configuration_as_it_was():
 
     assert narrowed.hub_containers == []
     assert len(config.hub_containers) == 1
+
+
+# --- declared containers left out ---
+
+
+def test_each_refused_declared_container_is_left_out_with_its_refusal():
+    config = PodmanConfig.from_dict(
+        {
+            "containers": [
+                {"name": "r36hand", "image": ""},
+                FULL_CONTAINER,
+                {"name": "Bad", "image": "x"},
+            ],
+            "mirrors": ["mirror.example"],
+            "machine": {"account": "me"},
+            "hub_containers": [hub_container()],
+        }
+    )
+
+    kept, refused = config.without_refused()
+
+    assert kept.declared_names == ["redis"]
+    assert kept.hub_names() == {"demo": ["neutrino_demo"]}
+    assert (kept.mirrors, kept.machine) == (["mirror.example"], config.machine)
+    assert [(name, error.code, error.params) for name, error in refused] == [
+        ("r36hand", "image_invalid", {"name": "r36hand", "image": ""}),
+        ("Bad", "container_name_invalid", {"name": "Bad"}),
+    ]
+    assert config.declared_names == ["r36hand", "redis", "Bad"]
+    kept.validate()
+
+
+def test_a_declared_container_with_a_hub_container_s_name_is_the_one_left_out():
+    config = PodmanConfig.from_dict(
+        {
+            "containers": [{"name": "neutrino_demo", "image": "nginx"}],
+            "hub_containers": [hub_container()],
+        }
+    )
+
+    kept, refused = config.without_refused()
+
+    assert kept.declared_names == []
+    assert [(name, error.code) for name, error in refused] == [
+        ("neutrino_demo", "container_name_duplicate")
+    ]
+
+
+def test_a_folder_the_machine_cannot_reach_leaves_its_container_out():
+    config = machine_config(
+        containers=[
+            {"name": "far", "image": "nginx", "volumes": ["/opt/www:/srv"]},
+            {"name": "near", "image": "nginx", "volumes": ["/Users/me/www:/srv"]},
+        ]
+    )
+
+    kept, refused = config.without_refused(os_name="darwin")
+
+    assert kept.declared_names == ["near"]
+    assert [(name, error.code) for name, error in refused] == [
+        ("far", "volume_not_shared")
+    ]
