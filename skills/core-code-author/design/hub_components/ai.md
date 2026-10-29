@@ -99,6 +99,24 @@ is the tool configuration the switch writes: the client's **Configure**
 dialog on a person's computer, the account's form on the machine page on a
 managed machine.
 
+## The served list
+
+The served list is the last set of names the gateway's `/v1/models`
+returned with at least one name in it. The hub probes the gateway at most
+once in 10 seconds, and every page of this standard that names the
+models the gateway serves means this list. Its readers are SiYuan's
+`models`, the AI tools' setting and their unchosen models, Ayakaleaf's
+model, the model of a client's `service` frame, and the model pickers of
+the machine page. The `ai` entry of the published list holds no model
+while the gateway's unit is stopped, and the probe line on Activity is a
+probe of its own at each read.
+
+| Rule | Reason |
+| --- | --- |
+| A probe that fails or returns no name leaves the list as it was. The list stays after the last account signs out and the last provider is turned off as well, and it is empty only until a probe first returns a name. | The probe returns no name while the gateway restarts or is stopped. A list that empties and comes back is two changes for every reader: each SiYuan instance stops and starts twice, Ayakaleaf's app restarts twice, and every account's AI tools are switched back and then to the hub again. |
+| A probe that returns another set of names replaces the list, and each reader follows it once. | An account signed in or out, a provider turned on or off, and a new catalog in the gateway's binary each change the names the gateway serves. |
+| The hub stores the list in `cliproxyapi/served_models.json` under the state root, writes it when the list changes and reads it at the panel's start. | A reboot or a hub update starts the panel and the gateway together, and a machine that reconnects before the gateway first returns a name gets the stored list in its state. The list is what the gateway last served and no person's decision, so it stays out of `config/`. A restored box probes the gateway again. |
+
 ## What each panel surface owns
 
 | Surface | Owns |
@@ -218,10 +236,10 @@ sections").
 cc-switch runs on a store of the agent's own in the account's Neutrino
 tree, as the client's runs on a store of the client's own, so the
 account's `~/.cc-switch` is never read or written ([../agent/ai_tools.md](../agent/ai_tools.md)). An account whose switch turns on is
-switched at the next state. While the gateway serves no model, the hub sends
-the setting as off, so every account is switched back; the stored setting
-and the device's key stay, and the next state after the gateway serves again
-switches the accounts back to the hub. Codeg's Claude Code and Codex
+switched at the next state. While the served list is empty ("The served
+list"), the hub sends the setting as off, so every account is switched back;
+the stored setting and the device's key stay, and the next state after the
+list holds a name switches the accounts back to the hub. Codeg's Claude Code and Codex
 entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which read
 the same files cc-switch writes, so the setting covers Codeg's sessions
 ([../agent/modules/codeg.md](../agent/modules/codeg.md)).
