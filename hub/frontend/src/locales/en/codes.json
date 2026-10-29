@@ -257,6 +257,7 @@
   "code.vault_passphrase_needed": "Enter the vault passphrase this backup was sealed with.",
   "code.vault_passphrase_wrong": "That passphrase does not open this backup.",
   "code.verb_unknown": "The machine's agent has no {verb} for {module}; it is older than this hub.",
+  "code.verify_failed": "This machine could not check whether the software is installed: {detail}",
   "code.vlan_cannot_be_split": "A VLAN cannot itself be split.",
   "code.vlan_id_out_of_range": "A VLAN id is {minimum} to {maximum}.",
   "code.vlan_name_fixed": "A VLAN interface is named after its trunk and id: {name}.",

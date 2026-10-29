@@ -257,6 +257,7 @@
   "code.vault_passphrase_needed": "请输入这份备份封存时用的保险库口令。",
   "code.vault_passphrase_wrong": "这个口令打不开这份备份。",
   "code.verb_unknown": "这台机器的被控端没有 {module} 的 {verb} 操作；它比这个中枢旧。",
+  "code.verify_failed": "这台机器没能查明软件是否已安装：{detail}",
   "code.vlan_cannot_be_split": "VLAN 本身不能再拆分。",
   "code.vlan_id_out_of_range": "VLAN 标签在 {minimum} 到 {maximum} 之间。",
   "code.vlan_name_fixed": "VLAN 接口以干道和标签命名：{name}。",

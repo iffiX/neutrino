@@ -202,3 +202,26 @@ def test_an_agent_steps_failure_fills_only_the_params_it_sends(code):
         if words is None:
             continue
         assert set(re.findall(r"\{(\w+)\}", words)) == AGENT_STEP_PARAMS[code], path
+
+
+# The codes an agent reports on a module's row by itself, by the params each
+# sends. The machine page words them as the tab's error notice.
+AGENT_ROW_PARAMS = {
+    "verify_failed": {"detail"},
+    "unsupported_platform": set(),
+}
+
+
+@pytest.mark.parametrize("code", sorted(AGENT_ROW_PARAMS))
+def test_a_code_an_agent_reports_on_a_row_is_worded_with_its_params(code):
+    for language in sorted(path.name for path in LOCALES_DIR.iterdir()):
+        tables = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted((LOCALES_DIR / language).glob("*.json"))
+        ]
+        key = f"code.{code}"
+        words = [table[key] for table in tables if key in table]
+        assert words, language
+        for word in words:
+            params = set(re.findall(r"\{(\w+)\}", word))
+            assert params == AGENT_ROW_PARAMS[code], language
