@@ -252,6 +252,7 @@ at most `ConnectStreamsMax`, 256, `connect` streams.
 | A guest's handshake, from its first check through its open record, has `GateHandshakeTimeout`, 20 seconds, where a member's knock and answer have `HandshakeTimeout`, 10. | On congested lines a browser's DTLS handshake often missed 10 seconds. `AdmissionTimeout` still bounds the whole admission at 30 seconds. |
 | A refused guest counts as no failed admission, and the guest path has no cookie reply. | A guest's first check costs a lookup and one HMAC before any answer, and only the holder of a live link passes it; a pause of joins for a share's visitors stops a member's enrolment too. |
 | A share that ends closes its sessions: the hub's Python sends `shares_set` without it, then `session_close {session, code: share_unknown}` for each of its sessions. | A revoked or expired share leaves no page open on it. |
+| A session the hub refuses has its streams closed at once. The session ends when the peer closes it, or `RelayEndGrace`, 2 seconds, after the peer acknowledged every byte written to it. It ends at most `KeepAliveTimeout` after the refusal. A member's connection reports no acknowledgement, so a member's session ends at most 2 seconds after its refusal. | On a slow line the `refused` frame waits behind the bytes already queued for the page. Through a line of 64 KB/s, a page read it 30 seconds after the revoke. An end 2 seconds after the refusal left pages on an iPhone through SakuraFrp on the hub-offline screen. |
 
 ## The links
 
@@ -542,6 +543,7 @@ are in [protocol.md](protocol.md), "The timings".
 | a connection's admission, from the accept to an admitted `hello` | `AdmissionTimeout` 30 s |
 | a dial and the handshake on it | `DialTimeout` 10 s |
 | keepalive | `KeepAliveInterval` 20 s between yamux pings, `KeepAliveTimeout` 60 s for the answer |
+| a refused session's end, after the peer acknowledged every byte written to it | `RelayEndGrace` 2 s |
 | redial backoff | `RedialBackoffMin` 5 s, doubled to `RedialBackoffMax` 60 s |
 | address rotation, an agent's: the pause before the next address of the set | `RotateDelay` 1 s; a client's round dials every address at once |
 | a client's redial of an address refused within a round, until `DialTimeout` from the round's start | `RedialInterval` 1 s |
