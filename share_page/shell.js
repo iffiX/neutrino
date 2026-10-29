@@ -1215,28 +1215,45 @@ const page = {
     if (this.connecting || this.isEnded) return;
     this.connecting = (async () => {
       const quietUntil = performance.now() + (isQuiet ? TIMING.quiet : 0);
-      for (;;) {
-        if (this.isEnded) return;
+      let session = null;
+      while (!session && !this.isEnded && performance.now() < quietUntil) {
         const tryStarted = performance.now();
-        if (!isQuiet || tryStarted >= quietUntil) {
-          if (screen.kind !== "hub") screen.refuse("hub");
-          this.failWaiting();
-        }
-        const deadline = isQuiet && tryStarted < quietUntil ? Math.max(quietUntil, tryStarted + TIMING.retry) : tryStarted + TIMING.open;
         try {
-          const session = await openSession(this.facts, this.jar, deadline, (code) => this.onCode(code));
-          this.connecting = null;
-          stats.reconnects = (stats.reconnects || 0) + 1;
-          this.use(session);
-          await this.check(performance.now() + TIMING.open);
-          return;
+          session = await openSession(this.facts, this.jar, Math.max(quietUntil, tryStarted + TIMING.retry), (code) => this.onCode(code));
         } catch (error) {
           if (error.screen === "link") { this.connecting = null; this.endShare(); return; }
+          if (performance.now() < quietUntil) await sleep(1000);
         }
-        const pause = performance.now() < quietUntil ? 1000 : tryStarted + TIMING.retry - performance.now();
-        await sleep(Math.max(0, pause));
       }
+      if (!session && !this.isEnded) session = await this.retryShown();
+      this.connecting = null;
+      if (!session || this.isEnded) { if (session) session.close(); return; }
+      stats.reconnects = (stats.reconnects || 0) + 1;
+      this.use(session);
+      await this.check(performance.now() + TIMING.open);
     })();
+  },
+
+  // Starts a try every TIMING.retry behind the hub-offline screen, whatever the tries before it are doing.
+  // It resolves with the first session admitted, the others closed, or with null once the share ended.
+  retryShown() {
+    return new Promise((resolve) => {
+      let isSettled = false;
+      let timer = 0;
+      const settle = (session) => { isSettled = true; clearInterval(timer); resolve(session); };
+      const start = () => {
+        if (isSettled) return;
+        if (this.isEnded) { settle(null); return; }
+        if (screen.kind !== "hub") screen.refuse("hub");
+        this.failWaiting();
+        openSession(this.facts, this.jar, performance.now() + TIMING.open, (code) => this.onCode(code)).then(
+          (session) => { if (isSettled) session.close(); else settle(session); },
+          (error) => { if (error.screen === "link" && !isSettled) { settle(null); this.endShare(); } },
+        );
+      };
+      timer = setInterval(start, TIMING.retry);
+      start();
+    });
   },
 
   // The share ended. The page shows the link screen and deletes the app's cache.
