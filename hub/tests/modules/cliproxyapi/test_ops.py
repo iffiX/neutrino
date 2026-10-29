@@ -1,6 +1,7 @@
 """The applier: resolving every sealed key, provider and client, before it renders."""
 
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -266,9 +267,55 @@ def scripted_probes(monkeypatch, answers: list) -> None:
     monkeypatch.setattr(ops, "CLIPROXYAPI_SERVED_MODELS_TTL_S", -1.0)
 
 
+def sign_in(box) -> Path:
+    """Write an account's token file into the gateway's auth directory."""
+    auth = box / "state" / "cliproxyapi" / "auth"
+    auth.mkdir(parents=True, exist_ok=True)
+    token = auth / "claude-person.json"
+    token.write_text('{"type":"claude"}', encoding="utf-8")
+    return token
+
+
+def keyed_provider(*, is_enabled: bool = True, is_keyed: bool = True) -> None:
+    """Store a provider, turned on or off, with or without a key."""
+    token_id = None
+    if is_keyed:
+        token_id = (
+            SecretVault()
+            .add(kind="token", name="relay key", secret={"value": "sealed-key"})
+            .id
+        )
+    registry = AiProviderRegistry()
+    record = registry.add(
+        name="relay",
+        kind="custom",
+        base_url="https://relay.example/v1",
+        secret_id=token_id,
+    )
+    registry.update(record.id, is_enabled=is_enabled)
+
+
+def test_a_signed_in_account_or_a_keyed_provider_turned_on_is_a_credential(box):
+    assert ops.has_credentials() is False
+
+    keyed_provider(is_enabled=False)
+    keyed_provider(is_keyed=False)
+    (box / "state" / "cliproxyapi" / "auth").mkdir(parents=True)
+    (box / "state" / "cliproxyapi" / "auth" / "notes.txt").write_text("x")
+    assert ops.has_credentials() is False
+
+    token = sign_in(box)
+    assert ops.has_credentials() is True
+
+    token.unlink()
+    keyed_provider()
+    assert ops.has_credentials() is True
+
+
 def test_a_failed_or_empty_probe_leaves_the_last_list_that_held_a_name(
     box, monkeypatch
 ):
+    sign_in(box)
     scripted_probes(
         monkeypatch,
         [(True, None, ["a", "b"]), UNREACHABLE, NO_MODELS, (True, None, ["a", "c"])],
@@ -286,6 +333,7 @@ def test_a_failed_or_empty_probe_leaves_the_last_list_that_held_a_name(
 
 
 def test_the_last_list_that_held_a_name_outlives_a_restart(box, monkeypatch):
+    keyed_provider()
     stored = box / "state" / "cliproxyapi" / "served_models.json"
     scripted_probes(monkeypatch, [UNREACHABLE, (True, None, ["a"]), UNREACHABLE])
 
@@ -302,6 +350,32 @@ def test_the_last_list_that_held_a_name_outlives_a_restart(box, monkeypatch):
         ["a"],
     )
     assert json.loads(stored.read_text(encoding="utf-8")) == {"models": ["a"]}
+
+
+def test_a_failed_or_empty_probe_with_no_credential_empties_the_list(box, monkeypatch):
+    token = sign_in(box)
+    stored = box / "state" / "cliproxyapi" / "served_models.json"
+    scripted_probes(
+        monkeypatch,
+        [
+            (True, None, ["a", "b"]),
+            NO_MODELS,
+            UNREACHABLE,
+            UNREACHABLE,
+            (True, None, ["c"]),
+        ],
+    )
+    cache = ops.CliproxyApiServedModelCache()
+    assert cache.served(port=8317, client_key="k") == (True, ["a", "b"])
+
+    token.unlink()
+
+    assert cache.served(port=8317, client_key="k") == (True, [])
+    assert cache.served(port=8317, client_key="k") == (False, [])
+    assert json.loads(stored.read_text(encoding="utf-8")) == {"models": []}
+    restarted = ops.CliproxyApiServedModelCache()
+    assert restarted.first_model(port=8317, client_key="k") == ""
+    assert restarted.served(port=8317, client_key="k") == (True, ["c"])
 
 
 def test_elsewhere_an_apply_restarts_the_child(

@@ -7,7 +7,8 @@ so a client's dots follow the machines at once rather than at its next
 report. An overlay device found at run time that the loaded ruleset does not
 name yet runs one converge step, and nothing else does; so do network
 resolvers the last render did not use. A machine's state keeps its hash
-while the gateway is down or serves nothing.
+while the gateway is down or serves nothing and an account is signed in, and
+moves once when the last account goes.
 """
 
 import json
@@ -32,6 +33,8 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from tests.conftest import unlock_vault
 
 LINUX = {"os": "linux", "family": "debian", "arch": "amd64"}
+UNREACHABLE = (False, {"code": "gateway_unreachable", "params": {}}, [])
+NO_MODELS = (True, {"code": "gateway_no_models", "params": {}}, [])
 
 
 class RecordingEvents:
@@ -349,12 +352,11 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     assert composed["gone"]["is_hub_machine"] is False
 
 
-def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
-    monkeypatch, tmp_path
-):
-    """A machine with SiYuan and the AI tools on for an account. A stopped
-    gateway and one that serves nothing give the same state, and a model
-    added gives a new state once."""
+def gateway_reader(monkeypatch, tmp_path, answers: list) -> PanelRuntime:
+    """A panel whose machine `other` has SiYuan and the AI tools on for ann.
+
+    Each gateway probe returns the next of ``answers``.
+    """
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
     unlock_vault(monkeypatch, tmp_path)
@@ -370,12 +372,6 @@ def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
     ai_keys.settle_instance_keys(store, "other", "siyuan", "other")
     store.set_want("other", "siyuan", "running")
     ai_keys.ensure_device_key("other", "other")
-    answers = [
-        (True, None, ["m1"]),
-        (False, {"code": "gateway_unreachable", "params": {}}, []),
-        (True, {"code": "gateway_no_models", "params": {}}, []),
-        (True, None, ["m1", "m2"]),
-    ]
 
     def probe(self, *, port, client_key):
         return answers.pop(0)
@@ -396,6 +392,27 @@ def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
     monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
     monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
     monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
+    return panel
+
+
+def sign_in(tmp_path):
+    """Write an account's token file into the gateway's auth directory."""
+    auth = tmp_path / "state" / "cliproxyapi" / "auth"
+    auth.mkdir(parents=True, exist_ok=True)
+    token = auth / "claude-ann.json"
+    token.write_text('{"type":"claude"}', encoding="utf-8")
+    return token
+
+
+def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
+    monkeypatch, tmp_path
+):
+    """A machine with SiYuan and the AI tools on for an account, and an
+    account signed in on the AI page. A stopped gateway and one that serves
+    nothing give the same state, and a model added gives a new state once."""
+    answers = [(True, None, ["m1"]), UNREACHABLE, NO_MODELS, (True, None, ["m1", "m2"])]
+    panel = gateway_reader(monkeypatch, tmp_path, answers)
+    sign_in(tmp_path)
 
     states = [panel.desired_state_for("other") for _ in range(4)]
 
@@ -404,6 +421,30 @@ def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
     models = [state["modules"]["siyuan"]["config"]["models"] for _, state in states]
     assert models == [["m1"], ["m1"], ["m1"], ["m1", "m2"]]
     assert all(state["ai_tools"]["is_enabled"] for _, state in states)
+
+
+def test_the_last_account_signed_out_empties_the_state_once(monkeypatch, tmp_path):
+    """The same machine. With no account and no provider left, a gateway
+    that serves nothing gives a new state once, with SiYuan's models empty
+    and the AI tools off, and a stopped gateway leaves it."""
+    answers = [(True, None, ["m1"]), NO_MODELS, UNREACHABLE, NO_MODELS]
+    panel = gateway_reader(monkeypatch, tmp_path, answers)
+    token = sign_in(tmp_path)
+
+    states = [panel.desired_state_for("other")]
+    token.unlink()
+    states += [panel.desired_state_for("other") for _ in range(3)]
+
+    hashes = [state_hash for state_hash, _ in states]
+    assert hashes[0] != hashes[1] == hashes[2] == hashes[3]
+    models = [state["modules"]["siyuan"]["config"]["models"] for _, state in states]
+    assert models == [["m1"], [], [], []]
+    assert [state["ai_tools"]["is_enabled"] for _, state in states] == [
+        True,
+        False,
+        False,
+        False,
+    ]
 
 
 class SlowEnginePart:

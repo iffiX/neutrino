@@ -389,9 +389,8 @@ def gateway_models(served_models) -> list:
             :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`.
 
     Returns:
-        The served names, the last list that held a name while the probe
-        fails or finds no name; empty while the gateway has no hub key or
-        the key does not open.
+        The served list; empty while the gateway has no hub key or the key
+        does not open.
     """
     held = load_config()
     if held.hub_key is None:

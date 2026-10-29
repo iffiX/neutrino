@@ -14,12 +14,11 @@ import threading
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-from neutrino_hub.modules.ai.registry import AiProviderRegistry
-from neutrino_hub.modules.cliproxyapi.constants import (
-    CLIPROXYAPI_AUTH_RELATIVE,
-    CLIPROXYAPI_BINARY_PATH,
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_BINARY_PATH
+from neutrino_hub.modules.cliproxyapi.ops import (
+    has_credentials,
+    load_config as load_cliproxyapi_config,
 )
-from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi_config
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
     CHANNEL_MODULE_STATE_RUNNING,
@@ -55,7 +54,6 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_SOURCE_MANUAL,
 )
 from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
-from neutrino_hub.utils import constants as utils_constants
 from neutrino_hub.utils import json_file
 
 # The owner a reported container carries when a container module runs it.
@@ -547,15 +545,7 @@ class PublishedServiceCache:
             True when the binary is on the box and at least one enabled
             keyed provider or one signed-in account feeds it.
         """
-        if not CLIPROXYAPI_BINARY_PATH.is_file():
-            return False
-        for provider in AiProviderRegistry().list_records():
-            if provider.is_enabled and provider.secret_id:
-                return True
-        auth_dir = utils_constants.UTILS_STATE_ROOT / CLIPROXYAPI_AUTH_RELATIVE
-        if not auth_dir.is_dir():
-            return False
-        return any(path.suffix == ".json" for path in auth_dir.iterdir())
+        return CLIPROXYAPI_BINARY_PATH.is_file() and has_credentials()
 
     def _ai_state(self, is_active: bool) -> tuple:
         """The gateway's port, served models and health.

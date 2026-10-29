@@ -72,9 +72,8 @@ CLIPROXYAPI_USAGE_MINUTES_KEPT = 90
 
 # How long a probed model list answers heartbeats before it is re-asked.
 CLIPROXYAPI_SERVED_MODELS_TTL_S = 10.0
-# The last served model list that held a name, beside the usage store. The
-# hub's readers get it while the probe fails or finds no name, after a
-# restart too.
+# The served model list, beside the usage store. The panel reads it at its
+# start.
 CLIPROXYAPI_SERVED_MODELS_RELATIVE = "cliproxyapi/served_models.json"
 
 # A change of keys alone is written into the served file, which the gateway

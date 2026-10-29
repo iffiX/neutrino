@@ -214,6 +214,27 @@ def _read_served_models() -> list:
     return [name for name in models if isinstance(name, str) and name]
 
 
+def has_credentials() -> bool:
+    """Whether an account is signed in or a provider is turned on with a key.
+
+    Returns:
+        True when a token file is in the auth directory under the state root
+        or an enabled provider with a key is in ``config/ai/providers.json``.
+        A providers file that does not parse counts as no provider.
+    """
+    try:
+        providers = AiProviderRegistry().list_records()
+    except ValueError:
+        providers = []
+    if any(provider.is_enabled and provider.secret_id for provider in providers):
+        return True
+    try:
+        paths = list((constants.UTILS_STATE_ROOT / CLIPROXYAPI_AUTH_RELATIVE).iterdir())
+    except OSError:
+        return False
+    return any(path.suffix == ".json" for path in paths)
+
+
 def _write_served_models(models: list) -> None:
     """Store a served list, logging a failed write."""
     try:
@@ -496,13 +517,13 @@ class CliproxyApiServedModelCache:
 
     Heartbeats answer with the first served name, and a fleet beats every few
     seconds; the cache keeps that from asking the gateway on every beat. A
-    probe that fails or finds no name leaves the last list that held a name.
-    The state root stores that list across a restart.
+    probe that fails or finds no name leaves the last list that held a name
+    while :func:`has_credentials` is true, and empties it otherwise. The state
+    root stores that list across a restart.
     """
 
     def __init__(self):
-        # The last probed list that held a name. None until the stored list
-        # is read.
+        # The served list. None until the stored list is read.
         self._models: "list[str] | None" = None
         self._is_answered = False
         # None, not zero: `time.monotonic()` counts from boot on Linux, and a
@@ -519,7 +540,7 @@ class CliproxyApiServedModelCache:
         Returns:
             ``(is_answered, models)``; while the probe fails or finds no
             name, the list is the last one that held a name, empty before
-            any did.
+            any did and while :func:`has_credentials` is false.
         """
         if self._models is None:
             self._models = _read_served_models()
@@ -534,6 +555,9 @@ class CliproxyApiServedModelCache:
             if models and models != self._models:
                 self._models = models
                 _write_served_models(models)
+            elif not models and self._models and not has_credentials():
+                self._models = []
+                _write_served_models([])
         return self._is_answered, list(self._models)
 
     def first_model(self, *, port: int, client_key: str) -> str:
