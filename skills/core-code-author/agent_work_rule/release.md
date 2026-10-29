@@ -666,6 +666,10 @@ repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A
 pre-release deploys nothing. When either secret is missing, the job prints
 one line naming it, deploys nothing and succeeds.
 
+A test that deploys the page as a preview deployment of `neutrinohub-share`,
+on a branch of its own, deletes that deployment when the test ends. It
+deletes the deployments of that branch alone and never the production one.
+
 Running the same workflow from the Actions tab builds the packages and attaches
 them as artifacts without creating a release, which is how a change to the
 pipeline is tried before a tag depends on it.
