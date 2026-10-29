@@ -562,6 +562,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.container_name_reserved` | The name {name} starts with neutrino_, which the hub keeps for the containers of its modules. | 容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。 |
 | `code.module_in_use` | {modules} run on Containers; uninstall them first. | {modules} 运行在容器模块上，先卸载它们。 |
 | `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
+| `code.containers_not_applied` | Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here. | 容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。 |
 
 ## The Services page's health words
 

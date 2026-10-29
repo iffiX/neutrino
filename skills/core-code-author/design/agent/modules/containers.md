@@ -315,6 +315,21 @@ container on the same system.
 | A container with the label `neutrino.module` is never imported into the declared containers. While `config/devices/<id>/modules.json` does not name its module, as on a hub the machine joined or one that lost its configuration, Containers renders none of its containers and they stop. Their named volumes stay until the module's uninstall, and the module's install starts its containers on them again. | A label names the module that owns the container. In the lab a machine that joined another hub had its Ayakaleaf containers imported as declared ones: the mongo container's anonymous volume, written as a folder, was gone at its next start, and the module's install was refused `container_name_duplicate {name}`. |
 | A hub container's row in **Running** has the module's title and **Journal** as its one button. The hub refuses `container/start`, `/stop`, `/restart` and a container's shell on it with `container_hub_owned {name}`. | The module runs its containers as its configuration says, and a press or a shell beside it changes them behind the module. |
 
+## A refused declared container
+
+An apply checks each declared container on its own. The `validate` verb
+checks the whole configuration, so a save on the tab is refused with the
+code of the first container the checks refuse.
+
+| Rule | Reason |
+| --- | --- |
+| An apply leaves out each declared container the checks refuse and applies the rest: the other declared containers, the hub containers, the mirrors and the Run settings. It then fails with the first refusal, such as `image_invalid {name, image}`, and Containers reads `failed` with that code, which its tab shows as the error notice. | In the lab a machine that joined another hub had a container started by hand whose image the report gave as empty. The new hub imported it, the agent refused the whole configuration, and Ayakaleaf's containers kept the earlier hub's environment: each sign-in through the forwarder found no cookie of the new name. |
+| A left-out container is rendered as one the configuration does not name, and a unit an earlier apply wrote for it goes. | That unit runs settings the configuration has since replaced. |
+| The hub containers' names are taken before the declared ones, so a declared container with a hub container's name is the one refused, `container_name_duplicate {name}`. | A person's container never keeps a module's containers from their update. |
+| The import leaves out a reported container whose image is empty or contains a space ([../../protocol.md](../../protocol.md), "Taking over a machine"). | The agent refuses such a declaration `image_invalid {name, image}`. |
+| A container module's start fails `containers_not_applied` while the hub containers the last apply of Containers wrote for the module differ from the ones the state names. The module then reads `failed` until a press tries it again ([../../agent.md](../../agent.md), "A retry is the same press again"). | The module's containers run on an earlier state's units and environment files, which its own step cannot change. |
+| Until the first apply of Containers after the agent starts, every module's hub containers count as written. Once that apply fails before its files are written, none do. | An agent that starts applies nothing it already tried, and its units are the last apply's. The runner keeps what an apply wrote in memory alone, so a failed apply after the start leaves nothing to compare. |
+
 ## Reaching the machine
 
 Every container reaches the agent's `127.0.0.1` listeners at
