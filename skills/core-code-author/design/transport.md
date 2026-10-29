@@ -757,7 +757,11 @@ A refused `join` leaves no binding to keep. `nagent join` exits with the
 code, and a client's row reads the join's refusal ([client.md](client.md),
 "Joining before the hub is reached"). `ticket_spent`, `role_mismatch` and
 `protocol_too_old` end a join this way; after `admission_paused` the client
-tries the join again once `retry_after_s` has passed.
+tries the join again once `retry_after_s` has passed. After
+`control_unavailable` and `channel_full` the client keeps the ticket. It
+tries the join again after the refusal's `retry_after_s`, 5 seconds for the
+hub transport's `control_unavailable`, or a minute later when the refusal
+names none.
 
 `binding_unknown` is the one refusal that unbinds: the hub says it has no
 binding for the peer's static key, because the row was removed on the panel.
