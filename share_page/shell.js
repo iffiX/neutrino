@@ -977,8 +977,11 @@ async function openSession(facts, jar, deadline, onCode) {
 const mirror = {
   frame: null,
   observer: null,
-  watch(frame) {
+  // The link's app title, the tab's title while the app's page has none.
+  title: "",
+  watch(frame, title) {
     this.frame = frame;
+    this.title = title;
     frame.addEventListener("load", () => {
       if (this.observer) this.observer.disconnect();
       try {
@@ -993,7 +996,7 @@ const mirror = {
     if (screen.kind !== "app" || !this.frame) return;
     try {
       const doc = this.frame.contentDocument;
-      if (doc.title) document.title = doc.title;
+      document.title = doc.title || this.title;
       const icon = doc.querySelector("link[rel~='icon']");
       document.getElementById("icon").href = icon ? icon.href : "/favicon.ico";
     } catch (e) { /* a document the shell cannot read keeps the last title */ }
@@ -1063,7 +1066,7 @@ const page = {
     const title = this.facts.app.title || "";
     screen.loading(title);
     const slowTimer = setTimeout(() => screen.slow(), TIMING.slow);
-    mirror.watch(document.getElementById("app"));
+    mirror.watch(document.getElementById("app"), title);
     worker.onRequest = (message, port, reply) => this.take(message, port, reply);
     const started = worker.start(cacheName(this.facts)).catch(() => { stats.isWorkerFailed = true; });
     const deadline = stats.startedAt + TIMING.open;
