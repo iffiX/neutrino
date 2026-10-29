@@ -733,6 +733,45 @@ def test_validate_refuses_a_configuration_holding_a_refused_container(runner):
     assert (outcome["exit_code"], outcome["code"]) == (1, "image_invalid")
 
 
+def test_a_module_s_containers_are_applied_once_their_units_are_written(
+    hub_runner, monkeypatch
+):
+    changed = json.loads(json.dumps(HUB_CONFIG))
+    changed["hub_containers"][0]["environment"] = ["COOKIE_NAME=new"]
+
+    before = hub_runner.is_applied("demo")
+    hub_runner.take_config(HUB_CONFIG)
+    hub_runner.apply(HUB_CONFIG)
+    applied = hub_runner.is_applied("demo")
+    hub_runner.take_config(changed)
+    with pytest.raises(ModuleApplyError):
+        hub_runner.apply(dict(changed, mirrors=["http://mirror.example"]))
+
+    assert (before, applied) == (True, True)
+    assert hub_runner.is_applied("demo") is False
+    assert hub_runner.is_applied("late") is False
+
+
+def test_a_restarted_agent_counts_a_module_s_containers_written_until_its_first_apply(
+    hub_runner, monkeypatch
+):
+    hub_runner.apply(HUB_CONFIG)
+    restarted = PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+    restarted.take_config(HUB_CONFIG)
+
+    before = restarted.is_applied("demo")
+
+    def refuse(self, rendered, environments, *, autostart_names, source_keys=None):
+        raise subprocess.CalledProcessError(1, ["systemctl"], stderr="bad unit")
+
+    monkeypatch.setattr(FakeUnitApplier, "apply", refuse)
+    with pytest.raises(ModuleApplyError):
+        restarted.apply(HUB_CONFIG)
+
+    assert before is True
+    assert restarted.is_applied("demo") is False
+
+
 def test_a_container_module_reaches_podman_through_the_runner(runner):
     assert runner.podman_command() == ("/usr/bin/podman",)
     assert runner.is_engine_active() is True

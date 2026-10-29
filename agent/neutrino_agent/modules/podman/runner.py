@@ -96,6 +96,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def __init__(self, *, platform, log=print, publish=None):
         super().__init__(platform=platform, log=log, publish=publish)
         self._config: "PodmanConfig | None" = None
+        self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
         self._probe = PodmanServiceProbe()
@@ -168,6 +169,9 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 refuses a unit; the first left-out container's refusal once
                 the rest is applied.
         """
+        # A failed first apply after a start leaves every module unwritten.
+        if self._written is None:
+            self._written = PodmanConfig()
         parsed, refused = PodmanConfig.from_dict(config).without_refused()
         parsed.validate()
         # Held before the units are started: a start waits on the image
@@ -191,6 +195,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 source_keys=renderer.source_keys(),
             )
             self._config = rendered
+            self._written = rendered
             self._write_record(rendered)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
@@ -355,6 +360,21 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             for module, names in held.items()
             if isinstance(names, list)
         }
+
+    def is_applied(self, module: str) -> bool:
+        """Whether the last apply wrote a module's hub containers as the state names them.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            True as well while no apply ran since the start.
+        """
+        if self._written is None or self._wanted is None:
+            return True
+        return self._written.hub_containers_of(
+            module
+        ) == self._wanted.hub_containers_of(module)
 
     def is_engine_active(self) -> bool:
         """Whether Podman's socket is active, which **Stop** turns off."""

@@ -585,3 +585,17 @@ def test_a_folder_the_machine_cannot_reach_leaves_its_container_out():
     assert [(name, error.code) for name, error in refused] == [
         ("far", "volume_not_shared")
     ]
+
+
+def test_a_module_s_hub_containers_are_its_own_in_order():
+    config = hub_with(
+        hub_container(),
+        hub_container(name="neutrino_demo_db", page_port=0),
+        hub_container(module="other", name="neutrino_other", volumes=[]),
+    )
+
+    assert [c.name for c in config.hub_containers_of("demo")] == [
+        "neutrino_demo",
+        "neutrino_demo_db",
+    ]
+    assert config.hub_containers_of("absent") == []

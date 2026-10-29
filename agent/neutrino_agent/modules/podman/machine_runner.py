@@ -334,6 +334,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # One apply, stop or removal at a time.
         self._apply_lock = threading.Lock()
         self._config: "PodmanConfig | None" = None
+        self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
         self._page_ports = PodmanPagePortStore(directory=platform.agent_data_dir())
@@ -446,6 +447,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ModuleInstallPending: While the computer owes a restart.
         """
         with self._apply_lock:
+            # A failed first apply after a start leaves every module unwritten.
+            if self._written is None:
+                self._written = PodmanConfig()
             parsed, refused = PodmanConfig.from_dict(config).without_refused(
                 os_name=self._platform.os_name
             )
@@ -491,6 +495,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                     "apply_failed",
                     {"detail": output.strip()[-PODMAN_MACHINE_DETAIL_CHARS:]},
                 )
+            self._written = rendered
             changed = [
                 line[len(PODMAN_MACHINE_CHANGED_PREFIX) :]
                 for line in output.splitlines()
@@ -736,6 +741,21 @@ class PodmanMachineModuleRunner(ModuleRunner):
             for module, names in held.items()
             if isinstance(names, list)
         }
+
+    def is_applied(self, module: str) -> bool:
+        """Whether the last apply wrote a module's hub containers into the machine as the state names them.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            True as well while no apply ran since the start.
+        """
+        if self._written is None or self._wanted is None:
+            return True
+        return self._written.hub_containers_of(
+            module
+        ) == self._wanted.hub_containers_of(module)
 
     def is_engine_active(self) -> bool:
         """Whether the machine answers the read."""

@@ -194,9 +194,10 @@ class ContainerModuleRunner(ModuleRunner):
             platform: The machine's platform.
             name: The module's name.
             containers: The Containers runner: :meth:`podman_command`,
-                :meth:`hub_names`, :meth:`is_engine_active`,
-                :meth:`drive_hub_containers`, :meth:`drop_hub_containers`
-                and :meth:`hub_journal` reach Podman through it.
+                :meth:`hub_names`, :meth:`is_applied`,
+                :meth:`is_engine_active`, :meth:`drive_hub_containers`,
+                :meth:`drop_hub_containers` and :meth:`hub_journal` reach
+                Podman through it.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
             probe_one: Probes one source, as :func:`source_fetch.probe`.
@@ -316,11 +317,15 @@ class ContainerModuleRunner(ModuleRunner):
         Raises:
             ModuleInstallPending: While Containers has not rendered the
                 module's containers, or the hooks wait on their first start.
-            ModuleApplyError: When systemd refuses a unit.
+            ModuleApplyError: ``containers_not_applied`` when Containers'
+                last apply did not write the containers the state names;
+                ``apply_failed`` when systemd refuses a unit.
         """
         names = self._names()
         if not names:
             raise ModuleInstallPending("containers_pending")
+        if not self._containers.is_applied(self.name):
+            raise ModuleApplyError("containers_not_applied", {})
         if self._version:
             self._hooks.installed(self._version)
         if self._containers.is_engine_active():

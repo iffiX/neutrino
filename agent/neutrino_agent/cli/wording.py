@@ -216,6 +216,10 @@ CLI_CODE_WORDS = {
     "machine_init_failed": "the Podman machine could not be made: {detail}",
     "machine_set_failed": "the Podman machine could not be changed: {detail}",
     "machine_unreachable": "the Podman machine does not answer: {detail}",
+    "containers_not_applied": (
+        "Containers did not apply this module's containers; fix Containers, "
+        "then start this module again"
+    ),
 }
 
 # Where a shared desktop stands, plus the word for a machine that has not

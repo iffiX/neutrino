@@ -46,10 +46,11 @@ RECIPE = {
 class FakeContainers:
     """The Containers runner as a container module reaches it."""
 
-    def __init__(self, *, hub_names=None, is_active=True):
+    def __init__(self, *, hub_names=None, is_active=True, is_written=True):
         self.command = ("/usr/bin/podman",)
         self.names = dict(hub_names or {})
         self.is_active = is_active
+        self.is_written = is_written
         self.driven: list = []
         self.dropped: list = []
 
@@ -58,6 +59,9 @@ class FakeContainers:
 
     def hub_names(self):
         return dict(self.names)
+
+    def is_applied(self, module):
+        return self.is_written
 
     def is_engine_active(self):
         return self.is_active
@@ -256,6 +260,26 @@ def test_a_start_starts_the_containers_that_do_not_run(store):
     assert ["--filter", "label=neutrino.module=demo"] == [
         call for call in podman.calls if call[1] == "ps"
     ][0][3:5]
+
+
+def test_a_start_fails_while_containers_has_not_written_the_module_s_containers(
+    store, monkeypatch
+):
+    """Containers' last apply failed before it wrote the units and environment
+    files the state names, so the module's containers run on earlier ones."""
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]}, is_written=False)
+    told: list = []
+    monkeypatch.setattr(ContainerHooks, "installed", lambda self, v: told.append(v))
+    monkeypatch.setattr(ContainerHooks, "start", lambda self: told.append("start"))
+    runner = runner_for(containers, FakePodman(stopped=["neutrino_demo"]))
+    runner.take_recipe(RECIPE)
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.start()
+
+    assert (refused.value.code, refused.value.params) == ("containers_not_applied", {})
+    assert containers.driven == []
+    assert told == []
 
 
 def test_a_start_leaves_the_containers_while_containers_is_stopped(store):

@@ -1264,6 +1264,54 @@ def test_the_machine_gets_the_hub_containers_whose_images_its_store_holds(
     assert rig.make_runner().hub_names() == {"demo": ["neutrino_demo"]}
 
 
+def test_a_module_s_containers_are_applied_once_the_root_script_wrote_them(
+    rig, monkeypatch
+):
+    monkeypatch.setattr(
+        machine_runner_module,
+        "image_references",
+        lambda *, podman: {"ghcr.io/acme/demo@" + HUB_DIGEST},
+    )
+    monkeypatch.setattr(
+        machine_runner_module, "ensure_network", lambda name, *, podman: False
+    )
+    monkeypatch.setattr(
+        machine_runner_module, "fastest_sources", lambda names, sets: ({}, {})
+    )
+    rig.runner._page_ports._pick = lambda: 40999
+    rig.keep_image()
+    changed = json.loads(json.dumps(HUB_CONFIG))
+    changed["hub_containers"][0]["environment"] = ["COOKIE_NAME=new"]
+
+    assert rig.runner.is_applied("demo") is True
+    rig.runner.take_config(HUB_CONFIG)
+    rig.runner.apply(HUB_CONFIG)
+    applied = rig.runner.is_applied("demo")
+    rig.runner.take_config(changed)
+    rig.world.shell_answers = [(1, "Job for neutrino_demo.service failed.\n")]
+    refusal(lambda: rig.runner.apply(changed))
+
+    assert applied is True
+    assert rig.runner.is_applied("demo") is False
+    assert rig.runner.is_applied("late") is False
+
+
+def test_a_restarted_agent_counts_a_module_s_containers_written_until_its_first_apply(
+    rig,
+):
+    rig.keep_image()
+    rig.runner.apply(HUB_CONFIG)
+    restarted = rig.make_runner()
+    restarted.take_config(HUB_CONFIG)
+
+    before = restarted.is_applied("demo")
+    rig.world.shell_answers = [(1, "Job for web.service failed.\n")]
+    refusal(lambda: restarted.apply(HUB_CONFIG))
+
+    assert before is True
+    assert restarted.is_applied("demo") is False
+
+
 def test_a_container_module_drives_and_drops_its_containers_in_the_machine(rig):
     rig.keep_image()
     rig.runner.apply(CONFIG)

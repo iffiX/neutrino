@@ -419,6 +419,19 @@ class PodmanConfig:
             names.setdefault(container.module, []).append(container.name)
         return names
 
+    def hub_containers_of(self, module: str) -> list:
+        """One module's hub containers, in order.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            Its :class:`PodmanHubContainer` entries.
+        """
+        return [
+            container for container in self.hub_containers if container.module == module
+        ]
+
     def without_refused(self, *, os_name: str = "linux") -> tuple:
         """The configuration without each declared container its checks refuse.
 

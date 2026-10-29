@@ -118,6 +118,7 @@ MODULE_CODES = (
     "machine_init_failed",
     "machine_set_failed",
     "machine_unreachable",
+    "containers_not_applied",
 )
 
 # What the self-update raises, worded by the surface that shows last_error.
