@@ -195,6 +195,7 @@
   "ui.devices.add_by_ssh": "Add over SSH",
   "ui.devices.agent_offline": "The agent is not answering.",
   "ui.devices.badge": "{total} agents, {online} online",
+  "ui.devices.badge_one": "1 agent, {online} online",
   "ui.devices.cancel": "Cancel",
   "ui.devices.empty": "No agents yet",
   "ui.devices.empty_hint": "Add a machine by link or over SSH.",

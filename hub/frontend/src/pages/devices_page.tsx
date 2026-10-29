@@ -27,6 +27,7 @@ import type { HubEvent } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceAnnotation,
+  DeviceCount,
   DeviceMetricsView,
   DeviceRequest,
   DevicesResponse,
@@ -292,12 +293,7 @@ export function DevicesPage() {
           <div className="page_title_row">
             <h1>{t("ui.devices.title")}</h1>
             {count !== null && (
-              <span className="badge">
-                {t("ui.devices.badge", {
-                  total: count.total,
-                  online: count.online,
-                })}
-              </span>
+              <span className="badge">{describeCount(count)}</span>
             )}
           </div>
         </div>
@@ -703,6 +699,13 @@ function busiestGpu(metrics: DeviceMetricsView): number | null {
     return null;
   }
   return readings.length === 0 ? null : Math.max(...readings);
+}
+
+/** The badge beside the title: the count of agents and of those online. */
+function describeCount(count: DeviceCount): string {
+  return count.total === 1
+    ? t("ui.devices.badge_one", { online: count.online })
+    : t("ui.devices.badge", { total: count.total, online: count.online });
 }
 
 /** When the machine was last seen: its session's end, else its last report. */

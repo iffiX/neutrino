@@ -195,6 +195,7 @@
   "ui.devices.add_by_ssh": "用 SSH 添加",
   "ui.devices.agent_offline": "这个被控端没有应答。",
   "ui.devices.badge": "{total} 台被控端，{online} 台在线",
+  "ui.devices.badge_one": "1 台被控端，{online} 台在线",
   "ui.devices.cancel": "取消",
   "ui.devices.empty": "还没有被控端",
   "ui.devices.empty_hint": "用链接或 SSH 添加一台机器。",
