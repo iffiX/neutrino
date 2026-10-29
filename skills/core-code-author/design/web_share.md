@@ -119,4 +119,5 @@ English otherwise.
 | The mark is the panel's: a 46 px rounded square with an accent border and the accent's wash, the N logo inside as an inline SVG. While loading it breathes as the panel's does, `splash_breathe`, 2.2 seconds. | A visitor who opens the panel later meets the same mark, and the page loads no image. |
 | The colours are the panel's dark and light tokens, `--color-bg`, `--color-text`, `--color-text-muted`, `--color-accent` and its wash, with their values, chosen by the system's setting. | The page has no Settings of its own, and reads as the panel does. |
 | A screen shows no mascot, no button and no link. | A visitor has nothing to do on a refusal but ask the person who shared the link. |
+| While a screen shows, the tab's title is the screen's first line, the slow line among them, and the tab has no icon. The app's title and icon come back with the app. | The tab reads as what the window shows, and a share that ended leaves nothing of its app on the tab. |
 | The app-unavailable screen has one wording for a machine that is offline and for a shared app that is down. | The visitor waits in both cases, and the page shows the app once it is back. |
