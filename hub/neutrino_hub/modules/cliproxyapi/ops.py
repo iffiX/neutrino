@@ -8,6 +8,8 @@ reloads it without a restart, so no request in flight is cut.
 """
 
 import hashlib
+import json
+import logging
 import os
 import tempfile
 import time
@@ -41,6 +43,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_RELOAD_WAIT_S,
     CLIPROXYAPI_RESTART_WAIT_S,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
+    CLIPROXYAPI_SERVED_MODELS_RELATIVE,
     CLIPROXYAPI_SERVED_MODELS_TTL_S,
     CLIPROXYAPI_SUPERVISED_NAME,
     CLIPROXYAPI_UNIT,
@@ -58,6 +61,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_GATEWAY_KEY,
 )
 from neutrino_hub.modules.devices.module_table import gateway_module_names
+
+LOGGER = logging.getLogger(__name__)
 
 CLIPROXYAPI_CONFIG_PATH = "cliproxyapi/cliproxyapi.json"
 PROBE_TIMEOUT_S = 5
@@ -190,6 +195,33 @@ def ensure_auth_dir() -> Path:
 def _fingerprint_path() -> Path:
     # Resolved per call, against the state root as it is right now.
     return constants.UTILS_STATE_ROOT / CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE
+
+
+def _served_models_path() -> Path:
+    # Resolved per call, against the state root as it is right now.
+    return constants.UTILS_STATE_ROOT / CLIPROXYAPI_SERVED_MODELS_RELATIVE
+
+
+def _read_served_models() -> list:
+    """The stored served list; empty when none is stored or it does not read."""
+    try:
+        held = json.loads(_served_models_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    models = held.get("models") if isinstance(held, dict) else None
+    if not isinstance(models, list):
+        return []
+    return [name for name in models if isinstance(name, str) and name]
+
+
+def _write_served_models(models: list) -> None:
+    """Store a served list, logging a failed write."""
+    try:
+        write_generated(
+            _served_models_path(), json.dumps({"models": models}) + "\n", mode=0o600
+        )
+    except OSError as error:
+        LOGGER.warning("the served model list was not stored: %s", error)
 
 
 class CliproxyApiConfigApplier:
@@ -463,11 +495,15 @@ class CliproxyApiServedModelCache:
     """The gateway's served model names, probed and kept for a short while.
 
     Heartbeats answer with the first served name, and a fleet beats every few
-    seconds; the cache keeps that from asking the gateway on every beat.
+    seconds; the cache keeps that from asking the gateway on every beat. A
+    probe that fails or finds no name leaves the last list that held a name.
+    The state root stores that list across a restart.
     """
 
     def __init__(self):
-        self._models: list[str] = []
+        # The last probed list that held a name. None until the stored list
+        # is read.
+        self._models: "list[str] | None" = None
         self._is_answered = False
         # None, not zero: `time.monotonic()` counts from boot on Linux, and a
         # panel started early in one would read the cache as fresh.
@@ -481,17 +517,23 @@ class CliproxyApiServedModelCache:
             client_key: A key to authenticate the probe with.
 
         Returns:
-            ``(is_answered, models)``; the list is empty when nothing is
-            served or the gateway does not answer.
+            ``(is_answered, models)``; while the probe fails or finds no
+            name, the list is the last one that held a name, empty before
+            any did.
         """
+        if self._models is None:
+            self._models = _read_served_models()
         if (
             self._probed_at is None
             or time.monotonic() - self._probed_at > CLIPROXYAPI_SERVED_MODELS_TTL_S
         ):
-            self._is_answered, _, self._models = CliproxyApiConfigApplier().probe(
+            self._is_answered, _, models = CliproxyApiConfigApplier().probe(
                 port=port, client_key=client_key
             )
             self._probed_at = time.monotonic()
+            if models and models != self._models:
+                self._models = models
+                _write_served_models(models)
         return self._is_answered, list(self._models)
 
     def first_model(self, *, port: int, client_key: str) -> str:
@@ -502,8 +544,8 @@ class CliproxyApiServedModelCache:
             client_key: A key to authenticate the probe with.
 
         Returns:
-            The first served model name, or empty when none is served or the
-            gateway does not answer.
+            The first name of :meth:`served`'s list, or empty while it is
+            empty.
         """
         _, models = self.served(port=port, client_key=client_key)
         return models[0] if models else ""

@@ -1,5 +1,7 @@
 """The applier: resolving every sealed key, provider and client, before it renders."""
 
+import json
+
 import pytest
 import yaml
 
@@ -11,6 +13,9 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.credentials.vault import SecretVault
 from tests.conftest import unlock_vault
+
+UNREACHABLE = (False, {"code": "gateway_unreachable", "params": {}}, [])
+NO_MODELS = (True, {"code": "gateway_no_models", "params": {}}, [])
 
 
 @pytest.fixture()
@@ -249,6 +254,54 @@ def test_a_probe_that_finds_nothing_to_serve_answers_a_code(monkeypatch):
         {"code": "gateway_no_models", "params": {}},
         [],
     )
+
+
+def scripted_probes(monkeypatch, answers: list) -> None:
+    """Make every probe stale and each one return the next of ``answers``."""
+
+    def probe(self, *, port, client_key):
+        return answers.pop(0)
+
+    monkeypatch.setattr(ops.CliproxyApiConfigApplier, "probe", probe)
+    monkeypatch.setattr(ops, "CLIPROXYAPI_SERVED_MODELS_TTL_S", -1.0)
+
+
+def test_a_failed_or_empty_probe_leaves_the_last_list_that_held_a_name(
+    box, monkeypatch
+):
+    scripted_probes(
+        monkeypatch,
+        [(True, None, ["a", "b"]), UNREACHABLE, NO_MODELS, (True, None, ["a", "c"])],
+    )
+    cache = ops.CliproxyApiServedModelCache()
+
+    answers = [cache.served(port=8317, client_key="k") for _ in range(4)]
+
+    assert answers == [
+        (True, ["a", "b"]),
+        (False, ["a", "b"]),
+        (True, ["a", "b"]),
+        (True, ["a", "c"]),
+    ]
+
+
+def test_the_last_list_that_held_a_name_outlives_a_restart(box, monkeypatch):
+    stored = box / "state" / "cliproxyapi" / "served_models.json"
+    scripted_probes(monkeypatch, [UNREACHABLE, (True, None, ["a"]), UNREACHABLE])
+
+    assert ops.CliproxyApiServedModelCache().served(port=8317, client_key="k") == (
+        False,
+        [],
+    )
+    assert not stored.exists()
+    assert (
+        ops.CliproxyApiServedModelCache().first_model(port=8317, client_key="k") == "a"
+    )
+    assert ops.CliproxyApiServedModelCache().served(port=8317, client_key="k") == (
+        False,
+        ["a"],
+    )
+    assert json.loads(stored.read_text(encoding="utf-8")) == {"models": ["a"]}
 
 
 def test_elsewhere_an_apply_restarts_the_child(

@@ -6,7 +6,8 @@ client is handed its state, whose terminals list each machine's presence,
 so a client's dots follow the machines at once rather than at its next
 report. An overlay device found at run time that the loaded ruleset does not
 name yet runs one converge step, and nothing else does; so do network
-resolvers the last render did not use.
+resolvers the last render did not use. A machine's state keeps its hash
+while the gateway is down or serves nothing.
 """
 
 import json
@@ -16,12 +17,21 @@ import time
 import pytest
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.clients import ai_keys
+from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
+from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+from neutrino_hub.modules.devices import desired_state as desired_state_module
+from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.web import channel_state
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.constants import WEB_EVENT_DEVICES
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from tests.conftest import unlock_vault
+
+LINUX = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
 class RecordingEvents:
@@ -337,6 +347,63 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     assert composed["own"]["is_hub_machine"] is True
     assert composed["other"]["is_hub_machine"] is False
     assert composed["gone"]["is_hub_machine"] is False
+
+
+def test_a_gateway_outage_leaves_the_state_and_a_new_list_moves_it_once(
+    monkeypatch, tmp_path
+):
+    """A machine with SiYuan and the AI tools on for an account. A stopped
+    gateway and one that serves nothing give the same state, and a model
+    added gives a new state once."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    gateway = cliproxyapi_ops.load_config()
+    gateway.hub_key = CliproxyApiClientKey.generated("hub")
+    cliproxyapi_ops.save_config(gateway)
+    store = DesiredStateStore()
+    DeviceAccountStore(store).add(
+        "other", DeviceAccount(account="ann", is_ai_tools_enabled=True)
+    )
+    store.set_enabled_accounts("other", "siyuan", ["ann"])
+    ai_keys.settle_instance_keys(store, "other", "siyuan", "other")
+    store.set_want("other", "siyuan", "running")
+    ai_keys.ensure_device_key("other", "other")
+    answers = [
+        (True, None, ["m1"]),
+        (False, {"code": "gateway_unreachable", "params": {}}, []),
+        (True, {"code": "gateway_no_models", "params": {}}, []),
+        (True, None, ["m1", "m2"]),
+    ]
+
+    def probe(self, *, port, client_key):
+        return answers.pop(0)
+
+    monkeypatch.setattr(cliproxyapi_ops.CliproxyApiConfigApplier, "probe", probe)
+    monkeypatch.setattr(cliproxyapi_ops, "CLIPROXYAPI_SERVED_MODELS_TTL_S", -1.0)
+    panel = object.__new__(PanelRuntime)
+    panel.desired_states = store
+    panel.served_models = cliproxyapi_ops.CliproxyApiServedModelCache()
+    panel.device_platform = {"other": LINUX}
+    panel.device_address = {}
+    panel.device_account_details = {}
+    panel.device_hostname = {}
+    panel.module_releases = None
+    devices = OwnMachineDevices()
+    monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
+    monkeypatch.setattr(runtime_module, "DeviceRetryMarks", NoRetryMarks)
+    monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
+    monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
+
+    states = [panel.desired_state_for("other") for _ in range(4)]
+
+    hashes = [state_hash for state_hash, _ in states]
+    assert hashes[0] == hashes[1] == hashes[2] != hashes[3]
+    models = [state["modules"]["siyuan"]["config"]["models"] for _, state in states]
+    assert models == [["m1"], ["m1"], ["m1"], ["m1", "m2"]]
+    assert all(state["ai_tools"]["is_enabled"] for _, state in states)
 
 
 class SlowEnginePart:
