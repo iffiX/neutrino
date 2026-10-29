@@ -598,6 +598,8 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
     under config or state is named."""
     link = tmp_path / "nagent"
     link.write_text("")
+    plist = tmp_path / "com.neutrino.agent.plist"
+    plist.write_text("")
     calls = []
     answering(
         monkeypatch,
@@ -609,6 +611,7 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
         calls,
     )
     monkeypatch.setattr(darwin_module, "AGENT_DARWIN_LINK_PATH", str(link))
+    monkeypatch.setattr(darwin_module, "AGENT_LAUNCHD_PLIST_PATH", str(plist))
 
     removed = DarwinPlatform().remove_agent_program()
 
@@ -624,6 +627,7 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
     ]
     assert "RustDesk" not in " ".join(" ".join(call) for call in calls)
     assert not link.exists()
+    assert not plist.exists()
     named = " ".join(" ".join(call) for call in calls)
     assert "agent/config" not in named
     assert "agent/state" not in named
