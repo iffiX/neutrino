@@ -18,7 +18,9 @@ The first rule is enforced, not only stated: every test runs under a guard on
 ``systemctl`` that starts, stops, enables or masks, an ``nft`` that loads or
 deletes, an ``ip`` that adds or removes, and everything polkit would ask a
 person to authorize. A test that reaches one fails naming the command, rather
-than stopping a unit on the developer's box or opening a password dialog.
+than stopping a unit on the developer's box or opening a password dialog. An
+audit hook fails a test that writes, creates, renames or removes a file
+outside its temporary folders.
 """
 
 import hashlib
@@ -112,6 +114,30 @@ MUTATING_FIREWALLD_OPTIONS = (
     "--new-",
     "--delete-",
 )
+# The audit events that change a file by name, each to the places of its
+# paths. A place is the position of a path and the position of the folder
+# descriptor it is relative to, or None.
+FILE_CHANGE_EVENTS = {
+    "os.chmod": ((0, 2),),
+    "os.chown": ((0, 3),),
+    "os.link": ((1, 3),),
+    "os.mkdir": ((0, 2),),
+    "os.remove": ((0, 1),),
+    "os.rename": ((0, 2), (1, 3)),
+    "os.rmdir": ((0, 1),),
+    "os.symlink": ((1, 2),),
+    "os.truncate": ((0, None),),
+    "os.utime": ((0, 3),),
+    "shutil.copyfile": ((1, None),),
+    "shutil.copytree": ((1, None),),
+    "shutil.move": ((0, None), (1, None)),
+    "shutil.rmtree": ((0, 1),),
+}
+# Every audit event the file guard reads: the changes by name, ``open`` and
+# the bind of a Unix socket.
+FILE_AUDIT_EVENTS = frozenset(FILE_CHANGE_EVENTS) | {"open", "socket.bind"}
+# The flags of an ``os.open`` that writes or creates.
+FILE_WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 
 # iphlpapi's tables as a Windows machine answered them, with what its
 # PowerShell cmdlets answered at the same moment.
@@ -189,6 +215,125 @@ def _no_test_reaches_the_machine(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", guarded_run)
     monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+
+
+# The folders the running test may change, and the paths the file guard
+# refused in it. ``refused`` is None between tests.
+_file_guard = {"roots": (), "refused": None}
+
+
+def _named_path(path, folder) -> str | None:
+    """The absolute path of a name an audit event changes.
+
+    Args:
+        path: The path, relative to ``folder`` when that is a descriptor.
+        folder: The descriptor of a folder, or None or -1 for none.
+
+    Returns:
+        The path with its folder resolved and its last name kept; None for
+        a descriptor, or a folder this system cannot name.
+    """
+    if isinstance(path, int):
+        return None
+    path = os.fsdecode(os.fspath(path))
+    if not os.path.isabs(path) and isinstance(folder, int) and folder >= 0:
+        try:
+            path = os.path.join(os.readlink(f"/proc/self/fd/{folder}"), path)
+        except OSError:
+            return None
+    head, name = os.path.split(os.path.abspath(path))
+    return os.path.join(os.path.realpath(head), name)
+
+
+def _changed_paths(event: str, arguments: tuple) -> list:
+    """The paths an audit event writes, creates, renames or removes.
+
+    Args:
+        event: The audit event.
+        arguments: Its arguments.
+
+    Returns:
+        Each absolute path. A write through ``open`` resolves the whole
+        path, and every other change resolves the folder of the name.
+    """
+    if event == "open":
+        path, mode, flags = arguments
+        is_write = isinstance(mode, str) and any(letter in mode for letter in "wax+")
+        if isinstance(flags, int) and flags & FILE_WRITE_FLAGS:
+            is_write = True
+        if not is_write or isinstance(path, int):
+            return []
+        return [os.path.realpath(os.fsdecode(os.fspath(path)))]
+    if event == "socket.bind":
+        address = arguments[1]
+        if isinstance(address, bytes):
+            address = os.fsdecode(address)
+        if not isinstance(address, str) or address[:1] in ("", "\0"):
+            return []
+        return [_named_path(address, None)]
+    paths = []
+    for path_at, folder_at in FILE_CHANGE_EVENTS[event]:
+        if folder_at is not None and folder_at < len(arguments):
+            path = _named_path(arguments[path_at], arguments[folder_at])
+        else:
+            path = _named_path(arguments[path_at], None)
+        if path is not None:
+            paths.append(path)
+    return paths
+
+
+def _is_test_owned(path: str) -> bool:
+    """Whether a test may change a path: under its temporary folders, a
+    bytecode cache, or the null device."""
+    if path == os.devnull or "__pycache__" in path.split(os.sep):
+        return True
+    return any(
+        path == root or path.startswith(root + os.sep) for root in _file_guard["roots"]
+    )
+
+
+def _guard_files(event: str, arguments: tuple) -> None:
+    """Fail the running test when an audit event changes a file outside its
+    temporary folders.
+
+    Raises:
+        pytest.fail.Exception: Naming the test, the path and the event.
+    """
+    refused = _file_guard["refused"]
+    if refused is None or event not in FILE_AUDIT_EVENTS:
+        return
+    for path in _changed_paths(event, arguments):
+        if not _is_test_owned(path):
+            test = os.environ.get("PYTEST_CURRENT_TEST", "a test")
+            refused.append(path)
+            pytest.fail(
+                f"{test} would change {path} on this machine ({event}); "
+                "point it under tmp_path, or stub what writes it",
+                pytrace=True,
+            )
+
+
+sys.addaudithook(_guard_files)
+
+
+@pytest.fixture(autouse=True)
+def _no_test_changes_a_file_of_the_machine(tmp_path_factory):
+    """Fail a test at once when it would change a file outside its temporary folders.
+
+    The audit hook checks every thread. Code under test catches
+    ``Exception`` in places. The refusal is a pytest failure it does not
+    catch, and the test also fails at its end when something swallowed it.
+    """
+    _file_guard["roots"] = (
+        os.path.realpath(tempfile.gettempdir()),
+        os.path.realpath(tmp_path_factory.getbasetemp()),
+    )
+    refused: list = []
+    _file_guard["refused"] = refused
+    yield refused
+    _file_guard["refused"] = None
+    if refused:
+        pytest.fail(f"the test tried to change a file of the machine: {refused}")
 
 
 @pytest.fixture(autouse=True)
