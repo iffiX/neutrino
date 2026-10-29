@@ -130,7 +130,10 @@ the module's uninstall ([../../hub_components/ai.md](../../hub_components/ai.md)
 `http://127.0.0.1:8317` on a managed machine, the agent's AI gateway forward,
 which is open while the module is installed ([../../agent.md](../../agent.md),
 "The AI gateway forward"), and the gateway's `listen_port` in place of 8317 on
-the hub's own machine. `models` are the names the gateway serves.
+the hub's own machine. `models` is the hub's served list
+([../../hub_components/ai.md](../../hub_components/ai.md), "The served
+list"): every name the gateway serves, the models of the accounts signed in
+on the AI page and of the API-key providers alike.
 
 The hook writes into the workspace's `conf/conf.json`, as the account:
 
@@ -143,6 +146,8 @@ The hook writes into the workspace's `conf/conf.json`, as the account:
 | Rule | Reason |
 | --- | --- |
 | The hook writes the file after the instance's first start, and again whenever the key, `gateway_url` or `models` differ from what the instance's record holds, with the instance stopped and started again after. | The kernel makes `conf.json` at its first start, reads it at each start and writes it back from what it holds. `SIYUAN_OPENAI_API_BASE_URL`, `_KEY` and `_MODEL` fill one provider at the first start alone. |
+| `models` holds the accounts' models beside the providers'. | The models of an account signed in on the AI page are in the gateway's catalog alone, and no file of `config/` names them. |
+| `models` changes only when a name is added or dropped. A gateway that restarts, stops or serves nothing leaves it as it was. | Each change stops and starts every instance. The served list stays across a failed or empty probe, so a gateway restart restarts no instance, and an account signed in or out or a provider turned on or off restarts each instance once. |
 | The provider's id and each model's id have the form of SiYuan's own ids, `20000101000000-` and seven hex characters, from the SHA-256 of `neutrino` for the provider and of `neutrino/<name>` for a model. | A fixed id finds the module's provider again among the person's own, and the kernel gives its AI entries ids of that form. |
 | The key is written as it is, and the kernel encrypts it with a key built into SiYuan when it next saves the file, within seconds of its start. The hub's keys are 32 characters of base64url. | The kernel decrypts every stored key that reads as hex: keys of 32, 48 and 64 hex characters stopped the kernel at every start while the file held them, with `crypto/cipher: input not full blocks`, and a key that reads as no hex is taken as written. |
 | The key is in the person's file, not only in the service's environment as Hermes WebUI's is. | SiYuan reads its providers from `conf.json` alone. |
