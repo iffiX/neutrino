@@ -23,7 +23,7 @@ side of a share is in [protocol.md](protocol.md), "Web shares", and
 | --- | --- |
 | The page is plain JavaScript with no build step and no library, and no crypto runs in it: DTLS is the browser's. | It loads at once: the four files measured 53.2 KB, 14.8 KB compressed, where the member path built for WebAssembly measured 1.7 MB compressed ([transport.md](transport.md), "The guest path"). |
 | The page is served at `/__neutrino/` of its site, and the site sends `Service-Worker-Allowed: /` with `sw.js`, from a `_headers` file on Cloudflare Pages. | The service worker's scope is the whole origin, so the app runs at `/` as it does on its own machine. |
-| A share names its site when it is made: one of `WEB_SHARE_SITES` in `modules/clients/constants.py`, the page on Cloudflare Pages first and on EdgeOne Pages second, or the `https://` address of a copy a person hosts. | A site runs nothing and stores nothing, so any static host serves the page, and a visitor in mainland China reaches the EdgeOne copy. |
+| A share names its site when it is made: `https://share.neutrinohub.net`, the one site of `WEB_SHARE_SITES` in `modules/clients/constants.py`, or the `https://` address of a copy a person hosts. Cloudflare Pages serves the site. Its DNS stays at DNSPod, where a later record for mainland China points at an EdgeOne Pages copy of the same files. | A site runs nothing and stores nothing, so any static host serves the page. A link names one address, and the visitor's DNS answer picks the copy. |
 | The share's facts are after `#` in the link, which a browser never sends to the site. | The site learns nothing of the hub, the share or the visitor. |
 
 ## The connection
