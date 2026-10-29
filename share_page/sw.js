@@ -183,7 +183,7 @@ function send(shell, sent, isKept) {
   const isNavigation = sent.destination === "iframe";
   return new Promise((resolve) => {
     pending.set(id, { id, resolve, shell, sent, isKept, controller: null, chunks: [], isHtml: false, isSettled: false });
-    shell.port.postMessage({ type: "fetch", id, method: sent.method, url: sent.url.pathname + sent.url.search, headers: sent.headers, body, isNavigation }, body ? [body] : []);
+    shell.port.postMessage({ type: "fetch", id, method: sent.method, url: sent.url.pathname + sent.url.search, headers: sent.headers, body, isNavigation, destination: sent.destination }, body ? [body] : []);
   });
 }
 

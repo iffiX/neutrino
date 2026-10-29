@@ -17,6 +17,8 @@ const CHANNEL = { label: "neutrino", bufferedHigh: 4 * 1024 * 1024, bufferedLow:
 // Every interval of web_share.md, in milliseconds.
 const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000, awake: 10000 };
 const HTTP = { host: "127.0.0.1", streamsMax: 8 };
+// The request destinations that go before every other request waiting for a stream.
+const FIRST_DESTINATIONS = ["font", "style"];
 // The query parameter that tags a navigation of the app's frame with its tab.
 const TAB_PARAM = "__neutrino_tab";
 // The query parameter that names the tab a new tab was opened from.
@@ -682,7 +684,10 @@ class HttpConnection {
 class HttpPool {
   constructor(mux, entry, jar, onCode) {
     this.mux = mux; this.entry = entry; this.jar = jar; this.onCode = onCode;
-    this.idle = []; this.active = new Set(); this.waiting = [];
+    this.idle = []; this.active = new Set();
+    // Requests waiting for a stream, as [use, fail, isFirst], each list in the order sent.
+    // waitingFirst stores the requests of FIRST_DESTINATIONS and goes before waiting.
+    this.waitingFirst = []; this.waiting = [];
     this.byRequest = new Map();
   }
   // Sends a request. The sink takes head, body, end and fail(code).
@@ -721,7 +726,7 @@ class HttpPool {
     this.acquire((connection) => {
       if (request.id !== undefined) this.byRequest.set(request.id, connection);
       connection.send({ method: request.method, path: request.path, headers, body: request.body }, wrapped);
-    }, () => wrapped.fail(""));
+    }, () => wrapped.fail(""), FIRST_DESTINATIONS.includes(request.destination));
   }
   resend(request, sink) {
     if (this.mux.isEnded) { sink.fail(""); return; }
@@ -735,22 +740,25 @@ class HttpPool {
     if (connection && connection.current) { connection.current.sink = { head() {}, body() {}, end() {}, fail() {} }; connection.fail(""); }
   }
   // Gives a request a connection, or fails it once the session ended.
-  acquire(use, fail) {
+  acquire(use, fail, isFirst) {
     if (this.mux.isEnded) { fail(); return; }
     while (this.idle.length) { const connection = this.idle.pop(); if (connection.isUsable) { this.active.add(connection); use(connection); return; } }
     if (this.active.size < HTTP.streamsMax) { const connection = new HttpConnection(this); this.active.add(connection); use(connection); return; }
-    this.waiting.push([use, fail]);
+    (isFirst ? this.waitingFirst : this.waiting).push([use, fail, isFirst]);
   }
+  // Takes the request that waited longest, one of waitingFirst before any of waiting.
+  nextWaiting() { return this.waitingFirst.shift() || this.waiting.shift(); }
   release(connection) {
     this.active.delete(connection);
-    if (this.waiting.length) { this.active.add(connection); this.waiting.shift()[0](connection); return; }
+    const next = this.nextWaiting();
+    if (next) { this.active.add(connection); next[0](connection); return; }
     this.idle.push(connection);
   }
   forget(connection) {
     this.active.delete(connection);
     const index = this.idle.indexOf(connection);
     if (index >= 0) this.idle.splice(index, 1);
-    while (this.waiting.length && (this.mux.isEnded || this.active.size < HTTP.streamsMax)) this.acquire(...this.waiting.shift());
+    while ((this.waitingFirst.length || this.waiting.length) && (this.mux.isEnded || this.active.size < HTTP.streamsMax)) this.acquire(...this.nextWaiting());
   }
   fetchWhole(method, path) {
     return new Promise((resolve, reject) => {
@@ -1302,9 +1310,9 @@ const page = {
   },
 
   serve(message, port) {
-    const { id, method, url, headers, body } = message;
+    const { id, method, url, headers, body, destination } = message;
     this.serving.add(id);
-    this.session.pool.request({ id, method, path: url, headers, body: body ? new Uint8Array(body) : null }, {
+    this.session.pool.request({ id, method, path: url, headers, body: body ? new Uint8Array(body) : null, destination }, {
       head: (head) => {
         if (message.isNavigation) this.isFrameFailed = false;
         port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers, hasSetCookie: head.hasSetCookie });
