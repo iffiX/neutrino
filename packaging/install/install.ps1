@@ -460,7 +460,7 @@ function Install-Neutrino {
     }
     if ($Component -eq 'client') {
         if (-not (Test-NeutrinoClientBound)) {
-            Write-Output "Next, in a PowerShell of your own: nclient join '<client link from the hub's Clients page>'"
+            Write-Output "Next, in a PowerShell of your own: nclient hub join '<client link from the hub's Clients page>'"
         }
         return
     }

@@ -490,7 +490,7 @@ main() {
             ;;
         client)
             is_client_bound "$kind" && return 0
-            echo "Next, join this computer to a hub: nclient join '<client link from the hub's Clients page>'"
+            echo "Next, join this computer to a hub: nclient hub join '<client link from the hub's Clients page>'"
             return 0
             ;;
     esac

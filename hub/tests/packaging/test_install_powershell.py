@@ -657,7 +657,7 @@ def test_the_script_reads_the_hubs_settings_where_the_hub_keeps_them():
 # --- a person who has joined is not told to join ---
 
 CLIENT_JOIN_LINE = (
-    "Next, in a PowerShell of your own: nclient join "
+    "Next, in a PowerShell of your own: nclient hub join "
     "'<client link from the hub's Clients page>'"
 )
 CLIENT_BINDINGS = '{\n  "bindings": [{"id": "c1", "token": "t0k"}]\n}\n'
@@ -695,7 +695,7 @@ def test_a_person_who_has_joined_is_given_no_join_line(run, tmp_path):
     )
 
     assert outcome == "ok"
-    assert not any("nclient join" in line for line in run.said)
+    assert not any("nclient hub join" in line for line in run.said)
 
 
 def test_the_elevated_window_reads_the_bindings_of_the_account_that_ran_it(
@@ -715,7 +715,7 @@ def test_the_elevated_window_reads_the_bindings_of_the_account_that_ran_it(
     )
 
     assert outcome == "ok"
-    assert not any("nclient join" in line for line in run.said)
+    assert not any("nclient hub join" in line for line in run.said)
 
 
 def test_the_elevation_carries_the_persons_roaming_folder(run, tmp_path):

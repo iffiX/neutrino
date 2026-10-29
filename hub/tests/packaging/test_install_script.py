@@ -928,7 +928,7 @@ def test_a_system_with_no_package_asks_for_no_password(stand_ins):
         (
             "client",
             "1000",
-            "Next, join this computer to a hub: nclient join "
+            "Next, join this computer to a hub: nclient hub join "
             "'<client link from the hub's Clients page>'",
         ),
     ],
@@ -1122,7 +1122,7 @@ CLIENT_BINDINGS = (
     '\n  "exit_hub_id": ""\n}\n'
 )
 CLIENT_JOIN_LINE = (
-    "Next, join this computer to a hub: nclient join "
+    "Next, join this computer to a hub: nclient hub join "
     "'<client link from the hub's Clients page>'"
 )
 CLIENT_BINDINGS_PLACES = {
@@ -1147,7 +1147,7 @@ def test_a_person_who_has_joined_is_given_no_join_line(
     result, _asked = stand_ins("client", system=system, machine=machine)
 
     assert result.returncode == 0, result.stderr
-    assert "nclient join" not in result.stdout
+    assert "nclient hub join" not in result.stdout
 
 
 def test_a_client_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
@@ -1167,7 +1167,7 @@ def test_the_bindings_are_read_where_xdg_config_home_puts_them(stand_ins, tmp_pa
 
     result, _asked = stand_ins("client", environment={"XDG_CONFIG_HOME": str(config)})
 
-    assert "nclient join" not in result.stdout
+    assert "nclient hub join" not in result.stdout
 
 
 @pytest.mark.parametrize("is_bound", [True, False])
@@ -1192,7 +1192,7 @@ def test_through_sudo_the_invoking_persons_own_bindings_decide(
 
     assert result.returncode == 0, result.stderr
     if is_bound:
-        assert "nclient join" not in result.stdout
+        assert "nclient hub join" not in result.stdout
     else:
         assert result.stdout.strip().splitlines()[-1] == CLIENT_JOIN_LINE
 
