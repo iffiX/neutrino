@@ -20,6 +20,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import sys
 import tarfile
 import time
@@ -2437,6 +2438,39 @@ def test_a_restore_outside_linux_runs_nhub_itself_and_restarts_the_service(
     assert environment["PYTHONUNBUFFERED"] == "1"
     assert controller.restarted == ["web"]
     assert lines[-1].startswith("restarting the panel")
+
+
+def test_a_restore_on_linux_applies_outside_the_sandbox(monkeypatch):
+    handed: list = []
+
+    async def stream_outside_sandbox(command, *, environment=None):
+        handed.append((command, environment))
+        yield "rendered and applied\n"
+
+    monkeypatch.setattr(settings_router.sys, "platform", "linux")
+    monkeypatch.setattr(
+        settings_router, "stream_outside_sandbox", stream_outside_sandbox
+    )
+    monkeypatch.setattr(settings_router, "is_dev_root_set", lambda: True)
+
+    lines = asyncio.run(_drained(settings_router._restore_apply_source()))
+
+    assert handed == [(["nhub", "apply"], {"PYTHONUNBUFFERED": "1"})]
+    assert "rendered and applied\n" in lines
+
+
+def test_a_failed_restore_apply_ends_the_task_with_its_exit_code(monkeypatch):
+    async def stream_outside_sandbox(command, *, environment=None):
+        yield "applying\n"
+        raise subprocess.CalledProcessError(2, command)
+
+    monkeypatch.setattr(settings_router.sys, "platform", "linux")
+    monkeypatch.setattr(
+        settings_router, "stream_outside_sandbox", stream_outside_sandbox
+    )
+
+    with pytest.raises(RuntimeError, match="nhub apply exited 2"):
+        asyncio.run(_drained(settings_router._restore_apply_source()))
 
 
 # --- the hub's own agent after a restore ---

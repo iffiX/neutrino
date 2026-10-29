@@ -7,7 +7,7 @@ against upstream has to survive every way a distribution decorates one.
 
 import pytest
 
-from neutrino_hub.system import machine
+from neutrino_hub.system import machine, package_manager
 from neutrino_hub.system.constants import SYSTEM_RUNTIME_PACKAGES
 from neutrino_hub.system.package_manager import (
     AptPackageController,
@@ -93,6 +93,37 @@ def test_each_family_gets_its_own_tool(monkeypatch, family, expected):
         "neutrino_hub.system.package_manager.distribution_family", lambda: family
     )
     assert isinstance(current(), expected)
+
+
+@pytest.mark.parametrize(
+    "controller,tool",
+    [
+        (AptPackageController, "apt-get"),
+        (DnfPackageController, "dnf"),
+        (PacmanPackageController, "pacman"),
+    ],
+)
+@pytest.mark.parametrize("operation", ["refresh", "install", "remove"])
+def test_every_change_to_the_packages_runs_outside_the_sandbox(
+    monkeypatch, controller, tool, operation
+):
+    """privilege.md: anything that installs software leaves the panel's sandbox."""
+    handed: list = []
+
+    def run_outside_sandbox(command, **keywords):
+        handed.append(command)
+
+    def run(command, **keywords):
+        pytest.fail(f"ran inside the sandbox: {command}")
+
+    monkeypatch.setattr(package_manager, "run_outside_sandbox", run_outside_sandbox)
+    monkeypatch.setattr(package_manager, "run", run)
+    arguments = () if operation == "refresh" else (("podman",),)
+
+    getattr(controller(), operation)(*arguments)
+
+    (command,) = handed
+    assert tool in command
 
 
 def test_an_unknown_distribution_is_refused_by_name(monkeypatch):

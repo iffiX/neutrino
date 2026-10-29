@@ -5,7 +5,6 @@ import hashlib
 import io
 import json
 import logging
-import os
 import platform
 import asyncio
 import subprocess
@@ -84,7 +83,7 @@ from neutrino_hub.utils.json_file import (
 from neutrino_hub.utils.passwords import PASSWORDS_PANEL_RULES, validate
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
-from neutrino_hub.system.sandbox import outside_sandbox
+from neutrino_hub.system.sandbox import stream_outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
@@ -991,29 +990,16 @@ async def _restore_apply_source():
     yield "applying the restored configuration\n"
     # Outside the panel's sandbox: apply touches the whole machine, and a
     # child of this unit inherits its hardening.
-    # Unbuffered, or a piped apply says nothing until it exits and minutes
-    # of work read as a hang.
-    if is_linux():
-        command = outside_sandbox(["env", "PYTHONUNBUFFERED=1", "nhub", "apply"])
-        environment = None
-    else:
-        command = hub_platform().hub_command("apply")
-        environment = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        env=environment,
-    )
-    assert process.stdout is not None
-    while True:
-        line = await process.stdout.readline()
-        if not line:
-            break
-        yield line.decode("utf-8", "replace")
-    code = await process.wait()
-    if code != 0:
-        raise RuntimeError(f"nhub apply exited {code}")
+    # Unbuffered, or an apply writes nothing until it exits and minutes of
+    # work read as a hang.
+    command = ["nhub", "apply"] if is_linux() else hub_platform().hub_command("apply")
+    try:
+        async for line in stream_outside_sandbox(
+            command, environment={"PYTHONUNBUFFERED": "1"}
+        ):
+            yield line
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"nhub apply exited {error.returncode}") from error
     if is_dev_root_set():
         yield "development root: restart the panel by hand to pick up the settings\n"
         return

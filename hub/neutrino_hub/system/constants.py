@@ -3,7 +3,11 @@
 from pathlib import Path
 
 from neutrino_hub import edition
-from neutrino_hub.utils.constants import UTILS_LOG_ROOT, UTILS_STATE_ROOT
+from neutrino_hub.utils.constants import (
+    UTILS_LOG_ROOT,
+    UTILS_RUNTIME_ROOT,
+    UTILS_STATE_ROOT,
+)
 
 # Units the panel shows and controls. The key is what the panel displays; the
 # value is the systemd unit behind it.
@@ -96,6 +100,19 @@ SYSTEM_RESTART_EXIT_STATUS = 75
 SYSTEM_RESTART_DELAY_S = 2.0
 # How many log lines a journal answers by default.
 SYSTEM_JOURNAL_LINES = 100
+
+# The transient unit a command outside the panel's sandbox runs in. With
+# `--wait` systemd-run exits with the command's exit code. `--collect` drops
+# the unit's record afterwards, so finished transient units do not pile up.
+SYSTEM_SANDBOX_SYSTEMD_RUN = ("systemd-run", "--quiet", "--wait", "--collect")
+# Set by systemd in the environment of every unit's process.
+SYSTEM_SANDBOX_UNIT_MARKER = "INVOCATION_ID"
+# The output files of each command run outside the sandbox, deleted when the
+# command ends.
+SYSTEM_SANDBOX_OUTPUT_DIR = UTILS_RUNTIME_ROOT / "outside_sandbox"
+SYSTEM_SANDBOX_OUTPUT_DIR_MODE = 0o700
+# How often a streamed command's output file is read.
+SYSTEM_SANDBOX_POLL_S = 0.25
 
 # What `systemctl is-active` prints for the states a caller acts on. A unit
 # systemd is restarting after a failure reads as activating.
