@@ -138,9 +138,10 @@ inheritance is broken with its entries kept, so the owner, SYSTEM and
 Administrators stay, and the module's users are removed from it, so
 OpenSSH's permission check on the account's own `~/.ssh` files passes. On
 macOS the grant is an ACL entry beside the mode, which OpenSSH does not
-read, so the `.ssh` folder needs nothing. Removing a folder share, or an
-account from it, takes the module's grant to that user off the folder on
-both systems.
+read, so the `.ssh` folder needs nothing. On macOS each account takes the
+same entry as its SMB user, since a file the SMB user writes has the SMB
+user as its owner. Removing a folder share, or an account from it, takes the
+module's grant to that user off the folder on both systems.
 
 ## Removing the agent
 
