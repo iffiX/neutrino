@@ -843,8 +843,9 @@ def _serve_router() -> int:
     )
     log = _StepLog()
     try:
-        _reconcile_resident(controller, log, readiness, stopping, is_first=True)
+        # Taken before each pass, so a link that changes during it is applied again.
         fingerprint = link_fingerprint()
+        _reconcile_resident(controller, log, readiness, stopping, is_first=True)
         while not stopping.is_set():
             try:
                 change = changes.get(timeout=ROUTER_WAIT_POLL_S)
@@ -858,8 +859,8 @@ def _serve_router() -> int:
             current = link_fingerprint()
             if current == fingerprint:
                 continue
+            fingerprint = current
             _reconcile_resident(controller, log, readiness, stopping, is_first=False)
-            fingerprint = link_fingerprint()
         return 0
     finally:
         monitor.stop()

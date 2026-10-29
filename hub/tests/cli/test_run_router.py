@@ -176,6 +176,43 @@ def test_the_notify_socket_is_kept_from_every_child(monkeypatch):
     assert told == ["/run/systemd/notify"]
 
 
+def test_a_link_that_changes_during_the_first_pass_is_applied_again(
+    monkeypatch, resident
+):
+    notified, handlers = resident
+    monkeypatch.setattr(run, "ROUTER_DEBOUNCE_QUIET_S", 0.01)
+    monitors = []
+    links = ["before"]
+
+    class _TrackedMonitor(_Monitor):
+        def __init__(self, *, on_change, on_gone):
+            super().__init__(on_change=on_change, on_gone=on_gone)
+            monitors.append(self)
+
+    class _MovingController(_Controller):
+        def reconcile_locked(self, only=None):
+            if _Controller.passes == 0:
+                links[0] = "after"
+                monitors[0].on_change()
+            return super().reconcile_locked(only)
+
+    def stop_after_two_passes():
+        deadline = time.monotonic() + 3
+        while run.signal.SIGTERM not in handlers or _Controller.passes < 2:
+            if time.monotonic() > deadline and run.signal.SIGTERM in handlers:
+                break
+            time.sleep(0.001)
+        handlers[run.signal.SIGTERM](run.signal.SIGTERM, None)
+
+    monkeypatch.setattr(run, "RouterLinkMonitor", _TrackedMonitor)
+    monkeypatch.setattr(run, "RouterStateController", _MovingController)
+    monkeypatch.setattr(run, "link_fingerprint", lambda: (links[0],))
+    threading.Thread(target=stop_after_two_passes, daemon=True).start()
+
+    assert run._serve_router() == 0
+    assert _Controller.passes == 2
+
+
 def test_a_burst_settles_after_it_goes_quiet(monkeypatch):
     changes: queue.Queue = queue.Queue()
     for _ in range(3):
