@@ -252,7 +252,10 @@ stopped, run `nhub setup --json` with the answers of a `server` hub that
 installs its local agent, and expect the panel to answer
 `http://127.0.0.1:8080/api/hub/display` with 200. They then stop the hub,
 remove it, and run `install.sh` or `install.ps1` with `NEUTRINO_ASSET_DIR`
-naming the built files, up to `nhub --version`. Its `agent_windows` and
+naming the built files, up to `nhub --version`. `hub_windows` also reads the
+hub's rules in Windows Firewall: `neutrino_hub_setup` while the wizard
+serves, `neutrino_hub_panel_http` and no `neutrino_hub_setup` after setup,
+and no rule of the hub's after the removal. Its `agent_windows` and
 `client_windows` checks first install the released 0.4.0 `.msi` pinned in
 `packaging/shared/constants.py` and the built one over it, so every build
 runs an upgrade's whole sequence. That one install may end in 3010, a
