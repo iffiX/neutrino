@@ -68,12 +68,8 @@ CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"
 # --- Web shares ---
 # Where the Web shares live under config/. Real file gitignored.
 WEB_SHARES_CONFIG_PATH = "clients/web_shares.json"
-# The sites that serve the share page, each {url, title}: Cloudflare Pages
-# first, EdgeOne Pages second.
-WEB_SHARE_SITES = (
-    {"url": "https://neutrino-share.pages.dev", "title": "Cloudflare Pages"},
-    {"url": "https://neutrino-share.edgeone.app", "title": "EdgeOne Pages"},
-)
+# The sites that serve the share page, each {url, title}.
+WEB_SHARE_SITES = ({"url": "https://share.neutrinohub.net", "title": "Neutrino"},)
 # The path of the share page under its site.
 WEB_SHARE_PAGE_PATH = "/__neutrino/"
 # The link's form, the ``v`` of its JSON.

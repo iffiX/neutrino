@@ -258,7 +258,7 @@ def create(client, **fields):
         "name": "paper",
         "entry_id": f"ayakaleaf_{DEVICE}_web",
         "days": 7,
-        "site": "https://neutrino-share.pages.dev",
+        "site": "https://share.neutrinohub.net",
     }
     body.update(fields)
     return client.post("/api/hub/client/web_share/create", json=body)
@@ -270,7 +270,9 @@ def test_the_list_offers_each_web_entry_with_its_guest_login(api):
     body = client.get("/api/hub/client").json()
 
     assert body["web_shares"] == []
-    assert body["web_share_sites"][0]["url"] == "https://neutrino-share.pages.dev"
+    assert body["web_share_sites"] == [
+        {"url": "https://share.neutrinohub.net", "title": "Neutrino"}
+    ]
     assert [
         (entry["entry_id"], entry["guest_login"], entry["visitor_account"])
         for entry in body["web_share_entries"]
@@ -289,7 +291,7 @@ def test_a_share_returns_its_link_once_and_keeps_a_hash_of_its_ticket(api, tmp_p
     assert response.status_code == 200
     body = response.json()
     facts = decoded(body["link"])
-    assert body["link"].startswith("https://neutrino-share.pages.dev/__neutrino/#")
+    assert body["link"].startswith("https://share.neutrinohub.net/__neutrino/#")
     assert facts["hub"] == {"ip": "203.0.113.7", "port": 31234, "fp": FINGERPRINT}
     assert facts["app"] == {"entry": f"ayakaleaf_{DEVICE}_web", "title": "Ayakaleaf"}
     stored_text = (tmp_path / "clients" / "web_shares.json").read_text()
@@ -505,7 +507,7 @@ def test_the_link_names_direct_first_then_the_frp_vendors_then_the_relay(
 @pytest.mark.parametrize(
     "site, expected",
     [
-        ("https://neutrino-share.pages.dev/", "https://neutrino-share.pages.dev"),
+        ("https://share.neutrinohub.net/", "https://share.neutrinohub.net"),
         ("https://share.example", "https://share.example"),
         ("https://share.example/copy", ""),
         ("http://share.example", ""),
