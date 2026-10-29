@@ -16,7 +16,10 @@ const YAMUX = {
 const CHANNEL = { label: "neutrino", bufferedHigh: 4 * 1024 * 1024, bufferedLow: 1024 * 1024 };
 // Every interval of web_share.md, in milliseconds.
 const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000, awake: 10000 };
-const HTTP = { host: "127.0.0.1", streamsMax: 8 };
+// The app's host, and the connect streams on a slow line and on a fast one.
+const HTTP = { host: "127.0.0.1", streamsSlow: 8, streamsFast: 32 };
+// The line's speed check. A window counts while at least openMin requests are open through all of it.
+const LINE = { windowMs: 250, openMin: 2, fastBytesPerSecond: 1024 * 1024, slowWindows: 2 };
 // The request destinations that go before every other request waiting for a stream.
 const FIRST_DESTINATIONS = ["font", "style"];
 // The query parameter that tags a navigation of the app's frame with its tab.
@@ -287,6 +290,7 @@ class Yamux {
     this.nextID = 1;
     this.lastByteAt = performance.now();
     this.onEnd = null;
+    this.onBytes = null;
     this.isEnded = false;
     channel.onmessage = (event) => this.feed(new Uint8Array(event.data));
     channel.onbufferedamountlow = () => this.pumpAll();
@@ -306,6 +310,7 @@ class Yamux {
   }
   feed(u8) {
     this.lastByteAt = performance.now();
+    if (this.onBytes) this.onBytes(u8.length);
     this.queue.push(u8);
     while (this.queue.length >= YAMUX.headerBytes) {
       const head = this.queue.peek(YAMUX.headerBytes);
@@ -657,7 +662,7 @@ class HttpConnection {
         this.current = null;
         this.served++;
         sink.end();
-        if (this.isClosingAfter || !this.isUsable) { this.isUsable = false; this.stream.close(); this.pool.forget(this); } else this.pool.release(this);
+        if (this.isClosingAfter || !this.isUsable) this.close(); else this.pool.release(this);
       },
       error: () => this.fail(""),
     });
@@ -665,6 +670,8 @@ class HttpConnection {
     this.stream.write(requestHead(request.method, request.path, request.headers));
     if (request.body && request.body.length) this.stream.write(request.body);
   }
+  // Closes the connection after its last response.
+  close() { this.isUsable = false; this.stream.close(); this.pool.forget(this); }
   // Ends the connection. The code is the hub's close code, empty for a broken
   // stream. A GET or HEAD on a reused stream that ended before its response
   // is sent again on a new stream.
@@ -689,6 +696,13 @@ class HttpPool {
     // waitingFirst stores the requests of FIRST_DESTINATIONS and goes before waiting.
     this.waitingFirst = []; this.waiting = [];
     this.byRequest = new Map();
+    // The streams the line's speed allows, the requests open now, and the window that measures the line.
+    this.streamsMax = HTTP.streamsSlow;
+    this.openCount = 0;
+    this.slowCount = 0;
+    this.window = { startedAt: performance.now(), bytes: 0, openMin: 0 };
+    mux.onBytes = (n) => this.measure(n);
+    stats.streamsMax = this.streamsMax;
   }
   // Sends a request. The sink takes head, body, end and fail(code).
   request(request, sink) {
@@ -708,7 +722,10 @@ class HttpPool {
     if (cookie) headers.push(["Cookie", cookie]);
     if (request.body && request.body.length) headers.push(["Content-Length", String(request.body.length)]);
     else if (request.method !== "GET" && request.method !== "HEAD") headers.push(["Content-Length", "0"]);
+    this.openCount++;
+    let isOpen = true;
     const wrapped = {
+      close: () => { if (isOpen) { isOpen = false; this.closeRequest(); } },
       head: (head) => {
         const kept = [];
         let hasSetCookie = false;
@@ -720,8 +737,8 @@ class HttpPool {
         sink.head({ status: head.status, statusText: head.statusText, headers: kept, hasSetCookie });
       },
       body: sink.body,
-      end: () => { this.byRequest.delete(request.id); sink.end(); },
-      fail: (code) => { this.byRequest.delete(request.id); sink.fail(code); },
+      end: () => { wrapped.close(); this.byRequest.delete(request.id); sink.end(); },
+      fail: (code) => { wrapped.close(); this.byRequest.delete(request.id); sink.fail(code); },
     };
     this.acquire((connection) => {
       if (request.id !== undefined) this.byRequest.set(request.id, connection);
@@ -737,28 +754,64 @@ class HttpPool {
   // Drops the connection of a request the page no longer reads.
   abort(id) {
     const connection = this.byRequest.get(id);
-    if (connection && connection.current) { connection.current.sink = { head() {}, body() {}, end() {}, fail() {} }; connection.fail(""); }
+    if (connection && connection.current) { connection.current.sink.close(); connection.current.sink = { head() {}, body() {}, end() {}, fail() {}, close() {} }; connection.fail(""); }
   }
   // Gives a request a connection, or fails it once the session ended.
   acquire(use, fail, isFirst) {
     if (this.mux.isEnded) { fail(); return; }
-    while (this.idle.length) { const connection = this.idle.pop(); if (connection.isUsable) { this.active.add(connection); use(connection); return; } }
-    if (this.active.size < HTTP.streamsMax) { const connection = new HttpConnection(this); this.active.add(connection); use(connection); return; }
+    if (this.active.size < this.streamsMax) {
+      while (this.idle.length) { const connection = this.idle.pop(); if (connection.isUsable) { this.active.add(connection); use(connection); return; } }
+      const connection = new HttpConnection(this); this.active.add(connection); use(connection); return;
+    }
     (isFirst ? this.waitingFirst : this.waiting).push([use, fail, isFirst]);
   }
   // Takes the request that waited longest, one of waitingFirst before any of waiting.
   nextWaiting() { return this.waitingFirst.shift() || this.waiting.shift(); }
+  // Gives a free connection to the next waiting request, or keeps it idle. A connection over the count closes.
   release(connection) {
     this.active.delete(connection);
-    const next = this.nextWaiting();
-    if (next) { this.active.add(connection); next[0](connection); return; }
-    this.idle.push(connection);
+    if (this.active.size < this.streamsMax) {
+      const next = this.nextWaiting();
+      if (next) { this.active.add(connection); next[0](connection); return; }
+      if (this.active.size + this.idle.length < this.streamsMax) { this.idle.push(connection); return; }
+    }
+    connection.close();
   }
   forget(connection) {
     this.active.delete(connection);
     const index = this.idle.indexOf(connection);
     if (index >= 0) this.idle.splice(index, 1);
-    while ((this.waitingFirst.length || this.waiting.length) && (this.mux.isEnded || this.active.size < HTTP.streamsMax)) this.acquire(...this.nextWaiting());
+    this.drain();
+  }
+  // Gives waiting requests connections while the count allows.
+  drain() {
+    while ((this.waitingFirst.length || this.waiting.length) && (this.mux.isEnded || this.active.size < this.streamsMax)) this.acquire(...this.nextWaiting());
+  }
+  // Counts a request's end in the window.
+  closeRequest() {
+    this.openCount--;
+    this.window.openMin = Math.min(this.window.openMin, this.openCount);
+  }
+  // Adds the channel's bytes to the window, and judges the window once it is LINE.windowMs old.
+  measure(n) {
+    const current = this.window;
+    current.bytes += n;
+    const now = performance.now();
+    if (now - current.startedAt < LINE.windowMs) return;
+    if (current.openMin >= LINE.openMin) this.judge((current.bytes * 1000) / (now - current.startedAt));
+    this.window = { startedAt: now, bytes: 0, openMin: this.openCount };
+  }
+  // Sets the count from a counted window's rate in bytes a second. One fast window raises it,
+  // and LINE.slowWindows slow windows in a row lower it.
+  judge(rate) {
+    if (rate >= LINE.fastBytesPerSecond) { this.slowCount = 0; this.setStreamsMax(HTTP.streamsFast); return; }
+    this.slowCount++;
+    if (this.slowCount >= LINE.slowWindows) this.setStreamsMax(HTTP.streamsSlow);
+  }
+  setStreamsMax(count) {
+    this.streamsMax = count;
+    stats.streamsMax = count;
+    this.drain();
   }
   fetchWhole(method, path) {
     return new Promise((resolve, reject) => {
