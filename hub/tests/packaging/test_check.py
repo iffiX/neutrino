@@ -533,6 +533,65 @@ def test_no_vault_under_programdata_fails_the_check(
 
 
 @pytest.fixture
+def windows_rules(check, monkeypatch):
+    """The hub's rules Windows Firewall lists, as the test sets them."""
+    held = {"names": ""}
+    monkeypatch.setattr(check, "_answer", lambda command: held["names"])
+    return held
+
+
+def test_the_wizards_rule_before_setup_passes(check, windows_rules):
+    windows_rules["names"] = "neutrino_hub_setup"
+
+    check._check_hub_windows_rules(
+        "before setup", present=("neutrino_hub_setup",), wait_s=0
+    )
+
+
+def test_the_wizards_rule_left_after_setup_fails_the_check(check, windows_rules):
+    windows_rules["names"] = "neutrino_hub_panel_http,neutrino_hub_setup"
+
+    with pytest.raises(SystemExit, match="neutrino_hub_setup is still there"):
+        check._check_hub_windows_rules(
+            "after setup",
+            present=("neutrino_hub_panel_http",),
+            absent=("neutrino_hub_setup",),
+            wait_s=0,
+        )
+
+
+def test_a_rule_left_after_the_removal_fails_the_check(check, windows_rules):
+    windows_rules["names"] = "neutrino_hub_agent"
+
+    with pytest.raises(SystemExit, match="neutrino_hub_agent is still there"):
+        check._check_hub_windows_rules(
+            "after the removal", absent=("neutrino_hub_",), wait_s=0
+        )
+
+    windows_rules["names"] = ""
+    check._check_hub_windows_rules(
+        "after the removal", absent=("neutrino_hub_",), wait_s=0
+    )
+
+
+def test_a_rule_the_wizard_writes_after_it_serves_is_waited_for(
+    check, windows_rules, monkeypatch
+):
+    answers = iter(["", "", "neutrino_hub_setup"])
+    monkeypatch.setattr(check, "_answer", lambda command: next(answers))
+    monkeypatch.setattr(check.time, "sleep", lambda seconds: None)
+
+    check._check_hub_windows_rules("before setup", present=("neutrino_hub_setup",))
+
+
+def test_a_missing_rule_fails_the_check(check, windows_rules):
+    with pytest.raises(SystemExit, match="no rule neutrino_hub_setup before setup"):
+        check._check_hub_windows_rules(
+            "before setup", present=("neutrino_hub_setup",), wait_s=0
+        )
+
+
+@pytest.fixture
 def client_data(check, monkeypatch, tmp_path):
     """The client's data folder of this test's own, and icacls answered per path."""
     data = tmp_path / "ProgramData" / "Neutrino" / "client"

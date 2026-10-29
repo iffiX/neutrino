@@ -37,11 +37,13 @@ The targets:
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
   carried ``frpc --version`` answers the pinned version, the
   ``neutrino_hub`` service runs and serves the setup wizard on the panel's
-  port, ``nhub setup --json`` sets a ``server`` hub up and installs its local
-  agent, the service runs and the panel answers ``/api/hub/display``;
-  ``nhub stop``, the hub and its agent are removed, and ``install.ps1``
-  installs the same file again from a directory up to ``nhub --version``.
-  Windows.
+  port with the rule ``neutrino_hub_setup`` in Windows Firewall, ``nhub
+  setup --json`` sets a ``server`` hub up and installs its local agent, the
+  service runs, the panel answers ``/api/hub/display``, and the hub's rules
+  hold ``neutrino_hub_panel_http`` and no ``neutrino_hub_setup``; ``nhub
+  stop``, the hub and its agent are removed with no rule of the hub's left,
+  and ``install.ps1`` installs the same file again from a directory up to
+  ``nhub --version``. Windows.
 - ``hub_macos``: the same with the .pkg, its ``com.neutrino.hub`` job
   loaded and running, removed by hand, and
   ``install.sh``. macOS.
@@ -248,6 +250,14 @@ MACHINE_ENVIRONMENT_KEY = (
 )
 HUB_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "hub"
 HUB_WINDOWS_SERVICE = "neutrino_hub"
+# The hub's rules in Windows Firewall: every name's start, the setup
+# wizard's rule and the panel's HTTP port's.
+HUB_WINDOWS_RULE_PREFIX = "neutrino_hub_"
+HUB_WINDOWS_SETUP_RULE = "neutrino_hub_setup"
+HUB_WINDOWS_PANEL_RULE = "neutrino_hub_panel_http"
+# How long the hub's rules are read again until they are as wanted. The
+# wizard writes its rule after it serves.
+HUB_WINDOWS_RULE_WAIT_S = 60
 # Where an installed hub keeps its configuration and the vault in it; nothing
 # named config may stand under Program Files, where a checkout would keep it.
 HUB_WINDOWS_CONFIG = PROGRAM_DATA / "Neutrino" / "hub" / "config"
@@ -1232,11 +1242,17 @@ def check_hub_windows(msi: Path) -> None:
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
         raise SystemExit("the hub's service is not running after install")
     _wait_for_wizard()
+    _check_hub_windows_rules("before setup", present=(HUB_WINDOWS_SETUP_RULE,))
 
     _set_up_hub([str(nhub)])
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
         raise SystemExit("the hub's service is not running after setup")
     _wait_for_panel()
+    _check_hub_windows_rules(
+        "after setup",
+        present=(HUB_WINDOWS_PANEL_RULE,),
+        absent=(HUB_WINDOWS_SETUP_RULE,),
+    )
     _check_hub_windows_config()
     _answer([str(nhub), "stop", "--yes"])
 
@@ -1246,6 +1262,7 @@ def check_hub_windows(msi: Path) -> None:
         raise SystemExit("the hub's service outlived the uninstaller")
     if nhub.exists():
         raise SystemExit("the hub's program outlived the uninstaller")
+    _check_hub_windows_rules("after the removal", absent=(HUB_WINDOWS_RULE_PREFIX,))
     _remove_windows_product("Neutrino Agent")
 
     _run_install_script(
@@ -1261,6 +1278,50 @@ def check_hub_windows(msi: Path) -> None:
         ],
     )
     print(f"nhub by install.ps1 {_answer([str(nhub), '--version'])}")
+
+
+def _check_hub_windows_rules(
+    when: str,
+    *,
+    present: tuple = (),
+    absent: tuple = (),
+    wait_s: float = HUB_WINDOWS_RULE_WAIT_S,
+) -> None:
+    """The hub's rules in Windows Firewall at one moment of the check, read
+    again until they are as wanted or ``wait_s`` has passed.
+
+    Args:
+        when: The moment, as the output and a failure name it.
+        present: Rule names that must be there.
+        absent: Rule names, or starts of them, that no rule may have.
+        wait_s: How long the rules are read again.
+
+    Raises:
+        SystemExit: When a rule of ``present`` is missing or a rule matches
+            ``absent`` once the time is up.
+    """
+    deadline = time.monotonic() + wait_s
+    while True:
+        listed = _answer(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                f"@(Get-NetFirewallRule -Name '{HUB_WINDOWS_RULE_PREFIX}*' "
+                "-ErrorAction SilentlyContinue).Name -join ','",
+            ]
+        )
+        held = [name for name in listed.split(",") if name]
+        missing = [name for name in present if name not in held]
+        left = [name for name in held if name.startswith(absent)] if absent else []
+        if not (missing or left) or time.monotonic() >= deadline:
+            break
+        time.sleep(HUB_PANEL_POLL_S)
+    print(f"the hub's rules {when}: {', '.join(held) or 'none'}")
+    if missing:
+        raise SystemExit(f"no rule {', '.join(missing)} {when}")
+    if left:
+        raise SystemExit(f"the rule {', '.join(left)} is still there {when}")
 
 
 def _check_hub_windows_config() -> None:
