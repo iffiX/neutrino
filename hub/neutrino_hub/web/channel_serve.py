@@ -94,6 +94,7 @@ from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_PORTS
 from neutrino_hub.system.machine import machine_id
+from neutrino_hub.utils.owned_tasks import start_owned_task
 from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
@@ -142,7 +143,7 @@ class ChannelControlHandler:
         returns, since the connection's answers are read after it.
         """
         self._pending.clear()
-        asyncio.get_running_loop().create_task(self._push_shares())
+        start_owned_task(self._push_shares())
 
     async def _push_shares(self) -> None:
         try:
@@ -403,13 +404,9 @@ class ChannelControlHandler:
         except AgentOfflineError:
             return
         if kind == CHANNEL_STREAM_PACKAGE:
-            asyncio.get_running_loop().create_task(
-                serve_package_stream(self._runtime, session, stream)
-            )
+            start_owned_task(serve_package_stream(self._runtime, session, stream))
         else:
-            asyncio.get_running_loop().create_task(
-                serve_log_stream(self._runtime, session, stream)
-            )
+            start_owned_task(serve_log_stream(self._runtime, session, stream))
 
     # --- frames ---
 
@@ -1050,7 +1047,7 @@ async def _send_reinstall(session: ChannelSession, hub_version: str) -> None:
         session.version,
         hub_version,
     )
-    asyncio.create_task(_log_reinstall_close(session.name, stream))
+    start_owned_task(_log_reinstall_close(session.name, stream))
 
 
 async def _log_reinstall_close(name: str, stream) -> None:

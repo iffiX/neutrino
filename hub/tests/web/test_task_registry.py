@@ -7,6 +7,7 @@ that install's log.
 """
 
 import asyncio
+import gc
 
 from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.web.task_stream import FINISHED_TASK_LIMIT, TaskStreamRegistry
@@ -91,3 +92,27 @@ def test_a_source_ends_its_task_with_a_status_of_its_own():
 
     assert stream.exit_code == 2
     assert "task failed" not in "".join(stream.buffer)
+
+
+def test_a_job_waiting_on_what_only_it_references_survives_a_collection():
+    async def waits():
+        yield "installing\n"
+        await asyncio.get_running_loop().create_future()
+
+    async def run():
+        registry = TaskStreamRegistry()
+        stream = registry.start(label="install podman", source=waits())
+        await _settle()
+        gc.collect()
+        drains = [
+            task for task in asyncio.all_tasks() if task.get_coro().__name__ == "_drain"
+        ]
+        for task in drains:
+            task.cancel()
+        await _settle()
+        return len(drains), stream
+
+    drains, stream = asyncio.run(run())
+
+    assert drains == 1
+    assert stream.buffer[0] == "installing\n"

@@ -34,6 +34,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_RECORD_RESIZE,
     CHANNEL_RECORD_STDERR,
 )
+from neutrino_hub.utils.owned_tasks import start_owned_task
 
 # The record types recv() hands on, by the name each item carries.
 ITEM_NAMES = {
@@ -154,7 +155,7 @@ class ChannelStream:
         self._closed = asyncio.Event()
         self._answered = asyncio.Event()
         self._write_lock = asyncio.Lock()
-        self._pump = self._loop.create_task(self._read_forever())
+        self._pump = start_owned_task(self._read_forever())
 
     @property
     def is_closed(self) -> bool:

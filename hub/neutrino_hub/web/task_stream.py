@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from neutrino_hub.exceptions import TaskExitStatusError
+from neutrino_hub.utils.owned_tasks import start_owned_task
 
 TASK_ID_BYTES = 8
 BUFFER_LINE_LIMIT = 2000
@@ -121,7 +122,7 @@ class TaskStreamRegistry:
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self._streams[stream.id] = stream
-        asyncio.create_task(self._drain(stream, source))
+        start_owned_task(self._drain(stream, source))
         self._note_change(stream.id)
         return stream
 

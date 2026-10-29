@@ -41,6 +41,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_RECORD_OPEN,
 )
 from neutrino_hub.modules.channel.streams import ChannelStream, encode_json_record
+from neutrino_hub.utils.owned_tasks import start_owned_task
 
 LOGGER = logging.getLogger(__name__)
 
@@ -299,7 +300,7 @@ class LocalChannelClient:
     def _dispatch(self, message: dict) -> None:
         """Hand one line to its taker without holding the reader."""
         if "question" in message:
-            asyncio.get_running_loop().create_task(self._answer(message))
+            start_owned_task(self._answer(message))
         elif "event" in message:
             self._take_event(message)
         elif "frame" in message:
@@ -323,13 +324,9 @@ class LocalChannelClient:
             self._queue(session, ("event", event, fields))
             self._queue(session, None)
         elif event == CHANNEL_EVENT_STREAM:
-            asyncio.get_running_loop().create_task(
-                self._handler.take_event(event, fields)
-            )
+            start_owned_task(self._handler.take_event(event, fields))
         else:
-            asyncio.get_running_loop().create_task(
-                self._handler.take_event(event, fields)
-            )
+            start_owned_task(self._handler.take_event(event, fields))
 
     def _start_session(self, session: str) -> None:
         """One worker per session, so its frames are taken in order."""
