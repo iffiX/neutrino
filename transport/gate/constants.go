@@ -88,3 +88,14 @@ const (
 	// GateSerialBits is the size of a certificate's random serial number.
 	GateSerialBits = 128
 )
+
+// The XOR-MAPPED-ADDRESS of a peer at a loopback, link-local or unspecified
+// address, with the peer's port.
+const (
+	// GateMappedIPv4 is the address for an IPv4 peer, from the documentation
+	// block of RFC 5737.
+	GateMappedIPv4 = "192.0.2.1"
+	// GateMappedIPv6 is the address for an IPv6 peer, from the documentation
+	// block of RFC 3849.
+	GateMappedIPv6 = "2001:db8::1"
+)

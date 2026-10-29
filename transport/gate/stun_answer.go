@@ -36,11 +36,11 @@ func (a *stunAnswerer) handle(frame []byte) {
 	_ = a.answer(message)
 }
 
-// answer writes the Binding Success for one verified request: the peer's
+// answer writes the Binding Success for one verified request: the mapped
 // address, the integrity under the share's password and the fingerprint.
 func (a *stunAnswerer) answer(request *stun.Message) error {
 	response, err := stun.Build(request, stun.BindingSuccess,
-		&stun.XORMappedAddress{IP: a.peer.IP, Port: a.peer.Port},
+		mappedAddress(a.peer),
 		stun.NewShortTermIntegrity(a.password), stun.Fingerprint)
 	if err != nil {
 		return err
@@ -83,6 +83,20 @@ func usernameOf(frame []byte) (string, int, bool) {
 		offset = valueStart + (length+3)&^3
 	}
 	return "", 0, false
+}
+
+// mappedAddress is the XOR-MAPPED-ADDRESS of a peer, at the peer's port. It
+// is the peer's address, or GateMappedIPv4 or GateMappedIPv6 by family for a
+// loopback, link-local or unspecified address.
+func mappedAddress(peer *net.TCPAddr) *stun.XORMappedAddress {
+	ip := peer.IP
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		ip = net.ParseIP(GateMappedIPv6)
+		if peer.IP.To4() != nil {
+			ip = net.ParseIP(GateMappedIPv4)
+		}
+	}
+	return &stun.XORMappedAddress{IP: ip, Port: peer.Port}
 }
 
 // tcpAddr is an address as a TCP address, the zero address when it is not

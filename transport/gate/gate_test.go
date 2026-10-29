@@ -292,6 +292,47 @@ func TestLaterChecksAreAnswered(t *testing.T) {
 	}
 }
 
+func TestMappedAddress(t *testing.T) {
+	cases := []struct {
+		name string
+		peer *net.TCPAddr
+		want *net.TCPAddr
+	}{
+		{"a public IPv4 peer", &net.TCPAddr{IP: net.IPv4(203, 0, 113, 9), Port: 4242}, &net.TCPAddr{IP: net.IPv4(203, 0, 113, 9), Port: 4242}},
+		{"a LAN peer", &net.TCPAddr{IP: net.IPv4(192, 168, 122, 191), Port: 4242}, &net.TCPAddr{IP: net.IPv4(192, 168, 122, 191), Port: 4242}},
+		{"a public IPv6 peer", &net.TCPAddr{IP: net.ParseIP("2001:db8::9"), Port: 4242}, &net.TCPAddr{IP: net.ParseIP("2001:db8::9"), Port: 4242}},
+		{"frpc on IPv4 loopback", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 50123}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv4), Port: 50123}},
+		{"a forwarder on another loopback address", &net.TCPAddr{IP: net.IPv4(127, 0, 1, 1), Port: 50123}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv4), Port: 50123}},
+		{"IPv4 loopback on an IPv6 socket", &net.TCPAddr{IP: net.ParseIP("::ffff:127.0.0.1"), Port: 50123}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv4), Port: 50123}},
+		{"a forwarder on IPv6 loopback", &net.TCPAddr{IP: net.IPv6loopback, Port: 50123}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv6), Port: 50123}},
+		{"an IPv4 link-local peer", &net.TCPAddr{IP: net.IPv4(169, 254, 7, 7), Port: 4242}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv4), Port: 4242}},
+		{"an IPv6 link-local peer", &net.TCPAddr{IP: net.ParseIP("fe80::7"), Port: 4242}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv6), Port: 4242}},
+		{"an unspecified peer", &net.TCPAddr{IP: net.IPv4zero, Port: 4242}, &net.TCPAddr{IP: net.ParseIP(GateMappedIPv4), Port: 4242}},
+	}
+	request := stunFrame(t, stun.BindingRequest, stun.NewUsername(testUfrag+":browser"), stun.NewShortTermIntegrity(testPassword), stun.Fingerprint)[GateFrameLengthBytes:]
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var written []byte
+			answerer := &stunAnswerer{ufrag: testUfrag, password: testPassword, peer: c.peer, write: func(frame []byte) error {
+				written = frame
+				return nil
+			}}
+			answerer.handle(request)
+			answer := &stun.Message{Raw: written}
+			if err := answer.Decode(); err != nil {
+				t.Fatal(err)
+			}
+			var mapped stun.XORMappedAddress
+			if err := mapped.GetFrom(answer); err != nil {
+				t.Fatal(err)
+			}
+			if !mapped.IP.Equal(c.want.IP) || mapped.Port != c.want.Port || (mapped.IP.To4() == nil) != (c.want.IP.To4() == nil) {
+				t.Fatalf("mapped address %v, want %v", &mapped, c.want)
+			}
+		})
+	}
+}
+
 // stunFrame builds one STUN message's bytes.
 func stunFrame(t *testing.T, messageType stun.MessageType, setters ...stun.Setter) []byte {
 	t.Helper()
