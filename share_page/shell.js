@@ -30,14 +30,16 @@ const KEPT_FACTS = "neutrino_share";
 const WORDS = {
   en: {
     opening: "Opening {app}…",
-    slow: "The line is slow, still connecting…",
+    slowConnecting: "The line is slow, still connecting…",
+    slowLoading: "The line is slow, still loading…",
     link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
     hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
     unavailable: ["The app cannot be opened right now.", "It opens by itself once it is back."],
   },
   zh: {
     opening: "正在打开 {app}…",
-    slow: "线路较慢，仍在连接…",
+    slowConnecting: "线路较慢，仍在连接…",
+    slowLoading: "线路较慢，仍在加载…",
     link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
     hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],
     unavailable: ["应用暂时打不开。", "恢复后会自动打开。"],
@@ -163,6 +165,10 @@ const screen = {
   kind: "",
   // Counts every change of screen.
   serial: 0,
+  // Whether the loading line reads that the line is slow.
+  isSlow: false,
+  // Whether the session is admitted and the app's first page loads.
+  isAdmitted: false,
   element(id) { return document.getElementById(id); },
   // The tab of a screen of the page's own: the screen's first line as its title, and no icon.
   tab(line) {
@@ -178,10 +184,22 @@ const screen = {
     this.element("screen").classList.remove("hidden");
     this.tab(line);
   },
+  // Reads the loading line as slow, after TIMING.slow of the page.
   slow() {
-    if (this.kind !== "loading") return;
-    this.element("title").textContent = words.slow;
-    this.tab(words.slow);
+    this.isSlow = true;
+    this.slowLine();
+  },
+  // Marks the session admitted. A slow line then names the app's load.
+  admitted() {
+    this.isAdmitted = true;
+    this.slowLine();
+  },
+  // Draws the slow line of the step the page waits for, on the loading screen alone.
+  slowLine() {
+    if (this.kind !== "loading" || !this.isSlow) return;
+    const line = this.isAdmitted ? words.slowLoading : words.slowConnecting;
+    this.element("title").textContent = line;
+    this.tab(line);
   },
   refuse(kind) {
     const [title, detail] = words[kind];
@@ -1140,7 +1158,7 @@ const page = {
     if (!this.facts) { screen.refuse("link"); return; }
     const title = this.facts.app.title || "";
     screen.loading(title);
-    const slowTimer = setTimeout(() => screen.slow(), TIMING.slow);
+    setTimeout(() => screen.slow(), TIMING.slow);
     mirror.watch(document.getElementById("app"), title);
     worker.onRequest = (message, port, reply) => this.take(message, port, reply);
     const started = worker.start(cacheName(this.facts)).catch(() => { stats.isWorkerFailed = true; });
@@ -1155,11 +1173,11 @@ const page = {
         await sleep(Math.min(2000, deadline - performance.now()));
       }
     }
-    clearTimeout(slowTimer);
     await started;
     if (stats.isWorkerFailed) { if (session) session.close(); screen.refuse("hub"); return; }
     if (!session) { screen.refuse("hub"); this.reconnect(false); return; }
     stats.admitMs = performance.now() - stats.startedAt;
+    screen.admitted();
     this.use(session);
     await this.check(deadline + TIMING.open);
   },
