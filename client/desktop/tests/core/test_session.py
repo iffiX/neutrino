@@ -779,6 +779,33 @@ def test_a_paused_join_counts_down_and_joins_again(config_path):
         made.close()
 
 
+@pytest.mark.parametrize(
+    "params, wait_s", [({"retry_after_s": 5}, 5), ({}, CLIENT_BACKOFF_MAX_S)]
+)
+def test_a_join_refused_control_unavailable_joins_again_after_its_retry_after_s(
+    config_path, params, wait_s
+):
+    now = [1000.0]
+    made = Harness(pending(config_path), clock=lambda: now[0])
+    made.transport.answers["join"] = lambda line: {
+        "code": "control_unavailable",
+        "params": params,
+    }
+    try:
+        made.transport.next_command("join")
+        assert wait_for(lambda: made.session.waiting() is not None)
+        waiting = made.session.waiting()
+        assert waiting["reason"] == "hub_silent"
+        assert wait_s - 2 < waiting["next_round_at"] - time.time() <= wait_s
+        now[0] += wait_s - 1
+        with pytest.raises(queue.Empty):
+            made.transport.next_command("join", timeout_s=1.5)
+        now[0] += 1
+        made.transport.next_command("join", timeout_s=4)
+    finally:
+        made.close()
+
+
 def test_a_join_that_reached_no_address_waits_and_tries_again(config_path):
     made = Harness(pending(config_path))
     made.transport.answers["join"] = lambda line: {

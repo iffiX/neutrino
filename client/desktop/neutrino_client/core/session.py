@@ -134,7 +134,7 @@ CODE_HUB_UNTRUSTED = "hub_untrusted"
 CODE_HUB_KEY_MISSING = "hub_key_missing"
 CODE_REPLACED = "replaced"
 # The refusals of a join the hub answers that keep the ticket: tried again
-# a minute later.
+# after the refusal's ``retry_after_s``, else a minute later.
 JOIN_RETRIED_CODES = ("control_unavailable", "channel_full")
 # How long one turn of the session's thread waits when nothing is due.
 SESSION_TICK_S = 1
@@ -1257,10 +1257,11 @@ class ClientHubSession:
     def _join_failed(self, code: dict) -> None:
         """Wait after a join that did not complete, by its code.
 
-        ``hub_unreachable`` waits the backoff, ``hub_untrusted``,
-        ``control_unavailable`` and ``channel_full`` a minute, and
-        ``admission_paused`` the seconds the hub names; any other code is
-        the hub refusing the ticket, which waits for good.
+        ``hub_unreachable`` waits the backoff and ``hub_untrusted`` a
+        minute. ``admission_paused``, ``control_unavailable`` and
+        ``channel_full`` wait the seconds the hub names, the last two a
+        minute when it names none. Any other code is the hub refusing the
+        ticket, which waits for good.
         """
         name = code["code"]
         if name == CODE_HUB_UNREACHABLE:
@@ -1268,17 +1269,12 @@ class ClientHubSession:
         elif name == CODE_HUB_UNTRUSTED:
             self._wait(WAIT_UNTRUSTED, code, CLIENT_BACKOFF_MAX_S, is_retried=True)
         elif name == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
-            try:
-                delay = float(code["params"].get("retry_after_s") or 0)
-            except (TypeError, ValueError):
-                delay = 0
-            delay = max(delay, CLIENT_JOIN_RETRY_MIN_S)
+            delay = _retry_after_s(code, CLIENT_JOIN_RETRY_MIN_S)
             self._wait(WAIT_ADMISSION_PAUSED, code, delay, is_retried=True)
             self._log(f"the hub paused admissions; joining again in {delay:g}s")
         elif name in JOIN_RETRIED_CODES:
-            self._wait(
-                self._silent_reason(), code, CLIENT_BACKOFF_MAX_S, is_retried=True
-            )
+            delay = _retry_after_s(code, CLIENT_BACKOFF_MAX_S)
+            self._wait(self._silent_reason(), code, delay, is_retried=True)
         else:
             self._wait(WAIT_JOIN_REFUSED, code, None)
             self._log(f"the hub refused the join: {name}")
@@ -1961,3 +1957,20 @@ def _params_of(line: dict) -> dict:
     """A line's ``params``, empty when it carries none."""
     params = line.get("params")
     return dict(params) if isinstance(params, dict) else {}
+
+
+def _retry_after_s(code: dict, default_s: float) -> float:
+    """A refusal's ``retry_after_s``, at least ``CLIENT_JOIN_RETRY_MIN_S``.
+
+    Args:
+        code: The ``{"code", "params"}`` of the refusal.
+        default_s: The seconds when the refusal names none.
+
+    Returns:
+        The seconds before the join runs again.
+    """
+    try:
+        delay = float(code["params"].get("retry_after_s") or default_s)
+    except (TypeError, ValueError):
+        delay = default_s
+    return max(delay, CLIENT_JOIN_RETRY_MIN_S)

@@ -360,18 +360,12 @@ class HubSession(
                     is ChannelResult.Refused -> when (answer.code) {
                         "hub_untrusted" -> waitFor(HubWaitReason.UNTRUSTED, answer, CLIENT_BACKOFF_MAX_S)
 
-                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> {
-                            val retryS = (answer.params["retry_after_s"] as? JsonPrimitive)?.longOrNull
-                            waitFor(
-                                HubWaitReason.ADMISSION_PAUSED,
-                                answer,
-                                (retryS ?: CLIENT_BACKOFF_MAX_S).coerceAtLeast(1),
-                            )
-                        }
+                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED ->
+                            waitFor(HubWaitReason.ADMISSION_PAUSED, answer, retryAfterS(answer))
 
                         in CLIENT_ROUND_SILENT_CODES -> silent(answer, null)
 
-                        in CLIENT_ROUND_RETRIED_CODES -> waitFor(silentReason(), answer, CLIENT_BACKOFF_MAX_S)
+                        in CLIENT_ROUND_RETRIED_CODES -> waitFor(silentReason(), answer, retryAfterS(answer))
 
                         else -> {
                             hold(HubWaitReason.JOIN_REFUSED, answer)
@@ -712,6 +706,10 @@ class HubSession(
 
     private fun silentReason(): HubWaitReason =
         if (overlay != null) HubWaitReason.HUB_OFF_OVERLAY else HubWaitReason.HUB_SILENT
+
+    /** The refusal's `retry_after_s`, else [CLIENT_BACKOFF_MAX_S], and at least a second. */
+    private fun retryAfterS(refusal: ChannelResult.Refused): Long =
+        ((refusal.params["retry_after_s"] as? JsonPrimitive)?.longOrNull ?: CLIENT_BACKOFF_MAX_S).coerceAtLeast(1)
 
     /** Wait [waitS] seconds on [reason], the next round's moment on the view, and show `connecting` at 0. */
     private fun waitFor(reason: HubWaitReason, refusal: ChannelResult.Refused?, waitS: Long): Long {

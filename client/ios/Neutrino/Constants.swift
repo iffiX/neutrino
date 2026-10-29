@@ -252,7 +252,7 @@ enum Channel {
     /// The codes of a round, or a join, that no address answered: the next one runs at the backoff.
     static let roundSilentCodes = ["hub_unreachable", Transport.codeMissing, Transport.codeFailed]
 
-    /// The hub's refusals a bound session or a join waits `backoffMaxSeconds` after and tries again.
+    /// The hub's refusals a join waits their `retry_after_s` after, else `backoffMaxSeconds`, and tries again.
     static let roundRetriedCodes = ["control_unavailable", "channel_full"]
 
     /// Anything on the way to the hub that did not answer.

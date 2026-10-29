@@ -436,6 +436,44 @@ class HubSessionTest {
     }
 
     @Test
+    fun aJoinRefusedControlUnavailableJoinsAgainAfterItsSeconds() {
+        fake.answer = { line ->
+            if (FakeTransport.text(line, "command") == "join") {
+                buildJsonObject {
+                    put("code", "control_unavailable")
+                    put("params", buildJsonObject { put("retry_after_s", 5) })
+                }
+            } else {
+                JsonObject(emptyMap())
+            }
+        }
+        val (session, store) = session(binding = Samples.binding.copy(token = "", ticket = "ticket-1"))
+        assertTrue(fake.nextCommand("join") != null)
+        eventually("waiting") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
+        assertEquals(CLOCK_MILLIS + 5_000, session.view.value.nextRoundAtMillis)
+        assertEquals("ticket-1", store.get("b1")?.ticket)
+        assertNull(fake.nextCommand("join", seconds = 3))
+        assertTrue(fake.nextCommand("join", seconds = 4) != null)
+    }
+
+    @Test
+    fun aJoinRefusedControlUnavailableWithNoSecondsWaitsAMinute() {
+        fake.answer = { line ->
+            if (FakeTransport.text(line, "command") == "join") {
+                buildJsonObject {
+                    put("code", "control_unavailable")
+                    put("params", JsonObject(emptyMap()))
+                }
+            } else {
+                JsonObject(emptyMap())
+            }
+        }
+        val (session, _) = session(binding = Samples.binding.copy(token = "", ticket = "ticket-1"))
+        eventually("waiting") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
+        assertEquals(CLOCK_MILLIS + 60_000, session.view.value.nextRoundAtMillis)
+    }
+
+    @Test
     fun anOldBindingDialsNothing() {
         val (session, _) = session(binding = Samples.binding.copy(hubKey = "", privateKey = ""))
         eventually("refused") { session.view.value.waitReason == HubWaitReason.JOIN_REFUSED }

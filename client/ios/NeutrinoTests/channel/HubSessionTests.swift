@@ -312,6 +312,37 @@ final class HubSessionTests: XCTestCase {
         XCTAssertTrue(RunLoopWait.until { self.fake.sent("join").count == 2 })
     }
 
+    func testAJoinRefusedControlUnavailableKeepsTheTicketAndJoinsAgainAfterItsSeconds() throws {
+        var pending = Samples.binding
+        pending.token = ""
+        pending.ticket = "ticket-1"
+        fake.answer = { line in
+            line.text("command") == "join"
+                ? ["code": .string("control_unavailable"), "params": .object(["retry_after_s": .int(5)])] : [:]
+        }
+        let session = try self.session(pending)
+        XCTAssertTrue(RunLoopWait.until { session.view.waitReason == .hubSilent })
+        XCTAssertEqual(session.view.nextRoundAt, clock.now + 5)
+        XCTAssertEqual(store.get("b1")?.ticket, "ticket-1")
+        clock.advance(by: 4)
+        RunLoopWait.turn()
+        XCTAssertEqual(fake.sent("join").count, 1)
+        clock.advance(by: 1)
+        XCTAssertTrue(RunLoopWait.until { self.fake.sent("join").count == 2 })
+    }
+
+    func testAJoinRefusedControlUnavailableWithNoSecondsWaitsAMinute() throws {
+        var pending = Samples.binding
+        pending.token = ""
+        pending.ticket = "ticket-1"
+        fake.answer = { line in
+            line.text("command") == "join" ? ["code": .string("control_unavailable"), "params": .object([:])] : [:]
+        }
+        let session = try self.session(pending)
+        XCTAssertTrue(RunLoopWait.until { session.view.waitReason == .hubSilent })
+        XCTAssertEqual(session.view.nextRoundAt, clock.now + Channel.backoffMaxSeconds)
+    }
+
     func testABindingOf05DialsNothingAndWaitsForLeave() throws {
         var old = Samples.binding
         old.hubKey = ""

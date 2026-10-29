@@ -332,12 +332,11 @@ final class HubSession {
             case Channel.codeHubUntrusted:
                 wait = waitFor(.untrusted, refusal, Channel.backoffMaxSeconds)
             case Channel.codeAdmissionPaused:
-                let retry = refusal.params["retry_after_s"]?.intValue.map(Double.init) ?? Channel.backoffMaxSeconds
-                wait = waitFor(.admissionPaused, refusal, max(retry, 1))
+                wait = waitFor(.admissionPaused, refusal, retryAfter(refusal))
             case _ where Channel.roundSilentCodes.contains(refusal.code):
                 wait = silent(refusal, nextRound: nil)
             case _ where Channel.roundRetriedCodes.contains(refusal.code):
-                wait = waitFor(HubWaitReason.hubSilent, refusal, Channel.backoffMaxSeconds)
+                wait = waitFor(HubWaitReason.hubSilent, refusal, retryAfter(refusal))
             default:
                 isJoining = false
                 hold(.joinRefused, refusal)
@@ -647,6 +646,11 @@ final class HubSession {
             backoff = min(backoff * 2, Channel.backoffMaxSeconds)
         }
         return waitFor(HubWaitReason.hubSilent, refusal, wait)
+    }
+
+    /// The refusal's `retry_after_s`, else `Channel.backoffMaxSeconds`, and at least a second.
+    private func retryAfter(_ refusal: ClientError) -> Double {
+        max(refusal.params["retry_after_s"]?.intValue.map(Double.init) ?? Channel.backoffMaxSeconds, 1)
     }
 
     private func waitFor(_ reason: HubWaitReason, _ refusal: ClientError?, _ seconds: Double) -> Double {

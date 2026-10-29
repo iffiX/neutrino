@@ -236,7 +236,7 @@ const val CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
 /** The codes of a round, or a join, that no address answered: the next one runs at the backoff. */
 val CLIENT_ROUND_SILENT_CODES: List<String> = listOf("hub_unreachable", "transport_missing", "transport_failed")
 
-/** The hub's refusals a bound session or a join waits [CLIENT_BACKOFF_MAX_S] after and tries again. */
+/** The hub's refusals a join waits their `retry_after_s` after, else [CLIENT_BACKOFF_MAX_S], and tries again. */
 val CLIENT_ROUND_RETRIED_CODES: List<String> = listOf("control_unavailable", "channel_full")
 
 /** The refusals the hub answers a protocol number it does not speak with. */
