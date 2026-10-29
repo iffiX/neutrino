@@ -8,14 +8,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// testPipeName is a pipe name no other process holds.
+// testPipeCount numbers the pipes of this test process.
+var testPipeCount atomic.Int64
+
+// testPipeName is a pipe name no other process or test holds.
 func testPipeName(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf(`%sneutrino_test_%d_%d`, ControlPipePrefix, os.Getpid(), time.Now().UnixNano())
+	return fmt.Sprintf(`%sneutrino_test_%d_%d`, ControlPipePrefix, os.Getpid(), testPipeCount.Add(1))
 }
 
 // acceptOne accepts one connection in the background; a listener closed
