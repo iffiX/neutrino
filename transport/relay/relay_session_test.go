@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/libp2p/go-yamux/v4"
 
+	"github.com/iffiX/neutrino/transport/knock"
 	"github.com/iffiX/neutrino/transport/session"
 )
 
@@ -144,6 +146,54 @@ func TestConnectRelayedToAnAgent(t *testing.T) {
 	_, refusal = openStream(t, clientConn, session.KindConnect, map[string]any{"id": "nothing"})
 	if refusal == nil || refusal.Code != "service_unknown" {
 		t.Fatalf("python's refusal %v", refusal)
+	}
+}
+
+func TestFarStreamPastTheMemoryCapIsReset(t *testing.T) {
+	limit := int64(3*session.StreamWindowInitialBytes + session.StreamWindowInitialBytes/2)
+	memory := session.NewTransportMemory(limit)
+	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, testHold), memory)
+	address := hub.listen(t)
+	agent := newPeer(t, hub, "dev", "agent")
+	agentConn, agentSession := agent.admit(t, hub, address, "dev")
+	serveAgentStreams(t, agentConn, 445)
+	client := newPeer(t, hub, "cli", "client")
+	clientConn, clientSession := client.admit(t, hub, address, "cli")
+	hub.python.mu.Lock()
+	hub.python.entries["connect:files"] = entryAnswer{answer: map[string]any{
+		"kind": "file", "device_id": "dev",
+		"target": map[string]any{"session": agentSession, "open": map[string]any{"kind": "connect", "port": 445, "protocol": "tcp"}},
+	}}
+	hub.python.mu.Unlock()
+
+	stream, err := clientConn.session.OpenStream(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.SetReadDeadline(time.Now().Add(5 * time.Second))
+	payload := session.OpenRecord(session.KindConnect, map[string]any{"id": "files"})[session.RecordHeaderBytes:]
+	if _, refusal, err := OpenOn(stream, json.RawMessage(payload)); !errors.Is(err, yamux.ErrStreamReset) {
+		t.Fatalf("a connect whose far stream is past the cap: %v %v", refusal, err)
+	}
+
+	_, refusal := openStream(t, clientConn, session.KindConnect, map[string]any{"id": "nothing"})
+	if refusal == nil || refusal.Code != "service_unknown" {
+		t.Fatalf("the client's next stream: %v", refusal)
+	}
+	for _, id := range []string{agentSession, clientSession} {
+		if _, err := hub.hub.Session(id); err != nil {
+			t.Fatalf("session %s after the refusal: %v", id, err)
+		}
+	}
+	if agentConn.session.IsClosed() || clientConn.session.IsClosed() {
+		t.Fatal("a refusal at the cap ended a peer's session")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for memory.Used() > 2*session.StreamWindowInitialBytes {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d bytes held after the refusal", memory.Used())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

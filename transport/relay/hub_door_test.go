@@ -142,7 +142,7 @@ func TestRefusedConnectionsAreHeldThenReset(t *testing.T) {
 }
 
 func TestRefusalPastTheHoldDeadlineResetsAtOnce(t *testing.T) {
-	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, 0))
+	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, 0), nil)
 	hostPort, _ := session.ParseAddress(hub.listen(t))
 	n, elapsed, err := refusalOf(t, hostPort, randomBytes(40))
 	if n != 0 || !isReset(err) || elapsed > time.Second {
@@ -196,7 +196,7 @@ func TestDoorReadsToTheDrawnLength(t *testing.T) {
 // refused connections and checks that a bound peer still gets in, one
 // refused connection reset to make room.
 func TestRefusedConnectionsAreClosedFirst(t *testing.T) {
-	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMin, 20*time.Second))
+	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMin, 20*time.Second), nil)
 	address := hub.listen(t)
 	hostPort, _ := session.ParseAddress(address)
 	var held []net.Conn

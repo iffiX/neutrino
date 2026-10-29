@@ -174,14 +174,14 @@ func fixedDraws(readBytes int, hold time.Duration) *knock.DoorDraws {
 
 func newTestHub(t *testing.T) *testHub {
 	t.Helper()
-	return newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, testHold))
+	return newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, testHold), nil)
 }
 
-func newTestHubWith(t *testing.T, draws *knock.DoorDraws) *testHub {
+func newTestHubWith(t *testing.T, draws *knock.DoorDraws, memory *session.TransportMemory) *testHub {
 	t.Helper()
 	key, _ := handshake.GenerateKey()
 	python := newFakePython()
-	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Draws: draws, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
+	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Draws: draws, Memory: memory, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -352,9 +352,9 @@ func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 			relayed.closeWith(session.NewRefusal(session.CodeAgentOffline, map[string]any{"device": target.DeviceID}))
 			return
 		}
-		farStream, refusal := far.openFar(target.Target.Open)
-		if refusal != nil {
-			relayed.closeWith(refusal)
+		farStream, err := far.openFar(target.Target.Open)
+		if err != nil {
+			relayed.endUnopened(err)
 			return
 		}
 		relayed.setFar(farStream.Stream)
@@ -425,9 +425,9 @@ func (rs *RelaySession) relayRecords(record *RecordStream, open []byte) {
 		relayed.closeWith(session.NewRefusal(session.CodeAgentOffline, map[string]any{"device": target.DeviceID}))
 		return
 	}
-	farStream, refusal := far.openFar(target.Target.Open)
-	if refusal != nil {
-		relayed.closeWith(refusal)
+	farStream, err := far.openFar(target.Target.Open)
+	if err != nil {
+		relayed.endUnopened(err)
 		return
 	}
 	relayed.setFar(farStream.Stream)
@@ -449,11 +449,16 @@ func (rs *RelaySession) endRelayed(relayed *relayStream, isClosePassed, isFarEnd
 }
 
 // openFar opens a stream on this session with an open record the Python
-// gave, as the far end of a relayed stream.
-func (rs *RelaySession) openFar(open json.RawMessage) (*RecordStream, *session.Refusal) {
+// gave, as the far end of a relayed stream. It returns ErrMemoryExhausted
+// when the memory cap refuses the stream, and an agent_offline refusal when
+// the session is gone.
+func (rs *RelaySession) openFar(open json.RawMessage) (*RecordStream, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), session.ConnectDialTimeout)
 	defer cancel()
 	stream, err := rs.session.OpenStream(ctx)
+	if errors.Is(err, session.ErrMemoryExhausted) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, session.NewRefusal(session.CodeAgentOffline, nil)
 	}
@@ -598,6 +603,24 @@ func (s *relayStream) closeWith(refusal *session.Refusal) {
 		}
 		if far != nil {
 			far.Close()
+		}
+	})
+}
+
+// endUnopened ends the stream whose far end did not open: with a reset when
+// the memory cap refused the far stream, and with the refusal's close record
+// otherwise.
+func (s *relayStream) endUnopened(err error) {
+	var refusal *session.Refusal
+	if errors.As(err, &refusal) {
+		s.closeWith(refusal)
+		return
+	}
+	s.once.Do(func() {
+		if resetter, ok := s.peer.(interface{ Reset() error }); ok {
+			_ = resetter.Reset()
+		} else {
+			s.peer.Close()
 		}
 	})
 }
