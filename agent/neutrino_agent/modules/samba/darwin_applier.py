@@ -4,8 +4,8 @@ The server is Apple's smbd, enabled through launchd. Share points are made
 with ``sharing``, their record names starting with the module's prefix, SMB
 only, no guest, never encrypted. Accounts are made with ``sysadminctl``,
 without a login shell or a home, hidden, and given an SMB password with the
-NT hash turned on first. Folders are granted with ``chmod +a``. The module
-fences nothing: the pf sub-anchor an earlier version fenced SMB in is
+NT hash turned on first. Folders are granted to each SMB user and its
+machine account with ``chmod +a``. The module fences nothing: the pf sub-anchor an earlier version fenced SMB in is
 emptied, and the rules file it kept deleted, at the first apply that finds
 the file.
 
@@ -551,6 +551,7 @@ class SambaDarwinApplier:
                 notes.append(f"removed share {name}")
         known = accounts + [name for name in config.users if name not in accounts]
         known = [name for name in known if name not in refused]
+        known += [smb_user_account(name) for name in known if smb_user_account(name)]
         grants = folder_acl_grants(served, refused=refused)
         for path in owned.values():
             if path and path not in grants:
@@ -648,6 +649,8 @@ class SambaDarwinApplier:
 def folder_acl_grants(shares: list, *, refused: "set | None" = None) -> dict:
     """The access-control entry each account takes on each shared folder.
 
+    The machine account of each SMB user takes the same entry as the user.
+
     Args:
         shares: The shares served, each with its users.
         refused: Accounts the system would not make, which no folder names.
@@ -662,11 +665,27 @@ def folder_acl_grants(shares: list, *, refused: "set | None" = None) -> dict:
     for share in shares:
         entry = SAMBA_DARWIN_ACL_READ if share.is_read_only else SAMBA_DARWIN_ACL_CHANGE
         held = grants.setdefault(share.path, {})
-        for name in share.valid_users:
-            if name in refused or held.get(name) == SAMBA_DARWIN_ACL_CHANGE:
+        for user in share.valid_users:
+            if user in refused:
                 continue
-            held[name] = entry
+            for name in (user, smb_user_account(user)):
+                if name and held.get(name) != SAMBA_DARWIN_ACL_CHANGE:
+                    held[name] = entry
     return grants
+
+
+def smb_user_account(user: str) -> str:
+    """The machine account one of the module's SMB users stands for.
+
+    Args:
+        user: The SMB user, ``neutrino-<account>``.
+
+    Returns:
+        The account; empty for a user without the module's prefix.
+    """
+    if not user.startswith(SAMBA_LINUX_USER_PREFIX):
+        return ""
+    return user[len(SAMBA_LINUX_USER_PREFIX) :]
 
 
 def _kept_point(held: list, share) -> "dict | None":

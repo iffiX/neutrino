@@ -747,3 +747,60 @@ def test_each_account_of_a_folder_share_is_granted_the_folder_once(applier, tool
         (call[2].split()[0], "write" in call[2]) for call in tools.ran("chmod", "+a")
     ]
     assert granted == [("user:ann", True), ("user:bob", True), ("user:carol", False)]
+
+
+def test_the_account_of_each_smb_user_takes_the_users_entry(applier, tools):
+    """A file the SMB user writes is the user's; its account opens it too."""
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {
+                    "name": "ann",
+                    "path": "/Users/ann",
+                    "valid_users": ["neutrino-ann"],
+                    "force_user": "ann",
+                },
+                {
+                    "name": "lab",
+                    "path": "/Volumes/data/lab",
+                    "valid_users": ["neutrino-ann", "neutrino-bob"],
+                },
+            ],
+            "users": ["neutrino-ann", "neutrino-bob"],
+        }
+    )
+    for name in ("neutrino-ann", "neutrino-bob"):
+        tools.users[name] = account(f"neutrino file share {name}")
+
+    applier.apply(config, {"shares": {}, "accounts": ["neutrino-ann", "neutrino-bob"]})
+
+    granted = [
+        (call[-1], call[2].split()[0], "write" in call[2])
+        for call in tools.ran("chmod", "+a")
+    ]
+    assert granted == [
+        ("/Users/ann", "user:neutrino-ann", True),
+        ("/Users/ann", "user:ann", True),
+        ("/Volumes/data/lab", "user:neutrino-ann", True),
+        ("/Volumes/data/lab", "user:ann", True),
+        ("/Volumes/data/lab", "user:neutrino-bob", True),
+        ("/Volumes/data/lab", "user:bob", True),
+    ]
+
+
+def test_a_share_no_longer_served_takes_the_entries_of_the_user_and_its_account(
+    applier, tools
+):
+    tools.users["neutrino-ann"] = account("neutrino file share neutrino-ann")
+
+    applier.apply(
+        SambaConfig.from_dict({"shares": [], "users": ["neutrino-ann"]}),
+        {"shares": {"lab": "/Volumes/data/lab"}, "accounts": ["neutrino-ann"]},
+    )
+
+    taken = {
+        call[2].split()[0]
+        for call in tools.ran("chmod", "-a")
+        if call[-1] == "/Volumes/data/lab"
+    }
+    assert taken == {"user:neutrino-ann", "user:ann"}
