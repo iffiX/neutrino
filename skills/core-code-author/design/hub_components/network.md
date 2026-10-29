@@ -353,6 +353,14 @@ routing pass renders the answer into the system's own firewall:
 | Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
 | macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
+Before setup the Windows firewall holds one rule of the hub's,
+`neutrino_hub_setup`: the setup wizard's port over TCP, open to every sender
+in every profile. The wizard's service writes it when it starts, and setup's
+firewall step removes it with every other rule of the hub's it does not
+render. An uninstall removes it with the rest. macOS opens nothing before
+setup: the pf anchor exists from setup's firewall step on, and the
+application firewall is off on a fresh macOS.
+
 An overlay's peer port is open there while its engine runs, whatever its
 chip, as on Linux. A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
@@ -392,6 +400,8 @@ image runs it already. The hub's `fail2ban` dependency stays as it is.
 | The router unit starts after firewalld (`After=firewalld.service`). | The first pass of a boot finds firewalld running and writes into it. |
 | The half-minute check that compares the overlay devices also compares the hub's rules in firewalld with the ones the pass wrote, and runs the pass again when they differ. | firewalld started at a later boot, or reloaded, holds none of the hub's runtime rules. |
 | Removing the package and a reset take the hub's rules out of firewalld, with the hub's nftables table. | The machine's firewall is the person's again. |
+| Before setup the hub's one rule is the setup wizard's port with no source address, in the zone of every interface and in the default zone, runtime and permanent, with the hub's marker. The wizard's service writes it when it starts. | The address the install prints for the browser is on that port, and firewalld's zones drop it from another machine until the hub's own rules exist. |
+| The first routing pass after setup removes the wizard's rule with every rule of the hub's it does not render, and removing the package removes it with the rest. | The hub's own rules take over the panel's port from setup on, and the wizard's port is open only while the wizard serves. |
 
 ## Two overlays at once
 
