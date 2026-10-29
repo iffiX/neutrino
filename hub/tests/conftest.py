@@ -695,6 +695,9 @@ class StubDesiredStates:
     def want_of(self, key: str, module: str) -> str:
         return self.wants.get((key.lower(), module), "")
 
+    def set_want(self, key: str, module: str, want: str) -> None:
+        self.wants[(key.lower(), module)] = want
+
     def settle_want(self, key: str, module: str) -> bool:
         pair = (key.lower(), module)
         if pair not in self.wants or pair in self.settled:

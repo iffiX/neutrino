@@ -14,7 +14,6 @@ from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
     gitea_import_config,
     import_module_config,
-    labelled_containers,
     podman_import_config,
     samba_import_config,
 )
@@ -163,28 +162,3 @@ def test_podman_leaves_out_a_container_with_a_module_s_label():
     names = [c["name"] for c in podman_import_config(details)["containers"]]
 
     assert names == ["web"]
-
-
-def test_the_labelled_containers_are_those_of_a_module_not_named_and_not_declared():
-    details = {
-        "containers": [
-            {"name": "web", "image": "nginx"},
-            {"name": "neutrino_demo", "image": "d", "module": "demo", "has_unit": True},
-            {"name": "neutrino_box", "image": "b", "module": "box"},
-            {"name": "neutrino_kept", "image": "k", "module": "kept"},
-        ]
-    }
-
-    taken = labelled_containers(details, {"box"}, {"neutrino_kept"})
-
-    assert taken == [
-        {
-            "name": "neutrino_demo",
-            "image": "d",
-            "ports": [],
-            "volumes": [],
-            "environment": [],
-            "command": "",
-            "is_autostart": True,
-        }
-    ]

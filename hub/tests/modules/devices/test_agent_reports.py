@@ -571,7 +571,7 @@ def test_a_socket_ending_withdraws_the_share(box):
     assert runtime.device_shares.live() == []
 
 
-# --- a hub container whose module the hub no longer names ---
+# --- a hub container whose module the hub does not name ---
 
 
 def podman_report(*containers) -> dict:
@@ -591,14 +591,24 @@ LABELLED = {
     "image": "ghcr.io/acme/demo@sha256:" + "d" * 64,
     "ports": ["127.0.0.1:41000:8080"],
     "volumes": ["neutrino_demo_data:/srv"],
-    "environment": ["DEMO_PASSWORD=pw"],
+    "environment": [],
     "has_unit": True,
     "source": "hub",
     "module": "demo",
 }
+HAND_STARTED = {
+    "name": "web",
+    "image": "docker.io/library/nginx:1.27",
+    "ports": ["8080:80"],
+    "volumes": ["webdata:/data"],
+    "environment": ["TZ=UTC"],
+    "has_unit": False,
+    "source": "manual",
+    "module": "",
+}
 
 
-def test_a_hub_container_of_a_module_not_named_joins_the_declared_ones(box):
+def test_a_hub_container_of_a_module_not_named_never_joins_the_declared_ones(box):
     runtime, device = box
     runtime.desired_states.wants[(DEVICE, "podman")] = "running"
     runtime.desired_states.files[(DEVICE, "podman")] = {
@@ -609,51 +619,30 @@ def test_a_hub_container_of_a_module_not_named_joins_the_declared_ones(box):
     agent_reports.record_report(runtime, device, podman_report(LABELLED))
 
     assert runtime.desired_states.files[(DEVICE, "podman")]["containers"] == [
-        {"name": "web", "image": "nginx"},
-        {
-            "name": "neutrino_demo",
-            "image": "ghcr.io/acme/demo@sha256:" + "d" * 64,
-            "ports": ["127.0.0.1:41000:8080"],
-            "volumes": ["neutrino_demo_data:/srv"],
-            "environment": ["DEMO_PASSWORD=pw"],
-            "command": "",
-            "is_autostart": True,
-        },
+        {"name": "web", "image": "nginx"}
     ]
-    assert runtime.pushed == [DEVICE]
-
-
-def test_a_module_settled_absent_counts_as_not_named(box):
-    runtime, device = box
-    runtime.desired_states.wants[(DEVICE, "demo")] = "absent"
-    runtime.desired_states.settled.append((DEVICE, "demo"))
-
-    agent_reports.record_report(runtime, device, podman_report(LABELLED))
-
-    held = runtime.desired_states.files[(DEVICE, "podman")]["containers"]
-    assert [container["name"] for container in held] == ["neutrino_demo"]
-
-
-@pytest.mark.parametrize("want", ["installed", "running", "absent"])
-def test_a_hub_container_of_a_named_module_stays_its_module_s(box, want):
-    runtime, device = box
-    runtime.desired_states.wants[(DEVICE, "demo")] = want
-
-    agent_reports.record_report(runtime, device, podman_report(LABELLED))
-
-    assert (DEVICE, "podman") not in runtime.desired_states.files
     assert runtime.pushed == []
 
 
-def test_a_hub_container_already_declared_is_taken_once(box):
+def test_a_machine_that_joins_brings_its_own_containers_and_no_module_s(box):
+    """The first report of a machine that ran a module under another hub
+    takes Containers over with the containers a person started, and leaves
+    the module's own to the module."""
     runtime, device = box
-    runtime.desired_states.files[(DEVICE, "podman")] = {
-        "containers": [{"name": "neutrino_demo", "image": "x"}]
-    }
 
-    agent_reports.record_report(runtime, device, podman_report(LABELLED))
+    agent_reports.record_report(
+        runtime, device, podman_report(LABELLED, HAND_STARTED), is_first=True
+    )
 
+    assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
     assert runtime.desired_states.files[(DEVICE, "podman")]["containers"] == [
-        {"name": "neutrino_demo", "image": "x"}
+        {
+            "name": "web",
+            "image": "docker.io/library/nginx:1.27",
+            "ports": ["8080:80"],
+            "volumes": ["webdata:/data"],
+            "environment": ["TZ=UTC"],
+            "command": "",
+            "is_autostart": False,
+        }
     ]
-    assert runtime.pushed == []
