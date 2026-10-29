@@ -56,6 +56,12 @@ reader takes both. The report gives a hub container's environment as empty
 ([protocol.md](../../protocol.md), "The modules section, one entry per
 module").
 
+The report gives each container's `volumes` as a configuration writes them,
+a host folder by its path and a named volume by its name. It leaves out an
+anonymous volume, the one Podman names with 64 hex digits: every unit runs
+`podman run --rm`, and Podman removes a container's anonymous volumes with
+the container.
+
 ## Windows and macOS
 
 `PodmanMachineModuleRunner`, `name` `podman` and runner `podman_machine`, is
