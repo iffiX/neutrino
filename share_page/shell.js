@@ -14,8 +14,8 @@ const YAMUX = {
   headerBytes: 12, initialWindow: 256 * 1024, frameMax: 65507, receiveWindow: 4 * 1024 * 1024,
 };
 const CHANNEL = { label: "neutrino", bufferedHigh: 4 * 1024 * 1024, bufferedLow: 1024 * 1024 };
-// Every interval of web_share.md, "The connection", in milliseconds.
-const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000 };
+// Every interval of web_share.md, in milliseconds.
+const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000, awake: 10000 };
 const HTTP = { host: "127.0.0.1", streamsMax: 8 };
 // The query parameter that tags a navigation of the app's frame with its tab.
 const TAB_PARAM = "__neutrino_tab";
@@ -1029,6 +1029,11 @@ const worker = {
     navigator.serviceWorker.startMessages();
     await this.announce();
   },
+  // Sends the worker a message. Its event restarts the worker's idle time.
+  wake() {
+    const target = navigator.serviceWorker.controller;
+    if (target) target.postMessage({ type: "awake" });
+  },
   // Gives the worker a port for this tab's requests. A restarted worker asks again.
   announce() {
     const target = navigator.serviceWorker.controller;
@@ -1065,6 +1070,8 @@ const page = {
   isPageLoaded: false,
   // Whether a request of that page failed before its load event.
   isPageBroken: false,
+  // The ids of the worker's requests being served, until each ends or fails.
+  serving: new Set(),
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
@@ -1296,19 +1303,21 @@ const page = {
 
   serve(message, port) {
     const { id, method, url, headers, body } = message;
+    this.serving.add(id);
     this.session.pool.request({ id, method, path: url, headers, body: body ? new Uint8Array(body) : null }, {
       head: (head) => {
         if (message.isNavigation) this.isFrameFailed = false;
         port.postMessage({ type: "head", id, status: head.status, statusText: head.statusText, headers: head.headers, hasSetCookie: head.hasSetCookie });
       },
       body: (piece) => { const copy = piece.slice(); port.postMessage({ type: "chunk", id, data: copy.buffer }, [copy.buffer]); },
-      end: () => port.postMessage({ type: "end", id }),
+      end: () => { this.serving.delete(id); port.postMessage({ type: "end", id }); },
       fail: (code) => this.fail(message, port, code || "stream"),
     });
   },
 
   // Fails a request of the worker, and marks a failed navigation and a broken page of the frame.
   fail(message, port, code) {
+    this.serving.delete(message.id);
     if (message.isNavigation) this.isFrameFailed = true;
     if (this.isFrameLoaded && !this.isPageLoaded) this.isPageBroken = true;
     port.postMessage({ type: "error", id: message.id, code });
@@ -1333,5 +1342,9 @@ window.__neutrino = {
 setInterval(() => {
   if (page.session && !page.connecting && (screen.kind === "app" || screen.kind === "unavailable")) page.session.ping();
 }, TIMING.ping);
+
+// A message to the worker every TIMING.awake while it streams a response of the app.
+// Firefox stops a worker 30 seconds after its last event, and the bodies it streams end there.
+setInterval(() => { if (page.serving.size) worker.wake(); }, TIMING.awake);
 
 page.start().catch(() => { if (!page.isEnded) screen.refuse("hub"); });

@@ -54,6 +54,7 @@ self.addEventListener("message", (event) => {
     else event.ports[0].postMessage(null);
     return;
   } else {
+    // An awake message does nothing more. Its event alone keeps the worker running.
     return;
   }
   for (const check of [...announced]) check();
