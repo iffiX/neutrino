@@ -81,15 +81,15 @@ def clean_tool_configs(raw: dict) -> dict:
 
 
 def resolved_configs(credential: dict, tool_configs: dict) -> dict:
-    """The staged choices with the grant's model filling unchosen slots.
+    """The staged choices with the grant's model filling unchosen models.
 
     Args:
         credential: The grant, whose ``model`` is the prefill default.
         tool_configs: The staged per-tool choices.
 
     Returns:
-        ``{tool: {knob: value}}`` ready for the switcher; every Claude slot
-        carries a model.
+        ``{tool: {knob: value}}`` ready for the switcher; every Claude slot,
+        Codex's model and Gemini's model carry a model.
     """
     default_model = str(credential.get("model", ""))
     claude = tool_configs.get("claude", {})
@@ -101,12 +101,12 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
             for slot in AI_CLAUDE_SLOTS
         },
         "codex": {
-            "model": str(codex.get("model", "") or ""),
+            "model": str(codex.get("model", "") or "") or default_model,
             "model_reasoning_effort": str(
                 codex.get("model_reasoning_effort", "") or ""
             ),
         },
-        "gemini": {"model": str(gemini.get("model", "") or "")},
+        "gemini": {"model": str(gemini.get("model", "") or "") or default_model},
     }
 
 

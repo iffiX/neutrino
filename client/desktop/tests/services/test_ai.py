@@ -657,7 +657,7 @@ def test_tool_configs_are_cleaned_of_unknown_knobs():
     }
 
 
-def test_resolved_configs_fill_every_claude_slot():
+def test_resolved_configs_fill_every_unchosen_model():
     resolved = resolved_configs({"model": "m1"}, {"claude": {"opus": "m2"}})
 
     assert resolved["claude"] == {
@@ -666,8 +666,21 @@ def test_resolved_configs_fill_every_claude_slot():
         "sonnet": "m1",
         "haiku": "m1",
     }
-    assert resolved["codex"] == {"model": "", "model_reasoning_effort": ""}
-    assert resolved["gemini"] == {"model": ""}
+    assert resolved["codex"] == {"model": "m1", "model_reasoning_effort": ""}
+    assert resolved["gemini"] == {"model": "m1"}
+
+
+def test_resolved_configs_keep_a_chosen_model_and_effort():
+    resolved = resolved_configs(
+        {"model": "m1"},
+        {
+            "codex": {"model": "m3", "model_reasoning_effort": "high"},
+            "gemini": {"model": "m4"},
+        },
+    )
+
+    assert resolved["codex"] == {"model": "m3", "model_reasoning_effort": "high"}
+    assert resolved["gemini"] == {"model": "m4"}
 
 
 def test_the_tools_get_the_endpoints_own_path_on_the_forward():
