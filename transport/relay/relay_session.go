@@ -103,19 +103,37 @@ func (rs *RelaySession) refuse(refusal *session.Refusal, reason string) {
 	rs.endSoon(reason)
 }
 
-// endSoon ends the session once the peer closed it or RelayEndGrace passed,
-// with reason whatever ends it first.
+// endSoon closes the session's relayed streams and ends the session once the
+// peer closed it, or RelayEndGrace after the peer acknowledged every byte
+// written to it, with reason whatever ends it first. The wait for the
+// acknowledgement ends at the session's keepalive timeout.
 func (rs *RelaySession) endSoon(reason string) {
 	rs.mu.Lock()
 	if rs.endReason == "" {
 		rs.endReason = reason
 	}
+	streams := make([]*relayStream, 0, len(rs.streams))
+	for stream := range rs.streams {
+		streams = append(streams, stream)
+	}
 	rs.mu.Unlock()
 	_ = rs.control.CloseWrite()
+	for _, stream := range streams {
+		stream.closeWith(nil)
+	}
 	go func() {
+		flushed := make(chan struct{})
+		go func() {
+			rs.session.Flush(rs.hub.timings.KeepAliveTimeout)
+			close(flushed)
+		}()
 		select {
 		case <-rs.session.CloseChan():
-		case <-time.After(RelayEndGrace):
+		case <-flushed:
+			select {
+			case <-rs.session.CloseChan():
+			case <-time.After(RelayEndGrace):
+			}
 		}
 		rs.end(reason)
 	}()

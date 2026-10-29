@@ -577,3 +577,142 @@ func TestGuestHandshakeTime(t *testing.T) {
 		channel.Close()
 	}
 }
+
+// slowConn writes at most bytesPerSecond, as a slow line does.
+type slowConn struct {
+	net.Conn
+	bytesPerSecond int
+}
+
+func (c *slowConn) Write(p []byte) (int, error) {
+	time.Sleep(time.Duration(len(p)) * time.Second / time.Duration(c.bytesPerSecond))
+	return c.Conn.Write(p)
+}
+
+// TestSessionCloseReachesASlowGuest checks that a guest on a slow line reads
+// its refused frame behind the bytes already queued for it, and that the
+// session's streams close at the refusal.
+func TestSessionCloseReachesASlowGuest(t *testing.T) {
+	certificate, err := gate.LoadOrCreateCertificate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := handshake.GenerateKey()
+	python := newFakePython()
+	hub, err := NewHub(HubConfig{Key: key, Certificate: &certificate, Timings: session.DefaultTimings}, python)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(hub.Close)
+	hub.SetShares([]gate.Share{{Ufrag: guestUfrag, Password: guestPassword}})
+	test := &testHub{hub: hub, python: python, key: key}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		test.serveGuestAccepted(&slowConn{Conn: conn, bytesPerSecond: 64 * 1024}, 0)
+	}()
+	app, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { app.Close() })
+	appClosed := make(chan time.Time, 1)
+	go func() {
+		conn, err := app.Accept()
+		if err != nil {
+			return
+		}
+		go func() { _, _ = conn.Write(make([]byte, 1<<20)) }()
+		_, _ = io.Copy(io.Discard, conn)
+		appClosed <- time.Now()
+	}()
+	python.mu.Lock()
+	python.entries["connect:app"] = entryAnswer{answer: map[string]any{
+		"kind": "web", "device_id": "",
+		"target": map[string]any{"address": "127.0.0.1", "port": app.Addr().(*net.TCPAddr).Port, "protocol": "tcp"},
+	}}
+	python.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	channel, err := gate.Dial(ctx, listener.Addr().String(), gate.DialOptions{Ufrag: guestUfrag, Password: guestPassword, Fingerprint: hub.Fingerprint()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { channel.Close() })
+	if _, err := channel.Write(gate.GuestOpenRecord(gate.GuestOpen{Protocol: knock.PROTOCOL, Ticket: guestTicket})); err != nil {
+		t.Fatal(err)
+	}
+	message := make([]byte, gate.GateGuestOpenBytesMax)
+	n, err := channel.ReadMessage(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, refusal, err := gate.ParseGuestAnswer(message[:n]); err != nil || refusal != nil || id != guestShareID {
+		t.Fatalf("answer %q %v %v", id, refusal, err)
+	}
+	sess, err := session.NewPeerSession(channel, session.DefaultTimings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := sess.OpenStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Write(session.OpenRecord(session.KindControl, nil)); err != nil {
+		t.Fatal(err)
+	}
+	guest := &connected{session: sess, control: session.NewControlStream(stream)}
+	if refusal, err := guest.control.ReadAnswer(); err != nil || refusal != nil {
+		t.Fatalf("control stream answer: %v %v", refusal, err)
+	}
+	guest.hello(t, guestShareID, RelayRoleGuest)
+	sessionID := python.waitEvent(t, "session_open")["session"].(string)
+	python.waitFrame(t, session.FrameHello)
+	welcome := session.MakeFrame(session.FrameWelcome, map[string]any{"id": "hub", "protocol": knock.PROTOCOL, "role": "hub", "name": "h", "software": "neutrino_hub/0.6.0", "time": 1.5})
+	if err := hub.WriteFrame(sessionID, welcome, false); err != nil {
+		t.Fatal(err)
+	}
+	if kind, _ := guest.readFrame(t); kind != session.FrameWelcome {
+		t.Fatalf("first frame %s, want welcome", kind)
+	}
+
+	record, refusal := openStream(t, guest, session.KindConnect, map[string]any{"id": "app"})
+	if refusal != nil {
+		t.Fatalf("refused %v", refusal)
+	}
+	if _, err := io.ReadFull(record.Reader, make([]byte, 1024)); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, record.Reader) }()
+	closedAt := time.Now()
+	if err := hub.SessionClose(sessionID, "share_unknown", nil); err != nil {
+		t.Fatal(err)
+	}
+	kind, frame := guest.readFrame(t)
+	if kind != session.FrameRefused || session.ParseRefused(frame).Code != "share_unknown" {
+		t.Fatalf("got %s %s, want refused share_unknown", kind, frame)
+	}
+	if read := time.Since(closedAt); read < RelayEndGrace {
+		t.Fatalf("the refused frame came %s after the close, before the queued bytes", read)
+	}
+	select {
+	case at := <-appClosed:
+		if at.Sub(closedAt) > time.Second {
+			t.Fatalf("the app's stream closed %s after the refusal", at.Sub(closedAt))
+		}
+	default:
+		t.Fatal("the app's stream is still open")
+	}
+	ended := python.waitEvent(t, "session_end")
+	if ended["session"] != sessionID || ended["reason"] != EndClosedByHub {
+		t.Fatalf("ended %v", ended)
+	}
+}

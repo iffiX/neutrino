@@ -20,6 +20,8 @@ type ChannelConn struct {
 	tcp     net.Conn
 	closers []io.Closer
 	once    sync.Once
+	// closed is closed by Close.
+	closed chan struct{}
 
 	// readBuffer holds one message and pending what a Read left of it.
 	readBuffer []byte
@@ -30,7 +32,7 @@ type ChannelConn struct {
 }
 
 func newChannelConn(channel *datachannel.DataChannel, tcp net.Conn, closers ...io.Closer) *ChannelConn {
-	return &ChannelConn{channel: channel, tcp: tcp, closers: closers, readBuffer: make([]byte, GateReadBytesMax)}
+	return &ChannelConn{channel: channel, tcp: tcp, closers: closers, closed: make(chan struct{}), readBuffer: make([]byte, GateReadBytesMax)}
 }
 
 // Read returns the next bytes of the stream, at most one message's worth.
@@ -88,11 +90,17 @@ func (c *ChannelConn) Write(p []byte) (int, error) {
 }
 
 // Flush waits until every message written has left the association's
-// buffer, or timeout passes.
+// buffer, the connection closed, or timeout passes.
 func (c *ChannelConn) Flush(timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
+	poll := time.NewTicker(GateFlushPoll)
+	defer poll.Stop()
 	for c.channel.BufferedAmount() > 0 && time.Now().Before(deadline) {
-		time.Sleep(GateFlushPoll)
+		select {
+		case <-c.closed:
+			return
+		case <-poll.C:
+		}
 	}
 }
 
@@ -100,6 +108,7 @@ func (c *ChannelConn) Flush(timeout time.Duration) {
 // connection, once.
 func (c *ChannelConn) Close() error {
 	c.once.Do(func() {
+		close(c.closed)
 		c.channel.Close()
 		for _, closer := range c.closers {
 			closer.Close()

@@ -85,6 +85,15 @@ func (s *Session) IsClosed() bool {
 	return s.yamux.IsClosed()
 }
 
+// Flush waits until the peer acknowledged every byte written to the
+// connection, the connection closed, or timeout passed. On a connection
+// with no flush of its own, a Noise connection, it returns at once.
+func (s *Session) Flush(timeout time.Duration) {
+	if flusher, ok := s.conn.(interface{ Flush(time.Duration) }); ok {
+		flusher.Flush(timeout)
+	}
+}
+
 // RemoteAddr is the connection's peer address.
 func (s *Session) RemoteAddr() net.Addr {
 	return s.conn.RemoteAddr()
