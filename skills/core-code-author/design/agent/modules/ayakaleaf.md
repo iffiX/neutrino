@@ -112,6 +112,21 @@ root:
 | A step that fails ends the install `install_failed` with `ayakaleaf_setup_failed {step, detail}`, `step` being `replica_set`, `admin` or `tex`, and `detail` the tool's own last line. **Install** runs the steps the record does not hold. | The forwarder signs in as the administrator, and the editor compiles Chinese only with the set; a step done once is never repeated. |
 | The administrator step fails `ayakaleaf_setup_failed {step: admin}` when `/launchpad` already sends the browser to `/login`. | An administrator the module did not make exists, so the module's password does not open the app. |
 
+## A machine that joins another hub
+
+A machine that runs Ayakaleaf and joins another hub keeps the module's
+papers and data. The new hub imports none of the module's containers, and
+they stop at its first apply of Containers. The module's install on the new
+hub starts them again on the same volumes ([containers.md](containers.md),
+"Hub containers"). The new hub generates the module's secrets and its
+password at that install, as at every first install.
+
+| Rule | Reason |
+| --- | --- |
+| The module's record keeps the password the app's administrator has. When the state names another password, the administrator step runs again: it signs in with the kept password and changes it with `POST /user/password/update` and the JSON body `{_csrf, currentPassword, newPassword1, newPassword2}`. The module reads `installing` until the step ends. | The volumes keep the administrator made with the earlier hub's password, and the forwarder signs in with the password the state names. |
+| A change the app refuses fails the install `ayakaleaf_setup_failed {step: admin}`, and **Install** runs the step again. | The administrator's password was changed in the app, so the kept password does not open it. |
+| The guests of the earlier hub's shares are deleted, as every guest the state no longer names is ("The guest account"). | Their shares ended with the earlier hub. |
+
 ## TeX
 
 | Rule | Reason |
