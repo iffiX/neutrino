@@ -4,7 +4,8 @@ What these pin, against a faked ``podman`` and a fake app on loopback: the
 replica set initiated once, the administrator made through ``/launchpad``
 with its session's CSRF token, the Chinese TeX set installed with the
 fastest ``ctan`` source on ``tlmgr``'s command line after ``tlmgr`` updates
-itself from it, each step kept in the record and skipped after,
+itself from it, each step kept in the record and skipped after, a new password in
+the state changed on the administrator signed in with the old one,
 ``ayakaleaf_setup_failed {step, detail}`` from
 each step and from a ``/launchpad`` that already sends to ``/login``; the
 forwarder's two requests giving the app's cookie under ``cookie_name``, 401
@@ -398,6 +399,64 @@ def test_install_again_runs_only_the_steps_the_record_does_not_hold(box, app):
     assert len(box.podman.named("mongosh")) == 1
     assert app.paths("POST").count("/launchpad/register_admin") == 1
     assert box.record()["steps"] == ["replica_set", "admin", "tex"]
+
+
+def test_a_new_password_in_the_state_changes_the_administrator_s(box, app):
+    """A machine that joins another hub keeps the app's data, whose
+    administrator has the old hub's password."""
+    ready(box)
+    before = len(app.requests)
+
+    box.start({**CONFIG, "password": "new-hub-password"})
+
+    assert app.accounts[ADMIN_EMAIL]["password"] == "new-hub-password"
+    (change,) = [
+        entry
+        for entry in app.requests[before:]
+        if entry[:2] == ("POST", "/user/password/update")
+    ]
+    body = json.loads(change[3])
+    assert body["currentPassword"] == PASSWORD
+    assert body["newPassword1"] == body["newPassword2"] == "new-hub-password"
+    assert app.paths("POST").count("/launchpad/register_admin") == 1
+    assert len(box.podman.named("mongosh")) == 1
+    assert len(box.podman.named("tlmgr")) == 2
+    assert sorted(box.record()["steps"]) == ["admin", "replica_set", "tex"]
+    assert box.record()["admin_password"] == "new-hub-password"
+    assert box.record()["is_ready"] is True
+
+
+def test_the_same_password_changes_nothing(box, app):
+    ready(box)
+
+    box.start()
+
+    assert "/user/password/update" not in app.paths()
+
+
+def test_a_refused_change_fails_the_administrator_step_and_keeps_the_old_password(
+    box, app
+):
+    ready(box)
+    app.accounts[ADMIN_EMAIL]["password"] = "a-person-s-own"
+
+    with pytest.raises(ModuleSetupError) as failed:
+        box.start({**CONFIG, "password": "new-hub-password"})
+
+    assert failed.value.params["step"] == "admin"
+    assert box.record()["admin_password"] == PASSWORD
+    assert "admin" not in box.record()["steps"]
+
+
+def test_the_guests_of_the_new_password_are_made_after_the_change(box, app):
+    ready(box)
+
+    box.start({**CONFIG, "password": "new-hub-password", "guests": [GUEST]})
+
+    assert GUEST["email"] in app.accounts
+    assert box.hooks.details()["guests"] == [
+        {"account": "guest-k3f9", "code": "", "params": {}}
+    ]
 
 
 def test_a_version_change_makes_the_tex_volume_again_and_runs_the_tex_step(box):

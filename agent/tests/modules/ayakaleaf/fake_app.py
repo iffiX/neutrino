@@ -1,4 +1,4 @@
-"""A stand-in for Ayakaleaf's app on loopback: sessions, CSRF tokens, the launchpad, the login, guests and invitations.
+"""A stand-in for Ayakaleaf's app on loopback: sessions, CSRF tokens, the launchpad, the login, a password change, guests and invitations.
 
 It keeps what the routes the hooks use change: the accounts, the sessions,
 the invitations waiting for each account, and every request it was sent.
@@ -161,6 +161,15 @@ class FakeAppHandler(BaseHTTPRequestHandler):
                     account["password"] = fields["password"]
                     return self._answer(200, {"redir": "/login"}, session_id)
             return self._answer(404, {"message": "no such token"}, session_id)
+        if (method, path) == ("POST", "/user/password/update"):
+            if user is None:
+                return self._answer(401, {"message": "no login"}, session_id)
+            if fields.get("currentPassword") != user["password"]:
+                return self._answer(400, {"message": "wrong password"}, session_id)
+            if fields.get("newPassword1") != fields.get("newPassword2"):
+                return self._answer(400, {"message": "no match"}, session_id)
+            user["password"] = fields["newPassword1"]
+            return self._answer(200, {"message": {"type": "success"}}, session_id)
         if (method, path) == ("POST", "/user/settings"):
             if user is None:
                 return self._answer(401, {"message": "no login"}, session_id)

@@ -31,10 +31,12 @@ AYAKALEAF_REPLICA_SET_INITIATE = (
 )
 AYAKALEAF_REPLICA_SET_WAIT_S = 120
 
-# The administrator the module makes, and the routes that make it.
+# The administrator the module makes, the routes that make it, and the route
+# that changes its password.
 AYAKALEAF_ADMIN_EMAIL = "admin@ayakaleaf.neutrino"
 AYAKALEAF_LAUNCHPAD_PATH = "/launchpad"
 AYAKALEAF_REGISTER_ADMIN_PATH = "/launchpad/register_admin"
+AYAKALEAF_PASSWORD_UPDATE_PATH = "/user/password/update"
 
 # The TeX step: the collections ``tlmgr`` adds, the source set it reads from,
 # the repository's path under each source, and how long one run may take.
@@ -88,8 +90,9 @@ AYAKALEAF_PODMAN_TIMEOUT_S = 120
 # What the module keeps, root-only, in its record: the forwarder's port and
 # secrets, the session cookie's name, the app's local name, the loopback
 # port the app is published at, the version it last installed, the first
-# start's steps done, whether its first start has ended, the guests made
-# with their ``user_id``, each guest's failure, and whether it was stopped.
+# start's steps done, the password the app's administrator has, whether its
+# first start has ended, the guests made with their ``user_id``, each
+# guest's failure, and whether it was stopped.
 AYAKALEAF_RECORD_FIELDS = (
     "account",
     "port",
@@ -100,6 +103,7 @@ AYAKALEAF_RECORD_FIELDS = (
     "upstream_port",
     "version",
     "steps",
+    "admin_password",
     "is_ready",
     "guests",
     "guest_failures",

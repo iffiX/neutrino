@@ -20,7 +20,9 @@ set, ``tlmgr`` in the app container updating itself and then installing
 from the fastest source of the ``ctan`` set. Until all three are done and
 ``/status`` answers 200, the module reads ``installing`` and its start
 waits; a step that fails ends the install. A version change makes the TeX
-volume again and runs the TeX step again.
+volume again and runs the TeX step again. A password in the state other
+than the administrator's runs the administrator step again. The step then
+changes the password through the app's own settings route.
 
 Once the first start has ended, each start settles the guests of the
 module's Web shares through :class:`ShareGuestAccounts`, which calls the
@@ -84,6 +86,7 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_MONGO_CONTAINER,
     AYAKALEAF_MONGO_SHELL,
     AYAKALEAF_PASSWORD_SET_PATH,
+    AYAKALEAF_PASSWORD_UPDATE_PATH,
     AYAKALEAF_PENDING,
     AYAKALEAF_PODMAN_TIMEOUT_S,
     AYAKALEAF_PROJECT_PATH,
@@ -483,6 +486,34 @@ def register_admin(browser: AppBrowser, email: str, password: str) -> None:
         raise ConnectionError(refusal(answer, AYAKALEAF_REGISTER_ADMIN_PATH))
 
 
+def change_admin_password(
+    browser: AppBrowser, email: str, current: str, password: str
+) -> None:
+    """Change the administrator's password, as the app's settings page does.
+
+    Args:
+        browser: A browser with no session.
+        email: The administrator's e-mail.
+        current: The password the administrator has.
+        password: Its new password.
+
+    Raises:
+        ConnectionError: When the app refuses the login or the change.
+        OSError: When the app does not answer.
+    """
+    sign_in(browser, email, current)
+    answer = browser.post(
+        AYAKALEAF_PASSWORD_UPDATE_PATH,
+        {
+            "currentPassword": current,
+            "newPassword1": password,
+            "newPassword2": password,
+        },
+    )
+    if answer.status != 200:
+        raise ConnectionError(refusal(answer, AYAKALEAF_PASSWORD_UPDATE_PATH))
+
+
 def register_guest(admin: AppBrowser, guest: ShareGuest, browser) -> str:
     """Make one guest account through the app's own routes.
 
@@ -687,6 +718,9 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
     def start(self) -> None:
         """Serve the page, run the first start's steps the record does not hold, then settle the guests.
 
+        The administrator step is owed again while the administrator has a
+        password other than the state's.
+
         Raises:
             ModuleInstallPending: Until the steps are done and ``/status``
                 answers 200, and while a guest is owed and the app does not
@@ -698,6 +732,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         """
         record = self._started_record()
         self._sync_forwarder(record)
+        record = self._owed_admin(record)
         if not record.get("is_ready"):
             with self._lock:
                 self._is_starting = True
@@ -961,17 +996,25 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         if self._status(port) != 200:
             raise ModuleInstallPending(AYAKALEAF_PENDING)
         if AYAKALEAF_STEP_ADMIN not in steps:
+            password = str(record.get("password", "") or "")
+            held = str(record.get("admin_password", "") or "")
+            browser = self._browser_factory(port=port, cookie_name=_cookie_name(record))
             try:
-                register_admin(
-                    self._browser_factory(port=port, cookie_name=_cookie_name(record)),
-                    AYAKALEAF_ADMIN_EMAIL,
-                    str(record.get("password", "") or ""),
-                )
+                if held:
+                    change_admin_password(
+                        browser, AYAKALEAF_ADMIN_EMAIL, held, password
+                    )
+                else:
+                    register_admin(browser, AYAKALEAF_ADMIN_EMAIL, password)
             except OSError as error:
                 raise _setup_failed(AYAKALEAF_STEP_ADMIN, str(error)) from error
             steps.append(AYAKALEAF_STEP_ADMIN)
-            record = self._keep({**record, "steps": steps})
-            self._log(f"{self._name}: the administrator is made")
+            record = self._keep({**record, "steps": steps, "admin_password": password})
+            self._log(
+                f"{self._name}: the administrator's password is changed"
+                if held
+                else f"{self._name}: the administrator is made"
+            )
         if AYAKALEAF_STEP_TEX not in steps:
             self._install_tex()
             steps.append(AYAKALEAF_STEP_TEX)
@@ -981,6 +1024,16 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
             raise ModuleInstallPending(AYAKALEAF_PENDING)
         self._log(f"{self._name}: the first start has ended")
         return self._keep({**record, "is_ready": True})
+
+    def _owed_admin(self, record: dict) -> dict:
+        """The record with the administrator step owed again while the administrator's password is not the state's."""
+        steps = list(record.get("steps") or [])
+        held = str(record.get("admin_password", "") or "")
+        if AYAKALEAF_STEP_ADMIN not in steps or held == record.get("password"):
+            return record
+        steps.remove(AYAKALEAF_STEP_ADMIN)
+        self._log(f"{self._name}: the administrator's password changes")
+        return self._keep({**record, "steps": steps, "is_ready": False})
 
     def _initiate_replica_set(self) -> None:
         """Initiate the replica set in the mongo container, trying again while mongod starts.
