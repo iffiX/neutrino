@@ -751,6 +751,7 @@ after the refusal's `retry_after_s` when it names one.
 | Rule | Reason |
 | --- | --- |
 | Every `control_unavailable` the hub's transport makes carries `retry_after_s`, `RelayControlRetryAfter`, 5 seconds, and a bound peer refused it knocks again after those 5 seconds. A `control_unavailable` the hub's Python answers itself carries no `retry_after_s`. | The hub's transport makes the refusal while its Python is away, as for a restart, and a peer that waits a minute comes back up to a minute after the Python. After a macOS hub's reboot its agents were back 71 seconds after the boot. |
+| While bound peers are refused `control_unavailable`, the hub's transport, the agent, the desktop client and the phone apps each write one line at the first refusal, then at most one line a minute with the count of refusals since the line before, and one line when a session is admitted again. The hub's transport counts the refusals of every peer together, and a peer counts those of each binding apart. | The hub's Python may stay away for hours, and every peer knocks every 5 seconds. A line for each refusal fills each of those logs. |
 
 A refused `join` leaves no binding to keep. `nagent join` exits with the
 code, and a client's row reads the join's refusal ([client.md](client.md),

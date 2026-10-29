@@ -991,6 +991,7 @@ Every interval the Python sides run on is a constant named here, in the
 | the client's round-trip probe | | | `CLIENT_PING_INTERVAL_S` 20, the client's `ping` frame, whose `pong` sets `rtt_ms` |
 | a `reply` to a `service`, `persist` or `stop_session` | `CHANNEL_REPLY_TIMEOUT_S` 15 | | `CLIENT_STREAM_TIMEOUT_S` 15 |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
+| the least time between two log lines for a binding's `control_unavailable` refusals | | `AGENT_REFUSAL_LOG_INTERVAL_S` 60 | `CLIENT_REFUSAL_LOG_INTERVAL_S` 60 |
 
 An agent reports six times as often as a client because its `machine` section
 carries the metrics the Dashboard draws live; a client's carries its hostname
