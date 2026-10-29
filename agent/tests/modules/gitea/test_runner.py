@@ -432,6 +432,24 @@ def test_each_system_gets_its_own_applier(os_name, kind, tmp_path):
     assert applier.is_git_required is True
 
 
+@pytest.mark.parametrize("os_name", ["darwin", "windows"])
+def test_each_system_applier_has_every_member_of_the_linux_one(os_name, tmp_path):
+    class Platform(AgentPlatform):
+        pass
+
+    Platform.os_name = os_name
+    platform = Platform()
+    platform.agent_var_dir = lambda: str(tmp_path)
+    applier = runner_module.gitea_applier_for(platform)
+
+    members = [
+        name
+        for name in vars(runner_module.GiteaLinuxApplier)
+        if not name.startswith("_")
+    ]
+    assert [name for name in members if not hasattr(applier, name)] == []
+
+
 def test_its_ssh_server_takes_the_first_free_port_from_2222_and_keeps_it(tmp_path):
     held = {2222}
     applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")

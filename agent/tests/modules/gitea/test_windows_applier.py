@@ -209,3 +209,15 @@ def test_an_uninstall_deletes_the_service_and_keeps_the_data(sc, tmp_path, state
     assert sc.sc("delete") == [["sc.exe", "delete", "neutrino_gitea"]]
     assert not (tmp_path / "state" / "gitea").exists()
     assert repository.is_dir()
+
+
+def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(
+    sc, tmp_path, state
+):
+    applier = make(sc, tmp_path, state=state)
+    os.makedirs(os.path.dirname(applier.conf_path))
+    with open(applier.conf_path, "w", encoding="utf-8") as stream:
+        stream.write("[server]\nHTTP_PORT = 3300\nROOT_URL = http://box:3300/\n")
+
+    assert applier.read_listen_port() == 3300
+    assert applier.read_root_url() == "http://box:3300/"

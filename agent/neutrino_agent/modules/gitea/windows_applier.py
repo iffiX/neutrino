@@ -23,7 +23,11 @@ import shutil
 import subprocess
 import time
 
-from neutrino_agent.modules.gitea.applier import GiteaState, read_listen_port
+from neutrino_agent.modules.gitea.applier import (
+    GiteaState,
+    read_listen_port,
+    read_root_url,
+)
 from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_DIR_NAME,
     GITEA_CONF_PARTS,
@@ -312,6 +316,10 @@ class GiteaWindowsApplier:
     def read_listen_port(self) -> int:
         """The port the installed ``app.ini`` names, 0 for none."""
         return read_listen_port(self.conf_path)
+
+    def read_root_url(self) -> str:
+        """The root URL the installed ``app.ini`` names, empty for none."""
+        return read_root_url(self.conf_path)
 
     def journal_units(self) -> list:
         """No journal: the service writes its own log file."""

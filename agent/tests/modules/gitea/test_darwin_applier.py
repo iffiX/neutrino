@@ -9,6 +9,7 @@ restarts the job; a stop that waits until launchd lets go; the CLI run as
 the account; and an uninstall that keeps the data and the account.
 """
 
+import os
 import plistlib
 
 import pytest
@@ -272,3 +273,12 @@ def test_an_uninstall_keeps_the_data_and_the_account(applier, tools, binary, tmp
     assert tools.ran("dscl", ".", "-delete") == []
     assert tools.ran("sysadminctl", "-deleteUser") == []
     assert applier.is_active() is False
+
+
+def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(applier):
+    os.makedirs(os.path.dirname(applier.conf_path))
+    with open(applier.conf_path, "w", encoding="utf-8") as stream:
+        stream.write("[server]\nHTTP_PORT = 3300\nROOT_URL = http://box:3300/\n")
+
+    assert applier.read_listen_port() == 3300
+    assert applier.read_root_url() == "http://box:3300/"
