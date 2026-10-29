@@ -45,7 +45,8 @@ def start_child_process(
         cwd: The directory it starts in; None keeps this process's.
         creation_flags: Windows process creation flags; 0 elsewhere.
         stdin_text: One line written to the child's standard input, which
-            is then closed; empty gives the child no input at all.
+            stays open until the supervisor ends the child; empty gives the
+            child no input at all.
 
     Returns:
         The started process.
@@ -65,7 +66,7 @@ def start_child_process(
     if stdin_text and process.stdin is not None:
         try:
             process.stdin.write(stdin_text.encode("utf-8"))
-            process.stdin.close()
+            process.stdin.flush()
         except OSError:
             pass
     return process
@@ -383,6 +384,7 @@ class ChildProcessSupervisor:
                 if now - child.started_at >= SYSTEM_CHILD_STABLE_S:
                     child.wait_s = SYSTEM_CHILD_RESTART_MIN_S
                 return
+            _close_input(child.process)
             child.process = None
             self._end_dependents(name)
             self._tell_ended(name)
@@ -517,14 +519,28 @@ class ChildProcessSupervisor:
 
 
 def _ask_to_end(process) -> bool:
-    """Ask a process that runs to end; whether it was asked."""
-    if process is None or process.poll() is not None:
+    """Close a process's standard input and ask it to end; whether it was asked."""
+    if process is None:
+        return False
+    _close_input(process)
+    if process.poll() is not None:
         return False
     try:
         process.terminate()
     except OSError:
         return False
     return True
+
+
+def _close_input(process) -> None:
+    """Close a child's standard input. The transport exits at the end of its input."""
+    stream = getattr(process, "stdin", None)
+    if stream is None:
+        return
+    try:
+        stream.close()
+    except OSError:
+        pass
 
 
 def _wait_ended(process) -> None:

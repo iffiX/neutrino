@@ -5,6 +5,7 @@ its start line, stopped and kept stopped, started again after a wait that
 doubles, its output written to a log file rotated by size.
 """
 
+import sys
 import time
 
 import pytest
@@ -423,6 +424,45 @@ def test_the_watcher_ticks_after_the_children(paired):
     supervisor.tick()
 
     assert events == [("tick",)]
+
+
+# --- a child whose secret rides its standard input ---------------------------
+
+# A child that reads its first line, says so, and exits once its standard
+# input ends, as the transport does.
+INPUT_WATCHER = (
+    "import sys\n"
+    "sys.stdin.readline()\n"
+    "print('read', flush=True)\n"
+    "sys.stdin.read()\n"
+)
+
+
+def test_a_child_reading_its_secret_runs_until_it_is_stopped(tmp_path):
+    supervisor = ChildProcessSupervisor(
+        log_dir=tmp_path, log=lambda line: None, make_secret=lambda: "ab" * 32
+    )
+    supervisor.set_start_line(
+        "transport",
+        ChildStartLine(
+            argv=[sys.executable, "-c", INPUT_WATCHER], is_secret_on_stdin=True
+        ),
+    )
+
+    supervisor.start("transport")
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and "read" not in _text(
+            tmp_path / "transport.log"
+        ):
+            time.sleep(0.01)
+        assert _text(tmp_path / "transport.log") == "read\n"
+        time.sleep(0.5)
+        assert supervisor.is_running("transport")
+    finally:
+        supervisor.stop_all()
+
+    assert not supervisor.is_running("transport")
 
 
 def _text(path) -> str:
