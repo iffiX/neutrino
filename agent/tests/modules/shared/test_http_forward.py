@@ -706,6 +706,73 @@ def test_a_closed_forwarder_stops_waiting():
     assert not forwarder._thread.is_alive()
 
 
+def test_a_closed_forwarder_ends_every_connection_it_serves_both_sockets():
+    page = FakePage()
+    hooks = DemoHooks(page.port)
+    forwarder = forwarder_for(hooks, free_port())
+    forwarder.start()
+    wait_until(lambda: forwarder.is_listening)
+    port = forwarder.port
+    kept = socket.create_connection(("127.0.0.1", port), timeout=5)
+    ws = socket.create_connection(("127.0.0.1", port), timeout=5)
+    try:
+        kept.sendall(
+            f"GET /a HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            "Cookie: demo=ok\r\n\r\n".encode()
+        )
+        assert read_answer(kept).startswith(b"HTTP/1.1 200")
+        ws.sendall(
+            b"GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: demo=ok\r\n"
+            b"Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
+        )
+        received = b""
+        while b"\r\n\r\n" not in received:
+            received += ws.recv(65536)
+
+        forwarder.close()
+
+        assert kept.recv(65536) == b""
+        assert ws.recv(65536) == b""
+        for upstream in hooks.upstreams:
+            upstream.settimeout(5)
+            assert upstream.recv(65536) == b""
+        assert len(hooks.upstreams) == 2
+        with pytest.raises(ConnectionRefusedError):
+            socket.create_connection(("127.0.0.1", port), timeout=5)
+        assert forwarder._sockets == set()
+    finally:
+        kept.close()
+        ws.close()
+        page.stop()
+
+
+def test_a_page_connection_opened_again_is_no_longer_counted():
+    page = FakePage()
+    hooks = DemoHooks(page.port)
+    forwarder = forwarder_for(hooks, free_port())
+    try:
+        forwarder.start()
+        wait_until(lambda: forwarder.is_listening)
+        port = forwarder.port
+        request = (
+            f"GET /a HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: demo=ok\r\n\r\n"
+        ).encode()
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+            client.sendall(request)
+            read_answer(client)
+            hooks.upstreams[0].shutdown(socket.SHUT_RDWR)
+            client.sendall(request)
+            again = read_answer(client)
+
+            assert again.startswith(b"HTTP/1.1 200")
+            assert len(hooks.upstreams) == 2
+            assert hooks.upstreams[0] not in forwarder._sockets
+            assert hooks.upstreams[1] in forwarder._sockets
+    finally:
+        forwarder.close()
+        page.stop()
+
+
 def test_a_forwarder_matches_a_record_by_the_hooks_fields():
     forwarder = forwarder_for(DemoHooks(1), 8443)
     record = {"account": "ann", "port": 8443, "secret": SECRET, "database": "a"}

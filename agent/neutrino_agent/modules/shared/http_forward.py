@@ -21,7 +21,8 @@ its ``Content-Length``; a WebSocket is passed on unchanged and relayed both
 ways until either side closes. A page whose login is a cookie of its own
 with a fixed name gets it renamed both ways: the entry's cookie name toward
 the browser, the page's own toward the page. Both of a forwarder's connections send at
-once, with ``TCP_NODELAY``.
+once, with ``TCP_NODELAY``. Closing a forwarder ends every connection it
+serves, both of its sockets.
 
 Not pure: opens sockets.
 """
@@ -871,6 +872,9 @@ class InstanceForwarder:
         self._lock = threading.Lock()
         self._closed = threading.Event()
         self._server: "ForwarderServer | None" = None
+        # Every socket of the connections being served: each browser's
+        # connection and each connection to the page opened for one.
+        self._sockets: set = set()
         self._spent: dict = {}
         self._code = ""
         self._params: dict = {}
@@ -917,13 +921,17 @@ class InstanceForwarder:
         self._thread.start()
 
     def close(self) -> None:
-        """Stop listening and stop waiting."""
+        """Stop listening, stop waiting, and end every connection being served."""
         self._closed.set()
         with self._lock:
             server, self._server = self._server, None
+            served = list(self._sockets)
         if server is not None:
             server.shutdown()
             server.server_close()
+        for connection in served:
+            with contextlib.suppress(OSError):
+                connection.shutdown(socket.SHUT_RDWR)
 
     def handle(self, client: socket.socket) -> None:
         """Judge each request a connection carries, and answer or pass it on.
@@ -931,18 +939,22 @@ class InstanceForwarder:
         The connection stays open across requests while both sides allow
         it, each request going through the checks and the module's rule
         again and on to the page over one connection kept for it. A
-        WebSocket is relayed both ways once passed on.
+        WebSocket is relayed both ways once passed on. A closed forwarder
+        serves nothing, and its close ends the connection.
 
         Args:
             client: The browser's connection, closed by the caller.
         """
+        opened = [client]
+        if not self._track(client):
+            return
         set_no_delay(client)
         client.settimeout(AGENT_FORWARD_IDLE_TIMEOUT_S)
         reader = ConnectionReader(client)
         kept: "ConnectionReader | None" = None
         try:
             while True:
-                kept = self._serve_one(client, reader, kept)
+                kept = self._serve_one(client, reader, kept, opened)
                 if kept is _CLOSED:
                     kept = None
                     return
@@ -952,14 +964,39 @@ class InstanceForwarder:
             if isinstance(kept, ConnectionReader):
                 with contextlib.suppress(OSError):
                     kept.socket.close()
+            with self._lock:
+                self._sockets.difference_update(opened)
 
-    def _serve_one(self, client: socket.socket, reader: ConnectionReader, kept):
+    def _track(self, connection: socket.socket) -> bool:
+        """Count a socket among those the forwarder's close ends.
+
+        Returns:
+            False once the forwarder is closed, the socket left uncounted.
+        """
+        with self._lock:
+            if self._closed.is_set():
+                return False
+            self._sockets.add(connection)
+            return True
+
+    def _close_upstream(self, upstream: socket.socket, opened: list) -> None:
+        """Close a connection to the page, and stop counting it."""
+        upstream.close()
+        opened.remove(upstream)
+        with self._lock:
+            self._sockets.discard(upstream)
+
+    def _serve_one(
+        self, client: socket.socket, reader: ConnectionReader, kept, opened: list
+    ):
         """Serve the next request on a browser's connection.
 
         Args:
             client: The browser's connection.
             reader: Its bytes, read through a buffer.
             kept: The connection to the page kept for it, None while none is.
+            opened: Every socket the browser's connection used so far, the
+                connections to the page opened for it added.
 
         Returns:
             The connection to the page to keep for the next request, None
@@ -1002,7 +1039,7 @@ class InstanceForwarder:
         if is_upgrade(headers):
             if kept is not None:
                 kept.socket.close()
-            upstream = self._open_upstream()
+            upstream = self._open_upstream(opened)
             if upstream is None:
                 answer(client, 502)
                 return _CLOSED
@@ -1020,14 +1057,14 @@ class InstanceForwarder:
             return _CLOSED
         is_reused = kept is not None
         if kept is None:
-            kept = self._open_reader()
+            kept = self._open_reader(opened)
             if kept is None:
                 answer(client, 502)
                 return _CLOSED
         outcome = self._pass_on(kept, client, reader, head, length, method)
         if outcome is None and is_reused and length == 0:
-            kept.socket.close()
-            kept = self._open_reader()
+            self._close_upstream(kept.socket, opened)
+            kept = self._open_reader(opened)
             if kept is None:
                 answer(client, 502)
                 return _CLOSED
@@ -1101,19 +1138,28 @@ class InstanceForwarder:
             take_token=functools.partial(self.take_token, tokens[0]),
         )
 
-    def _open_upstream(self) -> "socket.socket | None":
-        """A connection to the page, sending at once; None when the page does not answer."""
+    def _open_upstream(self, opened: list) -> "socket.socket | None":
+        """A connection to the page, sending at once, added to ``opened``.
+
+        Returns:
+            The connection; None when the page does not answer or the
+            forwarder is closed.
+        """
         try:
             upstream = self._hooks.connect(self.record)
         except OSError:
+            return None
+        opened.append(upstream)
+        if not self._track(upstream):
+            upstream.close()
             return None
         set_no_delay(upstream)
         upstream.settimeout(AGENT_FORWARD_IDLE_TIMEOUT_S)
         return upstream
 
-    def _open_reader(self) -> "ConnectionReader | None":
-        """A connection to the page read through a buffer; None when it does not answer."""
-        upstream = self._open_upstream()
+    def _open_reader(self, opened: list) -> "ConnectionReader | None":
+        """A connection to the page read through a buffer, added to ``opened``; None when it does not answer."""
+        upstream = self._open_upstream(opened)
         return ConnectionReader(upstream) if upstream is not None else None
 
     def take_token(self, token: str, *, secret: "str | None" = None) -> bool:
