@@ -19,6 +19,7 @@ from tests.transport.fake_transport import FakeTransport, one_shot_for
 
 GATEWAY_URL = "tcp://192.0.2.5:8443"
 OLD_GATEWAY_URL = "tcp://192.0.2.6:8443"
+NAME_URL = "tcp://hub.neutrino.internal:8443"
 LINK = link_for(
     {"urls": [GATEWAY_URL], "token": "ticket", "key": HUB_KEY, "role": "agent"}
 )
@@ -102,7 +103,7 @@ def test_the_join_carries_the_seven_fields_the_key_and_the_addresses(joined_hub)
 
     (join,) = joined_hub
     assert join["command"] == "join"
-    assert join["addresses"] == [GATEWAY_URL]
+    assert join["addresses"] == [NAME_URL, GATEWAY_URL]
     assert join["hub_key"] == HUB_KEY
     assert {
         "ticket",

@@ -190,7 +190,7 @@ AGENT_REPORT_INTERVAL_S = 5
 AGENT_BACKOFF_MIN_S = 5
 AGENT_BACKOFF_MAX_S = 60
 # The name every network the hub serves resolves to the hub's address on that
-# network. It is the first address a round dials.
+# network. It heads the addresses a round dials.
 AGENT_HUB_NAME = "hub.neutrino.internal"
 
 AGENT_COMMAND_TIMEOUT_S = 900

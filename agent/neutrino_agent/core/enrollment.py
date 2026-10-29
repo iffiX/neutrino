@@ -304,12 +304,11 @@ def stored_urls(binding: dict) -> list:
 
 
 def dial_addresses(binding: dict) -> list:
-    """The addresses one round dials, in order, each one the transport knows.
+    """The addresses one round dials at once, each one the transport knows.
 
-    The address the hub's name resolves to on this network comes first,
-    then the stored list in the hub's order: every round starts from the
-    top, and the address that answered last is not preferred. An address of
-    a scheme the transport does not know is left out.
+    The hub's name comes first, then the stored list in the hub's order.
+    The address that answered last is not preferred. An address of a scheme
+    the transport does not know is left out.
 
     Args:
         binding: The binding.
@@ -317,28 +316,13 @@ def dial_addresses(binding: dict) -> list:
     Returns:
         ``tcp://<host>:<port>`` addresses, each once.
     """
-    stored = stored_urls(binding)
-    name_url = hub_name_url(stored[0]) if stored else ""
-    return [
+    stored = [
         url
-        for url in clean_urls([name_url, *stored])
+        for url in stored_urls(binding)
         if urllib.parse.urlsplit(url).scheme == ADDRESS_SCHEME
     ]
-
-
-def resolve_hub_address() -> str:
-    """The IPv4 address the hub's name resolves to on this network.
-
-    Returns:
-        The address, or empty when the name does not resolve.
-    """
-    try:
-        found = socket.getaddrinfo(
-            AGENT_HUB_NAME, None, socket.AF_INET, socket.SOCK_STREAM
-        )
-    except OSError:
-        return ""
-    return str(found[0][4][0]) if found else ""
+    name_url = hub_name_url(stored[0]) if stored else ""
+    return clean_urls([name_url, *stored])
 
 
 def hub_name_url(gateway_url: str) -> str:
@@ -348,17 +332,16 @@ def hub_name_url(gateway_url: str) -> str:
         gateway_url: A stored address, for its port.
 
     Returns:
-        ``tcp://<address>:<port>``, or empty when the name does not resolve
-        or the stored address names no port.
+        ``tcp://hub.neutrino.internal:<port>``, which the transport resolves
+        at each round; empty when the stored address names no port.
     """
     try:
         port = urllib.parse.urlsplit(gateway_url).port
     except ValueError:
         port = None
-    address = resolve_hub_address() if port else ""
-    if not address:
+    if not port:
         return ""
-    return f"{ADDRESS_SCHEME}://{address}:{port}"
+    return f"{ADDRESS_SCHEME}://{AGENT_HUB_NAME}:{port}"
 
 
 def address_url(address: str) -> str:

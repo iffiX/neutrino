@@ -244,9 +244,7 @@ def _isolated_ai_forward(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_network(monkeypatch):
-    """The hub's name resolves to nothing and no route is looked at, unless a
-    test says otherwise."""
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
+    """No route is looked at, unless a test says otherwise."""
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
 
 

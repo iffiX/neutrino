@@ -6,8 +6,8 @@ has never enrolled still answers locally, waiting for a link.
 
 The session is its transport's. The agent starts ``neutrino_transport`` as
 its child, hands it the binding with ``dial``, and the transport keeps one
-session to the hub, dialling the hub's addresses in order and again after
-each end. The agent writes every frame: ``hello`` when the transport says a
+session to the hub, dialling every address of the hub at once and again
+after each end. The agent writes every frame: ``hello`` when the transport says a
 session opened, then a report every few seconds and at once when something
 changed. The hub decides everything about modules: its state says what
 each is to be, and this machine observes, installs, configures and reports

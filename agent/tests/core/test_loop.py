@@ -62,6 +62,7 @@ from tests.transport.fake_transport import FakeTransport, one_shot_for, starter_
 
 LAN_URL = "tcp://192.0.2.1:8443"
 OVERLAY_URL = "tcp://100.64.0.1:8443"
+NAME_URL = "tcp://hub.neutrino.internal:8443"
 MACHINE_URL = "ssh://root@127.0.0.1:50743/run/podman/podman.sock"
 AI_ON = {"hash": "h", "ai_tools": {"is_enabled": True, "is_forwarded": True}}
 AI_OFF = {"hash": "h", "ai_tools": {"is_enabled": False, "is_forwarded": False}}
@@ -156,10 +157,7 @@ def commands_named(fake, name) -> list:
 # --- the transport and the dial ---
 
 
-def test_the_first_turn_starts_the_transport_and_dials_the_binding(
-    fake, config_path, monkeypatch
-):
-    monkeypatch.setattr(enrollment_module, "resolve_hub_address", lambda: "10.9.9.9")
+def test_the_first_turn_starts_the_transport_and_dials_the_binding(fake, config_path):
     agent = agent_on(fake, config=config_path, urls=[LAN_URL, OVERLAY_URL])
 
     delay = agent.run_once()
@@ -174,7 +172,7 @@ def test_the_first_turn_starts_the_transport_and_dials_the_binding(
         "psk": hashlib.sha256(BINDING_TOKEN.encode()).hexdigest(),
         "role": "agent",
         "protocol": PROTOCOL,
-        "addresses": ["tcp://10.9.9.9:8443", LAN_URL, OVERLAY_URL],
+        "addresses": [NAME_URL, LAN_URL, OVERLAY_URL],
     }
 
 
@@ -191,6 +189,7 @@ def test_the_last_answered_address_follows_the_list_and_other_schemes_are_left_o
     agent.run_once()
 
     assert fake.wait_command("dial")["addresses"] == [
+        NAME_URL,
         LAN_URL,
         "tcp://198.51.100.9:8443",
     ]
@@ -209,7 +208,7 @@ def test_a_binding_is_dialled_once_and_again_when_its_addresses_change_unwelcome
 
     dials = commands_named(fake, "dial")
     assert len(dials) == 2
-    assert dials[1]["addresses"] == [OVERLAY_URL, LAN_URL]
+    assert dials[1]["addresses"] == [NAME_URL, OVERLAY_URL, LAN_URL]
 
 
 def test_a_states_urls_are_written_down_and_dial_nothing_while_a_session_is_up(
@@ -641,7 +640,7 @@ def test_a_binding_written_over_starts_the_transport_afresh(fake, config_path):
     agent.run_once()
 
     assert fake.starts == 2
-    assert fake.wait_command("dial", count=2)["addresses"][0] == OVERLAY_URL
+    assert fake.wait_command("dial", count=2)["addresses"] == [NAME_URL, OVERLAY_URL]
 
 
 def test_a_session_that_drops_is_hub_unreachable_and_keeps_the_binding(

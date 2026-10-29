@@ -47,7 +47,10 @@ def test_a_bound_machine_leaves_and_says_so(fake, config_path, capsys):
 
     (leave,) = leaves(fake)
     assert leave["hub_key"] == HUB_KEY
-    assert leave["addresses"] == ["tcp://192.0.2.5:8443"]
+    assert leave["addresses"] == [
+        "tcp://hub.neutrino.internal:8443",
+        "tcp://192.0.2.5:8443",
+    ]
     assert LEAVE_WORDS in capsys.readouterr().out
     assert not config_path.exists()
     assert not enrollment.is_bound()

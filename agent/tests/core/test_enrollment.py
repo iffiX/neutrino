@@ -4,8 +4,8 @@ The link is compact JSON compressed with zlib in unpadded base64url, so it
 holds no character a shell splits or a URL escapes; it carries the hub's
 key, and a link made for a client is refused here. The join goes through a
 transport the test plays: one ``join`` command with the link's key, a
-fresh static key of this agent's, the addresses in order and the seven
-fields, its answer's ``binding_id`` and ``token`` stored with every address
+fresh static key of this agent's, the hub's name and the link's addresses,
+and the seven fields, its answer's ``binding_id`` and ``token`` stored with every address
 the link carried. A file missing any field but the address list, or
 holding a key that is not 64 hex characters, is an unbound agent. The
 addresses of a round, the hub's name on a stored address's port, and the
@@ -28,11 +28,7 @@ import pytest
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_ROLE, AGENT_SOFTWARE_PREFIX, PROTOCOL
-from neutrino_agent.core.enrollment import (
-    default_source_address,
-    parse_link,
-    resolve_hub_address,
-)
+from neutrino_agent.core.enrollment import default_source_address, parse_link
 from neutrino_agent.exceptions import EnrollmentError
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.detect import platform_tuple
@@ -212,7 +208,6 @@ def test_a_platform_without_a_machine_id_sends_an_empty_one():
 def test_a_join_goes_through_the_transport_and_stores_the_binding(
     fake, config_path, monkeypatch
 ):
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "10.9.9.9")
     link = link_for(
         {
             "urls": [GATEWAY_URL, "tcp://10.0.0.1:8443"],
@@ -231,7 +226,7 @@ def test_a_join_goes_through_the_transport_and_stores_the_binding(
     assert join["hub_key"] == HUB_KEY
     assert join["private_key"] == stored["private_key"]
     assert join["addresses"] == [
-        "tcp://10.9.9.9:8443",
+        "tcp://hub.neutrino.internal:8443",
         GATEWAY_URL,
         "tcp://10.0.0.1:8443",
     ]
@@ -440,15 +435,15 @@ def test_the_dial_fields_carry_the_keys_the_psk_and_the_addresses(config_path):
         "psk": hashlib.sha256(BINDING_TOKEN.encode()).hexdigest(),
         "role": "agent",
         "protocol": PROTOCOL,
-        "addresses": [GATEWAY_URL],
+        "addresses": [NAME_URL, GATEWAY_URL],
     }
 
 
-# --- the addresses, and the round's order ---
+# --- the addresses of a round ---
 
 LAN_URL = "tcp://192.0.2.1:8443"
 OVERLAY_URL = "tcp://100.64.0.1:8443"
-NAME_URL = "tcp://192.0.2.9:8443"
+NAME_URL = "tcp://hub.neutrino.internal:8443"
 
 
 def test_the_list_is_kept_clean_and_in_the_hubs_order():
@@ -460,32 +455,29 @@ def test_the_list_is_kept_clean_and_in_the_hubs_order():
     assert enrollment.clean_urls("not a list") == []
 
 
-def test_every_round_is_the_name_then_the_list_from_the_top(monkeypatch):
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "192.0.2.9")
+def test_every_round_is_the_name_then_the_list():
     binding = {"gateway_url": OVERLAY_URL, "gateway_urls": [LAN_URL, OVERLAY_URL]}
 
     assert enrollment.dial_addresses(binding) == [NAME_URL, LAN_URL, OVERLAY_URL]
 
 
-def test_the_name_takes_the_stored_addresss_port(monkeypatch):
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "192.0.2.9")
+def test_the_name_takes_the_stored_addresss_port_unresolved(monkeypatch):
+    def getaddrinfo(*args):
+        raise AssertionError("the name was resolved")
+
+    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
 
     assert enrollment.hub_name_url(LAN_URL) == NAME_URL
-    assert enrollment.hub_name_url("tcp://192.0.2.1:9") == "tcp://192.0.2.9:9"
+    assert (
+        enrollment.hub_name_url("tcp://192.0.2.1:9") == "tcp://hub.neutrino.internal:9"
+    )
     assert enrollment.hub_name_url("tcp://hub.lan") == ""
-
-
-def test_a_name_that_does_not_resolve_is_no_address(monkeypatch):
-    binding = {"gateway_url": LAN_URL, "gateway_urls": [LAN_URL]}
-
-    assert enrollment.hub_name_url(LAN_URL) == ""
-    assert enrollment.dial_addresses(binding) == [LAN_URL]
 
 
 def test_an_address_of_another_scheme_is_not_dialled():
     binding = {"gateway_url": LAN_URL, "gateway_urls": ["https://x:1", "udp://y:2"]}
 
-    assert enrollment.dial_addresses(binding) == [LAN_URL]
+    assert enrollment.dial_addresses(binding) == [NAME_URL, LAN_URL]
 
 
 @pytest.mark.parametrize(
@@ -499,34 +491,6 @@ def test_an_address_of_another_scheme_is_not_dialled():
 )
 def test_a_session_open_address_is_kept_as_a_tcp_url(address, url):
     assert enrollment.address_url(address) == url
-
-
-def test_the_name_is_looked_up_as_ipv4_only(monkeypatch):
-    asked = []
-
-    def getaddrinfo(host, port, family=0, kind=0, *rest):
-        asked.append((host, family, kind))
-        return [(family, kind, 6, "", ("192.0.2.9", 0))]
-
-    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
-
-    assert resolve_hub_address() == "192.0.2.9"
-    assert asked == [
-        (
-            "hub.neutrino.internal",
-            enrollment.socket.AF_INET,
-            enrollment.socket.SOCK_STREAM,
-        )
-    ]
-
-
-def test_a_lookup_that_fails_resolves_to_nothing(monkeypatch):
-    def getaddrinfo(*args):
-        raise enrollment.socket.gaierror("no such name")
-
-    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
-
-    assert resolve_hub_address() == ""
 
 
 def test_the_route_to_the_hub_is_read_off_the_first_literal():
@@ -575,7 +539,7 @@ def test_unbind_sends_leave_with_the_binding_and_deletes_the_file(fake, config_p
     assert leave["hub_key"] == HUB_KEY
     assert leave["private_key"] == PRIVATE_KEY
     assert leave["psk"] == hashlib.sha256(BINDING_TOKEN.encode()).hexdigest()
-    assert leave["addresses"] == [GATEWAY_URL]
+    assert leave["addresses"] == [NAME_URL, GATEWAY_URL]
     assert not config_path.exists()
 
 
