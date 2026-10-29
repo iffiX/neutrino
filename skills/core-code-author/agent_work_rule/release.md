@@ -654,6 +654,16 @@ notes. Its `publish` job publishes the GitHub draft, and then runs
 `packaging/ci/publish_cn.py`, which publishes the same release to CNB ("The
 mainland site on CNB").
 
+Its `share_page` job runs once the `publish` job succeeds. It checks out the
+tag, builds `share_page/` with `packaging/build/build_share_page.py`, and
+deploys the tree to the Cloudflare Pages project `neutrinohub-share`
+([../design/web_share.md](../design/web_share.md), "The files and the
+sites"). The deploy runs wrangler at the version the workflow pins, as a
+production deployment of the project's branch `main`. It reads the
+repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A
+pre-release deploys nothing. When either secret is missing, the job prints
+one line naming it, deploys nothing and succeeds.
+
 Running the same workflow from the Actions tab builds the packages and attaches
 them as artifacts without creating a release, which is how a change to the
 pipeline is tried before a tag depends on it.
