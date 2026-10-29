@@ -85,11 +85,15 @@ class StubGatewayConfig:
 
 
 @pytest.fixture
-def factories(monkeypatch):
+def factories(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "PanelRuntime", StubRuntime)
     monkeypatch.setattr(app_module, "PanelUsageCollector", StubUsageCollector)
     monkeypatch.setattr(app_module, "_shared_runtime", None)
     monkeypatch.setattr(app_module, "_usage_collector", None)
+    monkeypatch.setattr(app_module, "WEB_LEGACY_TLS_DIR", tmp_path / "agent_tls")
+    monkeypatch.setattr(
+        app_module, "WEB_LEGACY_TLS_SERVED_KEY_PATH", tmp_path / "agent_tls_key.pem"
+    )
     # No gateway on the box the tests run on, whatever the box has.
     StubGatewayApplier.is_installed = False
     StubGatewayApplier.applied = 0
