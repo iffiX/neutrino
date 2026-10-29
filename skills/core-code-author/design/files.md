@@ -409,6 +409,9 @@ start line names and the one `journal("netbird")` reads. The agent writes
         netbird.sock        the hub's NetBird daemon, macOS only
         transport/          the transport's run directory, 0700, its own:
                             transport.sock, the local channel
+        outside_sandbox/    0700, the output and errors of each command
+                            the panel runs outside its sandbox, each file
+                            deleted when its command ends
     agent/
         agent.sock          the root-only control socket
         transport.sock      the agent's local channel to its transport

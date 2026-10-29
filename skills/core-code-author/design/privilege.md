@@ -107,6 +107,17 @@ does, but one rule beats three — and so does any vendor script that runs a
 package manager of its own. A working copy started from a shell is not inside
 a unit and gets the command unchanged.
 
+systemd writes the command's output and errors to two files under
+`/run/neutrino/hub/outside_sandbox/`, and `systemd-run --wait` exits with the
+command's exit code. The panel reads the files when the unit has ended, then
+deletes them. The apply of a restore writes both to one file, which the panel
+reads while the unit runs and streams to the page line by line.
+
+`systemd-run` gets no `--pipe` on any distribution. On Rocky 9 with SELinux
+enforcing, systemd rejected the panel's pipes, and every install from the panel
+failed with `Failed to start transient service unit: Connection reset by
+peer`.
+
 ## Stepping down uses runuser, never sudo
 
 The panel is already root, so reaching a service account is a step down.
