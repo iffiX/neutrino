@@ -34,6 +34,8 @@ GITEA_COMMAND_PASSWORD = "password"
 # read again. Each read starts two gitea processes, and the agent reports
 # every few seconds.
 GITEA_SURVEY_TTL_S = 60.0
+# The words ``gitea --version`` opens with, compared in lower case.
+GITEA_VERSION_PREFIX = "gitea version"
 
 # The refusal of an install or an apply on macOS or Windows while the
 # machine has no git the server can run.

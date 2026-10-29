@@ -50,6 +50,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_DATA_DIR_NAME,
     GITEA_DATA_PARTS,
     GITEA_LOG_PARTS,
+    GITEA_VERSION_PREFIX,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.samba.darwin_applier import tool_line
@@ -64,7 +65,6 @@ except ImportError:  # Windows has no account database module.
     pwd = None
 
 PLIST_SUFFIX = ".plist"
-VERSION_PREFIX = "Gitea version"
 
 
 def render_plist(*, binary: str, conf: str, data_dir: str, git_dir: str) -> bytes:
@@ -306,7 +306,9 @@ class GiteaDarwinApplier:
         output = self._run(
             [self.binary_path, "--version"], is_checked=False, timeout_s=30
         ).stdout
-        version = output.split()[2] if output.startswith(VERSION_PREFIX) else ""
+        version = (
+            output.split()[2] if output.lower().startswith(GITEA_VERSION_PREFIX) else ""
+        )
         return GiteaState(
             is_installed=True, version=version, admin_usernames=self._admin_names()
         )

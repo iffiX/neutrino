@@ -33,7 +33,7 @@ class FakeTools:
         self.is_refusing_account = False
         self.is_loaded = False
         self.is_running = False
-        self.version = "Gitea version 1.27.3 built with GNU Make 4.4.1, go1.25.3\n"
+        self.version = "gitea version 1.27.3 built with go1.26.7-X:jsonv2 : bindata\n"
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         command = list(command)

@@ -51,7 +51,12 @@ class FakeSc:
                 self.exists = False
             return CommandResult(command, 0, "", "")
         if command[1:] == ["--version"]:
-            return CommandResult(command, 0, "Gitea version 1.27.3 built with go\n", "")
+            return CommandResult(
+                command,
+                0,
+                "gitea version 1.27.3 built with go1.26.7-X:jsonv2 : bindata\n",
+                "",
+            )
         return CommandResult(
             command, 0, "ID   Username   Email   IsActive\n1   ann   a@x   true\n", ""
         )

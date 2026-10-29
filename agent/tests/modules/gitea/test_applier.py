@@ -193,7 +193,7 @@ def test_survey_reads_the_version_and_the_admins_as_the_git_user(box):
     (tmp_path / "etc/app.ini").write_text("")
     commands.answers[(str(tmp_path / "bin/gitea"), "--version")] = (
         0,
-        "Gitea version 1.27.3 built\n",
+        "gitea version 1.27.3 built with go1.26.7-X:jsonv2 : bindata\n",
     )
     commands.answers[("runuser", "-u")] = (
         0,

@@ -34,6 +34,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_DATA_DIR_NAME,
     GITEA_DATA_PARTS,
     GITEA_LOG_PARTS,
+    GITEA_VERSION_PREFIX,
     GITEA_WINDOWS_DISPLAY_NAME,
     GITEA_WINDOWS_ENVIRONMENT_KEY,
     GITEA_WINDOWS_GIT_FALLBACK,
@@ -51,7 +52,6 @@ try:
 except ImportError:  # Only Windows has the registry.
     winreg = None
 
-VERSION_PREFIX = "Gitea version"
 # What ``sc.exe`` exits with for a service that does not exist, and for a
 # start of one that already runs.
 SC_SERVICE_DOES_NOT_EXIST = 1060
@@ -267,7 +267,9 @@ class GiteaWindowsApplier:
         output = self._run(
             [self.binary_path, "--version"], is_checked=False, timeout_s=30
         ).stdout
-        version = output.split()[2] if output.startswith(VERSION_PREFIX) else ""
+        version = (
+            output.split()[2] if output.lower().startswith(GITEA_VERSION_PREFIX) else ""
+        )
         return GiteaState(
             is_installed=True, version=version, admin_usernames=self._admin_names()
         )

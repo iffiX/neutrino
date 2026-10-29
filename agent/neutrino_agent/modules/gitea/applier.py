@@ -28,6 +28,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_UNIT,
     GITEA_UNIT_SOURCE_NAME,
     GITEA_USER,
+    GITEA_VERSION_PREFIX,
 )
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
@@ -244,7 +245,7 @@ class GiteaAdminManager:
             [GITEA_BINARY_PATH, "--version"], is_checked=False, timeout_s=30
         ).stdout
         version = ""
-        if version_output.startswith("Gitea version"):
+        if version_output.lower().startswith(GITEA_VERSION_PREFIX):
             version = version_output.split()[2]
         return GiteaState(
             is_installed=True, version=version, admin_usernames=self._admin_names()
