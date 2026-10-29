@@ -24,6 +24,7 @@ from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import SSH_UNREACHABLE_STATUS
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.devices.registry import (
     DeviceClientInfo,
@@ -807,6 +808,10 @@ class InstallRuntime:
 @pytest.fixture
 def install_api(monkeypatch, tmp_path):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.registry.DeviceHostKeyStore",
+        lambda: DeviceHostKeyStore(path=tmp_path / "devices" / "known_hosts"),
+    )
     unlock_vault(monkeypatch, tmp_path)
     device_id = DeviceRegistry().create("xenode").id
     app = FastAPI()
@@ -1407,7 +1412,8 @@ def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypat
 
 
 @pytest.fixture
-def box_api(monkeypatch):
+def box_api(monkeypatch, tmp_path):
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
     client, runtime = device_box(monkeypatch, devices_router)
     monkeypatch.setattr(channel_addresses, "read_public_key", lambda: FINGERPRINT)
     with client:
