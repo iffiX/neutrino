@@ -6,10 +6,15 @@ import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import { hasFeature } from "../edition";
-import type { CliproxyApiStatusView, NetworkView } from "../api_types";
+import type {
+  CliproxyApiStatusView,
+  DevicesResponse,
+  NetworkView,
+} from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
 import type { NavItem } from "../nav_items";
 import { useApiResource } from "../use_api_resource";
+import { HUB_EVENT_DEVICES } from "../use_hub_events";
 import { useLiveStats } from "../use_live_stats";
 
 import "./top_bar.css";
@@ -19,14 +24,8 @@ import "./top_bar.css";
  *
  * One chip per core page, in the sidebar's own order, each a thumbnail of the
  * page behind it: what this machine is, where its traffic goes, what the AI
- * gateway is serving, how many devices report in. Opening the page is how you
- * get the rest; none of this should need a page open to be seen.
- *
- * It used to show `wan`, `lan` and `proxy`, which was a router's summary on a
- * panel with three modes: a server has no uplink to name and serves no
- * network, so two of the three chips answered questions that mode does not
- * pose. The mode itself was the one thing never shown, and every other chip's
- * meaning depends on it.
+ * gateway is serving, how many agents the hub manages. Opening the page is how
+ * you get the rest; none of this should need a page open to be seen.
  */
 
 const SOCKET_TONES: Record<string, StatusTone> = {
@@ -60,6 +59,9 @@ const IS_PROXY_CARRIED = hasFeature("proxy");
 /** What a chip shows when nothing has answered yet. */
 const CHIP_NOTHING = "—";
 
+/** What moves the agents chip: a machine came or went. */
+const DEVICES_INVALIDATE_ON = [{ type: HUB_EVENT_DEVICES }];
+
 export function TopBar() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -70,6 +72,9 @@ export function TopBar() {
   // starting on a default that is wrong for most machines.
   const network = useApiResource<NetworkView>("/hub/network");
   const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway");
+  const devices = useApiResource<DevicesResponse>("/hub/device", {
+    invalidateOn: DEVICES_INVALIDATE_ON,
+  });
 
   const currentItem = NAV_ITEMS.find((item) =>
     item.path === "/"
@@ -78,7 +83,7 @@ export function TopBar() {
   );
   const proxy = describeProxy(latestFrame);
   const mode = latestFrame?.network_mode ?? network.data?.mode ?? null;
-  const agentCount = latestFrame?.agent_device_count ?? null;
+  const agentCount = devices.data?.count.total ?? null;
 
   return (
     <header className="top_bar">
@@ -149,7 +154,7 @@ function describeMode(mode: string | null): string {
   return key === undefined ? mode : t(key);
 }
 
-/** What the devices chip says: how many machines report in. */
+/** What the agents chip says: how many agents the hub manages. */
 function describeAgents(count: number | null): string {
   if (count === null) {
     return CHIP_NOTHING;
