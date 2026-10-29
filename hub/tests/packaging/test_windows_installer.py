@@ -87,20 +87,33 @@ def test_the_service_is_started_again_when_it_ends(document):
         assert recovery.get(f"{failure}FailureActionType") == "restart"
 
 
-def test_the_removal_hands_the_network_back_and_no_action_starts_the_service(
+def test_the_removal_hands_the_network_back_quietly_and_no_action_starts_the_service(
     document,
 ):
     _source, root = document
 
-    (action,) = root.iter(WXS + "CustomAction")
+    command, action = root.iter(WXS + "CustomAction")
+    assert command.get("Id") == "SetResetNetwork"
+    assert command.get("Property") == "ResetNetwork"
+    assert command.get("Value") == '"[INSTALLFOLDER]nhub.exe" reset network --yes'
+    assert command.get("Execute") == "immediate"
     assert action.get("Id") == "ResetNetwork"
-    assert action.get("FileRef") == "HubServiceFile"
-    assert action.get("ExeCommand") == "reset network --yes"
+    assert action.get("DllEntry") == "WixQuietExec"
+    assert action.get("BinaryRef") == "Wix4UtilCA_X64"
+    assert action.get("Execute") == "deferred"
+    assert action.get("Impersonate") == "no"
     assert action.get("Return") == "ignore"
-    (custom,) = root.iter(WXS + "Custom")
-    assert custom.get("Action") == "ResetNetwork"
-    assert custom.get("Before") == "RemoveFiles"
-    assert custom.get("Condition") == 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+    removed = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+    first, second = root.iter(WXS + "Custom")
+    assert (first.get("Action"), first.get("Before")) == (
+        "SetResetNetwork",
+        "ResetNetwork",
+    )
+    assert (second.get("Action"), second.get("Before")) == (
+        "ResetNetwork",
+        "RemoveFiles",
+    )
+    assert first.get("Condition") == second.get("Condition") == removed
 
 
 def test_the_start_menu_entry_runs_nhub_open(document):

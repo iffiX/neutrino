@@ -68,6 +68,9 @@ HUB_SERVICE_ARGUMENTS = "service run"
 # whose removal of the old version carries the upgrading code.
 HUB_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
 HUB_RESET_ARGUMENTS = "reset network --yes"
+# The Util extension's library its quiet exec runs from. A console program
+# the removal starts itself fails to start with 0xC0000142.
+HUB_UTIL_LIBRARY = wix_build.UTIL_LIBRARY["amd64"]
 # Where the programs the hub drives sit, under the program folder.
 PROGRAMS_DIR_NAME = "bin"
 # The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe,
@@ -202,6 +205,9 @@ WIX_BODY = r"""
     @RESET_NETWORK@
 
     <InstallExecuteSequence>
+      <Custom Action="SetResetNetwork"
+              Before="ResetNetwork"
+              Condition="@HUB_REMOVED@" />
       <Custom Action="ResetNetwork"
               Before="RemoveFiles"
               Condition="@HUB_REMOVED@" />
@@ -347,11 +353,19 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         start="auto",
         permissions=(SERVICE_RECOVERY,),
     )
-    reset_network = wix_build.custom_action(
+    reset_network = wix_build.element(
+        "CustomAction",
+        {
+            "Id": "SetResetNetwork",
+            "Property": "ResetNetwork",
+            "Value": f'"[INSTALLFOLDER]{HUB_BINARY_NAME}" {HUB_RESET_ARGUMENTS}',
+            "Execute": "immediate",
+        },
+    ) + wix_build.custom_action(
         "ResetNetwork",
         is_failure_ignored=True,
-        FileRef="HubServiceFile",
-        ExeCommand=HUB_RESET_ARGUMENTS,
+        BinaryRef=HUB_UTIL_LIBRARY,
+        DllEntry="WixQuietExec",
     )
     body = wix_build.fill(
         WIX_BODY,
