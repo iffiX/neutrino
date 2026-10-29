@@ -1,5 +1,6 @@
 """The container applier's effects, with podman and systemd replaced."""
 
+import json
 import os
 import stat
 import subprocess
@@ -431,6 +432,53 @@ def test_a_hub_containers_environment_is_not_read_and_a_declared_ones_is(
     assert by_name["neutrino_demo"].module == "demo"
     assert by_name["neutrino_demo"].environment == []
     assert by_name["web"].environment == ["TOKEN=mine"]
+
+
+def test_a_named_volume_is_read_by_its_name_and_an_anonymous_one_is_left_out(
+    commands,
+):
+    """The mongo image's own anonymous volume at ``/data/configdb`` goes
+    with its container. An import that wrote its path failed the next start
+    with ``statfs ... no such file or directory``."""
+    anonymous = "da8ab5bca7e1a9f27a5aef903224f7021099c0d4a4ad595d547551649d605ddc"  # scan: allow
+    storage = "/var/lib/containers/storage/volumes"
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["db"], "Image": "mongo", "State": "running"}]',
+    )
+    commands.answers[("/usr/bin/podman", "inspect")] = (
+        0,
+        json.dumps(
+            [
+                {
+                    "Name": "db",
+                    "Mounts": [
+                        {
+                            "Type": "volume",
+                            "Name": "dbdata",
+                            "Source": f"{storage}/dbdata/_data",
+                            "Destination": "/data/db",
+                        },
+                        {
+                            "Type": "volume",
+                            "Name": anonymous,
+                            "Source": f"{storage}/{anonymous}/_data",
+                            "Destination": "/data/configdb",
+                        },
+                        {
+                            "Type": "bind",
+                            "Source": "/srv/backup",
+                            "Destination": "/backup",
+                        },
+                    ],
+                }
+            ]
+        ),
+    )
+
+    (state,) = PodmanStatusReader().survey(declared_names=[])
+
+    assert state.volumes == ["dbdata:/data/db", "/srv/backup:/backup"]
 
 
 SURVEYED = (

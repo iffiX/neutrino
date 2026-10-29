@@ -458,7 +458,7 @@ def test_the_details_read_what_podman_itself_says_of_each_container(
         "ports": ["8080:80"],
         "volumes": [
             "/srv/web:/usr/share/nginx/html",
-            "/var/lib/containers/storage/volumes/webdata/_data:/data",
+            "webdata:/data",
         ],
         "environment": [
             "PATH=/usr/sbin:/usr/bin",

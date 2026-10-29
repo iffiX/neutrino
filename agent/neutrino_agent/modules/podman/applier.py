@@ -18,12 +18,14 @@ import contextlib
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_ANONYMOUS_VOLUME_PATTERN,
     PODMAN_BINARY,
     PODMAN_CNI_DIR,
     PODMAN_CNI_SUFFIX,
@@ -46,6 +48,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_UNIT_DIR,
     PODMAN_UNIT_FILE_MODE,
     PODMAN_UNIT_SUFFIX,
+    PODMAN_VOLUME_MOUNT,
 )
 from neutrino_agent.modules.podman.renderer import source_neutral
 from neutrino_agent.modules.shared import source_fetch
@@ -860,15 +863,22 @@ def _inspected_ports(detail: dict) -> list:
 
 
 def _inspected_volumes(detail: dict, *, host_volume=None) -> list:
-    """Every mount of one inspect object as ``source:destination``, the
-    source passed through ``host_volume`` when one is given."""
+    """Every mount of one inspect object as ``source:destination``: a named
+    volume by its name, any other source passed through ``host_volume`` when
+    one is given. An anonymous volume is left out."""
     volumes = []
     for mount in detail.get("Mounts") or []:
         if not isinstance(mount, dict):
             continue
-        source = str(mount.get("Source", "") or mount.get("Name", "") or "")
-        if source and host_volume is not None:
-            source = host_volume(source)
+        name = str(mount.get("Name", "") or "")
+        if mount.get("Type") == PODMAN_VOLUME_MOUNT and name:
+            if re.fullmatch(PODMAN_ANONYMOUS_VOLUME_PATTERN, name):
+                continue
+            source = name
+        else:
+            source = str(mount.get("Source", "") or name)
+            if source and host_volume is not None:
+                source = host_volume(source)
         destination = str(mount.get("Destination", "") or "")
         if source and destination:
             volumes.append(f"{source}:{destination}")

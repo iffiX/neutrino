@@ -234,6 +234,9 @@ PODMAN_PAGE_ADDRESS = "127.0.0.1"
 PODMAN_PAGE_PORTS_NAME = "page_ports.json"
 # An image's digest, as a hub container names it.
 PODMAN_DIGEST_PATTERN = r"sha256:[0-9a-f]{64}"
+# The type of a volume's mount, and the name podman gives an anonymous volume.
+PODMAN_VOLUME_MOUNT = "volume"
+PODMAN_ANONYMOUS_VOLUME_PATTERN = r"[0-9a-f]{64}"
 # Where a container comes from, by the owner rule: the label, then the
 # declared names, else a person's own.
 PODMAN_SOURCE_HUB = "hub"
