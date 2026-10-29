@@ -4,11 +4,14 @@ The tab words where each container comes from with one of three chips, and
 the Hub containers block with its title, its hint and its empty line; the
 Run settings' default line and the memory advice say what ui_text.md
 writes; the codes Containers adds for hub containers and for container
-modules have a sentence in both languages; and the old badges are gone, so
-nothing names a person's container anything but manual.
+modules have a sentence in both languages; the old badges are gone, so
+nothing names a person's container anything but manual; and the
+not-installed notice of Containers and Gitea shows for an absent module
+alone.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -92,3 +95,24 @@ def test_each_owner_the_hub_reports_has_its_chip():
         DEVICE_CONTAINER_SOURCE_MANUAL,
     ):
         assert f'"ui.containers.source_{source}"' in panels
+
+
+@pytest.mark.parametrize(
+    ("panel", "key"),
+    [
+        ("containers_panels.tsx", "ui.containers.not_installed"),
+        ("gitea_panels.tsx", "ui.gitea.not_installed"),
+    ],
+)
+def test_the_not_installed_notice_shows_for_an_absent_module_alone(panel, key):
+    source = (PANELS_PATH.parent / panel).read_text(encoding="utf-8")
+
+    shown_when = re.search(
+        r"\{([^{}]*) && \(\s*<div className=\"notice notice--warn\">"
+        r"\s*<Icon name=\"alert\" size=\{15\} />"
+        rf"\s*<div className=\"notice_body\">\{{t\(\"{re.escape(key)}\"\)\}}",
+        source,
+    )
+    assert shown_when is not None
+    assert shown_when.group(1) == "saved.state === ABSENT_STATE"
+    assert 'const ABSENT_STATE = "absent";' in source

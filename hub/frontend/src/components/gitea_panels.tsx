@@ -33,6 +33,9 @@ import "./gitea_panels.css";
  * a client opens it, so the panel shows no link to it.
  */
 
+/** The state of a module whose software is not on the machine. */
+const ABSENT_STATE = "absent";
+
 interface GiteaPanelsProps {
   /** The machine whose Gitea this is. */
   deviceId: string;
@@ -101,7 +104,7 @@ export function GiteaPanels({
 
   return (
     <>
-      {!saved.is_installed && (
+      {saved.state === ABSENT_STATE && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.gitea.not_installed")}</div>

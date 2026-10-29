@@ -122,6 +122,9 @@ const MACHINE_RUN_OS = ["windows", "darwin"];
 /** The system whose machine starts with the account's Windows login. */
 const WINDOWS_OS = "windows";
 
+/** The state of a module whose software is not on the machine. */
+const ABSENT_STATE = "absent";
+
 /** A volume in each system's own form, shown in the empty add field. */
 const VOLUME_PLACEHOLDER_KEYS: Record<string, string> = {
   linux: "ui.containers.volume_placeholder_linux",
@@ -268,7 +271,7 @@ export function ContainersPanels({
 
   return (
     <>
-      {!saved.is_installed && (
+      {saved.state === ABSENT_STATE && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.containers.not_installed")}</div>
