@@ -501,6 +501,27 @@ def test_the_notice_names_every_library_the_page_and_the_hub_depend_on():
         assert re.search(rf"\n  {re.escape(name)}  ", notice, re.I), name
 
 
+def test_the_package_data_holds_every_tracked_data_file():
+    """A file under ``neutrino_hub/data/`` that no ``package-data`` pattern
+    names is left out of every hub package."""
+    import fnmatch
+    import re
+
+    project = (venv_tree.HUB_ROOT / "pyproject.toml").read_text()
+    listed = project.split("[tool.setuptools.package-data]", 1)[1].split("]", 1)[0]
+    patterns = re.findall(r'"([^"]+)"', listed)
+    package = venv_tree.HUB_ROOT / "neutrino_hub"
+    tracked = subprocess.run(
+        ["git", "ls-files", "data"],
+        cwd=package,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    for path in tracked:
+        assert any(fnmatch.fnmatch(path, pattern) for pattern in patterns), path
+
+
 def test_the_notice_names_no_berkeley_db():
     """``_dbm``, which links it, is taken out of the staged interpreter."""
     notice = (venv_tree.HUB_ROOT.parent / "licenses" / "hub_notices.txt").read_text()
