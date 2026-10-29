@@ -19,6 +19,9 @@ const (
 	// RelayMemoryLogInterval is the least time between two log lines for
 	// streams the memory cap reset.
 	RelayMemoryLogInterval = time.Minute
+	// RelayRefusalLogInterval is the least time between two log lines for
+	// control_unavailable refusals.
+	RelayRefusalLogInterval = time.Minute
 	// RelayControlRetryAfter is the retry_after_s of every
 	// control_unavailable the hub's transport makes.
 	RelayControlRetryAfter = 5 * time.Second

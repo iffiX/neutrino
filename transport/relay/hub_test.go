@@ -251,9 +251,51 @@ func TestMemoryCapLineAtMostOnceAMinute(t *testing.T) {
 	}
 }
 
+// TestControlUnavailableLinesAtMostOnceAMinute checks that 30
+// control_unavailable refusals in 150 seconds write four lines: one at the
+// first, one a minute after each line with the count since, and one at the
+// next admitted session. Another code writes a line at each refusal.
+func TestControlUnavailableLinesAtMostOnceAMinute(t *testing.T) {
+	key, _ := handshake.GenerateKey()
+	var clock atomic.Int64
+	clock.Store(time.Unix(1_000_000, 0).UnixNano())
+	lines := &logLines{}
+	hub, err := NewHub(HubConfig{Key: key, Now: func() time.Time { return time.Unix(0, clock.Load()) }, Log: lines.add}, newFakePython())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(hub.Close)
+
+	for i := 0; i < 30; i++ {
+		if i > 0 {
+			clock.Add(int64(RelayControlRetryAfter))
+		}
+		hub.logRefused("refused", controlUnavailable(), "address", "192.0.2.7")
+	}
+	clock.Add(int64(RelayControlRetryAfter))
+	hub.logRefusalsEnded()
+	hub.logRefusalsEnded()
+	hub.logRefused("refused", session.NewRefusal(session.CodeChannelFull, nil), "address", "192.0.2.7")
+	hub.logRefused("refused", session.NewRefusal(session.CodeChannelFull, nil), "address", "192.0.2.7")
+	want := []string{
+		"refused address=192.0.2.7 code=control_unavailable count=1",
+		"refused address=192.0.2.7 code=control_unavailable count=12",
+		"refused address=192.0.2.7 code=control_unavailable count=12",
+		"refusals_ended code=control_unavailable count=5",
+		"refused address=192.0.2.7 code=channel_full",
+		"refused address=192.0.2.7 code=channel_full",
+	}
+	lines.mu.Lock()
+	got := append([]string(nil), lines.lines...)
+	lines.mu.Unlock()
+	if !slices.Equal(got, want) {
+		t.Fatalf("lines %q, want %q", got, want)
+	}
+}
+
 // TestControlUnavailableNamesItsRetry checks that a bound peer knocking
 // while the Python is away reads refused control_unavailable with
-// retry_after_s 5, and is admitted once the Python is back.
+// retry_after_s 5, and the line it writes.
 func TestControlUnavailableNamesItsRetry(t *testing.T) {
 	hub := newTestHub(t)
 	address := hub.listen(t)
@@ -271,11 +313,17 @@ func TestControlUnavailableNamesItsRetry(t *testing.T) {
 	if kind != session.FrameRefused || refusal.Code != session.CodeControlUnavailable || refusal.Params["retry_after_s"] != RelayControlRetryAfter.Seconds() {
 		t.Fatalf("away python: %s %s", kind, frame)
 	}
+	if got := hub.lines.named("refused"); !slices.Equal(got, []string{"refused address=127.0.0.1 code=control_unavailable count=1"}) {
+		t.Fatalf("lines %q", got)
+	}
 
 	hub.python.mu.Lock()
 	hub.python.isAway = false
 	hub.python.mu.Unlock()
 	agent.admit(t, hub, address, "dev7")
+	if got := hub.lines.named("refusals_ended"); !slices.Equal(got, []string{"refusals_ended code=control_unavailable count=0"}) {
+		t.Fatalf("lines %q", got)
+	}
 }
 
 // listen opens one loopback listener served by the hub's door.

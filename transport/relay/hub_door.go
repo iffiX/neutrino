@@ -353,7 +353,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, head []byte, address net.IP, li
 		}
 	}
 	if refusal != nil {
-		h.log("guest_refused", "address", peerAddress, "share", share, "code", refusal.Code)
+		h.logRefused("guest_refused", refusal, "address", peerAddress, "share", share)
 		_, _ = channel.Write(gate.GuestRefuseRecord(refusal))
 		channel.Flush(RelayEndGrace)
 		return false
@@ -451,6 +451,7 @@ func (h *Hub) admit(d *door, conn net.Conn, facts peerFacts) {
 	d.admission.Stop()
 	d.closer.disarm()
 	rs.hello = frame
+	h.logRefusalsEnded()
 	h.log("session_open", "session", rs.ID, "binding", facts.bindingID, "role", facts.role, "address", facts.address, "listener", facts.listener)
 	h.python.Event("session_open", rs.openEvent())
 	h.python.Frame(rs.ID, frame)
@@ -487,7 +488,7 @@ func (rs *RelaySession) answerJoin(frame []byte) {
 	fields["listener"] = rs.Listener
 	answer, refusal := rs.hub.ask("ticket", fields)
 	if refusal != nil {
-		rs.hub.log("join_refused", "address", rs.Address, "code", refusal.Code)
+		rs.hub.logRefused("join_refused", refusal, "address", rs.Address)
 		rs.writeRefusedAndEnd(refusal)
 		return
 	}

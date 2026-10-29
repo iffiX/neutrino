@@ -84,7 +84,8 @@ type Hub struct {
 	jar   *knock.CookieJar
 
 	// mu guards sessions, byBinding, unadmitted, nextSession, nextStream,
-	// listeners, keepAliveLogged, memoryRefused and memoryLogged.
+	// listeners, keepAliveLogged, memoryRefused, memoryLogged,
+	// unavailableRefused, unavailableLogged and isUnavailableRun.
 	mu              sync.Mutex
 	sessions        map[string]*RelaySession
 	byBinding       map[string]*RelaySession
@@ -97,7 +98,13 @@ type Hub struct {
 	// at memoryLogged.
 	memoryRefused int
 	memoryLogged  time.Time
-	config        HubConfig
+	// unavailableRefused counts the control_unavailable refusals since the
+	// line at unavailableLogged. isUnavailableRun is true from the first
+	// refusal to the next admitted session.
+	unavailableRefused int
+	unavailableLogged  time.Time
+	isUnavailableRun   bool
+	config             HubConfig
 }
 
 // NewHub makes the service from config, answering to python.
@@ -500,6 +507,45 @@ func (h *Hub) logMemoryRefused() {
 	h.memoryLogged = now
 	h.mu.Unlock()
 	h.log("memory_cap_refused", "count", strconv.Itoa(count))
+}
+
+// logRefused writes the line of a refusal with its code after fields. A
+// control_unavailable writes its line at the first refusal, then at most
+// once every RelayRefusalLogInterval with the count since the line before.
+func (h *Hub) logRefused(verb string, refusal *session.Refusal, fields ...string) {
+	fields = append(fields, "code", refusal.Code)
+	if refusal.Code != session.CodeControlUnavailable {
+		h.log(verb, fields...)
+		return
+	}
+	h.mu.Lock()
+	h.unavailableRefused++
+	now := h.now()
+	if h.isUnavailableRun && now.Sub(h.unavailableLogged) < RelayRefusalLogInterval {
+		h.mu.Unlock()
+		return
+	}
+	count := h.unavailableRefused
+	h.unavailableRefused = 0
+	h.unavailableLogged = now
+	h.isUnavailableRun = true
+	h.mu.Unlock()
+	h.log(verb, append(fields, "count", strconv.Itoa(count))...)
+}
+
+// logRefusalsEnded ends a run of control_unavailable refusals at an admitted
+// session with one line, the count since the line before.
+func (h *Hub) logRefusalsEnded() {
+	h.mu.Lock()
+	if !h.isUnavailableRun {
+		h.mu.Unlock()
+		return
+	}
+	count := h.unavailableRefused
+	h.unavailableRefused = 0
+	h.isUnavailableRun = false
+	h.mu.Unlock()
+	h.log("refusals_ended", "code", session.CodeControlUnavailable, "count", strconv.Itoa(count))
 }
 
 // controlUnavailable is the control_unavailable refusal the hub's

@@ -92,7 +92,7 @@ func (rs *RelaySession) OpenEvent() map[string]any {
 // writeRefusedAndEnd writes a refused frame as the first frame and ends the
 // session after the peer had time to read it.
 func (rs *RelaySession) writeRefusedAndEnd(refusal *session.Refusal) {
-	rs.hub.log("refused", "address", rs.Address, "code", refusal.Code)
+	rs.hub.logRefused("refused", refusal, "address", rs.Address)
 	_ = rs.control.WriteFrame(session.RefusedFrame(refusal))
 	rs.endSoon(EndClosedByHub)
 }

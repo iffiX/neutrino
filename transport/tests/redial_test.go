@@ -3,12 +3,46 @@ package tests
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/iffiX/neutrino/transport/relay"
 	"github.com/iffiX/neutrino/transport/session"
 )
+
+// hubLines records a hub transport's log lines, each a verb and its
+// key=value pairs.
+type hubLines struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *hubLines) add(verb string, fields ...string) {
+	line := verb
+	for i := 0; i+1 < len(fields); i += 2 {
+		line += " " + fields[i] + "=" + fields[i+1]
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, line)
+}
+
+// named returns the lines of the verbs given, in the order written.
+func (l *hubLines) named(verbs ...string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var found []string
+	for _, line := range l.lines {
+		verb, _, _ := strings.Cut(line, " ")
+		if slices.Contains(verbs, verb) {
+			found = append(found, line)
+		}
+	}
+	return found
+}
 
 // bind writes a peer's binding into the faked hub Python's records and
 // returns the psk of its token.
@@ -23,11 +57,13 @@ func (h *hubSide) bind(peer *peerSide, id string) string {
 
 // TestControlUnavailableIsDialledAgainInFiveSeconds checks that an agent
 // and a client refused control_unavailable while the hub's Python is away
-// dial again 5 seconds later, and that both are admitted within 5 seconds
-// of the Python's return.
+// dial again 5 seconds later, that both are admitted within 5 seconds of
+// the Python's return, and that the hub writes one refusal line for the
+// run and one at its end.
 func TestControlUnavailableIsDialledAgainInFiveSeconds(t *testing.T) {
 	dir := shortTempDir(t)
-	hub := startHubAway(t, dir, freePort(t), nil)
+	lines := &hubLines{}
+	hub := startHubAway(t, dir, freePort(t), lines.add)
 	agent := startAgent(t, dir, 1)
 	client := startClient(t, dir)
 	agent.dial(t, hub, "dev-8", hub.bind(agent, "dev-8"))
@@ -60,6 +96,10 @@ func TestControlUnavailableIsDialledAgainInFiveSeconds(t *testing.T) {
 	client.hello(t, hub, "cl-8")
 	if elapsed := time.Since(returned); elapsed > retry+time.Second {
 		t.Fatalf("both were admitted %v after the Python's return", elapsed)
+	}
+	got := lines.named("refused", "refusals_ended")
+	if len(got) != 2 || !strings.HasPrefix(got[0], "refused address=127.0.0.1 code=control_unavailable count=1") || !strings.HasPrefix(got[1], "refusals_ended code=control_unavailable count=") {
+		t.Fatalf("lines %q", got)
 	}
 }
 
