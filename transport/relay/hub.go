@@ -84,7 +84,7 @@ type Hub struct {
 	jar   *knock.CookieJar
 
 	// mu guards sessions, byBinding, unadmitted, nextSession, nextStream,
-	// listeners and keepAliveLogged.
+	// listeners, keepAliveLogged, memoryRefused and memoryLogged.
 	mu              sync.Mutex
 	sessions        map[string]*RelaySession
 	byBinding       map[string]*RelaySession
@@ -93,7 +93,11 @@ type Hub struct {
 	nextStream      uint64
 	listeners       []net.Listener
 	keepAliveLogged map[string]time.Time
-	config          HubConfig
+	// memoryRefused counts the streams the memory cap reset since the line
+	// at memoryLogged.
+	memoryRefused int
+	memoryLogged  time.Time
+	config        HubConfig
 }
 
 // NewHub makes the service from config, answering to python.
@@ -479,6 +483,23 @@ func (h *Hub) logKeepAlive(address string) {
 	h.keepAliveLogged[address] = now
 	h.mu.Unlock()
 	h.log("keepalive_lost", "address", address)
+}
+
+// logMemoryRefused counts a stream the memory cap reset and writes the line
+// with the count since the line before, at most once a minute.
+func (h *Hub) logMemoryRefused() {
+	h.mu.Lock()
+	h.memoryRefused++
+	now := h.now()
+	if !h.memoryLogged.IsZero() && now.Sub(h.memoryLogged) < RelayMemoryLogInterval {
+		h.mu.Unlock()
+		return
+	}
+	count := h.memoryRefused
+	h.memoryRefused = 0
+	h.memoryLogged = now
+	h.mu.Unlock()
+	h.log("memory_cap_refused", "count", strconv.Itoa(count))
 }
 
 // ask asks the Python one question within ControlQuestionTimeout. It returns

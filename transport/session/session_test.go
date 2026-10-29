@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,7 +78,8 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	peerConn, hubConn := noisePair(t)
 	limit := int64(StreamWindowInitialBytes + StreamWindowInitialBytes/2)
 	memory := NewTransportMemory(limit)
-	hub, err := NewHubSession(hubConn, memory, DefaultTimings)
+	var refused atomic.Int32
+	hub, err := NewHubSession(hubConn, memory, DefaultTimings, func() { refused.Add(1) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +142,13 @@ func TestSessionStreamsAndMemoryCap(t *testing.T) {
 	}
 	if _, err := hub.OpenStream(ctx); !errors.Is(err, ErrMemoryExhausted) {
 		t.Fatalf("the hub's stream past the cap: %v", err)
+	}
+	reported := time.Now().Add(3 * time.Second)
+	for refused.Load() != 2 {
+		if time.Now().After(reported) {
+			t.Fatalf("%d refusals reported, want 2", refused.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	select {
 	case stream := <-accepted:

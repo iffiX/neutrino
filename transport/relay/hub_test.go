@@ -8,7 +8,10 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,6 +162,36 @@ type testHub struct {
 	hub    *Hub
 	python *fakePython
 	key    noise.DHKey
+	lines  *logLines
+}
+
+// logLines records the hub's log lines, each a verb and its key=value pairs.
+type logLines struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logLines) add(verb string, fields ...string) {
+	line := verb
+	for i := 0; i+1 < len(fields); i += 2 {
+		line += " " + fields[i] + "=" + fields[i+1]
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, line)
+}
+
+// named returns the lines of one verb, in the order written.
+func (l *logLines) named(verb string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var found []string
+	for _, line := range l.lines {
+		if line == verb || strings.HasPrefix(line, verb+" ") {
+			found = append(found, line)
+		}
+	}
+	return found
 }
 
 // testHold is the hold deadline of the tests' door.
@@ -181,12 +214,37 @@ func newTestHubWith(t *testing.T, draws *knock.DoorDraws, memory *session.Transp
 	t.Helper()
 	key, _ := handshake.GenerateKey()
 	python := newFakePython()
-	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Draws: draws, Memory: memory, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}}, python)
+	lines := &logLines{}
+	hub, err := NewHub(HubConfig{Key: key, ListenPort: 0, Draws: draws, Memory: memory, Timings: session.Timings{KeepAliveInterval: time.Second, KeepAliveTimeout: 5 * time.Second}, Log: lines.add}, python)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(hub.Close)
-	return &testHub{hub: hub, python: python, key: key}
+	return &testHub{hub: hub, python: python, key: key, lines: lines}
+}
+
+// TestMemoryCapLineAtMostOnceAMinute checks that the memory cap's line is
+// written at the first reset, none within the minute after, and the next one
+// with the count of resets since the line before.
+func TestMemoryCapLineAtMostOnceAMinute(t *testing.T) {
+	key, _ := handshake.GenerateKey()
+	var clock atomic.Int64
+	clock.Store(time.Unix(1_000_000, 0).UnixNano())
+	lines := &logLines{}
+	hub, err := NewHub(HubConfig{Key: key, Now: func() time.Time { return time.Unix(0, clock.Load()) }, Log: lines.add}, newFakePython())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(hub.Close)
+
+	for _, step := range []time.Duration{0, 30 * time.Second, 29 * time.Second, time.Second, RelayMemoryLogInterval} {
+		clock.Add(int64(step))
+		hub.logMemoryRefused()
+	}
+	want := []string{"memory_cap_refused count=1", "memory_cap_refused count=3", "memory_cap_refused count=1"}
+	if got := lines.named("memory_cap_refused"); !slices.Equal(got, want) {
+		t.Fatalf("lines %q, want %q", got, want)
+	}
 }
 
 // listen opens one loopback listener served by the hub's door.

@@ -373,7 +373,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, head []byte, address net.IP, li
 // admit runs a session from its connection: the control stream, the first
 // frame and the registration, or the refusal the door decided on.
 func (h *Hub) admit(d *door, conn net.Conn, facts peerFacts) {
-	sess, err := session.NewHubSession(conn, h.memory, h.timings)
+	sess, err := session.NewHubSession(conn, h.memory, h.timings, h.logMemoryRefused)
 	if err != nil {
 		return
 	}

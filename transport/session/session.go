@@ -22,14 +22,16 @@ var DefaultTimings = Timings{KeepAliveInterval: KeepAliveInterval, KeepAliveTime
 
 // Session is one go-yamux session over a Noise connection.
 type Session struct {
-	yamux  *yamux.Session
-	conn   net.Conn
-	memory *TransportMemory
+	yamux     *yamux.Session
+	conn      net.Conn
+	memory    *TransportMemory
+	onRefused func()
 }
 
 // NewHubSession starts the hub's side, yamux's server, so the hub's streams
 // take even ids. Windows reserve from memory, or from no cap when it is nil.
-func NewHubSession(conn net.Conn, memory *TransportMemory, timings Timings) (*Session, error) {
+// onRefused, when set, is called for each stream the cap resets.
+func NewHubSession(conn net.Conn, memory *TransportMemory, timings Timings, onRefused func()) (*Session, error) {
 	spans := func() (yamux.MemoryManager, error) { return nil, nil }
 	if memory != nil {
 		spans = memory.Spans()
@@ -38,7 +40,7 @@ func NewHubSession(conn net.Conn, memory *TransportMemory, timings Timings) (*Se
 	if err != nil {
 		return nil, fmt.Errorf("yamux server: %w", err)
 	}
-	return &Session{yamux: inner, conn: conn, memory: memory}, nil
+	return &Session{yamux: inner, conn: conn, memory: memory, onRefused: onRefused}, nil
 }
 
 // NewPeerSession starts a peer's side, yamux's client, so its streams take
@@ -60,7 +62,7 @@ func (s *Session) OpenStream(ctx context.Context) (*yamux.Stream, error) {
 		return nil, fmt.Errorf("open stream: %w", err)
 	}
 	if s.memory != nil && s.memory.IsPastCap() {
-		_ = stream.Reset()
+		s.refuse(stream)
 		return nil, fmt.Errorf("open stream: %w", ErrMemoryExhausted)
 	}
 	return stream, nil
@@ -78,7 +80,7 @@ func (s *Session) AcceptStream() (*yamux.Stream, error) {
 		if s.memory == nil || !s.memory.IsPastCap() {
 			return stream, nil
 		}
-		_ = stream.Reset()
+		s.refuse(stream)
 	}
 }
 
@@ -119,6 +121,14 @@ func (s *Session) LocalAddr() net.Addr {
 // NumStreams is the number of streams open on the session.
 func (s *Session) NumStreams() int {
 	return s.yamux.NumStreams()
+}
+
+// refuse resets a stream the memory cap refuses and calls onRefused.
+func (s *Session) refuse(stream *yamux.Stream) {
+	_ = stream.Reset()
+	if s.onRefused != nil {
+		s.onRefused()
+	}
 }
 
 // config is go-yamux's configuration for every session: the channel's

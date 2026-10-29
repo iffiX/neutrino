@@ -16,6 +16,9 @@ const (
 	// RelayKeepAliveLogInterval is the least time between two log lines for
 	// a lost keepalive from one peer address.
 	RelayKeepAliveLogInterval = time.Minute
+	// RelayMemoryLogInterval is the least time between two log lines for
+	// streams the memory cap reset.
+	RelayMemoryLogInterval = time.Minute
 	// RelayLoopback is the address the frp listeners listen on.
 	RelayLoopback = "127.0.0.1"
 	// RelayListenerMain names the agent port's own listener.

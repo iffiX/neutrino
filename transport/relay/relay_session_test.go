@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -187,6 +188,9 @@ func TestFarStreamPastTheMemoryCapIsReset(t *testing.T) {
 	}
 	if agentConn.session.IsClosed() || clientConn.session.IsClosed() {
 		t.Fatal("a refusal at the cap ended a peer's session")
+	}
+	if lines := hub.lines.named("memory_cap_refused"); !slices.Equal(lines, []string{"memory_cap_refused count=1"}) {
+		t.Fatalf("memory cap lines %q", lines)
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for memory.Used() > 2*session.StreamWindowInitialBytes {
