@@ -21,7 +21,6 @@ from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 
 STAGING = ["downloading neutrino-hub_0.3.1_amd64.deb  40 MB", "checked"]
 HANDED_OVER = [*STAGING, "installing; the panel restarts now"]
-AGENT_PACKAGE = "/var/lib/neutrino/hub/agent_cache/neutrino-agent_0.3.1_amd64.deb"
 
 
 def stub(bin_dir: Path, name: str, *, body: str) -> None:
@@ -73,7 +72,7 @@ def box(tmp_path):
 
 
 def plan_for(
-    directory: Path, *, rollback: bool = True, python: str = "", family: str = "debian"
+    directory: Path, *, rollback: bool = True, family: str = "debian"
 ) -> HubUpdatePlan:
     return HubUpdatePlan(
         from_version="0.3.0",
@@ -85,7 +84,6 @@ def plan_for(
         https_port=8444,
         units=("neutrino_hub_web", "neutrino_hub_router"),
         started_at="2026-09-20T15:00:00Z",
-        python=python,
         steps=tuple(STAGING),
     )
 
@@ -95,9 +93,6 @@ def run_script(
     *,
     rollback: bool = True,
     available_kb: int = 2_000_000,
-    python: str = "",
-    agent_start_s: int = 0,
-    agent_wait_s: int = 120,
     family: str = "debian",
     gate_timeout_s: int = 1,
 ) -> tuple[int, dict]:
@@ -111,14 +106,11 @@ def run_script(
     script = directory / "update.sh"
     script.write_text(
         render_script(
-            plan_for(directory, rollback=rollback, python=python, family=family),
+            plan_for(directory, rollback=rollback, family=family),
             directory=directory,
             gate_timeout_s=gate_timeout_s,
             poll_s=0.2,
             meminfo_path=str(meminfo),
-            agent_command=str(bin_dir / "nagent"),
-            agent_start_s=agent_start_s,
-            agent_wait_s=agent_wait_s,
         )
     )
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
@@ -149,7 +141,6 @@ def test_an_install_the_gate_passes_is_installed(box):
         *HANDED_OVER,
         "installed 0.3.1",
         "panel answers",
-        "no agent on this machine",
         "done",
     ]
     assert "Setting up" in raw["output"]
@@ -436,218 +427,18 @@ def test_a_failed_install_starts_again_what_it_stopped(box):
 # --- the box's own agent ----------------------------------------------------
 
 
-def agent_stubs(bin_dir: Path, directory: Path, *, package: str = AGENT_PACKAGE):
-    """An installed agent at 0.3.0, and an interpreter naming the package the
-    cache holds for it."""
+def test_the_update_installs_no_agent(box):
+    """The panel's start brings the box's own agent to the new version."""
+    bin_dir, directory = box
     (directory / "agent_version").write_text("0.3.0\n")
     stub(bin_dir, "nagent", body=f"cat {directory / 'agent_version'}")
-    stub(bin_dir, "hub_python", body=f'echo "{package}"')
 
-
-def test_the_boxs_own_agent_is_reinstalled_from_the_cache_after_the_gate(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    calls = installs(directory)
-    assert calls[0].endswith("neutrino-hub_0.3.1_amd64.deb")
-    assert calls[1].endswith(AGENT_PACKAGE)
-    assert code == 0
-    assert raw["stage"] == "installed"
-    assert raw["steps"][-3:] == ["panel answers", "agent updated to 0.3.1", "done"]
-    assert f"agent: reinstalling {AGENT_PACKAGE}" in raw["output"]
-
-
-def test_an_agent_already_at_the_caches_version_is_left_alone(box):
-    """A same-version update reinstalls the hub but not the agent, so the
-    agent and the desktop share it hosts keep running."""
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    (directory / "agent_version").write_text("0.3.1\n")
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
+    code, raw = run_script(box)
 
     assert code == 0
-    assert raw["stage"] == "installed"
-    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
-    assert len(installs(directory)) == 1
-
-
-def test_an_agent_that_will_not_reinstall_leaves_the_hub_installed(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    stub(
-        bin_dir,
-        "apt-get",
-        body='case "$*" in *neutrino-agent*) exit 100;; esac\n' + apt_get(directory),
-    )
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert code == 0
-    assert raw["stage"] == "installed"
-    assert raw["steps"][-2:] == ["agent update failed: apt-get exited 100", "done"]
-
-
-def test_a_cache_with_no_agent_for_this_machine_installs_none(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory, package="")
-
-    _, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert len(installs(directory)) == 1
-    assert raw["steps"][-2:] == [
-        "agent update failed: no agent package for this machine",
-        "done",
-    ]
-    assert "this hub carries no agent for this machine" in raw["output"]
-
-
-def test_a_box_with_no_agent_gets_none(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    (bin_dir / "nagent").unlink()
-
-    _, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert len(installs(directory)) == 1
-    assert raw["steps"][-2:] == ["no agent on this machine", "done"]
-
-
-def test_a_rolled_back_hub_reinstalls_no_agent(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    stub(bin_dir, "curl", body=f"grep -q 0.3.0 {directory / 'hub_version'}")
-
-    _, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert raw["stage"] == "rolled_back"
-    assert not any("neutrino-agent" in line for line in installs(directory))
-
-
-def agent_updating(bin_dir: Path, directory: Path, *, answers: int) -> None:
-    """A systemctl whose agent update unit runs for this many questions, and
-    whose last answer finds the agent updated by it."""
-    count = directory / "asked"
-    stub(
-        bin_dir,
-        "systemctl",
-        body=(
-            '[ "$1" = list-units ] || exit 0\n'
-            '[ "$6" = neutrino_agent_update.service ] || exit 0\n'
-            f"echo x >> {count}\n"
-            f'if [ "$(wc -l < {count})" -le {answers} ]; then\n'
-            '  echo "neutrino_agent_update.service loaded active running sh -c"\n'
-            f"else echo 0.3.1 > {directory / 'agent_version'}; fi"
-        ),
-    )
-
-
-def test_the_agents_own_update_is_waited_out_before_the_reinstall(box):
-    """The agent's own update, started on the new hub's welcome, installed
-    the target first; the script reinstalls nothing."""
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    agent_updating(bin_dir, directory, answers=3)
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert code == 0
-    assert len((directory / "asked").read_text().splitlines()) == 4
-    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
-    assert not any("neutrino-agent" in line for line in installs(directory))
-
-
-def test_an_agent_update_that_never_ends_is_waited_out_only_so_long(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    agent_updating(bin_dir, directory, answers=10**6)
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_wait_s=1)
-
-    assert code == 0
-    assert raw["steps"][-2:] == ["agent updated to 0.3.1", "done"]
-
-
-def agent_starting(bin_dir: Path, directory: Path, *, idle: int, running: int):
-    """A systemctl whose agent update unit is absent for this many questions,
-    then runs for this many, and whose next answer finds the agent updated."""
-    count = directory / "asked"
-    stub(
-        bin_dir,
-        "systemctl",
-        body=(
-            '[ "$1" = list-units ] || exit 0\n'
-            '[ "$6" = neutrino_agent_update.service ] || exit 0\n'
-            f"echo x >> {count}\n"
-            f"asked=$(wc -l < {count})\n"
-            f'[ "$asked" -le {idle} ] && exit 0\n'
-            f'if [ "$asked" -le {idle + running} ]; then\n'
-            '  echo "neutrino_agent_update.service loaded active running sh -c"\n'
-            f"else echo 0.3.1 > {directory / 'agent_version'}; fi"
-        ),
-    )
-
-
-def test_the_agent_is_given_time_to_start_its_own_update(box):
-    """The agent reconnects to the new panel and starts its own update a
-    moment after the panel answers; the script installs nothing beside it."""
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    agent_starting(bin_dir, directory, idle=2, running=2)
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=10)
-
-    assert code == 0
-    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
-    assert not any("neutrino-agent" in line for line in installs(directory))
-    assert len((directory / "asked").read_text().splitlines()) == 5
-
-
-def test_an_agent_that_starts_no_update_of_its_own_is_installed_once_given_up_on(
-    box,
-):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    agent_starting(bin_dir, directory, idle=10**6, running=0)
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=1)
-
-    assert code == 0
-    assert raw["steps"][-2:] == ["agent updated to 0.3.1", "done"]
-    assert installs(directory)[1].endswith(AGENT_PACKAGE)
-
-
-def test_an_agent_already_on_the_target_is_not_waited_for(box):
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    (directory / "agent_version").write_text("0.3.1\n")
-    agent_starting(bin_dir, directory, idle=10**6, running=0)
-
-    _, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=60)
-
-    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
-    assert not (directory / "asked").exists()
-
-
-def test_an_agent_install_that_failed_with_the_target_in_place_says_already(box):
-    """The agent's own update installed the target while this install
-    waited for the lock, and the package manager then refused."""
-    bin_dir, directory = box
-    agent_stubs(bin_dir, directory)
-    stub(
-        bin_dir,
-        "apt-get",
-        body='case "$*" in *neutrino-agent*) '
-        f"echo 0.3.1 > {directory / 'agent_version'}; exit 100;; esac\n"
-        + apt_get(directory),
-    )
-
-    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
-
-    assert code == 0
-    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
+    assert raw["steps"][-2:] == ["panel answers", "done"]
+    assert not [call for call in installs(directory) if "neutrino-agent" in call]
+    assert (directory / "agent_version").read_text() == "0.3.0\n"
 
 
 # --- arch: pacman's lock ----------------------------------------------------
@@ -676,7 +467,6 @@ def test_a_held_pacman_lock_is_a_step_before_the_install_waits(box, monkeypatch)
         "waiting for the package manager",
         "installed 0.3.1",
         "panel answers",
-        "no agent on this machine",
         "done",
     ]
 

@@ -278,7 +278,6 @@ def test_the_installs_steps_are_printed_as_the_record_gains_them(box, capsys):
             "installing; the panel restarts now",
             "installed 0.3.1",
             "panel answers",
-            "agent already 0.3.1",
             "done",
         ],
     )
@@ -293,7 +292,6 @@ def test_the_installs_steps_are_printed_as_the_record_gains_them(box, capsys):
         "installing; the panel restarts now",
         "installed 0.3.1",
         "panel answers",
-        "agent already 0.3.1",
         "done",
         "installed 0.3.1 over 0.3.0",
     ]

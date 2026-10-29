@@ -17,7 +17,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
@@ -28,36 +27,19 @@ import psutil
 
 from neutrino_hub import HUB_PACKAGE_ASSET
 from neutrino_hub.exceptions import (
-    AgentArtifactFetchError,
     DownloadFailedError,
     DownloadTooLargeError,
     HubUpdateError,
 )
-from neutrino_hub.modules.devices.agent_package import (
-    AGENT_PACKAGE_FAMILY_OF_OS,
-    AGENT_PACKAGE_FAMILY_OF_PLATFORM,
-    AgentPackageCache,
-)
-from neutrino_hub.modules.devices.constants import AGENT_PACKAGE_CACHE_DIR
 from neutrino_hub.modules.hub_update.constants import (
-    HUB_UPDATE_AGENT_COMMAND,
-    HUB_UPDATE_AGENT_COMMAND_DARWIN,
-    HUB_UPDATE_AGENT_COMMAND_WINDOWS,
-    HUB_UPDATE_AGENT_PATTERNS,
-    HUB_UPDATE_AGENT_START_S,
-    HUB_UPDATE_AGENT_UPDATE_UNIT,
-    HUB_UPDATE_AGENT_WAIT_S,
     HUB_UPDATE_CREATION_FLAGS_WINDOWS,
     HUB_UPDATE_FAMILY_OF_OS,
     HUB_UPDATE_JOB_DARWIN,
-    HUB_UPDATE_MSI_BUSY_CODE,
     HUB_UPDATE_MSI_INSTALLED_CODES,
-    HUB_UPDATE_MSI_MUTEX,
     HUB_UPDATE_NHUB_DARWIN,
     HUB_UPDATE_NHUB_NAME_WINDOWS,
     HUB_UPDATE_PID_NAME,
     HUB_UPDATE_PLIST_DARWIN,
-    HUB_UPDATE_PROGRAM_FILES_DEFAULT,
     HUB_UPDATE_SCRIPT_NAME_WINDOWS,
     HUB_UPDATE_SERVICE_DARWIN,
     HUB_UPDATE_SERVICE_WINDOWS,
@@ -122,7 +104,7 @@ from neutrino_hub.modules.hub_update.state import (
 )
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
 from neutrino_hub.platforms.detect import hub_os
-from neutrino_hub.system.machine import distribution_family, machine_architecture
+from neutrino_hub.system.machine import distribution_family
 from neutrino_hub.system.systemd_ctl import held_unit_state
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.source_fetch import SourceFetcher
@@ -235,11 +217,6 @@ POLL=@POLL@
 MEMINFO=@MEMINFO@
 LOW_MEMORY_KB=@LOW_MEMORY_KB@
 SHED=@SHED@
-PYTHON=@PYTHON@
-AGENT_COMMAND=@AGENT_COMMAND@
-AGENT_UNIT=@AGENT_UNIT@
-AGENT_START=@AGENT_START@
-AGENT_WAIT=@AGENT_WAIT@
 MANAGER=@MANAGER@
 ROLLBACK_MANAGER=@ROLLBACK_MANAGER@
 STEPS=@STEPS@
@@ -295,12 +272,6 @@ why() {
     fi
 }
 
-is_running() {
-    systemctl list-units --all --plain --no-legend --full "$1.service" 2>/dev/null \
-        | awk -v unit="$1.service" '{ for (i = 1; i + 2 <= NF; i++) if ($i == unit) state = $(i + 2) }
-            END { exit !(state == "active" || state == "activating" || state == "reloading" || state == "deactivating") }'
-}
-
 shed() {
     available=$(awk '/^MemAvailable:/ {print $2}' "$MEMINFO" 2>/dev/null)
     [ -n "$available" ] && [ "$available" -lt "$LOW_MEMORY_KB" ] || return 0
@@ -316,49 +287,6 @@ unshed() {
         systemctl start "$unit" >> "$LOG" 2>&1
     done
     STOPPED=''
-}
-
-install_agent() {
-    if ! command -v "$AGENT_COMMAND" >/dev/null 2>&1; then
-        step 'no agent on this machine'
-        return 0
-    fi
-    AGENT=''
-    [ -z "$PYTHON" ] || AGENT=$("$PYTHON" -c 'from neutrino_hub.modules.hub_update.installer import local_agent_package; print(local_agent_package())' 2>> "$LOG")
-    if [ -z "$AGENT" ]; then
-        echo "agent: this hub carries no agent for this machine" >> "$LOG"
-        step 'agent update failed: no agent package for this machine'
-        return 0
-    fi
-    WANTED=$(basename "$AGENT" | sed -E 's/^neutrino-agent[_-]([^_-]+)[_-].*$/\1/')
-    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$INSTALLED" != "$WANTED" ]; then
-        deadline=$(( $(date +%s) + AGENT_START ))
-        while ! is_running "$AGENT_UNIT" && [ "$(date +%s)" -lt "$deadline" ]; do
-            sleep 1
-        done
-        deadline=$(( $(date +%s) + AGENT_WAIT ))
-        while is_running "$AGENT_UNIT" && [ "$(date +%s)" -lt "$deadline" ]; do
-            sleep "$POLL"
-        done
-        INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    fi
-    if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$WANTED" ]; then
-        step "agent already $WANTED"
-        return 0
-    fi
-    echo "agent: reinstalling $AGENT" >> "$LOG"
-    @LOCK_STEP@
-    ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1
-    code=$?
-    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$INSTALLED" != "$WANTED" ]; then
-        step "agent update failed: $(why "$code" "$INSTALLED")"
-    elif [ "$code" = 0 ]; then
-        step "agent updated to $WANTED"
-    else
-        step "agent already $WANTED"
-    fi
 }
 
 gate() {
@@ -399,7 +327,6 @@ if [ "$code" = 0 ] && [ "$seen" = "$TO" ]; then
     step "installed $TO"
     if gate "$TO"; then
         step 'panel answers'
-        install_agent
         finish @STAGE_INSTALLED@ ''
     fi
     REASON=@REASON_GATE_FAILED@
@@ -455,12 +382,6 @@ JOB=@JOB@
 SERVICE=@SERVICE@
 PLIST=@PLIST@
 NHUB=@NHUB@
-AGENT_COMMAND=@AGENT_COMMAND@
-AGENT_CACHE=@AGENT_CACHE@
-AGENT_PATTERN=@AGENT_PATTERN@
-AGENT_JOB=@AGENT_JOB@
-AGENT_START=@AGENT_START@
-AGENT_WAIT=@AGENT_WAIT@
 MANAGER=@MANAGER@
 STEPS=@STEPS@
 STAGE=@STAGE_INSTALLING@
@@ -518,53 +439,6 @@ start_service() {
     launchctl kickstart "$SERVICE" >> "$LOG" 2>&1 || true
 }
 
-agent_updating() {
-    launchctl print "$AGENT_JOB" 2>/dev/null | grep -q 'state = running'
-}
-
-install_agent() {
-    if [ ! -x "$AGENT_COMMAND" ]; then
-        step 'no agent on this machine'
-        return 0
-    fi
-    AGENT=''
-    for found in "$AGENT_CACHE"/$AGENT_PATTERN; do
-        [ -f "$found" ] && AGENT=$found
-    done
-    if [ -z "$AGENT" ]; then
-        echo "agent: this hub carries no agent for this machine" >> "$LOG"
-        step 'agent update failed: no agent package for this machine'
-        return 0
-    fi
-    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$INSTALLED" != "$TO" ]; then
-        deadline=$(( $(date +%s) + AGENT_START ))
-        while ! agent_updating && [ "$(date +%s)" -lt "$deadline" ]; do
-            sleep 1
-        done
-        deadline=$(( $(date +%s) + AGENT_WAIT ))
-        while agent_updating && [ "$(date +%s)" -lt "$deadline" ]; do
-            sleep "$POLL"
-        done
-        INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    fi
-    if [ "$INSTALLED" = "$TO" ]; then
-        step "agent already $TO"
-        return 0
-    fi
-    echo "agent: reinstalling $AGENT" >> "$LOG"
-    ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1
-    code=$?
-    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$INSTALLED" != "$TO" ]; then
-        step "agent update failed: $(why "$code" "$INSTALLED")"
-    elif [ "$code" = 0 ]; then
-        step "agent updated to $TO"
-    else
-        step "agent already $TO"
-    fi
-}
-
 gate() {
     deadline=$(( $(date +%s) + GATE_TIMEOUT ))
     while :; do
@@ -598,7 +472,6 @@ if [ "$code" = 0 ] && [ "$seen" = "$TO" ]; then
     step "installed $TO"
     if gate "$TO"; then
         step 'panel answers'
-        install_agent
         finish @STAGE_INSTALLED@ ''
     fi
     REASON=@REASON_GATE_FAILED@
@@ -660,11 +533,6 @@ $Service = @SERVICE@
 $Nhub = @NHUB@
 $Settings = @SETTINGS@
 $Authority = @AUTHORITY@
-$AgentCommand = @AGENT_COMMAND@
-$AgentCache = @AGENT_CACHE@
-$AgentPattern = @AGENT_PATTERN@
-$AgentStart = @AGENT_START@
-$AgentWait = @AGENT_WAIT@
 $Installed = @INSTALLED_CODES@
 $Settled = @STAGES_SETTLED@
 $Steps = New-Object System.Collections.Generic.List[string]
@@ -732,67 +600,6 @@ function Start-Hub {
     Start-Service -Name $Service -ErrorAction SilentlyContinue
 }
 
-function Test-Installer {
-    $held = $null
-    try {
-        if (-not [Threading.Mutex]::TryOpenExisting(@MSI_MUTEX@, [ref]$held)) { return $false }
-        $held.Dispose()
-    } catch [UnauthorizedAccessException] {
-    }
-    return $true
-}
-
-function Wait-Installer {
-    $deadline = (Get-Date).AddSeconds($AgentWait)
-    while (((Get-Date) -lt $deadline) -and (Test-Installer)) {
-        Start-Sleep -Seconds $Poll
-    }
-}
-
-function Install-Agent {
-    if (-not (Test-Path -LiteralPath $AgentCommand)) {
-        Add-Step 'no agent on this machine'
-        return
-    }
-    $found = Get-ChildItem -Path $AgentCache -Filter $AgentPattern -ErrorAction SilentlyContinue |
-        Select-Object -Last 1
-    if (-not $found) {
-        Add-Content -LiteralPath $Log -Value 'agent: this hub carries no agent for this machine'
-        Add-Step 'agent update failed: no agent package for this machine'
-        return
-    }
-    if ((Get-Version $AgentCommand) -ne $To) {
-        $deadline = (Get-Date).AddSeconds($AgentStart)
-        while (((Get-Date) -lt $deadline) -and -not (Test-Installer)) {
-            Start-Sleep -Seconds 1
-        }
-        Wait-Installer
-    }
-    if ((Get-Version $AgentCommand) -eq $To) {
-        Add-Step "agent already $To"
-        return
-    }
-    Add-Content -LiteralPath $Log -Value "agent: reinstalling $($found.FullName)"
-    $arguments = "/i `"$($found.FullName)`" /qn /norestart"
-    $code = Invoke-Msi $arguments
-    if ($code -eq @MSI_BUSY@) {
-        Wait-Installer
-        if ((Get-Version $AgentCommand) -eq $To) {
-            Add-Step "agent already $To"
-            return
-        }
-        $code = Invoke-Msi $arguments
-    }
-    $seen = Get-Version $AgentCommand
-    if ($seen -ne $To) {
-        Add-Step "agent update failed: $(Get-Why $code $seen)"
-    } elseif ($Installed -contains $code) {
-        Add-Step "agent updated to $To"
-    } else {
-        Add-Step "agent already $To"
-    }
-}
-
 function Test-Gate($Version) {
     $deadline = (Get-Date).AddSeconds($GateTimeout)
     $report = ''
@@ -839,7 +646,6 @@ if (($Installed -contains $code) -and $seen -eq $To) {
     Add-Step "installed $To"
     if (Test-Gate $To) {
         Add-Step 'panel answers'
-        Install-Agent
         Complete-Update @STAGE_INSTALLED@ ''
     }
     $Reason = @REASON_GATE_FAILED@
@@ -894,9 +700,6 @@ class HubUpdatePlan:
         units: The units the gate holds for: the panel, and those of the
             router's that were running when the plan was made.
         started_at: When the update started, as an ISO stamp.
-        python: The hub's own interpreter, which names this machine's agent
-            package in the cache once the new hub is installed; empty leaves
-            the agent alone.
         steps: The staging's lines, as the record keeps them.
     """
 
@@ -909,7 +712,6 @@ class HubUpdatePlan:
     https_port: int
     units: tuple[str, ...]
     started_at: str
-    python: str = ""
     steps: tuple[str, ...] = ()
 
 
@@ -1085,7 +887,7 @@ def install_commands(
     if family == "msi":
         windows_path = f'"{path}"'
         return tuple(
-            _powershell_quote(line.replace("@PATH@", windows_path))
+            powershell_quote(line.replace("@PATH@", windows_path))
             for line in INSTALL_COMMANDS[family]
         )
     install, rollback = INSTALL_COMMANDS[family]
@@ -1095,10 +897,10 @@ def install_commands(
 
 
 def agent_install_command(family: str) -> str:
-    """What installs the agent package the script finds, on this family.
+    """What installs an agent package on this family, from a shell script.
 
     Args:
-        family: The distribution family.
+        family: The distribution family, or ``pkg``.
 
     Returns:
         The install command line, naming the file as ``"$AGENT"``.
@@ -1111,6 +913,19 @@ def agent_install_command(family: str) -> str:
     return _filled(INSTALL_COMMANDS[family][0], '"$AGENT"')
 
 
+def lock_step(family: str) -> str:
+    """What a family's shell script runs before an install.
+
+    Args:
+        family: The distribution family, or ``pkg``.
+
+    Returns:
+        On arch, a step saying it waits while pacman's lock is held; empty
+        on every other family.
+    """
+    return _filled(LOCK_STEPS.get(family, ""), "")
+
+
 def update_family() -> str:
     """Which family this hub updates itself as.
 
@@ -1118,25 +933,6 @@ def update_family() -> str:
         ``pkg`` on macOS, ``msi`` on Windows, else the distribution family.
     """
     return HUB_UPDATE_FAMILY_OF_OS.get(hub_os(), "") or distribution_family()
-
-
-def local_agent_package() -> str:
-    """This machine's own agent package, as the hub's cache holds it.
-
-    Returns:
-        The file's path; empty when the cache holds none for this machine or
-        it cannot be had.
-    """
-    family = AGENT_PACKAGE_FAMILY_OF_OS.get(hub_os(), "")
-    family = family or AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(distribution_family(), "")
-    architecture = machine_architecture()
-    cache = AgentPackageCache()
-    if not family or not cache.serves(family=family, architecture=architecture):
-        return ""
-    try:
-        return str(cache.package(family=family, architecture=architecture))
-    except (OSError, ValueError, AgentArtifactFetchError):
-        return ""
 
 
 def render_script(
@@ -1148,9 +944,6 @@ def render_script(
     output_limit_bytes: int = HUB_UPDATE_OUTPUT_LIMIT_BYTES,
     meminfo_path: str = HUB_UPDATE_MEMINFO_PATH,
     low_memory_bytes: int = HUB_UPDATE_LOW_MEMORY_BYTES,
-    agent_command: str = HUB_UPDATE_AGENT_COMMAND,
-    agent_start_s: int = HUB_UPDATE_AGENT_START_S,
-    agent_wait_s: int = HUB_UPDATE_AGENT_WAIT_S,
 ) -> str:
     """The script the update runs: the transient unit's shell on Linux, the
     launchd job's shell on macOS, the PowerShell on Windows. Pure.
@@ -1159,13 +952,8 @@ def render_script(
     the panel and the AI gateway before the package unpacks and starts them
     after. Right after the package step it reads the version installed: a
     box still on the version it started from is left as it is, one on
-    another version that is not the target is rolled back. Once the new hub
-    passes its gate, an agent not on the target is given ``agent_start_s``
-    to start its own update and ``agent_wait_s`` to end it; the script then
-    reinstalls the machine's own agent from the hub's cache unless it is
-    already there, and an install that failed with the agent on the target
-    is taken for one that was not needed. On arch it says it waits before
-    each install while pacman's lock is held.
+    another version that is not the target is rolled back. On arch it says
+    it waits before each install while pacman's lock is held.
 
     Args:
         plan: What to install and what to hold for.
@@ -1177,10 +965,6 @@ def render_script(
         meminfo_path: Where the kernel says how much memory is available.
         low_memory_bytes: Below this, the panel and the AI gateway stop for
             the unpack.
-        agent_command: The command whose presence says the machine has an
-            agent of its own.
-        agent_start_s: How long the agent is given to start its own update.
-        agent_wait_s: How long the agent's own update is waited out.
 
     Returns:
         The script's text.
@@ -1195,8 +979,6 @@ def render_script(
             gate_timeout_s=gate_timeout_s,
             poll_s=poll_s,
             output_limit_bytes=output_limit_bytes,
-            agent_start_s=agent_start_s,
-            agent_wait_s=agent_wait_s,
         )
     install, _ = install_commands(
         plan.family,
@@ -1224,17 +1006,11 @@ def render_script(
         "@HEALTH_PATH@": shlex.quote(HUB_UPDATE_HEALTH_PATH),
         "@SETTINGS@": shlex.quote(str(HUB_UPDATE_PANEL_SETTINGS_PATH)),
         "@AUTHORITY@": shlex.quote(str(HUB_UPDATE_PANEL_AUTHORITY_PATH)),
-        "@LOCK_STEP@": _filled(LOCK_STEPS.get(plan.family, ""), ""),
+        "@LOCK_STEP@": lock_step(plan.family),
         "@INSTALL@": install,
-        "@AGENT_INSTALL@": agent_install_command(plan.family),
         "@MEMINFO@": shlex.quote(meminfo_path),
         "@LOW_MEMORY_KB@": str(int(low_memory_bytes) // 1024),
         "@SHED@": shlex.quote(" ".join(HUB_UPDATE_SHED_UNITS)),
-        "@PYTHON@": shlex.quote(plan.python),
-        "@AGENT_COMMAND@": shlex.quote(agent_command),
-        "@AGENT_UNIT@": shlex.quote(HUB_UPDATE_AGENT_UPDATE_UNIT),
-        "@AGENT_START@": str(int(agent_start_s)),
-        "@AGENT_WAIT@": str(int(agent_wait_s)),
         "@MANAGER@": shlex.quote(MANAGER_NAMES[plan.family]),
         "@ROLLBACK_MANAGER@": shlex.quote(
             ROLLBACK_MANAGER_NAMES.get(plan.family, MANAGER_NAMES[plan.family])
@@ -1406,7 +1182,7 @@ class HubUpdateInstaller:
         self._run = run_command
         self._unit_state = unit_state_of
         self._disk_usage = disk_usage
-        self._start_detached = start_detached or _start_detached
+        self._start_detached = start_detached or start_detached_process
 
     @property
     def checker(self) -> HubReleaseChecker:
@@ -1546,7 +1322,6 @@ class HubUpdateInstaller:
             https_port=https_port,
             units=self._gate_units(),
             started_at=started_at,
-            python=sys.executable,
             steps=tuple(staging.steps),
         )
 
@@ -1638,7 +1413,6 @@ class HubUpdateInstaller:
             https_port=https_port,
             units=self._gate_units(),
             started_at=started_at,
-            python=sys.executable,
             steps=tuple(staging.steps),
         )
 
@@ -1868,8 +1642,6 @@ def _render_system_script(
     gate_timeout_s: int,
     poll_s: float,
     output_limit_bytes: int,
-    agent_start_s: int,
-    agent_wait_s: int,
 ) -> str:
     """The macOS sh or the Windows PowerShell an update runs. Pure."""
     install, _ = install_commands(plan.family, plan.package)
@@ -1878,27 +1650,19 @@ def _render_system_script(
         _, rollback_install = install_commands(plan.family, plan.rollback)
     if plan.family == "msi":
         template = SCRIPT_WINDOWS
-        quote = _powershell_quote
-        program_files = os.environ.get("ProgramFiles", HUB_UPDATE_PROGRAM_FILES_DEFAULT)
+        quote = powershell_quote
         values = {
             "@SERVICE@": quote(HUB_UPDATE_SERVICE_WINDOWS),
             "@NHUB@": quote(
                 str(constants.UTILS_STATIC_ROOT / HUB_UPDATE_NHUB_NAME_WINDOWS)
             ),
-            "@AGENT_COMMAND@": quote(
-                "\\".join((program_files, *HUB_UPDATE_AGENT_COMMAND_WINDOWS))
-            ),
-            "@INSTALLED_CODES@": _powershell_list(
+            "@INSTALLED_CODES@": powershell_list(
                 str(code) for code in HUB_UPDATE_MSI_INSTALLED_CODES
             ),
-            "@STAGES_SETTLED@": _powershell_list(
+            "@STAGES_SETTLED@": powershell_list(
                 quote(stage) for stage in HUB_UPDATE_STAGES_SETTLED
             ),
-            "@STEPS@": _powershell_list(
-                quote(line) for line in handed_over_steps(plan)
-            ),
-            "@MSI_MUTEX@": quote(HUB_UPDATE_MSI_MUTEX),
-            "@MSI_BUSY@": str(HUB_UPDATE_MSI_BUSY_CODE),
+            "@STEPS@": powershell_list(quote(line) for line in handed_over_steps(plan)),
             "@ROLLBACK_INSTALL@": rollback_install or "''",
         }
     else:
@@ -1908,9 +1672,6 @@ def _render_system_script(
             "@SERVICE@": quote(HUB_UPDATE_SERVICE_DARWIN),
             "@PLIST@": quote(HUB_UPDATE_PLIST_DARWIN),
             "@NHUB@": quote(HUB_UPDATE_NHUB_DARWIN),
-            "@AGENT_COMMAND@": quote(HUB_UPDATE_AGENT_COMMAND_DARWIN),
-            "@AGENT_INSTALL@": INSTALL_COMMANDS["pkg"][0].replace("@PATH@", '"$AGENT"'),
-            "@AGENT_JOB@": quote(f"system/{HUB_UPDATE_AGENT_UPDATE_UNIT}"),
             "@JOB@": quote(HUB_UPDATE_UNIT),
             "@STAGES_SETTLED@": "|".join(HUB_UPDATE_STAGES_SETTLED),
             "@STEPS@": quote("\n".join(handed_over_steps(plan))),
@@ -1934,12 +1695,6 @@ def _render_system_script(
             "@OUTPUT_LIMIT@": str(int(output_limit_bytes)),
             "@SETTINGS@": quote(str(HUB_UPDATE_PANEL_SETTINGS_PATH)),
             "@AUTHORITY@": quote(str(HUB_UPDATE_PANEL_AUTHORITY_PATH)),
-            "@AGENT_CACHE@": quote(str(AGENT_PACKAGE_CACHE_DIR)),
-            "@AGENT_PATTERN@": quote(
-                HUB_UPDATE_AGENT_PATTERNS[plan.family].format(version=plan.to_version)
-            ),
-            "@AGENT_START@": str(int(agent_start_s)),
-            "@AGENT_WAIT@": str(int(agent_wait_s)),
             "@MANAGER@": quote(MANAGER_NAMES[plan.family]),
             "@STEP_DONE@": quote(HUB_UPDATE_STEP_DONE),
             "@INSTALL@": install,
@@ -1958,7 +1713,7 @@ def _render_system_script(
     return text
 
 
-def _start_detached(command: list) -> int:
+def start_detached_process(command: list) -> int:
     """Start the Windows script with no window and outside the service's job.
 
     A job that refuses breakaway refuses the start; the script is then
@@ -1989,12 +1744,12 @@ def _start_detached(command: list) -> int:
     raise refusal
 
 
-def _powershell_quote(text: str) -> str:
+def powershell_quote(text: str) -> str:
     """One value as a PowerShell literal string."""
     return "'" + text.replace("'", "''") + "'"
 
 
-def _powershell_list(items) -> str:
+def powershell_list(items) -> str:
     """Values already written as PowerShell, as one array."""
     return "@(" + ", ".join(items) + ")"
 

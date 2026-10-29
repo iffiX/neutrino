@@ -891,19 +891,6 @@ def test_the_agent_is_installed_by_the_forward_command_naming_the_file_found():
     )
 
 
-def test_a_staged_plan_names_the_hubs_own_interpreter(tmp_path, roots):
-    """Once the new hub is installed, its interpreter names the box's own
-    agent package in the cache."""
-    package = tmp_path / "neutrino-hub_0.3.0_amd64.deb"
-    package.write_bytes(b"package")
-
-    plan = make_installer(tmp_path, checker=Checker()).plan_for_file(
-        package, current="0.3.0", port=8080, https_port=8444
-    )
-
-    assert plan.python == installer_module.sys.executable
-
-
 def gate_of(text: str) -> str:
     """The gate function the script defines, on its own."""
     start = text.index("gate() {")
@@ -1107,7 +1094,7 @@ def test_the_detached_start_falls_back_when_the_job_refuses_breakaway(monkeypatc
 
     monkeypatch.setattr(installer_module.subprocess, "Popen", popen)
 
-    assert installer_module._start_detached(["powershell.exe"]) == 77
+    assert installer_module.start_detached_process(["powershell.exe"]) == 77
 
     assert tried == [0x09000000, 0x08000000]
 
@@ -1123,7 +1110,7 @@ def test_the_windows_script_is_started_with_no_window_never_detached(monkeypatch
 
     monkeypatch.setattr(installer_module.subprocess, "Popen", popen)
 
-    installer_module._start_detached(["powershell.exe"])
+    installer_module.start_detached_process(["powershell.exe"])
 
     assert tried == [0x08000000 | 0x01000000]
     for flags in installer_module.HUB_UPDATE_CREATION_FLAGS_WINDOWS:
@@ -1177,34 +1164,6 @@ def test_the_windows_script_runs_only_while_its_powershell_does(tmp_path):
     assert installer_module.windows_script_state(pid_file) == "inactive"
     pid_file.write_text("not a number")
     assert installer_module.windows_script_state(pid_file) == "inactive"
-
-
-class FakeAgentCache:
-    """Serves every family and machine, recording what it was asked."""
-
-    asked = []
-
-    def serves(self, *, family, architecture):
-        self.asked.append((family, architecture))
-        return True
-
-    def package(self, *, family, architecture):
-        return Path(f"/cache/{family}-{architecture}")
-
-
-def test_the_local_agent_is_the_systems_own_family_outside_linux(monkeypatch):
-    FakeAgentCache.asked = []
-    monkeypatch.setattr(installer_module, "AgentPackageCache", FakeAgentCache)
-    monkeypatch.setattr(installer_module, "machine_architecture", lambda: "arm64")
-    monkeypatch.setattr(installer_module, "hub_os", lambda: "darwin")
-
-    assert installer_module.local_agent_package() == "/cache/pkg-arm64"
-
-    monkeypatch.setattr(installer_module, "hub_os", lambda: "linux")
-    monkeypatch.setattr(installer_module, "distribution_family", lambda: "debian")
-
-    assert installer_module.local_agent_package() == "/cache/deb-arm64"
-    assert FakeAgentCache.asked == [("pkg", "arm64"), ("deb", "arm64")]
 
 
 def test_old_system_scripts_and_packages_are_pruned(tmp_path, roots):

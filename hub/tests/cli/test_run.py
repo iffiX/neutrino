@@ -65,6 +65,7 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_configured_port", lambda: 80)
     monkeypatch.setattr(run, "_configured_https_port", lambda: 443)
     monkeypatch.setattr(run, "_prepare_transport", lambda: None)
+    monkeypatch.setattr(run, "_follow_local_agent", lambda: None)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
     monkeypatch.setattr(
         run, "_stop_samplers", lambda: recorded["steps"].append("samplers stopped")
@@ -524,6 +525,7 @@ def test_the_panel_installs_the_local_agent_the_first_run_left_to_it(
     monkeypatch.setattr("neutrino_hub.web.constants.WEB_SETUP_LOCAL_AGENT_PATH", mark)
     finished = threading.Event()
     monkeypatch.setattr(setup, "finish_local_agent", finished.set)
+    monkeypatch.setattr(run, "_follow_local_agent", lambda: None)
 
     run._finish_first_run()
     assert not finished.wait(0.2)
@@ -544,6 +546,7 @@ def test_the_panel_joins_the_local_agent_again_after_a_restore(monkeypatch, tmp_
     monkeypatch.setattr("neutrino_hub.web.constants.WEB_RESTORE_LOCAL_AGENT_PATH", mark)
     joined = threading.Event()
     monkeypatch.setattr(setup, "rejoin_local_agent", joined.set)
+    monkeypatch.setattr(run, "_follow_local_agent", lambda: None)
 
     run._finish_first_run()
     assert not joined.wait(0.2)
@@ -551,3 +554,91 @@ def test_the_panel_joins_the_local_agent_again_after_a_restore(monkeypatch, tmp_
     mark.touch()
     run._finish_first_run()
     assert joined.wait(5)
+
+
+def no_marks(monkeypatch, tmp_path) -> None:
+    """Neither the first run nor a restore left a mark."""
+    monkeypatch.setattr(
+        "neutrino_hub.web.constants.WEB_SETUP_LOCAL_AGENT_PATH",
+        tmp_path / "setup_local_agent",
+    )
+    monkeypatch.setattr(
+        "neutrino_hub.web.constants.WEB_RESTORE_LOCAL_AGENT_PATH",
+        tmp_path / "restore_local_agent",
+    )
+
+
+def test_each_start_of_the_panel_brings_the_local_agent_to_its_version(
+    monkeypatch, tmp_path
+):
+    no_marks(monkeypatch, tmp_path)
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: False)
+    followed = threading.Event()
+    monkeypatch.setattr(run, "_follow_local_agent", followed.set)
+
+    run._finish_first_run()
+
+    assert followed.wait(5)
+
+
+def test_a_mark_or_a_development_root_leaves_the_local_agent_alone(
+    monkeypatch, tmp_path
+):
+    from neutrino_hub.cli import setup
+
+    no_marks(monkeypatch, tmp_path)
+    followed = threading.Event()
+    monkeypatch.setattr(run, "_follow_local_agent", followed.set)
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: True)
+
+    run._finish_first_run()
+
+    mark = tmp_path / "setup_local_agent"
+    mark.touch()
+    monkeypatch.setattr("neutrino_hub.web.constants.WEB_SETUP_LOCAL_AGENT_PATH", mark)
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(setup, "finish_local_agent", lambda: None)
+    run._finish_first_run()
+
+    assert not followed.wait(0.2)
+
+
+class FakeLocalAgent:
+    """Answers ``follow`` with what the test gives it."""
+
+    answer: object = ""
+
+    def follow(self):
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_the_local_agents_install_is_a_line_of_the_panels_log(monkeypatch, capsys):
+    from neutrino_hub.modules.hub_update import local_agent
+
+    monkeypatch.setattr(local_agent, "HubLocalAgentInstaller", FakeLocalAgent)
+    FakeLocalAgent.answer = (
+        "agent 0.5.2 goes to 0.6.0: neutrino_hub_local_agent started"
+    )
+
+    run._follow_local_agent()
+
+    assert capsys.readouterr().out == (
+        "  local agent: agent 0.5.2 goes to 0.6.0: neutrino_hub_local_agent started\n"
+    )
+
+
+def test_a_local_agent_install_that_cannot_start_is_said_and_the_panel_serves(
+    monkeypatch, capsys
+):
+    from neutrino_hub.modules.hub_update import local_agent
+
+    monkeypatch.setattr(local_agent, "HubLocalAgentInstaller", FakeLocalAgent)
+    FakeLocalAgent.answer = OSError("systemd-run: not found")
+
+    run._follow_local_agent()
+
+    err = capsys.readouterr().err
+    assert "error: the local agent stays at its version" in err
+    assert "systemd-run: not found" in err

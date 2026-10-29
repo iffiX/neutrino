@@ -51,8 +51,6 @@ HUB_UPDATE_UNIT_ENVIRONMENT = (
 HUB_UPDATE_LOW_MEMORY_BYTES = 300 * 1024 * 1024
 HUB_UPDATE_SHED_UNITS = ("neutrino_hub_web", "neutrino_hub_cliproxyapi")
 HUB_UPDATE_MEMINFO_PATH = "/proc/meminfo"
-# What says this machine has an agent of its own to reinstall.
-HUB_UPDATE_AGENT_COMMAND = "nagent"
 # What the gate holds for: the panel, and whichever of these was running when
 # the install was staged.
 HUB_UPDATE_PANEL_UNIT = "neutrino_hub_web"
@@ -75,14 +73,22 @@ HUB_UPDATE_PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
 # What dnf5 says when it refuses at once because another transaction holds
 # the rpm lock.
 HUB_UPDATE_DNF_LOCK_TEXT = "rpm transaction lock"
-# The agent's own update, which the script waits out before it reinstalls the
-# machine's agent: a transient unit on Linux, a launchd job on macOS, and on
-# Windows any install the Windows Installer is running. The agent is given
-# the first span to start it once the panel answers, and the second to end
-# it.
-HUB_UPDATE_AGENT_UPDATE_UNIT = "neutrino_agent_update"
-HUB_UPDATE_AGENT_START_S = 20
-HUB_UPDATE_AGENT_WAIT_S = 120
+# The install of this machine's own agent at the version of the hub's
+# package: the transient unit, launchd job or PowerShell it runs as, and its
+# script, process id and log under the update directory.
+HUB_UPDATE_LOCAL_AGENT_UNIT = "neutrino_hub_local_agent"
+HUB_UPDATE_LOCAL_AGENT_SCRIPT_NAME = "local_agent.sh"
+HUB_UPDATE_LOCAL_AGENT_SCRIPT_NAME_WINDOWS = "local_agent.ps1"
+HUB_UPDATE_LOCAL_AGENT_PID_NAME = "local_agent.pid"
+HUB_UPDATE_LOCAL_AGENT_LOG_NAME = "local_agent.log"
+# How long that script waits while the hub's own update or another install
+# runs, and how often it looks; how long the panel waits for the agent to
+# print its version.
+HUB_UPDATE_LOCAL_AGENT_WAIT_S = 30 * 60
+HUB_UPDATE_LOCAL_AGENT_POLL_S = 1
+HUB_UPDATE_LOCAL_AGENT_VERSION_TIMEOUT_S = 60
+# The version in an agent package's name, as every family spells it.
+HUB_UPDATE_LOCAL_AGENT_VERSION_NAME = r"^neutrino-agent[_-]([^_-]+)[_-]"
 # The Windows Installer holds this mutex while it installs, and msiexec
 # answers this code while another install holds it.
 HUB_UPDATE_MSI_MUTEX = "Global\\_MSIExecute"
@@ -106,21 +112,12 @@ HUB_UPDATE_JOB_DARWIN = f"system/{HUB_UPDATE_UNIT}"
 # alone for a job that refuses breakaway. A PowerShell started with
 # DETACHED_PROCESS exits at once without running its script.
 HUB_UPDATE_CREATION_FLAGS_WINDOWS = (0x08000000 | 0x01000000, 0x08000000)
-# The one service the package registers, and the commands the gate and the
-# agent's reinstall run.
+# The one service the package registers, and the command the gate runs.
 HUB_UPDATE_SERVICE_DARWIN = "system/com.neutrino.hub"
 HUB_UPDATE_PLIST_DARWIN = "/Library/LaunchDaemons/com.neutrino.hub.plist"
 HUB_UPDATE_SERVICE_WINDOWS = "neutrino_hub"
 HUB_UPDATE_NHUB_DARWIN = "/usr/local/bin/nhub"
 HUB_UPDATE_NHUB_NAME_WINDOWS = "nhub.exe"
-HUB_UPDATE_AGENT_COMMAND_DARWIN = "/usr/local/bin/nagent"
-HUB_UPDATE_AGENT_COMMAND_WINDOWS = ("Neutrino", "agent", "nagent.exe")
-HUB_UPDATE_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
-# The agent package the new hub's package seeds into the cache, by family.
-HUB_UPDATE_AGENT_PATTERNS = {
-    "pkg": "neutrino-agent-{version}-macos-*.pkg",
-    "msi": "neutrino-agent-{version}-windows-*.msi",
-}
 # What msiexec answers for a finished install, with and without a reboot
 # owed.
 HUB_UPDATE_MSI_INSTALLED_CODES = (0, 3010)
