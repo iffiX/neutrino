@@ -454,7 +454,7 @@ function Install-Neutrino {
 
     if ($Component -eq 'agent') {
         if (-not (Test-NeutrinoAgentBound)) {
-            Write-Output "Next, in this window: nagent join '<enrollment link from the hub's Devices page>'"
+            Write-Output "Next, in this window: nagent join '<enrollment link from the hub's Agents page>'"
         }
         return
     }

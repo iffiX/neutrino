@@ -1492,11 +1492,11 @@ def finish(
         print()
         print(f"    nagent join '{link}'")
         print()
-        print("  The link lasts thirty minutes. The panel's Devices page generates")
+        print("  The link lasts thirty minutes. The panel's Agents page generates")
         print("  more, one per device.")
     else:
         print(
-            f"  {note}" if note else "  The Devices page generates an enrollment link."
+            f"  {note}" if note else "  The Agents page generates an enrollment link."
         )
     print()
     if is_waiting:
@@ -1544,7 +1544,7 @@ def _watch(joined) -> None:
         if _is_enter_pressed():
             break
     if not seen:
-        print("    nothing joined; the Devices page generates another link.")
+        print("    nothing joined; the Agents page generates another link.")
 
 
 def _is_enter_pressed() -> bool:

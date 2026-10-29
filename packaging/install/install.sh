@@ -485,7 +485,7 @@ main() {
             if $as_root ${as_root:+-n} grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$binding" 2>/dev/null; then
                 return 0
             fi
-            echo "Next, join this machine to a hub: ${as_root:+$as_root }nagent join '<enrollment link from the hub's Devices page>'"
+            echo "Next, join this machine to a hub: ${as_root:+$as_root }nagent join '<enrollment link from the hub's Agents page>'"
             return 0
             ;;
         client)

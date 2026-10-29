@@ -1163,7 +1163,7 @@ def _enrollment_link(password: str) -> tuple:
             if time.monotonic() >= deadline:
                 return "", (
                     f"The panel did not answer in {SETUP_PANEL_WAIT_S:.0f}s "
-                    f"({error}); its Devices page generates a link."
+                    f"({error}); its Agents page generates a link."
                 )
             time.sleep(SETUP_PANEL_POLL_S)
 

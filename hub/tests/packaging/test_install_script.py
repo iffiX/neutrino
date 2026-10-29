@@ -917,13 +917,13 @@ def test_a_system_with_no_package_asks_for_no_password(stand_ins):
             "agent",
             "1000",
             "Next, join this machine to a hub: sudo nagent join "
-            "'<enrollment link from the hub's Devices page>'",
+            "'<enrollment link from the hub's Agents page>'",
         ),
         (
             "agent",
             "0",
             "Next, join this machine to a hub: nagent join "
-            "'<enrollment link from the hub's Devices page>'",
+            "'<enrollment link from the hub's Agents page>'",
         ),
         (
             "client",
