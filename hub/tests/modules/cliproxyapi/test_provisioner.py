@@ -39,6 +39,7 @@ def carried(tmp_path, monkeypatch):
     monkeypatch.setattr(
         provisioner, "CLIPROXYAPI_AUTH_DIR", tmp_path / "cliproxyapi" / "auth"
     )
+    monkeypatch.setattr(provisioner, "UTILS_GENERATED_DIR", tmp_path / "generated")
     monkeypatch.setattr(provisioner, "CliproxyApiConfigApplier", RecordingApplier)
     monkeypatch.setattr(provisioner, "run", refuse)
     RecordingApplier.applies = []
@@ -66,13 +67,18 @@ def test_elsewhere_a_missing_binary_is_named(elsewhere, carried, fake_controller
 
 
 def test_elsewhere_a_removal_disables_the_child_and_keeps_the_binary(
-    elsewhere, carried, fake_controller
+    elsewhere, carried, fake_controller, tmp_path
 ):
+    rendered = tmp_path / "generated" / "cliproxyapi.yaml"
+    rendered.parent.mkdir()
+    rendered.write_text("")
+
     result = CliproxyApiProvisioner().deprovision()
 
     assert result.message == "removed; logins kept"
     assert fake_controller.verbs() == [("disable", "cliproxyapi")]
     assert carried.is_file()
+    assert not rendered.exists()
 
 
 # --- what a checkout fetches on Linux ---
