@@ -357,6 +357,7 @@
   "code.container_name_reserved": "The name {name} starts with neutrino_, which the hub keeps for the containers of its modules.",
   "code.module_in_use": "{modules} run on Containers; uninstall them first.",
   "code.container_hub_owned": "{name} is run by a module of the hub; change it in that module's tab.",
+  "code.containers_not_applied": "Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here.",
   "code.control_unavailable": "The hub is busy and did not answer; try again.",
   "code.hub_key_missing": "This binding is from 0.5 and the hub no longer moves it; join the hub again with a new link.",
   "code.key_missing": "The SSH server of {account} has no key from the hub; apply the module again.",

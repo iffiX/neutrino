@@ -357,6 +357,7 @@
   "code.container_name_reserved": "容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。",
   "code.module_in_use": "{modules} 运行在容器模块上，先卸载它们。",
   "code.container_hub_owned": "{name} 由中枢的模块运行，要改就到那个模块的标签页里改。",
+  "code.containers_not_applied": "容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。",
   "code.control_unavailable": "中枢正忙，没有应答，稍后再试。",
   "code.hub_key_missing": "这份绑定来自 0.5，中枢已不再迁移；用新链接重新加入中枢。",
   "code.key_missing": "{account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。",

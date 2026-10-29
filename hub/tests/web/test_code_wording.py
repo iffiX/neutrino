@@ -139,8 +139,8 @@ def test_every_attention_an_agent_declares_is_worded_in_every_language(code):
 
 
 # What the Containers module's agent answers an apply, an install, a press or
-# the Run settings with, which the Containers tab words out of the same
-# catalogs.
+# the Run settings with, and a container module's start, which the machine
+# page words out of the same catalogs.
 CONTAINERS_CODES = (
     "service_invalid",
     "service_protocol_none",
@@ -174,6 +174,7 @@ CONTAINERS_CODES = (
     "environment_invalid",
     "command_invalid",
     "mirror_invalid",
+    "containers_not_applied",
 )
 
 
