@@ -57,7 +57,7 @@ class Stop(threading.Event):
 
 
 @pytest.fixture
-def service(monkeypatch):
+def service(monkeypatch, tmp_path):
     """The service's first run, with the server, the questions and the steps
     stood in for."""
     FakeServer.instances = []
@@ -68,6 +68,7 @@ def service(monkeypatch):
         "documents": [],
         "opened": [],
     }
+    monkeypatch.setattr(setup, "UTILS_SETUP_LOG_PATH", tmp_path / "setup.log")
     monkeypatch.setattr(setup, "WebSetupServer", FakeServer)
     monkeypatch.setattr(
         setup, "open_setup_port", lambda port: state["opened"].append(port) or []
