@@ -1492,8 +1492,8 @@ def finish(
         print()
         print(f"    nagent join '{link}'")
         print()
-        print("  The link lasts thirty minutes. The panel's Agents page generates")
-        print("  more, one per device.")
+        print("  The link lasts thirty minutes. A new link from the panel's Agents")
+        print("  page replaces it.")
     else:
         print(
             f"  {note}" if note else "  The Agents page generates an enrollment link."
