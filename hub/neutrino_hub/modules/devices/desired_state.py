@@ -524,9 +524,9 @@ def ai_tools_agent_config(
         it, the version and the artifact each left out when none is given;
         else ``{is_enabled, is_forwarded, gateway_port, base_url, api_key,
         accounts: [{account, password, tool_configs}], cc_switch_version,
-        cc_switch_artifact}``, every Claude slot filled with the first
-        served model where none was chosen and ``password`` sent to a
-        Windows machine alone.
+        cc_switch_artifact}``, every model filled with the first served
+        model where none was chosen and ``password`` sent to a Windows
+        machine alone.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")

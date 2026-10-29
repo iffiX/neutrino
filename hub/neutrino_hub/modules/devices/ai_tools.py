@@ -46,7 +46,7 @@ def clean_tool_configs(raw: dict) -> dict:
 
 
 def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
-    """The choices with the gateway's first model filling the unchosen slots.
+    """The choices with the gateway's first model filling the unchosen models.
 
     Args:
         tool_configs: The cleaned choices.
@@ -54,9 +54,9 @@ def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
 
     Returns:
         ``{claude: {default, opus, sonnet, haiku}, codex: {model,
-        model_reasoning_effort}, gemini: {model}}``: every Claude slot
-        carries a model; Codex's and Gemini's knobs are the chosen ones or
-        empty, as the client leaves them.
+        model_reasoning_effort}, gemini: {model}}``: every Claude slot,
+        Codex's model and Gemini's model carry a model; Codex's effort is
+        the chosen one or empty.
     """
     claude = tool_configs.get("claude") or {}
     codex = tool_configs.get("codex") or {}
@@ -67,10 +67,10 @@ def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
             for slot in DEVICE_AI_CLAUDE_SLOTS
         },
         "codex": {
-            "model": str(codex.get("model", "") or ""),
+            "model": str(codex.get("model", "") or "") or default_model,
             DEVICE_AI_REASONING_EFFORT_KEY: str(
                 codex.get(DEVICE_AI_REASONING_EFFORT_KEY, "") or ""
             ),
         },
-        "gemini": {"model": str(gemini.get("model", "") or "")},
+        "gemini": {"model": str(gemini.get("model", "") or "") or default_model},
     }
