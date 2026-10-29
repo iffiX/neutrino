@@ -102,7 +102,8 @@ managed machine.
 ## The served list
 
 The served list is the last set of names the gateway's `/v1/models`
-returned with at least one name in it. The hub probes the gateway at most
+returned with at least one name in it, and empty once no credential feeds
+the gateway. The hub probes the gateway at most
 once in 10 seconds, and every page of this standard that names the
 models the gateway serves means this list. Its readers are SiYuan's
 `models`, the AI tools' setting and their unchosen models, Ayakaleaf's
@@ -113,9 +114,10 @@ probe of its own at each read.
 
 | Rule | Reason |
 | --- | --- |
-| A probe that fails or returns no name leaves the list as it was. The list stays after the last account signs out and the last provider is turned off as well, and it is empty only until a probe first returns a name. | The probe returns no name while the gateway restarts or is stopped. A list that empties and comes back is two changes for every reader: each SiYuan instance stops and starts twice, Ayakaleaf's app restarts twice, and every account's AI tools are switched back and then to the hub again. |
+| A probe that fails or returns no name leaves the list as it was while an account is signed in or a provider is turned on. The list is empty until a probe first returns a name. | The probe returns no name while the gateway restarts or is stopped. A list that empties and comes back is two changes for every reader: each SiYuan instance stops and starts twice, Ayakaleaf's app restarts twice, and every account's AI tools are switched back and then to the hub again. |
+| A probe that fails or returns no name empties the list while no account is signed in and no provider is turned on. The hub reads both from its own files: a token file in the gateway's auth directory under the state root, and a provider in `config/ai/providers.json` turned on with a key. Each reader follows the empty list once. | The names of a signed-out account and of a provider turned off no longer work, and SiYuan, Ayakaleaf and the AI tools would go on calling the hub with them. A probe returns no name both while the gateway restarts and after the last credential goes, and the hub's own files tell the two apart. |
 | A probe that returns another set of names replaces the list, and each reader follows it once. | An account signed in or out, a provider turned on or off, and a new catalog in the gateway's binary each change the names the gateway serves. |
-| The hub stores the list in `cliproxyapi/served_models.json` under the state root, writes it when the list changes and reads it at the panel's start. | A reboot or a hub update starts the panel and the gateway together, and a machine that reconnects before the gateway first returns a name gets the stored list in its state. The list is what the gateway last served and no person's decision, so it stays out of `config/`. A restored box probes the gateway again. |
+| The hub stores the list in `cliproxyapi/served_models.json` under the state root, writes it when the list changes, an emptied list included, and reads it at the panel's start. | A reboot or a hub update starts the panel and the gateway together, and a machine that reconnects before the gateway first returns a name gets the stored list in its state. The list is what the gateway last served and no person's decision, so it stays out of `config/`. A restored box probes the gateway again. |
 
 ## What each panel surface owns
 
