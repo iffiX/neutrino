@@ -16,10 +16,18 @@ import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.leave as leave_cli
 import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.loop as loop_module
+from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 from tests.conftest import HUB_KEY, bind
 from tests.transport.fake_transport import FakeTransport, one_shot_for
 
 LEAVE_WORDS = "left the hub; this machine keeps the agent and can join again"
+
+
+@pytest.fixture(autouse=True)
+def _desktop_left(monkeypatch):
+    """The desktop host's leave does nothing. No test reaches this machine's
+    RustDesk."""
+    monkeypatch.setattr(RdpShareHost, "leave_hub", lambda self: None)
 
 
 @pytest.fixture

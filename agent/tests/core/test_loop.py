@@ -599,6 +599,7 @@ def test_a_round_that_found_no_session_says_why(fake, config_path, code, params)
 
 def test_a_round_ended_by_binding_unknown_unbinds(fake, config_path):
     agent = agent_on(fake, config=config_path)
+    agent._rdp = RecordedDesktop()
     agent.run_once()
 
     fake.send_event("round_end", code="binding_unknown", params={}, next_round_s=0)
@@ -884,6 +885,7 @@ def test_leave_gives_the_binding_back_and_closes_everything(fake, config_path):
 
 def test_leave_does_not_wait_on_a_hub_that_cannot_be_told(fake, config_path):
     agent = agent_on(fake, config=config_path)
+    agent._rdp = RecordedDesktop()
     lines: list = []
     agent._log = lines.append
     fake.answers["leave"] = {"code": "hub_unreachable", "params": {"detail": "x"}}
