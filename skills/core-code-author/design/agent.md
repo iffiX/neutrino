@@ -877,19 +877,20 @@ page; the client rejects a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the
 link pastes anywhere unquoted.
 
-The agent tries each address in turn, at enrolment and on every reconnect,
-from the start: the name `hub.neutrino.internal` where the network resolves
-it, then the set in the hub's order, `RotateDelay` apart. The address that
-answered last is not preferred, and while the session is up nothing moves it
-([transport.md](transport.md), "Where the port is reached"). **Its
-transport knocks under the link's `key`, and no frame leaves the machine
-before message 2 opens**, which only the holder of the hub's private key can
-make ("The session" there). An address whose scheme the agent does not know
-is skipped.
+The agent dials every address at once, at enrolment and on every reconnect:
+the name `hub.neutrino.internal`, which its transport resolves at each
+round, and the set. The first whose handshake completes is the round's. The
+address that answered last is not preferred, and while the session is up
+nothing moves it ([transport.md](transport.md), "Where the port is
+reached"). **Its transport knocks under the link's `key`, and no frame
+leaves the machine before message 2 opens**, which only the holder of the
+hub's private key can make ("The session" there). An address whose scheme
+the agent does not know is skipped.
 
-An answer that does not open aborts the whole enrolment loudly, with no move
-to the next address. Something on a link's own address that answers without
-the hub's key is an impersonation, and moving on quietly hides that.
+An answer that does not open, before another address completes its
+handshake, aborts the whole enrolment loudly. Something on a link's own
+address that answers without the hub's key is an impersonation, and a join
+through another address hides that.
 
 The `join` frame is admitted by `protocol` first, so a rejected protocol
 spends no ticket. Then the hub spends the ticket **atomically**: the entry

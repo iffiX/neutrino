@@ -799,8 +799,8 @@ public address, OpenFrp's after it, and the relay's stays last.
 
 | Rule | Reason |
 | --- | --- |
-| The frp addresses sit with the relay's, after every address of the hub's own. | Each is a path through another server, tried after the hub's own addresses. |
-| The relay's address stays the last member of `urls`. | Agents and clients already rank it last, and an agent that reached the hub only through the relay keeps the same order. |
+| The frp addresses sit with the relay's, after every address of the hub's own. | Each is a path through another server, which a client ranks below the hub's own addresses. |
+| The relay's address stays the last member of `urls`. | Clients already rank it last, and an agent that reached the hub only through the relay keeps the same order. |
 
 A socket through a frp node arrives at that vendor's loopback listener from
 `127.0.0.1`. Its scope is `link`, and its `reached_through` is `sakurafrp` or

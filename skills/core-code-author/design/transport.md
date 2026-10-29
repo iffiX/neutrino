@@ -430,8 +430,8 @@ link's and the state's `urls` and changes nothing else about the port.
 | A change of the port's number reaches every online client and agent in `urls` first, and the port moves at once after. A peer offline at that moment joins again with a new link. | A peer reaches the hub only at an address it was given, so the new one is given before the old one closes. |
 | The port treats a peer the same on every way in. No rule on it depends on the address a peer arrives from or the listener it arrives on; the listener names the way in and nothing else. | Through the relay and the frp nodes every peer arrives from loopback, so an address says nothing about the peer. |
 | A client dials every candidate address of the hub at once, at every round: the hub's address on each virtual network that is up, the hub's name, and `urls`. The first connection whose handshake completes under the binding's `hub_key` carries the round's one `hello`, and the client closes the others before any `hello` on them ([client.md](client.md), "The Hubs page"). No address is preferred for having worked last, no prober runs between rounds, and each address keeps its own connect time; an address that refuses is dialled again every second until the round's connect time ends. A network change (a virtual network turning on, the device's connectivity changing, or new `urls` in the state) starts one round at once, and its winner takes a live channel only on a better path. | Under an order, a client on a network the first addresses do not reach waits out each of their connect times before the address that works. Dialling at once costs the hub one unadmitted connection per address for a few seconds. |
-| An agent tries `urls` in a fixed order, at every reconnect as at its first connect: the hub's name on the current network, then `urls` in the hub's order, the frp nodes and the relay last. The address that last worked is not tried earlier for having worked, and a connected channel is not moved because a nearer address answers again. | The nearest address is tried first, and the path through another server is the last resort; an address taken while a nearer one refused for a moment, as during a hub restart, would otherwise stay in use after the nearer one is back. |
-| The hub treats each connection of a client's round as any connection: it counts among the unadmitted ones until it closes or its `hello` is admitted. A second admitted session of one binding replaces the earlier one, which the hub ends with `refused {code: replaced}` ("What a refusal does to the binding"). | A binding holds one session. The client sends one `hello` per round, so its own round never replaces itself. |
+| An agent dials every address of the hub at once, at every round, its first connect as every reconnect: the hub's name, `urls`, and the address that last answered. The first connection whose handshake completes under the binding's `hub_key` carries the round's one `hello`. The agent's transport closes the others before any `hello` on them. No address is preferred for having worked last, and each address keeps its own connect time. An address that refuses is dialled again every second until the round's connect time ends. A connected channel is not moved because another address answers. | Under an order, an agent waits out the connect time of each address before the one that works. In the lab, its first session took 13.5 seconds. An agent runs no round beside a live session, so its channel moves only when the session ends. |
+| The hub treats each connection of a peer's round as any connection: it counts among the unadmitted ones until it closes or its `hello` is admitted. A second admitted session of one binding replaces the earlier one, which the hub ends with `refused {code: replaced}` ("What a refusal does to the binding"). | A binding holds one session. A peer sends one `hello` per round, so its own round never replaces itself. |
 
 The hub's own address, for a peer, is a set and a name.
 `hub.neutrino.internal` is the hub's name on every served network: dnsmasq
@@ -439,21 +439,22 @@ answers it with the hub's address on the network the query came in on, so
 the name resolves to the hub of the network the peer stands on, whatever
 that address is today. A binding holds the `urls` of the last state it took
 as `gateway_urls`, with `gateway_url` the last address that answered. An
-agent's round, a reconnect as much as the first, tries the name where it
-resolves, then `gateway_urls` in order, then `gateway_url` when the list
-does not hold it. A client's round dials the same addresses and the hub's
-address on each virtual network that is up, all at once. On either, the
-first whose handshake completes under the binding's `hub_key` is written
-back as `gateway_url`. Another network's hub on the name answers the knock
-with silence, since the knock's magic and `mac1` follow from a key it does
-not hold, and the address is skipped; an answer that opens under no psk on a
-stored address is recorded as `last_error`, and the round goes on with the
-other addresses.
+agent's round, a reconnect as much as the first, dials the name,
+`gateway_urls`, and `gateway_url` when the list does not hold it, all at
+once. A client's round dials the same addresses and the hub's address on
+each virtual network that is up. The peer's transport resolves the name at
+each round. On either, the first whose handshake completes under the
+binding's `hub_key` is written back as `gateway_url`. Another network's hub
+on the name answers the knock with silence, since the knock's magic and
+`mac1` follow from a key it does not hold, and the address is skipped; an
+answer that opens under no psk on a stored address is recorded as
+`last_error`, and the round goes on with the other addresses.
 
 ### The redial
 
 A peer's transport dials again by the code that ended the last session, so
-the agent and the client hold one rule:
+the agent and the client hold one rule. A round of either dials every
+address of the hub at once ("Where the port is reached").
 
 | The session ended | The transport |
 | --- | --- |
@@ -545,8 +546,7 @@ are in [protocol.md](protocol.md), "The timings".
 | keepalive | `KeepAliveInterval` 20 s between yamux pings, `KeepAliveTimeout` 60 s for the answer |
 | a refused session's end, after the peer acknowledged every byte written to it | `RelayEndGrace` 2 s |
 | redial backoff | `RedialBackoffMin` 5 s, doubled to `RedialBackoffMax` 60 s |
-| address rotation, an agent's: the pause before the next address of the set | `RotateDelay` 1 s; a client's round dials every address at once |
-| a client's redial of an address refused within a round, until `DialTimeout` from the round's start | `RedialInterval` 1 s |
+| a peer's redial of an address refused within a round, until `DialTimeout` from the round's start | `RedialInterval` 1 s |
 | a stream's window | `StreamWindowInitialBytes` 256 KiB, growing to `StreamWindowMaxBytes` 16 MiB |
 | one record's payload | `RecordBytesMax` 64 KiB |
 | one control frame | `ControlFrameBytesMax` 2 MiB |
@@ -865,7 +865,7 @@ writes every frame, `hello` first, as a frame line.
 
 | Command | Fields | The transport |
 | --- | --- | --- |
-| `dial` | `{hub_key, private_key, psk, role, protocol, addresses}`, `addresses` in the order "Where the port is reached" sets | keeps one session to the hub, dialling the addresses in order, and again after each end ("The redial") |
+| `dial` | `{hub_key, private_key, psk, role, protocol, addresses}`, `addresses` the set "Where the port is reached" names | keeps one session to the hub, dialling every address at once at each round, and again after each end ("The redial") |
 | `join` | `{hub_key, private_key, addresses, ticket, role, protocol, machine_id, name, software, platform}` | dials as a round does, knocks with `is_join` on the round's winner alone, sends the one `join` there, and answers `{binding_id, token}`, the `joined` frame's `id` and `token`, or `{code, params}`: `hub_unreachable {detail}` when no address answered, `hub_untrusted` when a link's address answered under neither psk, which ends the round, else the hub's own |
 | `leave` | `{hub_key, private_key, psk, role, protocol, addresses}` | dials, sends `leave`, and answers `{}` or `{code, params}` |
 | `forward_start` | `{listen, protocol, open}` | listens on `listen`, `127.0.0.1:8317` for the AI gateway forward, and opens a stream with `open`, `{kind: connect, id: ai}`, for each connection, relaying its bytes; answers `{id, listen}`, the address bound |
