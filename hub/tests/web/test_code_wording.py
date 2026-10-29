@@ -184,3 +184,21 @@ def test_every_code_containers_answers_is_worded_in_every_language(code):
         for path in (LOCALES_DIR / language).glob("*.json"):
             worded |= set(json.loads(path.read_text(encoding="utf-8")))
         assert f"code.{code}" in worded, language
+
+
+# The codes an agent's install and uninstall end with, by the params each sends.
+AGENT_STEP_PARAMS = {
+    "install_failed": {"detail"},
+    "uninstall_failed": {"detail"},
+    "install_unconfirmed": set(),
+    "uninstall_unconfirmed": set(),
+}
+
+
+@pytest.mark.parametrize("code", sorted(AGENT_STEP_PARAMS))
+def test_an_agent_steps_failure_fills_only_the_params_it_sends(code):
+    for path in sorted(LOCALES_DIR.glob("*/*.json")):
+        words = json.loads(path.read_text(encoding="utf-8")).get(f"code.{code}")
+        if words is None:
+            continue
+        assert set(re.findall(r"\{(\w+)\}", words)) == AGENT_STEP_PARAMS[code], path
