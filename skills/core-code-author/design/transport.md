@@ -705,8 +705,9 @@ with a `fingerprint` and no `hub_key`, has no way to the hub's key. The
 agent records `last_error` `hub_key_missing` and dials nothing until `nagent
 join` binds it again. The client's row reads `join_refused` with
 `hub_key_missing`, and **Leave** is its only action ([client.md](client.md),
-"The Hubs page"). The hub's own update replaces the agent on the hub's own
-machine, and that agent joins again the same way. The hub marks a stored
+"The Hubs page"). Every install of the hub's package replaces the agent on
+the hub's own machine ([../misc/operations.md](../misc/operations.md), "The
+hub's own agent follows its hub"), and that agent joins again the same way. The hub marks a stored
 device row that holds a token and no static key with `hub_key_missing`, and
 the **Agents** page and the machine page show that code's words for it
 ([ui_behavior.md](ui_behavior.md), "The Agents page").

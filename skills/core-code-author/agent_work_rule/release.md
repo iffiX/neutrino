@@ -20,8 +20,10 @@ hub of 0.6 refuses. Its machine is installed again with 0.6 and joins again
 ([../design/transport.md](../design/transport.md), "A peer of 0.5").
 
 An agent whose hub names a newer `software` upgrades itself from the package
-the hub keeps; a client, on a computer or a phone, is upgraded when its
-person installs the new package.
+the hub keeps, and the agent on the hub's own machine follows every install
+of the hub's package ([../misc/operations.md](../misc/operations.md), "The
+hub's own agent follows its hub"); a client, on a computer or a phone, is
+upgraded when its person installs the new package.
 
 Every package reads its version from package metadata. It is never written
 into the source twice.

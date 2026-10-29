@@ -146,6 +146,7 @@ reset prints which of the three it did.
 | DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
 | Control panel | `journalctl -u neutrino_hub_web` |
 | An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub/hub_update/update.log` |
+| The hub's own agent following the hub | `journalctl -u neutrino_hub_local_agent`, and `/var/lib/neutrino/hub/hub_update/local_agent.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
 
 ## A hub on macOS or Windows
@@ -218,15 +219,9 @@ A gate that fails installs the previous package and holds the gate again.
 When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit
 starts, it stops `neutrino_hub_web` and `neutrino_hub_cliproxyapi`, where
 running, before the package manager runs, and starts them again once it has
-finished, whether the install succeeded or not. After the gate passes, a box
-with `nagent` on it below the target gives the agent up to 20 seconds to start
-its own update in `neutrino_agent_update` and up to 120 seconds for it to end,
-then, unless `nagent --version` names the target by then, reinstalls its own
-agent from the hub's cache,
-`/var/lib/neutrino/hub/agent_cache/`, the file the new hub hands its own machine,
-as `nhub setup` does; a failure there is written to `update.log` and leaves
-the hub `installed`. That is how the hub's own agent follows a hub whose
-protocol number rose past it.
+finished, whether the install succeeded or not. The unit installs no agent.
+The machine's own agent follows the version the unit ends on, as after every
+install of the hub's package ("The hub's own agent follows its hub" below).
 
 `state.json` in that directory records where it stands: `installing`,
 `installed`, `rolling_back`, `rolled_back` or `failed`, with `reason` naming
@@ -264,6 +259,57 @@ install. The package manager runs under `ionice -c 2 -n 7 nice -n 10`. A
 watchdog of 60 seconds gives such a board room for that restart; by hand on
 such a board, put `DPKG_DEB_THREADS_MAX=1` in front of the `apt-get` line
 above.
+
+## The hub's own agent follows its hub
+
+The agent on the hub's own machine is brought to the version of the hub's
+package by every way that package arrives: the panel's update, `install.sh`,
+`install.ps1`, `apt`, `dnf`, `pacman`, the macOS `.pkg` and the Windows
+`.msi`. Each of them ends with the panel started on the new version. The
+Linux packages' scripts restart `neutrino_hub_web` on a box somebody set up,
+and the `.pkg` and the `.msi` start the one service. At each start the panel
+reads `nagent --version`. When the machine has an agent whose version is not
+the version of the machine's own package in
+`/var/lib/neutrino/hub/agent_cache/`, the panel writes `local_agent.sh`, or
+`local_agent.ps1` on Windows, into `/var/lib/neutrino/hub/hub_update/` and
+starts it apart from itself, the way the hub's update starts `update.sh`:
+
+| System | The script runs as |
+| --- | --- |
+| Linux | the transient unit `neutrino_hub_local_agent` |
+| macOS | the job `neutrino_hub_local_agent` given to `launchctl submit`, which removes itself when it ends |
+| Windows | a PowerShell with no window, whose process id the panel writes to `local_agent.pid` beside it |
+
+A script of that name still running is left to run, and no second one
+starts. The script takes these turns and writes each one, with the package
+manager's output, to `local_agent.log` beside it:
+
+1. It waits, at most 30 minutes, while the hub's own update runs:
+   `neutrino_hub_update` on Linux and macOS, and the update's PowerShell on
+   Windows. It looks every second.
+1. It ends when `nhub --version` names a version other than the one it was
+   written for, or when `nagent --version` names the package's version.
+1. It installs the package with the command the hub's update installs with,
+   which waits up to 300 seconds for the lock of the install that started the
+   panel: apt and dnf by their own wait, pacman by a wait on its lock file,
+   macOS while `installer` runs, and Windows while the Windows Installer
+   runs and once more after `msiexec`'s busy answer.
+
+A machine with no agent gets none. A hub that is not set up serves the setup
+wizard and starts no panel, and `nhub setup` installs its agent
+([../design/architecture.md](../design/architecture.md), "`nhub setup`
+configures and starts, and installs nothing"). The Arch package carries no
+agent package, so a hub there starts no script. An agent of 0.5 is replaced
+by the agent of 0.6, which reads `hub_key_missing` until it joins again with
+a new link from the hub's own row on the Agents page
+([../design/transport.md](../design/transport.md), "A peer of 0.5").
+
+| Rule | Reason |
+| --- | --- |
+| The panel's start starts the script, and no package script does. | Every install path ends with the panel started on the new version, the panel's update among them, so one check there serves every package format on every system. |
+| The script runs apart from the panel and installs once the package manager lets go. | The package manager holds its lock while the hub package's scripts run, which is when the panel starts, and an install in the panel's own process ends when the panel stops. |
+| The script waits for the hub's own update to end and installs only while the hub is still the version it was written for. | The update's gate can put the previous version back, and the agent follows the version the update ends on. |
+| Nothing else holds the script back, and each wait looks every second. | The agent reaches the hub's version within seconds of the panel's start. The agent's own update installs nothing once the agent is at its version. |
 
 ## Trying a change on an installed box
 

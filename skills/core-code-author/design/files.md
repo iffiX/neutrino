@@ -217,7 +217,10 @@ overrides both, which is what makes a second instance testable. Details of the f
                             /etc/neutrino/hub/web/panel_tls/
         hub_update/         the hub's own package at the version running and
                             at the one being installed, the install script,
-                            its log, and state.json
+                            its log, and state.json; local_agent.sh, or
+                            local_agent.ps1 and local_agent.pid on Windows,
+                            and local_agent.log, the install of the
+                            machine's own agent at the hub's version
         transport/          the transport's own, mode 0700, owned by its
                             account on Linux: control_secret, the local
                             channel's secret, mode 0640 with root as owner
@@ -274,7 +277,10 @@ while it runs. Losing it costs a render or a re-login, never a decision.
 package lays the agent builds it was made from straight into it, so enrolling
 a device and letting an agent update itself need no network at all; an
 upgrade replaces those files the way it replaces `/opt/neutrino/hub`, because
-the package manager owns them. A platform the package seeded none for is
+the package manager owns them. The machine's own agent is installed from it
+at the hub's version after every install of the hub's package
+([../misc/operations.md](../misc/operations.md), "The hub's own agent
+follows its hub"). A platform the package seeded none for is
 fetched once from the release sites, checked against the digest its manifest
 pins, and kept beside them ([agent.md](agent.md), "The agent's packages come
 from the hub"). A file already here is served only while it still hashes to

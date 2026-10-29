@@ -963,6 +963,14 @@ That package installs the hub's own local agent, and enrolls and updates
 every device of the same platform with no network of its own. The Arch
 package holds none, because no agent package is published for Arch.
 
+The local agent follows every install of the hub's package. At each start
+the panel compares `nagent --version` with that package's version, and
+when they differ it starts a script apart from itself that installs the
+package once no other install runs
+([../misc/operations.md](../misc/operations.md), "The hub's own agent
+follows its hub"). A machine with no agent gets none, and `nhub setup`
+installs the first one.
+
 Another platform's agent package is fetched when a device of that platform
 needs it, for an install over SSH or for a self-update:
 

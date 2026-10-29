@@ -283,8 +283,11 @@ Windows, whose process id the hub writes beside `state.json`, and a job given
 to `launchctl submit` on macOS, which removes itself when it ends. It installs
 the `.msi` or the `.pkg`, holds the same gate (the service running,
 `/api/hub/display` answering 200 on 127.0.0.1, `nhub --version` printing the
-target), installs the kept previous package when the gate fails, reinstalls
-the local agent, and writes each turn into `state.json`.
+target), installs the kept previous package when the gate fails, and writes
+each turn into `state.json`. The local agent follows the version the update
+ends on, as after every install of the hub's package
+([../misc/operations.md](../misc/operations.md), "The hub's own agent
+follows its hub").
 
 ## Libraries carry the logic; `nhub` carries the execution
 
