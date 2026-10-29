@@ -31,9 +31,11 @@ from neutrino_hub.modules.firewall.renderer import (
     FirewallExposure,
     render_exposure,
     render_firewalld_rules,
+    render_firewalld_setup_rules,
     render_pf_anchor,
     render_port_rules,
     render_programs,
+    render_setup_port_rule,
 )
 from neutrino_hub.modules.firewall.windows_applier import FirewallWindowsApplier
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
@@ -156,6 +158,39 @@ def converge_firewalld(exposure: FirewallExposure) -> list:
     notes = applier.apply(wanted, held=held)
     write_generated(FIREWALL_FIREWALLD_RECORD_PATH, json.dumps(wanted))
     return notes
+
+
+def open_setup_port(port: int) -> list:
+    """Open the setup wizard's port to every sender in the system firewall.
+
+    The hub's rules become this one rule: on Linux where firewalld runs, a
+    rich rule in the zone of every device and in the default zone, runtime
+    and permanent; on Windows, ``neutrino_hub_setup``. The first firewall
+    pass after setup removes it as a rule it does not render, and a reset
+    removes it with the hub's other rules. macOS opens nothing.
+
+    Args:
+        port: The port the wizard listens on.
+
+    Returns:
+        One line per zone or rule changed, and one per rule Windows refused;
+        empty when nothing changed.
+
+    Raises:
+        OSError: When the firewall cannot be read or changed.
+        subprocess.CalledProcessError: When firewall-cmd refuses.
+    """
+    if is_linux():
+        applier = FirewallFirewalldApplier()
+        if not applier.is_running():
+            return []
+        devices, default, held = applier.survey()
+        wanted = render_firewalld_setup_rules(port, zones=devices, default_zone=default)
+        return applier.apply(wanted, held=held)
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        notes, refused = FirewallWindowsApplier().apply([render_setup_port_rule(port)])
+        return notes + [entry["detail"] for entry in refused]
+    return []
 
 
 def is_firewalld_moved() -> bool:

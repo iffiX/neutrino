@@ -31,6 +31,7 @@ from neutrino_hub.modules.firewall.constants import (
     FIREWALL_PURPOSE_OVERLAY,
     FIREWALL_PURPOSE_PANEL_HTTP,
     FIREWALL_PURPOSE_PANEL_HTTPS,
+    FIREWALL_PURPOSE_SETUP,
     FIREWALL_PURPOSE_SOCKS,
     FIREWALL_RULE_PREFIX,
 )
@@ -276,6 +277,21 @@ def render_port_rules(exposure: FirewallExposure) -> list:
     return rules
 
 
+def render_setup_port_rule(port: int) -> FirewallPortRule:
+    """Windows Firewall's rule for the setup wizard's port before setup.
+
+    Args:
+        port: The port the wizard listens on.
+
+    Returns:
+        ``neutrino_hub_setup``, the port over TCP open to every sender.
+    """
+    return _rule(
+        FIREWALL_PURPOSE_SETUP,
+        FirewallPort(FIREWALL_PURPOSE_SETUP, FIREWALL_PROTOCOL_TCP, port),
+    )
+
+
 def render_pf_anchor(exposure: FirewallExposure) -> str:
     """The pf anchor that keeps the hub's ports to loopback and the segments.
 
@@ -394,6 +410,23 @@ def render_firewalld_rules(
             ),
         )
     return {zone: sorted(rules) for zone, rules in sorted(found.items())}
+
+
+def render_firewalld_setup_rules(port: int, *, zones: dict, default_zone: str) -> dict:
+    """firewalld's rule for the setup wizard's port before setup, by zone.
+
+    Args:
+        port: The port the wizard listens on.
+        zones: Device name to the zone firewalld holds it in.
+        default_zone: The zone of a device in none.
+
+    Returns:
+        Zone to its one rule, the port over TCP with no source and the hub's
+        priority: in the zone of every device and in the default zone.
+    """
+    rule = firewalld_rule(port=port, protocol=FIREWALL_PROTOCOL_TCP)
+    found = {zone for zone in (*zones.values(), default_zone) if zone}
+    return {zone: [rule] for zone in sorted(found)}
 
 
 def firewalld_rule(

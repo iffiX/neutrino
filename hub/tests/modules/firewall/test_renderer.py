@@ -8,7 +8,9 @@ engines' peer ports and DHCP open with no switch; Direct opens the agent
 port to every sender on the enabled interfaces. Then the same answer as
 Windows rules, one per purpose, with the segments as remote addresses; as a
 pf anchor with an address table per family; as firewalld rich rules in the
-zone of each interface; and on macOS the programs, the hub first.
+zone of each interface; and on macOS the programs, the hub first. Before
+setup the wizard's port is one Windows rule open to every sender, and one
+firewalld rule with no source in every zone.
 """
 
 import pytest
@@ -18,9 +20,11 @@ from neutrino_hub.modules.firewall.renderer import (
     firewalld_rule,
     render_exposure,
     render_firewalld_rules,
+    render_firewalld_setup_rules,
     render_pf_anchor,
     render_port_rules,
     render_programs,
+    render_setup_port_rule,
 )
 from neutrino_hub.modules.router.interfaces import RouterSegment
 
@@ -301,3 +305,20 @@ def test_a_firewalld_rule_is_written_as_firewall_cmd_prints_it():
     assert firewalld_rule(port=11010, protocol="UDP") == (
         'rule priority="32123" port port="11010" protocol="udp" accept'
     )
+
+
+def test_the_wizards_port_is_one_windows_rule_open_to_every_sender():
+    assert render_setup_port_rule(8080) == FirewallPortRule(
+        name="neutrino_hub_setup", protocol="TCP", port=8080
+    )
+
+
+def test_the_wizards_port_is_one_firewalld_rule_in_every_zone_and_the_default():
+    rules = render_firewalld_setup_rules(
+        8080,
+        zones={"eth0": "public", "wt0": "trusted", "eth1": "public"},
+        default_zone="home",
+    )
+
+    rule = 'rule priority="32123" port port="8080" protocol="tcp" accept'
+    assert rules == {"home": [rule], "public": [rule], "trusted": [rule]}

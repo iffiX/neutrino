@@ -76,6 +76,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
 )
+from neutrino_hub.modules.firewall.ops import open_setup_port
 from neutrino_hub.modules.frp.constants import (
     FRP_ASSETS,
     FRP_BINARY_PATH,
@@ -340,6 +341,7 @@ def serve_until_set_up(stop) -> int:
         )
         return 1
     print(f"serving the setup wizard on port {server.port}", flush=True)
+    _open_setup_port(server.port)
     steps = _panel_started_last(
         [step for step in CORE_STEPS if step[2] not in _skipped_steps()]
     )
@@ -428,6 +430,26 @@ def rejoin_local_agent() -> None:
         reporter.done("joined")
     finally:
         WEB_RESTORE_LOCAL_AGENT_PATH.unlink(missing_ok=True)
+
+
+def _open_setup_port(port: int) -> None:
+    """Open the wizard's port in the system firewall the hub writes.
+
+    Args:
+        port: The port the wizard listens on.
+    """
+    try:
+        notes = open_setup_port(port)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(
+            f"warning: port {port} is not open in the system firewall "
+            f"({command_failure_text(error)}); open it there to reach the "
+            "wizard from another machine",
+            file=sys.stderr,
+        )
+        return
+    for note in notes:
+        print(f"  {note}", flush=True)
 
 
 def is_local_agent_installed() -> bool:

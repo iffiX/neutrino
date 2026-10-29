@@ -61,8 +61,17 @@ def service(monkeypatch):
     """The service's first run, with the server, the questions and the steps
     stood in for."""
     FakeServer.instances = []
-    state = {"is_set_up": False, "runs": [], "statuses": [], "documents": []}
+    state = {
+        "is_set_up": False,
+        "runs": [],
+        "statuses": [],
+        "documents": [],
+        "opened": [],
+    }
     monkeypatch.setattr(setup, "WebSetupServer", FakeServer)
+    monkeypatch.setattr(
+        setup, "open_setup_port", lambda port: state["opened"].append(port) or []
+    )
     monkeypatch.setattr(setup, "ensure_setup_token", lambda: "kept-token")
     monkeypatch.setattr(setup, "_browser_port", lambda: 8080)
     monkeypatch.setattr(setup.wizard, "context", lambda: {"modes": []})
@@ -147,6 +156,31 @@ def test_a_box_set_up_while_the_terminal_still_holds_the_lock_keeps_waiting(
     assert setup.serve_until_set_up(Stop(after=2)) == 0
 
     terminal.release()
+
+
+def test_the_wizard_opens_its_port_in_the_system_firewall(service):
+    service["is_set_up"] = True
+
+    setup.serve_until_set_up(Stop(after=5))
+
+    assert service["opened"] == [8080]
+
+
+def test_a_firewall_that_refuses_is_a_warning_and_the_wizard_serves(
+    service, monkeypatch, capsys
+):
+    def refusing(port):
+        raise OSError("firewall-cmd: not running")
+
+    monkeypatch.setattr(setup, "open_setup_port", refusing)
+    service["documents"] = [ANSWERS]
+    service["statuses"] = [SYSTEM_RESTART_EXIT_STATUS]
+
+    assert setup.serve_until_set_up(Stop(after=5)) == SYSTEM_RESTART_EXIT_STATUS
+
+    err = capsys.readouterr().err
+    assert "warning: port 8080 is not open in the system firewall" in err
+    assert "firewall-cmd: not running" in err
 
 
 def test_a_port_it_cannot_take_is_a_failure(service, monkeypatch):

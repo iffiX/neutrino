@@ -17,6 +17,9 @@ FIREWALL_PURPOSE_OVERLAY = "{provider}_{protocol}"
 # The Windows rule that opens the agent port to every sender on the enabled
 # interfaces while Direct is on.
 FIREWALL_PURPOSE_DIRECT = "agent_direct"
+# The Windows rule that opens the setup wizard's port to every sender before
+# setup.
+FIREWALL_PURPOSE_SETUP = "setup"
 # The Windows rule beside each hub port's that opens it to ``fe80::/64`` on
 # the interfaces whose IPv6 segment is exposed, by its purpose's suffix.
 FIREWALL_PURPOSE_LINK_SUFFIX = "_link"

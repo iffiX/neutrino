@@ -8,7 +8,8 @@ is not touched, an IPv4 network Windows reads back with its mask spelled
 out included. An alias Windows has no adapter by yet is waited for a bounded
 number of runs, then left out with a note; a rule Windows refuses leaves the
 others applied and is answered by name; the next pass scopes a rule left
-narrowed or disabled again.
+narrowed or disabled again. The setup wizard's rule is one no purpose
+names once setup's pass runs.
 """
 
 import pytest
@@ -106,6 +107,26 @@ def test_a_moved_port_is_written_again_and_a_rule_no_purpose_names_is_removed():
     assert change["remove"] == [
         "neutrino_hub_socks_1090_tcp",
         "neutrino_hub_panel_http",
+    ]
+
+
+def test_the_first_pass_after_setup_takes_the_wizards_rule_away():
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(
+                ("neutrino_hub_setup", "TCP", "8080"), remote=("Any",)
+            )
+        }
+    )
+
+    notes, refused = FirewallWindowsApplier(powershell=powershell).apply(RULES)
+
+    assert notes[-1] == "firewall closed neutrino_hub_setup"
+    assert refused == []
+    change = powershell.runs[1][1]
+    assert change["remove"] == ["neutrino_hub_setup"]
+    assert [entry["name"] for entry in change["create"]] == [
+        rule.name for rule in RULES
     ]
 
 

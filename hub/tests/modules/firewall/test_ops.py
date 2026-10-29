@@ -10,7 +10,9 @@ networks it wrote the rules for, and a network that moved, not an address
 that rotated inside one, runs the pass again; on Linux firewalld gets the
 rules in the zones of the exposed interfaces while it runs, the pass
 records what it wrote, and a runtime that lost them runs the pass again; a
-reset takes everything away on every system.
+reset takes everything away on every system. Before setup the wizard's port
+opens to every sender in firewalld and on Windows, and nothing opens on
+macOS; the first pass after setup and a reset take it out.
 """
 
 import json
@@ -19,7 +21,7 @@ import pytest
 
 from neutrino_hub.modules.firewall import ops
 from neutrino_hub.modules.firewall.firewalld_applier import FirewallFirewalldApplier
-from neutrino_hub.modules.firewall.renderer import firewalld_rule
+from neutrino_hub.modules.firewall.renderer import FirewallPortRule, firewalld_rule
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 from tests.conftest import FakeFirewalld
@@ -383,3 +385,77 @@ def test_a_reset_on_linux_takes_the_hubs_rules_out_of_firewalld(firewalld):
     assert firewalld.zones["public"]["runtime"] == []
     assert firewalld.zones["public"]["permanent"] == []
     assert not ops.FIREWALL_FIREWALLD_RECORD_PATH.exists()
+
+
+# --- the setup wizard's port ---
+
+
+def test_before_setup_firewalld_opens_the_wizards_port_in_every_zone(firewalld):
+    notes = ops.open_setup_port(8080)
+
+    rule = firewalld_rule(port=8080, protocol="TCP")
+    assert notes == [
+        "firewalld zone public: 1 rules added, 0 removed",
+        "firewalld zone trusted: 1 rules added, 0 removed",
+    ]
+    for zone in ("public", "trusted"):
+        assert firewalld.zones[zone]["runtime"] == [rule]
+        assert firewalld.zones[zone]["permanent"] == [rule]
+
+
+def test_a_wizard_on_another_port_moves_its_rule(firewalld):
+    ops.open_setup_port(8080)
+
+    ops.open_setup_port(39211)
+
+    rule = firewalld_rule(port=39211, protocol="TCP")
+    assert firewalld.zones["public"]["runtime"] == [rule]
+    assert firewalld.zones["public"]["permanent"] == [rule]
+
+
+def test_the_first_pass_after_setup_takes_the_wizards_port_out(firewalld):
+    ops.open_setup_port(8080)
+
+    ops.converge_firewalld(linux_exposure())
+
+    assert firewalld.zones["trusted"]["runtime"] == []
+    assert firewalld.zones["trusted"]["permanent"] == []
+    assert firewalld.zones["public"]["runtime"] == [
+        firewalld_rule(
+            family="ipv4", source="192.168.1.0/24", port=port, protocol="TCP"
+        )
+        for port in (443, 8080, 8443)
+    ]
+
+
+def test_a_reset_before_setup_takes_the_wizards_port_out(firewalld):
+    ops.open_setup_port(8080)
+
+    ops.hand_back_firewall()
+
+    for zone in ("public", "trusted"):
+        assert firewalld.zones[zone]["runtime"] == []
+        assert firewalld.zones[zone]["permanent"] == []
+
+
+def test_firewalld_stopped_opens_nothing_for_the_wizard(firewalld):
+    firewalld.is_running = False
+
+    assert ops.open_setup_port(8080) == []
+    assert firewalld.zones["public"]["permanent"] == []
+
+
+def test_windows_opens_the_wizards_port_to_every_sender(on_windows, recorder):
+    assert ops.open_setup_port(8080) == ["changed"]
+
+    assert recorder.handed == [
+        (
+            "apply",
+            [FirewallPortRule(name="neutrino_hub_setup", protocol="TCP", port=8080)],
+        )
+    ]
+
+
+def test_macos_opens_nothing_for_the_wizard(on_darwin, recorder):
+    assert ops.open_setup_port(8080) == []
+    assert recorder.handed == []
