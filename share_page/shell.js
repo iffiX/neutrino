@@ -159,6 +159,11 @@ const screen = {
   // Counts every change of screen.
   serial: 0,
   element(id) { return document.getElementById(id); },
+  // The tab of a screen of the page's own: the screen's first line as its title, and no icon.
+  tab(line) {
+    document.title = line;
+    this.element("icon").href = "data:,";
+  },
   loading(title) {
     this.kind = "loading";
     this.serial++;
@@ -166,10 +171,12 @@ const screen = {
     this.element("box").classList.add("loading");
     this.element("title").textContent = line;
     this.element("screen").classList.remove("hidden");
-    document.title = line;
+    this.tab(line);
   },
   slow() {
-    if (this.kind === "loading") this.element("title").textContent = words.slow;
+    if (this.kind !== "loading") return;
+    this.element("title").textContent = words.slow;
+    this.tab(words.slow);
   },
   refuse(kind) {
     const [title, detail] = words[kind];
@@ -179,7 +186,7 @@ const screen = {
     this.element("title").textContent = title;
     this.element("detail").textContent = detail;
     this.element("screen").classList.remove("hidden");
-    document.title = title;
+    this.tab(title);
     stats.screen = kind;
   },
   app() {
