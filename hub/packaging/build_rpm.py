@@ -94,6 +94,8 @@ cp -a {payload}/. %{{buildroot}}/
 {is_set_up}
 install -d -m 755 /etc/neutrino
 install -d -m 700 /etc/neutrino/hub
+# Open to the transport's account, whichever package made them first.
+install -d -m 755 /var/lib/neutrino /var/log/neutrino
 install -d -m 755 /var/lib/neutrino/hub
 install -d -m 755 /var/lib/neutrino/hub/generated
 install -d -m 755 /var/log/neutrino/hub

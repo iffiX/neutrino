@@ -522,3 +522,22 @@ def test_the_removal_takes_the_units_drop_ins_too():
     assert drop_ins in build_deb.POSTRM
     assert drop_ins in _spec()
     assert drop_ins in build_pkg.INSTALL_SCRIPT
+
+
+def test_every_linux_package_opens_the_state_and_log_parents(tmp_path):
+    """The client's NetBird can make ``/var/lib/neutrino`` first, root-only,
+    and the transport's account reads the hub's state below it."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+    spec = _spec()
+    post = spec[spec.index("%post\n") : spec.index("%preun")]
+    script = build_pkg.install_script()
+    install = script[script.index("post_install()") : script.index("post_upgrade()")]
+    upgrade = script[script.index("post_upgrade()") : script.index("pre_remove()")]
+    line = "install -d -m 755 /var/lib/neutrino /var/log/neutrino\n"
+
+    for text in (postinst, post, install, upgrade):
+        assert line in text
+        assert text.index(line) < text.index(
+            "install -d -m 755 /var/lib/neutrino/hub\n"
+        )
