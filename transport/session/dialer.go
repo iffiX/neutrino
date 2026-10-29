@@ -64,7 +64,7 @@ func ParseAddress(address string) (string, error) {
 // connection with the session's keys, handshake.ErrHubUntrusted when message
 // 2 opens under neither psk, ErrSchemeUnknown for an address it cannot
 // dial, and the connection's own error otherwise, context.DeadlineExceeded
-// among them.
+// and context.Canceled among them.
 func Dial(ctx context.Context, address string, options DialOptions) (*DialResult, error) {
 	hostPort, err := ParseAddress(address)
 	if err != nil {
@@ -112,6 +112,8 @@ func dialOnce(ctx context.Context, hostPort string, options DialOptions, cookie 
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
 	payload := knock.Payload{Protocol: options.Protocol, Role: options.Role, IsJoin: options.IsJoin, Time: now().UnixNano()}
 	initiator, err := handshake.NewInitiator(options.Static, options.HubPublic, options.Psk, append(payload.Marshal(), knock.Padding()...))
 	if err != nil {
@@ -160,6 +162,9 @@ func dialOnce(ctx context.Context, hostPort string, options DialOptions, cookie 
 	keys, isRefusal, err := initiator.Open(message2)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !stop() {
+		return nil, nil, fmt.Errorf("handshake %s: %w", hostPort, ctx.Err())
 	}
 	_ = conn.SetDeadline(time.Time{})
 	isDone = true

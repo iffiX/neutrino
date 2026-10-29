@@ -185,6 +185,27 @@ func TestDialSilenceAndSchemes(t *testing.T) {
 	}
 }
 
+// TestDialStopsAtTheContextsEnd checks that a dial waiting on a silent hub
+// ends when its context is cancelled.
+func TestDialStopsAtTheContextsEnd(t *testing.T) {
+	hub := newFakeHub(t)
+	hub.isSilent = true
+	peer, _ := handshake.GenerateKey()
+	options := DialOptions{Static: peer, HubPublic: hub.key.Public, Psk: handshake.ZeroPsk, Protocol: knock.PROTOCOL, Role: knock.KnockRoleAgent, IsJoin: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-hub.knocks
+		cancel()
+	}()
+	started := time.Now()
+	if _, err := Dial(ctx, hub.address(), options); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v, want canceled", err)
+	}
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("the dial ended %v after the knock", elapsed)
+	}
+}
+
 // TestKnockIsPadded checks that message 1 carries 0 to KnockPaddingBytesMax
 // bytes of padding after its JSON, drawn for each dial, and that the hub
 // reads the JSON through it.
