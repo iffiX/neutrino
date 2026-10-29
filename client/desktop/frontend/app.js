@@ -1745,7 +1745,7 @@ function newShellButton(picked) {
 }
 
 // The tab strip, the active terminal, and the status line with the hint and
-// the two switches. With no tab, a dashed frame offers a new terminal.
+// the two switches. With no tab, a dashed frame with a hint.
 function shellPanel(state) {
   if (shellTabs.length === 0) {
     const empty = document.createElement('div');
@@ -1757,12 +1757,6 @@ function shellPanel(state) {
     hint.textContent = t('ui.terminal_pick_hint');
     empty.appendChild(none);
     empty.appendChild(hint);
-    const open = newShellButton(pickedMachine(state));
-    open.className = 'with_icon';
-    clearChildren(open);
-    open.appendChild(icon('terminal', 14));
-    open.appendChild(document.createTextNode(t('ui.terminal_new')));
-    empty.appendChild(open);
     return empty;
   }
   const panel = document.createElement('section');

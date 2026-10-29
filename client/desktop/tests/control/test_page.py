@@ -1986,6 +1986,12 @@ def test_a_plain_session_closes_and_a_kept_or_shared_one_arms():
     )
 
 
+def test_new_terminal_stands_in_the_machines_card_alone():
+    assert "newShellButton(picked)" in body_of("machineStrip")
+    assert "newShellButton" not in body_of("shellPanel")
+    assert PAGE_JS.count("newShellButton(") == 2
+
+
 def test_a_middle_click_closes_a_tab_and_a_double_click_opens_one():
     assert "if (event.button !== 1) return;" in body_of("shellTabButton")
     assert "head.ondblclick = (event) => {" in body_of("shellPanel")
