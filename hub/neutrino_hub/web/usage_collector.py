@@ -48,16 +48,18 @@ class PanelUsageCollector:
                 :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`,
                 so a tick also notices what the gateway serves; None watches
                 only the counters.
-            on_change: Called with nothing when a tick moved the counters or
-                the served list; None tells nobody.
+            on_change: Called with nothing when a tick moved the counters,
+                the served list or whether the probe succeeded; None tells
+                nobody.
         """
         self._store = store or CliproxyApiUsageStore()
         self._poll_interval_s = poll_interval_s
         self._served_models = served_models
         self._on_change = on_change
+        # Whether the probe succeeded and the served list, at the last tick.
         # None until the first tick, so starting the panel is not itself a
         # change anybody is told about.
-        self._served_names: "list | None" = None
+        self._served: "tuple | None" = None
         self._is_stopped = threading.Event()
         self._thread: threading.Thread | None = None
         # The last resolvable upstream-key map, kept across a locked vault so
@@ -163,7 +165,8 @@ class PanelUsageCollector:
         """Fold one poll in, and say when the AI page's numbers moved.
 
         Returns:
-            True when this tick moved the counters or the served list.
+            True when this tick moved the counters, the served list or
+            whether the probe succeeded.
         """
         is_changed = False
         try:
@@ -183,30 +186,30 @@ class PanelUsageCollector:
             self.sample_once()
 
     def _note_served_models(self) -> bool:
-        """Whether the gateway serves a different list than at the last tick."""
+        """Whether the probe's success or the served list moved since the last tick."""
         if self._served_models is None:
             return False
-        names = self._read_served_models()
-        if self._served_names is None or names == self._served_names:
-            self._served_names = names
+        served = self._read_served_models()
+        if self._served is None or served == self._served:
+            self._served = served
             return False
-        self._served_names = names
+        self._served = served
         return True
 
-    def _read_served_models(self) -> list:
-        """What the gateway serves now; empty when it cannot be asked."""
+    def _read_served_models(self) -> tuple:
+        """Whether the probe succeeded and the served list; ``(False, [])`` with no key."""
         try:
             config = load_config()
         except ValueError:
-            return []
+            return False, []
         for stored in config.client_keys:
             try:
                 key = stored.open_key()
             except ValueError:
                 continue
             if key:
-                _, names = self._served_models.served(
+                is_answered, names = self._served_models.served(
                     port=config.listen_port, client_key=key
                 )
-                return list(names)
-        return []
+                return is_answered, list(names)
+        return False, []

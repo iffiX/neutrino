@@ -253,10 +253,11 @@ class StubServedModels:
 
     def __init__(self, names=()):
         self.names = list(names)
+        self.is_answered = True
 
     def served(self, *, port, client_key) -> tuple:
         del port, client_key
-        return bool(self.names), list(self.names)
+        return self.is_answered and bool(self.names), list(self.names)
 
 
 class ChangeCounter:
@@ -294,6 +295,35 @@ def test_a_served_list_that_moved_is_worth_telling(collector, monkeypatch, tmp_p
     assert changes.count == 1
     assert watcher.sample_once() is False
     assert changes.count == 1
+
+
+def test_a_gateway_that_stops_or_starts_answering_is_worth_telling(
+    collector, monkeypatch, tmp_path
+):
+    del collector
+    monkeypatch.setattr(
+        collector_module.httpx,
+        "get",
+        lambda *a, **k: FakeResponse({"detail": "no"}, status_code=401),
+    )
+    served = StubServedModels(["gpt-5"])
+    changes = ChangeCounter()
+    watcher = PanelUsageCollector(
+        store=CliproxyApiUsageStore(path=tmp_path / "usage.json"),
+        served_models=served,
+        on_change=changes,
+    )
+    assert watcher.sample_once() is False
+
+    served.is_answered = False
+
+    assert watcher.sample_once() is True
+    assert watcher.sample_once() is False
+
+    served.is_answered = True
+
+    assert watcher.sample_once() is True
+    assert changes.count == 2
 
 
 def test_records_folded_in_are_worth_telling(collector, monkeypatch, tmp_path):
