@@ -19,6 +19,7 @@ connection that drops ends every session and is dialled again.
 import asyncio
 import hashlib
 import json
+import threading
 
 import pytest
 
@@ -71,13 +72,17 @@ class FakeRuntime:
         self.client_reached: dict = {}
         self.settings = {"listen_port": 8080}
         self.forgotten: list = []
+        # Set when a binding is forgotten.
+        self.forgot = threading.Event()
         self.channel = None
 
     def forget_device(self, key):
         self.forgotten.append(("device", key))
+        self.forgot.set()
 
     def forget_client(self, key):
         self.forgotten.append(("client", key))
+        self.forgot.set()
 
 
 @pytest.fixture
@@ -454,6 +459,7 @@ def test_a_leave_drops_the_token_and_writes_left_as_the_last_frame(
             )
             await fake.frame("s1", {"type": "leave"})
             left = await fake.next_frame()
+            await asyncio.to_thread(runtime.forgot.wait, 5.0)
         finally:
             await stopped(fake, channel, task)
         device = DeviceRegistry().get(device_id)
