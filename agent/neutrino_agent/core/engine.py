@@ -52,10 +52,6 @@ from neutrino_agent.constants import (
     AGENT_METHOD_HUB,
     AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
-    AGENT_LOCK_ALONE,
-    AGENT_LOCK_CONTAINERS,
-    AGENT_LOCK_PACKAGE_MANAGER,
-    AGENT_LOCK_SHARED,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
@@ -119,7 +115,12 @@ from neutrino_agent.modules.shared.package import (
     verify_detail,
     verify_passes,
 )
-from neutrino_agent.modules.shared.step_locks import ordered
+from neutrino_agent.modules.shared.step_locks import (
+    CONTAINERS_ALONE_LOCKS,
+    CONTAINERS_SHARED_LOCKS,
+    PACKAGE_MANAGER_LOCKS,
+    ordered,
+)
 from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
@@ -167,12 +168,6 @@ FAILURE_SUFFIX = ".json"
 # The artifacts the system's own installer puts on the machine: another
 # version replaces them by an uninstall and an install.
 SYSTEM_INSTALLED_KINDS = (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG)
-# The locks of a step that runs the system's installer.
-PACKAGE_MANAGER_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
-# The locks of a container module's step on Containers' engine.
-CONTAINERS_SHARED_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),)
-# The locks of a container module's uninstall. It drops its hub containers.
-CONTAINERS_ALONE_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_ALONE),)
 
 
 class ReconcileWorker:

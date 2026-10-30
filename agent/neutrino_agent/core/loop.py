@@ -51,8 +51,6 @@ from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_NAME,
     AGENT_FAILURES_DIR_NAME,
     AGENT_HUB_SOFTWARE_PREFIX,
-    AGENT_LOCK_ALONE,
-    AGENT_LOCK_PACKAGE_MANAGER,
     AGENT_LOCK_SELF_UPDATE_HOLDER,
     AGENT_PACKAGE_DIR_NAME,
     AGENT_PROBE_TIMEOUT_S,
@@ -87,6 +85,7 @@ from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunn
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 from neutrino_agent.modules.shared.hub_clock import hub_clock
+from neutrino_agent.modules.shared.step_locks import PACKAGE_MANAGER_LOCKS
 from neutrino_agent.modules.terminal.config import TerminalConfig
 from neutrino_agent.modules.terminal.constants import TERMINAL_NAME
 from neutrino_agent.platforms.detect import detect_platform
@@ -118,8 +117,6 @@ IDLE_POLL_INTERVAL_S = 2
 
 # What a version ends in when it was built from a checkout.
 DEV_VERSION_SUFFIX = "+dev"
-# The step lock the self-update takes before it launches.
-SELF_UPDATE_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
 
 # The events of the agent's local channel.
 EVENT_SESSION_OPEN = "session_open"
@@ -1492,7 +1489,7 @@ class Agent:
             return False
         launch = functools.partial(self._launch_update, target, path, kind, version)
         locks = self._desired.locks
-        if locks.try_acquire(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER):
+        if locks.try_acquire(PACKAGE_MANAGER_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER):
             return launch()
         self._log(f"update to {target} waits for a module's package step to end")
         threading.Thread(
@@ -1505,7 +1502,9 @@ class Agent:
 
     def _launch_when_free(self, launch) -> None:
         """Take ``package_manager`` once a module's step lets it go, then launch the install."""
-        self._desired.locks.acquire(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER)
+        self._desired.locks.acquire(
+            PACKAGE_MANAGER_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
+        )
         launch()
 
     def _launch_update(self, target: str, path: str, kind: str, version: str) -> bool:
@@ -1534,7 +1533,7 @@ class Agent:
             )
         except SelfUpdateError as error:
             self._desired.locks.release(
-                SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
+                PACKAGE_MANAGER_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
             )
             with self._lock:
                 self._update_error = {"code": str(error), "params": {"target": target}}
@@ -1548,7 +1547,9 @@ class Agent:
     def _release_after_update(self) -> None:
         """Let ``package_manager`` go once the launched install wrote its result."""
         self_update.wait_reinstall_result(self._var_dir, timeout_s=AGENT_UPDATE_HOLD_S)
-        self._desired.locks.release(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER)
+        self._desired.locks.release(
+            PACKAGE_MANAGER_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
+        )
 
 
 def _framed(lines: queue.Queue):

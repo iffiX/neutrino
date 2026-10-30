@@ -22,6 +22,7 @@ from neutrino_agent.constants import (
     AGENT_LOCK_ALONE,
     AGENT_LOCK_CONTAINERS,
     AGENT_LOCK_ORDER,
+    AGENT_LOCK_PACKAGE_MANAGER,
     AGENT_LOCK_SHARED,
     AGENT_LOCK_SYSTEM_ACCOUNTS,
     AGENT_WAIT_LOCK,
@@ -29,6 +30,12 @@ from neutrino_agent.constants import (
 
 # The locks a taker may share; every other lock is taken alone.
 SHARABLE_LOCKS = (AGENT_LOCK_CONTAINERS,)
+# The step locks of a step that has Containers' engine alone.
+CONTAINERS_ALONE_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_ALONE),)
+# The step locks of a step on Containers' engine beside other such steps.
+CONTAINERS_SHARED_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),)
+# The step locks of a step that runs the system's installer.
+PACKAGE_MANAGER_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
 # The step locks of a step that makes or removes the machine's accounts.
 SYSTEM_ACCOUNTS_LOCKS = ((AGENT_LOCK_SYSTEM_ACCOUNTS, AGENT_LOCK_ALONE),)
 

@@ -63,7 +63,6 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
     PODMAN_CONTAINER_ACTIONS,
-    PODMAN_FEATURES_LOCKS,
     PODMAN_GIB,
     PODMAN_JOURNAL_LINES,
     PODMAN_MACHINE_API_POLL_S,
@@ -80,7 +79,6 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
     PODMAN_SOURCE_MANUAL,
-    PODMAN_STEP_LOCKS,
     PODMAN_STEP_MACHINE,
     PODMAN_STEP_RESTART,
     PODMAN_STEP_WINDOWS_FEATURES,
@@ -110,6 +108,10 @@ from neutrino_agent.modules.shared.instances import machine_for
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.package import keep_artifact, kept_artifact_path
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
+from neutrino_agent.modules.shared.step_locks import (
+    CONTAINERS_ALONE_LOCKS,
+    PACKAGE_MANAGER_LOCKS,
+)
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
@@ -408,7 +410,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             The ``(lock, mode)`` pairs; none for ``restart``, which waits
             for a person.
         """
-        return () if step == PODMAN_STEP_RESTART else PODMAN_STEP_LOCKS
+        return () if step == PODMAN_STEP_RESTART else CONTAINERS_ALONE_LOCKS
 
     def install_steps(self, recipe: dict, steps: list) -> list:
         """The install's steps, ``windows_features`` and ``restart`` first where the system has them.
@@ -426,7 +428,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ModuleStep(
                 name=PODMAN_STEP_WINDOWS_FEATURES,
                 run=self._run_features,
-                locks=PODMAN_FEATURES_LOCKS,
+                locks=PACKAGE_MANAGER_LOCKS,
                 failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
                 error_code="install_failed",
             ),

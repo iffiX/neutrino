@@ -113,7 +113,6 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_TEX_VOLUME,
     AYAKALEAF_UPSTREAM_HOST,
 )
-from neutrino_agent.modules.podman.constants import PODMAN_SHARED_LOCKS
 from neutrino_agent.modules.podman.container_runner import (
     ContainerHooks,
     first_start_step,
@@ -134,6 +133,7 @@ from neutrino_agent.modules.shared.http_forward import (
 )
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
+from neutrino_agent.modules.shared.step_locks import CONTAINERS_SHARED_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 
 # How much of a failed step's words a detail keeps.
@@ -764,10 +764,13 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
             held.discard(AYAKALEAF_STEP_ADMIN)
         owed = [step for step in AYAKALEAF_STEPS if step not in held]
         runs = {
-            AYAKALEAF_STEP_REPLICA_SET: (self._run_replica_set, PODMAN_SHARED_LOCKS),
+            AYAKALEAF_STEP_REPLICA_SET: (
+                self._run_replica_set,
+                CONTAINERS_SHARED_LOCKS,
+            ),
             AYAKALEAF_STEP_WAIT_APP: (self._run_wait_app, ()),
             AYAKALEAF_STEP_ADMIN: (self._run_admin, ()),
-            AYAKALEAF_STEP_TEX: (self._run_tex, PODMAN_SHARED_LOCKS),
+            AYAKALEAF_STEP_TEX: (self._run_tex, CONTAINERS_SHARED_LOCKS),
         }
         names = []
         if owed or not record.get("is_ready"):

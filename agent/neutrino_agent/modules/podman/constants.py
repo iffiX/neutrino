@@ -1,12 +1,6 @@
 """Fixed values of the container engine module."""
 
-from neutrino_agent.constants import (
-    AGENT_LOCK_ALONE,
-    AGENT_LOCK_CONTAINERS,
-    AGENT_LOCK_PACKAGE_MANAGER,
-    AGENT_LOCK_SHARED,
-    AGENT_VAR_DIR,
-)
+from neutrino_agent.constants import AGENT_VAR_DIR
 
 # Podman has no daemon; the API socket stands for the engine.
 PODMAN_UNIT = "podman.socket"
@@ -77,12 +71,6 @@ PODMAN_MACHINE_RUNNER = "podman_machine"
 PODMAN_STEP_WINDOWS_FEATURES = "windows_features"
 PODMAN_STEP_RESTART = "restart"
 PODMAN_STEP_MACHINE = "machine"
-# The step lock of every step of Containers' own task but the restart. The
-# dism step takes the second beside it.
-PODMAN_STEP_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_ALONE),)
-PODMAN_FEATURES_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
-# The step lock a container module's step on Containers' engine takes.
-PODMAN_SHARED_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),)
 
 # The account's default machine, the one its own ``podman`` reaches.
 PODMAN_MACHINE_NAME = "podman-machine-default"

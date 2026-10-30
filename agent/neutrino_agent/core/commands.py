@@ -30,8 +30,6 @@ from neutrino_agent.constants import (
     AGENT_CONTAINERS_MODULE,
     AGENT_KILL_GRACE_S,
     AGENT_KILL_PROTECTED_PIDS,
-    AGENT_LOCK_CONTAINERS,
-    AGENT_LOCK_SHARED,
     AGENT_MODULE_COMMAND_SETTLE_S,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
@@ -42,6 +40,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
 )
 from neutrino_agent.modules.remote_desktop.user_tier import RemoteDesktopReader
+from neutrino_agent.modules.shared.step_locks import CONTAINERS_SHARED_LOCKS
 
 VERB_REBOOT = "reboot"
 VERB_SHUTDOWN = "shutdown"
@@ -65,7 +64,7 @@ POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
 KILL_POLL_S = 0.05
 # The step locks a module verb holds while it runs, by ``(module, verb)``.
 VERB_LOCKS = {
-    (AGENT_CONTAINERS_MODULE, "control"): ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),),
+    (AGENT_CONTAINERS_MODULE, "control"): CONTAINERS_SHARED_LOCKS,
 }
 
 

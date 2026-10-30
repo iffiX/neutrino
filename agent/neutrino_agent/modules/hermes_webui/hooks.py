@@ -74,7 +74,6 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_UPSTREAM_HOST,
     HERMES_WEBUI_WEBUI_CONTAINER,
 )
-from neutrino_agent.modules.podman.constants import PODMAN_SHARED_LOCKS
 from neutrino_agent.modules.podman.container_runner import (
     ContainerHooks,
     first_start_step,
@@ -88,6 +87,7 @@ from neutrino_agent.modules.shared.http_forward import (
 )
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
+from neutrino_agent.modules.shared.step_locks import CONTAINERS_SHARED_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 
 # How much of a failed command's words a log line keeps.
@@ -378,7 +378,7 @@ class HermesWebuiHooks(ContainerHooks):
                 first_start_step(
                     HERMES_WEBUI_STEP_FIRST_START,
                     self._run_first_start,
-                    PODMAN_SHARED_LOCKS,
+                    CONTAINERS_SHARED_LOCKS,
                 )
             )
         if is_new or not record.get("is_update_check_off"):

@@ -59,7 +59,6 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
     PODMAN_RUNTIME,
-    PODMAN_STEP_LOCKS,
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
@@ -70,6 +69,7 @@ from neutrino_agent.modules.podman.renderer import (
 )
 from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
+from neutrino_agent.modules.shared.step_locks import CONTAINERS_ALONE_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 
@@ -155,7 +155,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         Returns:
             The ``(lock, mode)`` pair.
         """
-        return PODMAN_STEP_LOCKS
+        return CONTAINERS_ALONE_LOCKS
 
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
         """The core's steps, the ``configure`` under ``stopped`` applying with no container started.
