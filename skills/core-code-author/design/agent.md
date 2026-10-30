@@ -211,6 +211,10 @@ and its mark in one hold of `CONFIG_WRITE_LOCK`, and the hub reads every
 module's `want` and mark for a state in one hold of it. A state composed
 between the two writes would carry the new `want` with the old mark, and
 the module would plan a second task when the press's own state arrives.
+Each binding's state is composed and sent under a push lock of its own,
+the report's push of a changed state among them, so the state composed
+last reaches the agent last. A state composed before a press and sent
+after it would undo the press's `want` on the machine.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
 that reads its `want`, or is in transit, writes no mark and asks for
