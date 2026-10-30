@@ -18,6 +18,7 @@ hub's own copy changes, through the functions here.
 import hashlib
 import json
 import socket
+import threading
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
@@ -202,6 +203,12 @@ def note_client_scope(
     return scope
 
 
+# Each binding's push lock, by role and key. One state is composed and sent
+# at a time, so the state composed last is the one sent last.
+_PUSH_LOCKS: dict = {}
+_PUSH_LOCKS_GUARD = threading.Lock()
+
+
 def push_state(runtime, role: str, key: str) -> None:
     """Hand one binding its state now, from outside the loop.
 
@@ -214,7 +221,29 @@ def push_state(runtime, role: str, key: str) -> None:
         AgentOfflineError: When the binding has no channel.
         StreamRefusedError: When the socket did not take it in time.
     """
-    _registry(runtime, role).push_state_from_thread(key, _compose(runtime, role, key))
+    with _push_lock(role, key):
+        _registry(runtime, role).push_state_from_thread(
+            key, _compose(runtime, role, key)
+        )
+
+
+def offer_agent_state(runtime, session, held_hash: str) -> None:
+    """Hand one agent its state when the agent has another, from outside the loop.
+
+    Args:
+        runtime: The shared runtime.
+        session: The agent's live session.
+        held_hash: The hash of the state the agent has.
+
+    Raises:
+        AgentOfflineError: When the agent has no channel.
+        StreamRefusedError: When the socket did not take it in time.
+    """
+    with _push_lock(CHANNEL_ROLE_AGENT, session.key):
+        document = agent_state(runtime, session.key)
+        if document["hash"] != held_hash:
+            runtime.agent_sessions.push_state_from_thread(session.key, document)
+        session.offered_hash = document["hash"]
 
 
 def push_states(runtime, role: str) -> None:
@@ -232,11 +261,12 @@ def push_states(runtime, role: str) -> None:
             runtime.client_scope[session.key] = _client_scope(
                 runtime, session.address, held.hub_address if held else "", served
             )
-        document = _compose(runtime, role, session.key)
-        if document["hash"] == session.offered_hash:
-            continue
-        registry.send_json_from_thread(session.key, {"type": "state", **document})
-        session.offered_hash = document["hash"]
+        with _push_lock(role, session.key):
+            document = _compose(runtime, role, session.key)
+            if document["hash"] == session.offered_hash:
+                continue
+            registry.send_json_from_thread(session.key, {"type": "state", **document})
+            session.offered_hash = document["hash"]
 
 
 def push_every_state(runtime) -> list:
@@ -404,6 +434,12 @@ def _mark_own_machine(
             )
             == own_machine_id
         )
+
+
+def _push_lock(role: str, key: str) -> threading.Lock:
+    """One binding's push lock, made at its first push."""
+    with _PUSH_LOCKS_GUARD:
+        return _PUSH_LOCKS.setdefault((role, key), threading.Lock())
 
 
 def _compose(runtime, role: str, key: str) -> dict:

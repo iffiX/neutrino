@@ -5,10 +5,15 @@ is the published list resolved for its scope with the switch, hashed over
 both, so two clients from two scopes hold two hashes over one fingerprint.
 A push from the panel goes to the one binding named; a push after the
 list moved goes to every live client whose hash differs, and to none whose
-copy already agrees.
+copy already agrees. Two pushes at once reach the binding in the order
+they were composed, and an agent is offered its state only when it has
+another.
 """
 
 import asyncio
+import threading
+import time
+import types
 
 import pytest
 
@@ -616,6 +621,49 @@ def test_a_push_from_the_panel_hands_one_agent_its_state():
             {"hash": "h9", "modules": {"samba": {"want": "running"}}, "desktop": {}},
         )
     ]
+
+
+def test_two_pushes_at_once_send_the_state_composed_last_last(monkeypatch):
+    """The first push composes, then stalls before its send. The second
+    push's state, composed later, still reaches the agent after it."""
+    runtime = FakeRuntime()
+    composed: list = []
+    second_composed = threading.Event()
+
+    def compose(runtime, role, key):
+        composed.append(len(composed) + 1)
+        number = composed[-1]
+        if number == 1:
+            second_composed.wait(0.5)
+        else:
+            second_composed.set()
+        return {"hash": f"h{number}", "modules": {}}
+
+    monkeypatch.setattr(channel_state, "_compose", compose)
+    first = threading.Thread(
+        target=channel_state.push_state, args=(runtime, CHANNEL_ROLE_AGENT, DEVICE)
+    )
+    first.start()
+    while not composed:
+        time.sleep(0.01)
+    channel_state.push_state(runtime, CHANNEL_ROLE_AGENT, DEVICE)
+    first.join(5)
+
+    assert [state_hash for _, state_hash, _ in runtime.agent_sessions.pushes] == [
+        "h1",
+        "h2",
+    ]
+
+
+def test_an_agent_is_offered_its_state_only_when_it_has_another():
+    runtime = FakeRuntime()
+    session = types.SimpleNamespace(key=DEVICE, offered_hash=None)
+
+    channel_state.offer_agent_state(runtime, session, "h9")
+    channel_state.offer_agent_state(runtime, session, "h1")
+
+    assert [state_hash for _, state_hash, _ in runtime.agent_sessions.pushes] == ["h9"]
+    assert session.offered_hash == "h9"
 
 
 def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):

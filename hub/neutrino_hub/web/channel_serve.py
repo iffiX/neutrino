@@ -970,18 +970,16 @@ class _AgentFrames:
             WEB_EVENT_METRICS, key, data=dict(runtime.device_metrics.get(key, {}))
         )
         if session.offered_hash is None:
-            document = await asyncio.to_thread(channel_state.agent_state, runtime, key)
-            if document["hash"] != session.state_hash:
-                await session.push_state(document)
-            session.offered_hash = document["hash"]
+            await asyncio.to_thread(
+                channel_state.offer_agent_state, runtime, session, session.state_hash
+            )
         elif await asyncio.to_thread(runtime.desired_states.uses_gateway_models, key):
             # Whether the gateway serves moves with no write to announce it,
             # so a machine whose AI tools, SiYuan accounts or Ayakaleaf use
             # it has its state read again.
-            document = await asyncio.to_thread(channel_state.agent_state, runtime, key)
-            if document["hash"] != session.offered_hash:
-                await session.push_state(document)
-                session.offered_hash = document["hash"]
+            await asyncio.to_thread(
+                channel_state.offer_agent_state, runtime, session, session.offered_hash
+            )
         if getattr(session, "is_reinstall_due", False) and runtime.device_platform.get(
             key
         ):
