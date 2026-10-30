@@ -17,6 +17,7 @@ import json
 import os
 import stat
 import subprocess
+import threading
 
 import pytest
 
@@ -653,6 +654,36 @@ def test_an_apply_keeps_what_it_made_in_the_record(native):
         "is_served": True,
     }
     assert native.is_active() is True
+
+
+def test_a_record_write_waits_for_a_read_that_holds_the_record_open(
+    native, monkeypatch
+):
+    native.apply(WINDOWS_CONFIG)
+    reading, released = threading.Event(), threading.Event()
+    loaded = json.load
+
+    def slow_load(stream):
+        reading.set()
+        released.wait(5)
+        return loaded(stream)
+
+    monkeypatch.setattr(runner_module.json, "load", slow_load)
+    reader = threading.Thread(target=native._read_record)
+    reader.start()
+    assert reading.wait(5)
+    writer = threading.Thread(
+        target=native._write_record, args=({"shares": {}, "is_served": False},)
+    )
+    writer.start()
+    writer.join(0.2)
+
+    assert writer.is_alive()
+    released.set()
+    reader.join(5)
+    writer.join(5)
+    monkeypatch.setattr(runner_module.json, "load", loaded)
+    assert record_of(native)["is_served"] is False
 
 
 def test_a_failed_apply_still_lists_the_shares_it_may_have_made(native):

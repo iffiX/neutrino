@@ -388,6 +388,8 @@ class SambaNativeServerRunner(ModuleRunner):
         self._config: "SambaConfig | None" = None
         self._left_out: list = []
         self._lock = threading.Lock()
+        # One open of the record at a time.
+        self._record_lock = threading.Lock()
         self._status: "dict | None" = None
         self._status_at = 0.0
 
@@ -641,20 +643,27 @@ class SambaNativeServerRunner(ModuleRunner):
 
         Empty when none.
         """
-        try:
-            with open(self._record_path, "r", encoding="utf-8") as stream:
-                held = json.load(stream)
-        except (OSError, ValueError):
-            held = {}
+        with self._record_lock:
+            try:
+                with open(self._record_path, "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                held = {}
         held = held if isinstance(held, dict) else {}
         shares = held.get("shares")
+        passwords = held.get("passwords")
         return {
             "shares": dict(shares) if isinstance(shares, dict) else {},
             "accounts": [str(name) for name in held.get("accounts") or []],
-            "passwords": read_digests(self._record_path),
+            "passwords": (
+                {str(name): str(digest) for name, digest in passwords.items()}
+                if isinstance(passwords, dict)
+                else {}
+            ),
             "is_served": bool(held.get("is_served", False)),
         }
 
     def _write_record(self, record: dict) -> None:
         """Keep the record, root-only, whole or not at all."""
-        write_record(self._record_path, record)
+        with self._record_lock:
+            write_record(self._record_path, record)
