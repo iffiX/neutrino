@@ -24,4 +24,7 @@ var (
 	ErrGuestAnswerMalformed = errors.New("guest answer malformed")
 	// ErrMessageTooLarge is a channel message past the buffer given.
 	ErrMessageTooLarge = errors.New("channel message too large")
+	// ErrYamuxFrameMalformed is a write to a channel that schedules frames
+	// which is not a yamux frame of at most GateMessageBytesMax.
+	ErrYamuxFrameMalformed = errors.New("yamux frame malformed")
 )

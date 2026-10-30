@@ -363,6 +363,7 @@ func (h *Hub) serveGuest(d *door, conn net.Conn, head []byte, address net.IP, li
 	}
 	h.ledger.HandshakeDone(d.entry)
 	_ = channel.SetReadDeadline(time.Time{})
+	channel.ScheduleFrames()
 	h.admit(d, channel, peerFacts{
 		bindingID: bindingID, role: RelayRoleGuest, protocol: open.Protocol,
 		address: peerAddress, localAddress: FormatIP(PeerIP(conn.LocalAddr())), listener: listenerName,

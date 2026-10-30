@@ -57,6 +57,12 @@ const (
 	GateGuestOpenBytesMax = 1024
 	// GateFlushPoll is how often a flush looks at the buffered amount.
 	GateFlushPoll = 5 * time.Millisecond
+	// GateBufferedBytesMax bounds the bytes the channel holds not yet
+	// acknowledged while the hub sends a guest's yamux frames.
+	GateBufferedBytesMax = 256 * 1024
+	// GateBufferedPoll is how often a writer waiting for room looks at the
+	// buffered amount.
+	GateBufferedPoll = 50 * time.Millisecond
 	// GateClientUfrag is the ice-ufrag the Go client names for itself; the
 	// hub reads only the share's half.
 	GateClientUfrag = "guest"
@@ -98,4 +104,14 @@ const (
 	// GateMappedIPv6 is the address for an IPv6 peer, from the documentation
 	// block of RFC 3849.
 	GateMappedIPv6 = "2001:db8::1"
+)
+
+// The yamux frame fields the hub's scheduler of a guest's frames reads.
+const (
+	yamuxHeaderBytes      = 12
+	yamuxVersion          = 0
+	yamuxTypeData         = 0
+	yamuxTypeWindowUpdate = 1
+	yamuxFlagFIN          = 4
+	yamuxFlagRST          = 8
 )

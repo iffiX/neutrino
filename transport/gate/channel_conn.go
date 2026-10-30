@@ -12,9 +12,10 @@ import (
 
 // ChannelConn is data channel 0 as a net.Conn: a byte stream whose reads
 // return what the channel's messages carry, in order, and whose writes
-// become messages of at most GateMessageBytesMax bytes. Closing it closes
-// the channel, the association, the DTLS connection and the TCP connection
-// under them.
+// become messages of at most GateMessageBytesMax bytes. After
+// ScheduleFrames its writes are yamux frames, sent by a frameScheduler.
+// Closing it closes the channel, the association, the DTLS connection and
+// the TCP connection under them.
 type ChannelConn struct {
 	channel *datachannel.DataChannel
 	tcp     net.Conn
@@ -27,8 +28,10 @@ type ChannelConn struct {
 	readBuffer []byte
 	pending    []byte
 
-	// writeMu keeps messages whole and in order.
+	// writeMu keeps messages whole and in order, and guards frames.
 	writeMu sync.Mutex
+	// frames sends the writes once ScheduleFrames ran; nil before.
+	frames *frameScheduler
 }
 
 func newChannelConn(channel *datachannel.DataChannel, tcp net.Conn, closers ...io.Closer) *ChannelConn {
@@ -71,11 +74,28 @@ func (c *ChannelConn) ReadMessage(p []byte) (int, error) {
 	return n, err
 }
 
+// ScheduleFrames makes every later write a yamux frame of a guest's
+// session, queued and sent by a frameScheduler until the connection closes.
+func (c *ChannelConn) ScheduleFrames() {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if c.frames != nil {
+		return
+	}
+	c.frames = newFrameScheduler(c.channel, c.closed)
+	go c.frames.run()
+}
+
 // Write sends p as binary messages of at most GateMessageBytesMax bytes
-// each, in order. It returns the channel's error.
+// each, in order, or queues its frames after ScheduleFrames. It returns the
+// channel's error, and ErrYamuxFrameMalformed for a scheduled write that is
+// not a yamux frame.
 func (c *ChannelConn) Write(p []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.frames != nil {
+		return c.frames.write(p)
+	}
 	written := 0
 	for len(p) > 0 {
 		chunk := min(len(p), GateMessageBytesMax)
@@ -89,13 +109,13 @@ func (c *ChannelConn) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// Flush waits until every message written has left the association's
-// buffer, the connection closed, or timeout passes.
+// Flush waits until every message written has left the scheduler's queues
+// and the association's buffer, the connection closed, or timeout passes.
 func (c *ChannelConn) Flush(timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	poll := time.NewTicker(GateFlushPoll)
 	defer poll.Stop()
-	for c.channel.BufferedAmount() > 0 && time.Now().Before(deadline) {
+	for (c.channel.BufferedAmount() > 0 || c.scheduledBytes() > 0) && time.Now().Before(deadline) {
 		select {
 		case <-c.closed:
 			return
@@ -115,6 +135,18 @@ func (c *ChannelConn) Close() error {
 		}
 	})
 	return nil
+}
+
+// scheduledBytes counts the bytes the scheduler holds, 0 before
+// ScheduleFrames.
+func (c *ChannelConn) scheduledBytes() int {
+	c.writeMu.Lock()
+	frames := c.frames
+	c.writeMu.Unlock()
+	if frames == nil {
+		return 0
+	}
+	return frames.pending()
 }
 
 // LocalAddr is the TCP connection's own address.

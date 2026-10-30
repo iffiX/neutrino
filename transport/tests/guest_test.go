@@ -35,9 +35,15 @@ type guestSide struct {
 // and on an accept the control stream through welcome.
 func dialGuest(t *testing.T, hub *hubSide, ufrag, password, ticket string) (*guestSide, *session.Refusal) {
 	t.Helper()
+	return dialGuestAt(t, hub, net.JoinHostPort("127.0.0.1", itoa(hub.port)), ufrag, password, ticket)
+}
+
+// dialGuestAt is dialGuest through address, which leads to the hub's port.
+func dialGuestAt(t *testing.T, hub *hubSide, address, ufrag, password, ticket string) (*guestSide, *session.Refusal) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := gate.Dial(ctx, net.JoinHostPort("127.0.0.1", itoa(hub.port)), gate.DialOptions{Ufrag: ufrag, Password: password, Fingerprint: hub.hub.Fingerprint()})
+	conn, err := gate.Dial(ctx, address, gate.DialOptions{Ufrag: ufrag, Password: password, Fingerprint: hub.hub.Fingerprint()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,4 +224,127 @@ func TestGuestThroughTheGate(t *testing.T) {
 		t.Fatalf("after the share ended: %v, want the connection closed", err)
 	}
 	first.echo(t)
+}
+
+// slowProxy forwards loopback connections to port, the bytes toward the
+// dialler at most bps a second.
+func slowProxy(t *testing.T, port, bps int) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			far, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
+			if err != nil {
+				conn.Close()
+				continue
+			}
+			t.Cleanup(func() { conn.Close(); far.Close() })
+			go func() { _, _ = io.Copy(far, conn) }()
+			go func() {
+				buffer := make([]byte, 16*1024)
+				for {
+					n, err := far.Read(buffer)
+					if n > 0 {
+						time.Sleep(time.Duration(n) * time.Second / time.Duration(bps))
+						if _, err := conn.Write(buffer[:n]); err != nil {
+							return
+						}
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return listener.Addr().String()
+}
+
+// bulkServer writes to each connection without end.
+func bulkServer(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				chunk := make([]byte, 64*1024)
+				for {
+					if _, err := conn.Write(chunk); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func TestGuestCloseBehindBulkStreamsOnASlowLine(t *testing.T) {
+	dir := shortTempDir(t)
+	port := freePort(t)
+	hub := startHub(t, dir, port)
+	bulkPort := bulkServer(t)
+	hub.records.mu.Lock()
+	hub.records.entries["app"] = map[string]any{"kind": "web", "device_id": "", "target": map[string]any{"address": "127.0.0.1", "port": bulkPort, "protocol": "tcp"}}
+	hub.records.shares[shareUfrag] = shareRecord{id: shareID, ticket: shareTicket, entry: "app"}
+	hub.records.mu.Unlock()
+	if answer := hub.python.command("shares_set", map[string]any{"shares": []map[string]any{{"ufrag": shareUfrag, "pwd": sharePassword}}}); answer["code"] != nil {
+		t.Fatalf("shares_set %v", answer)
+	}
+	guest, refusal := dialGuestAt(t, hub, slowProxy(t, port, 128*1024), shareUfrag, sharePassword, shareTicket)
+	if refusal != nil {
+		t.Fatalf("refused %v", refusal)
+	}
+	for i := 0; i < 4; i++ {
+		stream, reader, refusal := guest.open(t, session.KindConnect, map[string]any{"id": "app"})
+		if refusal != nil {
+			t.Fatalf("bulk stream %d refused %v", i, refusal)
+		}
+		defer stream.Close()
+		go func() { _, _ = io.Copy(io.Discard, reader) }()
+	}
+	time.Sleep(3 * time.Second)
+	hub.records.mu.Lock()
+	hub.records.entries["app"]["target"] = map[string]any{"address": "127.0.0.1", "port": freePort(t), "protocol": "tcp"}
+	hub.records.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := guest.session.OpenStream(ctx)
+	if err != nil {
+		t.Fatalf("the session ended behind the bulk streams: %v", err)
+	}
+	defer stream.Close()
+	started := time.Now()
+	if _, err := stream.Write(session.OpenRecord(session.KindConnect, map[string]any{"id": "app"})); err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.SetReadDeadline(time.Now().Add(20 * time.Second))
+	refusal, err = session.ReadAnswer(bufio.NewReader(stream))
+	if err != nil {
+		t.Fatalf("no answer after %v: %v", time.Since(started), err)
+	}
+	if refusal == nil || refusal.Code != session.CodeConnectFailed {
+		t.Fatalf("answer %v, want connect_failed", refusal)
+	}
+	if elapsed := time.Since(started); elapsed > 8*time.Second {
+		t.Fatalf("the close came %v after the open, behind the bulk streams", elapsed)
+	}
 }
