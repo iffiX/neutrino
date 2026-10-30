@@ -79,15 +79,27 @@ class GiteaInstaller:
         place_binary(binary_path, GITEA_BINARY_PATH)
         self.install_unit()
 
-    def ensure_account(self) -> None:
+    def ensure_account(self) -> bool:
         """Make the git account when it is missing, and its directories.
+
+        A work root owned by another uid is given to the account with
+        everything under it, and ``app.ini`` to its group. A ``git``
+        account removed by hand leaves such a root.
+
+        Returns:
+            Whether the work root changed hands.
 
         Raises:
             subprocess.CalledProcessError: If ``useradd`` refuses.
-            OSError: If a directory cannot be made.
+            OSError: If a directory cannot be made or given.
         """
         self.create_user()
+        account = pwd.getpwnam(GITEA_USER)
+        is_given = give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
+        if is_given and os.path.isfile(GITEA_CONF_PATH):
+            shutil.chown(GITEA_CONF_PATH, group=GITEA_USER)
         self.create_directories()
+        return is_given
 
     def uninstall(self) -> None:
         """Remove the unit, the binary and the rendered configuration.
@@ -339,6 +351,40 @@ class GiteaAdminManager:
             "--config",
             GITEA_CONF_PATH,
         ]
+
+
+def give_tree(root: str, uid: int, gid: int, chown=None) -> bool:
+    """Give a directory and everything under it to an account, when another uid owns the directory.
+
+    A symbolic link is left as it is.
+
+    Args:
+        root: The directory.
+        uid: The account's uid.
+        gid: The account's group.
+        chown: Changes one path's owner, as :func:`os.chown` does; None
+            is :func:`os.chown`.
+
+    Returns:
+        Whether the tree changed hands; False for a missing directory or
+        one the uid owns already.
+
+    Raises:
+        OSError: When a path cannot be given.
+    """
+    try:
+        if os.stat(root).st_uid == uid:
+            return False
+    except FileNotFoundError:
+        return False
+    chown = chown if chown is not None else os.chown
+    for directory, _directories, files in os.walk(root):
+        chown(directory, uid, gid)
+        for name in files:
+            path = os.path.join(directory, name)
+            if not os.path.islink(path):
+                chown(path, uid, gid)
+    return True
 
 
 def read_listen_port(path: str = "") -> int:

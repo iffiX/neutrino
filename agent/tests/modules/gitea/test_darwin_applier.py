@@ -169,6 +169,19 @@ def test_the_account_step_makes_the_hidden_account_and_its_data(
     assert ["chown", str(data), 502, 20] in tools.calls
 
 
+def test_the_account_step_gives_data_another_uid_owns_to_the_account(
+    applier, tools, tmp_path
+):
+    tools.has_account = True
+    data = tmp_path / "state" / "gitea_data"
+    (data / "data").mkdir(parents=True)
+    (data / "data" / "gitea.db").write_text("")
+
+    assert applier.ensure_account() is True
+
+    assert ["chown", str(data / "data" / "gitea.db"), 502, 20] in tools.calls
+
+
 def test_an_account_made_already_is_not_made_again(applier, tools):
     tools.has_account = True
 

@@ -94,9 +94,13 @@ class GiteaLinuxApplier:
         """Install the binary and its unit."""
         GiteaInstaller().install(binary_path)
 
-    def ensure_account(self) -> None:
-        """Make the ``git`` account when it is missing, and its directories."""
-        GiteaInstaller().ensure_account()
+    def ensure_account(self) -> bool:
+        """Make the ``git`` account when it is missing, and its directories.
+
+        Returns:
+            Whether the work root changed hands.
+        """
+        return GiteaInstaller().ensure_account()
 
     def uninstall(self) -> None:
         """Take the unit, the binary and ``app.ini`` off; keep the data."""
@@ -483,7 +487,8 @@ class GiteaModuleRunner(ModuleRunner):
 
     def _run_account(self, context) -> None:
         """The ``account`` step: the server's account made when it is missing, and its directories."""
-        self._applier.ensure_account()
+        if self._applier.ensure_account():
+            self._log(f"gitea: gave its data to {self._applier.account}")
 
     def _kept_ssh_port(self) -> int:
         """The port the record keeps for Gitea's own SSH server, 0 when none."""

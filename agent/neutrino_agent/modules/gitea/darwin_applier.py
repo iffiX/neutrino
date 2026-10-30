@@ -30,6 +30,7 @@ import time
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.applier import (
     GiteaState,
+    give_tree,
     read_listen_port,
     read_root_url,
 )
@@ -231,17 +232,25 @@ class GiteaDarwinApplier:
             self._unload()
         place_binary(binary_path, self.binary_path)
 
-    def ensure_account(self) -> None:
+    def ensure_account(self) -> bool:
         """Make the account when it is missing, and the data directory its own.
+
+        A data directory owned by another uid is given to the account with
+        everything under it.
+
+        Returns:
+            Whether the data directory changed hands.
 
         Raises:
             ModuleApplyError: ``user_create_failed {user, detail}`` when the
                 system will not make the account.
-            OSError: When a directory cannot be made.
+            OSError: When a directory cannot be made or given.
             subprocess.CalledProcessError: When a step refuses.
         """
         uid, gid = self._ensure_account()
+        is_given = give_tree(self.data_dir, uid, gid, chown=self._chown)
         self._prepare_data(uid, gid)
+        return is_given
 
     def uninstall(self) -> None:
         """Unload and delete the LaunchDaemon, the binary and ``app.ini``.

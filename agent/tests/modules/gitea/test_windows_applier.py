@@ -216,7 +216,7 @@ def test_a_stop_disables_the_service_and_a_start_sets_it_auto_first(
         ["config", "neutrino_gitea", "start=", "auto"],
         ["start", "neutrino_gitea"],
     ]
-    assert applier.ensure_account() is None
+    assert applier.ensure_account() is False
 
 
 def test_the_cli_is_run_by_the_agent_itself(sc, tmp_path, state):

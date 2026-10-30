@@ -7,6 +7,7 @@ a crashloop. The applier owns the root on every apply.
 
 import os
 import stat
+import types
 
 import pytest
 
@@ -52,8 +53,17 @@ def box(monkeypatch, tmp_path):
         lambda path, user=None, group=None: chowns.append((str(path), user, group)),
     )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
-    monkeypatch.setattr(applier_module.pwd, "getpwnam", lambda name: object())
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid()))
     return commands, chowns, tmp_path
+
+
+def account_of(uid: int):
+    """A ``getpwnam`` that finds every name with one uid and gid."""
+
+    def getpwnam(name):
+        return types.SimpleNamespace(pw_name=name, pw_uid=uid, pw_gid=uid + 1)
+
+    return getpwnam
 
 
 def test_apply_writes_app_ini_group_readable_owns_the_root_and_starts(box):
@@ -173,6 +183,44 @@ def test_the_account_step_makes_the_user_and_its_directories(box):
     assert any(call[:2] == ["useradd", "--system"] for call in commands.calls)
     for name in ("custom", "data", "log", ".ssh"):
         assert (tmp_path / "gitea" / name).is_dir()
+
+
+def test_the_account_step_gives_a_work_root_another_uid_owns_to_the_account(
+    box, monkeypatch
+):
+    commands, chowns, tmp_path = box
+    data = tmp_path / "gitea" / "data"
+    (data / "gitea-repositories" / "ann").mkdir(parents=True)
+    (data / "gitea.db").write_text("")
+    (data / "link").symlink_to(data / "gitea.db")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/app.ini").write_text("[server]\n")
+    given: list = []
+    monkeypatch.setattr(
+        applier_module.os, "chown", lambda path, uid, gid: given.append((path, uid))
+    )
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid() + 7))
+
+    assert GiteaInstaller().ensure_account() is True
+
+    paths = {path for path, uid in given if uid == os.getuid() + 7}
+    assert str(data / "gitea.db") in paths
+    assert str(data / "gitea-repositories" / "ann") in paths
+    assert str(data / "link") not in paths
+    assert (str(tmp_path / "etc/app.ini"), None, "git") in chowns
+
+
+def test_the_account_step_leaves_a_work_root_the_account_owns(box, monkeypatch):
+    _, chowns, tmp_path = box
+    (tmp_path / "gitea" / "data").mkdir(parents=True)
+    (tmp_path / "gitea" / "data" / "gitea.db").write_text("")
+    given: list = []
+    monkeypatch.setattr(
+        applier_module.os, "chown", lambda path, uid, gid: given.append(path)
+    )
+
+    assert GiteaInstaller().ensure_account() is False
+    assert given == []
 
 
 def test_the_unit_is_rewritten_only_when_it_differs(box):

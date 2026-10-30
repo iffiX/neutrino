@@ -221,8 +221,13 @@ class GiteaWindowsApplier:
             )
         self._run(["sc.exe", "failure", GITEA_WINDOWS_SERVICE, *SC_FAILURE_ACTIONS])
 
-    def ensure_account(self) -> None:
-        """Make nothing: the server runs as LocalSystem."""
+    def ensure_account(self) -> bool:
+        """Make nothing: the server runs as LocalSystem.
+
+        Returns:
+            Always False.
+        """
+        return False
 
     def uninstall(self) -> None:
         """Stop and delete the service, the binary and ``app.ini``.
