@@ -342,6 +342,15 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """
         return (PODMAN_BINARY,)
 
+    def image_references(self) -> set:
+        """Every image reference with a digest in Podman's store, for a container module's presence check.
+
+        Returns:
+            The references this machine's Podman lists; empty when Podman
+            cannot say.
+        """
+        return image_references(podman=self.podman_command())
+
     def hub_names(self) -> dict:
         """The hub containers rendered by the last apply, by module.
 

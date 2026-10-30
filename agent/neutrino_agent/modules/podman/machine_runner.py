@@ -736,6 +736,23 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         return self.read_command()
 
+    def image_references(self) -> set:
+        """Every image reference with a digest in the machine's store, for a container module's presence check.
+
+        Returns:
+            The references the machine's Podman lists while the machine
+            answers the read. While it does not, the references saved when
+            the agent last stopped the machine. Empty while no machine was
+            applied.
+        """
+        record = self._record()
+        if not record:
+            return set()
+        command, info = self._read(self._machine_of_record(record))
+        if info is not None and command:
+            return image_references(podman=command)
+        return {str(reference) for reference in record.get("images") or []}
+
     def hub_names(self) -> dict:
         """The hub containers the last apply wrote into the machine, by module.
 
@@ -1215,7 +1232,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             )
 
     def _halt(self, record: dict, machine: PodmanMachine) -> None:
-        """Stop the keeper, then the machine.
+        """Save the store's image references, then stop the keeper, then the machine.
 
         Raises:
             ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
@@ -1223,6 +1240,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 login.
             OSError: When the service manager cannot stop the keeper.
         """
+        self._save_images(machine)
         keeper = self._keeper_of(
             str(record.get("account", "") or ""), str(record.get("password", "") or "")
         )
@@ -1234,6 +1252,23 @@ class PodmanMachineModuleRunner(ModuleRunner):
             with self._lock:
                 self._reading = None
         self._log(f"podman: stopped the machine of {machine.account}")
+
+    def _save_images(self, machine: PodmanMachine) -> None:
+        """Save the store's image references in the record, logging a failure.
+
+        A machine that does not answer the read leaves the saved list as it is.
+        """
+        record = self._record()
+        command, info = self._read(machine)
+        if not record or info is None or not command:
+            return
+        references = image_references(podman=command)
+        try:
+            self._records.write({**record, "images": sorted(references)})
+        except OSError as error:
+            self._log(
+                f"podman: the images of {machine.account} were not saved: {error}"
+            )
 
     def _run_quietly(self, machine: PodmanMachine, script: str) -> None:
         """Run one root script, logging a failure instead of raising it."""

@@ -193,7 +193,8 @@ PODMAN_WINDOWS_DISK_PARTS = (
 )
 
 # The fields the runner keeps of the last apply, root-only: the declared
-# containers' names, and the hub containers' names by module.
+# containers' names, the hub containers' names by module, and the store's
+# image references saved at the machine's last stop.
 PODMAN_MACHINE_RECORD_FIELDS = (
     "account",
     "password",
@@ -202,6 +203,7 @@ PODMAN_MACHINE_RECORD_FIELDS = (
     "disk_gib",
     "names",
     "hub_names",
+    "images",
 )
 # On Linux root's Podman runs the containers, and its record is root's.
 PODMAN_RECORD_FIELDS = ("account", "names", "hub_names")

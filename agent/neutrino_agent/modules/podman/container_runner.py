@@ -194,10 +194,11 @@ class ContainerModuleRunner(ModuleRunner):
             platform: The machine's platform.
             name: The module's name.
             containers: The Containers runner: :meth:`podman_command`,
-                :meth:`hub_names`, :meth:`is_applied`,
-                :meth:`is_engine_active`, :meth:`engine_awake`,
-                :meth:`drive_hub_containers`, :meth:`drop_hub_containers` and
-                :meth:`hub_journal` reach Podman through it.
+                :meth:`image_references`, :meth:`hub_names`,
+                :meth:`is_applied`, :meth:`is_engine_active`,
+                :meth:`engine_awake`, :meth:`drive_hub_containers`,
+                :meth:`drop_hub_containers` and :meth:`hub_journal` reach
+                Podman through it.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
             probe_one: Probes one source, as :func:`source_fetch.probe`.
@@ -215,20 +216,19 @@ class ContainerModuleRunner(ModuleRunner):
         )
 
     def verify(self, recipe: dict) -> bool:
-        """Whether every image the recipe pins is in Containers' Podman store.
+        """Whether every image the recipe pins is in Containers' Podman store, as Containers reads it.
 
         Args:
             recipe: The module's recipe.
 
         Returns:
-            False for a recipe that pins no image, and while Podman cannot
-            be asked.
+            False for a recipe that pins no image, and while Containers
+            reads no store.
         """
         images = recipe_images(recipe)
-        command = self._command()
-        if not images or not command:
+        if not images:
             return False
-        references = image_references(podman=command)
+        references = self._containers.image_references()
         return all(
             stored_reference(image["digest"], image["sources"], references)
             for image in images

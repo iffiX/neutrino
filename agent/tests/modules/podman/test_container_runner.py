@@ -74,6 +74,11 @@ class FakeContainers:
     def drive_hub_containers(self, names, action):
         self.driven.append((list(names), action))
 
+    def image_references(self):
+        if not self.command:
+            return set()
+        return container_runner_module.image_references(podman=self.command)
+
     def drop_hub_containers(self, module):
         self.dropped.append(module)
         self.awake_at_drop.append(self.is_awake)

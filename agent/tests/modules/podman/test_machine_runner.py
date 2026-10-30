@@ -31,6 +31,8 @@ from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import machine_runner as machine_runner_module
 from neutrino_agent.modules.podman.config import PodmanConfig
+from neutrino_agent.modules.podman.constants import PODMAN_MACHINE_INFO_TTL_S
+from neutrino_agent.modules.podman.container_runner import ContainerModuleRunner
 from neutrino_agent.modules.podman.machine import PodmanMachineState
 from neutrino_agent.modules.podman.machine_runner import (
     PODMAN_GIB,
@@ -114,6 +116,28 @@ INSPECT_OUTPUT = json.dumps(
     ]
 )
 INFO = {"host": {"cpus": 2, "memTotal": 4 * PODMAN_GIB - 100 * 1024**2}}
+WEB_REFERENCE = "ghcr.io/acme/webui@sha256:" + "a" * 64
+AGENT_REFERENCE = "docker.io/acme/agent@sha256:" + "b" * 64
+IMAGE_RECIPE = {
+    "runner": "container",
+    "method": "container",
+    "params": {
+        "artifacts": [
+            {
+                "name": "webui",
+                "kind": "image",
+                "digest": "sha256:" + "a" * 64,
+                "sources": ["ghcr.io/acme/webui"],
+            },
+            {
+                "name": "agent",
+                "kind": "image",
+                "digest": "sha256:" + "b" * 64,
+                "sources": ["docker.io/acme/agent"],
+            },
+        ]
+    },
+}
 
 
 class World:
@@ -663,6 +687,7 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
             "disk_gib": 100,
             "names": ["web"],
             "hub_names": {},
+            "images": None,
         }
     ]
     assert rig.lines[-1] == "podman: made the machine of me; containers unchanged"
@@ -1226,6 +1251,74 @@ def test_a_running_machine_is_left_as_it_is_around_an_uninstall(rig):
 
     assert rig.launchctl.verbs() == []
     assert ("me", "stop", "") not in rig.world.calls
+
+
+def test_stop_saves_the_store_s_images_for_a_container_module_s_presence_check(
+    rig, monkeypatch
+):
+    store = {WEB_REFERENCE, AGENT_REFERENCE}
+    monkeypatch.setattr(
+        machine_runner_module, "image_references", lambda *, podman: set(store)
+    )
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    module = ContainerModuleRunner(
+        platform=rig.platform, name="demo", containers=rig.runner, log=rig.lines.append
+    )
+
+    rig.runner.stop()
+    rig.world.is_answering = False
+    store.clear()
+
+    assert rig.record()[0]["images"] == [AGENT_REFERENCE, WEB_REFERENCE]
+    assert rig.runner.image_references() == {WEB_REFERENCE, AGENT_REFERENCE}
+    assert module.verify(IMAGE_RECIPE) is True
+    assert module.is_active() is False
+
+    rig.world.is_answering = True
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+    store.add(WEB_REFERENCE)
+    assert rig.runner.image_references() == {WEB_REFERENCE}
+    assert module.verify(IMAGE_RECIPE) is False
+
+
+def test_the_halt_after_a_container_module_s_uninstall_saves_the_store_without_its_images(
+    rig, monkeypatch
+):
+    store = {WEB_REFERENCE, AGENT_REFERENCE}
+    monkeypatch.setattr(
+        machine_runner_module, "image_references", lambda *, podman: set(store)
+    )
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.world.is_answering = False
+    rig.launchctl.on_bootstrap = functools.partial(
+        setattr, rig.world, "is_answering", True
+    )
+    module = ContainerModuleRunner(
+        platform=rig.platform, name="demo", containers=rig.runner, log=rig.lines.append
+    )
+    is_present_before = module.verify(IMAGE_RECIPE)
+
+    with rig.runner.engine_awake():
+        store.clear()
+    rig.world.is_answering = False
+
+    assert is_present_before is True
+    assert rig.record()[0]["images"] == []
+    assert module.verify(IMAGE_RECIPE) is False
+    assert rig.world.calls[-1] == ("me", "stop", "")
+
+
+def test_a_machine_not_stopped_by_the_agent_has_no_saved_images(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.is_answering = False
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+
+    assert rig.record()[0]["images"] is None
+    assert rig.runner.image_references() == set()
 
 
 def test_a_machine_that_cannot_take_the_script_still_loses_its_keeper(rig):
