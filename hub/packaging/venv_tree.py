@@ -334,6 +334,44 @@ HUB_WAIT_FOR_PANEL = f"""wait_for_panel() {{
 }}
 """
 
+# The units of the network programs the package carries, each followed by
+# the program its main process runs.
+HUB_NETBIRD_UNIT, HUB_NETBIRD_PROGRAM = _runtime(
+    "neutrino_hub.modules.netbird.constants", "NETBIRD_UNIT", "NETBIRD_BINARY_NAME"
+)
+HUB_EASYTIER_UNIT, HUB_EASYTIER_PROGRAM = _runtime(
+    "neutrino_hub.modules.easytier.constants", "EASYTIER_UNIT", "EASYTIER_CORE_NAME"
+)
+HUB_FRP_UNITS, HUB_FRP_PROGRAM = _runtime(
+    "neutrino_hub.modules.frp.constants", "FRP_UNITS", "FRP_BINARY_NAME"
+)
+HUB_NETWORK_PROGRAM_UNITS = tuple(
+    f"{unit} {VENDOR_DIR / program}"
+    for unit, program in (
+        (HUB_NETBIRD_UNIT, HUB_NETBIRD_PROGRAM),
+        (HUB_EASYTIER_UNIT, HUB_EASYTIER_PROGRAM),
+        *((unit, HUB_FRP_PROGRAM) for unit in HUB_FRP_UNITS.values()),
+    )
+)
+# The shell function an upgrade restarts those units with. A unit restarts
+# when its main process runs a program whose bytes differ from the file at
+# the program's path. A program the package lacks restarts nothing.
+HUB_RESTART_REPLACED = f"""restart_replaced() {{
+    set -- {' '.join(HUB_NETWORK_PROGRAM_UNITS)}
+    while [ "$#" -ge 2 ]; do
+        unit=$1
+        program=$2
+        shift 2
+        [ -f "$program" ] || continue
+        pid=$(systemctl show --property=MainPID --value "$unit" 2>/dev/null) || continue
+        [ "${{pid:-0}}" -gt 0 ] 2>/dev/null || continue
+        running=$(sha256sum <"/proc/$pid/exe" 2>/dev/null) || continue
+        [ "$running" = "$(sha256sum <"$program")" ] && continue
+        systemctl try-restart "$unit" >/dev/null 2>&1 || true
+    done
+}}
+"""
+
 # What a first install runs once the files are in place, and an upgrade over
 # a hub nobody set up: the panel's unit serves the setup wizard on this
 # version, and its address is printed.

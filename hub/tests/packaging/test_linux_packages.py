@@ -14,6 +14,14 @@ import build_pkg
 import build_rpm
 import venv_tree
 from neutrino_hub.modules.hub_update.constants import HUB_UPDATE_HEALTH_PATH
+from neutrino_hub.modules.easytier.constants import EASYTIER_CORE_NAME, EASYTIER_UNIT
+from neutrino_hub.modules.frp.constants import (
+    FRP_BINARY_NAME,
+    FRP_OPENFRP,
+    FRP_SAKURAFRP,
+    FRP_UNITS,
+)
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_NAME, NETBIRD_UNIT
 from neutrino_hub.modules.transport.constants import TRANSPORT_UNIT
 from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
@@ -43,6 +51,7 @@ def _spec(geodata="/var/lib/neutrino/hub/geodata\n"):
         first_install=venv_tree.FIRST_INSTALL,
         is_set_up=venv_tree.HUB_IS_SET_UP,
         wait_for_panel=venv_tree.HUB_WAIT_FOR_PANEL,
+        restart_replaced=venv_tree.HUB_RESTART_REPLACED,
     )
 
 
@@ -348,6 +357,9 @@ def _upgrade_calls(
 ) -> list:
     """Run the upgrade part of a maintainer script against this test's settings.
 
+    The package's programs are read from ``tmp_path/bin`` and each process's
+    program from ``tmp_path/proc``.
+
     Args:
         tmp_path: Where the script, the settings and the fakes go.
         upgrade: The script's text from its upgrade on, the shared functions
@@ -363,7 +375,11 @@ def _upgrade_calls(
     if settings is not None:
         path.write_text(settings)
     script = tmp_path / "upgrade.sh"
-    script.write_text(upgrade.replace(venv_tree.HUB_SETTINGS_LINUX, str(path)))
+    script.write_text(
+        upgrade.replace(venv_tree.HUB_SETTINGS_LINUX, str(path))
+        .replace(f"{venv_tree.VENDOR_DIR}/", f"{tmp_path / 'bin'}/")
+        .replace('"/proc/', f'"{tmp_path / "proc"}/')
+    )
     return _run_with_fakes(tmp_path, [*command[:1], str(script), *command[1:]], bodies)
 
 
@@ -373,6 +389,7 @@ def _deb_upgrade(tmp_path) -> str:
     return (
         venv_tree.HUB_IS_SET_UP
         + venv_tree.HUB_WAIT_FOR_PANEL
+        + venv_tree.HUB_RESTART_REPLACED
         + postinst[postinst.index("# An upgrade can") :]
     )
 
@@ -380,7 +397,12 @@ def _deb_upgrade(tmp_path) -> str:
 def _rpm_upgrade() -> str:
     spec = _spec()
     post = spec[spec.index("# An upgrade can") : spec.index("\n%preun")]
-    return venv_tree.HUB_IS_SET_UP + venv_tree.HUB_WAIT_FOR_PANEL + post
+    return (
+        venv_tree.HUB_IS_SET_UP
+        + venv_tree.HUB_WAIT_FOR_PANEL
+        + venv_tree.HUB_RESTART_REPLACED
+        + post
+    )
 
 
 def _arch_upgrade() -> str:
@@ -501,8 +523,9 @@ def test_an_upgrade_restarts_the_transport_after_ten_tries_of_a_silent_panel(
     )
 
     transport = f"systemctl try-restart {TRANSPORT_UNIT}"
+    last_probe = max(i for i, call in enumerate(calls) if call.startswith("curl "))
     assert _probes(calls) == [f"http://127.0.0.1:9090{HUB_UPDATE_HEALTH_PATH}"] * 10
-    assert calls[-1] == transport
+    assert calls.index(transport) == last_probe + 1
     assert calls.count("sleep 1") == 9
 
 
@@ -538,6 +561,131 @@ def test_an_upgrade_restarts_the_transport_at_once_while_no_panel_runs(
 def _probes(calls: list) -> list:
     """The addresses the script asked the panel's page at, in order."""
     return [call.split()[-1] for call in calls if call.startswith("curl ")]
+
+
+def _network_programs(tmp_path, *, running: dict, installed: dict) -> str:
+    """Lay out each unit's running program and the package's programs.
+
+    Args:
+        tmp_path: Where ``proc/`` and ``bin/`` go.
+        running: The bytes each unit's main process runs, by unit; a unit
+            left out has no main process.
+        installed: The bytes of each program the package installed, by name.
+
+    Returns:
+        The fake systemctl's body, which prints each unit's main process id.
+    """
+    (tmp_path / "bin").mkdir()
+    for name, data in installed.items():
+        (tmp_path / "bin" / name).write_bytes(data)
+    cases = []
+    for pid, (unit, data) in enumerate(running.items(), start=101):
+        (tmp_path / "proc" / str(pid)).mkdir(parents=True)
+        (tmp_path / "proc" / str(pid) / "exe").write_bytes(data)
+        cases.append(f"        {unit}) echo {pid} ;;")
+    return "\n".join(
+        [
+            'if [ "$1" = show ]; then',
+            "    for unit; do :; done",
+            '    case "$unit" in',
+            *cases,
+            "        *) echo 0 ;;",
+            "    esac",
+            "fi",
+            "exit 0",
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_restarts_each_network_unit_running_a_replaced_program_last(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+    systemctl = _network_programs(
+        tmp_path,
+        running={
+            NETBIRD_UNIT: b"netbird 0.78.0",
+            EASYTIER_UNIT: b"easytier-core 2.6.4",
+            FRP_UNITS[FRP_OPENFRP]: b"frpc 0.71.0",
+        },
+        installed={
+            NETBIRD_BINARY_NAME: b"netbird 0.78.1",
+            EASYTIER_CORE_NAME: b"easytier-core 2.6.4",
+            FRP_BINARY_NAME: b"frpc 0.71.1",
+        },
+    )
+
+    calls = _upgrade_calls(
+        tmp_path, upgrade, command, SET_UP_SETTINGS, bodies={"systemctl": systemctl}
+    )
+
+    after = calls[calls.index(f"systemctl try-restart {TRANSPORT_UNIT}") + 1 :]
+    assert [call for call in after if "try-restart" in call] == [
+        f"systemctl try-restart {NETBIRD_UNIT}",
+        f"systemctl try-restart {FRP_UNITS[FRP_OPENFRP]}",
+    ]
+    assert [call.split()[-1] for call in after if " show " in call] == [
+        NETBIRD_UNIT,
+        EASYTIER_UNIT,
+        FRP_UNITS[FRP_SAKURAFRP],
+        FRP_UNITS[FRP_OPENFRP],
+    ]
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_restarts_no_network_unit_whose_program_the_package_lacks(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+    systemctl = _network_programs(
+        tmp_path,
+        running={
+            NETBIRD_UNIT: b"netbird 0.78.0",
+            EASYTIER_UNIT: b"easytier-core 2.6.3",
+            FRP_UNITS[FRP_SAKURAFRP]: b"frpc 0.71.0",
+            FRP_UNITS[FRP_OPENFRP]: b"frpc 0.71.0",
+        },
+        installed={},
+    )
+
+    calls = _upgrade_calls(
+        tmp_path, upgrade, command, SET_UP_SETTINGS, bodies={"systemctl": systemctl}
+    )
+
+    after = calls[calls.index(f"systemctl try-restart {TRANSPORT_UNIT}") + 1 :]
+    assert after == []
+
+
+def test_the_deb_and_the_rpm_define_the_network_program_restart(tmp_path):
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+    postinst = (tmp_path / "tree/DEBIAN/postinst").read_text()
+
+    assert venv_tree.HUB_RESTART_REPLACED in postinst
+    assert venv_tree.HUB_RESTART_REPLACED in _spec()
+    assert "%" not in venv_tree.HUB_RESTART_REPLACED
 
 
 def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():

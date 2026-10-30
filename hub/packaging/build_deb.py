@@ -47,6 +47,7 @@ from venv_tree import (
     FIRST_INSTALL,
     HUB_IS_SET_UP,
     HUB_WAIT_FOR_PANEL,
+    HUB_RESTART_REPLACED,
     stage_desktop_entry,
 )
 from shared import deb_build  # noqa: E402
@@ -71,6 +72,7 @@ set -e
 {prune}
 {is_set_up}
 {wait_for_panel}
+{restart_replaced}
 if [ "$1" = configure ]; then
     listing=/var/lib/dpkg/info/{package}.list
     if [ -r "$listing" ]; then
@@ -115,6 +117,9 @@ if [ "$1" = configure ] && [ -n "$2" ] && hub_is_set_up; then
     # page, so the peers that dial again reach the new panel.
     wait_for_panel >/dev/null 2>&1 || true
     systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
+    # NetBird, EasyTier and frpc restart last, each only while its unit runs
+    # a program this package replaced.
+    restart_replaced >/dev/null 2>&1 || true
     exit 0
 fi
 
@@ -254,6 +259,7 @@ def _lay_out(
             first_install=FIRST_INSTALL,
             is_set_up=HUB_IS_SET_UP,
             wait_for_panel=HUB_WAIT_FOR_PANEL,
+            restart_replaced=HUB_RESTART_REPLACED,
             lease_client=lease_client_lines(),
         ),
         is_executable=True,

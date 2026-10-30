@@ -36,6 +36,7 @@ from venv_tree import (
     FIRST_INSTALL,
     HUB_IS_SET_UP,
     HUB_WAIT_FOR_PANEL,
+    HUB_RESTART_REPLACED,
     stage_desktop_entry,
 )
 from shared import edition_build  # noqa: E402
@@ -66,6 +67,7 @@ package() {{
 
 INSTALL_SCRIPT = """@IS_SET_UP@
 @WAIT_FOR_PANEL@
+@RESTART_REPLACED@
 pre_upgrade() {
     # Python writes __pycache__ into the carried tree while the hub runs;
     # pacman does not own those files, and a directory the new version no
@@ -119,6 +121,9 @@ post_upgrade() {
     # page, so the peers that dial again reach the new panel.
     wait_for_panel >/dev/null 2>&1 || true
     systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
+    # NetBird, EasyTier and frpc restart last, each only while its unit runs
+    # a program this package replaced.
+    restart_replaced >/dev/null 2>&1 || true
 }
 
 pre_remove() {
@@ -152,6 +157,7 @@ def install_script() -> str:
         .replace("@STOP_HUB@", stop_hub_lines())
         .replace("@IS_SET_UP@", HUB_IS_SET_UP)
         .replace("@WAIT_FOR_PANEL@", HUB_WAIT_FOR_PANEL)
+        .replace("@RESTART_REPLACED@", HUB_RESTART_REPLACED)
     )
 
 

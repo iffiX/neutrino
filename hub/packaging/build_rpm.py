@@ -37,6 +37,7 @@ from venv_tree import (
     FIRST_INSTALL,
     HUB_IS_SET_UP,
     HUB_WAIT_FOR_PANEL,
+    HUB_RESTART_REPLACED,
     stage_desktop_entry,
 )
 from shared import edition_build  # noqa: E402
@@ -94,6 +95,7 @@ cp -a {payload}/. %{{buildroot}}/
 %post
 {is_set_up}
 {wait_for_panel}
+{restart_replaced}
 install -d -m 755 /etc/neutrino
 install -d -m 700 /etc/neutrino/hub
 # Open to the transport's account, whichever package made them first.
@@ -125,6 +127,9 @@ if [ "$1" -ge 2 ] && hub_is_set_up; then
     # page, so the peers that dial again reach the new panel.
     wait_for_panel >/dev/null 2>&1 || true
     systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
+    # NetBird, EasyTier and frpc restart last, each only while its unit runs
+    # a program this package replaced.
+    restart_replaced >/dev/null 2>&1 || true
 else
 {first_install}fi
 
@@ -214,6 +219,7 @@ def main() -> int:
                 first_install=FIRST_INSTALL,
                 is_set_up=HUB_IS_SET_UP,
                 wait_for_panel=HUB_WAIT_FOR_PANEL,
+                restart_replaced=HUB_RESTART_REPLACED,
             ).replace("@STOP_HUB@", stop_hub_lines()),
             encoding="utf-8",
         )
