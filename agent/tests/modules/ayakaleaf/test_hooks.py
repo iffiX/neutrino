@@ -4,7 +4,8 @@ What these pin, against a faked ``podman`` and a fake app on loopback: the
 replica set initiated once, the administrator made through ``/launchpad``
 with its session's CSRF token, the Chinese TeX set installed with the
 fastest ``ctan`` source on ``tlmgr``'s command line after ``tlmgr`` updates
-itself from it, each step kept in the record and skipped after, a new password in
+itself from it, each step kept in the record and planned only while the
+record owes it, a new password in
 the state changed on the administrator signed in with the old one,
 ``ayakaleaf_setup_failed {step, detail}`` from
 each step and from a ``/launchpad`` that already sends to ``/login``; the
@@ -198,8 +199,21 @@ class Box:
             return json.load(stream)
 
     def start(self, config=None) -> None:
-        self.hooks.apply(config or CONFIG)
+        """Plan the steps after the start, then run the start and each step, as the module's task does."""
+        config = config or CONFIG
+        version = self.record().get("version", "") if self.has_record() else ""
+        steps = self.hooks.start_steps(config, version)
+        self.hooks.apply(config)
         self.hooks.start()
+        for step in steps:
+            step.run(None)
+
+    def planned(self, config=None) -> list:
+        version = self.record().get("version", "") if self.has_record() else ""
+        return [step.name for step in self.hooks.start_steps(config or CONFIG, version)]
+
+    def has_record(self) -> bool:
+        return os.path.exists(os.path.join(self.record_dir, "ayakaleaf.json"))
 
 
 @pytest.fixture
@@ -255,6 +269,54 @@ def test_the_first_start_runs_the_three_steps_in_order_and_keeps_each(box, app):
     assert box.record()["steps"] == ["replica_set", "admin", "tex"]
     assert box.record()["is_ready"] is True
     assert box.hooks.is_installing() is False
+
+
+def test_a_first_start_plans_its_four_steps_each_failing_install_failed(box):
+    box.hooks.installed("6.3.2")
+
+    steps = box.hooks.start_steps(CONFIG, "6.3.2")
+
+    assert [(step.name, step.locks) for step in steps] == [
+        ("replica_set", (("containers", "shared"),)),
+        ("wait_app", ()),
+        ("admin", ()),
+        ("tex", (("containers", "shared"),)),
+    ]
+    assert {step.failed_state for step in steps} == {"install_failed"}
+
+
+def test_an_ended_first_start_plans_nothing_and_an_owed_guest_its_step(box):
+    ready(box)
+
+    assert box.planned() == []
+    assert box.planned({**CONFIG, "guests": [GUEST]}) == ["guests"]
+
+
+def test_a_version_change_plans_the_wait_and_the_tex_step(box):
+    ready(box)
+
+    assert [step.name for step in box.hooks.start_steps(CONFIG, "6.3.3")] == [
+        "wait_app",
+        "tex",
+    ]
+
+
+def test_a_new_password_plans_the_wait_and_the_administrator_step(box):
+    ready(box)
+
+    assert box.planned({**CONFIG, "password": "new-hub-password"}) == [
+        "wait_app",
+        "admin",
+    ]
+
+
+def test_a_first_start_cut_before_it_was_kept_ended_plans_the_wait_alone(box):
+    ready(box)
+    box.hooks._keep({**box.record(), "is_ready": False})
+
+    assert box.planned() == ["wait_app"]
+    box.start()
+    assert box.record()["is_ready"] is True
 
 
 def test_the_administrator_is_made_with_the_launchpad_s_session_and_token(box, app):

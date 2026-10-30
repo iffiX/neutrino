@@ -13,24 +13,24 @@ request with that cookie is passed on with ``Host`` and ``Origin`` as the
 browser sent them; every other request, the browser's own ``POST /login``
 and every path under ``/launchpad`` is 401.
 
-The first start runs three steps once per install and keeps each one done
-in the record: the replica set, with ``rs.initiate`` in the mongo
-container; the administrator, through ``/launchpad``; and the Chinese TeX
-set, ``tlmgr`` in the app container updating itself and then installing
-from the fastest source of the ``ctan`` set. Until all three are done and
-``/status`` answers 200, the module reads ``installing`` and its start
-waits; a step that fails ends the install. A version change makes the TeX
-volume again and runs the TeX step again. A password in the state other
-than the administrator's runs the administrator step again. The step then
-changes the password through the app's own settings route.
+The first start is steps of the module's task after its ``start``, each
+kept done in the record once: ``replica_set``, with ``rs.initiate`` in the
+mongo container; ``wait_app``, which checks every 30 seconds until
+``/status`` answers 200; ``admin``, the administrator through
+``/launchpad``; and ``tex``, ``tlmgr`` in the app container updating itself
+and then installing the Chinese TeX set from the fastest source of the
+``ctan`` set. Until they are done the module reads ``installing``, and a
+step that fails ends the task ``install_failed``. A version change makes
+the TeX volume again and plans ``tex`` again. A password in the state other
+than the administrator's plans ``admin`` again, which then changes the
+password through the app's own settings route.
 
-Once the first start has ended, each start settles the guests of the
-module's Web shares through :class:`ShareGuestAccounts`, which calls the
-three guest hooks: a guest is made through the app's own routes as the
-administrator, deleted by its ``user_id``, and signed in as the forwarder
-signs in the administrator, its waiting invitations accepted. The record
-keeps what the forwarder needs, so it listens again after the agent
-restarts.
+The ``guests`` step settles the guests of the module's Web shares through
+:class:`ShareGuestAccounts`, which calls the three guest hooks: a guest is
+made through the app's own routes as the administrator, deleted by its
+``user_id``, and signed in as the forwarder signs in the administrator, its
+waiting invitations accepted. The record keeps what the forwarder needs, so
+it listens again after the agent restarts.
 
 Not pure: runs podman, opens sockets, writes the record.
 """
@@ -72,6 +72,7 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_BASE_PORT,
     AYAKALEAF_COOKIE,
     AYAKALEAF_DELETE_USER_PATH,
+    AYAKALEAF_FIRST_START_STEPS,
     AYAKALEAF_FORWARDER_FIELDS,
     AYAKALEAF_GUEST_FAILED,
     AYAKALEAF_GUEST_STEP_ADMIN_LOGIN,
@@ -99,8 +100,11 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_STATUS_PATH,
     AYAKALEAF_STATUS_TIMEOUT_S,
     AYAKALEAF_STEP_ADMIN,
+    AYAKALEAF_STEP_GUESTS,
     AYAKALEAF_STEP_REPLICA_SET,
     AYAKALEAF_STEP_TEX,
+    AYAKALEAF_STEP_WAIT_APP,
+    AYAKALEAF_STEPS,
     AYAKALEAF_TEX_COLLECTIONS,
     AYAKALEAF_TEX_REPOSITORY_PATH,
     AYAKALEAF_TEX_SET,
@@ -109,7 +113,11 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_TEX_VOLUME,
     AYAKALEAF_UPSTREAM_HOST,
 )
-from neutrino_agent.modules.podman.container_runner import ContainerHooks
+from neutrino_agent.modules.podman.constants import PODMAN_SHARED_LOCKS
+from neutrino_agent.modules.podman.container_runner import (
+    ContainerHooks,
+    first_start_step,
+)
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.guest_accounts import (
     GuestAccountHooks,
@@ -716,35 +724,69 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         self._keep({**record, "version": version, "steps": steps, "is_ready": False})
 
     def start(self) -> None:
-        """Serve the page, run the first start's steps the record does not hold, then settle the guests.
+        """Serve the page. The first start's steps follow it.
 
         The administrator step is owed again while the administrator has a
         password other than the state's.
 
         Raises:
-            ModuleInstallPending: Until the steps are done and ``/status``
-                answers 200, and while a guest is owed and the app does not
-                answer.
-            ModuleSetupError: ``ayakaleaf_setup_failed {step, detail}``
-                when a step of the first start fails.
             ModuleApplyError: When the Containers runner cannot keep the
                 app's published port.
         """
         record = self._started_record()
         self._sync_forwarder(record)
+        self._guests.take_record(record)
         record = self._owed_admin(record)
         if not record.get("is_ready"):
             with self._lock:
                 self._is_starting = True
-            try:
-                record = self._first_start(record)
-            except ModuleSetupError:
-                with self._lock:
-                    self._is_starting = False
-                raise
-            with self._lock:
-                self._is_starting = False
-        self._settle_guests(record)
+
+    def start_steps(self, config: dict, version: str) -> list:
+        """The first start's steps the record does not hold, then ``guests`` while a guest is owed.
+
+        Args:
+            config: The module's configuration the task's entry carries.
+            version: The version the recipe names.
+
+        Returns:
+            :class:`ModuleStep` each: ``replica_set``, ``wait_app``,
+            ``admin`` and ``tex`` while the first start is not done, each of
+            the three only while it is owed; then ``guests``.
+        """
+        record = self._record()
+        parsed = AyakaleafConfig.from_dict(config)
+        held = set(record.get("steps") or [])
+        kept = str(record.get("version", "") or "")
+        if kept and version and kept != version:
+            held.discard(AYAKALEAF_STEP_TEX)
+        admin_password = str(record.get("admin_password", "") or "")
+        if admin_password != parsed.password:
+            held.discard(AYAKALEAF_STEP_ADMIN)
+        owed = [step for step in AYAKALEAF_STEPS if step not in held]
+        runs = {
+            AYAKALEAF_STEP_REPLICA_SET: (self._run_replica_set, PODMAN_SHARED_LOCKS),
+            AYAKALEAF_STEP_WAIT_APP: (self._run_wait_app, ()),
+            AYAKALEAF_STEP_ADMIN: (self._run_admin, ()),
+            AYAKALEAF_STEP_TEX: (self._run_tex, PODMAN_SHARED_LOCKS),
+        }
+        names = []
+        if owed or not record.get("is_ready"):
+            names = [
+                step
+                for step in AYAKALEAF_FIRST_START_STEPS
+                if step == AYAKALEAF_STEP_WAIT_APP or step in owed
+            ]
+        steps = [
+            first_start_step(
+                name,
+                functools.partial(self._run_first_start, runs[name][0]),
+                runs[name][1],
+            )
+            for name in names
+        ]
+        if not self._guests.is_settled(parsed.guests, record):
+            steps.append(first_start_step(AYAKALEAF_STEP_GUESTS, self._run_guests))
+        return steps
 
     def stop(self) -> None:
         """Stop serving the page."""
@@ -978,24 +1020,49 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
             return ""
         return browser.session_header
 
-    def _first_start(self, record: dict) -> dict:
-        """Run the steps the record does not hold, then wait for ``/status``; the record with ``is_ready``.
+    def _run_first_start(self, run, context) -> None:
+        """Run one step of the first start. A failure of the step ends the first start."""
+        try:
+            run(context)
+        except ModuleSetupError:
+            with self._lock:
+                self._is_starting = False
+            raise
+
+    def _run_replica_set(self, context) -> None:
+        """The ``replica_set`` step, kept done in the record.
 
         Raises:
-            ModuleInstallPending: While mongo or the app does not answer
-                yet.
-            ModuleSetupError: When a step fails.
+            ModuleInstallPending: While mongosh fails within the wait.
+            ModuleSetupError: When it still fails after the wait.
         """
+        record = self._record()
         steps = list(record.get("steps") or [])
-        port = int(record.get("upstream_port", 0) or 0)
-        if AYAKALEAF_STEP_REPLICA_SET not in steps:
-            self._initiate_replica_set()
-            steps.append(AYAKALEAF_STEP_REPLICA_SET)
-            record = self._keep({**record, "steps": steps})
-            self._log(f"{self._name}: the replica set exists")
-        if self._status(port) != 200:
-            raise ModuleInstallPending(AYAKALEAF_PENDING)
+        if AYAKALEAF_STEP_REPLICA_SET in steps:
+            return
+        self._initiate_replica_set()
+        self._keep({**record, "steps": [*steps, AYAKALEAF_STEP_REPLICA_SET]})
+        self._log(f"{self._name}: the replica set exists")
+
+    def _run_wait_app(self, context) -> None:
+        """The ``wait_app`` step, which waits until ``/status`` answers 200.
+
+        Raises:
+            ModuleInstallPending: While the app does not answer 200.
+        """
+        self._end_first_start_when_done(self._record())
+
+    def _run_admin(self, context) -> None:
+        """The ``admin`` step: the administrator made, or its password changed, and kept done.
+
+        Raises:
+            ModuleSetupError: ``ayakaleaf_setup_failed {step: admin}`` when
+                the app refuses.
+        """
+        record = self._record()
+        steps = list(record.get("steps") or [])
         if AYAKALEAF_STEP_ADMIN not in steps:
+            port = int(record.get("upstream_port", 0) or 0)
             password = str(record.get("password", "") or "")
             held = str(record.get("admin_password", "") or "")
             browser = self._browser_factory(port=port, cookie_name=_cookie_name(record))
@@ -1008,22 +1075,59 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
                     register_admin(browser, AYAKALEAF_ADMIN_EMAIL, password)
             except OSError as error:
                 raise _setup_failed(AYAKALEAF_STEP_ADMIN, str(error)) from error
-            steps.append(AYAKALEAF_STEP_ADMIN)
-            record = self._keep({**record, "steps": steps, "admin_password": password})
+            record = self._keep(
+                {
+                    **record,
+                    "steps": [*steps, AYAKALEAF_STEP_ADMIN],
+                    "admin_password": password,
+                }
+            )
             self._log(
                 f"{self._name}: the administrator's password is changed"
                 if held
                 else f"{self._name}: the administrator is made"
             )
+        self._end_first_start_when_done(record)
+
+    def _run_tex(self, context) -> None:
+        """The ``tex`` step: the Chinese TeX set installed, and kept done.
+
+        Raises:
+            ModuleSetupError: When no source serves it.
+            ModuleInstallPending: While the app does not answer 200 after it.
+        """
+        record = self._record()
+        steps = list(record.get("steps") or [])
         if AYAKALEAF_STEP_TEX not in steps:
             self._install_tex()
-            steps.append(AYAKALEAF_STEP_TEX)
-            record = self._keep({**record, "steps": steps})
+            record = self._keep({**record, "steps": [*steps, AYAKALEAF_STEP_TEX]})
             self._log(f"{self._name}: the Chinese TeX set is installed")
-        if self._status(port) != 200:
+        self._end_first_start_when_done(record)
+
+    def _run_guests(self, context) -> None:
+        """The ``guests`` step.
+
+        Raises:
+            ModuleInstallPending: While a guest is owed or kept past its
+                share and the app does not answer.
+        """
+        self._settle_guests(self._record())
+
+    def _end_first_start_when_done(self, record: dict) -> None:
+        """Keep the first start ended once the record holds its three steps and ``/status`` answers 200.
+
+        Raises:
+            ModuleInstallPending: While ``/status`` does not answer 200.
+        """
+        if self._status(int(record.get("upstream_port", 0) or 0)) != 200:
             raise ModuleInstallPending(AYAKALEAF_PENDING)
+        steps = list(record.get("steps") or [])
+        if record.get("is_ready") or not all(step in steps for step in AYAKALEAF_STEPS):
+            return
+        self._keep({**record, "is_ready": True})
+        with self._lock:
+            self._is_starting = False
         self._log(f"{self._name}: the first start has ended")
-        return self._keep({**record, "is_ready": True})
 
     def _owed_admin(self, record: dict) -> dict:
         """The record with the administrator step owed again while the administrator's password is not the state's."""

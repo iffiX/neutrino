@@ -1995,6 +1995,7 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
 # --- the steps of Containers, Ayakaleaf and Hermes WebUI ---
 
 CONTAINERS_ALONE = ("containers", "alone")
+CONTAINERS_SHARED = ("containers", "shared")
 PACKAGE_MANAGER = ("package_manager", "alone")
 
 
@@ -2127,6 +2128,85 @@ def test_containers_on_macos_plans_the_pkg_then_the_machine(tmp_path):
         ("configure", {}, (CONTAINERS_ALONE,)),
         ("start", {}, (CONTAINERS_ALONE,)),
     ]
+
+
+def image_recipe(*names) -> dict:
+    """A ``container`` recipe pinning one image per name."""
+    return {
+        "runner": "container",
+        "method": "container",
+        "params": {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "name": name,
+                    "kind": "image",
+                    "digest": "sha256:" + DIGEST,
+                    "sources": [f"ghcr.io/acme/{name}"],
+                }
+                for name in names
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "module, images, first_start",
+    [
+        (
+            "ayakaleaf",
+            ("app", "mongo", "redis"),
+            [
+                ("replica_set", {}, (CONTAINERS_SHARED,)),
+                ("wait_app", {}, ()),
+                ("admin", {}, ()),
+                ("tex", {}, (CONTAINERS_SHARED,)),
+            ],
+        ),
+        (
+            "hermes_webui",
+            ("webui", "agent"),
+            [
+                ("first_start", {}, (CONTAINERS_SHARED,)),
+                ("update_check", {}, ()),
+            ],
+        ),
+    ],
+)
+def test_a_container_module_plans_its_pulls_then_its_start_and_first_start(
+    tmp_path, module, images, first_start
+):
+    engine = ModuleEngine(
+        platform=StateRootPlatform(str(tmp_path)), configured_dir=str(tmp_path / "c")
+    )
+    entry = {"want": "running", "config": {}, "install": image_recipe(*images)}
+    with engine._lock:
+        engine._add_container_runner(module, entry["install"])
+    engine.runner_of(module).take_recipe(entry["install"])
+
+    install = engine.install_steps(module, entry)
+    start = engine.configure_steps(module, entry, "running")
+    stop = engine.configure_steps(module, entry, "stopped")
+
+    assert planned(install) == [
+        ("wait_containers", {}, ()),
+        *[("pull", {"image": image}, (CONTAINERS_SHARED,)) for image in images],
+        ("verify", {}, (CONTAINERS_SHARED,)),
+        ("render", {}, ()),
+    ]
+    assert planned(start) == [
+        ("wait_containers", {}, ()),
+        ("start", {}, (CONTAINERS_SHARED,)),
+        *first_start,
+    ]
+    assert planned(stop) == [
+        ("wait_containers", {}, ()),
+        ("stop", {}, (CONTAINERS_SHARED,)),
+    ]
+    assert planned(engine.uninstall_steps(module, entry)) == [
+        ("uninstall", {}, (CONTAINERS_ALONE,))
+    ]
+    assert {step.failed_state for step in start[2:]} == {"install_failed"}
 
 
 # --- another version ---

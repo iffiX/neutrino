@@ -8,8 +8,9 @@ a request with neither; two devices' pages open in one browser keeping both
 logins; the four gateway keys written with ``hermes config set``
 once ``config.yaml`` exists and again when the base URL changes, never
 ``model.default``; ``installing`` until the keys and ``/health`` hold, the
-start waiting meanwhile; the webui's own update check saved off once the
-first start has ended; a version change making ``agent`` and ``app``
+step ``first_start`` waiting meanwhile; the webui's own update check saved
+off in the step ``update_check`` once the first start has ended, each step
+planned only while the record owes it; a version change making ``agent`` and ``app``
 again and keeping ``home`` and ``workspace``; and the record that brings
 the forwarder back after a restart.
 """
@@ -179,6 +180,24 @@ class Box:
         with open(path, encoding="utf-8") as stream:
             return json.load(stream)
 
+    def start(self) -> None:
+        """Plan the steps after the start, then run the start and each step, as the module's task does."""
+        steps = self.hooks.start_steps({}, self.version())
+        self.hooks.start()
+        for step in steps:
+            step.run(None)
+
+    def planned(self, version="") -> list:
+        return [
+            step.name for step in self.hooks.start_steps({}, version or self.version())
+        ]
+
+    def version(self) -> str:
+        path = os.path.join(self.record_dir, "hermes_webui.json")
+        if not os.path.exists(path):
+            return ""
+        return str(self.record().get("version", "") or "")
+
 
 @pytest.fixture
 def box(tmp_path):
@@ -189,12 +208,12 @@ def test_the_forwarder_takes_the_first_free_port_from_8787_and_keeps_it(box):
     box.held_ports.add(8787)
     box.hooks.apply({**CONFIG, "port": 9100})
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     box.held_ports.clear()
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     (forwarder,) = box.forwarders
     assert forwarder.record["port"] == 8788
@@ -202,12 +221,35 @@ def test_the_forwarder_takes_the_first_free_port_from_8787_and_keeps_it(box):
     assert box.hooks.details() == {"port": 8788}
 
 
+def test_an_install_plans_the_first_start_on_containers_then_the_update_check(box):
+    box.hooks.installed("0.52.492")
+
+    steps = box.hooks.start_steps(CONFIG, "0.52.492")
+
+    assert [(step.name, step.locks) for step in steps] == [
+        ("first_start", (("containers", "shared"),)),
+        ("update_check", ()),
+    ]
+    assert {step.failed_state for step in steps} == {"install_failed"}
+
+
+def test_an_ended_first_start_plans_nothing_and_another_version_both_steps(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.start()
+
+    assert box.planned() == []
+    assert box.planned("0.53.1") == ["first_start", "update_check"]
+
+
 def test_before_config_yaml_exists_the_start_waits_and_writes_no_key(box):
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
 
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     assert box.podman.config_sets() == []
     assert box.hooks.is_installing() is True
@@ -228,7 +270,7 @@ def test_once_config_yaml_exists_the_four_keys_are_written_with_hermes_config_se
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
 
-    box.hooks.start()
+    box.start()
 
     assert box.podman.config_sets() == [
         [
@@ -264,17 +306,17 @@ def test_the_module_reads_installing_until_health_answers_200_once(box):
     box.hooks.apply(CONFIG)
 
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
     assert box.hooks.is_installing() is True
     assert len(box.podman.config_sets()) == 4
 
     box.status = 200
-    box.hooks.start()
+    box.start()
 
     assert box.hooks.is_installing() is False
     assert len(box.podman.config_sets()) == 4
     box.status = 500
-    box.hooks.start()
+    box.start()
     assert box.hooks.is_running() is False
 
 
@@ -285,11 +327,11 @@ def test_the_update_check_is_saved_off_once_the_first_start_has_ended(box):
     box.hooks.apply(CONFIG)
 
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
     assert box.saved == []
     box.status = 200
-    box.hooks.start()
-    box.hooks.start()
+    box.start()
+    box.start()
 
     assert box.saved == [(41234, COOKIE.split(";")[0], {"check_for_updates": False})]
     assert box.record()["is_update_check_off"] is True
@@ -302,9 +344,9 @@ def test_a_failed_save_holds_nothing_up_and_the_next_start_tries_again(box):
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
 
-    box.hooks.start()
+    box.start()
     box.settings_status = 200
-    box.hooks.start()
+    box.start()
 
     assert len(box.saved) == 2
     assert box.record()["is_ready"] is True
@@ -317,10 +359,10 @@ def test_a_version_change_saves_the_update_check_off_again(box):
     box.status = 200
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
-    box.hooks.start()
+    box.start()
 
     box.hooks.installed("0.52.500")
-    box.hooks.start()
+    box.start()
 
     assert len(box.saved) == 2
 
@@ -340,10 +382,10 @@ def test_a_base_url_that_changes_writes_the_keys_again(box):
     box.status = 200
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
-    box.hooks.start()
+    box.start()
 
     box.podman.url = "http://host.containers.internal:8400"
-    box.hooks.start()
+    box.start()
 
     sets = box.podman.config_sets()
     assert len(sets) == 8
@@ -359,7 +401,7 @@ def test_an_agent_container_not_running_writes_nothing_and_waits(box):
     box.hooks.apply(CONFIG)
 
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     assert box.podman.config_sets() == []
 
@@ -395,7 +437,7 @@ def test_the_first_install_and_the_same_version_again_reset_nothing(box):
 def test_running_is_health_answering_200_at_the_published_port(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     box.status = 200
     assert box.hooks.is_running() is True
@@ -407,7 +449,7 @@ def test_running_is_health_answering_200_at_the_published_port(box):
 def test_stop_closes_the_forwarder_and_remove_forgets_the_record(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
     (forwarder,) = box.forwarders
 
     box.hooks.stop()
@@ -421,11 +463,11 @@ def test_stop_closes_the_forwarder_and_remove_forgets_the_record(box):
 def test_a_new_local_name_starts_another_forwarder(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     box.hooks.apply({**CONFIG, "local_name": "hermes-webui-1.m.localhost"})
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     first, second = box.forwarders
     assert first.is_closed and second.is_started
@@ -437,12 +479,12 @@ def test_the_record_keeps_the_cookie_name_and_a_new_one_starts_another_forwarder
 ):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
     assert box.record()["cookie_name"] == COOKIE_NAME
 
     box.hooks.apply({**CONFIG, "cookie_name": "hermes_session_0123456789ab"})
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     first, second = box.forwarders
     assert first.is_closed and second.is_started
@@ -452,7 +494,7 @@ def test_the_record_keeps_the_cookie_name_and_a_new_one_starts_another_forwarder
 def test_a_state_with_no_cookie_name_uses_the_webui_s_default(box):
     box.hooks.apply({"secret": SECRET, "password": PASSWORD})
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
 
     assert box.record()["cookie_name"] == "hermes_session"
 
@@ -462,7 +504,7 @@ def test_after_a_restart_the_record_brings_the_forwarder_back(box):
     box.status = 200
     box.hooks.installed("0.52.492")
     box.hooks.apply(CONFIG)
-    box.hooks.start()
+    box.start()
 
     restarted = box.make()
     assert restarted.is_running() is True
@@ -475,7 +517,7 @@ def test_after_a_restart_the_record_brings_the_forwarder_back(box):
 def test_a_stopped_module_s_forwarder_stays_down_after_a_restart(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):
-        box.hooks.start()
+        box.start()
     box.hooks.stop()
 
     box.make().is_running()

@@ -15,11 +15,21 @@ AYAKALEAF_REDIS_CONTAINER = "neutrino_ayakaleaf_redis"
 # image.
 AYAKALEAF_TEX_VOLUME = "neutrino_ayakaleaf_texlive"
 
-# The first start's steps, in the order they run.
+# The first start's steps the record keeps done, in the order they run.
 AYAKALEAF_STEP_REPLICA_SET = "replica_set"
 AYAKALEAF_STEP_ADMIN = "admin"
 AYAKALEAF_STEP_TEX = "tex"
 AYAKALEAF_STEPS = (AYAKALEAF_STEP_REPLICA_SET, AYAKALEAF_STEP_ADMIN, AYAKALEAF_STEP_TEX)
+# The wait for the app, the guests' step, and every step of the first start
+# in the order they run.
+AYAKALEAF_STEP_WAIT_APP = "wait_app"
+AYAKALEAF_STEP_GUESTS = "guests"
+AYAKALEAF_FIRST_START_STEPS = (
+    AYAKALEAF_STEP_REPLICA_SET,
+    AYAKALEAF_STEP_WAIT_APP,
+    AYAKALEAF_STEP_ADMIN,
+    AYAKALEAF_STEP_TEX,
+)
 AYAKALEAF_SETUP_FAILED = "ayakaleaf_setup_failed"
 
 # The replica set step: mongosh in the mongo container, and how long it is

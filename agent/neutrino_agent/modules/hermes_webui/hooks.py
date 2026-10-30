@@ -16,9 +16,10 @@ Once ``config.yaml`` exists in ``home`` the agent writes ``model.provider``,
 naming the key's variable, with ``hermes config set`` in the agent container, and again whenever the base URL differs from the one the
 record holds. From the install, and after a version change, the module
 reads ``installing`` until the keys hold the current base URL and the
-webui's ``/health`` first answers 200; meanwhile its start waits, and the
-state is applied again. Then the agent signs in and turns the webui's own
-update check off through its settings route, at each start until it took. A version change stops both containers and makes
+webui's ``/health`` first answers 200: the step ``first_start`` of the
+module's task checks every 30 seconds meanwhile. Then the step
+``update_check`` signs in and turns the webui's own update check off
+through its settings route, planned at each start until it took. A version change stops both containers and makes
 the ``agent`` and ``app`` volumes again. The record keeps what the
 forwarder needs, so it listens again after the agent restarts.
 
@@ -67,11 +68,17 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_PROVIDER,
     HERMES_WEBUI_RECORD_FIELDS,
     HERMES_WEBUI_SETTINGS_PATH,
+    HERMES_WEBUI_STEP_FIRST_START,
+    HERMES_WEBUI_STEP_UPDATE_CHECK,
     HERMES_WEBUI_UPDATE_CHECK_OFF,
     HERMES_WEBUI_UPSTREAM_HOST,
     HERMES_WEBUI_WEBUI_CONTAINER,
 )
-from neutrino_agent.modules.podman.container_runner import ContainerHooks
+from neutrino_agent.modules.podman.constants import PODMAN_SHARED_LOCKS
+from neutrino_agent.modules.podman.container_runner import (
+    ContainerHooks,
+    first_start_step,
+)
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwardDecision,
@@ -338,11 +345,9 @@ class HermesWebuiHooks(ContainerHooks):
             )
 
     def start(self) -> None:
-        """Serve the page, write the gateway keys once the first start allows, then turn the update check off.
+        """Serve the page, and write the gateway keys again once the first start has ended and the base URL changed.
 
         Raises:
-            ModuleInstallPending: Until the keys hold the current base URL
-                and ``/health`` has answered 200 once.
             ModuleApplyError: When the Containers runner cannot keep the
                 webui's published port.
         """
@@ -351,22 +356,36 @@ class HermesWebuiHooks(ContainerHooks):
         if not record.get("is_ready"):
             with self._lock:
                 self._is_starting = True
-        base_url = self._base_url()
-        if base_url and base_url != record.get("base_url") and self._has_config_file():
-            if self._write_keys(base_url):
-                record = self._keep({**record, "base_url": base_url})
-        if record.get("is_ready"):
-            self._turn_update_check_off(record)
             return
-        is_written = bool(base_url) and record.get("base_url") == base_url
-        if is_written and self._health(int(record["upstream_port"])) == 200:
-            record = self._keep({**record, "is_ready": True})
-            self._log(f"{self._name}: the first start has ended")
-            with self._lock:
-                self._is_starting = False
-            self._turn_update_check_off(record)
-            return
-        raise ModuleInstallPending(HERMES_WEBUI_PENDING)
+        self._keys_written(record, self._base_url())
+
+    def start_steps(self, config: dict, version: str) -> list:
+        """``first_start`` while the first start has not ended, then ``update_check`` while the update check is on.
+
+        Args:
+            config: The module's configuration the task's entry carries.
+            version: The version the recipe names.
+
+        Returns:
+            :class:`ModuleStep` each; a version the record does not hold
+            plans both.
+        """
+        record = self._record()
+        is_new = bool(version) and str(record.get("version", "") or "") != version
+        steps = []
+        if is_new or not record.get("is_ready"):
+            steps.append(
+                first_start_step(
+                    HERMES_WEBUI_STEP_FIRST_START,
+                    self._run_first_start,
+                    PODMAN_SHARED_LOCKS,
+                )
+            )
+        if is_new or not record.get("is_update_check_off"):
+            steps.append(
+                first_start_step(HERMES_WEBUI_STEP_UPDATE_CHECK, self._run_update_check)
+            )
+        return steps
 
     def stop(self) -> None:
         """Stop serving the page."""
@@ -491,6 +510,50 @@ class HermesWebuiHooks(ContainerHooks):
         if status != 200:
             return ""
         return session_cookie(headers, _cookie_name(record))
+
+    def _run_first_start(self, context) -> None:
+        """The ``first_start`` step: the gateway keys written, then ``/health`` waited for.
+
+        Raises:
+            ModuleInstallPending: Until the keys hold the current base URL
+                and ``/health`` has answered 200 once.
+        """
+        record = self._record()
+        if record.get("is_ready"):
+            return
+        with self._lock:
+            self._is_starting = True
+        base_url = self._base_url()
+        record = self._keys_written(record, base_url)
+        is_written = bool(base_url) and record.get("base_url") == base_url
+        port = int(record.get("upstream_port", 0) or 0)
+        if not is_written or self._health(port) != 200:
+            raise ModuleInstallPending(HERMES_WEBUI_PENDING)
+        self._keep({**record, "is_ready": True})
+        self._log(f"{self._name}: the first start has ended")
+        with self._lock:
+            self._is_starting = False
+
+    def _run_update_check(self, context) -> None:
+        """The ``update_check`` step, once the first start has ended."""
+        record = self._record()
+        if record.get("is_ready"):
+            self._turn_update_check_off(record)
+
+    def _keys_written(self, record: dict, base_url: str) -> dict:
+        """The record after the gateway keys are written for a base URL it does not hold, once ``config.yaml`` exists.
+
+        Args:
+            record: The module's record.
+            base_url: The base URL the agent container names now.
+
+        Returns:
+            The record, with the base URL the keys hold.
+        """
+        if base_url and base_url != record.get("base_url") and self._has_config_file():
+            if self._write_keys(base_url):
+                return self._keep({**record, "base_url": base_url})
+        return record
 
     def _turn_update_check_off(self, record: dict) -> None:
         """Save the webui's ``check_for_updates`` off once; a failure is a line in the log."""

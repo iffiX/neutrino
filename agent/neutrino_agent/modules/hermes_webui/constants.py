@@ -81,3 +81,6 @@ HERMES_WEBUI_FORWARDER_FIELDS = (
 )
 # What the module waits on while its first start runs.
 HERMES_WEBUI_PENDING = "hermes_webui_first_start"
+# The steps after the module's start: its first start and the update check.
+HERMES_WEBUI_STEP_FIRST_START = "first_start"
+HERMES_WEBUI_STEP_UPDATE_CHECK = "update_check"

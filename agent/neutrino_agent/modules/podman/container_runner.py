@@ -9,8 +9,10 @@ runs. Its uninstall removes the module's containers, their units, its
 network ``neutrino_<module>``, its named volumes ``neutrino_<module>_*`` and
 the images no other container uses. The Containers runner, on Linux or in
 the Podman machine on Windows and macOS, is how the runner reaches Podman,
-and it renders the hub containers. A module with a page or a step after its
-first start adds :class:`ContainerHooks` of its own.
+and it renders the hub containers. A module with a page or a first start of
+its own adds :class:`ContainerHooks`, whose steps follow the module's
+``start``. The ``start`` step takes the module's configuration, so a task
+of the module plans no ``configure`` step.
 
 Not pure: runs podman.
 """
@@ -19,9 +21,16 @@ Not pure: runs podman.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import dataclasses
+import functools
 import json
 import subprocess
 
+from neutrino_agent.constants import (
+    AGENT_MODULE_STATE_INSTALL_FAILED,
+    AGENT_STEP_CONFIGURE,
+    AGENT_STEP_START,
+)
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.podman.applier import (
     image_references,
@@ -34,7 +43,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MODULE_LABEL,
 )
 from neutrino_agent.modules.shared import source_fetch
-from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner, ModuleStep
 from neutrino_agent.modules.shared.package import params_of
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 
@@ -65,6 +74,26 @@ def recipe_images(recipe: dict) -> list:
             }
         )
     return images
+
+
+def first_start_step(name: str, run, locks: tuple = ()) -> ModuleStep:
+    """One step of a container module's first start. Its failure reads ``install_failed``.
+
+    Args:
+        name: The step's name.
+        run: Called with the task's context.
+        locks: The step locks it takes.
+
+    Returns:
+        The step.
+    """
+    return ModuleStep(
+        name=name,
+        run=run,
+        locks=tuple(locks),
+        failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+        error_code="install_failed",
+    )
 
 
 def module_references(images: list, references: set) -> list:
@@ -135,12 +164,23 @@ class ContainerHooks:
         """
 
     def start(self) -> None:
-        """Do what follows once the module's containers run.
+        """Serve what the module runs beside its containers, once they run.
 
         Raises:
-            ModuleInstallPending: While the containers' first start runs.
-            ModuleApplyError: When a step fails.
+            ModuleApplyError: When the module cannot serve it.
         """
+
+    def start_steps(self, config: dict, version: str) -> list:
+        """The steps after the module's ``start`` that its record does not hold.
+
+        Args:
+            config: The module's configuration the task's entry carries.
+            version: The version the recipe names.
+
+        Returns:
+            :class:`ModuleStep` each; none for a module with no first start.
+        """
+        return []
 
     def stop(self) -> None:
         """Take down what the module runs beside its containers."""
@@ -334,6 +374,34 @@ class ContainerModuleRunner(ModuleRunner):
         """
         self._hooks.apply(dict(config))
 
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The core's steps with no ``configure``, the hooks' first-start steps after ``start``.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``wait_containers``, ``configure``, then ``start`` or
+                ``stop``.
+
+        Returns:
+            The steps; ``start`` hands the hooks the configuration before
+            it starts the containers.
+        """
+        planned = []
+        for step in steps:
+            if step.name == AGENT_STEP_CONFIGURE:
+                continue
+            if step.name != AGENT_STEP_START:
+                planned.append(step)
+                continue
+            planned.append(
+                dataclasses.replace(
+                    step, run=functools.partial(self._run_start, dict(config))
+                )
+            )
+            planned += self._hooks.start_steps(dict(config), self._version)
+        return planned
+
     def start(self) -> None:
         """Start the module's containers that do not run, once Containers renders them.
 
@@ -342,7 +410,7 @@ class ContainerModuleRunner(ModuleRunner):
 
         Raises:
             ModuleInstallPending: While Containers has not rendered the
-                module's containers, or the hooks wait on their first start.
+                module's containers.
             ModuleApplyError: ``containers_not_applied`` when Containers'
                 last apply did not write the containers the state names;
                 ``apply_failed`` when systemd refuses a unit.
@@ -409,6 +477,11 @@ class ContainerModuleRunner(ModuleRunner):
             The lines, oldest first within each container's.
         """
         return self._containers.hub_journal(self._names(), lines)[-lines:]
+
+    def _run_start(self, config: dict, context) -> None:
+        """The ``start`` step: the configuration handed to the hooks, then the start."""
+        self.apply(config)
+        self.start()
 
     def _pull(self, command: tuple, image: dict) -> None:
         """Pull one image from the fastest source that serves it, a source the probe missed last.

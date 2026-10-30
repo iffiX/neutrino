@@ -4,6 +4,7 @@ from neutrino_agent.constants import (
     AGENT_LOCK_ALONE,
     AGENT_LOCK_CONTAINERS,
     AGENT_LOCK_PACKAGE_MANAGER,
+    AGENT_LOCK_SHARED,
     AGENT_VAR_DIR,
 )
 
@@ -77,6 +78,8 @@ PODMAN_STEP_MACHINE = "machine"
 # dism step takes the second beside it.
 PODMAN_STEP_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_ALONE),)
 PODMAN_FEATURES_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
+# The step lock a container module's step on Containers' engine takes.
+PODMAN_SHARED_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),)
 
 # The account's default machine, the one its own ``podman`` reaches.
 PODMAN_MACHINE_NAME = "podman-machine-default"
