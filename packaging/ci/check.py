@@ -245,6 +245,10 @@ SERVICE_DOES_NOT_EXIST = 1060
 # How long a service is given to start, or to go after removal.
 SERVICE_WAIT_S = 120
 SERVICE_POLL_S = 5
+# Tries of a removal of leftovers, and the pause between two. A process of a
+# hub that just stopped can still write a file into a folder being removed.
+LEFTOVERS_REMOVE_TRIES = 5
+LEFTOVERS_REMOVE_PAUSE_S = 2
 MACHINE_ENVIRONMENT_KEY = (
     r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 )
@@ -1381,7 +1385,7 @@ def check_hub_macos(pkg: Path) -> None:
     subprocess.run(
         ["sudo", "launchctl", "bootout", "system/com.carriez.RustDesk_service"]
     )
-    _sudo(["rm", "-rf", *HUB_MACOS_LEFTOVERS, *AGENT_MACOS_LEFTOVERS])
+    _remove_leftovers([*HUB_MACOS_LEFTOVERS, *AGENT_MACOS_LEFTOVERS])
     for package_id in (HUB_MACOS_PACKAGE_ID, AGENT_MACOS_PACKAGE_ID):
         subprocess.run(["sudo", "pkgutil", "--forget", package_id])
     if not _wait_for_job_gone(HUB_MACOS_JOB):
@@ -2098,6 +2102,28 @@ def _service_exists(name: str) -> bool:
     """Whether the service control manager knows a service."""
     result = subprocess.run(["sc.exe", "query", name], capture_output=True)
     return result.returncode != SERVICE_DOES_NOT_EXIST
+
+
+def _remove_leftovers(paths: list) -> None:
+    """Remove paths as root, again after each failed try.
+
+    Args:
+        paths: The files and folders to remove.
+
+    Raises:
+        SystemExit: When a path is still there after the last try, with
+            every path left.
+    """
+    for _ in range(LEFTOVERS_REMOVE_TRIES):
+        if subprocess.run(["sudo", "rm", "-rf", *paths]).returncode == 0:
+            return
+        time.sleep(LEFTOVERS_REMOVE_PAUSE_S)
+    left = subprocess.run(
+        ["sudo", "find", *paths], capture_output=True, text=True
+    ).stdout.strip()
+    raise SystemExit(
+        f"sudo rm failed {LEFTOVERS_REMOVE_TRIES} times, these are left:\n{left}"
+    )
 
 
 def _wait_for_job_gone(job: str) -> bool:

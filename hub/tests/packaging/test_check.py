@@ -957,6 +957,61 @@ def test_the_hub_entry_must_declare_the_runners_architecture_first(
             check._check_hub_macos_entry()
 
 
+def _macos_hub_check(check, monkeypatch, tmp_path, rm_codes):
+    """Run the macOS hub check with every system call faked. ``rm`` exits
+    each of ``rm_codes`` in turn and 1 after them."""
+    ran = []
+    codes = list(rm_codes)
+
+    def run(command, **kwargs):
+        ran.append(list(command))
+        if command[:3] == ["sudo", "rm", "-rf"]:
+            return SimpleNamespace(returncode=codes.pop(0) if codes else 1)
+        if command[:2] == ["sudo", "find"]:
+            return SimpleNamespace(returncode=0, stdout=f"{command[2]}/state/x\n")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    plist = tmp_path / "com.neutrino.hub.plist"
+    plist.write_text("")
+    monkeypatch.setattr(check, "HUB_MACOS_PLIST", plist)
+    monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
+    monkeypatch.setattr(check, "_answer", lambda command: "state = running")
+    monkeypatch.setattr(check, "check_frpc", lambda answer: None)
+    monkeypatch.setattr(check, "check_go_programs", lambda *arguments: None)
+    monkeypatch.setattr(check, "_is_job_loaded", lambda job: True)
+    monkeypatch.setattr(check, "_check_hub_macos_entry", lambda: None)
+    monkeypatch.setattr(check, "_wait_for_wizard", lambda: None)
+    monkeypatch.setattr(check, "_set_up_hub", lambda nhub: None)
+    monkeypatch.setattr(check, "_wait_for_panel", lambda: None)
+    monkeypatch.setattr(check, "_wait_for_job_gone", lambda job: True)
+    monkeypatch.setattr(
+        check, "_run_install_script", lambda package, command: ran.append(command)
+    )
+    monkeypatch.setattr(check.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(check.subprocess, "run", run)
+    check.check_hub_macos(tmp_path / "hub.pkg")
+    return ran
+
+
+def test_a_macos_hub_removal_that_meets_a_new_file_is_tried_again(
+    check, monkeypatch, tmp_path
+):
+    ran = _macos_hub_check(check, monkeypatch, tmp_path, rm_codes=[1, 0])
+
+    removals = [command for command in ran if command[:3] == ["sudo", "rm", "-rf"]]
+    assert len(removals) == 2
+    assert ran[-1][-2:] == [str(check.INSTALL_SCRIPTS_DIR / "install.sh"), "hub"]
+
+
+def test_a_macos_hub_leftover_that_outlives_every_removal_fails_naming_it(
+    check, monkeypatch, tmp_path
+):
+    with pytest.raises(SystemExit) as failed:
+        _macos_hub_check(check, monkeypatch, tmp_path, rm_codes=[])
+
+    assert "/Library/Application Support/Neutrino/hub/state/x" in str(failed.value)
+
+
 def test_an_msiexec_that_hangs_ends_the_check_with_a_snapshot(
     check, monkeypatch, tmp_path
 ):
