@@ -6,7 +6,8 @@ processors, memory and disk with ``podman machine set`` on the stopped
 machine. Every machine command runs with the account's own temporary
 directory as ``TMPDIR``, under which Podman keeps the machine's sockets.
 
-Not pure: runs the installer, ``pkgutil``, ``sysctl`` and ``getconf``.
+Not pure: runs the installer, ``pkgutil``, ``sysctl``, ``getconf`` and
+``chmod``.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -22,6 +23,7 @@ from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.podman.constants import (
     PODMAN_DARWIN_BINARY,
     PODMAN_DARWIN_COMMAND_TIMEOUT_S,
+    PODMAN_DARWIN_IMAGE_ENTRY,
     PODMAN_DARWIN_INSTALLED_PATHS,
     PODMAN_DARWIN_PKG_ID,
     PODMAN_DARWIN_SYSCTL_COMMAND,
@@ -91,6 +93,27 @@ class PodmanDarwinApplier(PodmanSystemApplier):
             raise ModuleApplyError(
                 "podman_install_failed", {"artifact": name, "exit_code": exit_code}
             ) from error
+
+    def open_image(self, path: str, account: str) -> None:
+        """Let the account alone read the kept image, through one access list entry.
+
+        The image stays root's, mode 0600. Every entry an earlier init added
+        goes first, so an account named before reads it no more.
+
+        Args:
+            path: The kept machine image.
+            account: The machine's account.
+
+        Raises:
+            OSError: When ``chmod`` cannot run.
+            subprocess.SubprocessError: When ``chmod`` refuses or does not
+                finish.
+        """
+        self._run(["chmod", "-N", path], timeout_s=PODMAN_DARWIN_COMMAND_TIMEOUT_S)
+        self._run(
+            ["chmod", "+a", PODMAN_DARWIN_IMAGE_ENTRY.format(account=account), path],
+            timeout_s=PODMAN_DARWIN_COMMAND_TIMEOUT_S,
+        )
 
     def uninstall(self) -> None:
         """Delete what the pkg put on the computer and forget its receipt.

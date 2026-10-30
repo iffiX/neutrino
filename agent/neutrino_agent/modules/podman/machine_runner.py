@@ -216,6 +216,17 @@ class PodmanSystemApplier:
         """
         raise PlatformUnsupportedError("no Podman machine here")
 
+    def open_image(self, path: str, account: str) -> None:
+        """Let the account that inits the machine read the kept image.
+
+        Nothing changes on a system that opens the module's directory to
+        every account.
+
+        Args:
+            path: The kept machine image.
+            account: The machine's account.
+        """
+
     def is_reboot_pending(self) -> bool:
         """Whether the computer owes the restart an install step asked for.
 
@@ -1259,7 +1270,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ModuleApplyError: ``machine_image_missing``, the machine's own
                 codes, or the system applier's.
             OSError: When the keeper cannot be written.
-            subprocess.SubprocessError: When the service manager refuses.
+            subprocess.SubprocessError: When the service manager refuses,
+                or the image cannot be opened to the account.
         """
         host_cpus, host_memory_gib = self._system.host_facts()
         cpus = settings.cpus or max(1, host_cpus // 2)
@@ -1268,9 +1280,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         notes = []
         if not machine.is_present():
             disk_gib = settings.disk_gib or PODMAN_MACHINE_DEFAULT_DISK_GIB
-            machine.init(
-                self._image_path(), cpus=cpus, memory_gib=memory_gib, disk_gib=disk_gib
-            )
+            image = self._image_path()
+            self._system.open_image(image, settings.account)
+            machine.init(image, cpus=cpus, memory_gib=memory_gib, disk_gib=disk_gib)
             if not machine.is_sized_at_init:
                 self._size_new_machine(
                     machine, cpus=cpus, memory_gib=memory_gib, disk_gib=disk_gib

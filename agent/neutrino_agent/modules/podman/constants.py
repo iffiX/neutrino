@@ -113,6 +113,8 @@ PODMAN_DARWIN_SYSCTL_COMMAND = ("/usr/sbin/sysctl", "-n", "hw.logicalcpu", "hw.m
 PODMAN_DARWIN_TEMP_DIR_COMMAND = ("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR")
 PODMAN_DARWIN_TEMP_DIR_VARIABLE = "TMPDIR"
 PODMAN_DARWIN_COMMAND_TIMEOUT_S = 30
+# The access list entry that lets the machine's account read the kept image.
+PODMAN_DARWIN_IMAGE_ENTRY = "user:{account} allow read"
 
 # The machine's memory for a 0 in the Run settings is half the computer's, at
 # most the cap. Podman's own 2 GiB serves where the computer's is not read.

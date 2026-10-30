@@ -2,7 +2,8 @@
 a recorded run and a fake installer.
 
 What these pin: Podman's pkg handed to the system's installer and a failure
-carried as ``podman_install_failed``; the uninstall deleting what the pkg
+carried as ``podman_install_failed``; the kept image opened to the
+machine's account alone; the uninstall deleting what the pkg
 put on the computer and forgetting its receipt; the computer's size from
 ``sysctl``; the disk read from the machine's settings file; the stop and
 the resources through ``podman machine``; the account's own ``TMPDIR`` read
@@ -152,6 +153,17 @@ def test_an_artifact_that_is_not_a_pkg_is_refused_before_any_installer_runs():
 
     assert refused.value.code == "install_failed"
     assert install_pkg.paths == []
+
+
+def test_the_image_is_opened_to_the_machines_account_alone():
+    run = RecordingRun()
+
+    applier(run=run).open_image("/state/podman/image/image.raw.zst", "me")
+
+    assert run.calls == [
+        ["chmod", "-N", "/state/podman/image/image.raw.zst"],
+        ["chmod", "+a", "user:me allow read", "/state/podman/image/image.raw.zst"],
+    ]
 
 
 def test_the_uninstall_deletes_the_pkgs_files_and_forgets_its_receipt(tmp_path):

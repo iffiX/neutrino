@@ -5,7 +5,8 @@ What these pin: the artifacts kept as the publisher's files with an msi or
 a pkg handed to the system's installer; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
-provider takes no size at init, and removed when that sizing fails; a
+provider takes no size at init, its image opened to the account first,
+and removed when that sizing fails; a
 memory of 0 as half the computer's at most 4 GiB, in the details too; a
 machine taken over made rootful and sized, refused a smaller disk; a change
 of size against the last apply, the disk grown and never shrunk; a new account stopping the old
@@ -257,6 +258,7 @@ class FakeSystem(PodmanSystemApplier):
         self.binary = binary
         self.provider = provider
         self.calls: list = []
+        self.opened: list = []
         self.is_pending = False
         self.disk = 0
         self.disk_error = None
@@ -264,6 +266,9 @@ class FakeSystem(PodmanSystemApplier):
 
     def install_artifact(self, artifact, path):
         self.calls.append(("install", artifact["name"], os.path.basename(path)))
+
+    def open_image(self, path, account):
+        self.opened.append((path, account))
 
     def is_reboot_pending(self):
         return self.is_pending
@@ -769,6 +774,7 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
 
     assert rig.world.calls[0] == ("me", "init", image, 2, 4, 100)
     assert rig.system.calls == []
+    assert rig.system.opened == [(image, "me")]
     assert rig.plist().is_file()
     assert rig.launchctl.verbs() == ["enable", "bootout", "bootstrap"]
     keeper = rig.tmp_path / "state" / "podman" / "keeper.sh"
