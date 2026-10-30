@@ -757,8 +757,11 @@ page: [file_share.md](agent/modules/file_share.md),
 [siyuan.md](agent/modules/siyuan.md),
 [hermes_webui.md](agent/modules/hermes_webui.md) and
 [ayakaleaf.md](agent/modules/ayakaleaf.md).
-A source that cannot be read leaves one line in the agent's log naming it,
-so the next journal shows why. `journal` answers while an apply runs; it
+A log file its program has not written yet reads as no lines and leaves no
+line, on every system: Gitea's `gitea.log` before Gitea's first start, an
+account's log before its program first runs. Any other source that cannot be
+read, a file the agent may not open among them, leaves one line in the
+agent's log naming it, so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
 at most the number of lines the verb asked for. A journal never shows a
 secret: a token in a URL (`?tkn=`) or on a line of its own is masked before
