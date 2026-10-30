@@ -206,7 +206,11 @@ the press, such as `running` wanted while it reads `installed`, writes the
 same mark. The mark means nothing to the agent; it changes
 that entry's hash, so the hash the agent tried for that module no longer
 matches and that module alone is tried again. A change to one module's entry, or a mark on it,
-never runs another module's failed step again.
+never runs another module's failed step again. A press writes its `want`
+and its mark in one hold of `CONFIG_WRITE_LOCK`, and the hub reads every
+module's `want` and mark for a state in one hold of it. A state composed
+between the two writes would carry the new `want` with the old mark, and
+the module would plan a second task when the press's own state arrives.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
 that reads its `want`, or is in transit, writes no mark and asks for
@@ -1340,8 +1344,9 @@ Everything the channel and the panel mutate follows two laws:
   before somebody else's change. One global lock instead of one per file,
   because references cross files (a provider names a vault object, a device
   names a key) and a composite operation must nest under a single lock to
-  be one step. Reads take no lock; a stale read is tolerable, a lost write
-  is not. In-memory stores spend-and-judge in one operation, the way the
+  be one step. Reads take no lock, save a state's read of the modules'
+  `want` and retry marks from their two files; a stale read is tolerable,
+  a lost write is not. In-memory stores spend-and-judge in one operation, the way the
   enrolment ticket is popped before it is inspected.
 
 The reason it is a law: the panel's sync routes run concurrently in a thread
