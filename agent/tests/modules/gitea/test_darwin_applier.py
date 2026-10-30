@@ -6,7 +6,8 @@ carrying the tool's line when the record is not usable; the data directory
 and ``app.ini`` the account's own; the LaunchDaemon run as the account with
 the git's directory first on its ``PATH``; an apply that starts, keeps or
 restarts the job, enabled before it loads; a stop that disables the job
-and waits until launchd lets go; the CLI run as
+and waits until launchd lets go; the account made by its own step, never by
+the install; the CLI run as
 the account; and an uninstall that keeps the data and the account.
 """
 
@@ -132,10 +133,21 @@ def test_the_layout_names_the_account_and_the_data(applier, tmp_path):
     assert layout.git_path == "/opt/homebrew/bin/git"
 
 
-def test_an_install_makes_the_hidden_account_and_puts_the_binary_in_place(
+def test_an_install_puts_the_binary_in_place_and_makes_no_account(
     applier, tools, binary, tmp_path
 ):
     applier.install(binary)
+
+    assert tools.ran("sysadminctl") == []
+    gitea = tmp_path / "state" / "gitea" / "gitea"
+    assert gitea.read_bytes() == b"\xcf\xfa\xed\xfe"
+    assert gitea.stat().st_mode & 0o777 == 0o755
+
+
+def test_the_account_step_makes_the_hidden_account_and_its_data(
+    applier, tools, tmp_path
+):
+    applier.ensure_account()
 
     (made,) = tools.ran("sysadminctl", "-addUser")
     assert made[2:][:7] == [
@@ -150,9 +162,6 @@ def test_an_install_makes_the_hidden_account_and_puts_the_binary_in_place(
     assert tools.ran("dscl", ".", "-create") == [
         ["dscl", ".", "-create", "/Users/neutrino_gitea", "IsHidden", "1"]
     ]
-    gitea = tmp_path / "state" / "gitea" / "gitea"
-    assert gitea.read_bytes() == b"\xcf\xfa\xed\xfe"
-    assert gitea.stat().st_mode & 0o777 == 0o755
     data = tmp_path / "state" / "gitea_data"
     assert data.stat().st_mode & 0o777 == 0o700
     for part in ("custom/conf", "data", "log"):
@@ -160,21 +169,19 @@ def test_an_install_makes_the_hidden_account_and_puts_the_binary_in_place(
     assert ["chown", str(data), 502, 20] in tools.calls
 
 
-def test_an_account_made_already_is_not_made_again(applier, tools, binary):
+def test_an_account_made_already_is_not_made_again(applier, tools):
     tools.has_account = True
 
-    applier.install(binary)
+    applier.ensure_account()
 
     assert tools.ran("sysadminctl") == []
 
 
-def test_a_refusal_sysadminctl_exits_0_on_is_refused_with_its_line(
-    applier, tools, binary
-):
+def test_a_refusal_sysadminctl_exits_0_on_is_refused_with_its_line(applier, tools):
     tools.is_refusing_account = True
 
     with pytest.raises(ModuleApplyError) as refused:
-        applier.install(binary)
+        applier.ensure_account()
 
     assert refused.value.code == "user_create_failed"
     assert refused.value.params == {

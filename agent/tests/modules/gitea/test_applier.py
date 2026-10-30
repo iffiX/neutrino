@@ -132,7 +132,7 @@ def test_apply_without_the_git_account_leaves_the_work_root_alone(box, monkeypat
     assert not (tmp_path / "gitea").exists()
 
 
-def test_install_copies_the_binary_makes_the_user_and_installs_the_unit(box):
+def test_install_copies_the_binary_and_installs_the_unit_and_makes_no_user(box):
     commands, chowns, tmp_path = box
     commands.answers[("id", "git")] = (1, "")
     downloaded = tmp_path / "download"
@@ -143,10 +143,19 @@ def test_install_copies_the_binary_makes_the_user_and_installs_the_unit(box):
     binary = tmp_path / "bin/gitea"
     assert binary.read_bytes() == b"\x7fELF binary"
     assert stat.S_IMODE(os.stat(binary).st_mode) == 0o755
-    assert any(call[:2] == ["useradd", "--system"] for call in commands.calls)
+    assert not any(call[0] in ("id", "useradd") for call in commands.calls)
     unit = tmp_path / "systemd/neutrino_gitea.service"
     assert "ExecStart=/usr/local/bin/gitea web" in unit.read_text()
     assert ["systemctl", "daemon-reload"] in commands.calls
+
+
+def test_the_account_step_makes_the_user_and_its_directories(box):
+    commands, chowns, tmp_path = box
+    commands.answers[("id", "git")] = (1, "")
+
+    GiteaInstaller().ensure_account()
+
+    assert any(call[:2] == ["useradd", "--system"] for call in commands.calls)
     for name in ("custom", "data", "log", ".ssh"):
         assert (tmp_path / "gitea" / name).is_dir()
 

@@ -67,7 +67,7 @@ class GiteaInstaller:
     """Puts the binary, its user, its directories and its unit in place."""
 
     def install(self, binary_path: str) -> None:
-        """Install what the hub handed down.
+        """Install the binary the hub handed down and its unit.
 
         Args:
             binary_path: The downloaded release binary.
@@ -76,10 +76,18 @@ class GiteaInstaller:
             subprocess.CalledProcessError: If a step refuses.
             OSError: If a file cannot be written.
         """
-        self.create_user()
-        self.create_directories()
         place_binary(binary_path, GITEA_BINARY_PATH)
         self.install_unit()
+
+    def ensure_account(self) -> None:
+        """Make the git account when it is missing, and its directories.
+
+        Raises:
+            subprocess.CalledProcessError: If ``useradd`` refuses.
+            OSError: If a directory cannot be made.
+        """
+        self.create_user()
+        self.create_directories()
 
     def uninstall(self) -> None:
         """Remove the unit, the binary and the rendered configuration.

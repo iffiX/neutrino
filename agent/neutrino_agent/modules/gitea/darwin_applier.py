@@ -132,9 +132,14 @@ def _run_as(entry: tuple, command: list, *, environment: dict, cwd: str):
 
 
 class GiteaDarwinApplier:
-    """Runs the git server as a LaunchDaemon of its own hidden account."""
+    """Runs the git server as a LaunchDaemon of its own hidden account.
+
+    Attributes:
+        account: The hidden account the server runs as.
+    """
 
     is_git_required = True
+    account = GITEA_DARWIN_ACCOUNT
 
     def __init__(
         self,
@@ -211,24 +216,32 @@ class GiteaDarwinApplier:
         )
 
     def install(self, binary_path: str) -> None:
-        """Make the account and the data directory, and put the binary in place.
+        """Put the binary in place, the job unloaded first.
 
         Args:
             binary_path: The release binary the hub handed down.
 
         Raises:
-            ModuleApplyError: ``user_create_failed {user, detail}`` when the
-                system will not make the account.
             OSError: When a file cannot be written.
             subprocess.CalledProcessError: When a step refuses.
         """
-        uid, gid = self._ensure_account()
-        self._prepare_data(uid, gid)
         os.makedirs(self.module_dir, exist_ok=True)
         os.chmod(self.module_dir, 0o755)
         if self._is_loaded():
             self._unload()
         place_binary(binary_path, self.binary_path)
+
+    def ensure_account(self) -> None:
+        """Make the account when it is missing, and the data directory its own.
+
+        Raises:
+            ModuleApplyError: ``user_create_failed {user, detail}`` when the
+                system will not make the account.
+            OSError: When a directory cannot be made.
+            subprocess.CalledProcessError: When a step refuses.
+        """
+        uid, gid = self._ensure_account()
+        self._prepare_data(uid, gid)
 
     def uninstall(self) -> None:
         """Unload and delete the LaunchDaemon, the binary and ``app.ini``.

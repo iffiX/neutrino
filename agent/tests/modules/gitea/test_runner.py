@@ -1,9 +1,11 @@
 """The git server runner: install from bytes, validate, apply, verbs, details.
 
 What these pin beside the verbs: the runner's own check is the binary on
-disk, the system packages a recipe names install before the binary, and
-the details name the port the server answers on, from the held
-configuration or the installed ``app.ini``.
+disk, the system packages a recipe names install before the binary, the
+server's account is a step of its own before ``configure`` taking
+``system_accounts`` as the uninstall does, none where the server runs as
+LocalSystem, and the details name the port the server answers on, from the
+held configuration or the installed ``app.ini``.
 """
 
 import subprocess
@@ -14,6 +16,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea import runner as runner_module
 from neutrino_agent.modules.gitea.applier import GiteaState
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.platforms.base import AgentPlatform
 
 SECRETS = {
@@ -38,10 +41,14 @@ class RecordingPlatform(AgentPlatform):
 
 class FakeInstaller:
     installed: list = []
+    accounts: list = []
     uninstalls = 0
 
     def install(self, binary_path):
         FakeInstaller.installed.append(binary_path)
+
+    def ensure_account(self):
+        FakeInstaller.accounts.append("git")
 
     def uninstall(self):
         FakeInstaller.uninstalls += 1
@@ -169,6 +176,44 @@ def test_a_refused_apply_is_typed(runner):
         runner.apply(CONFIG)
 
     assert refused.value.code == "apply_failed"
+
+
+def configure_and_start():
+    return [
+        ModuleStep(name="configure", run=lambda context: None),
+        ModuleStep(name="start", run=lambda context: None),
+    ]
+
+
+def test_the_account_step_comes_before_the_core_s_and_makes_the_account(runner):
+    steps = runner.configure_steps({}, "running", configure_and_start())
+    steps[0].run(None)
+
+    assert [(step.name, step.params) for step in steps] == [
+        ("account", {"account": "git"}),
+        ("configure", {}),
+        ("start", {}),
+    ]
+    assert FakeInstaller.accounts == ["git"]
+
+
+def test_a_server_run_as_localsystem_plans_no_account_step(tmp_path):
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=SystemApplier(tmp_path),
+        record_dir=str(tmp_path / "record"),
+    )
+
+    steps = runner.configure_steps({}, "running", configure_and_start())
+
+    assert [step.name for step in steps] == ["configure", "start"]
+
+
+def test_the_account_and_the_uninstall_take_system_accounts(runner):
+    assert runner.step_locks("account") == (("system_accounts", "alone"),)
+    assert runner.step_locks("uninstall") == (("system_accounts", "alone"),)
+    assert runner.step_locks("configure") == ()
 
 
 def test_stop_takes_the_server_down(runner):
@@ -314,6 +359,7 @@ class SystemApplier:
     """A macOS or Windows applier as the runner sees it."""
 
     is_git_required = True
+    account = ""
 
     def __init__(self, tmp_path, git=""):
         self.git = git

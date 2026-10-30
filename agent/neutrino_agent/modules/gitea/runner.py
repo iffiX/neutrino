@@ -23,8 +23,13 @@ import os
 import subprocess
 import time
 
+from neutrino_agent.constants import AGENT_STEP_ACCOUNT, AGENT_STEP_UNINSTALL
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
+from neutrino_agent.modules.shared.base import (
+    ModuleRunner,
+    ModuleStep,
+    command_outcome,
+)
 from neutrino_agent.modules.gitea.applier import (
     GiteaAdminManager,
     GiteaConfigApplier,
@@ -43,6 +48,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_SSH_BASE_PORT,
     GITEA_SURVEY_TTL_S,
     GITEA_UNIT,
+    GITEA_USER,
 )
 from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
@@ -50,13 +56,19 @@ from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
+from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
 
 
 class GiteaLinuxApplier:
-    """The Linux server: the ``git`` account, the systemd unit, ``runuser``."""
+    """The Linux server: the ``git`` account, the systemd unit, ``runuser``.
+
+    Attributes:
+        account: The system account the server runs as.
+    """
 
     is_git_required = False
+    account = GITEA_USER
 
     @property
     def binary_path(self) -> str:
@@ -72,8 +84,12 @@ class GiteaLinuxApplier:
         return GiteaLayout()
 
     def install(self, binary_path: str) -> None:
-        """Install the binary, its account, its directories and its unit."""
+        """Install the binary and its unit."""
         GiteaInstaller().install(binary_path)
+
+    def ensure_account(self) -> None:
+        """Make the ``git`` account when it is missing, and its directories."""
+        GiteaInstaller().ensure_account()
 
     def uninstall(self) -> None:
         """Take the unit, the binary and ``app.ini`` off; keep the data."""
@@ -283,6 +299,44 @@ class GiteaModuleRunner(ModuleRunner):
         """Take the server down and keep it from starting at boot, leaving the repositories in place."""
         self._applier.stop()
 
+    def step_locks(self, step: str) -> tuple:
+        """``system_accounts`` for ``account`` and ``uninstall``.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            The step locks the module adds to the step.
+        """
+        if step in (AGENT_STEP_ACCOUNT, AGENT_STEP_UNINSTALL):
+            return SYSTEM_ACCOUNTS_LOCKS
+        return ()
+
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The server's ``account {account}`` before the core's steps, where it runs as an account of its own.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``, as the core
+                plans them.
+
+        Returns:
+            The steps; the core's own on Windows, where the server runs as
+            LocalSystem.
+        """
+        account = self._applier.account
+        if not account:
+            return steps
+        return [
+            ModuleStep(
+                name=AGENT_STEP_ACCOUNT,
+                params={"account": account},
+                run=self._run_account,
+            ),
+            *steps,
+        ]
+
     def is_active(self) -> bool:
         """Whether the git server's unit, job or service runs."""
         return self._applier.is_active()
@@ -384,6 +438,10 @@ class GiteaModuleRunner(ModuleRunner):
             )
         self._survey = None
         return command_outcome(0, output=f"{subject}\n")
+
+    def _run_account(self, context) -> None:
+        """The ``account`` step: the server's account made when it is missing, and its directories."""
+        self._applier.ensure_account()
 
     def _kept_ssh_port(self) -> int:
         """The port the record keeps for Gitea's own SSH server, 0 when none."""

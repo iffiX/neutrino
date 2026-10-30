@@ -100,9 +100,14 @@ def _service_command(binary: str, conf: str) -> str:
 
 
 class GiteaWindowsApplier:
-    """Runs the git server as a Windows service."""
+    """Runs the git server as a Windows service.
+
+    Attributes:
+        account: Empty: the server runs as LocalSystem.
+    """
 
     is_git_required = True
+    account = ""
 
     def __init__(
         self,
@@ -215,6 +220,9 @@ class GiteaWindowsApplier:
                 ]
             )
         self._run(["sc.exe", "failure", GITEA_WINDOWS_SERVICE, *SC_FAILURE_ACTIONS])
+
+    def ensure_account(self) -> None:
+        """Make nothing: the server runs as LocalSystem."""
 
     def uninstall(self) -> None:
         """Stop and delete the service, the binary and ``app.ini``.
