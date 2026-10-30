@@ -1,8 +1,9 @@
 """A module's task: its steps, its row, its waits, its end.
 
 What these pin: each kind of exception a step raises read as its failure
-and named in the log; the step's line; the row a task publishes, its
-plan's steps and the step it is on; ``queued`` while the first step waits
+and named in the log; the step's line, written once its locks are taken
+and once for a step run again; the row a task publishes, its plan's steps
+and the step it is on; ``queued`` while the first step waits
 for a step lock, ``installing`` and ``uninstalling`` by the plan's kind and
 nothing for a configure plan; a step waiting outside the agent run again
 until it takes, holding no lock between its checks; a newer entry taken at
@@ -219,6 +220,60 @@ def test_a_first_step_waiting_for_a_lock_reads_queued():
     locks.release(locked, "gitea")
     assert task.ended.wait(SETTLE_S)
     assert owner.rows[-1][1] == "installing"
+
+
+def test_a_step_s_line_is_written_once_its_locks_are_taken():
+    locks = StepLocks()
+    locked = (("package_manager", "alone"),)
+    locks.acquire(locked, "gitea")
+    logged: list = []
+    owner = Owner([(PLAN_INSTALL, [step("packages", locks=locked)])])
+    task = ModuleTask(
+        name="samba",
+        entry={"want": "running"},
+        entry_hash="h1",
+        owner=owner,
+        locks=locks,
+        log=logged.append,
+        recheck_s=0.01,
+    )
+    task.start()
+    for _ in range(500):
+        if task.wait().get("code") == "waiting_for_lock":
+            break
+        task.ended.wait(0.01)
+
+    assert task.wait()["code"] == "waiting_for_lock"
+    assert logged == []
+    locks.release(locked, "gitea")
+    assert task.ended.wait(SETTLE_S)
+    assert logged == ["samba: step 1/1: packages"]
+
+
+def test_a_step_run_again_after_its_check_writes_its_line_once():
+    logged: list = []
+    tries: list = []
+
+    def first_start(context):
+        tries.append(1)
+        if len(tries) < 3:
+            raise ModuleInstallPending("first start")
+
+    owner = Owner([(PLAN_INSTALL, [step("first_start", run=first_start)])])
+    task = ModuleTask(
+        name="samba",
+        entry={"want": "running"},
+        entry_hash="h1",
+        owner=owner,
+        locks=StepLocks(),
+        log=logged.append,
+        recheck_s=0.01,
+    )
+
+    run_task(task)
+
+    assert len(tries) == 3
+    assert logged == ["samba: step 1/1: first_start"]
 
 
 def test_a_waiting_step_runs_again_until_it_takes_and_holds_no_lock_between():

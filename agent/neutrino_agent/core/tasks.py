@@ -409,7 +409,8 @@ class ModuleTask:
                 return None, RUN_REPLANNED
             if self._owner.is_task_cut(self):
                 return None, RUN_CUT
-            self._begin(index, count, step)
+            self._begin(index)
+            is_written = False
             while True:
                 self._locks.acquire(step.locks, self.name, on_wait=self.set_wait)
                 try:
@@ -418,6 +419,9 @@ class ModuleTask:
                     if self._owner.is_task_cut(self):
                         return None, RUN_CUT
                     self.set_wait({})
+                    if not is_written:
+                        self._write_step_line(index, count, step)
+                        is_written = True
                     if kind == PLAN_INSTALL:
                         self._has_installed = True
                     failure = run_step(step, self)
@@ -462,17 +466,20 @@ class ModuleTask:
             self._wait = {}
         self._owner.task_changed(self)
 
-    def _begin(self, index: int, count: int, step) -> None:
-        """Mark one step as the running one, and write its line."""
+    def _begin(self, index: int) -> None:
+        """Mark one step as the running one, and publish the row."""
         with self._lock:
             self._index = index
             self._wait = {}
+        self._owner.task_changed(self)
+
+    def _write_step_line(self, index: int, count: int, step) -> None:
+        """Write a step's line once its step locks are taken, as its work starts."""
         if self._log_stream is None:
             self._log_stream = self._owner.open_log(self.name)
         line = step_line(index, count, step)
         self._log(f"{self.name}: {line}")
         self.log(line)
-        self._owner.task_changed(self)
 
     def _close_log(self) -> None:
         """End the log stream with the module's state, and its failure's code."""
