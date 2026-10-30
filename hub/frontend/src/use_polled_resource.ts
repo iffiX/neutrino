@@ -17,6 +17,9 @@ import type { ApiResource } from "./use_api_resource";
  *
  * A hidden tab stops asking and catches up when it comes back, so a panel
  * left open in a background tab costs the gateway nothing.
+ *
+ * A tick starts no request while the first load or the last tick is still
+ * out.
  */
 
 export const DEFAULT_POLL_INTERVAL_MS = 15000;
@@ -36,7 +39,7 @@ export function usePolledResource<T>(
   intervalMs: number = DEFAULT_POLL_INTERVAL_MS,
 ): ApiResource<T> {
   const resource = useApiResource<T>(path);
-  const { data, setData } = resource;
+  const { data, isLoading, setData } = resource;
   // What is on screen, serialized. A tick compares against this rather than
   // against its own last answer, so a value the page folded in itself — a
   // mutation response — counts as held too.
@@ -46,17 +49,30 @@ export function usePolledResource<T>(
   // answer is dropped when anything else set the value while it was out.
   const generationRef = useRef(0);
 
+  // Whether the first load is still out.
+  const isLoadingRef = useRef(isLoading);
+
   useEffect(() => {
     generationRef.current += 1;
     heldPayloadRef.current = data === null ? null : JSON.stringify(data);
   }, [data]);
 
   useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
     if (path === null) {
       return;
     }
     let isCancelled = false;
+    // Whether this path's last tick is still out.
+    let isTickOut = false;
     const tick = async () => {
+      if (isTickOut || isLoadingRef.current) {
+        return;
+      }
+      isTickOut = true;
       try {
         const issuedAt = generationRef.current;
         const fresh = await apiGet<T>(path);
@@ -71,6 +87,8 @@ export function usePolledResource<T>(
         setData(fresh);
       } catch {
         // A transient failure keeps the last reading; the next tick retries.
+      } finally {
+        isTickOut = false;
       }
     };
     const tickWhenVisible = () => {
