@@ -106,7 +106,10 @@ systemd refuses a second service of its name while it runs. So the install
 first waits for a service of its name that runs, polling every 5 seconds
 for at most the install's 30 minutes, and stops it when the time is up.
 When CloudCLI's version is then in the account's app directory, the
-install takes that service's work and runs no npm. When the kernel kills the
+install takes that service's work and runs no npm. A `systemd-run` that
+finds a service of that name still loaded, or a run the machine's shutdown
+stopped, makes the step wait for its next check and keeps no failure, so a
+reboot during npm leaves the step to run again after it. When the kernel kills the
 install for want of memory, the install ends
 `cloudcli_install_out_of_memory {account}` and the agent keeps running. A
 failed install is tried again only with a state of another hash, and the
