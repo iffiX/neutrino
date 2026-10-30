@@ -174,6 +174,7 @@ macOS.
 | **Stop** runs the root script that stops every declared container and every hub container, then stops the keeper, then runs `podman machine stop` as the account. The machine then stops answering the read, and the module reads `stopped`. A container a person started by hand stops with the machine. | A running machine keeps its memory, about 3 GiB on the lab machine, while the module is stopped. A keeper left running starts the stopped machine again within 30 seconds. |
 | **Start** applies the configuration, and the apply starts the keeper. The keeper starts the machine, and the apply waits until the machine answers the read. | The keeper is the one program that starts the machine. |
 | A stop lasts until the computer's next boot. The keeper's task or LaunchDaemon starts at boot, as every account service's does, and starts the machine. | The account service layer stops a service and leaves it registered ([module_template.md](../module_template.md), "The run"). |
+| A container module's uninstall while the machine is stopped starts the keeper and waits until the machine answers the read. It then removes the module's containers and their files in the machine, and stops the keeper and the machine again. | The uninstall's steps run through the machine's Podman. On Linux they run while Containers is stopped as well. |
 
 A published port answers about 30 seconds after a boot with nobody signed
 in. On Windows the machine keeps running when the keeper's task stops and
@@ -259,7 +260,8 @@ LaunchDaemon's `StandardOutPath` and `StandardErrorPath`, on macOS.
 ### The uninstall
 
 The uninstall runs in the order of this table, so the root script reaches
-the machine while it still runs:
+the machine while it still runs. A machine that **Stop** stopped is started
+by its keeper first, and the uninstall waits until it answers the read:
 
 | What | After the uninstall |
 | --- | --- |
