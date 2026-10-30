@@ -130,6 +130,7 @@ def compose_hub_containers(
     is_hub_machine: bool = False,
     models: "list | tuple" = (),
     releases=None,
+    wanted: "dict | None" = None,
 ) -> list:
     """The ``hub_containers`` the Containers module's state carries for one machine.
 
@@ -142,6 +143,8 @@ def compose_hub_containers(
         releases: The publishers' feeds as last read, as a
             :class:`~neutrino_hub.modules.devices.module_releases.ModuleReleaseStore`;
             None takes every image's tested digest.
+        wanted: The modules ``modules.json`` names, as the state's one
+            read gave them; None reads the file.
 
     Returns:
         ``{module, name, image: {digest, sources}, ports, volumes,
@@ -155,7 +158,7 @@ def compose_hub_containers(
     Raises:
         ValueError: For a composition :func:`check_composition` refuses.
     """
-    wants = store.modules(key)
+    wants = store.modules(key) if wanted is None else wanted
     manifests = load_module_manifests()
     request = HubContainerRequest(
         store=store,

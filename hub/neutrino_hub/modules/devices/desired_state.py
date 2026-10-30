@@ -1295,6 +1295,7 @@ class DesiredStateStore:
         ai_models: "list | tuple" = (),
         releases: "ModuleReleaseStore | None" = None,
         manifests: "dict | None" = None,
+        wanted: "dict | None" = None,
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -1323,6 +1324,9 @@ class DesiredStateStore:
                 digest of a hub container's image at the version the machine
                 chose; None takes the tested digests.
             manifests: The module manifests; None reads them.
+            wanted: The modules ``modules.json`` names, as the state's one
+                read gave them, which the Containers module's hub
+                containers start by; None reads the file.
 
         Returns:
             The configuration: an account-layer module as
@@ -1373,6 +1377,7 @@ class DesiredStateStore:
                 is_hub_machine=is_hub_machine,
                 models=ai_models,
                 releases=releases,
+                wanted=wanted,
             )
         elif name == DEVICE_HERMES_WEBUI_MODULE:
             app_id = f"{SERVICES_HERMES_WEBUI_ID}_{key}"
@@ -1444,6 +1449,7 @@ class DesiredStateStore:
         """
         resolved = resolved_modules(platform)
         marks = dict(retry_marks or {})
+        wanted = self.modules(key) if wanted is None else wanted
         slugs = app_slugs(machine_apps(self, key))
         shared = {
             "address": address,
@@ -1454,9 +1460,10 @@ class DesiredStateStore:
             "ai_models": tuple(ai_models),
             "releases": releases,
             "manifests": load_module_manifests(),
+            "wanted": wanted,
         }
         modules = {}
-        for name, entry in (self.modules(key) if wanted is None else wanted).items():
+        for name, entry in wanted.items():
             if entry["is_settled"] or name in DEVICE_AGENT_MODULES:
                 continue
             recipe = dict((resolved.get(name) or {}).get("recipe") or {})

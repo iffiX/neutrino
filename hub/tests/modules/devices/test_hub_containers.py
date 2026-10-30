@@ -98,6 +98,22 @@ def test_a_module_s_containers_start_with_the_box_while_it_is_wanted_running(
     assert {container["is_autostart"] for container in composed} == {is_autostart}
 
 
+def test_the_containers_state_reads_each_want_from_the_one_read_of_the_state(store):
+    """A press written after the state's one read of the wants reaches
+    neither the module's entry nor the Containers entry's containers, so
+    the two never disagree."""
+    store.set_want(DEVICE, "podman", "running")
+    store.set_want(DEVICE, "demo", "stopped")
+    wanted = store.modules(DEVICE)
+    store.set_want(DEVICE, "demo", "running")
+
+    desired, _ = store.compose(DEVICE, LINUX, wanted=wanted)
+
+    composed = desired["modules"]["podman"]["config"]["hub_containers"]
+    assert desired["modules"]["demo"]["want"] == "stopped"
+    assert {container["is_autostart"] for container in composed} == {False}
+
+
 def test_a_stop_timeout_and_exit_codes_are_composed_where_a_container_names_them(
     store, monkeypatch
 ):
