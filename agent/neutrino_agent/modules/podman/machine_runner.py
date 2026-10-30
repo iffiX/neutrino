@@ -526,15 +526,35 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._source_sets = dict(source_sets)
 
     def stop(self) -> None:
-        """Stop every declared and hub container in the machine, leaving images and volumes."""
+        """Stop every declared and hub container, then the keeper, then the machine.
+
+        Images and volumes stay. The keeper starts the machine again at
+        the computer's next boot.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
+                the machine; ``credential_invalid`` when Windows refuses the
+                login.
+            OSError: When the service manager cannot stop the keeper.
+        """
         with self._apply_lock:
             record = self._record()
             if not record:
                 return
-            self._run_quietly(
-                self._machine_of_record(record),
-                machine_stop_script(),
+            account = str(record.get("account", "") or "")
+            password = str(record.get("password", "") or "")
+            machine = self._machine_of(account, password)
+            self._run_quietly(machine, machine_stop_script())
+            # The keeper starts a stopped machine again within 30 seconds.
+            account_service.stop(
+                self._keeper_of(account, password), self._service_machine
             )
+            try:
+                machine.stop()
+            finally:
+                with self._lock:
+                    self._reading = None
+            self._log(f"podman: stopped the machine of {account}")
 
     def remove_configuration(self) -> None:
         """Take the containers' files out of the machine, remove the keeper and stop the machine.

@@ -1109,15 +1109,38 @@ def test_a_verb_before_any_apply_knows_no_container(rig):
 # --- stop, removal, uninstall ---
 
 
-def test_stop_stops_the_declared_containers_and_leaves_the_machine(rig):
+def test_stop_stops_the_containers_then_the_keeper_then_the_machine(rig):
     rig.keep_image()
     rig.runner.apply(CONFIG)
+    assert rig.runner.is_active()
     rig.world.calls.clear()
+    rig.launchctl.calls.clear()
 
     rig.runner.stop()
+    rig.world.is_answering = False
 
     assert rig.world.scripts[-1][2] == machine_stop_script()
-    assert rig.world.calls == []
+    assert rig.launchctl.verbs() == ["bootout"]
+    assert "com.neutrino.podman.me" not in rig.launchctl.loaded
+    assert rig.world.calls == [("me", "stop", "")]
+    assert "me" not in rig.world.running
+    assert rig.plist().is_file()
+    assert not rig.runner.is_active()
+
+
+def test_start_after_a_stop_brings_the_keeper_and_the_machine_back(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.launchctl.calls.clear()
+
+    rig.runner.apply(CONFIG)
+    rig.runner.start()
+
+    assert rig.launchctl.verbs() == ["bootout", "bootstrap"]
+    assert "com.neutrino.podman.me" in rig.launchctl.loaded
+    assert "me" in rig.world.running
+    assert rig.runner.is_active()
 
 
 def test_removal_empties_the_machine_removes_the_keeper_and_stops_the_machine(rig):
