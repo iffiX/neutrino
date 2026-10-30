@@ -797,7 +797,9 @@ A tab reads, top to bottom: its state line; `ui.modules.log_title` and the
 log box; `ui.modules.config_title` and the module's panel, which **Configure**
 opens and **Hide configuration** closes; and the buttons **Install**,
 **Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
-to the right edge.
+to the right edge. **Configure** on a module whose `want` is `stopped` opens
+the panel and writes nothing, and the module stays stopped until its
+**Start** ([protocol.md](protocol.md), "The modules section, one entry per module").
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -938,7 +940,8 @@ asked for live: **Install** while its `want` is `installed`, **Start** while
 it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
 That press tries the same step again ([agent.md](agent.md), "A retry is the
 same press again"); there is no other retry button. A module panel's apply
-and **Configure** on a refused configuration try again the same way. A
+and **Configure** on a refused configuration try again the same way, and
+under `stopped` the panel's apply alone does. A
 press, or a module panel's apply, on a module whose state is not its `want`
 after the press asks the machine to apply it again, as **Start** on a module
 that reads `installed` while its `want` is `running` does. A press on a

@@ -1309,6 +1309,7 @@ writes it directly:
 | --- | --- | --- |
 | **Install** | `installed` | installs the package only; writes no configuration, and starts nothing but Containers' `podman.socket`, which a Linux install enables |
 | **Configure** or **Start** | `running` | ensures the package, applies the configuration, starts the unit |
+| **Configure** on a module whose `want` is `stopped` | none written | nothing new: the panel opens, the first import of Gitea or Containers still runs, and the module stays stopped until its **Start** |
 | **Stop** | `stopped` | ensures the package, applies the configuration, stops the unit |
 | **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation shows the row's `uninstall_data` line ([ui_behavior.md](ui_behavior.md), "The machine page"); every shipped `hub` and `system` entry keeps the data, so share directories, repositories and declared containers' volumes stay, and a `container` module is removed with its volumes ([agent/module_install.md](agent/module_install.md), "From container images") |
 
