@@ -13,7 +13,8 @@ of size against the last apply, the disk grown and never shrunk; a new account s
 machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
-shell runs through, empty before any apply; the keeper's log in the
+shell runs through, empty before any apply; a machine step with no
+account failing ``machine_account_missing``; the keeper's log in the
 journal; the verbs; stop stopping the containers, the keeper and the
 machine, and start bringing them back; a stopped machine woken by its
 keeper for a removal or a container module's uninstall; removal and
@@ -631,6 +632,19 @@ def test_a_machine_step_run_again_after_a_new_size_sizes_nothing_again(rig):
 
     assert rig.system.calls == [("halt", "me"), ("resources", "me", 4, 4)]
     assert rig.record()[0]["names"] == ["web"]
+
+
+def test_a_machine_step_with_no_account_fails_machine_account_missing(rig):
+    config = {"containers": [], "mirrors": [], "machine": dict(MACHINE, account="")}
+    steps = rig.runner.configure_steps(
+        config, "running", [plain_step("configure"), plain_step("start")]
+    )
+
+    found = refusal(lambda: steps[0].run(None))
+
+    assert (found.code, found.params) == ("machine_account_missing", {})
+    assert rig.world.calls == []
+    assert rig.launchctl.calls == []
 
 
 def test_the_machine_step_waits_while_a_restart_is_owed(rig):

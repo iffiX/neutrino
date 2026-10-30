@@ -642,11 +642,14 @@ class PodmanMachineModuleRunner(ModuleRunner):
 
         Raises:
             ModuleApplyError: When the configuration is refused, or the
-                machine cannot be made, sized or reached.
+                machine cannot be made, sized or reached;
+                ``machine_account_missing`` when the Run settings name no
+                account.
             ModuleInstallPending: While the computer owes a restart.
         """
         with self._apply_lock:
-            self._prepare_machine(config)
+            if not self._prepare_machine(config):
+                raise ModuleApplyError("machine_account_missing", {})
 
     def write_containers(self, config: dict) -> None:
         """Write the declared containers, and each module's hub containers whose images the store holds, into the machine.
@@ -1131,8 +1134,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
             self._prepare_machine(config)
             self._write_containers(config)
 
-    def _prepare_machine(self, config: dict) -> None:
+    def _prepare_machine(self, config: dict) -> bool:
         """Make, size and wake the account's machine, and keep its size in the record. Call under the apply lock.
+
+        Returns:
+            Whether the Run settings name an account, whose machine now
+            answers.
 
         Raises:
             ModuleApplyError: As :meth:`prepare_machine` does.
@@ -1151,7 +1158,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             record = {}
         if not settings.account:
             self._log("podman: no account is named; no machine runs")
-            return
+            return False
         machine = self._machine_of(settings.account, settings.password)
         try:
             notes, disk_gib = self._prepare(machine, settings, record)
@@ -1164,6 +1171,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._write_record(settings, disk_gib)
         if notes:
             self._log(f"podman: {'; '.join(notes)}")
+        return True
 
     def _write_containers(self, config: dict) -> None:
         """Write the containers into the running machine with one root script. Call under the apply lock.
