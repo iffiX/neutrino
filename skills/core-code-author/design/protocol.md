@@ -2149,7 +2149,9 @@ agent has reported on its link.
 
 The device's address is the report's `network.link.address`; the session's
 peer address, which the transport gives the hub's Python with the session,
-is the fallback when that is empty, and it is recorded.
+is the fallback when that is empty, and it is recorded. The hub's own
+machine's address is `127.0.0.1`, whichever of the hub's addresses its
+session runs on.
 
 ### The address a caller is given
 
