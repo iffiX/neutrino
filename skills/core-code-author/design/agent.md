@@ -157,6 +157,17 @@ Containers row as it is. The pull runs on Containers' Podman, and on
 Windows a read of the Podman machine failed while a 2.8 GB image was
 pulled, so Containers read `stopped`.
 
+**A stopped module stays stopped.** A module's **Stop** keeps what it
+stopped from starting again at the next boot, and its **Start** undoes
+that before it starts anything:
+
+| Rule | Reason |
+| --- | --- |
+| On Linux every unit a module's **Stop** stops is also disabled, and **Start** enables it again. Containers' declared and hub containers are among them. | A person who stopped a module expects it stopped until they start it, and a module that comes back at boot spends the memory and the port the **Stop** gave back. |
+| On macOS every LaunchDaemon a module's **Stop** stops is disabled with `launchctl disable system/<label>`, and **Start** runs `launchctl enable` before it loads the job. | `RunAtLoad` loads a job at boot until it is disabled. |
+| On Windows every scheduled task a module's **Stop** stops is disabled with `Disable-ScheduledTask`, and **Start** runs `Enable-ScheduledTask` before it starts the task; a service a module made, Gitea's, gets the start type `disabled` at **Stop** and `auto` at **Start**. | A task triggered at startup runs at boot until it is disabled, and a service of start type `auto` starts at boot. |
+| The account service layer holds the disable and the enable for every program run as an account: VS Code, code-server, CloudCLI, Codeg, SiYuan, the SSH server's instances and Containers' keeper ([module_template.md](agent/module_template.md), "The run"). | One place for every account service, on every system. |
+
 **The agent is handed conclusions, never a table to search.** The recipes it
 receives are already resolved for its platform; it has no manifest logic and
 no version table. A module it has no runner for is `unsupported`, which is an

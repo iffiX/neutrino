@@ -32,13 +32,19 @@ methods.
 One instance runs per enabled account of the module, an available account of
 the machine ([agent.md](../agent.md), "The two layers and the accounts"). The
 account service layer, `modules/shared/account_service/` with one file per system, writes
-the service definition, starts, stops, removes and queries it:
+the service definition, starts, stops, disables, enables, removes and
+queries it:
 
-| System | The service |
-| --- | --- |
-| Linux | the unit `neutrino_<module>@<account>.service` with `User=<account>`, its output in the unit's journal |
-| macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says, and `AbandonProcessGroup` where the module asks for it, so the processes the program started keep running when the job stops |
-| Windows | a scheduled task under the account's login, the one the account's row on the machine page holds, started at boot with no time limit and a limited token; a stop ends the task's whole process tree |
+| System | The service | A stop, and the start after it |
+| --- | --- | --- |
+| Linux | the unit `neutrino_<module>@<account>.service` with `User=<account>`, its output in the unit's journal | `systemctl disable --now`; the start runs `systemctl enable --now` |
+| macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says, and `AbandonProcessGroup` where the module asks for it, so the processes the program started keep running when the job stops | `launchctl disable system/<label>`, then the job unloaded; the start runs `launchctl enable system/<label>` before it loads the job |
+| Windows | a scheduled task under the account's login, the one the account's row on the machine page holds, started at boot with no time limit and a limited token; a stop ends the task's whole process tree | `Disable-ScheduledTask` after the stop; the start runs `Enable-ScheduledTask` before it starts the task |
+
+A stopped instance stays stopped across a reboot, and the module's
+**Start** enables it again ([agent.md](../agent.md), "A stopped module stays
+stopped"). Containers' keeper is an account service like the others, so
+Containers' **Stop** keeps the Podman machine stopped across a reboot too.
 
 A task under an account's login signs the account in with a batch logon,
 and Windows admits that logon only for an account with "Log on as a batch
@@ -225,7 +231,7 @@ under `modules/<module>/`, which the `container` runner calls.
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
 | `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |
-| `account_service/` | one file per system: write the service definition for an account, start, stop, remove and query it; its `__init__.py` also holds `write_if_changed`, which writes a file only when its text differs, so an apply that changes nothing rewrites no file |
+| `account_service/` | one file per system: write the service definition for an account, start, stop, disable, enable, remove and query it; its `__init__.py` also holds `write_if_changed`, which writes a file only when its text differs, so an apply that changes nothing rewrites no file |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
 
 An applier on Windows runs its cmdlets through the agent's one PowerShell

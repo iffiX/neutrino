@@ -15,7 +15,7 @@ are the same on every system.
 | `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
 | Listens on | `127.0.0.1` alone, at the configured port | the same | the same |
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
-| Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
+| Service | `neutrino_gitea.service`, disabled at **Stop** and enabled at **Start** | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log`, disabled with `launchctl disable` at **Stop** and enabled at **Start** | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure; its start type `disabled` at **Stop** and `auto` at **Start** |
 | Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
 | SSH | Gitea's own SSH server, on `127.0.0.1` alone | the same | the same |
 
