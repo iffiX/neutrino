@@ -289,7 +289,9 @@ module from it after a restart: a module whose install failed reads
 `install_failed`, and one whose configure, start, stop or uninstall failed
 reads `failed` while its software is there. The module's next attempt
 replaces the record, and deletes it when the attempt took; a state that no
-longer names the module, a join and a leave delete it as well. A failure the
+longer names the module, a join and a leave delete it as well. While the
+module's task runs, its row leaves the kept failure out and reads what the
+task and the machine show. A failure the
 session caused, `hub_unreachable`, is kept like any other, and its tried hash
 is not, so the next state runs the step again.
 
@@ -320,7 +322,7 @@ account carries it as a parameter.
 | A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing or the last install failed, the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. |
 | Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
 | A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
-| A module's task opens one `log {module}` stream for its whole run, writes `step <i>/<n>: <name> <params>` at each step's start, and then the step's output line by line. | The log box reads the steps in order, configure and start among them. |
+| A module's task opens one `log {module}` stream for its whole run, writes `step <i>/<n>: <name> <params>` once the step has taken its step locks, and then the step's output line by line. A step that runs again after its check writes its line once. | The log box reads the steps in order, configure and start among them. |
 | The report goes up at the start and the end of every step. | Several tasks run at once, and a step of three seconds would otherwise start and end between two reports. |
 
 ### From a state to tasks
@@ -434,6 +436,7 @@ names.
 | `wait_containers` ends the task with `module_needed {module: podman, state}`, `install_failed` in an install and `failed` after it, when Containers' task ends and Containers does not read `running`, or when Containers' `want` is not `running`. Containers' row is read first when nothing read it since the agent started. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks Containers too. |
 | An installed container module plans no step while Containers' `want` is not `running`: its task ends with no failure and no tried hash, and the module reads `stopped`. | Containers' **Stop** stops every hub container, and the state that starts Containers again plans the module's start. |
 | `render` asks Containers for a configure task and waits for it to end. Two asks while one Containers task runs become one more configure after it. | Containers renders a container module's containers once their images are in its store, and does it once for a run of pulls. |
+| An install plan holds one `wait_containers`, its first step; the configure steps after the install steps add none. | Containers is waited for once, before the first pull. |
 | Containers' task never waits for a container module. | Module waits then form no loop ("Step locks"). |
 
 ### A restart mid-task
