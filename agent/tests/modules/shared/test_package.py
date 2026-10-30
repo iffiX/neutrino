@@ -39,6 +39,7 @@ from neutrino_agent.modules.shared.package import (
     swap_back,
     swap_in,
     unpacked_paths,
+    program_stamp,
     verify_detail,
     verify_passes,
 )
@@ -126,6 +127,23 @@ def test_verify_passes_runs_the_recipes_command_and_reads_its_exit(monkeypatch):
     assert verify_passes("smbd -V") is False
     assert verify_passes("") is False
     assert seen == ["smbd -V ok", "smbd -V"]
+
+
+def test_a_verify_commands_program_is_its_first_word_or_quoted_part(
+    tmp_path, monkeypatch
+):
+    program = tmp_path / "state dir" / "code"
+    program.parent.mkdir()
+    program.write_text("x")
+    found = os.stat(program)
+    stamp = (str(program), found.st_mtime_ns, found.st_size, found.st_ino)
+    monkeypatch.setenv("NEUTRINO_TEST_STATE", str(tmp_path / "state dir"))
+
+    assert program_stamp(f'"{program}" --version') == stamp
+    assert program_stamp('"$NEUTRINO_TEST_STATE/code" --version') == stamp
+    assert program_stamp(f"{tmp_path}/none --version") is None
+    assert program_stamp("podman --version && runc --version") is None
+    assert program_stamp("") is None
 
 
 def test_the_npm_artifact_is_not_received_and_is_found_by_its_kind():

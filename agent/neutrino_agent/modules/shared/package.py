@@ -76,6 +76,34 @@ def verify_passes(command: str) -> bool:
     return result.returncode == 0
 
 
+def program_stamp(command: str) -> "tuple | None":
+    """The program file a verify command runs first, as it stands now.
+
+    The program is the command's first word, or its first quoted part, with
+    the system's variables expanded.
+
+    Args:
+        command: The shell command the hub resolved for this platform.
+
+    Returns:
+        ``(path, mtime_ns, size, inode)``; None for a program named without
+        an absolute path, or one that is not there.
+    """
+    text = command.strip()
+    if text.startswith('"'):
+        program = text[1:].split('"', 1)[0]
+    else:
+        program = text.split(None, 1)[0] if text else ""
+    program = os.path.expandvars(program)
+    if not program or not os.path.isabs(program):
+        return None
+    try:
+        found = os.stat(program)
+    except OSError:
+        return None
+    return (program, found.st_mtime_ns, found.st_size, found.st_ino)
+
+
 def verify_detail(command: str) -> str:
     """Why a recipe's verify command fails on this machine, empty when it passes.
 

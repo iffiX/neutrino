@@ -112,6 +112,7 @@ from neutrino_agent.modules.shared.package import (
     stage_artifact,
     swap_back,
     swap_in,
+    program_stamp,
     verify_detail,
     verify_passes,
 )
@@ -295,6 +296,11 @@ class ModuleEngine(ReconcileWorker):
         self._failures: dict = {}
         # Module name to the detail of the read that last failed, logged once.
         self._verify_failures: dict = {}
+        # Each verify command that passed, by command, with the program file
+        # it runs as it stood then. A command whose program is unchanged
+        # passes again without running.
+        self._verified: dict = {}
+        self._verified_lock = threading.Lock()
         self._details_at = 0.0
         # The modules this agent applies the hub's configuration to, by
         # name; each also answers its own verbs. A platform that installs no
@@ -1374,23 +1380,39 @@ class ModuleEngine(ReconcileWorker):
         except OSError as error:
             self._log(f"{name}: could not keep its failure: {error}")
 
-    @staticmethod
-    def _is_present(runner, recipe: dict) -> bool:
+    def _is_present(self, runner, recipe: dict) -> bool:
         """Whether the software is there, by the method's one presence check.
 
         A module the agent carries is always there; a ``system`` or a
-        ``hub`` recipe is there while its ``verify`` exits 0; a
-        ``container`` recipe while every image it pins is in Containers'
-        Podman, as its runner reads it. A ``builtin`` recipe, and a module
-        the state does not name, which comes with no recipe, are judged by
-        the runner's own check.
+        ``hub`` recipe is there while its ``verify`` exits 0, run once per
+        program file it names; a ``container`` recipe while every image it
+        pins is in Containers' Podman, as its runner reads it. A
+        ``builtin`` recipe, and a module the state does not name, which
+        comes with no recipe, are judged by the runner's own check.
         """
         method = str(recipe.get("method", "") or "")
         if method == AGENT_METHOD_AGENT:
             return True
         if method in VERIFIED_METHODS:
-            return verify_passes(str(params_of(recipe).get("verify", "") or ""))
+            return self._verify_passes(str(params_of(recipe).get("verify", "") or ""))
         return bool(runner.verify(recipe))
+
+    def _verify_passes(self, command: str) -> bool:
+        """Whether a verify command passes, run again only once the program file it names changed.
+
+        A command whose program is found on ``PATH`` runs every time.
+        """
+        stamp = program_stamp(command)
+        with self._verified_lock:
+            if stamp is not None and self._verified.get(command) == stamp:
+                return True
+        is_passed = verify_passes(command)
+        with self._verified_lock:
+            if is_passed and stamp is not None:
+                self._verified[command] = stamp
+            else:
+                self._verified.pop(command, None)
+        return is_passed
 
     def _runner_for(self, name: str, recipe: dict):
         """The runner for one module: the one its recipe names, else its own by name.

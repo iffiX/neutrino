@@ -7,7 +7,8 @@ here is the runner the recipe's ``runner`` chooses, an unknown one reading
 unsupported; the state derived from three facts (the software there by the
 method's one presence check, the unit active, the configured mark on disk)
 with the unit and the details read whenever that check passes, whatever the
-runner's own check says; the five fields of every row; the mark written and
+runner's own check says; a ``verify`` that passed run again only once the
+program file it names changed; the five fields of every row; the mark written and
 cleared by name; an install and an uninstall run in the caller's thread
 with each output line handed on as it comes and the row transient
 meanwhile; a ``hub`` recipe's system packages installed by name before its
@@ -149,6 +150,8 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._wakeup = threading.Event()
     engine._failures = {}
     engine._verify_failures = {}
+    engine._verified = {}
+    engine._verified_lock = threading.Lock()
     engine._details_at = 0.0
     runner = runner if runner is not None else HubRunner()
     engine._module_runners = {runner.name: runner}
@@ -912,6 +915,31 @@ def test_a_recipe_whose_verify_fails_is_absent_whatever_the_runner_says(
     assert engine.report()["samba"]["state"] == "absent"
     assert runner.detail_reads == 0
     assert engine.is_installed("samba") is False
+
+
+def test_a_verify_naming_a_program_file_runs_once_per_file(monkeypatch, tmp_path):
+    program = tmp_path / "state dir" / "gitea"
+    program.parent.mkdir()
+    program.write_text("1")
+    wanted = module_wanted("running", "system")
+    wanted["samba"]["install"]["params"]["verify"] = f'"{program}" --version'
+    engine = module_engine(ConfigurableRunner(), wanted, tmp_path)
+    asked: list = []
+    answers = iter([True, True, False, False, True])
+    monkeypatch.setattr(
+        engine_module,
+        "verify_passes",
+        lambda command: asked.append(command) or next(answers),
+    )
+
+    assert [engine.is_installed("samba") for _ in range(3)] == [True] * 3
+    assert len(asked) == 1
+    program.write_text("1.1")
+    assert engine.is_installed("samba") is True
+    assert len(asked) == 2
+    program.write_text("1.22")
+    assert [engine.is_installed("samba") for _ in range(3)] == [False, False, True]
+    assert len(asked) == 5
 
 
 def test_a_module_the_agent_carries_is_there_without_any_check(monkeypatch):
