@@ -268,14 +268,14 @@ and its rollback run the package manager, and with it the same scripts.
 
 | Package | Its install over a hub somebody set up |
 | --- | --- |
-| `.deb`, `.rpm`, Arch | The script runs `nhub apply`. It then restarts `neutrino_hub_transport` while it runs, `neutrino_hub_router` where it is enabled, and `neutrino_hub_web` while it runs, in that order. |
+| `.deb`, `.rpm`, Arch | The script runs `nhub apply`. It then restarts `neutrino_hub_router` where it is enabled, `neutrino_hub_web` while it runs, and `neutrino_hub_transport` while it runs, in that order. |
 | macOS `.pkg` | The preinstall stops `com.neutrino.hub` before the installer writes the files, and every daemon it supervises ends with it, the transport among them. The postinstall starts it again. |
 | Windows `.msi` | The installer stops `neutrino_hub` before it replaces the files and starts it after them. The daemons it supervises run in its job and end with it. |
 
 | Rule | Reason |
 | --- | --- |
 | On Linux the script restarts the transport's unit after `nhub apply`, whether or not `nhub apply` restarted it. | A running process keeps the program it started from, and `nhub apply` restarts the transport only when `transport.json` changes. The restart runs the unit `nhub apply` wrote. |
-| The transport restarts before the panel. | The restart ends every session, and each peer dials again at once ([../design/transport.md](../design/transport.md), "The redial"). The panel still running admits each peer again, and the panel's restart after that ends no session. |
+| The transport restarts last. | The restart ends every session, and each peer dials again at once ([../design/transport.md](../design/transport.md), "The redial"). The new panel already runs and admits each peer. A peer that dials while no panel runs reads `control_unavailable` and dials again 5 seconds later. |
 | On macOS and Windows no script names the transport. | The transport runs there as a child of the one service, and the install stops and starts that service. |
 
 ## The hub's own agent follows its hub
