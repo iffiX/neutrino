@@ -222,6 +222,7 @@
   "ui.containers.run_memory_need": "为这里安装的容器模块，设为 {need} GiB 或更多。",
   "ui.containers.run_needed": "先在“运行设置”里选一个账户。",
   "ui.containers.run_restart_warning": "虚拟机会重启，容器会停一会儿。",
+  "ui.containers.run_stopped_hint": "容器已停止，这些设置在下次启动时生效。",
   "ui.containers.run_title": "运行设置",
   "ui.containers.run_wsl_warning": "这个账户下的所有 WSL 系统都会重启并使用新设置。",
   "ui.containers.service_auto": "自动",

@@ -222,6 +222,7 @@
   "ui.containers.run_memory_need": "Set {need} GiB or more for the container modules installed here.",
   "ui.containers.run_needed": "Choose an account under Run settings first.",
   "ui.containers.run_restart_warning": "The machine restarts, and its containers stop for a moment.",
+  "ui.containers.run_stopped_hint": "Containers are stopped; these settings take effect at the next Start.",
   "ui.containers.run_title": "Run settings",
   "ui.containers.run_wsl_warning": "Every WSL system of this account restarts with the new settings.",
   "ui.containers.service_auto": "Auto",
