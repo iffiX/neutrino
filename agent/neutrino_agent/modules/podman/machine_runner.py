@@ -20,6 +20,7 @@ Not pure: drives the machine, the keeper and the computer's installer.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import functools
 import ntpath
 import os
@@ -541,20 +542,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             record = self._record()
             if not record:
                 return
-            account = str(record.get("account", "") or "")
-            password = str(record.get("password", "") or "")
-            machine = self._machine_of(account, password)
+            machine = self._machine_of_record(record)
             self._run_quietly(machine, machine_stop_script())
-            # The keeper starts a stopped machine again within 30 seconds.
-            account_service.stop(
-                self._keeper_of(account, password), self._service_machine
-            )
-            try:
-                machine.stop()
-            finally:
-                with self._lock:
-                    self._reading = None
-            self._log(f"podman: stopped the machine of {account}")
+            self._halt(record, machine)
 
     def remove_configuration(self) -> None:
         """Take the containers' files out of the machine, remove the keeper and stop the machine.
@@ -570,7 +560,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             script = PodmanMachineScriptRenderer(
                 config=PodmanConfig(), os_name=self._platform.os_name
             ).render()
-            self._run_quietly(self._machine_of_record(record), script)
+            machine = self._machine_of_record(record)
+            self._wake(record, machine)
+            self._run_quietly(machine, script)
             self._retire(record)
 
     def is_installing(self) -> bool:
@@ -780,6 +772,42 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def is_engine_active(self) -> bool:
         """Whether the machine answers the read."""
         return self.is_active()
+
+    @contextlib.contextmanager
+    def engine_awake(self):
+        """Run a container module's uninstall with the machine running.
+
+        A stopped machine is started by its keeper first, and the keeper and
+        the machine are stopped again after. A machine that does not start
+        or stop is logged, and the uninstall goes on.
+
+        Yields:
+            Nothing, once the machine answers the read.
+        """
+        record = self._record()
+        if not record:
+            yield
+            return
+        machine = self._machine_of_record(record)
+        _command, info = self._read(machine)
+        if info is not None:
+            yield
+            return
+        self._wake(record, machine)
+        try:
+            yield
+        finally:
+            try:
+                self._halt(record, machine)
+            except (
+                ModuleApplyError,
+                KeyError,
+                OSError,
+                PlatformUnsupportedError,
+            ) as error:
+                self._log(
+                    f"podman: the machine of {machine.account} did not stop: {error}"
+                )
 
     def drive_hub_containers(self, names: list, action: str) -> None:
         """Start, stop or restart the units of some hub containers in the machine.
@@ -1166,6 +1194,46 @@ class PodmanMachineModuleRunner(ModuleRunner):
         with self._lock:
             self._reading = None
         self._log(f"podman: stopped the machine of {account}")
+
+    def _wake(self, record: dict, machine: PodmanMachine) -> None:
+        """Start the keeper and wait until the machine answers the read, logging a failure."""
+        keeper = self._keeper_of(
+            str(record.get("account", "") or ""), str(record.get("password", "") or "")
+        )
+        try:
+            account_service.start(keeper, self._service_machine, is_restart=False)
+            self._wait_for_machine(machine)
+        except (
+            ModuleApplyError,
+            KeyError,
+            OSError,
+            PlatformUnsupportedError,
+            subprocess.SubprocessError,
+        ) as error:
+            self._log(
+                f"podman: the machine of {machine.account} did not start: {error}"
+            )
+
+    def _halt(self, record: dict, machine: PodmanMachine) -> None:
+        """Stop the keeper, then the machine.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
+                the machine; ``credential_invalid`` when Windows refuses the
+                login.
+            OSError: When the service manager cannot stop the keeper.
+        """
+        keeper = self._keeper_of(
+            str(record.get("account", "") or ""), str(record.get("password", "") or "")
+        )
+        # The keeper starts a stopped machine again within 30 seconds.
+        account_service.stop(keeper, self._service_machine)
+        try:
+            machine.stop()
+        finally:
+            with self._lock:
+                self._reading = None
+        self._log(f"podman: stopped the machine of {machine.account}")
 
     def _run_quietly(self, machine: PodmanMachine, script: str) -> None:
         """Run one root script, logging a failure instead of raising it."""

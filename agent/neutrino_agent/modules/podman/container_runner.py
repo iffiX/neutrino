@@ -195,9 +195,9 @@ class ContainerModuleRunner(ModuleRunner):
             name: The module's name.
             containers: The Containers runner: :meth:`podman_command`,
                 :meth:`hub_names`, :meth:`is_applied`,
-                :meth:`is_engine_active`, :meth:`drive_hub_containers`,
-                :meth:`drop_hub_containers` and :meth:`hub_journal` reach
-                Podman through it.
+                :meth:`is_engine_active`, :meth:`engine_awake`,
+                :meth:`drive_hub_containers`, :meth:`drop_hub_containers` and
+                :meth:`hub_journal` reach Podman through it.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
             probe_one: Probes one source, as :func:`source_fetch.probe`.
@@ -264,21 +264,25 @@ class ContainerModuleRunner(ModuleRunner):
 
         Every image the store holds under a source of the recipe's images
         goes, an earlier version's among them; one a container uses stays.
+        The steps run while Containers holds its engine awake.
 
         Args:
             recipe: The module's recipe.
         """
-        self._containers.drop_hub_containers(self.name)
-        command = self._command()
-        if command:
-            for name in self._states(command):
-                self._quietly([*command, "rm", "-f", name])
-            self._quietly([*command, "network", "rm", PODMAN_HUB_PREFIX + self.name])
-            for volume in self._volumes(command):
-                self._quietly([*command, "volume", "rm", "-f", volume])
-            references = image_references(podman=command)
-            for reference in module_references(recipe_images(recipe), references):
-                self._quietly([*command, "rmi", reference])
+        with self._containers.engine_awake():
+            self._containers.drop_hub_containers(self.name)
+            command = self._command()
+            if command:
+                for name in self._states(command):
+                    self._quietly([*command, "rm", "-f", name])
+                self._quietly(
+                    [*command, "network", "rm", PODMAN_HUB_PREFIX + self.name]
+                )
+                for volume in self._volumes(command):
+                    self._quietly([*command, "volume", "rm", "-f", volume])
+                references = image_references(podman=command)
+                for reference in module_references(recipe_images(recipe), references):
+                    self._quietly([*command, "rmi", reference])
         self._hooks.remove()
 
     def take_recipe(self, recipe: dict) -> None:

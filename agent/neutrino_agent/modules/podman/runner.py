@@ -380,6 +380,15 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """Whether Podman's socket is active, which **Stop** turns off."""
         return self.is_active()
 
+    @contextlib.contextmanager
+    def engine_awake(self):
+        """Hold nothing for a container module's uninstall. Podman runs with its socket off.
+
+        Yields:
+            Nothing.
+        """
+        yield
+
     def drive_hub_containers(self, names: list, action: str) -> None:
         """Start, stop or restart the units of some hub containers.
 

@@ -1,5 +1,7 @@
 """The ``container`` method: images pulled by digest from the fastest source, run as hub containers."""
 
+import contextlib
+import functools
 import json
 import subprocess
 
@@ -53,6 +55,9 @@ class FakeContainers:
         self.is_written = is_written
         self.driven: list = []
         self.dropped: list = []
+        self.is_awake = False
+        # Whether the engine was held awake at each drop.
+        self.awake_at_drop: list = []
 
     def podman_command(self):
         return self.command
@@ -71,7 +76,16 @@ class FakeContainers:
 
     def drop_hub_containers(self, module):
         self.dropped.append(module)
+        self.awake_at_drop.append(self.is_awake)
         self.names.pop(module, None)
+
+    @contextlib.contextmanager
+    def engine_awake(self):
+        self.is_awake = True
+        try:
+            yield
+        finally:
+            self.is_awake = False
 
     def hub_journal(self, names, lines):
         return [f"{name}: line" for name in names]
@@ -86,9 +100,14 @@ class FakePodman:
         self.volumes = list(volumes)
         self.failing = set(failing)
         self.calls: list = []
+        # Whether the engine is held awake, asked at each call; None asks nothing.
+        self.is_awake = None
+        self.awake_at_calls: list = []
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
         self.calls.append(list(command))
+        if self.is_awake is not None:
+            self.awake_at_calls.append(self.is_awake())
         verb = command[1]
         if verb == "ps":
             entries = [{"Names": [n], "State": "running"} for n in self.running]
@@ -340,6 +359,19 @@ def test_the_uninstall_removes_containers_units_network_volumes_and_images(store
         ["rmi", "ghcr.io/acme/webui@" + WEB],
         ["rmi", "docker.io/acme/agent@" + AGENT],
     ]
+
+
+def test_the_uninstall_holds_the_engine_awake_through_every_step(store):
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    podman = FakePodman(stopped=["neutrino_demo"], volumes=["neutrino_demo_home"])
+    podman.is_awake = functools.partial(getattr, containers, "is_awake")
+
+    runner_for(containers, podman).uninstall(RECIPE)
+
+    assert containers.awake_at_drop == [True]
+    assert podman.awake_at_calls
+    assert all(podman.awake_at_calls)
+    assert containers.is_awake is False
 
 
 def test_the_uninstall_removes_an_earlier_version_s_image_and_no_other(store):

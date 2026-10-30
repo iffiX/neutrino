@@ -13,10 +13,14 @@ machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
 shell runs through, empty before any apply; the keeper's log in the
-journal; the verbs; stop, removal and uninstall keeping the machine; and a
-restarted agent reading on from the record.
+journal; the verbs; stop stopping the containers, the keeper and the
+machine, and start bringing them back; a stopped machine woken by its
+keeper for a removal or a container module's uninstall; removal and
+uninstall keeping the machine; and a restarted agent reading on from the
+record.
 """
 
+import functools
 import json
 import os
 import subprocess
@@ -128,6 +132,8 @@ class World:
         self.is_account_gone = False
         self.environments: list = []
         self.remove_error = None
+        # Whether the machine answered the read at each root script.
+        self.answering_at_shell: list = []
 
 
 def machine_class_for(world: World):
@@ -205,6 +211,7 @@ def machine_class_for(world: World):
 
         def shell(self, script):
             world.scripts.append((self.account, self.password, script))
+            world.answering_at_shell.append(world.is_answering)
             code, output = (
                 world.shell_answers.pop(0) if world.shell_answers else (0, "")
             )
@@ -269,6 +276,8 @@ class Launchctl:
     def __init__(self):
         self.calls: list = []
         self.loaded: set = set()
+        # Called at each bootstrap, as the keeper starting the machine.
+        self.on_bootstrap = None
 
     def __call__(self, command, *, is_checked=True, **_):
         self.calls.append(list(command))
@@ -279,6 +288,8 @@ class Launchctl:
             return CommandResult(list(command), code, "state = running\n", "")
         if verb == "bootstrap":
             self.loaded.add(os.path.basename(command[3])[: -len(".plist")])
+            if self.on_bootstrap is not None:
+                self.on_bootstrap()
         if verb == "bootout":
             self.loaded.discard(command[2].split("/", 1)[1])
         return CommandResult(list(command), 0, "", "")
@@ -1157,6 +1168,64 @@ def test_removal_empties_the_machine_removes_the_keeper_and_stops_the_machine(ri
     assert ("me", "stop", "") in rig.world.calls
     assert "me" in rig.world.present
     assert rig.record() == []
+
+
+def test_removal_of_a_stopped_module_wakes_the_machine_for_its_script(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.world.is_answering = False
+    rig.launchctl.on_bootstrap = functools.partial(
+        setattr, rig.world, "is_answering", True
+    )
+    rig.launchctl.calls.clear()
+
+    rig.runner.remove_configuration()
+
+    assert rig.launchctl.verbs()[:2] == ["bootout", "bootstrap"]
+    assert (
+        rig.world.scripts[-1][2]
+        == PodmanMachineScriptRenderer(config=PodmanConfig(), os_name="darwin").render()
+    )
+    assert rig.world.answering_at_shell[-1] is True
+    assert not rig.plist().exists()
+    assert rig.world.calls[-1] == ("me", "stop", "")
+    assert rig.record() == []
+
+
+def test_a_stopped_machine_is_held_awake_for_a_container_module_s_uninstall(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.world.is_answering = False
+    rig.launchctl.on_bootstrap = functools.partial(
+        setattr, rig.world, "is_answering", True
+    )
+    rig.launchctl.calls.clear()
+    rig.world.calls.clear()
+    seen = []
+
+    with rig.runner.engine_awake():
+        seen.append(rig.world.is_answering)
+        seen.append(rig.launchctl.verbs())
+
+    assert seen == [True, ["bootout", "bootstrap"]]
+    assert rig.launchctl.verbs() == ["bootout", "bootstrap", "bootout"]
+    assert rig.world.calls[-1] == ("me", "stop", "")
+    assert rig.plist().is_file()
+
+
+def test_a_running_machine_is_left_as_it_is_around_an_uninstall(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.launchctl.calls.clear()
+    rig.world.calls.clear()
+
+    with rig.runner.engine_awake():
+        pass
+
+    assert rig.launchctl.verbs() == []
+    assert ("me", "stop", "") not in rig.world.calls
 
 
 def test_a_machine_that_cannot_take_the_script_still_loses_its_keeper(rig):
