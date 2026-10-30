@@ -99,11 +99,13 @@ class FakeContainers:
 class FakePodman:
     """podman's answers: what ``ps`` lists, what ``volume ls`` lists, which pulls fail."""
 
-    def __init__(self, *, running=(), stopped=(), volumes=(), failing=()):
+    def __init__(self, *, running=(), stopped=(), volumes=(), failing=(), on_rmi=None):
         self.running = list(running)
         self.stopped = list(stopped)
         self.volumes = list(volumes)
         self.failing = set(failing)
+        # Called with each reference ``rmi`` names.
+        self.on_rmi = on_rmi
         self.calls: list = []
         # Whether the engine is held awake, asked at each call; None asks nothing.
         self.is_awake = None
@@ -121,6 +123,8 @@ class FakePodman:
         if verb == "volume" and command[2] == "ls":
             listed = [{"Name": name} for name in self.volumes]
             return CommandResult(list(command), 0, json.dumps(listed), "")
+        if verb == "rmi" and self.on_rmi is not None:
+            self.on_rmi(command[2])
         if verb == "pull" and command[2] in self.failing:
             if is_checked:
                 raise subprocess.CalledProcessError(
@@ -147,6 +151,9 @@ def store(monkeypatch):
     held: set = set()
     monkeypatch.setattr(
         container_runner_module, "image_references", lambda *, podman: set(held)
+    )
+    monkeypatch.setattr(
+        container_runner_module, "read_image_references", lambda *, podman: set(held)
     )
     return held
 
@@ -398,6 +405,25 @@ def test_the_uninstall_removes_an_earlier_version_s_image_and_no_other(store):
         ["rmi", "ghcr.nju.edu.cn/acme/webui@" + older],
         ["rmi", "docker.io/acme/agent@" + AGENT],
     ]
+
+
+def test_the_uninstall_removes_an_image_of_two_references_once(store):
+    index = "sha256:" + "f" * 64
+    webui = {"ghcr.io/acme/webui@" + WEB, "ghcr.io/acme/webui@" + index}
+    store.update(webui | {"docker.io/acme/agent@" + AGENT})
+    podman = FakePodman(
+        on_rmi=lambda reference: store.difference_update(
+            webui if reference in webui else {reference}
+        )
+    )
+
+    runner_for(FakeContainers(), podman).uninstall(RECIPE)
+
+    assert [call[1:] for call in podman.calls if call[1] == "rmi"] == [
+        ["rmi", "ghcr.io/acme/webui@" + WEB],
+        ["rmi", "docker.io/acme/agent@" + AGENT],
+    ]
+    assert store == set()
 
 
 def test_the_details_name_the_version_and_the_journal_is_the_containers(store):

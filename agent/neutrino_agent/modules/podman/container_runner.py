@@ -23,7 +23,11 @@ import json
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
-from neutrino_agent.modules.podman.applier import image_references, stored_reference
+from neutrino_agent.modules.podman.applier import (
+    image_references,
+    read_image_references,
+    stored_reference,
+)
 from neutrino_agent.modules.podman.constants import (
     PODMAN_CONTAINER_PULL_TIMEOUT_S,
     PODMAN_HUB_PREFIX,
@@ -280,9 +284,14 @@ class ContainerModuleRunner(ModuleRunner):
                 )
                 for volume in self._volumes(command):
                     self._quietly([*command, "volume", "rm", "-f", volume])
-                references = image_references(podman=command)
-                for reference in module_references(recipe_images(recipe), references):
+                held = image_references(podman=command)
+                for reference in module_references(recipe_images(recipe), held):
+                    # A removal takes every reference of its image.
+                    if reference not in held:
+                        continue
                     self._quietly([*command, "rmi", reference])
+                    now = read_image_references(podman=command)
+                    held = now if now is not None else held - {reference}
         self._hooks.remove()
 
     def take_recipe(self, recipe: dict) -> None:
