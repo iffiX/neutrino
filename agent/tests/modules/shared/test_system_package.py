@@ -160,8 +160,12 @@ def fakes(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
     monkeypatch.setattr(system_package_module, "AGENT_PACKAGE_LOCK_RETRY_S", 0)
     monkeypatch.setattr(system_package_module, "PROC_DIR", str(tmp_path / "proc"))
+    dnf_lock = tmp_path / "rpmdb_lock.pid"
+    monkeypatch.setattr(system_package_module, "DNF_LOCK_PATHS", (str(dnf_lock),))
 
     class Fakes:
+        lock = dnf_lock
+
         def turns(self, program, *turns):
             (tmp_path / f"{program}.turns").write_text("\n".join(turns) + "\n")
 
@@ -273,3 +277,64 @@ def test_dnf_still_locked_past_the_wait_fails_package_manager_busy(fakes, monkey
         system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
 
     assert caught.value.code == "package_manager_busy"
+
+
+def test_dnf_waits_while_another_dnf_holds_its_lock_and_names_it(fakes):
+    """dnf 4 waits for its own lock without a word; the step names the
+    holder from the lock's file and runs dnf once the lock is free."""
+    fakes.process(
+        4321,
+        "dnf-automatic",
+        b"/usr/bin/python3",
+        b"-s",
+        b"/usr/bin/dnf-automatic",
+        b"--timer",
+    )
+    fakes.lock.write_text("4321")
+    waits: list = []
+
+    def told(wait):
+        waits.append((wait, len(fakes.args("dnf"))))
+        fakes.lock.unlink(missing_ok=True)
+
+    system_package_module.set_wait_sink(told)
+    try:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    # The wait ends before dnf runs.
+    assert waits == [
+        (
+            {
+                "code": "waiting_for_package_manager",
+                "params": {"holder": "dnf-automatic"},
+            },
+            0,
+        ),
+        ({}, 0),
+    ]
+    assert len(fakes.args("dnf")) == 1
+
+
+def test_a_dnf_lock_held_past_the_wait_fails_naming_its_holder(fakes, monkeypatch):
+    monkeypatch.setattr(system_package_module, "AGENT_UPDATE_LOCK_TIMEOUT_S", 0)
+    fakes.process(4321, "dnf", b"/usr/bin/python3", b"/usr/bin/dnf", b"makecache")
+    fakes.lock.write_text("4321")
+
+    with pytest.raises(ModuleApplyError) as caught:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+
+    assert (caught.value.code, caught.value.params) == (
+        "package_manager_busy",
+        {"holder": "dnf"},
+    )
+    assert fakes.args("dnf") == []
+
+
+def test_a_dnf_lock_file_of_an_ended_process_holds_nothing(fakes):
+    fakes.lock.write_text("4321")
+
+    system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+
+    assert len(fakes.args("dnf")) == 1

@@ -43,6 +43,9 @@ from neutrino_agent.modules.shared.package import params_of
 # process's id and name in it.
 APT_LOCK_TEXT = "Could not get lock"
 APT_LOCK_HOLDER = re.compile(r"held by process (\d+) \(([^)]*)\)")
+# The files dnf 4 names the process that holds each of its own locks in,
+# the rpm database's and the metadata's.
+DNF_LOCK_PATHS = ("/var/lib/dnf/rpmdb_lock.pid", "/var/cache/dnf/metadata_lock.pid")
 # Where the kernel shows each process: its name, cut at 15 characters, and
 # its command line.
 PROC_DIR = "/proc"
@@ -70,8 +73,9 @@ def run_package_manager(
     """Run one ``apt-get``, ``dnf`` or ``yum`` command, waiting for the system's own lock.
 
     apt waits up to 300 seconds through ``DPkg::Lock::Timeout`` and names
-    the process that holds the lock; dnf runs again every few seconds while
-    its output names the rpm transaction lock, up to 300 seconds. A run
+    the process that holds the lock; dnf runs once no process holds dnf 4's
+    own locks, and again every few seconds while its output names the rpm
+    transaction lock, up to 300 seconds in all. A run
     apt refuses because a dpkg run was cut runs ``dpkg --configure -a``
     once, then the command again.
 
@@ -209,32 +213,56 @@ def _run_apt(command: list, timeout_s: int) -> tuple:
 
 
 def _run_dnf(command: list, timeout_s: int) -> str:
-    """Run dnf or yum again while another run holds the rpm transaction lock, up to the wait."""
+    """Run dnf or yum once no other run holds its lock, up to the wait.
+
+    dnf 4 and yum wait for their own lock without a word, so the files
+    their locks name the holder in are read before each run, and the wait
+    for a holder they name ends before dnf runs; dnf 5 refuses at once, and
+    runs again while its output names the rpm transaction lock.
+    """
     waited = 0
-    is_waiting = False
-    while True:
-        try:
-            output = installers.run_checked(command, timeout_s=timeout_s)
-        except InstallError as error:
-            if AGENT_UPDATE_DNF_LOCK_TEXT not in str(error):
-                if is_waiting:
+    told = None
+    try:
+        while True:
+            pid = _dnf_lock_pid()
+            if not pid:
+                if told:
+                    told = None
                     _tell_wait({})
-                raise
+                try:
+                    return installers.run_checked(command, timeout_s=timeout_s)
+                except InstallError as error:
+                    if AGENT_UPDATE_DNF_LOCK_TEXT not in str(error):
+                        raise
+            holder = holder_name(pid) if pid else ""
             if waited >= AGENT_UPDATE_LOCK_TIMEOUT_S:
-                if is_waiting:
-                    _tell_wait({})
-                raise ModuleApplyError(
-                    CODE_PACKAGE_MANAGER_BUSY, {"holder": ""}
-                ) from None
-        else:
-            if is_waiting:
-                _tell_wait({})
-            return output
-        if not is_waiting:
-            is_waiting = True
-            _tell_wait(_package_wait(""))
-        time.sleep(AGENT_PACKAGE_LOCK_RETRY_S)
-        waited += AGENT_PACKAGE_LOCK_RETRY_S
+                raise ModuleApplyError(CODE_PACKAGE_MANAGER_BUSY, {"holder": holder})
+            if told != holder:
+                told = holder
+                _tell_wait(_package_wait(holder))
+            time.sleep(AGENT_PACKAGE_LOCK_RETRY_S)
+            waited += AGENT_PACKAGE_LOCK_RETRY_S
+    finally:
+        if told is not None:
+            _tell_wait({})
+
+
+def _dnf_lock_pid() -> int:
+    """The process that holds one of dnf 4's own locks; 0 when none does.
+
+    A file that names this process or a process that has ended holds
+    nothing.
+    """
+    for path in DNF_LOCK_PATHS:
+        try:
+            with open(path, encoding="utf-8") as stream:
+                pid = int(stream.read().strip() or "0")
+        except (OSError, ValueError):
+            continue
+        if pid > 0 and pid != os.getpid():
+            if os.path.exists(os.path.join(PROC_DIR, str(pid))):
+                return pid
+    return 0
 
 
 def _lines(stream):
