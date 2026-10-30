@@ -390,8 +390,9 @@ export function MachineModules({
   };
 
   // Configure wants the module running, and imports what the machine has
-  // first where the hub holds nothing for it yet. Pressed while its section
-  // is open, it closes the section and asks nothing of the machine.
+  // first where the hub holds nothing for it yet. On a stopped module it
+  // opens the section and keeps the module stopped. Pressed while its
+  // section is open, it closes the section and asks nothing of the machine.
   const configure = async () => {
     if (activeModule === null || activeRow === undefined) {
       return;
@@ -416,12 +417,14 @@ export function MachineModules({
         const imported: DeviceRequest = { device_id: deviceId };
         await apiPost(`/agent/module/${activeModule}/import`, imported);
       }
-      const answer = await apiPost<DeviceModuleListView>(
-        "/agent/module/start",
-        request,
-      );
-      notePress(activeModule, "configure");
-      modules.setData(answer);
+      if (activeRow.want !== WANT_STOPPED) {
+        const answer = await apiPost<DeviceModuleListView>(
+          "/agent/module/start",
+          request,
+        );
+        notePress(activeModule, "configure");
+        modules.setData(answer);
+      }
       setConfigured((current) =>
         current.includes(activeModule) ? current : [...current, activeModule],
       );

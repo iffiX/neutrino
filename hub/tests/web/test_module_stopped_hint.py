@@ -5,7 +5,8 @@ ui_text.md writes; the account layer's apply bar shows it in place of the
 module's own hint while the module's want is ``stopped``, and its apply
 then waits for ``stopped``; Terminal's and the SSH server's tabs, which the
 agent's package carries, never show it; and the folder shares show it under
-their hint while the file share is stopped.
+their hint while the file share is stopped. Configure on a stopped module
+opens its panel after the first import and posts no Start.
 """
 
 import json
@@ -65,3 +66,16 @@ def test_a_carried_module_never_reads_stopped_and_the_folder_shares_do():
         r'\{t\("ui\.modules\.stopped_hint"\)\}</p> \)\}',
         shares,
     )
+
+
+def test_configure_on_a_stopped_module_posts_no_start():
+    page = source("machine_modules.tsx")
+    configure = page[page.index("const configure = async") :]
+    configure = configure[: configure.index("\n  };\n")]
+
+    imported = configure.index("/import`")
+    guarded = configure.index("if (activeRow.want !== WANT_STOPPED) {")
+    started = configure.index('"/agent/module/start"')
+    opened = configure.index("setConfigured(", started)
+    assert imported < guarded < started < opened
+    assert configure.count('"/agent/module/start"') == 1
