@@ -29,6 +29,7 @@ as an account, the file share and Gitea with their locks; and that nothing
 in it ever retries anything.
 """
 
+import json
 import os
 import threading
 import time
@@ -1183,6 +1184,20 @@ def test_a_kept_failure_reads_the_same_after_the_agent_starts_again(tmp_path):
         "install_failed",
         {"detail": "dpkg"},
     )
+
+
+def test_a_kept_failure_keeps_its_step_on_disk_and_after_a_restart(tmp_path):
+    configured_dir = str(tmp_path / "configured")
+    step = {"name": "pull", "params": {"image": "agent"}, "index": 3, "count": 5}
+    first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    first.record_failure(
+        "terminal", {**failure("install_failed", "download_failed"), "step": step}
+    )
+
+    with open(tmp_path / "failures" / "terminal.json", encoding="utf-8") as stream:
+        assert json.load(stream)["step"] == step
+    second = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    assert second._failures["terminal"]["step"] == step
 
 
 def test_a_kept_apply_failure_reads_failed_after_the_agent_starts_again(tmp_path):

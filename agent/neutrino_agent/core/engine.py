@@ -1550,11 +1550,13 @@ def _failure(held) -> "dict | None":
     """One kept failure in its one shape, or None for anything else.
 
     Args:
-        held: ``{"state", "code", "params"}`` as recorded or read back.
+        held: ``{"state", "code", "params", "step"}`` as recorded or read
+            back.
 
     Returns:
         The failure, ``state`` one of the two failure states and a code
-        beside it; None when it is not one.
+        beside it, with the failed step ``{name, params, index, count}``
+        where it names one; None when it is not one.
     """
     if not isinstance(held, dict):
         return None
@@ -1563,11 +1565,15 @@ def _failure(held) -> "dict | None":
     params = held.get("params")
     if state not in FAILURE_STATES or not code:
         return None
-    return {
+    kept = {
         "state": state,
         "code": code,
         "params": dict(params) if isinstance(params, dict) else {},
     }
+    step = held.get("step")
+    if isinstance(step, dict) and step.get("name"):
+        kept["step"] = dict(step)
+    return kept
 
 
 def _recipe_of(wanted: "dict | None") -> dict:
