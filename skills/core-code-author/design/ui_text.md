@@ -412,6 +412,63 @@ refuses with:
 | --- | --- | --- |
 | `ui.reason.ai_managed`, `code.ai_tools_managed` | This is an agent's machine: set its AI tools on the hub's panel, in the account's form on its machine page. | 这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。 |
 
+## A module task's words
+
+The step list under a module tab's state line, the words of a step's wait,
+and the codes a task ends with ([ui_behavior.md](ui_behavior.md), "The machine
+page"; [agent.md](agent.md), "The steps"). The `ui.*` keys are in
+`locales/<language>/modules.json` and the `code.*` keys in `codes.json`. A
+step's words are a label with no full stop; a wait and a code are
+sentences.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.step.packages` | Install system packages | 安装系统软件包 |
+| `ui.modules.step.artifact`, in a plan with several `artifact` steps | Install {name} | 安装 {name} |
+| `ui.modules.step.artifact_alone`, in a plan with one `artifact` step | Install the program | 安装程序 |
+| `ui.modules.step.verify` | Check the install | 检查安装结果 |
+| `ui.modules.step.switch` | Switch to version {version} | 切换到版本 {version} |
+| `ui.modules.step.configure` | Apply the configuration | 应用配置 |
+| `ui.modules.step.account` | Set up account {account} | 设置账户 {account} |
+| `ui.modules.step.npm` | Run npm for {account} | 为 {account} 运行 npm |
+| `ui.modules.step.start` | Start the module | 启动模块 |
+| `ui.modules.step.stop` | Stop the module | 停止模块 |
+| `ui.modules.step.uninstall` | Uninstall the module | 卸载模块 |
+| `ui.modules.step.wait_containers` | Wait for Containers | 等待容器模块 |
+| `ui.modules.step.pull` | Pull image {image} | 拉取镜像 {image} |
+| `ui.modules.step.render` | Create the containers | 创建容器 |
+| `ui.modules.step.windows_features` | Turn on Windows features | 打开 Windows 功能 |
+| `ui.modules.step.restart` | Wait for the restart | 等待重启 |
+| `ui.modules.step.machine` | Set up the Podman machine | 准备 Podman 虚拟机 |
+| `ui.modules.step.first_start` | First start | 首次启动 |
+| `ui.modules.step.update_check` | Read the update setting | 读取更新设置 |
+| `ui.modules.step.replica_set` | Set up the database | 初始化数据库 |
+| `ui.modules.step.wait_app` | Wait for the app to start | 等待应用启动 |
+| `ui.modules.step.admin` | Create the administrator | 创建管理员 |
+| `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
+| `ui.modules.step.guests` | Create the Web share guests | 建好 Web 分享的访客账户 |
+| `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
+
+In a wait or a code, `{lock}` reads as the lock's words below, `{module}`
+as the module's title, and `{state}` as the state's word. A `{module}` of
+`agent`, the self-update, reads `ui.modules.holder_agent`, and an empty
+`{holder}` reads `ui.modules.holder_unnamed`.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.lock.containers` | the container engine | 容器引擎 |
+| `ui.modules.lock.package_manager` | the package manager | 包管理器 |
+| `ui.modules.lock.system_accounts` | the system accounts | 系统账户 |
+| `ui.modules.holder_agent` | the agent's update | 被控端更新 |
+| `ui.modules.holder_unnamed` | another program | 另一个程序 |
+| `code.waiting_for_lock` | Waiting for {lock}, held by {module}. | 在等“{module}”用完{lock}。 |
+| `code.waiting_for_package_manager` | Waiting for the system's package manager, held by {holder}. | 在等系统的包管理器空出来（占用者：{holder}）。 |
+| `code.waiting_for_module` | Waiting for {module} to be ready. | 在等“{module}”准备好。 |
+| `code.waiting_for_check` | Checking every {seconds} seconds. | 每 {seconds} 秒检查一次。 |
+| `code.module_needed` | This module needs {module} running, and the state of {module} is {state}. Press Install to try both again. | 这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“安装”会把两个模块一起重试。 |
+| `code.package_manager_busy` | The system's package manager stayed busy for 5 minutes, held by {holder}; try again later. | 系统的包管理器一直在忙，等了 5 分钟（占用者：{holder}），稍后再试。 |
+| `code.state_not_settled` | {module} is still applying its configuration. | “{module}”还在应用配置。 |
+
 ## The uninstall dialog's words
 
 Every module's **Uninstall** opens one dialog ([ui_behavior.md](ui_behavior.md),
