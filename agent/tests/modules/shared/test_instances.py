@@ -5,10 +5,13 @@ anything is written and puts no presence check of its own in front of the
 instances; it prepares each account,
 renders the template from the hooks' answer for ``%i``, writes and starts
 one service per instance, restarting a new or changed one and keeping an
-unchanged one up, and keeps a root-only record per instance written only
-once every service started; an account no longer named loses its service,
+unchanged one up, and keeps a root-only record per instance written once
+its service started; an account no longer named loses its service,
 its record and its forwarder; one forwarder runs per record and follows
-it; a stop closes the forwarders and keeps the records; a restarted agent
+it; a task's steps are ``configure``, then per enabled account the step
+the hooks name for its preparation and ``account``, each account step
+starting its own instance, with no account step under ``stopped``; a
+stop closes the forwarders and keeps the records; a restarted agent
 starts the forwarders from the records; a row runs only while its service
 runs and its forwarder listens; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
@@ -17,7 +20,7 @@ where the hooks name one and nothing of a service whose output is
 discarded, a log not written yet read as empty, the refusal last; an artifact lands under its directory in
 the module's and the hooks tidy after it, a bad directory or archive being
 ``install_failed``; an uninstall deletes the module directory; and a record
-changed by the hooks is applied again.
+changed by the hooks asks for a configure task.
 """
 
 import dataclasses
@@ -41,9 +44,9 @@ from neutrino_agent.modules.shared.http_forward import RELAY, refused
 from neutrino_agent.modules.shared.instances import (
     InstanceHooks,
     InstancesModuleRunner,
-    kept_config,
     machine_for,
 )
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -827,43 +830,212 @@ def test_a_discarded_output_without_an_own_log_reads_no_file(tmp_path):
 # --- a record the hooks change ---
 
 
-def test_a_record_the_hooks_change_is_applied_again(runner, systemd):
+def test_a_record_the_hooks_change_asks_for_a_configure_task(runner, systemd):
     runner.apply(CONFIG)
     systemd.calls.clear()
+    asked: list = []
+    runner.bind_configure_asker(lambda: asked.append("demo"))
 
     runner.hooks._reapply("ann", upstream_port=42000)
 
     assert runner._records.read("ann")["upstream_port"] == 42000
+    assert asked == ["demo"]
+    assert systemd.calls == []
+    runner.apply(CONFIG)
     assert systemd.units("restart") == [
         ["systemctl", "restart", "neutrino_demo@ann.service"]
     ]
-    assert len(FakeForwarder.made) == 1
+    assert runner.hooks._reapply("ghost") is None
+    assert asked == ["demo"]
 
 
-def test_after_a_restart_the_kept_state_is_applied_again(machine, platform, tmp_path):
-    os.makedirs(platform.agent_data_dir(), exist_ok=True)
-    with open(os.path.join(platform.agent_data_dir(), "desired.json"), "w") as stream:
-        json.dump({"modules": {"demo": {"want": "running", "config": CONFIG}}}, stream)
-    first = make_runner(machine, platform)
-    first.apply(CONFIG)
-    restarted = make_runner(machine, platform)
-    machine.run.calls.clear()
+# --- the steps of a task ---
 
-    restarted.hooks._reapply("ann", upstream_port=42000)
 
-    assert machine.run.units("restart") == [
-        ["systemctl", "restart", "neutrino_demo@ann.service"]
+def core_steps(want):
+    """``configure`` and ``start`` or ``stop`` as the core plans them."""
+    second = "start" if want == "running" else "stop"
+    return [
+        ModuleStep(name="configure", run=lambda context: None),
+        ModuleStep(name=second, run=lambda context: None),
     ]
-    assert restarted.hooks._reapply("ghost") is None
 
 
-def test_the_kept_configuration_is_read_from_the_state_file(tmp_path):
-    path = tmp_path / "desired.json"
+def run_steps(steps):
+    for step in steps:
+        step.run(None)
 
-    assert kept_config(str(path), "demo") == {}
-    path.write_text(json.dumps({"modules": {"demo": {"config": CONFIG}}}))
-    assert kept_config(str(path), "demo") == CONFIG
-    assert kept_config(str(path), "other") == {}
+
+TWO = {"instances": [INSTANCE, {"account": "bob", "secret": "b"}]}
+
+
+def test_a_running_module_s_steps_are_configure_then_each_account_then_start(
+    runner,
+):
+    steps = runner.configure_steps(TWO, "running", core_steps("running"))
+
+    assert [(step.name, step.params) for step in steps] == [
+        ("configure", {}),
+        ("account", {"account": "ann"}),
+        ("account", {"account": "bob"}),
+        ("start", {}),
+    ]
+
+
+def test_a_stopped_module_s_steps_are_configure_then_stop(runner):
+    steps = runner.configure_steps(TWO, "stopped", core_steps("stopped"))
+
+    assert [step.name for step in steps] == ["configure", "stop"]
+
+
+def test_a_module_that_installs_per_account_puts_its_step_before_each_account(
+    machine, platform
+):
+    class NpmHooks(DemoHooks):
+        prepare_step = "npm"
+
+    runner = InstancesModuleRunner(
+        hooks_class=NpmHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+    )
+
+    steps = runner.configure_steps(TWO, "running", core_steps("running"))
+    run_steps(steps)
+
+    assert [(step.name, step.params) for step in steps] == [
+        ("configure", {}),
+        ("npm", {"account": "ann"}),
+        ("account", {"account": "ann"}),
+        ("npm", {"account": "bob"}),
+        ("account", {"account": "bob"}),
+        ("start", {}),
+    ]
+    assert runner.hooks.prepared == [("ann", "/home/ann"), ("bob", "/home/bob")]
+
+
+def test_the_configure_step_starts_no_instance_and_each_account_starts_its_own(
+    runner, systemd, tmp_path
+):
+    configure, ann, bob, _start = runner.configure_steps(
+        TWO, "running", core_steps("running")
+    )
+
+    configure.run(None)
+    after_configure = list(systemd.calls)
+    ann.run(None)
+
+    assert after_configure == [["systemctl", "daemon-reload"]]
+    assert runner.hooks.prepared == [("ann", "/home/ann")]
+    assert systemd.calls[1:] == [
+        ["systemctl", "enable", "neutrino_demo@ann.service"],
+        ["systemctl", "restart", "neutrino_demo@ann.service"],
+    ]
+    assert sorted(os.listdir(tmp_path / "config" / "demo")) == ["ann.env", "ann.json"]
+    assert [forwarder.record["account"] for forwarder in FakeForwarder.made] == ["ann"]
+    bob.run(None)
+    assert sorted(os.listdir(tmp_path / "config" / "demo")) == [
+        "ann.env",
+        "ann.json",
+        "bob.env",
+        "bob.json",
+    ]
+
+
+def test_the_configure_step_retires_an_account_no_longer_named(
+    runner, systemd, tmp_path
+):
+    runner.apply(TWO)
+    systemd.calls.clear()
+
+    configure, _ann, _start = runner.configure_steps(
+        CONFIG, "running", core_steps("running")
+    )
+    configure.run(None)
+
+    assert ["systemctl", "disable", "--now", "neutrino_demo@bob.service"] in (
+        systemd.calls
+    )
+    assert runner._records.read("bob") == {}
+
+
+def test_a_changed_template_restarts_each_instance_at_its_own_step(
+    runner, systemd, tmp_path
+):
+    runner.apply(TWO)
+    (tmp_path / "systemd" / "neutrino_demo@.service").write_text("old\n")
+    systemd.calls.clear()
+
+    steps = runner.configure_steps(TWO, "running", core_steps("running"))
+    run_steps(steps)
+    run_steps(runner.configure_steps(TWO, "running", core_steps("running")))
+
+    assert [call[2] for call in systemd.units("restart")] == [
+        "neutrino_demo@ann.service",
+        "neutrino_demo@bob.service",
+    ]
+
+
+def test_an_account_whose_install_still_runs_holds_its_step(machine, platform):
+    class NpmHooks(DemoHooks):
+        prepare_step = "npm"
+
+        def prepare(self, parsed, instance, entry):
+            self.installing = frozenset({instance.account})
+            return []
+
+    runner = InstancesModuleRunner(
+        hooks_class=NpmHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+    )
+    _configure, npm, _account, _start = runner.configure_steps(
+        CONFIG, "running", core_steps("running")
+    )
+
+    with pytest.raises(ModuleInstallPending):
+        npm.run(None)
+    assert runner.is_installing() is True
+
+
+def test_a_failed_account_step_is_the_journal_s_last_line_until_configure_takes(
+    runner, monkeypatch
+):
+    monkeypatch.setattr(
+        "neutrino_agent.modules.shared.base.units_journal",
+        lambda units, lines: [],
+    )
+    configure, ann, _start = runner.configure_steps(
+        CONFIG, "running", core_steps("running")
+    )
+    runner.hooks.prepare_error = ModuleApplyError("demo_npm_failed", {"account": "ann"})
+
+    configure.run(None)
+    with pytest.raises(ModuleApplyError):
+        ann.run(None)
+    refused = runner.journal_text(10)
+    configure.run(None)
+
+    assert refused == ["demo: demo_npm_failed account=ann"]
+    assert runner.journal_text(10) == []
+
+
+def test_a_failure_of_the_system_at_an_account_step_is_apply_failed(runner, systemd):
+    configure, ann, _start = runner.configure_steps(
+        CONFIG, "running", core_steps("running")
+    )
+    configure.run(None)
+    systemd.error = OSError("systemctl refused")
+
+    with pytest.raises(ModuleApplyError) as caught:
+        ann.run(None)
+
+    assert caught.value.code == "apply_failed"
+    assert caught.value.params["detail"] == "systemctl refused"
 
 
 # --- the machine ---

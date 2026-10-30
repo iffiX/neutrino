@@ -3,13 +3,13 @@
 Node.js comes from the hub's package stream as the archive nodejs.org
 publishes, the module's ``node`` artifact, which the shared unpack puts
 under ``node`` in the module's own directory, never on a ``PATH``.
-Before an instance first runs, its account installs the recipe's npm
-artifact into its own app directory with that Node.js: as a transient
-service on Linux, so a kill for want of memory ends it and not the agent,
-its output in a log systemd opens, since SELinux on Rocky 9 rejects the
-agent's pipes that ``--pipe`` passes; as
-the account's own process on macOS; as a task of its own on Windows, left
-running and judged by the next apply. The registries of the state's ``npm``
+Before an instance first runs, its account's ``npm {account}`` step
+installs the recipe's npm artifact into its own app directory with that
+Node.js: as a transient service on Linux, so a kill for want of memory ends
+it and not the agent, its output in a log systemd opens, since SELinux on
+Rocky 9 rejects the agent's pipes that ``--pipe`` passes; as the account's
+own process on macOS; as a task of its own on Windows, left running and
+judged when the step runs again. The registries of the state's ``npm``
 source set that name the pinned integrity are tried fastest first, each with
 the hosts of the npm settings fastest first, until one install takes. Each instance runs Node.js with the account's server script,
 from an environment written from scratch, on a loopback port the agent
@@ -37,7 +37,7 @@ import subprocess
 import time
 import urllib.parse
 
-from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S
+from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S, AGENT_STEP_NPM
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import (
     CloudcliConfig,
@@ -583,6 +583,7 @@ class CloudcliHooks(InstanceHooks):
     forwarder_fields = CLOUDCLI_FORWARDER_FIELDS
     secret_field = "token_secret"
     base_port = CLOUDCLI_BASE_PORT
+    prepare_step = AGENT_STEP_NPM
 
     def __init__(
         self,
@@ -618,7 +619,7 @@ class CloudcliHooks(InstanceHooks):
         # The accounts whose CloudCLI refused this hub's password and were
         # told to start afresh.
         self._refused: set = set()
-        # The install tasks Windows holds, read once per apply.
+        # The install tasks Windows holds, read at each account's npm step.
         self._install_tasks: dict = {}
         # The version and the npm artifact the recipe names, and the state's
         # source sets, whose ``npm`` set holds the registries.
@@ -698,25 +699,14 @@ class CloudcliHooks(InstanceHooks):
                 remove_tree(os.path.join(root, name))
 
     def prepare_module(self) -> list:
-        """Remove an old Node.js directory left behind, and on Windows read
-        every install task once for this apply.
+        """Remove an old Node.js directory left behind, and on Windows forget
+        which installs ran.
 
         Returns:
             Nothing changed.
-
-        Raises:
-            OSError: When the PowerShell host fails.
         """
         self._remove_old_node()
         if self._os_name == "windows":
-            read = self.machine.powershell.call(
-                "task_states", {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX}
-            )
-            self._install_tasks = {
-                str(entry.get("name", "")): entry
-                for entry in read.get("tasks") or []
-                if isinstance(entry, dict)
-            }
             self.installing = frozenset()
         return []
 
@@ -746,6 +736,7 @@ class CloudcliHooks(InstanceHooks):
         """
         account = instance.account
         if self._os_name == "windows":
+            self._read_install_tasks()
             step = self._install_windows(instance, entry.home)
             if step == INSTALL_RUNNING:
                 self.installing = frozenset(self.installing | {account})
@@ -1166,6 +1157,21 @@ class CloudcliHooks(InstanceHooks):
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
         self._check_native(check, account)
+
+    def _read_install_tasks(self) -> None:
+        """Read every install task Windows holds.
+
+        Raises:
+            OSError: When the PowerShell host fails.
+        """
+        read = self.machine.powershell.call(
+            "task_states", {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX}
+        )
+        self._install_tasks = {
+            str(entry.get("name", "")): entry
+            for entry in read.get("tasks") or []
+            if isinstance(entry, dict)
+        }
 
     def _install_windows(self, instance: CloudcliInstance, home: str) -> str:
         """Judge an account's install task, or start one when CloudCLI is not there.

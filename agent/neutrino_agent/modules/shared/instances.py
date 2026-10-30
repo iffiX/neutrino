@@ -8,10 +8,14 @@ instance's port itself, the first free port on loopback from the module's
 instance's root-only record, a retired one while the account is not
 enabled; a kept port another program holds at a start is replaced by the
 next free one. The record lets a forwarder start again after the agent
-restarts. The runner answers ``details`` and ``journal`` in the one shape,
-and asks the module's :class:`InstanceHooks` for what differs: how the
-software is installed and found, what each instance's service runs, what
-its first start needs, and what its forwarder admits.
+restarts. A task applies the module in steps: ``configure`` for what every
+instance shares, then one ``account {account}`` per enabled account, after
+its ``npm {account}`` where the module installs per account. A record the
+hooks change is applied by a configure task the runner asks for. The runner
+answers ``details`` and ``journal`` in the one shape, and asks the module's
+:class:`InstanceHooks` for what differs: how the software is installed and
+found, what each instance's service runs, what its first start needs, and
+what its forwarder admits.
 
 Not pure: drives the account service layer and the forwarders.
 """
@@ -20,15 +24,19 @@ Not pure: drives the account service layer and the forwarders.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import dataclasses
 import functools
-import json
 import ntpath
 import os
 import subprocess
 import threading
 import time
 
-from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
+from neutrino_agent.constants import (
+    AGENT_STEP_ACCOUNT,
+    AGENT_STEP_CONFIGURE,
+    AGENT_WANT_RUNNING,
+)
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.shared import account_service
 from neutrino_agent.modules.shared.account_service import (
@@ -38,13 +46,16 @@ from neutrino_agent.modules.shared.account_service import (
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_TEMPLATE_ACCOUNT,
 )
-from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner, ModuleStep
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.package import joiner, unpacked_paths
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
-from neutrino_agent.modules.shared.subprocess_run import command_detail
+from neutrino_agent.modules.shared.subprocess_run import (
+    bounded_detail,
+    command_detail,
+)
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 from neutrino_agent.modules.shared.windows_acl import leave_to_system
 
@@ -60,28 +71,8 @@ TEMPLATE_ACCOUNT = ACCOUNT_SERVICE_TEMPLATE_ACCOUNT
 # What an account the machine does not have reads as, where a service is
 # retired without one.
 NOBODY = AccountEntry(0, 0, "", "")
-
-
-def kept_config(path: str, name: str) -> dict:
-    """One module's configuration in a kept desired state.
-
-    Args:
-        path: The kept state's file.
-        name: The module's name.
-
-    Returns:
-        The module's ``config`` as the state carries it; empty when the
-        file or the entry is not there.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as stream:
-            document = json.load(stream)
-    except (OSError, ValueError):
-        return {}
-    modules = document.get("modules") if isinstance(document, dict) else None
-    entry = modules.get(name) if isinstance(modules, dict) else None
-    config = entry.get("config") if isinstance(entry, dict) else None
-    return dict(config) if isinstance(config, dict) else {}
+# How much of a failed command's words an ``apply_failed`` keeps.
+DETAIL_CHARS = 500
 
 
 def machine_for(platform, name: str) -> ServiceMachine:
@@ -145,6 +136,8 @@ class InstanceHooks:
         page_cookie: The fixed name of the page's own login cookie, which
             the forwarder renames to the record's ``cookie_name`` toward the
             browser and back toward the page; empty for a page with none.
+        prepare_step: The step each account's :meth:`prepare` runs as, ahead
+            of its ``account`` step; empty runs it inside ``account``.
         installing: The accounts whose install the module runs or waits on.
     """
 
@@ -158,6 +151,7 @@ class InstanceHooks:
     is_forwarded = True
     base_port = 0
     page_cookie = ""
+    prepare_step = ""
 
     def __init__(self, *, platform, log=print):
         """
@@ -190,7 +184,8 @@ class InstanceHooks:
         Args:
             machine: The machine, with the module's directories.
             reapply: Called with ``(account, **record_changes)`` to change
-                one instance's record and apply the configuration again.
+                one instance's record and ask for a configure task that runs
+                the instance on it.
         """
         self._machine = machine
         self._reapply = reapply
@@ -271,8 +266,8 @@ class InstanceHooks:
 
         Note:
             An install the module leaves running puts its account into
-            ``installing``; the runner then applies nothing more and the
-            state is applied again until the set is empty.
+            ``installing``; the step then runs again every recheck interval
+            until the account leaves the set.
         """
         return []
 
@@ -469,9 +464,10 @@ class InstancesModuleRunner(ModuleRunner):
         self._applied: "dict | None" = None
         self._applied_at = 0.0
         self._refusal: "tuple | None" = None
-        # One apply at a time: the state's, or an instance's apply again.
+        # One change of the records at a time: a step's, or the hooks'.
         self._apply_lock = threading.Lock()
-        self._last_config: "dict | None" = None
+        # The accounts whose running instance a changed template restarts.
+        self._owed_restarts: set = set()
         self._recipe: dict = {}
 
     @property
@@ -566,16 +562,63 @@ class InstancesModuleRunner(ModuleRunner):
                 account's step fails, or the system will not run it.
             ModuleInstallPending: While an account's install still runs.
         """
-        try:
-            with self._apply_lock:
-                self._last_config = dict(config)
-                self._apply(config)
-        except ModuleApplyError as error:
-            with self._lock:
-                self._refusal = (error.code, dict(error.params))
-            raise
+        with self._apply_lock:
+            self._refusing(self._apply, config)
         with self._lock:
             self._refusal = None
+
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The module's ``configure``, and under ``running`` the steps of each enabled account.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``, as the core
+                plans them.
+
+        Returns:
+            ``configure`` for what every instance shares, then under
+            ``running`` per enabled account its ``npm {account}`` where the
+            hooks name that step and its ``account {account}``, then the
+            core's ``start`` or ``stop``.
+        """
+        try:
+            accounts = [
+                instance.account for instance in self._hooks.parse(config).instances
+            ]
+        except ModuleApplyError:
+            accounts = []
+        planned = []
+        for step in steps:
+            if step.name != AGENT_STEP_CONFIGURE:
+                planned.append(step)
+                continue
+            planned.append(
+                dataclasses.replace(
+                    step, run=functools.partial(self._run_configure, dict(config))
+                )
+            )
+            if want != AGENT_WANT_RUNNING:
+                continue
+            for account in accounts:
+                if self._hooks.prepare_step:
+                    planned.append(
+                        ModuleStep(
+                            name=self._hooks.prepare_step,
+                            params={"account": account},
+                            run=functools.partial(
+                                self._run_prepare, dict(config), account
+                            ),
+                        )
+                    )
+                planned.append(
+                    ModuleStep(
+                        name=AGENT_STEP_ACCOUNT,
+                        params={"account": account},
+                        run=functools.partial(self._run_account, dict(config), account),
+                    )
+                )
+        return planned
 
     def stop(self) -> None:
         """Stop every instance and its forwarder; the software and the records stay.
@@ -690,82 +733,204 @@ class InstancesModuleRunner(ModuleRunner):
         details["instances"] = [dict(state) for state in self._read_states()]
         return details
 
-    def _apply(self, config: dict) -> None:
-        """Make the configuration true, raising what it refused."""
-        parsed = self._hooks.parse(config)
-        entries = {}
-        for instance in parsed.instances:
-            try:
-                entries[instance.account] = self._machine.lookup_account(
-                    instance.account
-                )
-            except KeyError:
-                raise ModuleApplyError(
-                    "account_unknown", {"account": instance.account}
-                ) from None
-        held = {str(record["account"]): record for record in self._records.read_all()}
+    def _run_configure(self, config: dict, context) -> None:
+        """The ``configure`` step: what every instance shares, and no instance for an account no longer named."""
+        with self._apply_lock:
+            self._refusing(self._configure, config)
+        with self._lock:
+            self._refusal = None
+
+    def _run_prepare(self, config: dict, account: str, context) -> None:
+        """The step the hooks name for one account's :meth:`InstanceHooks.prepare`, such as ``npm {account}``."""
+        parsed, instance, entry = self._instance(config, account)
+        self._refusing(self._prepare_one, parsed, instance, entry)
+
+    def _run_account(self, config: dict, account: str, context) -> None:
+        """The ``account {account}`` step: one instance prepared, written, started and recorded."""
+        with self._apply_lock:
+            self._refusing(self._account, config, account)
+
+    def _refusing(self, run, *args):
+        """Run one part of an apply, keeping its refusal for the journal.
+
+        Returns:
+            What the part returns.
+
+        Raises:
+            ModuleApplyError: The part's own refusal, and ``apply_failed
+                {detail}`` for a failure of the system.
+            ModuleInstallPending: While an account's install still runs.
+        """
         try:
-            notes = self._run_instances(parsed, entries, held)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ModuleApplyError(
-                "apply_failed", {"detail": command_detail(error)[:500]}
-            )
+            try:
+                return run(*args)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise ModuleApplyError(
+                    "apply_failed",
+                    {"detail": bounded_detail(command_detail(error), DETAIL_CHARS)},
+                ) from None
+        except ModuleApplyError as error:
+            with self._lock:
+                self._refusal = (error.code, dict(error.params))
+            raise
+
+    def _apply(self, config: dict) -> None:
+        """Make the whole configuration true: every account prepared first, then every instance run."""
+        parsed, entries = self._parsed(config)
+        held = self._held()
+        try:
+            notes = self._prepare_module()
+            for instance in parsed.instances:
+                notes += self._hooks.prepare(
+                    parsed, instance, entries[instance.account]
+                )
+            pending = sorted(self._hooks.installing)
+            if pending:
+                raise ModuleInstallPending(", ".join(pending))
+            notes += self._define_and_retire(parsed, held)
+            for instance in parsed.instances:
+                notes += self._run_instance(parsed, instance, entries[instance.account])
         finally:
             self._forget_states()
-        with self._lock:
-            self._is_resumed = True
-            self._is_stopped = False
+        self._resume_instances()
+        self._log(f"{self.name}: " + "; ".join(notes or ["unchanged"]))
+
+    def _configure(self, config: dict) -> None:
+        """Label the unpacks, prepare the module, write the template and retire every account no longer named."""
+        parsed, _entries = self._parsed(config)
+        held = self._held()
+        try:
+            notes = self._prepare_module()
+            notes += self._define_and_retire(parsed, held)
+        finally:
+            self._forget_states()
         self._sync_forwarders()
         self._log(f"{self.name}: " + "; ".join(notes or ["unchanged"]))
 
-    def _run_instances(self, parsed, entries: dict, held: dict) -> list:
-        """Label the unpacks, then prepare, write, start and record every instance; retire the rest."""
+    def _account(self, config: dict, account: str) -> None:
+        """Prepare one account unless its own step did, then run its instance and its forwarder."""
+        parsed, instance, entry = self._instance(config, account)
+        try:
+            notes = []
+            if not self._hooks.prepare_step:
+                notes += self._prepare_one(parsed, instance, entry)
+            notes += self._run_instance(parsed, instance, entry)
+        finally:
+            self._forget_states()
+        self._resume_instances()
+        self._log(f"{self.name}: " + "; ".join(notes or [f"{account} unchanged"]))
+
+    def _parsed(self, config: dict) -> tuple:
+        """The configuration parsed, and each account it names as the machine has it.
+
+        Raises:
+            ModuleApplyError: The hooks' refusal, and ``account_unknown
+                {account}`` for an account the machine lacks.
+        """
+        parsed = self._hooks.parse(config)
+        entries = {
+            instance.account: self._entry_of(instance.account)
+            for instance in parsed.instances
+        }
+        return parsed, entries
+
+    def _instance(self, config: dict, account: str) -> tuple:
+        """The configuration parsed, one account's instance in it, and the account.
+
+        Raises:
+            ModuleApplyError: The hooks' refusal, and ``account_unknown
+                {account}`` for an account the machine lacks or the
+                configuration does not name.
+        """
+        parsed = self._hooks.parse(config)
+        for instance in parsed.instances:
+            if instance.account == account:
+                return parsed, instance, self._entry_of(account)
+        raise ModuleApplyError("account_unknown", {"account": account})
+
+    def _entry_of(self, account: str) -> AccountEntry:
+        """One account as the machine has it.
+
+        Raises:
+            ModuleApplyError: ``account_unknown {account}`` for one it lacks.
+        """
+        try:
+            return self._machine.lookup_account(account)
+        except KeyError:
+            raise ModuleApplyError("account_unknown", {"account": account}) from None
+
+    def _held(self) -> dict:
+        """Every live record, by account."""
+        return {str(record["account"]): record for record in self._records.read_all()}
+
+    def _prepare_module(self) -> list:
+        """Label each unpack, then what the hooks need before any instance runs."""
         for path in unpacked_paths(
             self._recipe,
             module_dir=self.module_dir,
             join=joiner(self._platform.os_name),
         ):
             self._platform.label_programs(path)
-        notes = list(self._hooks.prepare_module())
-        for instance in parsed.instances:
-            notes += self._hooks.prepare(parsed, instance, entries[instance.account])
-        pending = sorted(self._hooks.installing)
-        if pending:
-            raise ModuleInstallPending(", ".join(pending))
+        return list(self._hooks.prepare_module())
+
+    def _prepare_one(self, parsed, instance, entry: AccountEntry) -> list:
+        """One account's preparation by the hooks.
+
+        Raises:
+            ModuleInstallPending: While the account's install still runs.
+        """
+        notes = list(self._hooks.prepare(parsed, instance, entry))
+        if instance.account in self._hooks.installing:
+            raise ModuleInstallPending(instance.account)
+        return notes
+
+    def _define_and_retire(self, parsed, held: dict) -> list:
+        """Write the template, and retire the instance of every account no longer named.
+
+        A changed template owes every named account a restart at its own
+        ``account`` step.
+        """
         template = self._hooks.service(
             self._hooks.instance_class.from_dict({"account": TEMPLATE_ACCOUNT}),
             NOBODY,
             {},
         )
-        is_defined = account_service.define(template, self._machine)
         wanted = {instance.account for instance in parsed.instances}
+        if account_service.define(template, self._machine):
+            self._owed_restarts |= wanted
+        notes = []
         for account, record in held.items():
             if account not in wanted:
                 self._retire(record)
+                self._owed_restarts.discard(account)
                 notes.append(f"stopped the instance of {account}")
-        ports = self._records.kept_ports()
-        records = []
-        for instance in parsed.instances:
-            account = instance.account
-            port = self._take_port(account, ports, is_held=account in held)
-            ports[account] = port
-            record = self._hooks.record(
-                parsed, instance, {**held.get(account, {}), "port": port}
-            )
-            record["port"] = port
-            service = self._hooks.service(instance, entries[account], record)
-            is_changed = account_service.write(service, self._machine)
-            is_restart = is_changed or is_defined or account not in held
-            account_service.start(service, self._machine, is_restart=is_restart)
-            if is_restart:
-                notes.append(f"started the instance of {account}")
-            records.append(record)
-        for record in records:
-            try:
-                self._records.write(record)
-            except OSError as error:
-                raise ModuleApplyError("apply_failed", {"detail": str(error)[:500]})
         return notes
+
+    def _run_instance(self, parsed, instance, entry: AccountEntry) -> list:
+        """Write and start one instance on its port, then keep its record.
+
+        A new instance, a changed one and one a changed template owes a
+        restart are started again; an unchanged one is kept up.
+        """
+        account = instance.account
+        held = self._records.read(account)
+        port = self._take_port(account, self._records.kept_ports(), is_held=bool(held))
+        record = self._hooks.record(parsed, instance, {**held, "port": port})
+        record["port"] = port
+        service = self._hooks.service(instance, entry, record)
+        is_changed = account_service.write(service, self._machine)
+        is_restart = is_changed or account in self._owed_restarts or not held
+        account_service.start(service, self._machine, is_restart=is_restart)
+        self._owed_restarts.discard(account)
+        self._records.write(record)
+        return [f"started the instance of {account}"] if is_restart else []
+
+    def _resume_instances(self) -> None:
+        """Mark the module running, and run one forwarder per record."""
+        with self._lock:
+            self._is_resumed = True
+            self._is_stopped = False
+        self._sync_forwarders()
 
     def _retire(self, record: dict) -> None:
         """Remove one instance's service and keep its port alone in its record."""
@@ -826,10 +991,7 @@ class InstancesModuleRunner(ModuleRunner):
         return self._hooks.service(instance, entry, record)
 
     def _reapply(self, account: str, **changes) -> None:
-        """Change one instance's record and apply the configuration again.
-
-        The configuration last applied, or the kept state's after a restart,
-        is applied again, so the instance runs on the changed record.
+        """Change one instance's record and ask for a configure task, which runs the instance on it.
 
         Args:
             account: The instance's account.
@@ -847,20 +1009,8 @@ class InstancesModuleRunner(ModuleRunner):
                     f"{self.name}: could not change the record of {account}: {error}"
                 )
                 return
-            config = self._last_config or kept_config(self._state_path(), self.name)
-            if not config:
-                self._log(f"{self.name}: {account} waits for a state to apply again")
-                return
-            try:
-                self._apply(config)
-            except (ModuleApplyError, ModuleInstallPending) as error:
-                self._log(f"{self.name}: {account} was not applied again: {error}")
-                return
-        self._log(f"{self.name}: {account} applied again on a changed record")
-
-    def _state_path(self) -> str:
-        """The kept desired state beside the agent's configuration."""
-        return os.path.join(self._platform.agent_data_dir(), AGENT_DESIRED_STATE_NAME)
+        self.ask_configure()
+        self._log(f"{self.name}: the record of {account} changed")
 
     def _refusal_line(self, code: str, params: dict) -> str:
         """One refused apply as a journal line: ``<module>: <code> <name>=<value>``."""

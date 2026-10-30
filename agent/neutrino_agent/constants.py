@@ -349,6 +349,8 @@ AGENT_STEP_WAIT_CONTAINERS = "wait_containers"
 AGENT_STEP_PULL = "pull"
 AGENT_STEP_RENDER = "render"
 AGENT_STEP_TOOLS = "tools"
+AGENT_STEP_ACCOUNT = "account"
+AGENT_STEP_NPM = "npm"
 
 # The codes a task's wait names.
 AGENT_WAIT_LOCK = "waiting_for_lock"
