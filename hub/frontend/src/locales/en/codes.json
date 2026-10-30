@@ -204,7 +204,7 @@
   "code.shell_failed": "The shell could not be opened: {detail}",
   "code.socks_ports_share_a_port": "Two listeners cannot share a port.",
   "code.split_needs_wired_port": "Only a wired port can be split into VLANs.",
-  "code.state_not_settled": "The machine is still applying its configuration.",
+  "code.state_not_settled": "{module} is still applying its configuration.",
   "code.static_lease_address_invalid": "{address} is not an address a device can hold.",
   "code.static_lease_duplicate": "{value} is listed twice.",
   "code.static_lease_holds_gateway": "{address} is this box's own address on that network.",
@@ -370,5 +370,11 @@
   "code.version_switch_failed": "Version {version} did not start, so the previous version runs again: {detail}",
   "code.version_unknown": "Version {version} is not listed for this machine.",
   "code.share_account_not_enabled": "{account} is not enabled for this machine's file share.",
-  "code.folder_share_unknown": "This machine has no folder share named {name}."
+  "code.folder_share_unknown": "This machine has no folder share named {name}.",
+  "code.module_needed": "This module needs {module} running, and the state of {module} is {state}. Press Install to try both again.",
+  "code.package_manager_busy": "The system's package manager stayed busy for 5 minutes, held by {holder}; try again later.",
+  "code.waiting_for_check": "Checking every {seconds} seconds.",
+  "code.waiting_for_lock": "Waiting for {lock}, held by {module}.",
+  "code.waiting_for_module": "Waiting for {module} to be ready.",
+  "code.waiting_for_package_manager": "Waiting for the system's package manager, held by {holder}."
 }

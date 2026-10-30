@@ -204,7 +204,7 @@
   "code.shell_failed": "打不开 shell：{detail}",
   "code.socks_ports_share_a_port": "两个监听端口不能相同。",
   "code.split_needs_wired_port": "只有有线网口能拆分成 VLAN。",
-  "code.state_not_settled": "机器还在应用配置。",
+  "code.state_not_settled": "“{module}”还在应用配置。",
   "code.static_lease_address_invalid": "非法地址：设备不能持有 {address}。",
   "code.static_lease_duplicate": "{value} 重复出现。",
   "code.static_lease_holds_gateway": "{address} 是这台机器在那个网络上的地址。",
@@ -370,5 +370,11 @@
   "code.version_switch_failed": "版本 {version} 没能启动，已换回原来的版本：{detail}",
   "code.version_unknown": "这台机器没有版本 {version}。",
   "code.share_account_not_enabled": "这台机器的文件共享没有启用 {account}。",
-  "code.folder_share_unknown": "这台机器没有叫 {name} 的文件夹共享。"
+  "code.folder_share_unknown": "这台机器没有叫 {name} 的文件夹共享。",
+  "code.module_needed": "这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“安装”会把两个模块一起重试。",
+  "code.package_manager_busy": "系统的包管理器一直在忙，等了 5 分钟（占用者：{holder}），稍后再试。",
+  "code.waiting_for_check": "每 {seconds} 秒检查一次。",
+  "code.waiting_for_lock": "在等“{module}”用完{lock}。",
+  "code.waiting_for_module": "在等“{module}”准备好。",
+  "code.waiting_for_package_manager": "在等系统的包管理器空出来（占用者：{holder}）。"
 }

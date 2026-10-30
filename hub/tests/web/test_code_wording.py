@@ -205,11 +205,19 @@ def test_an_agent_steps_failure_fills_only_the_params_it_sends(code):
         assert set(re.findall(r"\{(\w+)\}", words)) == AGENT_STEP_PARAMS[code], path
 
 
-# The codes an agent reports on a module's row by itself, by the params each
-# sends. The machine page words them as the tab's error notice.
+# The codes an agent reports on a module's row by itself or in its task's
+# wait, and the refusal of a module verb while the module's task runs, by
+# the params each sends. The machine page words them on the module's tab.
 AGENT_ROW_PARAMS = {
     "verify_failed": {"detail"},
     "unsupported_platform": set(),
+    "waiting_for_lock": {"lock", "module"},
+    "waiting_for_package_manager": {"holder"},
+    "waiting_for_module": {"module"},
+    "waiting_for_check": {"seconds"},
+    "module_needed": {"module", "state"},
+    "package_manager_busy": {"holder"},
+    "state_not_settled": {"module"},
 }
 
 

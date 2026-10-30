@@ -96,6 +96,56 @@ def test_every_module_state_has_a_word(language):
         assert f"state.{state}" in worded, state
 
 
+# The steps of a module's task, by the params each sends, and the step
+# locks a wait names (agent.md, "The steps" and "Step locks").
+MODULE_STEP_PARAMS = {
+    "packages": set(),
+    "artifact": {"name"},
+    "verify": set(),
+    "switch": {"version"},
+    "configure": set(),
+    "account": {"account"},
+    "npm": {"account"},
+    "start": set(),
+    "stop": set(),
+    "uninstall": set(),
+    "wait_containers": set(),
+    "pull": {"image"},
+    "render": set(),
+    "windows_features": set(),
+    "restart": set(),
+    "machine": set(),
+    "first_start": set(),
+    "update_check": set(),
+    "replica_set": set(),
+    "wait_app": set(),
+    "admin": set(),
+    "tex": set(),
+    "guests": set(),
+    "tools": {"account"},
+}
+MODULE_STEP_LOCKS = ("containers", "package_manager", "system_accounts")
+
+
+@pytest.mark.parametrize("step", sorted(MODULE_STEP_PARAMS))
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_every_step_of_a_module_task_is_worded_with_its_params(language, step):
+    words = catalog(language, "modules.json")[f"ui.modules.step.{step}"]
+    assert set(PLACEHOLDER_PATTERN.findall(words)) == MODULE_STEP_PARAMS[step]
+
+
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_the_one_artifact_step_of_a_plan_is_worded_with_no_params(language):
+    words = catalog(language, "modules.json")["ui.modules.step.artifact_alone"]
+    assert PLACEHOLDER_PATTERN.findall(words) == []
+
+
+@pytest.mark.parametrize("lock", MODULE_STEP_LOCKS)
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_every_step_lock_is_worded(language, lock):
+    assert f"ui.modules.lock.{lock}" in catalog(language, "modules.json")
+
+
 def test_every_key_a_source_names_is_one_english_words():
     worded = english_keys()
     for path in source_paths():
