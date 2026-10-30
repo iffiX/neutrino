@@ -432,16 +432,37 @@ function Remove-NeutrinoShare {
 }
 
 # The SMB server's latest events, oldest first: the time, the event id and
-# the first line of the message.
+# the first line of the message. wevtutil renders the newest events first,
+# in UTF-16, and an empty or missing log leaves no line.
 function Get-NeutrinoShareLog($Request) {
-    $events = @(Get-WinEvent -LogName $Request.log_name -MaxEvents $Request.lines `
-        -ErrorAction SilentlyContinue)
+    $info = New-Object -TypeName Diagnostics.ProcessStartInfo
+    $info.FileName = Join-Path -Path $env:SystemRoot -ChildPath 'System32\wevtutil.exe'
+    $info.Arguments = "qe `"$($Request.log_name)`" /c:$([int]$Request.lines) " +
+        '/rd:true /f:RenderedXml /uni:true'
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.StandardOutputEncoding = [Text.Encoding]::Unicode
+    $process = [Diagnostics.Process]::Start($info)
+    $rendered = $process.StandardOutput.ReadToEnd()
+    $null = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
     $lines = @()
+    if ($process.ExitCode -ne 0) {
+        return @{lines = $lines}
+    }
+    $events = @(([xml]"<Events>$rendered</Events>").DocumentElement.ChildNodes)
     for ($k = $events.Count - 1; $k -ge 0; $k--) {
-        $record = $events[$k]
-        $first = @("$($record.Message)" -split '\r?\n' | Where-Object { $_.Trim() })
+        $system = $events[$k].System
+        $id = $system.EventID
+        if ($id -is [Xml.XmlElement]) {
+            $id = $id.InnerText
+        }
+        $time = ([DateTime]::Parse($system.TimeCreated.SystemTime)).ToString('s')
+        $first = @("$($events[$k].RenderingInfo.Message)" -split '\r?\n' | Where-Object { $_.Trim() })
         $text = if ($first.Count -gt 0) { $first[0].Trim() } else { '' }
-        $lines += "$($record.TimeCreated.ToString('s')) $($record.Id) $text".TrimEnd()
+        $lines += "$time $id $text".TrimEnd()
     }
     return @{lines = $lines}
 }

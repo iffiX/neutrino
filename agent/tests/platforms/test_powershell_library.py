@@ -166,13 +166,20 @@ def test_the_share_s_other_operations_keep_what_their_scripts_did():
     assert "if ($Request.is_removed)" in withdraw
     assert "NetFirewallRule" not in withdraw
     assert "NetFirewallRule" not in body("share_status")
-    assert "Get-WinEvent -LogName $Request.log_name -MaxEvents $Request.lines" in body(
-        "share_log"
-    )
     assert "$secret.AppendChar($character)" in password
     assert "ConvertTo-SecureString" not in LIBRARY
     assert "Enable-LocalUser -Name $Request.name" in password
     assert "Get-SmbShareAccess" in body("share_status")
+
+
+def test_the_share_log_takes_its_messages_from_wevtutil_in_utf_16():
+    log = body("share_log")
+
+    assert "System32\\wevtutil.exe" in log
+    assert "/rd:true /f:RenderedXml /uni:true" in log
+    assert "StandardOutputEncoding = [Text.Encoding]::Unicode" in log
+    assert "Get-WinEvent" not in log
+    assert "FormatDescription" not in log
 
 
 def test_the_thermal_zones_and_the_removal_keep_what_their_scripts_did():
