@@ -551,14 +551,14 @@ for an msi or a pkg, therefore waits on the system's lock too:
 | System | The wait |
 | --- | --- |
 | apt | `-o DPkg::Lock::Timeout=300` on every `apt-get` |
-| dnf 4, yum | none: they wait on the rpm lock themselves |
+| dnf 4, yum | before each run, every 5 seconds up to 300 seconds while a live process holds one of dnf's own locks, `/var/lib/dnf/rpmdb_lock.pid` and `/var/cache/dnf/metadata_lock.pid`, each file naming its holder; dnf 4 alone would wait on them with no word and no end |
 | dnf 5 | runs again every 5 seconds, up to 300 seconds, while its output names `rpm transaction lock` |
 | msiexec | waits for the `Global\_MSIExecute` mutex up to 300 seconds, and runs once more on 1618 |
 | dism, macOS `installer` | none yet; the lab records what each prints while another run holds the system's lock |
 
 | Rule | Reason |
 | --- | --- |
-| While the helper waits on the system's lock, the step's wait is `waiting_for_package_manager {holder}`, `holder` the process apt names, such as `unattended-upgr`, and empty where none is named. | A person sees that the machine's own updater holds the install back. |
+| While the helper waits on the system's lock, the step's wait is `waiting_for_package_manager {holder}`, and empty again once the package manager runs. `holder` is the whole name of the process that holds the lock, the last part of the first word of its command line that begins with the kernel's name of it, such as `unattended-upgrade` where apt prints the kernel's `unattended-upgr`, cut at 15 characters; empty where nothing names the process. | A person sees that the machine's own updater holds the install back, by a name they can find. |
 | The self-update's script keeps its own copy of the same waits. | It runs outside the agent. |
 
 ### What needs no lock
