@@ -97,6 +97,9 @@ class FakeEngine:
         # Module name to every row published for it, in order.
         self.published: dict = {}
         self.containers_state = "running"
+        # What a first read of Containers' row finds, while nothing read it yet.
+        self.containers_read = "running"
+        self.refreshed: list = []
         self.lock = threading.Lock()
 
     def take_state(self, modules, source_sets=None):
@@ -204,7 +207,9 @@ class FakeEngine:
         pass
 
     def refresh_one(self, name):
-        pass
+        self.refreshed.append(name)
+        if name == "podman" and self.containers_state == "":
+            self.containers_state = self.containers_read
 
     def report(self):
         rows = {"podman": {"state": self.containers_state}}
@@ -1566,3 +1571,20 @@ def test_an_ask_while_the_module_s_task_runs_is_one_more_plan_after_it(tmp_path)
         for task, _state, _wait in engine.published["samba"]
     ]
     assert ["configure", "start"] in plans
+
+
+def test_a_containers_row_nothing_read_yet_is_read_before_it_is_judged(tmp_path):
+    """Right after the agent starts, Containers' row is empty until its first
+    read; a container module's wait reads it then, and goes on."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.containers_state = ""
+    held._tried["podman"] = desired_state_module._section_hash(
+        container_state(demo="running")["modules"]["podman"]
+    )
+
+    run(held, container_state(demo="running"))
+
+    assert "podman" in engine.refreshed
+    assert engine.results["demo"] == ("", {})
+    assert runners["demo"].applied == [{"n": "demo"}]

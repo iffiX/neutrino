@@ -836,8 +836,11 @@ class DesiredStateApplier:
         return str(entry.get("want", "") or "")
 
     def _containers_state(self) -> str:
-        """Containers' state as its row reads it now."""
+        """Containers' state as its row reads it now, read first when nothing read it yet."""
         row = self._engine.report().get(CONTAINERS_MODULE) or {}
+        if not str(row.get("state", "") or ""):
+            self._engine.refresh_one(CONTAINERS_MODULE)
+            row = self._engine.report().get(CONTAINERS_MODULE) or {}
         return str(row.get("state", "") or "")
 
     def _module_needed(self) -> ModuleApplyError:
