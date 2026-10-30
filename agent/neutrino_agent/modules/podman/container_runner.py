@@ -435,11 +435,23 @@ class ContainerModuleRunner(ModuleRunner):
         self._hooks.start()
 
     def stop(self) -> None:
-        """Stop the module's containers."""
+        """Stop the module's containers.
+
+        Raises:
+            ModuleApplyError: ``apply_failed`` with systemd's words when it
+                refuses a unit; the machine's own code when it cannot be
+                reached.
+        """
         self._hooks.stop()
         names = self._names()
-        if names:
+        if not names:
+            return
+        try:
             self._containers.drive_hub_containers(names, "stop")
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            ) from error
 
     def is_installing(self) -> bool:
         """Whether the module's hooks wait on its containers' first start."""

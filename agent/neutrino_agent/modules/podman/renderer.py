@@ -362,6 +362,28 @@ def machine_control_script(name: str, action: str) -> str:
     return f"systemctl {action} {name}.service\n"
 
 
+def machine_drive_script(names: list, action: str) -> str:
+    """The root script that starts, stops or restarts some containers with one ``systemctl`` call.
+
+    systemd orders the units by their ``After=``.
+
+    Args:
+        names: The containers, each already checked against
+            ``CONTAINER_NAME_PATTERN``.
+        action: One of :data:`PODMAN_CONTAINER_ACTIONS`.
+
+    Returns:
+        The POSIX sh text.
+
+    Raises:
+        ValueError: For an action outside the list.
+    """
+    if action not in PODMAN_CONTAINER_ACTIONS:
+        raise ValueError(action)
+    units = " ".join(f"{name}.service" for name in names)
+    return f"systemctl {action} {units}\n"
+
+
 def machine_journal_script(name: str, lines: int) -> str:
     """The root script that prints the tail of one container unit's journal.
 

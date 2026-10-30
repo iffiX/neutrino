@@ -345,6 +345,22 @@ def test_a_stop_stops_the_module_s_containers(store):
     assert containers.driven == [(["neutrino_demo"], "stop")]
 
 
+def test_a_refused_stop_keeps_systemd_s_own_words(store):
+    class Refusing(FakeContainers):
+        def drive_hub_containers(self, names, action):
+            raise subprocess.CalledProcessError(
+                1, ["systemctl", "stop"], stderr="Job for x.service canceled.\n"
+            )
+
+    containers = Refusing(hub_names={"demo": ["neutrino_demo"]})
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner_for(containers, FakePodman()).stop()
+
+    assert refused.value.code == "apply_failed"
+    assert refused.value.params == {"detail": "Job for x.service canceled."}
+
+
 def test_the_uninstall_removes_containers_units_network_volumes_and_images(store):
     store.update({"ghcr.io/acme/webui@" + WEB, "docker.io/acme/agent@" + AGENT})
     containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})

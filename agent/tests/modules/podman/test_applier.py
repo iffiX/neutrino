@@ -916,6 +916,18 @@ def test_a_set_with_no_variables_is_left_unprobed():
     assert probed == []
 
 
+def test_drive_reaches_the_generated_units_with_one_call(commands, dirs):
+    dirs.units.mkdir()
+    for name in ("neutrino_demo_db", "neutrino_demo"):
+        (dirs.units / f"{name}.service").write_text(rendered())
+
+    dirs.applier().drive(["neutrino_demo_db", "neutrino_demo", "gone"], "stop")
+
+    assert commands.calls == [
+        ["systemctl", "stop", "neutrino_demo_db.service", "neutrino_demo.service"]
+    ]
+
+
 def test_drive_and_remove_reach_only_the_generated_files(commands, dirs):
     dirs.units.mkdir()
     dirs.envs.mkdir(parents=True)
@@ -928,7 +940,7 @@ def test_drive_and_remove_reach_only_the_generated_files(commands, dirs):
     removed = applier.remove(["neutrino_demo", "theirs"])
 
     assert ["systemctl", "start", "neutrino_demo.service"] in commands.calls
-    assert ["systemctl", "start", "theirs.service"] not in commands.calls
+    assert not any("theirs.service" in call for call in commands.calls[:1])
     assert removed == ["neutrino_demo"]
     assert ["systemctl", "stop", "neutrino_demo.service"] in commands.calls
     assert [

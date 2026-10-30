@@ -1761,9 +1761,12 @@ def test_a_container_module_drives_and_drops_its_containers_in_the_machine(rig):
     rig.runner.apply(CONFIG)
     rig.runner._config = PodmanConfig.from_dict(HUB_CONFIG)
 
-    rig.runner.drive_hub_containers(["neutrino_demo"], "restart")
+    rig.runner.drive_hub_containers(["neutrino_demo", "neutrino_late"], "restart")
     rig.runner.drop_hub_containers("demo")
 
-    assert rig.world.scripts[-2][2] == "systemctl restart neutrino_demo.service\n"
+    assert (
+        rig.world.scripts[-2][2]
+        == "systemctl restart neutrino_demo.service neutrino_late.service\n"
+    )
     assert rig.world.scripts[-1][2] == machine_drop_script(["neutrino_demo"])
     assert rig.runner.hub_names() == {"late": ["neutrino_late"]}

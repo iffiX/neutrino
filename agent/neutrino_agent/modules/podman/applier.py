@@ -455,7 +455,9 @@ class PodmanUnitApplier:
         return f"containers: {', '.join(sorted(notes))}"
 
     def drive(self, names: list, action: str) -> None:
-        """Start, stop or restart the units of some containers, each that has a file.
+        """Start, stop or restart the units of some containers, each that has a file, with one ``systemctl`` call.
+
+        systemd orders the units by their ``After=``.
 
         Args:
             names: The containers.
@@ -468,9 +470,13 @@ class PodmanUnitApplier:
         if action not in PODMAN_CONTAINER_ACTIONS:
             raise ValueError(action)
         owned = set(self.generated_names())
-        for name in names:
-            if name + PODMAN_UNIT_SUFFIX in owned:
-                run(["systemctl", action, name + PODMAN_UNIT_SUFFIX], timeout_s=900)
+        units = [
+            name + PODMAN_UNIT_SUFFIX
+            for name in names
+            if name + PODMAN_UNIT_SUFFIX in owned
+        ]
+        if units:
+            run(["systemctl", action, *units], timeout_s=900)
 
     def remove(self, names: list) -> list:
         """Stop the units of some containers and delete their generated files.

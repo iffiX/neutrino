@@ -94,6 +94,7 @@ from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
     PodmanRenderContext,
     machine_control_script,
+    machine_drive_script,
     machine_drop_script,
     machine_journal_script,
     machine_stop_script,
@@ -925,7 +926,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 )
 
     def drive_hub_containers(self, names: list, action: str) -> None:
-        """Start, stop or restart the units of some hub containers in the machine.
+        """Start, stop or restart the units of some hub containers in the machine with one ``systemctl`` call.
 
         Args:
             names: The containers.
@@ -939,8 +940,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         record = self._record()
         if not record or not names:
             return
-        script = "".join(machine_control_script(name, action) for name in names)
-        done = self._machine_of_record(record).shell(script)
+        done = self._machine_of_record(record).shell(
+            machine_drive_script(names, action)
+        )
         if done.returncode != 0:
             said = f"{done.stdout or ''}{done.stderr or ''}".strip()
             raise ModuleApplyError(
