@@ -14,7 +14,7 @@ runs and its forwarder listens; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
 journal is the units' or the log files', the module's own log first
 where the hooks name one and nothing of a service whose output is
-discarded, the refusal last; an artifact lands under its directory in
+discarded, a log not written yet read as empty, the refusal last; an artifact lands under its directory in
 the module's and the hooks tidy after it, a bad directory or archive being
 ``install_failed``; an uninstall deletes the module directory; and a record
 changed by the hooks is applied again.
@@ -719,7 +719,10 @@ def test_the_journal_is_the_units_with_the_refusal_last(runner, monkeypatch):
     assert runner.journal_text(10) == ["journal of neutrino_demo@ann.service"]
 
 
-def test_without_units_the_log_files_come_then_the_agents_lines(tmp_path):
+@pytest.mark.parametrize(
+    "is_folder", [False, True], ids=["log_not_written_yet", "log_path_no_file"]
+)
+def test_without_units_the_log_files_come_then_the_agents_lines(tmp_path, is_folder):
     agent_log = tmp_path / "agent.log"
     agent_log.write_text("10:00 demo: running\n10:01 samba: unchanged\n")
 
@@ -753,12 +756,15 @@ def test_without_units_the_log_files_come_then_the_agents_lines(tmp_path):
     runner.hooks.install_log = lambda account: (
         str(tmp_path / "install_bob.log") if account == "bob" else ""
     )
+    if is_folder:
+        (tmp_path / "install_bob.log").mkdir()
 
     first = runner.journal_text(200)
 
     assert first[:2] == ["ann: a1", "10:00 demo: running"]
     assert first[2].startswith("10:02 demo: started")
-    assert any("cannot read the log source" in line for line in first)
+    warned = [line for line in first if "cannot read the log source" in line]
+    assert len(warned) == (1 if is_folder else 0)
 
 
 def test_a_modules_own_log_is_read_in_place_of_the_units_journal(

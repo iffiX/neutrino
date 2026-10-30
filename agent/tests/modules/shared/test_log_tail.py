@@ -3,8 +3,8 @@
 What these pin: the lines come oldest first, capped, blank lines dropped; a
 needle keeps only the lines that hold it and reads further back than a
 plain tail; a file longer than the read starts at its first whole line; a
-file another handle holds open for writing reads; a file that cannot be
-read is an OSError. The mask hides a token in a URL's query and a token on
+file another handle holds open for writing reads; a file not written yet
+reads as no lines, and a path that is no file is an OSError. The mask hides a token in a URL's query and a token on
 a line of its own, and leaves every other line as it was.
 """
 
@@ -65,9 +65,14 @@ def test_a_file_held_open_for_writing_reads(tmp_path):
         assert file_tail(str(path), 10, needle="samba") == ["10:00 samba: unchanged"]
 
 
-def test_a_missing_file_is_an_os_error(tmp_path):
+def test_a_file_not_written_yet_reads_as_no_lines(tmp_path):
+    assert file_tail(str(tmp_path / "absent.log"), 10) == []
+    assert file_tail(str(tmp_path / "log" / "absent.log"), 10) == []
+
+
+def test_a_path_that_is_no_file_is_an_os_error(tmp_path):
     with pytest.raises(OSError):
-        file_tail(str(tmp_path / "absent.log"), 10)
+        file_tail(str(tmp_path), 10)
 
 
 # --- the mask ---

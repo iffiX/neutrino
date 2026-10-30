@@ -304,10 +304,7 @@ class GiteaModuleRunner(ModuleRunner):
         path = self._applier.log_path()
         if not path:
             return super().journal_text(lines)
-        # Gitea writes its log at its first start.
-        own = []
-        if os.path.isfile(path):
-            own = self._read_source(path, lambda: file_tail(path, lines))
+        own = self._read_source(path, lambda: file_tail(path, lines))
         return self._with_agent_lines(own, lines)
 
     def details(self, recipe: dict) -> dict:

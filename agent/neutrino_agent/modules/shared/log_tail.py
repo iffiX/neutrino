@@ -2,8 +2,9 @@
 
 Only the end of the file is read. The file is opened for reading alone,
 which on Windows shares it with the handle the agent's logging writes
-through. :func:`mask_secrets` hides a token in a URL's query and a token
-printed on a line of its own.
+through. A file its program has not written yet reads as no lines.
+:func:`mask_secrets` hides a token in a URL's query and a token printed on
+a line of its own.
 
 Not pure: reads files.
 """
@@ -57,14 +58,20 @@ def file_tail(path: str, lines: int, *, needle: str = "") -> list:
         needle: Text a line holds to be returned; empty returns every line.
 
     Returns:
-        The non-blank lines. With a needle the read reaches further back,
-        so lines about one module are found among many others.
+        The non-blank lines; none while the file does not exist. With a
+        needle the read reaches further back, so lines about one module are
+        found among many others.
 
     Raises:
-        OSError: When the file cannot be read.
+        OSError: When the file exists and cannot be read, or the path is no
+            file.
     """
     limit = AGENT_MODULE_LOG_SEARCH_BYTES if needle else AGENT_MODULE_LOG_TAIL_BYTES
-    with open(path, "rb") as stream:
+    try:
+        stream = open(path, "rb")
+    except FileNotFoundError:
+        return []
+    with stream:
         size = stream.seek(0, os.SEEK_END)
         start = max(0, size - limit)
         stream.seek(start)
