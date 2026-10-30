@@ -367,16 +367,19 @@ func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 			relayed.closeWith(answer)
 			return
 		}
-		if _, err := stream.Write(session.AcceptRecord()); err != nil {
-			relayed.closeWith(nil)
-			return
-		}
 		if protocol == session.ProtocolUDP {
+			if _, err := stream.Write(session.AcceptRecord()); err != nil {
+				relayed.closeWith(nil)
+				return
+			}
 			isClosePassed, isFarEnded := RelayRecords(record, farStream, true)
 			rs.endRelayed(relayed, isClosePassed, isFarEnded)
 			return
 		}
-		relayed.markRaw()
+		if !relayed.acceptRaw() {
+			relayed.closeWith(nil)
+			return
+		}
 		Splice(stream, farStream.Stream)
 		return
 	}
@@ -400,11 +403,10 @@ func (rs *RelaySession) relayConnect(record *RecordStream, open []byte) {
 		return
 	}
 	relayed.setFar(conn)
-	if _, err := stream.Write(session.AcceptRecord()); err != nil {
+	if !relayed.acceptRaw() {
 		relayed.closeWith(nil)
 		return
 	}
-	relayed.markRaw()
 	Splice(stream, conn)
 }
 
@@ -567,11 +569,13 @@ type relayStream struct {
 	farSession string
 	peer       io.ReadWriteCloser
 
-	// mu guards far and isRaw.
-	mu    sync.Mutex
-	far   io.Closer
-	isRaw bool
-	once  sync.Once
+	// mu guards far, isRaw and isClosed, and the writes of the accept
+	// record and the close record.
+	mu       sync.Mutex
+	far      io.Closer
+	isRaw    bool
+	isClosed bool
+	once     sync.Once
 }
 
 func (s *relayStream) setFar(far io.Closer) {
@@ -580,10 +584,20 @@ func (s *relayStream) setFar(far io.Closer) {
 	s.far = far
 }
 
-func (s *relayStream) markRaw() {
+// acceptRaw writes the accept record and marks the stream raw under one
+// lock. A close record written between the two would reach the peer as raw
+// bytes. It returns false when the stream was closed or the write failed.
+func (s *relayStream) acceptRaw() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.isClosed {
+		return false
+	}
+	if _, err := s.peer.Write(session.AcceptRecord()); err != nil {
+		return false
+	}
 	s.isRaw = true
+	return true
 }
 
 // closeWith ends the stream: with a close record while it still carries
@@ -592,10 +606,11 @@ func (s *relayStream) closeWith(refusal *session.Refusal) {
 	s.once.Do(func() {
 		s.mu.Lock()
 		far, isRaw := s.far, s.isRaw
-		s.mu.Unlock()
+		s.isClosed = true
 		if !isRaw && refusal != nil {
 			_, _ = s.peer.Write(session.CloseRecord(refusal.Code, refusal.Params))
 		}
+		s.mu.Unlock()
 		if resetter, ok := s.peer.(interface{ Reset() error }); ok && isRaw {
 			_ = resetter.Reset()
 		} else {

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -410,5 +412,100 @@ func TestStreamsCloseByRow(t *testing.T) {
 	_ = second.Stream.(*yamux.Stream).SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := io.ReadFull(second.Reader, buffer); err != nil || string(buffer) != "ping" {
 		t.Fatalf("the other row's stream was touched: %q %v", buffer, err)
+	}
+}
+
+// heldPeer is a relayed stream's peer whose first write waits for release,
+// and that records every write, its close and its reset.
+type heldPeer struct {
+	entered chan struct{}
+	release chan struct{}
+
+	// mu guards writes, isClosed and isReset.
+	mu       sync.Mutex
+	writes   [][]byte
+	isClosed bool
+	isReset  bool
+}
+
+func newHeldPeer() *heldPeer {
+	return &heldPeer{entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (p *heldPeer) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (p *heldPeer) Write(data []byte) (int, error) {
+	p.mu.Lock()
+	isFirst := len(p.writes) == 0
+	p.writes = append(p.writes, bytes.Clone(data))
+	p.mu.Unlock()
+	if isFirst {
+		close(p.entered)
+		<-p.release
+	}
+	return len(data), nil
+}
+
+func (p *heldPeer) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.isClosed = true
+	return nil
+}
+
+func (p *heldPeer) Reset() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.isReset = true
+	return nil
+}
+
+func TestACloseDuringTheAcceptResetsTheRawStream(t *testing.T) {
+	peer := newHeldPeer()
+	stream := &relayStream{peer: peer}
+	accepted := make(chan bool, 1)
+	go func() { accepted <- stream.acceptRaw() }()
+	<-peer.entered
+	closed := make(chan struct{})
+	go func() {
+		stream.closeWith(session.NewRefusal(session.CodeAgentOffline, nil))
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("the close ended the stream while its accept was written")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(peer.release)
+	if !<-accepted {
+		t.Fatal("the accept was not written")
+	}
+	<-closed
+	peer.mu.Lock()
+	defer peer.mu.Unlock()
+	if len(peer.writes) != 1 || !bytes.Equal(peer.writes[0], session.AcceptRecord()) {
+		t.Fatalf("writes %q, want the accept record alone", peer.writes)
+	}
+	if !peer.isReset || peer.isClosed {
+		t.Fatalf("reset %v closed %v, want a reset", peer.isReset, peer.isClosed)
+	}
+}
+
+func TestACloseBeforeTheAcceptKeepsTheAcceptOut(t *testing.T) {
+	peer := newHeldPeer()
+	close(peer.release)
+	stream := &relayStream{peer: peer}
+	stream.closeWith(session.NewRefusal(session.CodeAgentOffline, nil))
+	if stream.acceptRaw() {
+		t.Fatal("a closed stream took the accept")
+	}
+	peer.mu.Lock()
+	defer peer.mu.Unlock()
+	refusal := session.CloseRecord(session.CodeAgentOffline, nil)
+	if len(peer.writes) != 1 || !bytes.Equal(peer.writes[0], refusal) {
+		t.Fatalf("writes %q, want the close record alone", peer.writes)
+	}
+	if !peer.isClosed || peer.isReset {
+		t.Fatalf("reset %v closed %v, want a close", peer.isReset, peer.isClosed)
 	}
 }
