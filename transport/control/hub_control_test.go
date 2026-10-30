@@ -205,9 +205,11 @@ func TestCommandsAndQuestions(t *testing.T) {
 		t.Fatalf("refusal %v", answer)
 	}
 
+	// The start is read before the timeout's deadline is set, so the wait
+	// measured from it is never short of the timeout.
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	started := time.Now()
 	_, err := hub.control.Ask(ctx, QuestionEntry, map[string]any{})
 	if !errors.Is(err, relay.ErrControlUnavailable) || time.Since(started) < 200*time.Millisecond {
 		t.Fatalf("unanswered question: %v after %v", err, time.Since(started))
