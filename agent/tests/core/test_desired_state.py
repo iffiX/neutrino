@@ -19,8 +19,8 @@ step lock naming the module that holds it and a first step's wait reading
 ``queued``, ``settle`` waiting for one module's task alone, an ask for a
 configure task made before a state names the module planned by the next
 state, a restart's replan from what the machine shows, and a container
-module waiting for Containers, asking it to render, and ending quietly while
-Containers is not to run.
+module waiting for Containers once in its install plan, asking it to render,
+and ending quietly while Containers is not to run.
 """
 
 import functools
@@ -1428,6 +1428,19 @@ def test_a_container_module_waits_for_containers_and_asks_it_to_render(tmp_path)
     assert [entry[0] for entry in journal] == ["apply", "start", "apply", "start"]
     assert [name for name, _ in engine.installs] == ["podman", "demo"]
     assert engine.results["demo"] == ("", {})
+
+
+def test_a_container_module_s_install_plan_waits_for_containers_once(tmp_path):
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="running"))
+
+    names = [step["name"] for step in engine.last("demo")[0]["steps"]]
+    assert names[0] == "wait_containers"
+    assert names.count("wait_containers") == 1
+    assert names[-1] == "start"
 
 
 def test_a_container_module_fails_module_needed_while_containers_is_not_to_run(

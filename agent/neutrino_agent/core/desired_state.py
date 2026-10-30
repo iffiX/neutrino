@@ -56,6 +56,7 @@ from neutrino_agent.constants import (
     AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_PRESENT_WANTS,
+    AGENT_STEP_WAIT_CONTAINERS,
     AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
     AGENT_WANT_RUNNING,
@@ -504,7 +505,7 @@ class DesiredStateApplier:
         ``want`` plans the install when the software is missing or the last
         install failed, the version switch when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
-        ``stopped`` and ``running``.
+        ``stopped`` and ``running``, less a second ``wait_containers``.
 
         Args:
             task: The task.
@@ -544,7 +545,14 @@ class DesiredStateApplier:
             kind = PLAN_SWITCH
             steps += self._engine.switch_steps(name, entry)
         if want in CONFIGURING_WANTS:
-            steps += self._engine.configure_steps(name, entry, want)
+            configuring = self._engine.configure_steps(name, entry, want)
+            if any(step.name == AGENT_STEP_WAIT_CONTAINERS for step in steps):
+                configuring = [
+                    step
+                    for step in configuring
+                    if step.name != AGENT_STEP_WAIT_CONTAINERS
+                ]
+            steps += configuring
         return kind, steps
 
     def is_task_cut(self, task) -> bool:
