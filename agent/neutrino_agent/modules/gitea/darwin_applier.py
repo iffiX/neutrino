@@ -31,6 +31,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.applier import (
     GiteaState,
     give_tree,
+    is_handover_owed,
     read_listen_port,
     read_root_url,
 )
@@ -51,6 +52,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_DATA_DIR_NAME,
     GITEA_DATA_PARTS,
     GITEA_LOG_PARTS,
+    GITEA_OWN_PARTS,
     GITEA_VERSION_PREFIX,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
@@ -235,11 +237,13 @@ class GiteaDarwinApplier:
     def ensure_account(self) -> bool:
         """Make the account when it is missing, and the data directory its own.
 
-        A data directory owned by another uid is given to the account with
-        everything under it.
+        The data directory is also the account's home, where macOS writes
+        ``Library``. When another uid owns one of Gitea's own parts,
+        ``custom``, ``data`` or ``log``, those parts alone are given to the
+        account with everything under them.
 
         Returns:
-            Whether the data directory changed hands.
+            Whether Gitea's own parts changed hands.
 
         Raises:
             ModuleApplyError: ``user_create_failed {user, detail}`` when the
@@ -248,7 +252,10 @@ class GiteaDarwinApplier:
             subprocess.CalledProcessError: When a step refuses.
         """
         uid, gid = self._ensure_account()
-        is_given = give_tree(self.data_dir, uid, gid, chown=self._chown)
+        is_given = is_handover_owed(self.data_dir, uid)
+        if is_given:
+            for part in GITEA_OWN_PARTS:
+                give_tree(os.path.join(self.data_dir, part), uid, gid, self._chown)
         self._prepare_data(uid, gid)
         return is_given
 

@@ -24,6 +24,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_CONF_PATH,
     GITEA_DIR,
     GITEA_ETC_DIR,
+    GITEA_OWN_PARTS,
     GITEA_SYSTEMD_DIR,
     GITEA_UNIT,
     GITEA_UNIT_SOURCE_NAME,
@@ -82,7 +83,8 @@ class GiteaInstaller:
     def ensure_account(self) -> bool:
         """Make the git account when it is missing, and its directories.
 
-        A work root owned by another uid is given to the account with
+        A work root where another uid owns one of Gitea's own parts,
+        ``custom``, ``data`` or ``log``, is given to the account with
         everything under it, and ``app.ini`` to its group. A ``git``
         account removed by hand leaves such a root.
 
@@ -95,9 +97,11 @@ class GiteaInstaller:
         """
         self.create_user()
         account = pwd.getpwnam(GITEA_USER)
-        is_given = give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
-        if is_given and os.path.isfile(GITEA_CONF_PATH):
-            shutil.chown(GITEA_CONF_PATH, group=GITEA_USER)
+        is_given = is_handover_owed(GITEA_DIR, account.pw_uid)
+        if is_given:
+            give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
+            if os.path.isfile(GITEA_CONF_PATH):
+                shutil.chown(GITEA_CONF_PATH, group=GITEA_USER)
         self.create_directories()
         return is_given
 
@@ -353,38 +357,52 @@ class GiteaAdminManager:
         ]
 
 
-def give_tree(root: str, uid: int, gid: int, chown=None) -> bool:
-    """Give a directory and everything under it to an account, when another uid owns the directory.
-
-    A symbolic link is left as it is.
+def is_handover_owed(root: str, uid: int) -> bool:
+    """Whether another uid owns one of Gitea's own parts of a data directory.
 
     Args:
-        root: The directory.
+        root: The data directory.
+        uid: The account's uid.
+
+    Returns:
+        True when ``custom``, ``data`` or ``log`` is there and belongs to
+        another uid.
+    """
+    for part in GITEA_OWN_PARTS:
+        try:
+            if os.lstat(os.path.join(root, part)).st_uid != uid:
+                return True
+        except FileNotFoundError:
+            continue
+    return False
+
+
+def give_tree(root: str, uid: int, gid: int, chown=None) -> None:
+    """Give a directory and everything under it to an account, each directory after what it holds.
+
+    A handover cut short leaves every directory it did not finish with its
+    old owner, so the next handover runs again. A symbolic link is left as
+    it is.
+
+    Args:
+        root: The directory; nothing happens when it is not there.
         uid: The account's uid.
         gid: The account's group.
         chown: Changes one path's owner, as :func:`os.chown` does; None
             is :func:`os.chown`.
 
-    Returns:
-        Whether the tree changed hands; False for a missing directory or
-        one the uid owns already.
-
     Raises:
         OSError: When a path cannot be given.
     """
-    try:
-        if os.stat(root).st_uid == uid:
-            return False
-    except FileNotFoundError:
-        return False
+    if os.path.islink(root) or not os.path.isdir(root):
+        return
     chown = chown if chown is not None else os.chown
-    for directory, _directories, files in os.walk(root):
-        chown(directory, uid, gid)
-        for name in files:
+    for directory, directories, files in os.walk(root, topdown=False):
+        for name in [*files, *directories]:
             path = os.path.join(directory, name)
             if not os.path.islink(path):
                 chown(path, uid, gid)
-    return True
+    chown(root, uid, gid)
 
 
 def read_listen_port(path: str = "") -> int:

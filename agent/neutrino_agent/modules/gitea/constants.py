@@ -50,6 +50,9 @@ GITEA_CONF_PARTS = ("custom", "conf", "app.ini")
 GITEA_LOG_PARTS = ("log", "gitea.log")
 # The parts of the data directory the server writes into.
 GITEA_DATA_PARTS = (("custom", "conf"), ("data",), ("log",))
+# Gitea's own files: the first directory of each part above, with everything
+# under it. The account step decides on a handover by their owners.
+GITEA_OWN_PARTS = tuple(parts[0] for parts in GITEA_DATA_PARTS)
 
 # macOS: the hidden account the server runs as, its LaunchDaemon, where
 # launchd writes its output, and where a usable git is looked for, in that

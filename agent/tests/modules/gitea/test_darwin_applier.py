@@ -3,7 +3,8 @@
 What these pin: git found by the tools' own paths and never ``/usr/bin/git``;
 the hidden account made with ``sysadminctl`` and read back, its refusal
 carrying the tool's line when the record is not usable; the data directory
-and ``app.ini`` the account's own; the LaunchDaemon run as the account with
+and ``app.ini`` the account's own, a handover giving Gitea's own parts and
+leaving the home's ``Library``; the LaunchDaemon run as the account with
 the git's directory first on its ``PATH``; an apply that starts, keeps or
 restarts the job, enabled before it loads; a stop that disables the job
 and waits until launchd lets go; the account made by its own step, never by
@@ -180,6 +181,25 @@ def test_the_account_step_gives_data_another_uid_owns_to_the_account(
     assert applier.ensure_account() is True
 
     assert ["chown", str(data / "data" / "gitea.db"), 502, 20] in tools.calls
+
+
+def test_the_handover_gives_gitea_s_own_parts_and_leaves_the_home_s_library(
+    applier, tools, tmp_path
+):
+    tools.has_account = True
+    data = tmp_path / "state" / "gitea_data"
+    for part in ("custom/conf", "data", "log", "Library/Containers/x"):
+        (data / part).mkdir(parents=True)
+    (data / "custom" / "conf" / "app.ini").write_text("")
+    (data / "log" / "gitea.log").write_text("")
+    (data / "Library" / "Containers" / "x" / "meta.plist").write_text("")
+
+    assert applier.ensure_account() is True
+
+    given = [call[1] for call in tools.ran("chown")]
+    assert str(data / "custom" / "conf" / "app.ini") in given
+    assert str(data / "log" / "gitea.log") in given
+    assert not [path for path in given if "Library" in path]
 
 
 def test_an_account_made_already_is_not_made_again(applier, tools):

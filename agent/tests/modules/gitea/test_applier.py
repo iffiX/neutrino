@@ -2,7 +2,9 @@
 
 The rule with teeth is work-root ownership: gitea runs as the git account
 and creates ``.ssh`` under its work root on start, so a root-owned root is
-a crashloop. The applier owns the root on every apply.
+a crashloop. The applier owns the root on every apply. A handover is owed
+while another uid owns one of Gitea's own parts, and gives each directory
+after what it holds.
 """
 
 import os
@@ -208,6 +210,37 @@ def test_the_account_step_gives_a_work_root_another_uid_owns_to_the_account(
     assert str(data / "gitea-repositories" / "ann") in paths
     assert str(data / "link") not in paths
     assert (str(tmp_path / "etc/app.ini"), None, "git") in chowns
+
+
+def test_a_handover_cut_short_runs_again_by_gitea_s_own_parts(box, monkeypatch):
+    _, chowns, tmp_path = box
+    root = tmp_path / "gitea"
+    for part in ("custom/conf", "data", "log"):
+        (root / part).mkdir(parents=True)
+    (root / "log" / "gitea.log").write_text("")
+    real_lstat = os.lstat
+
+    def lstat(path):
+        found = real_lstat(path)
+        if os.fspath(path) != str(root / "log"):
+            return found
+        fields = list(found)
+        fields[4] = os.getuid() + 9
+        return os.stat_result(fields)
+
+    given: list = []
+    monkeypatch.setattr(applier_module.os, "lstat", lstat)
+    monkeypatch.setattr(
+        applier_module.os, "chown", lambda path, uid, gid: given.append(path)
+    )
+
+    assert GiteaInstaller().ensure_account() is True
+
+    assert given[-1] == str(root)
+    assert given.index(str(root / "log" / "gitea.log")) < given.index(str(root / "log"))
+    assert given.index(str(root / "custom" / "conf")) < given.index(
+        str(root / "custom")
+    )
 
 
 def test_the_account_step_leaves_a_work_root_the_account_owns(box, monkeypatch):
