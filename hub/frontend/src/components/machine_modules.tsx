@@ -14,6 +14,7 @@ import { InstancesPanel } from "./instances_panel";
 import { ModuleCatalogModal } from "./module_catalog_modal";
 import { ModuleIcon } from "./module_icon";
 import { ModuleLog } from "./module_log";
+import { ModuleTaskSteps } from "./module_task_steps";
 import { ModuleVersionBlock } from "./module_version_block";
 import { RemoteDesktopPanels } from "./remote_desktop_panels";
 import { SambaStatusPanel } from "./samba_status_panel";
@@ -55,8 +56,9 @@ import "./machine_modules.css";
  * the left, the picked one's tab on the right, and **+ Add module** under
  * the list, which opens the catalog.
  *
- * A tab reads top to bottom: its state line, its version line once the
- * module is installed, its notices, `Log · last 200 lines` and the log box,
+ * A tab reads top to bottom: its state line, the steps of the module's last
+ * task, its version line once the module is installed, its notices,
+ * `Log · last 200 lines` and the log box,
  * `Configuration` and the module's panel while Configure holds it open, and
  * the presses at the right edge. The modules the agent carries show their
  * state line and their panel alone. The picked tab is kept in the address
@@ -218,8 +220,9 @@ const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
 };
 
 /** The states whose code the tab words as a notice at its top: what holds
- * up an install, and what is missing of software that is partly there. */
-const NOTICED_STATES = ["installing", "absent"];
+ * up an install or a queued task, and what is missing of software that is
+ * partly there. */
+const NOTICED_STATES = ["installing", "queued", "absent"];
 
 /** The code of an install that goes on only after the machine restarts. */
 const REBOOT_REQUIRED_CODE = "reboot_required";
@@ -477,8 +480,7 @@ export function MachineModules({
     panels !== undefined &&
     (isCarriedRow || configured.includes(activeModule));
   const isBusy = busyAction !== null;
-  const isInTransit =
-    activeRow !== undefined && BUSY_STATES.includes(activeRow.state);
+  const isInTransit = activeRow !== undefined && isRowInTransit(activeRow);
   const canAct =
     activeRow !== undefined && isAgentOnline && !isBusy && !isInTransit;
   const isPresent =
@@ -496,6 +498,22 @@ export function MachineModules({
     !UNWANTED.includes(activeRow.want);
   const isTermsGated =
     activeModule === TERMS_MODULE && termsView?.is_terms_accepted !== true;
+  const manifestTitles = manifestTitlesOf(modules.data);
+  // The step list follows the machine's report, not a press's transient.
+  const reportedRow =
+    activeModule === null ? undefined : reportedRows[activeModule];
+  const stepsTask = reportedRow?.task ?? null;
+  const isStepFailed =
+    reportedRow !== undefined && FAILED_STATES.includes(reportedRow.state);
+  // What the step list already words under a step: the wait of the running
+  // step, and the failure of the last step run.
+  const isWaitInSteps =
+    stepsTask !== null &&
+    stepsTask.is_running &&
+    activeRow !== undefined &&
+    stepsTask.wait.code === activeRow.code;
+  const isFailureInSteps =
+    stepsTask !== null && !stepsTask.is_running && isStepFailed;
 
   return (
     <div className="modules_split">
@@ -562,12 +580,20 @@ export function MachineModules({
             <>
               <div className="modules_detail_head">
                 <h3>{moduleTitle(activeRow.name, activeRow.title)}</h3>
-                {BUSY_STATES.includes(activeRow.state) && <Spinner size={11} />}
+                {isRowInTransit(activeRow) && <Spinner size={11} />}
                 <StatusDot
                   tone={dotTone(activeRow)}
                   label={stateWord(activeRow)}
                 />
               </div>
+              {stepsTask !== null && reportedRow !== undefined && (
+                <ModuleTaskSteps
+                  task={stepsTask}
+                  isFailed={isStepFailed}
+                  failure={describeFailure(reportedRow, manifestTitles)}
+                  manifestTitles={manifestTitles}
+                />
+              )}
               {isPresent && !isCarriedRow && (
                 <ModuleVersionBlock
                   key={activeRow.name}
@@ -597,11 +623,15 @@ export function MachineModules({
                 </div>
               )}
               {NOTICED_STATES.includes(activeRow.state) &&
-                activeRow.code !== "" && (
+                activeRow.code !== "" &&
+                (!isWaitInSteps || activeRow.code === REBOOT_REQUIRED_CODE) && (
                   <div className="notice notice--warn modules_install_notice">
                     <Icon name="alert" size={15} />
                     <div className="notice_body">
-                      <span>{wordedCode(activeRow) ?? activeRow.code}</span>
+                      <span>
+                        {wordedCode(activeRow, manifestTitles) ??
+                          activeRow.code}
+                      </span>
                       {activeRow.code === REBOOT_REQUIRED_CODE && (
                         <button
                           type="button"
@@ -620,11 +650,11 @@ export function MachineModules({
                     </div>
                   </div>
                 )}
-              {FAILED_STATES.includes(activeRow.state) && (
+              {FAILED_STATES.includes(activeRow.state) && !isFailureInSteps && (
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
-                    {describeFailure(activeRow)}
+                    {describeFailure(activeRow, manifestTitles)}
                   </div>
                 </div>
               )}
@@ -653,7 +683,7 @@ export function MachineModules({
                       isEditable: isAgentOnline,
                       platformOs,
                       want: activeRow.want,
-                      manifestTitles: manifestTitlesOf(modules.data),
+                      manifestTitles,
                     })}
                   </fieldset>
                 </>
@@ -874,9 +904,23 @@ function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
     >
       <ModuleIcon name={row.name} size={ROW_ICON_PX} />
       <span className="modules_list_row_title">{title}</span>
-      {BUSY_STATES.includes(row.state) && <Spinner size={11} />}
+      {row.task !== null && row.task.is_running && (
+        <span className="modules_list_row_step">
+          {row.task.index}/{row.task.steps.length}
+        </span>
+      )}
+      {isRowInTransit(row) && <Spinner size={11} />}
       <StatusDot tone={dotTone(row)} />
     </button>
+  );
+}
+
+/** Whether a module is in transit: a state of the busy set, or a task that
+ * runs. */
+function isRowInTransit(row: DeviceModuleView): boolean {
+  return (
+    BUSY_STATES.includes(row.state) ||
+    (row.task !== null && row.task.is_running)
   );
 }
 
@@ -960,21 +1004,28 @@ function dropExpired(
 }
 
 /** A failed step, worded from the code the agent reported. */
-function describeFailure(row: DeviceModuleView): string {
+function describeFailure(
+  row: DeviceModuleView,
+  manifestTitles: Record<string, string>,
+): string {
   if (row.code === "") {
     return t("ui.modules.failed");
   }
-  return wordedCode(row) ?? t("ui.modules.failed_code", { code: row.code });
+  return (
+    wordedCode(row, manifestTitles) ??
+    t("ui.modules.failed_code", { code: row.code })
+  );
 }
 
-/** The code the agent reported, in words; null for one the catalog lacks. */
-function wordedCode(row: DeviceModuleView): string | null {
+/** The code the agent reported, in words; null for one the catalog lacks.
+ * `manifestTitles` holds each module's manifest title, by name. */
+function wordedCode(
+  row: DeviceModuleView,
+  manifestTitles: Record<string, string>,
+): string | null {
   const key = `code.${row.code}`;
   if (row.code === "" || !hasWord(key)) {
     return null;
   }
-  return t(
-    key,
-    withModuleTitle(codeParams(row.params), { [row.name]: row.title }),
-  );
+  return t(key, withModuleTitle(codeParams(row.params), manifestTitles));
 }

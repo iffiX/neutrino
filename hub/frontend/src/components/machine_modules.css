@@ -58,6 +58,14 @@
   text-overflow: ellipsis;
 }
 
+/* The running step's index and the plan's length, beside the spinner. */
+.modules_list_row_step {
+  flex: none;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* As wide as the list, under its last row. */
 .modules_list_add {
   flex: none;

@@ -12,10 +12,10 @@ import type { DeviceModuleView, ServiceJournal } from "../api_types";
 /**
  * A module tab's log box, under its title `Log · last 200 lines`.
  *
- * The lines the agent sends up while the module installs or uninstalls,
- * after such a task fails, over a module whose install failed, and over one
- * still installing, as while it waits on a restart; the tail of the module's
- * own journal on the machine the rest of the time, polled while it shows.
+ * The lines the agent sends up while the module's task runs, after a task
+ * fails, over a module whose install failed, and over one still installing,
+ * as while it waits on a restart; the tail of the module's own journal on
+ * the machine the rest of the time, polled while it shows.
  * The page mounts one per device and module, so the box never holds another
  * module's text.
  */
@@ -43,6 +43,8 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const task = useTaskStream(row.task_id === "" ? null : row.task_id);
+  // Whether the machine reports the module's task as running.
+  const isReportedRunning = row.task !== null && row.task.is_running;
   // A finished task over a module whose install failed ended in a failure,
   // whatever its own exit status.
   const isTaskFailed =
@@ -52,14 +54,18 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
   // The install goes on while the module reads installing, after a task
   // that ended with no failure.
   const isInstallGoing =
-    task.isRunning || (!isTaskFailed && row.state === INSTALLING_STATE);
+    task.isRunning ||
+    isReportedRunning ||
+    (!isTaskFailed && row.state === INSTALLING_STATE);
   // Over a module in a state with a journal, a task replaying takes the box
-  // only once it ends in a failure; until then the journal shows.
+  // only while the machine reports the task running or once it ends in a
+  // failure; until then the journal shows.
   const isTaskShown =
     row.task_id !== "" &&
-    (task.isRunning
-      ? !JOURNAL_STATES.includes(row.state)
-      : isTaskFailed || isInstallGoing);
+    (isReportedRunning ||
+      (task.isRunning
+        ? !JOURNAL_STATES.includes(row.state)
+        : isTaskFailed || isInstallGoing));
   const isJournalShown =
     !isTaskShown && isAgentOnline && JOURNAL_STATES.includes(row.state);
   const journal = usePolledResource<ServiceJournal>(

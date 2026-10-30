@@ -1191,6 +1191,29 @@ export interface TaskStarted {
 
 // --- Modules on devices ---
 
+/** One step of a module's task: its name from the closed list, and its
+ * params. */
+export interface ModuleTaskStep {
+  name: string;
+  params: Record<string, unknown>;
+}
+
+/** What a module's step waits for now; an empty code while the step works. */
+export interface ModuleTaskWait {
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** A module's task, as its agent reports it on the module's row. */
+export interface ModuleTask {
+  /** The plan, in the order the steps run. */
+  steps: ModuleTaskStep[];
+  /** 1-based: the step that runs, or the last one run once the task ended. */
+  index: number;
+  wait: ModuleTaskWait;
+  is_running: boolean;
+}
+
 /** Where a module stands on one device, as its agent last reported. */
 export interface ModuleDeviceState {
   /** Whether the agent on this device is answering. */
@@ -1203,6 +1226,8 @@ export interface ModuleDeviceState {
    * nothing to say. */
   code: string;
   params: Record<string, unknown>;
+  /** The module's last task; null before its first. */
+  task: ModuleTask | null;
 }
 
 /** One module a device could run, as its agent last reported it beside
@@ -1234,8 +1259,10 @@ export interface DeviceModuleView {
   /** Whether the hub holds a configuration for the module on this device;
    * the first Configure imports one from the machine where it holds none. */
   is_configured: boolean;
-  /** The task carrying the module's last install or uninstall lines, to
-   * follow on `/ws/hub/task`; empty when none has run. */
+  /** The module's last task; null before its first. */
+  task: ModuleTask | null;
+  /** The hub's task with the lines of the module's last task, to follow on
+   * `/ws/hub/task`; empty when none has run. */
   task_id: string;
 }
 

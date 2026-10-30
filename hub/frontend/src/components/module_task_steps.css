@@ -1,0 +1,41 @@
+/* A module tab's step list: a dot and the step's words on each line, and
+   under the words what the step waits for or why it failed. */
+.module_steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module_step {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.module_step_detail {
+  grid-column: 2;
+  font-size: 12px;
+}
+
+.module_step--running,
+.module_step--waiting {
+  color: var(--color-text);
+}
+
+.module_step--waiting .module_step_detail {
+  color: var(--color-text-muted);
+}
+
+.module_step--pending {
+  color: var(--color-text-faint);
+}
+
+.module_step--failed {
+  color: var(--color-error);
+}
