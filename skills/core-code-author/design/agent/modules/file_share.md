@@ -136,10 +136,16 @@ thread has open fails with `Access is denied`. On Windows each
 share's folder is granted to the SMB users of its accounts with `icacls`,
 one user for a Home share and each checked account's for a folder share,
 and a `.ssh` folder directly under a share's folder, the account's own
-under its home, is taken out of that grant at every apply: the folder's
+under its home, is taken out of that grant: the folder's
 inheritance is broken with its entries kept, so the owner, SYSTEM and
 Administrators stay, and the module's users are removed from it, so
-OpenSSH's permission check on the account's own `~/.ssh` files passes. On
+OpenSSH's permission check on the account's own `~/.ssh` files passes.
+Each apply reads these folders' access lists through the PowerShell host
+first and runs `icacls` only for an entry that differs. Every change
+`icacls` makes walks the whole tree under the folder, and a home folder
+holds the account's whole profile: granting it again at every apply held
+`system_accounts` for 40 to 150 seconds. An account's grant replaces its
+own entries on the folder, so a right that changed takes effect. On
 macOS the grant is an ACL entry beside the mode, which OpenSSH does not
 read, so the `.ssh` folder needs nothing. On macOS each account takes the
 same entry as its SMB user, since a file the SMB user writes has the SMB

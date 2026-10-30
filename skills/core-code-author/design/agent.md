@@ -1069,7 +1069,7 @@ Win32 in its own process.
 | Work on Windows | Runs in |
 | --- | --- |
 | The scheduled tasks: registering one with an account's password, starting, stopping and deleting it, reading its state and last result, and the one-shot task that runs a program as an account | the host |
-| The file share: the shares and their access, the share accounts with their sign-in denial and hiding, the fence rule, the passwords, the server log | the host |
+| The file share: the shares and their access, the share accounts with their sign-in denial and hiding, the fence rule, the passwords, the server log, the shared folders' access lists | the host |
 | The thermal zones, read from WMI | the host |
 | The uninstall's cleanup of what the agent added under its prefix | the host |
 | The interfaces, the accounts and their homes, whether an instance's own process listens on its port, RustDesk's service configuration and processes, a file read as an account, an account's batch logon right in the local security policy | the agent's own process, through Win32 with ctypes |
