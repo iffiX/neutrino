@@ -11,6 +11,7 @@ what they carry. The agent arrives as the transport brings it: a
 """
 
 import asyncio
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.utils.json_file import set_config_write_hook, write_config
 from neutrino_hub.web import identity, ws
 from neutrino_hub.web.constants import (
+    WEB_EVENT_COALESCE_WINDOW_S,
     WEB_EVENT_CONFIG,
     WEB_EVENT_DEVICE_REPORT,
     WEB_EVENT_DEVICES,
@@ -322,6 +324,39 @@ def test_a_report_saying_nothing_new_asks_for_no_refetch(box, device):
     assert [frame["type"] for frame in metrics + config] == [
         WEB_EVENT_METRICS,
         WEB_EVENT_CONFIG,
+    ]
+
+
+def at_step(index: int) -> dict:
+    """A report whose module runs a task of two steps, at this one."""
+    task = {
+        "steps": [{"name": "configure", "params": {}}, {"name": "start", "params": {}}],
+        "index": index,
+        "wait": {},
+        "is_running": True,
+    }
+    return report(
+        modules={
+            "rustdesk": {"state": "installed", "code": "", "params": {}, "task": task}
+        }
+    )
+
+
+def test_a_report_moving_a_task_to_its_next_step_says_so_for_that_device(box, device):
+    client, runtime = box
+    panel = opened(client)
+    agent = agent_of(runtime, panel, device)
+    agent.send(at_step(1))
+    frames_until(panel, WEB_EVENT_METRICS)
+    # Past the window in which a second identical hint waits for the first.
+    time.sleep(WEB_EVENT_COALESCE_WINDOW_S * 1.5)
+
+    agent.send(at_step(2))
+    frames = frames_until(panel, WEB_EVENT_METRICS)
+    closed(agent, panel)
+
+    assert (WEB_EVENT_DEVICE_REPORT, device) in [
+        (frame["type"], frame["key"]) for frame in frames
     ]
 
 

@@ -281,9 +281,83 @@
               "additionalProperties": true,
               "title": "Details",
               "type": "object"
+            },
+            "task": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChannelModuleTask"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "title": "ChannelModuleReport",
+          "type": "object"
+        },
+        "ChannelModuleTask": {
+          "description": "A module's task, as the agent reports it on the module's row.",
+          "properties": {
+            "steps": {
+              "items": {
+                "$ref": "#/$defs/ChannelModuleTaskStep"
+              },
+              "title": "Steps",
+              "type": "array"
+            },
+            "index": {
+              "default": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "wait": {
+              "$ref": "#/$defs/ChannelModuleTaskWait"
+            },
+            "is_running": {
+              "default": false,
+              "title": "Is Running",
+              "type": "boolean"
+            }
+          },
+          "title": "ChannelModuleTask",
+          "type": "object"
+        },
+        "ChannelModuleTaskStep": {
+          "description": "One step of a module's task: its name from the closed list, and its params.",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ChannelModuleTaskStep",
+          "type": "object"
+        },
+        "ChannelModuleTaskWait": {
+          "description": "What a module's step waits for now; an empty code while the step works.",
+          "properties": {
+            "code": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "title": "ChannelModuleTaskWait",
           "type": "object"
         },
         "ChannelNetwork": {
@@ -1607,6 +1681,71 @@
       "type": "object"
     },
     "ChannelModuleReport": {
+      "$defs": {
+        "ChannelModuleTask": {
+          "description": "A module's task, as the agent reports it on the module's row.",
+          "properties": {
+            "steps": {
+              "items": {
+                "$ref": "#/$defs/ChannelModuleTaskStep"
+              },
+              "title": "Steps",
+              "type": "array"
+            },
+            "index": {
+              "default": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "wait": {
+              "$ref": "#/$defs/ChannelModuleTaskWait"
+            },
+            "is_running": {
+              "default": false,
+              "title": "Is Running",
+              "type": "boolean"
+            }
+          },
+          "title": "ChannelModuleTask",
+          "type": "object"
+        },
+        "ChannelModuleTaskStep": {
+          "description": "One step of a module's task: its name from the closed list, and its params.",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ChannelModuleTaskStep",
+          "type": "object"
+        },
+        "ChannelModuleTaskWait": {
+          "description": "What a module's step waits for now; an empty code while the step works.",
+          "properties": {
+            "code": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "title": "ChannelModuleTaskWait",
+          "type": "object"
+        }
+      },
       "description": "What the agent observed of one module.",
       "properties": {
         "state": {
@@ -1638,6 +1777,17 @@
           "additionalProperties": true,
           "title": "Details",
           "type": "object"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelModuleTask"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "ChannelModuleReport",
@@ -1670,6 +1820,107 @@
         "want"
       ],
       "title": "ChannelModuleState",
+      "type": "object"
+    },
+    "ChannelModuleTask": {
+      "$defs": {
+        "ChannelModuleTaskStep": {
+          "description": "One step of a module's task: its name from the closed list, and its params.",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ChannelModuleTaskStep",
+          "type": "object"
+        },
+        "ChannelModuleTaskWait": {
+          "description": "What a module's step waits for now; an empty code while the step works.",
+          "properties": {
+            "code": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "title": "ChannelModuleTaskWait",
+          "type": "object"
+        }
+      },
+      "description": "A module's task, as the agent reports it on the module's row.",
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/ChannelModuleTaskStep"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "index": {
+          "default": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "wait": {
+          "$ref": "#/$defs/ChannelModuleTaskWait"
+        },
+        "is_running": {
+          "default": false,
+          "title": "Is Running",
+          "type": "boolean"
+        }
+      },
+      "title": "ChannelModuleTask",
+      "type": "object"
+    },
+    "ChannelModuleTaskStep": {
+      "description": "One step of a module's task: its name from the closed list, and its params.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ChannelModuleTaskStep",
+      "type": "object"
+    },
+    "ChannelModuleTaskWait": {
+      "description": "What a module's step waits for now; an empty code while the step works.",
+      "properties": {
+        "code": {
+          "default": "",
+          "title": "Code",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "title": "ChannelModuleTaskWait",
       "type": "object"
     },
     "ChannelNetwork": {

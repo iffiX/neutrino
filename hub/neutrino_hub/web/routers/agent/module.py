@@ -5,8 +5,9 @@ agent last reported it beside what the hub asks of it, and its four presses
 write one ``want`` each into ``config/devices/<id>/modules.json``: install
 ``installed``, start ``running``, stop ``stopped``, uninstall ``absent``.
 The state is pushed at once, and what the machine reports afterwards is
-shown; an install's or an uninstall's lines arrive on a ``log`` stream the
-agent opens, which the list names by its task.
+shown, each row with its module's task as the agent reports it; a task's
+lines arrive on a ``log`` stream the agent opens, which the list names by
+its hub task.
 
 The file share, the git server and the container engine are hosted by
 devices, one desired state per device per module under ``config/``, and
@@ -25,6 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 
 from neutrino_hub.exceptions import (
     AgentOfflineError,
@@ -90,6 +92,7 @@ from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.models import (
     ApplyResult,
+    ChannelModuleTask,
     DeviceModuleListView,
     DeviceModuleRequest,
     DeviceModuleView,
@@ -144,6 +147,8 @@ class DeviceModuleContext:
         code: Why it failed, typed.
         params: What the wording names.
         details: The live reads the last report carried.
+        task: The module's last task as the machine reports it; None before
+            its first.
     """
 
     key: str
@@ -158,6 +163,7 @@ class DeviceModuleContext:
     code: str = ""
     params: dict = field(default_factory=dict)
     details: dict = field(default_factory=dict)
+    task: "dict | None" = None
 
     def fields(self) -> dict:
         """What every per-device view carries beside its own fields."""
@@ -168,6 +174,7 @@ class DeviceModuleContext:
             "state": self.state,
             "code": self.code,
             "params": dict(self.params),
+            "task": self.task,
         }
 
     def observe(self, runtime: PanelRuntime) -> None:
@@ -178,6 +185,7 @@ class DeviceModuleContext:
         self.code = observed["code"]
         self.params = observed["params"]
         self.details = observed["details"]
+        self.task = observed["task"]
 
 
 @router.get("", response_model=DeviceModuleListView)
@@ -691,12 +699,13 @@ def module_status(
             reads it when the report leaves the module out.
 
     Returns:
-        ``{"state", "is_active", "version", "code", "params", "details"}``, the details
-        as the agent sent them and the version the one they name; the state
-        is ``unknown`` until the agent has
+        ``{"state", "is_active", "version", "code", "params", "details",
+        "task"}``, the details as the agent sent them and the version the
+        one they name; the state is ``unknown`` until the agent has
         said, and ``absent`` for a ``container`` module a report from the
         device leaves out, since the agent observes one only once a state
-        names it.
+        names it. The task is the module's last one: None before its first,
+        and None for a task outside the protocol's shape.
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
     details = reported.get("details")
@@ -709,7 +718,27 @@ def module_status(
         "code": str(reported.get("code") or ""),
         "params": dict(reported.get("params") or {}),
         "details": dict(details),
+        "task": reported_task(reported.get("task")),
     }
+
+
+def reported_task(task: object) -> "dict | None":
+    """A module row's ``task`` as the panel's views take it.
+
+    Args:
+        task: The row's ``task`` as the agent sent it.
+
+    Returns:
+        ``{steps, index, wait, is_running}``, an empty ``wait`` read as an
+        empty code; None for a row with no task and for one whose task does
+        not have that shape.
+    """
+    if not isinstance(task, dict):
+        return None
+    try:
+        return ChannelModuleTask.model_validate(task).model_dump()
+    except ValidationError:
+        return None
 
 
 def podman_memory_need(runtime: PanelRuntime, key: str) -> PodmanMemoryNeedView | None:
@@ -758,7 +787,7 @@ def panel_details(details: dict) -> dict:
 
 
 def module_task_id(runtime: PanelRuntime, key: str, module: str) -> str:
-    """The newest task carrying one module's install or uninstall lines.
+    """The newest hub task with the lines of one module's task.
 
     Args:
         runtime: The shared runtime, which holds the tasks.

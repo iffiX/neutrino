@@ -295,8 +295,8 @@ WEB_LINK_SAMPLE_INTERVAL_S = 5.0
 WEB_ADDRESS_SAMPLE_INTERVAL_S = 30.0
 
 # The labels the device tasks run under, so a page reopened part-way through
-# finds them again: the SSH install of the agent, and a module's install or
-# uninstall, whose lines the agent sends up a ``log`` stream.
+# finds them again: the SSH install of the agent, and a module's task. The
+# agent sends a module task's lines up a ``log`` stream.
 WEB_TASK_LABEL_AGENT_INSTALL = "install_client {device_id}"
 WEB_TASK_LABEL_MODULE = "module:{device_id}:{module}"
 

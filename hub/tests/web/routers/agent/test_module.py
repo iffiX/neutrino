@@ -7,8 +7,8 @@ reported beside what the hub asks of it; the four presses write one
 module the agent carries takes none; a press on a module whose last report is
 ``failed`` or ``install_failed`` puts a fresh retry mark, and one on any other
 module puts none; a failed install reads its code beside the want it keeps;
-the task carrying a module's install lines is
-named on its row; on Windows and macOS the list advises the Podman
+each row carries its module's task as the agent reported it, and the hub
+task with that task's lines is named on the row; on Windows and macOS the list advises the Podman
 machine's memory while the container modules need more. The door: the per-device read carrying the module's own
 fields beside the shared ones, an import that writes what the machine
 reports only where the hub holds no configuration yet, a configuration
@@ -651,6 +651,73 @@ def test_a_machine_below_the_entry_floor_cannot_run_the_module(api, monkeypatch)
     assert newer["is_supported"] is True
 
 
+# A container module's install at its fourth step, waiting for Containers'
+# configure task, as the agent reports it (protocol.md, "The sections").
+TASK = {
+    "steps": [
+        {"name": "wait_containers", "params": {}},
+        {"name": "pull", "params": {"image": "app"}},
+        {"name": "verify", "params": {}},
+        {"name": "render", "params": {}},
+        {"name": "start", "params": {}},
+    ],
+    "index": 4,
+    "wait": {"code": "waiting_for_module", "params": {"module": "podman"}},
+    "is_running": True,
+}
+
+
+def test_a_row_carries_its_modules_task_as_the_agent_reported_it(api):
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "installing", "task": TASK},
+    }
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["task"] == TASK
+
+
+def test_a_step_that_works_reads_an_empty_wait(api):
+    """The agent sends ``{}`` while the step works; the row reads an empty code."""
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {
+            "state": "running",
+            "task": {
+                "steps": [{"name": "configure"}, {"name": "start"}],
+                "index": 2,
+                "wait": {},
+                "is_running": False,
+            },
+        },
+    }
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["task"] == {
+        "steps": [
+            {"name": "configure", "params": {}},
+            {"name": "start", "params": {}},
+        ],
+        "index": 2,
+        "wait": {"code": "", "params": {}},
+        "is_running": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "task", [None, "pull", {"steps": [{"params": {}}], "index": 1}]
+)
+def test_a_row_with_no_task_or_an_unreadable_one_reads_none(api, task):
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "running", "task": task}}
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["task"] is None
+
+
 def test_the_row_names_the_newest_task_carrying_the_modules_lines(api):
     client, runtime = api
     label = module_task_label(DEVICE, "fakedesk")
@@ -788,9 +855,19 @@ def test_the_device_read_carries_the_shared_fields_beside_the_modules_own(box):
         "state": "running",
         "code": "",
         "params": {},
+        "task": None,
         "users": ["ann"],
         "sessions": 1,
     }
+
+
+def test_the_device_read_carries_the_modules_task(box):
+    client, runtime = box
+    runtime.device_modules[LAPTOP] = {MODULE: {"state": "installing", "task": TASK}}
+
+    payload = client.get(BLOCK_PATH, params={"device_id": LAPTOP}).json()
+
+    assert payload["task"] == TASK
 
 
 def test_an_offline_device_reads_its_configuration_with_the_flag_down(box):

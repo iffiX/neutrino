@@ -2052,6 +2052,31 @@ class ChannelNetwork(BaseModel):
     interfaces: list[ChannelInterface] = Field(default_factory=list)
 
 
+class ChannelModuleTaskStep(BaseModel):
+    """One step of a module's task: its name from the closed list, and its params."""
+
+    name: str
+    params: dict = Field(default_factory=dict)
+
+
+class ChannelModuleTaskWait(BaseModel):
+    """What a module's step waits for now; an empty code while the step works."""
+
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class ChannelModuleTask(BaseModel):
+    """A module's task, as the agent reports it on the module's row."""
+
+    # The plan, in the order the steps run.
+    steps: list[ChannelModuleTaskStep] = Field(default_factory=list)
+    # 1-based: the step that runs, or the last one run once the task ended.
+    index: int = 0
+    wait: ChannelModuleTaskWait = Field(default_factory=ChannelModuleTaskWait)
+    is_running: bool = False
+
+
 class ChannelModuleReport(BaseModel):
     """What the agent observed of one module."""
 
@@ -2062,6 +2087,8 @@ class ChannelModuleReport(BaseModel):
     code: str = ""
     params: dict = Field(default_factory=dict)
     details: dict = Field(default_factory=dict)
+    # The module's last task since the agent started; None before its first.
+    task: ChannelModuleTask | None = None
 
 
 class ChannelDesktopReport(BaseModel):
@@ -2280,8 +2307,10 @@ class DeviceModuleView(BaseModel):
     code: str = ""
     params: dict = Field(default_factory=dict)
     details: dict = Field(default_factory=dict)
-    # The task carrying the module's last install or uninstall lines, for
-    # the page to follow; empty when the agent has opened no log for it.
+    # The module's last task as the machine reports it; None before its first.
+    task: ChannelModuleTask | None = None
+    # The hub's task with the lines of the module's last task, for the page
+    # to follow; empty when the agent has opened no log for it.
     task_id: str = ""
     # Whether the agent's own package carries the module: Terminal, Remote
     # desktop and the SSH server, whose tabs are always on the page.
@@ -2439,6 +2468,8 @@ class ModuleDeviceFields(BaseModel):
     state: str = "unknown"
     code: str = ""
     params: dict = Field(default_factory=dict)
+    # The module's last task as the machine reports it; None before its first.
+    task: ChannelModuleTask | None = None
 
 
 class AccountToolsView(BaseModel):

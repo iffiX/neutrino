@@ -731,11 +731,10 @@ async def serve_package_stream(runtime, session, stream) -> None:
 async def serve_log_stream(runtime, session, stream) -> None:
     """Serve a ``log`` stream an agent opened: its lines become one task.
 
-    ``{module}`` names the module being installed or uninstalled. The task
-    runs under :data:`WEB_TASK_LABEL_MODULE`, which is how the module list
-    finds it for the panel to follow on ``/ws/hub/task``, and it ends with
-    the close: the module's ``state``, and the code when the operation
-    failed.
+    ``{module}`` names the module whose task runs. The hub task runs under
+    :data:`WEB_TASK_LABEL_MODULE`, which is how the module list finds it for
+    the panel to follow on ``/ws/hub/task``, and it ends with the close: the
+    module's ``state``, and the code when the task failed.
 
     Args:
         runtime: The shared runtime.
@@ -750,7 +749,7 @@ async def serve_log_stream(runtime, session, stream) -> None:
 
 
 def module_task_label(device_id: str, module: str) -> str:
-    """The label a module's install or uninstall task runs under."""
+    """The label the hub task of a module's task runs under."""
     return WEB_TASK_LABEL_MODULE.format(device_id=device_id, module=module)
 
 
