@@ -17,7 +17,10 @@ shell runs through, empty before any apply; the keeper's log in the
 journal; the verbs; stop stopping the containers, the keeper and the
 machine, and start bringing them back; a stopped machine woken by its
 keeper for a removal or a container module's uninstall; removal and
-uninstall keeping the machine; and a restarted agent reading on from the
+uninstall keeping the machine; a configure under ``stopped`` keeping the
+configuration and starting nothing; with no record, Stop stopping and
+disabling the keeper of the configured account and an uninstall removing
+it with its plist and its log; and a restarted agent reading on from the
 record.
 """
 
@@ -591,10 +594,30 @@ def test_under_running_the_apply_is_the_machine_then_the_containers(rig):
     assert rig.record()[0]["names"] == ["web"]
 
 
-def test_under_stopped_the_core_s_steps_keep_the_configuration(rig):
-    steps = [plain_step("configure"), plain_step("stop")]
+def test_under_stopped_the_configure_keeps_the_configuration_and_starts_nothing(rig):
+    rig.keep_image()
+    planned = [plain_step("configure"), plain_step("stop")]
 
-    assert rig.runner.configure_steps(CONFIG, "stopped", steps) is steps
+    steps = rig.runner.configure_steps(CONFIG, "stopped", planned)
+    steps[0].run(None)
+
+    assert [step.name for step in steps] == ["configure", "stop"]
+    assert steps[1] is planned[1]
+    assert rig.world.calls == []
+    assert rig.world.scripts == []
+    assert rig.launchctl.calls == []
+    assert not rig.plist().exists()
+    assert rig.lines[-1] == "podman: kept the configuration for the next Start"
+
+
+def test_under_stopped_a_refused_container_still_fails_the_configure(rig):
+    config = dict(CONFIG, containers=[dict(CONTAINERS[0], image="")])
+    steps = rig.runner.configure_steps(config, "stopped", [plain_step("configure")])
+
+    found = refusal(lambda: steps[0].run(None))
+
+    assert (found.code, found.params) == ("image_invalid", {"name": "web", "image": ""})
+    assert rig.world.calls == []
 
 
 def test_a_machine_step_run_again_after_a_new_size_sizes_nothing_again(rig):
@@ -1292,6 +1315,58 @@ def test_start_after_a_stop_brings_the_keeper_and_the_machine_back(rig):
     assert "com.neutrino.podman.me" in rig.launchctl.loaded
     assert "me" in rig.world.running
     assert rig.runner.is_active()
+
+
+def unanswered_machine(rig):
+    """A machine step whose machine never answered: the keeper runs, and no record is kept."""
+    rig.keep_image()
+    rig.world.answers_after = 10**6
+    rig.runner.take_config(CONFIG)
+    steps = rig.runner.configure_steps(CONFIG, "running", [plain_step("configure")])
+    assert refusal(lambda: steps[0].run(None)).code == "machine_unreachable"
+    assert rig.record() == []
+    assert "com.neutrino.podman.me" in rig.launchctl.loaded
+    (rig.tmp_path / "Logs" / "podman_me.log").write_text("vfkit exited\n")
+    rig.world.calls.clear()
+    rig.launchctl.calls.clear()
+
+
+def test_stop_with_no_record_stops_and_disables_the_configured_keeper(rig):
+    unanswered_machine(rig)
+
+    rig.runner.stop()
+
+    assert rig.launchctl.verbs() == ["disable", "bootout"]
+    assert "com.neutrino.podman.me" not in rig.launchctl.loaded
+    assert rig.world.calls == [("me", "stop", "")]
+    assert rig.world.scripts == []
+    assert rig.plist().is_file()
+    assert rig.lines[-1] == "podman: stopped the keeper of me"
+
+
+def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):
+    unanswered_machine(rig)
+
+    rig.runner.uninstall({})
+
+    assert "com.neutrino.podman.me" not in rig.launchctl.loaded
+    assert not rig.plist().exists()
+    assert not (rig.tmp_path / "Logs" / "podman_me.log").exists()
+    assert not (rig.tmp_path / "state" / "podman").exists()
+    assert ("me", "stop", "") in rig.world.calls
+    assert rig.world.scripts == []
+    assert rig.system.calls == [("uninstall",)]
+
+
+def test_stop_and_uninstall_with_no_record_and_no_account_touch_no_keeper(rig):
+    rig.runner.take_config({"containers": [], "machine": {"account": ""}})
+
+    rig.runner.stop()
+    rig.runner.uninstall({})
+
+    assert rig.launchctl.calls == []
+    assert rig.world.calls == []
+    assert rig.system.calls == [("uninstall",)]
 
 
 def test_removal_empties_the_machine_removes_the_keeper_and_stops_the_machine(rig):

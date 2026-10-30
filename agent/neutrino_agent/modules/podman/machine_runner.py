@@ -9,7 +9,8 @@ starts the keeper that brings it up at boot, waits until the machine answers
 the read, and writes the declared containers, and the hub containers of each
 module whose images are in the machine's store, into it with one root
 script. Under ``running`` the module's task runs the apply as two steps,
-``machine`` and ``configure``. On Windows the install's ``windows_features``
+``machine`` and ``configure``; under ``stopped`` its ``configure`` checks
+the configuration and keeps it for the next Start. On Windows the install's ``windows_features``
 step comes first, and its ``restart`` step waits while the computer owes the
 restart, holding no step lock. Every other step takes ``containers`` alone.
 What differs between Windows and macOS around the machine is the system's
@@ -39,6 +40,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_STEP_CONFIGURE,
     AGENT_WANT_RUNNING,
+    AGENT_WANT_STOPPED,
 )
 from neutrino_agent.exceptions import (
     ModuleApplyError,
@@ -455,6 +457,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
         """The core's steps, the ``configure`` under ``running`` cut into ``machine`` and the containers' ``configure``.
 
+        Under ``stopped`` the ``configure`` keeps the configuration and
+        starts nothing.
+
         Args:
             config: The configuration the task's entry carries.
             want: ``running`` or ``stopped``.
@@ -463,6 +468,17 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Returns:
             The steps.
         """
+        if want == AGENT_WANT_STOPPED:
+            return [
+                (
+                    dataclasses.replace(
+                        step, run=functools.partial(self._run_keep, dict(config))
+                    )
+                    if step.name == AGENT_STEP_CONFIGURE
+                    else step
+                )
+                for step in steps
+            ]
         if want != AGENT_WANT_RUNNING:
             return steps
         planned = []
@@ -531,7 +547,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Uninstall Podman and delete the kept artifacts; the machine stays.
 
         A keeper an apply left behind goes first, with the containers'
-        files in the machine.
+        files in the machine. With no record the keeper of the account the
+        configuration names goes, with its definition and its log.
 
         Args:
             recipe: The module's recipe.
@@ -541,6 +558,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         if self._record():
             self.remove_configuration()
+        else:
+            held = self._configured_record()
+            if held:
+                self._retire(held)
         self._system.uninstall()
         remove_tree(self._service_machine.module_dir)
 
@@ -575,6 +596,27 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ModuleInstallPending: While the computer owes a restart.
         """
         self._apply(config, is_kept_while_stopped=True)
+
+    def keep(self, config: dict) -> None:
+        """Check a configuration under ``stopped`` and keep it for the next Start.
+
+        Nothing starts: neither the keeper, the machine nor a container.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: When the configuration is refused; the first
+                left-out container's refusal once the rest is kept.
+        """
+        with self._apply_lock:
+            parsed, refused = PodmanConfig.from_dict(config).without_refused(
+                os_name=self._platform.os_name
+            )
+            self._checked(parsed)
+            self._kept = dict(config)
+            self._log("podman: kept the configuration for the next Start")
+            self._refuse_left_out(refused)
 
     def start(self) -> None:
         """Apply the configuration an apply kept while Stop had the machine stopped.
@@ -641,7 +683,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Stop and disable every declared and hub container, then the keeper, then stop the machine.
 
         Images and volumes stay. The machine stays stopped across the
-        computer's next boot.
+        computer's next boot. With no record the keeper of the account the
+        configuration names is stopped and disabled, and its machine
+        stopped.
 
         Raises:
             ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
@@ -651,7 +695,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         with self._apply_lock:
             record = self._record()
-            if not record or self._is_halted(record):
+            if not record:
+                self._halt_keeper(self._configured_record())
+                return
+            if self._is_halted(record):
                 return
             machine = self._machine_of_record(record)
             self._run_quietly(machine, machine_stop_script())
@@ -1047,6 +1094,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def _run_machine(self, config: dict, context) -> None:
         """The ``machine`` step."""
         self.prepare_machine(config)
+
+    def _run_keep(self, config: dict, context) -> None:
+        """The ``configure`` step under ``stopped``."""
+        self.keep(config)
 
     def _run_containers(self, config: dict, context) -> None:
         """The ``configure`` step under ``running``."""
@@ -1467,6 +1518,40 @@ class PodmanMachineModuleRunner(ModuleRunner):
         with self._lock:
             self._reading = None
         self._log(f"podman: stopped the machine of {account}")
+
+    def _configured_record(self) -> dict:
+        """The account and the login the state's configuration names, as a record holds them.
+
+        Returns:
+            ``{"account", "password"}``; empty when it names no account.
+        """
+        wanted = self._wanted.machine if self._wanted is not None else None
+        if wanted is None or not wanted.account:
+            return {}
+        return {"account": wanted.account, "password": wanted.password}
+
+    def _halt_keeper(self, held: dict) -> None:
+        """Stop and disable one account's keeper, then stop its machine, where no apply wrote a record.
+
+        A machine that does not stop is logged.
+
+        Raises:
+            OSError: When the service manager cannot stop the keeper.
+        """
+        if not held:
+            return
+        account = str(held["account"])
+        password = str(held.get("password", "") or "")
+        account_service.stop(self._keeper_of(account, password), self._service_machine)
+        machine = self._machine_of(account, password)
+        try:
+            if machine.is_present():
+                machine.stop()
+        except (ModuleApplyError, KeyError, OSError, PlatformUnsupportedError) as error:
+            self._log(f"podman: the machine of {account} did not stop: {error}")
+        with self._lock:
+            self._reading = None
+        self._log(f"podman: stopped the keeper of {account}")
 
     def _wake(self, record: dict, machine: PodmanMachine) -> None:
         """Start the keeper and wait until the machine answers the read, logging a failure."""
