@@ -27,7 +27,11 @@ import tempfile
 import threading
 import time
 
-from neutrino_agent.constants import AGENT_CONFIGURED_DIR_NAME
+from neutrino_agent.constants import (
+    AGENT_CONFIGURED_DIR_NAME,
+    AGENT_STEP_CONFIGURE,
+    AGENT_STEP_UNINSTALL,
+)
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.samba.applier import (
@@ -49,9 +53,25 @@ from neutrino_agent.modules.samba.constants import (
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
+from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
+
+# The steps that make or remove the module's accounts.
+ACCOUNT_STEPS = (AGENT_STEP_CONFIGURE, AGENT_STEP_UNINSTALL)
+
+
+def account_step_locks(step: str) -> tuple:
+    """``system_accounts`` for the file share's ``configure`` and ``uninstall``.
+
+    Args:
+        step: The step's name.
+
+    Returns:
+        The step locks the module adds to the step.
+    """
+    return SYSTEM_ACCOUNTS_LOCKS if step in ACCOUNT_STEPS else ()
 
 
 class SambaModuleRunner(SystemPackageModuleRunner):
@@ -80,6 +100,17 @@ class SambaModuleRunner(SystemPackageModuleRunner):
     def unit(self) -> str:
         """The unit this machine's Samba runs as."""
         return self._unit
+
+    def step_locks(self, step: str) -> tuple:
+        """``system_accounts`` for ``configure`` and ``uninstall``, which run ``useradd`` and ``userdel``.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            The step locks the module adds to the step.
+        """
+        return account_step_locks(step)
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration, then have Samba check it.
@@ -310,6 +341,17 @@ class SambaNativeServerRunner(ModuleRunner):
         self._lock = threading.Lock()
         self._status: "dict | None" = None
         self._status_at = 0.0
+
+    def step_locks(self, step: str) -> tuple:
+        """``system_accounts`` for ``configure`` and ``uninstall``, which make and disable the module's accounts.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            The step locks the module adds to the step.
+        """
+        return account_step_locks(step)
 
     def verify(self, recipe: dict) -> bool:
         """Whether the system's SMB server is there.

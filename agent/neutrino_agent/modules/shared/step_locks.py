@@ -23,11 +23,14 @@ from neutrino_agent.constants import (
     AGENT_LOCK_CONTAINERS,
     AGENT_LOCK_ORDER,
     AGENT_LOCK_SHARED,
+    AGENT_LOCK_SYSTEM_ACCOUNTS,
     AGENT_WAIT_LOCK,
 )
 
 # The locks a taker may share; every other lock is taken alone.
 SHARABLE_LOCKS = (AGENT_LOCK_CONTAINERS,)
+# The step locks of a step that makes or removes the machine's accounts.
+SYSTEM_ACCOUNTS_LOCKS = ((AGENT_LOCK_SYSTEM_ACCOUNTS, AGENT_LOCK_ALONE),)
 
 
 def ordered(locks) -> tuple:

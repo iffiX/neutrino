@@ -7,8 +7,8 @@ and each share and ``pdbedit -L`` into the accounts. Each apply sets the
 passwords of the hub's map whose digest differs from the root-only record,
 which keeps digests and never a password; a user that is no account of the
 machine's lacks, the account a share writes as, is refused ``account_unknown``;
-the SMB users are made before the file is written; the ``set_password`` verb
-is gone.
+the SMB users are made before the file is written; ``configure`` and
+``uninstall`` take ``system_accounts``; the ``set_password`` verb is gone.
 On Windows and macOS the apply sets each account's password the same way,
 after the server has made the account, and a removal forgets the digests.
 """
@@ -337,6 +337,15 @@ def test_stop_takes_the_unit_down(runner):
     assert FakeApplier.stops == 1
 
 
+@pytest.mark.parametrize("step", ["configure", "uninstall"])
+def test_the_steps_that_make_or_remove_accounts_take_system_accounts(runner, step):
+    held = (("system_accounts", "alone"),)
+
+    assert runner.step_locks(step) == held
+    assert runner.step_locks("start") == ()
+    assert runner_module.account_step_locks(step) == held
+
+
 def test_details_carry_the_live_reads(runner, monkeypatch):
     class Reader:
         def sessions(self):
@@ -590,6 +599,12 @@ def native(tmp_path):
 
 def record_of(native_runner) -> dict:
     return native_runner._read_record()
+
+
+def test_the_native_server_s_account_steps_take_system_accounts(native):
+    assert native.step_locks("configure") == (("system_accounts", "alone"),)
+    assert native.step_locks("uninstall") == (("system_accounts", "alone"),)
+    assert native.step_locks("verify") == ()
 
 
 def test_the_native_server_installs_nothing_and_is_there_when_it_answers(native):
