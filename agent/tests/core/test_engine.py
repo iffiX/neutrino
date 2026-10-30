@@ -2662,7 +2662,7 @@ ACCOUNT_INSTANCE = {
 ACCOUNT_MODULES = ("vscode", "code_server", "cloudcli", "codeg", "siyuan", "ssh_server")
 
 
-def planned(steps) -> list:
+def planned_accounts(steps) -> list:
     """Each step's name, account and locks."""
     return [(step.name, step.params.get("account", ""), step.locks) for step in steps]
 
@@ -2687,13 +2687,13 @@ def test_a_running_program_run_as_an_account_steps_through_each_account(
     stopped = engine.configure_steps(module, entry, "stopped")
 
     npm = [("npm", "ann", ())] if module == "cloudcli" else []
-    assert planned(running) == [
+    assert planned_accounts(running) == [
         ("configure", "", ()),
         *npm,
         ("account", "ann", ()),
         ("start", "", ()),
     ]
-    assert planned(stopped) == [("configure", "", ()), ("stop", "", ())]
+    assert planned_accounts(stopped) == [("configure", "", ()), ("stop", "", ())]
     assert {step.name for step in running + stopped} <= STEP_NAMES
 
 
@@ -2733,13 +2733,13 @@ def test_the_file_share_and_gitea_take_system_accounts_for_their_accounts(tmp_pa
         "gitea", gitea, "running"
     )
 
-    assert planned(file_share) == [
+    assert planned_accounts(file_share) == [
         ("packages", "", manager),
         ("verify", "", ()),
         ("configure", "", accounts),
         ("start", "", ()),
     ]
-    assert planned(server) == [
+    assert planned_accounts(server) == [
         ("packages", "", manager),
         ("artifact", "", ()),
         ("verify", "", ()),
@@ -2747,9 +2747,9 @@ def test_the_file_share_and_gitea_take_system_accounts_for_their_accounts(tmp_pa
         ("configure", "", ()),
         ("start", "", ()),
     ]
-    assert planned(engine.uninstall_steps("samba", samba)) == [
+    assert planned_accounts(engine.uninstall_steps("samba", samba)) == [
         ("uninstall", "", (*manager, *accounts))
     ]
-    assert planned(engine.uninstall_steps("gitea", gitea)) == [
+    assert planned_accounts(engine.uninstall_steps("gitea", gitea)) == [
         ("uninstall", "", accounts)
     ]
