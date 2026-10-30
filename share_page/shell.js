@@ -183,6 +183,7 @@ const screen = {
     this.element("title").textContent = line;
     this.element("screen").classList.remove("hidden");
     this.tab(line);
+    this.slowLine();
   },
   // Reads the loading line as slow, after TIMING.slow of the page.
   slow() {
@@ -1149,6 +1150,8 @@ const page = {
   isPageLoaded: false,
   // Whether a request of that page failed before its load event.
   isPageBroken: false,
+  // Whether the app's first page has shown.
+  hasAppShown: false,
   // The ids of the worker's requests being served, until each ends or fails.
   serving: new Set(),
 
@@ -1177,7 +1180,6 @@ const page = {
     if (stats.isWorkerFailed) { if (session) session.close(); screen.refuse("hub"); return; }
     if (!session) { screen.refuse("hub"); this.reconnect(false); return; }
     stats.admitMs = performance.now() - stats.startedAt;
-    screen.admitted();
     this.use(session);
     await this.check(deadline + TIMING.open);
   },
@@ -1186,6 +1188,7 @@ const page = {
   use(session) {
     if (this.session) this.session.close();
     this.session = session;
+    screen.admitted();
     session.mux.onEnd = () => this.drop(session);
     session.control.onFrame = (frame) => {
       if (frame.type === "pong") session.pongAt = performance.now();
@@ -1201,6 +1204,7 @@ const page = {
   // After the shared app was down, a connect to the entry must be accepted too, and the frame loads again.
   // After the app-unavailable screen, the frame also loads again when its last navigation failed.
   // The frame also loads again when a request of its page failed before the page's load event.
+  // Until the app's first page shows, the loading screen covers the frame while it loads.
   async check(deadline) {
     const session = this.session;
     if (!session || this.isEnded) return;
@@ -1226,6 +1230,14 @@ const page = {
     }
     if (screen.serial !== serial) return;
     this.isAppDown = false;
+    const isReloadNeeded = this.isFrameLoaded && (wasAppDown || (wasUnavailable && this.isFrameFailed) || this.isPageBroken);
+    if (this.hasAppShown) {
+      screen.app();
+      if (isReloadNeeded) await this.reload(deadline);
+      return;
+    }
+    if (screen.kind !== "loading") screen.loading(this.facts.app.title || "");
+    const loadingSerial = screen.serial;
     if (!this.isFrameLoaded) {
       try {
         await this.load(session, reply.params && reply.params.token);
@@ -1235,10 +1247,13 @@ const page = {
         this.drop(session);
         return;
       }
-    } else if (wasAppDown || (wasUnavailable && this.isFrameFailed) || this.isPageBroken) {
+    } else if (isReloadNeeded) {
       await this.reload(deadline);
     }
-    if (this.session === session && screen.serial === serial) screen.app();
+    if (this.session === session && screen.serial === loadingSerial) {
+      this.hasAppShown = true;
+      screen.app();
+    }
   },
 
   // Signs the visitor in where the reply has a token, then loads the app in the frame.
