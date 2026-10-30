@@ -927,6 +927,29 @@ def _claim_reported(runtime: PanelRuntime, context: DeviceModuleContext) -> None
         raise _config_unwritable(error) from error
 
 
+def want_applied(runtime: PanelRuntime, key: str, module: str) -> None:
+    """Want one module running after an apply of its configuration, a stopped one staying stopped.
+
+    A stopped module takes the change at its next **Start**.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module name.
+
+    Raises:
+        HTTPException: 500 ``config_unwritable`` when the want cannot be
+            written.
+    """
+    store = runtime.desired_states
+    if store.want_of(key, module) == CHANNEL_MODULE_STATE_STOPPED:
+        return
+    try:
+        store.set_want(key, module, CHANNEL_MODULE_STATE_RUNNING)
+    except OSError as error:
+        raise _config_unwritable(error) from error
+
+
 def write_module_config(
     runtime: PanelRuntime, key: str, module: str, config: dict
 ) -> None:

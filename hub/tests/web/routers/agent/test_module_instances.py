@@ -7,8 +7,8 @@ enables it and what the machine reports of its instance, with each
 module's own field; a set replaces the enabled accounts, generates each
 newly enabled account's secrets once and keeps them across a disable,
 checks the section on the agent as the state will carry it, wants the
-module running and pushes; an account that is not available or named
-twice is refused; VS Code's set waits for its terms; and the terms route
+module running and pushes; a set on a stopped module keeps it stopped and
+pushes; an account that is not available or named twice is refused; VS Code's set waits for its terms; and the terms route
 answers the same view.
 """
 
@@ -171,6 +171,27 @@ def test_a_set_enables_the_accounts_and_seals_each_ones_fields_once(
         "" if module in ("terminal", "ssh_server") else "running"
     )
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE] * 3
+
+
+@pytest.mark.parametrize(
+    "module", ["samba", "vscode", "code_server", "cloudcli", "codeg", "siyuan"]
+)
+def test_a_set_on_a_stopped_module_keeps_it_stopped(api, tmp_path, monkeypatch, module):
+    from neutrino_hub.modules.clients import ai_keys
+
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    client, runtime = api
+    runtime.desired_states.set_want(DEVICE, module, "stopped")
+
+    answer = client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["bob"]},
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert [row["account"] for row in stored(tmp_path, module)["accounts"]] == ["bob"]
+    assert runtime.desired_states.want_of(DEVICE, module) == "stopped"
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
 def test_a_siyuan_account_gets_a_gateway_key_while_it_is_enabled(

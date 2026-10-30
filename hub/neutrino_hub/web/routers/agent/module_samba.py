@@ -9,7 +9,6 @@ add, edit and remove writes ``samba.json`` at once and pushes the state.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_RUNNING
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
@@ -44,6 +43,7 @@ from neutrino_hub.web.routers.agent.module import (
     recompose_published,
     require_online,
     validate_config,
+    want_applied,
     write_module_config,
 )
 from neutrino_hub.web.routers.agent.module_account import is_machine_path_absolute
@@ -122,6 +122,9 @@ def add_folder_share(
     request: FolderShareUpdate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> FolderShareListView:
     """Add a folder share, want the module running, and push the state.
+
+    A stopped module stays stopped and takes the share at its next
+    **Start**.
 
     Args:
         request: The device, the name, the folder and the accounts checked.
@@ -265,12 +268,7 @@ def _save(
     validate_config(runtime, context, written)
     write_module_config(runtime, context.key, MODULE, written)
     context.config = written
-    try:
-        runtime.desired_states.set_want(
-            context.key, MODULE, CHANNEL_MODULE_STATE_RUNNING
-        )
-    except OSError as error:
-        raise _config_unwritable(error) from error
+    want_applied(runtime, context.key, MODULE)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)

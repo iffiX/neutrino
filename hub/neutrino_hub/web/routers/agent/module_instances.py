@@ -8,7 +8,8 @@ enables it and what the machine reports of its instance; the set replaces
 the enabled accounts, generating each newly enabled account's secrets, a
 SiYuan account's gateway key among them and voided for an account it
 disables, and writes ``want: running`` with it as an apply of a
-configuration does (protocol.md, "The account layer in the state").
+configuration does, a stopped module staying stopped (protocol.md, "The
+account layer in the state").
 """
 
 import functools
@@ -17,7 +18,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_VALIDATE,
 )
@@ -57,6 +57,7 @@ from neutrino_hub.web.routers.agent.module import (
     recompose_published,
     require_online,
     require_terms,
+    want_applied,
     write_module_config,
 )
 
@@ -144,7 +145,8 @@ def replace_accounts(
     Each newly enabled account gets the fields the row seals, generated
     once; a disabled account keeps its record for its next enabling. The
     agent checks the module's section as the state will carry it before the
-    change holds, and the module is wanted running with it.
+    change holds, and the module is wanted running with it. A stopped
+    module stays stopped and takes the change at its next **Start**.
 
     Args:
         row: The module's row in the description table.
@@ -210,12 +212,7 @@ def replace_accounts(
         raise
     context.config = written
     if row.name not in DEVICE_AGENT_MODULES:
-        try:
-            runtime.desired_states.set_want(
-                context.key, row.name, CHANNEL_MODULE_STATE_RUNNING
-            )
-        except OSError as error:
-            raise _config_unwritable(error) from error
+        want_applied(runtime, context.key, row.name)
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)
