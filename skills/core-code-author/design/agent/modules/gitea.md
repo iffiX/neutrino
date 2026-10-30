@@ -79,11 +79,22 @@ before it installs a version older than the one installed
 the service is.
 
 **The data belongs to the server's account.** The `account` step makes the
-account when it is missing, and gives the data directory with everything
-under it to the account when another uid owns it; on Linux `app.ini` goes
-to the account's group with it. A `git` account removed by hand comes back
-with a new uid, and Gitea fails to start on data the old uid owns. A
-symbolic link under the data keeps its owner.
+account when it is missing, and hands the data over to the account when
+another uid owns one of Gitea's own folders in the data directory,
+`custom/`, `data/` or `log/`. On Linux the handover gives the data
+directory with everything under it, and `app.ini` goes to the account's
+group with it. On macOS it gives those three folders alone: the data
+directory is also the account's home, where macOS writes `Library/` with
+files root cannot give away. A handover gives each folder after what it
+holds, so one cut short runs again at the next start. A `git` account
+removed by hand comes back with a new uid, and Gitea fails to start on
+data the old uid owns. A symbolic link under the data keeps its owner.
+
+**A start waits for the server.** A `configure` that runs the server waits
+until it listens on `127.0.0.1` at its port, at most 60 seconds, and
+otherwise fails `apply_failed {detail}`, the detail naming the port and
+the last error Gitea logged, else the last line of its output. A Gitea that
+launchd or systemd keeps starting again then reads `failed`.
 
 **Uninstall takes what the module added and keeps the data**: the unit,
 the LaunchDaemon or the service, the binary and `app.ini` go; the data
