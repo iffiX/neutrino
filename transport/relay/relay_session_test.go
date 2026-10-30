@@ -178,6 +178,15 @@ func TestFarStreamPastTheMemoryCapIsReset(t *testing.T) {
 	if _, refusal, err := OpenOn(stream, json.RawMessage(payload)); !errors.Is(err, yamux.ErrStreamReset) {
 		t.Fatalf("a connect whose far stream is past the cap: %v %v", refusal, err)
 	}
+	// go-yamux sends a stream's reset before it releases the stream's
+	// window. A next stream accepted before the release is reset at the cap.
+	deadline := time.Now().Add(3 * time.Second)
+	for memory.Used() > 2*session.StreamWindowInitialBytes {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d bytes held after the refusal", memory.Used())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	_, refusal := openStream(t, clientConn, session.KindConnect, map[string]any{"id": "nothing"})
 	if refusal == nil || refusal.Code != "service_unknown" {
@@ -193,13 +202,6 @@ func TestFarStreamPastTheMemoryCapIsReset(t *testing.T) {
 	}
 	if lines := hub.lines.named("memory_cap_refused"); !slices.Equal(lines, []string{"memory_cap_refused count=1"}) {
 		t.Fatalf("memory cap lines %q", lines)
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for memory.Used() > 2*session.StreamWindowInitialBytes {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d bytes held after the refusal", memory.Used())
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
