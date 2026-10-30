@@ -605,7 +605,12 @@ class SambaConfigApplier:
         )
 
     def apply(
-        self, rendered: str, *, config: SambaConfig, user_files: "dict | None" = None
+        self,
+        rendered: str,
+        *,
+        config: SambaConfig,
+        user_files: "dict | None" = None,
+        is_started: bool = True,
     ) -> str:
         """Validate, install and load the module's file, or take it away.
 
@@ -620,6 +625,8 @@ class SambaConfigApplier:
                 directories to create.
             user_files: The files under :data:`SAMBA_USERS_DIR` by name, as
                 the renderer gives them; every other file there goes.
+            is_started: Whether the unit is reloaded or enabled and started
+                on the files. False writes the files alone.
 
         Returns:
             A short summary of what changed.
@@ -636,7 +643,7 @@ class SambaConfigApplier:
             self._remove_own()
             if smb_conf != (current or ""):
                 _write_file(SAMBA_CONF_PATH, smb_conf)
-            if notes and unit_state(self._unit) == "active":
+            if notes and is_started and unit_state(self._unit) == "active":
                 run(["systemctl", "reload", self._unit])
                 notes.append("reloaded")
             return "; ".join(notes or ["unchanged"])
@@ -646,6 +653,8 @@ class SambaConfigApplier:
         _write_file(SAMBA_MODULE_CONF_PATH, rendered)
         if smb_conf != current:
             _write_file(SAMBA_CONF_PATH, smb_conf)
+        if not is_started:
+            return "; ".join(notes + ["written"])
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
             return "; ".join(notes + ["reloaded"])

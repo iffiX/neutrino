@@ -158,7 +158,7 @@ class GiteaInstaller:
 class GiteaConfigApplier:
     """Installs a rendered ``app.ini`` and puts it into effect."""
 
-    def apply(self, rendered: str) -> str:
+    def apply(self, rendered: str, *, is_started: bool = True) -> str:
         """Install the rendered configuration and run the server on it.
 
         The file is written when its text differs from the one on disk, and
@@ -167,9 +167,11 @@ class GiteaConfigApplier:
 
         Args:
             rendered: The full ``app.ini`` text.
+            is_started: Whether the server is enabled and run on the file.
+                False writes the file alone.
 
         Returns:
-            ``unchanged``, ``restarted`` or ``started``.
+            ``unchanged``, ``written``, ``restarted`` or ``started``.
 
         Raises:
             subprocess.CalledProcessError: If the server refuses to come up.
@@ -178,6 +180,8 @@ class GiteaConfigApplier:
         if is_changed:
             self._write(rendered)
         self._own_work_root()
+        if not is_started:
+            return "written" if is_changed else "unchanged"
         if unit_state(GITEA_UNIT) == "active":
             if not is_changed:
                 return "unchanged"

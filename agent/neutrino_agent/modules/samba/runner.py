@@ -20,6 +20,8 @@ Not pure: drives Samba, or the system's SMB server, through its applier.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import functools
 import json
 import os
 import subprocess
@@ -31,6 +33,7 @@ from neutrino_agent.constants import (
     AGENT_CONFIGURED_DIR_NAME,
     AGENT_STEP_CONFIGURE,
     AGENT_STEP_UNINSTALL,
+    AGENT_WANT_STOPPED,
 )
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
@@ -132,6 +135,30 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         if parsed.served_shares():
             testparm(smb_conf, SambaConfigRenderer(config=parsed).render())
 
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The core's steps, the ``configure`` under ``stopped`` starting no server.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``.
+
+        Returns:
+            The steps.
+        """
+        if want != AGENT_WANT_STOPPED:
+            return steps
+        return [
+            (
+                dataclasses.replace(
+                    step, run=functools.partial(self._run_apply_stopped, dict(config))
+                )
+                if step.name == AGENT_STEP_CONFIGURE
+                else step
+            )
+            for step in steps
+        ]
+
     def apply(self, config: dict) -> None:
         """Make each SMB user, render the configuration, load it, and set each user's password.
 
@@ -143,6 +170,25 @@ class SambaModuleRunner(SystemPackageModuleRunner):
                 a share writes as is not the machine's, or Samba will not
                 take it.
         """
+        self._apply(config, is_started=True)
+
+    def apply_stopped(self, config: dict) -> None:
+        """Make each SMB user, write the configuration and set the passwords under ``stopped``, starting no server.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+        """
+        self._apply(config, is_started=False)
+
+    def _run_apply_stopped(self, config: dict, context) -> None:
+        """The ``configure`` step under ``stopped``."""
+        self.apply_stopped(config)
+
+    def _apply(self, config: dict, *, is_started: bool) -> None:
+        """Make the users, write the files and set the passwords. With ``is_started`` false the unit is left as it is."""
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         users = SambaUserManager()
@@ -159,7 +205,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
                 held = {}
             changes += users.converge_accounts(parsed)
             note = SambaConfigApplier(unit=self._unit).apply(
-                rendered, config=parsed, user_files=renderer.render_user_files()
+                rendered,
+                config=parsed,
+                user_files=renderer.render_user_files(),
+                is_started=is_started,
             )
             passwords, kept = users.converge(parsed, held)
             changes += passwords

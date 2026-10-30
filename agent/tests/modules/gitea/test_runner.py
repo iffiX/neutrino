@@ -58,11 +58,11 @@ class FakeApplier:
     applied: list = []
     error = None
 
-    def apply(self, rendered):
+    def apply(self, rendered, *, is_started=True):
         if FakeApplier.error is not None:
             raise FakeApplier.error
-        FakeApplier.applied.append(rendered)
-        return "started"
+        FakeApplier.applied.append(rendered if is_started else ("written", rendered))
+        return "started" if is_started else "written"
 
     def stop(self):
         FakeApplier.applied.append("stopped")
@@ -208,6 +208,32 @@ def test_a_server_run_as_localsystem_plans_no_account_step(tmp_path):
     steps = runner.configure_steps({}, "running", configure_and_start())
 
     assert [step.name for step in steps] == ["configure", "start"]
+
+
+def configure_and_stop():
+    return [
+        ModuleStep(name="configure", run=lambda context: None),
+        ModuleStep(name="stop", run=lambda context: None),
+    ]
+
+
+def test_a_configure_under_stopped_writes_app_ini_and_starts_nothing(runner):
+    steps = runner.configure_steps(CONFIG, "stopped", configure_and_stop())
+
+    assert [step.name for step in steps] == ["account", "configure", "stop"]
+    steps[1].run(None)
+    ((note, rendered),) = FakeApplier.applied
+    assert note == "written"
+    assert "HTTP_PORT" in rendered
+    assert runner.details({})["url"]
+
+
+def test_a_configure_under_running_is_the_core_s_own(runner):
+    planned = configure_and_start()
+
+    steps = runner.configure_steps(CONFIG, "running", planned)
+
+    assert steps[1:] == planned
 
 
 def test_the_account_and_the_uninstall_take_system_accounts(runner):
@@ -383,9 +409,9 @@ class SystemApplier:
     def install(self, binary_path):
         self.installed.append(binary_path)
 
-    def apply(self, rendered, *, git_path):
+    def apply(self, rendered, *, git_path, is_started=True):
         self.applied.append((rendered, git_path))
-        return "started"
+        return "started" if is_started else "written"
 
     def is_active(self):
         return True

@@ -235,15 +235,17 @@ class GiteaWindowsApplier:
             os.unlink(self.conf_path)
         shutil.rmtree(self.module_dir, ignore_errors=True)
 
-    def apply(self, rendered: str, *, git_path: str) -> str:
+    def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and run the service on it.
 
         Args:
             rendered: The full ``app.ini`` text.
             git_path: The git the server runs, named in ``app.ini`` already.
+            is_started: Whether the service is started on the file. False
+                writes the file alone.
 
         Returns:
-            ``unchanged``, ``restarted`` or ``started``.
+            ``unchanged``, ``written``, ``restarted`` or ``started``.
 
         Raises:
             OSError: When the file cannot be written.
@@ -251,6 +253,8 @@ class GiteaWindowsApplier:
         """
         os.makedirs(self._join(self.data_dir, *GITEA_CONF_PARTS[:-1]), exist_ok=True)
         is_changed = write_if_changed(self.conf_path, rendered, 0o600)
+        if not is_started:
+            return "written" if is_changed else "unchanged"
         if self.is_active():
             if not is_changed:
                 return "unchanged"

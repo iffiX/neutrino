@@ -190,6 +190,22 @@ def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_
     ]
 
 
+@pytest.mark.parametrize("state", ["active", "inactive"])
+def test_apply_under_stopped_writes_the_files_and_runs_no_systemctl(
+    box, monkeypatch, state
+):
+    commands, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
+
+    note = SambaConfigApplier(unit="smbd.service").apply(
+        f"{MARKER}\n", config=one_share(tmp_path), is_started=False
+    )
+
+    assert note.endswith("written")
+    assert (tmp_path / "etc/neutrino.conf").read_text() == f"{MARKER}\n"
+    assert commands.ran("systemctl") == []
+
+
 def test_apply_writes_each_users_file_and_drops_the_rest(box, monkeypatch):
     commands, tmp_path = box
     users_dir = tmp_path / "etc/neutrino_users"

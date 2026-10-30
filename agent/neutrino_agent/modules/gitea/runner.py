@@ -19,11 +19,18 @@ Not pure: drives Gitea through its applier.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import dataclasses
+import functools
 import os
 import subprocess
 import time
 
-from neutrino_agent.constants import AGENT_STEP_ACCOUNT, AGENT_STEP_UNINSTALL
+from neutrino_agent.constants import (
+    AGENT_STEP_ACCOUNT,
+    AGENT_STEP_CONFIGURE,
+    AGENT_STEP_UNINSTALL,
+    AGENT_WANT_STOPPED,
+)
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared.base import (
     ModuleRunner,
@@ -95,9 +102,9 @@ class GiteaLinuxApplier:
         """Take the unit, the binary and ``app.ini`` off; keep the data."""
         GiteaInstaller().uninstall()
 
-    def apply(self, rendered: str, *, git_path: str) -> str:
-        """Install ``app.ini`` and run the unit on it."""
-        return GiteaConfigApplier().apply(rendered)
+    def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
+        """Install ``app.ini`` and run the unit on it; with ``is_started`` false, write it alone."""
+        return GiteaConfigApplier().apply(rendered, is_started=is_started)
 
     def stop(self) -> None:
         """Stop the unit and disable it."""
@@ -278,6 +285,21 @@ class GiteaModuleRunner(ModuleRunner):
                 2222 up is free for its SSH server, or the server will not
                 come up.
         """
+        self._apply(config, is_started=True)
+
+    def apply_stopped(self, config: dict) -> None:
+        """Render ``app.ini`` under ``stopped``, the server neither enabled nor started.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+        """
+        self._apply(config, is_started=False)
+
+    def _apply(self, config: dict, *, is_started: bool) -> None:
+        """Render and write ``app.ini``. With ``is_started`` false the server is left as it is."""
         parsed = GiteaConfig.from_dict(config)
         parsed.validate()
         git_path = self._git_path()
@@ -287,7 +309,9 @@ class GiteaModuleRunner(ModuleRunner):
             ssh_listen_port=self._take_ssh_port(),
         ).render()
         try:
-            note = self._applier.apply(rendered, git_path=git_path)
+            note = self._applier.apply(
+                rendered, git_path=git_path, is_started=is_started
+            )
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
@@ -315,6 +339,8 @@ class GiteaModuleRunner(ModuleRunner):
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
         """The server's ``account {account}`` before the core's steps, where it runs as an account of its own.
 
+        Under ``stopped`` the ``configure`` writes ``app.ini`` and starts nothing.
+
         Args:
             config: The configuration the task's entry carries.
             want: ``running`` or ``stopped``.
@@ -322,9 +348,21 @@ class GiteaModuleRunner(ModuleRunner):
                 plans them.
 
         Returns:
-            The steps; the core's own on Windows, where the server runs as
-            LocalSystem.
+            The steps; no ``account`` step on Windows, where the server runs
+            as LocalSystem.
         """
+        if want == AGENT_WANT_STOPPED:
+            steps = [
+                (
+                    dataclasses.replace(
+                        step,
+                        run=functools.partial(self._run_apply_stopped, dict(config)),
+                    )
+                    if step.name == AGENT_STEP_CONFIGURE
+                    else step
+                )
+                for step in steps
+            ]
         account = self._applier.account
         if not account:
             return steps
@@ -438,6 +476,10 @@ class GiteaModuleRunner(ModuleRunner):
             )
         self._survey = None
         return command_outcome(0, output=f"{subject}\n")
+
+    def _run_apply_stopped(self, config: dict, context) -> None:
+        """The ``configure`` step under ``stopped``."""
+        self.apply_stopped(config)
 
     def _run_account(self, context) -> None:
         """The ``account`` step: the server's account made when it is missing, and its directories."""

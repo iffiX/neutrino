@@ -27,6 +27,7 @@ from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState, password_digest
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
@@ -94,6 +95,7 @@ class RecordingPlatform(AgentPlatform):
 
 class FakeApplier:
     applied: list = []
+    started: list = []
     stops = 0
     removals = 0
     served: list = []
@@ -106,10 +108,11 @@ class FakeApplier:
         FakeApplier.served.append(is_served)
         return "[global]\n   include = /etc/samba/neutrino.conf\n", ""
 
-    def apply(self, rendered, *, config, user_files=None):
+    def apply(self, rendered, *, config, user_files=None, is_started=True):
         FakeApplier.applied.append((self.unit, rendered, config))
         FakeApplier.user_files = dict(user_files or {})
-        return "started"
+        FakeApplier.started.append(is_started)
+        return "started" if is_started else "written"
 
     def remove(self):
         FakeApplier.removals += 1
@@ -163,6 +166,7 @@ class FakeUsers:
 @pytest.fixture
 def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
+    FakeApplier.started = []
     FakeApplier.stops = 0
     FakeApplier.removals = 0
     FakeApplier.served = []
@@ -319,7 +323,7 @@ def test_apply_renders_applies_and_keeps_the_configuration(runner):
 
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
-    def refuse(self, rendered, *, config, user_files=None):
+    def refuse(self, rendered, *, config, user_files=None, is_started=True):
         raise subprocess.CalledProcessError(1, ["systemctl"], stderr="no unit")
 
     monkeypatch.setattr(FakeApplier, "apply", refuse)
@@ -335,6 +339,22 @@ def test_stop_takes_the_unit_down(runner):
     runner.stop()
 
     assert FakeApplier.stops == 1
+
+
+def test_a_configure_under_stopped_writes_the_files_and_starts_no_server(runner):
+    planned = [
+        ModuleStep(name="configure", run=lambda context: None),
+        ModuleStep(name="stop", run=lambda context: None),
+    ]
+
+    steps = runner.configure_steps(CONFIG, "stopped", planned)
+    steps[0].run(None)
+
+    assert [step.name for step in steps] == ["configure", "stop"]
+    assert steps[1] is planned[1]
+    assert FakeApplier.started == [False]
+    assert FakeUsers.made
+    assert runner.configure_steps(CONFIG, "running", planned) == planned
 
 
 @pytest.mark.parametrize("step", ["configure", "uninstall"])

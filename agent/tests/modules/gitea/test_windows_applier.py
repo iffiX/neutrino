@@ -181,6 +181,19 @@ def test_an_apply_starts_keeps_or_restarts_the_service(sc, tmp_path, state):
     assert applier.is_active() is True
 
 
+def test_an_apply_under_stopped_writes_app_ini_and_starts_nothing(sc, tmp_path, state):
+    applier = make(sc, tmp_path, state=state)
+    sc.exists = True
+
+    note = applier.apply("one\n", git_path="C:\\git.exe", is_started=False)
+
+    assert note == "written"
+    conf = tmp_path / "state" / "gitea_data" / "custom" / "conf" / "app.ini"
+    assert conf.read_text() == "one\n"
+    assert sc.sc("start") == []
+    assert sc.sc("config") == []
+
+
 def test_a_stop_disables_the_service_and_a_start_sets_it_auto_first(
     sc, tmp_path, state
 ):

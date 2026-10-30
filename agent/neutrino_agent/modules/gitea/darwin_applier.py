@@ -254,15 +254,17 @@ class GiteaDarwinApplier:
                 os.unlink(path)
         shutil.rmtree(self.module_dir, ignore_errors=True)
 
-    def apply(self, rendered: str, *, git_path: str) -> str:
+    def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and the LaunchDaemon, and run the server on them.
 
         Args:
             rendered: The full ``app.ini`` text.
             git_path: The git the server runs.
+            is_started: Whether the job is enabled and loaded on the files.
+                False writes the files alone.
 
         Returns:
-            ``unchanged``, ``restarted`` or ``started``.
+            ``unchanged``, ``written``, ``restarted`` or ``started``.
 
         Raises:
             ModuleApplyError: ``user_create_failed`` when the account is gone
@@ -284,6 +286,8 @@ class GiteaDarwinApplier:
             self._plist_path, plist.decode("utf-8"), 0o644
         )
         self._prepare_output(uid, gid)
+        if not is_started:
+            return "written" if is_conf_changed or is_job_changed else "unchanged"
         if self._is_loaded():
             if is_job_changed:
                 self._unload()

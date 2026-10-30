@@ -221,6 +221,20 @@ def test_an_apply_writes_app_ini_and_the_job_and_starts_it(applier, tools, tmp_p
     assert applier.is_active() is True
 
 
+def test_an_apply_under_stopped_writes_the_files_and_loads_nothing(
+    applier, tools, tmp_path
+):
+    tools.has_account = True
+
+    note = applier.apply("one\n", git_path="/opt/homebrew/bin/git", is_started=False)
+
+    assert note == "written"
+    assert (tmp_path / "LaunchDaemons" / "com.neutrino.gitea.plist").exists()
+    assert tools.ran("launchctl", "enable") == []
+    assert tools.ran("launchctl", "bootstrap") == []
+    assert tools.ran("launchctl", "kickstart") == []
+
+
 def test_a_second_apply_keeps_a_running_job_and_a_changed_app_ini_restarts_it(
     applier, tools
 ):

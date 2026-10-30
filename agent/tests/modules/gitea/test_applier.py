@@ -100,6 +100,21 @@ def test_apply_starts_a_stopped_server_on_an_unchanged_file(box):
     assert ["systemctl", "enable", "--now", "neutrino_gitea.service"] in commands.calls
 
 
+@pytest.mark.parametrize("state", ["active", "inactive"])
+def test_apply_under_stopped_writes_app_ini_and_runs_no_systemctl(
+    box, monkeypatch, state
+):
+    commands, _, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
+
+    note = GiteaConfigApplier().apply("[server]\n", is_started=False)
+
+    assert note == "written"
+    assert (tmp_path / "etc/app.ini").read_text() == "[server]\n"
+    assert not [call for call in commands.calls if call[0] == "systemctl"]
+    assert GiteaConfigApplier().apply("[server]\n", is_started=False) == "unchanged"
+
+
 def test_an_app_ini_listening_on_every_address_moves_to_loopback(box, monkeypatch):
     """A server an earlier build left on every address is restarted on the
     loopback file at the next apply."""
