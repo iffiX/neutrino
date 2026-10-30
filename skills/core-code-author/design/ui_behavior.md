@@ -306,9 +306,13 @@ before it is rendered, and so does every journal and every module log box: no
 control code reaches the page. A module's log box belongs to the tab that
 shows it: switching the tab fetches that module's journal at once and shows
 the loading state until it arrives, and the box never holds another module's
-text. A module that failed shows the agent's code as
-its error line under its state, and an apply that ended in a failure shows
-no success notice.
+text. The box shows the module's own journal in every state, the lines its
+program writes once it runs, and reads empty for a program that has not
+written yet. It never shows the lines of the module's task: the
+`step <i>/<n>` lines, the failure's code and the install commands' output
+stay in the hub's task record and the agent's own log. A module that failed
+shows the agent's code as its error line under its state, and an apply that
+ended in a failure shows no success notice.
 
 ## Empty states and loading
 
@@ -875,7 +879,14 @@ A module's tab shows its task's steps under the state line, one line each
 in the plan's order: done, running, waiting with the words of what it waits
 for, such as "waiting for the package manager, held by File share", and not
 yet run. A failed step reads in the error tone with its code's words under
-it. A step's words are `ui.modules.step.<name>` with its params, a lock's
+it. A wait's words and a failure's words show under their step, and no
+notice of the tab repeats them. The notice at the top of the tab words a
+row's code where the step list does not. Such a row has no task, as an
+`absent` row with a code or a failed row after the agent restarted
+([agent.md](agent.md), "A failure outlives a restart"), or is a failed row
+whose next task runs. A `reboot_required` row keeps the notice too, since the
+notice holds **Restart now**. A step's words are
+`ui.modules.step.<name>` with its params, a lock's
 `ui.modules.lock.<lock>`, and a wait's the code catalog's. A finished
 task's steps stay until the next task starts. The module list shows `<i>/<n>`,
 the running step's index and the plan's length, beside the spinner of a row
@@ -883,21 +894,17 @@ whose task runs ([agent.md](agent.md), "The steps").
 
 A module reported `install_failed` has an `error` dot in the module list.
 Its tab reads `state.install_failed` beside the same dot, and shows the
-code's words as the error notice a `failed` module shows. **Install** and
-**Uninstall** are live, and **Start**, **Stop** and **Configure** are not:
+code's words as a `failed` module does. **Install** and **Uninstall** are
+live, and **Start**, **Stop** and **Configure** are not:
 **Install** runs the install again, and **Uninstall** removes what the
 install left ([agent.md](agent.md), "An install that fails ends
-install_failed"). The output box shows the failed install's lines while the
-hub holds its task, and never the module's journal. No module has a
-**Cancel** button.
+install_failed"). No module has a **Cancel** button.
 
-A module reported `installing` with a code shows the code's words as a
-notice at the top of its tab, and its buttons stay disabled as for any
-module in transit. Its output box keeps the task's lines while the hub
-holds the task, with `ui.modules.task_running` beside them, until the
-machine reports another state. A module reported `absent` with a code shows
-the code's words as the same notice, and its buttons are those of any
-`absent` module. With `reboot_required` the notice has **Restart now**
+A module reported `installing` with a code shows the code's words under its
+waiting step, and its buttons stay disabled as for any module in transit. A
+module reported `absent` with a code shows the code's words as a notice at
+the top of its tab, and its buttons are those of any `absent` module. A
+`reboot_required` row shows the same notice with **Restart now**
 (`ui.modules.restart_now`), which asks through `useConfirm`
 (`ui.modules.restart_title`, `ui.modules.restart_body`) and sends `POST
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
@@ -948,8 +955,8 @@ shows:
 | A locked version | a module of the `builtin` or `system` method, and a `container` module whose manifest names no `releases`, shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version as a row that cannot be pressed and no **Follow the tested version** row |
 
 There is no switch that updates a module by itself. A `version_switch_failed`
-shows as the tab's error notice, as any `failed` module's code does, with the
-old version on the version line.
+shows under its step, as any `failed` module's code does, with the old
+version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, the SSH server, Remote
@@ -969,7 +976,7 @@ carries them:
 | --- | --- | --- |
 | Terminal | **Enabled accounts**, each check row showing the account's shell | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply` |
 | SSH server | **Enabled accounts**, and the machine's host key fingerprint in mono under them, `ui.ssh_server.host_key` | one configurable `settings_group` with its own apply bar, `ui.ssh_server.apply` |
-| Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step is the module's notice with its code's words, and the apply bar's Apply tries again |
+| Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step shows its code's words under it, and the apply bar's Apply tries again |
 
 The Hermes WebUI tab draws the line `ui.hermes_webui.owner_notice`, or
 `ui.hermes_webui.owner_notice_version` once the machine reports the version,
@@ -1043,7 +1050,7 @@ after its press until the machine reports the module where its `want` asks,
 at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
 `running` or `stopped` on Linux, and on Windows and macOS `running` with the
 stored account's machine running; under `stopped` it is `stopped`.
-`ui.api.applied` shows only then, and a failure shows as the tab's notice.
+`ui.api.applied` shows only then, and a failure shows under its step.
 
 On every system the tab has **Hub containers** (`ui.containers.hub_title`)
 between **Running now** and **Registry mirrors**: one read-only row per hub
