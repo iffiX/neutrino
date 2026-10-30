@@ -821,7 +821,11 @@ account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
 accounts** while there is none. The panel is configurable, with its apply
 bar; an account checked goes to the end of the order, and each row shows the
-module's own field, its running dot and its code's words. The tabs of the
+module's own field, its running dot and its code's words. The bar's hint is
+`ui.modules.stopped_hint` while the module's `want` is `stopped`, and the
+module's own hint otherwise, on every tab but Terminal's and the SSH
+server's, which have no **Start**. An apply under `stopped` keeps the
+module stopped, and its bar waits for `stopped`. The tabs of the
 machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
@@ -832,7 +836,7 @@ each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
 | Panel | Idiom |
 | --- | --- |
 | **Home shares** (`ui.samba.home_shares`) | the tab's **Enabled accounts** under this title, with `ui.samba.home_shares_hint` under it: one check row per available account showing its share path, one Home share per checked account; configurable, with its apply bar |
-| **Folder shares** (`ui.samba.folder_shares`) | one row per folder share, with `ui.samba.folder_shares_hint` under the title, and **Add** (`ui.samba.folder_add`), a bordered `button` at the panel's top right that opens the inline form under the list, the panel add of "Inline forms", lit with the accent frame |
+| **Folder shares** (`ui.samba.folder_shares`) | one row per folder share, with `ui.samba.folder_shares_hint` under the title, and `ui.modules.stopped_hint` under it while the module's `want` is `stopped`, and **Add** (`ui.samba.folder_add`), a bordered `button` at the panel's top right that opens the inline form under the list, the panel add of "Inline forms", lit with the accent frame |
 
 | Field of the folder share form | Idiom |
 | --- | --- |
@@ -1037,7 +1041,7 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. The bar's hint is `ui.containers.run_apply_hint`,
-and `ui.containers.run_stopped_hint` while the module's `want` is `stopped`.
+and `ui.modules.stopped_hint` while the module's `want` is `stopped`.
 An apply under `stopped` keeps the settings for the next **Start**
 ([agent/modules/containers.md](agent/modules/containers.md)). While it is dirty, the bar's warning is
 `ui.containers.run_restart_warning` when the CPUs, the memory or the disk
