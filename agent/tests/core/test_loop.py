@@ -1356,6 +1356,16 @@ def test_the_loop_runs_the_relays_and_its_end_closes_them_and_the_transport(
     assert fake.starts == 1 and not fake.is_running()
 
 
+def test_the_agent_s_stop_ends_every_module_task_at_its_next_step(fake, config_path):
+    agent = agent_on(fake, config=config_path)
+    task = type("Task", (), {"kind": "install", "entry": {}})()
+    assert agent._desired.is_task_cut(task) is False
+
+    agent.stop()
+
+    assert agent._desired.is_task_cut(task) is True
+
+
 def test_the_relays_carry_the_forward_and_every_forwarder(fake, config_path):
     agent = live(agent_on(fake, config=config_path), fake)
     fake.answers["forward_start"] = lambda line: {"listen": "127.0.0.1:8317"}

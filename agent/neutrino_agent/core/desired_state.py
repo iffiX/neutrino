@@ -31,9 +31,11 @@ or a retry mark on it, runs that module's task alone, an agent that starts
 again tries nothing again, and an agent of another build tries every entry
 once again. A failure the socket caused keeps no hash, so the next state
 with that entry tries it again. Each task's outcome replaces the module's
-kept failure. The marks hold for one install, one build and one binding:
-the agent's removal, a join and a leave delete them, and another build
-reads none of them.
+kept failure. A task that ends once the agent began to stop keeps no tried
+hash and no outcome: the stop's signal ends the step's commands too. The
+marks hold for one install, one build and one binding: the agent's
+removal, a join and a leave delete them, and another build reads none of
+them.
 
 Not pure: writes the state file, starts the tasks and opens streams.
 """
@@ -343,6 +345,9 @@ class DesiredStateApplier:
         # "code", "params", "step"}``; None when it took.
         self._outcomes: dict = {}
         self._state_error: "dict | None" = None
+        # Set once the agent began to stop: a task that ends after it keeps
+        # nothing.
+        self._stopping = threading.Event()
         self._wakeup = threading.Event()
         self._worker = threading.Thread(
             target=self._run, name="desired_state", daemon=True
@@ -365,6 +370,17 @@ class DesiredStateApplier:
     def locks(self):
         """The agent's step locks. The self-update and a verb take them too."""
         return self._locks
+
+    def stop(self) -> None:
+        """Count every step's result from now on as the agent's stop.
+
+        Each running task ends at its next step boundary, and a task that
+        ends from now on keeps no tried hash and leaves the module's kept
+        failure as it was, so the next start plans each module again from
+        what the machine shows. Safe to call from a signal handler: it takes
+        no lock the caller can hold.
+        """
+        self._stopping.set()
 
     def settle(self, module: str, timeout_s: float) -> bool:
         """Wait until no state is pending and one module's task has ended.
@@ -558,8 +574,9 @@ class DesiredStateApplier:
     def is_task_cut(self, task) -> bool:
         """Whether a task ends at the next step boundary with no failure.
 
-        An installed container module's configure task ends there while
-        Containers' ``want`` is not ``running``.
+        Every task ends there once the agent began to stop, and an
+        installed container module's configure task while Containers'
+        ``want`` is not ``running``.
 
         Args:
             task: The task.
@@ -567,6 +584,8 @@ class DesiredStateApplier:
         Returns:
             True when its next step is not to run.
         """
+        if self._stopping.is_set():
+            return True
         if task.kind != PLAN_CONFIGURE:
             return False
         if _method_of(task.entry) != AGENT_METHOD_CONTAINER:
@@ -575,6 +594,9 @@ class DesiredStateApplier:
 
     def end_task(self, task, outcome, *, is_cut: bool, is_forced: bool = False) -> bool:
         """End a task, unless a newer entry came: keep its outcome and its tried hash.
+
+        A task that ends once the agent began to stop keeps neither: its
+        tried hash goes, and the module's kept failure stays as it was.
 
         Args:
             task: The task.
@@ -591,22 +613,27 @@ class DesiredStateApplier:
         name = task.name
         entry = task.entry
         with self._lock:
-            if task.has_newer() and not is_forced:
+            is_stopped = self._stopping.is_set()
+            if task.has_newer() and not is_forced and not is_stopped:
                 return False
             task.end()
-            is_kept = not is_cut and (
-                outcome is None or outcome.get("code") != RETRIED_CODE
+            is_kept = (
+                not is_cut
+                and not is_stopped
+                and (outcome is None or outcome.get("code") != RETRIED_CODE)
             )
             if is_kept:
                 self._tried[name] = task.planned_hash
             else:
                 self._tried.pop(name, None)
             tried = dict(self._tried)
-            if name != AI_TOOLS_SECTION:
+            if name != AI_TOOLS_SECTION and not is_stopped:
                 self._outcomes[name] = dict(outcome) if outcome else None
         try:
             self._write_tried(tried)
-            if name != AI_TOOLS_SECTION:
+            if is_stopped:
+                self._log(task_line(name, "ended by the agent's stop; nothing kept"))
+            elif name != AI_TOOLS_SECTION:
                 self._keep_outcome(task, entry, outcome, is_cut=is_cut)
         finally:
             with self._idle:
@@ -898,6 +925,8 @@ class DesiredStateApplier:
 
     def _settle_hash(self) -> None:
         """Move the applied hash and the state error by every mentioned module's task. Call under the lock."""
+        if self._stopping.is_set():
+            return
         first_failure = None
         for name in self._order:
             outcome = self._outcomes.get(name)

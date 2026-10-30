@@ -18,7 +18,8 @@ agent run again every recheck interval with no lock held, the wait of a
 step lock naming the module that holds it and a first step's wait reading
 ``queued``, ``settle`` waiting for one module's task alone, an ask for a
 configure task made before a state names the module planned by the next
-state, a restart's replan from what the machine shows, and a container
+state, a restart's replan from what the machine shows, a step's result
+after the agent began to stop keeping nothing, and a container
 module waiting for Containers once in its install plan, asking it to render,
 and ending quietly while Containers is not to run.
 """
@@ -1213,6 +1214,53 @@ def test_a_restart_mid_task_plans_the_module_again_from_what_the_machine_shows(
     assert machine.installs == []
     assert runners["samba"].applied == [{"n": "samba"}]
     assert again.applied_hash == "h1"
+
+
+def test_a_step_that_fails_after_the_agent_began_to_stop_keeps_nothing(tmp_path):
+    """The stop's signal ends the step's command too; the failure it reads
+    is the stop's, so the kept failure stays as it was and no tried hash is
+    written."""
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(
+        runners,
+        absent=("samba",),
+        install_refusal={"code": "pull_failed", "params": {}},
+    )
+    engine.install_gates["samba"] = gate
+    kept = {"state": "install_failed", "code": "install_failed", "params": {}}
+    engine.failures["samba"] = dict(kept)
+    held = _agent(runners, tmp_path, engine=engine)
+    held.apply(marked(state(samba="running"), "samba"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+
+    held.stop()
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert "samba" not in held._store.read_tried()
+    assert "samba" not in engine.results
+    assert engine.failures["samba"] == kept
+    assert held.state_error is None
+    assert held.applied_hash == ""
+
+
+def test_no_step_runs_after_one_that_took_while_the_agent_stops(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held = _agent(runners, tmp_path, engine=engine)
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+
+    held.stop()
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert runners["samba"].applied == []
+    assert "samba" not in held._store.read_tried()
+    assert "samba" not in engine.results
 
 
 def test_a_removal_lets_the_next_agent_apply_the_same_state_again(tmp_path):

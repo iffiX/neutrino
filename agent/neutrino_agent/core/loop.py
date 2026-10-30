@@ -464,8 +464,11 @@ class Agent:
     def stop(self) -> None:
         """Ask the loop to end; the wait is cut short.
 
-        Returns at once; :meth:`run_forever` returns once its turn ends.
+        Every module task's result from now on counts as the stop, so a
+        command the stop's signal ended keeps no failure. Returns at once;
+        :meth:`run_forever` returns once its turn ends.
         """
+        self._desired.stop()
         self._is_stop_asked.set()
         self._news.set()
 
