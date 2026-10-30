@@ -442,7 +442,26 @@ downloads anything, and asks nothing when `sudo -n true` already succeeds.
 It then installs with `sudo installer -pkg`, `sudo apt install ./`,
 `sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`;
 on the RHEL family it enables EPEL under the same sudo before `dnf install`
-("Hub"). For the hub it ends by printing the wizard's address with its token, and
+("Hub"). Before each run of the package manager, a script waits up to 300
+seconds while another program holds the package manager's lock, as the
+agent's own installs wait
+([../design/agent.md](../design/agent.md), "The system's own lock"): apt's
+locks, dpkg's and the package lists' that `apt-get update` writes, as
+`/proc/locks` lists them, dnf 4's lock files, the Windows Installer's
+`Global\_MSIExecute` mutex. It prints one line per holder, `Waiting up to
+300 seconds for <name> (process <pid>) to finish with the package
+manager`, `<name>` the whole name from the process's command line, and
+`another Windows Installer install` on Windows, where the mutex names no
+process. apt also gets `-o DPkg::Lock::Timeout=300`, dnf 5 runs again each
+second while its output names `rpm transaction lock`, and msiexec runs
+once more when it answers 1618. A lock still held after 300 seconds stops
+the script with one sentence, `<name> (process <pid>) still holds the
+package manager after 300 seconds; nothing was installed. Run this script
+again once it has finished.` A fresh machine's first boot is the common
+case: cloud-init's apt holds these locks for minutes, and an install over
+package lists `apt-get update` has half written finds none of the
+package's dependencies.
+For the hub it ends by printing the wizard's address with its token, and
 runs `nhub setup` in its place when its standard input is a terminal. Over a
 hub already set up, one whose panel settings hold a password hash, it runs
 neither and prints one line naming the panel's address. It runs `nhub` where
