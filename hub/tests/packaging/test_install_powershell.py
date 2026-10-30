@@ -5,8 +5,9 @@ check and ``msiexec`` replaced by functions that record what they were
 asked, and its downloads made for real from stand-in release sites on
 127.0.0.1, so what is asserted is the package each machine takes, the site
 and the release it comes from, the move to the next site on a stall, an
-error or other bytes, the checksum that stops a wrong file, and the one
-sentence each refusal says. Skipped where ``pwsh`` is not on the path.
+error or other bytes, the checksum that stops a wrong file, the one
+sentence each refusal says, and the wait while another install holds the
+Windows Installer. Skipped where ``pwsh`` is not on the path.
 """
 
 import hashlib
@@ -48,7 +49,14 @@ PACKAGES = (
 # Stand-ins defined after the script's own functions, so they win.
 STAND_INS = """
 $global:Asked = @()
+$global:Exits = @(($env:FAKE_EXIT -split ',') | ForEach-Object { [int]$_ })
+$global:Busy = [int]$env:FAKE_BUSY
 function Test-NeutrinoAdministrator { return [bool]$env:FAKE_ADMIN }
+function Test-NeutrinoInstallerBusy {
+    if ($global:Busy -le 0) { return $false }
+    $global:Busy -= 1
+    return $true
+}
 function Start-Process {
     param(
         [string]$FilePath, [switch]$Wait, [switch]$PassThru, [string]$Verb,
@@ -61,7 +69,9 @@ function Start-Process {
         return
     }
     $global:Asked += "$FilePath $($ArgumentList -join ' ')"
-    return [pscustomobject]@{ ExitCode = [int]$env:FAKE_EXIT }
+    $code = $global:Exits[0]
+    if ($global:Exits.Count -gt 1) { $global:Exits = $global:Exits[1..($global:Exits.Count - 1)] }
+    return [pscustomobject]@{ ExitCode = $code }
 }
 """
 
@@ -116,6 +126,8 @@ def run(tmp_path, release_sites):
         edition="intl",
         sites=None,
         script=SCRIPT,
+        busy=0,
+        lock_wait_s=300,
     ):
         text = re.sub(
             r"^\$script:NeutrinoEdition = '[a-z]+'$",
@@ -136,6 +148,7 @@ def run(tmp_path, release_sites):
             + f"$script:NeutrinoReleaseSites = @({_sites_text(given)})\n"
             + "$script:NeutrinoProbeWaitSeconds = 1\n"
             + "$script:NeutrinoStallSeconds = 1\n"
+            + f"$script:NeutrinoLockWaitSeconds = {lock_wait_s}\n"
             + "$outcome = 'ok'\n"
             + f"$given = @({quoted})\n"
             + "$said = @()\n"
@@ -150,6 +163,7 @@ def run(tmp_path, release_sites):
             "HOME": str(tmp_path),
             "FAKE_ADMIN": "1" if is_admin else "",
             "FAKE_EXIT": str(exit_code),
+            "FAKE_BUSY": str(busy),
             "PROCESSOR_ARCHITECTURE": architecture,
             "ProgramFiles": str(tmp_path / "Program Files"),
             "ProgramData": str(tmp_path / "ProgramData"),
@@ -753,3 +767,34 @@ def test_the_elevation_carries_the_persons_roaming_folder(run, tmp_path):
     assert outcome == "ok"
     command = asked[6]
     assert f"$env:NEUTRINO_PERSON_APPDATA = '{roaming}'; " in command
+
+
+# --- another install holding the Windows Installer ---
+
+WAITING = "Waiting up to 300 seconds for another Windows Installer install to finish"
+
+
+def test_an_install_waits_for_another_windows_installer_install(run):
+    outcome, asked = run(busy=1)
+
+    assert outcome == "ok"
+    assert run.said.count(WAITING) == 1
+    assert run.said.index(WAITING) > run.said.index(f"Installing {MSI}")
+    assert len([line for line in asked if line.startswith("msiexec.exe")]) == 1
+
+
+def test_msiexec_answering_busy_runs_once_more(run):
+    outcome, asked = run(exit_code="1618,0")
+
+    assert outcome == "ok"
+    assert len([line for line in asked if line.startswith("msiexec.exe")]) == 2
+
+
+def test_an_installer_held_past_the_wait_installs_nothing(run):
+    outcome, asked = run(busy=10, lock_wait_s=2)
+
+    assert outcome == (
+        "Another Windows Installer install still runs after 2 seconds; nothing "
+        "was installed. Run this script again once it has finished."
+    )
+    assert not any(line.startswith("msiexec.exe") for line in asked)

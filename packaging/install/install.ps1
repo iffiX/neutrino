@@ -31,6 +31,13 @@ $script:NeutrinoStallSeconds = 20
 $script:NeutrinoProbeBytes = 1048576
 # What msiexec answers for a finished install, with and without a reboot owed.
 $NeutrinoInstalledCodes = @(0, 3010)
+# How long an install waits for another Windows Installer install, in
+# seconds, as the agent's own installs wait; the mutex the Windows Installer
+# holds while it installs, and what msiexec answers while another install
+# holds it.
+$script:NeutrinoLockWaitSeconds = 300
+$NeutrinoInstallerMutex = 'Global\_MSIExecute'
+$NeutrinoInstallerBusyCode = 1618
 # What the script carries into the window opened as administrator: the
 # person's settings, and the roaming folder of the account that ran it, where
 # that person's client bindings are.
@@ -73,6 +80,33 @@ function Test-NeutrinoClientBound {
     if (-not (Test-Path -LiteralPath $bindings)) { return $false }
     $text = Get-Content -Raw -LiteralPath $bindings -ErrorAction SilentlyContinue
     return [bool](($text -match '"token"\s*:\s*"[^"]') -and ($text -match '"hub_key"\s*:\s*"[^"]'))
+}
+
+# Whether another install holds the Windows Installer now.
+function Test-NeutrinoInstallerBusy {
+    $held = $null
+    try {
+        if (-not [Threading.Mutex]::TryOpenExisting($NeutrinoInstallerMutex, [ref]$held)) { return $false }
+        $held.Dispose()
+    } catch [UnauthorizedAccessException] {
+    }
+    return $true
+}
+
+# Wait while another install holds the Windows Installer, saying so once, and
+# stop with one sentence after the wait.
+function Wait-NeutrinoInstaller {
+    $waited = 0
+    while (Test-NeutrinoInstallerBusy) {
+        if ($waited -ge $script:NeutrinoLockWaitSeconds) {
+            throw "Another Windows Installer install still runs after $($script:NeutrinoLockWaitSeconds) seconds; nothing was installed. Run this script again once it has finished."
+        }
+        if ($waited -eq 0) {
+            Write-Output "Waiting up to $($script:NeutrinoLockWaitSeconds) seconds for another Windows Installer install to finish"
+        }
+        Start-Sleep -Seconds 1
+        $waited += 1
+    }
 }
 
 function Get-NeutrinoMachine {
@@ -440,8 +474,14 @@ function Install-Neutrino {
         Write-Output "$($asset.Name) matches its SHA256SUMS line"
 
         Write-Output "Installing $($asset.Name)"
+        Wait-NeutrinoInstaller
         $msiexec = Start-Process -FilePath msiexec.exe -Wait -PassThru `
             -ArgumentList '/i', "`"$package`"", '/qn', '/norestart'
+        if ($msiexec.ExitCode -eq $NeutrinoInstallerBusyCode) {
+            Wait-NeutrinoInstaller
+            $msiexec = Start-Process -FilePath msiexec.exe -Wait -PassThru `
+                -ArgumentList '/i', "`"$package`"", '/qn', '/norestart'
+        }
         if ($msiexec.ExitCode -notin $NeutrinoInstalledCodes) {
             throw "msiexec exited $($msiexec.ExitCode) installing $($asset.Name)."
         }
