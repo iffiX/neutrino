@@ -27,11 +27,18 @@ const TAB_PARAM = "__neutrino_tab";
 // The query parameter that names the tab a new tab was opened from.
 const FROM_PARAM = "__neutrino_from";
 const KEPT_FACTS = "neutrino_share";
+// The N icon of images/icons/neutrino.png, on the introduction's tab.
+const MARK_ICON = "data:image/svg+xml," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><linearGradient id="n" gradientUnits="userSpaceOnUse" x1="196" y1="32" x2="383" y2="63">' +
+  '<stop stop-color="#08adfe"/><stop offset=".5" stop-color="#8d61f6"/><stop offset="1" stop-color="#ef2eb6"/></linearGradient>' +
+  '<rect width="512" height="512" rx="106" fill="#0a0e14"/><path fill="url(#n)" d="M182 83h89l16 165 44-165h81l-93 347h-82l-16-172-45 172h-78z"/></svg>');
 const WORDS = {
   en: {
     opening: "Opening {app}…",
     slowConnecting: "The line is slow, still connecting…",
     slowLoading: "The line is slow, still loading…",
+    intro: ["Neutrino Web share", "To use the shared app, open the full share link you were sent."],
+    incomplete: ["This link is incomplete.", "Copy the whole share link and open it again."],
     link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
     hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
     unavailable: ["The app cannot be opened right now.", "It opens by itself once it is back."],
@@ -40,6 +47,8 @@ const WORDS = {
     opening: "正在打开 {app}…",
     slowConnecting: "线路较慢，仍在连接…",
     slowLoading: "线路较慢，仍在加载…",
+    intro: ["微子 Web 分享", "用别人发给你的完整分享链接，就能打开他分享的应用。"],
+    incomplete: ["这个链接不完整。", "请把分享链接整段复制下来再打开。"],
     link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
     hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],
     unavailable: ["应用暂时打不开。", "恢复后会自动打开。"],
@@ -212,6 +221,11 @@ const screen = {
     this.element("screen").classList.remove("hidden");
     this.tab(title);
     stats.screen = kind;
+  },
+  // The introduction, with the N icon on the tab.
+  intro() {
+    this.refuse("intro");
+    this.element("icon").href = MARK_ICON;
   },
   app() {
     this.kind = "app";
@@ -1157,8 +1171,9 @@ const page = {
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
+    const isOpened = new URL(location.href).searchParams.has(FROM_PARAM);
     this.facts = readFacts() || (await factsFromOpener());
-    if (!this.facts) { screen.refuse("link"); return; }
+    if (!this.facts) { this.showFactless(isOpened); return; }
     const title = this.facts.app.title || "";
     screen.loading(title);
     setTimeout(() => screen.slow(), TIMING.slow);
@@ -1182,6 +1197,14 @@ const page = {
     stats.admitMs = performance.now() - stats.startedAt;
     this.use(session);
     await this.check(deadline + TIMING.open);
+  },
+
+  // Shows the screen of a tab with no facts. A tab the app opened shows the link screen,
+  // an address with a # part the incomplete-link screen, and any other address the introduction.
+  showFactless(isOpened) {
+    if (isOpened) screen.refuse("link");
+    else if (location.href.includes("#")) screen.refuse("incomplete");
+    else screen.intro();
   },
 
   // Makes a session the live one and watches its line.
