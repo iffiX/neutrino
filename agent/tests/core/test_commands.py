@@ -20,6 +20,7 @@ import time
 from neutrino_agent.core import commands
 from neutrino_agent.core.commands import AGENT_VERBS, DeviceOperator
 from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.platforms.base import AgentPlatform
 
 
@@ -175,7 +176,7 @@ def test_validate_reaches_the_runner_without_waiting_on_the_state():
     subject = DeviceOperator(
         platform=PowerPlatform(),
         runner_of={"samba": runner}.get,
-        settle=lambda timeout_s: settled.append(timeout_s) or False,
+        settle=lambda module, timeout_s: settled.append(timeout_s) or False,
         on_module_changed=changed.append,
     )
 
@@ -192,7 +193,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
     subject = DeviceOperator(
         platform=PowerPlatform(),
         runner_of={"samba": FakeRunner()}.get,
-        settle=lambda timeout_s: settled.append(timeout_s) or False,
+        settle=lambda module, timeout_s: settled.append(timeout_s) or False,
     )
 
     outcome = subject.run("samba", "journal", {"lines": 10})
@@ -378,12 +379,52 @@ def test_a_module_verb_settles_the_desired_state_first():
     subject = DeviceOperator(
         platform=PowerPlatform(),
         runner_of={"samba": runner}.get,
-        settle=lambda timeout_s: order.append(("settle", timeout_s)) or True,
+        settle=lambda module, timeout_s: order.append((module, timeout_s)) or True,
     )
 
     outcome = subject.run("samba", "set_password", {"name": "test", "password": "x"})
 
-    assert order and order[0][0] == "settle" and order[0][1] > 0
+    # The verb waits for its own module's task alone.
+    assert order and order[0][0] == "samba" and order[0][1] > 0
+    assert outcome.code == ""
+
+
+def test_containers_control_runs_holding_the_containers_lock_shared():
+    locks = StepLocks()
+    held: list = []
+
+    class ControlRunner(FakeRunner):
+        def command(self, verb, args, on_line=None):
+            held.append(locks.holders("containers"))
+            return {"exit_code": 0, "output": ""}
+
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        runner_of={"podman": ControlRunner()}.get,
+        settle=lambda module, timeout_s: True,
+        locks=locks,
+    )
+
+    outcome = subject.run("podman", "control", {"name": "web", "action": "stop"})
+
+    assert outcome.code == ""
+    assert held == [["podman"]]
+    # A taker alone gets it at once afterwards: the verb let it go.
+    assert locks.try_acquire((("containers", "alone"),), "ayakaleaf")
+
+
+def test_another_verb_takes_no_step_lock():
+    locks = StepLocks()
+    locks.acquire((("containers", "alone"),), "podman")
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        runner_of={"samba": FakeRunner()}.get,
+        settle=lambda module, timeout_s: True,
+        locks=locks,
+    )
+
+    outcome = subject.run("samba", "set_password", {"name": "test", "password": "x"})
+
     assert outcome.code == ""
 
 
@@ -392,7 +433,7 @@ def test_a_state_that_never_settles_refuses_the_verb_typed():
     subject = DeviceOperator(
         platform=PowerPlatform(),
         runner_of={"samba": runner}.get,
-        settle=lambda timeout_s: False,
+        settle=lambda module, timeout_s: False,
     )
 
     outcome = subject.run("samba", "set_password", {"name": "test", "password": "x"})

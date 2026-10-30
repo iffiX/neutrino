@@ -7,10 +7,12 @@ module unsupported. :class:`ModuleEngine` observes every module it has a
 runner for, named by the state or not, and derives one typed state from
 three facts: whether the software is there, by the method's one presence
 check, whether its unit is active, and whether the hub has configured it,
-which is a root-only mark on disk. It also carries out the two package
-operations the reconcile asks for, one at a time, because one package
-manager holds the machine-wide lock. :class:`ReconcileWorker` is the
-shared pattern: a thread woken by news, a signature that skips unchanged
+which is a root-only mark on disk. It also builds the steps a module's task
+runs: the install by the recipe's method, the version switch, the
+configure path and the uninstall, each step naming the step locks it takes.
+A row of a module whose task runs carries the task, and reads ``queued``,
+``installing`` or ``uninstalling`` while the task's plan asks for it.
+:class:`ReconcileWorker` is the shared pattern: a thread woken by news, a signature that skips unchanged
 inputs, an idle re-check so drift is still noticed, and per-name typed
 statuses.
 
@@ -28,6 +30,7 @@ nothing here reads a manifest or searches a platform table either.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import json
 import os
@@ -49,20 +52,33 @@ from neutrino_agent.constants import (
     AGENT_METHOD_HUB,
     AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
+    AGENT_LOCK_ALONE,
+    AGENT_LOCK_CONTAINERS,
+    AGENT_LOCK_PACKAGE_MANAGER,
+    AGENT_LOCK_SHARED,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_MODULE_STATE_INSTALLED,
     AGENT_MODULE_STATE_INSTALLING,
-    AGENT_MODULE_STATE_QUEUED,
     AGENT_MODULE_STATE_RUNNING,
     AGENT_MODULE_STATE_STOPPED,
-    AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
-    AGENT_PRESENT_WANTS,
+    AGENT_STEP_ARTIFACT,
+    AGENT_STEP_CONFIGURE,
+    AGENT_STEP_PACKAGES,
+    AGENT_STEP_PULL,
+    AGENT_STEP_RENDER,
+    AGENT_STEP_START,
+    AGENT_STEP_STOP,
+    AGENT_STEP_SWITCH,
+    AGENT_STEP_UNINSTALL,
+    AGENT_STEP_VERIFY,
+    AGENT_STEP_WAIT_CONTAINERS,
     AGENT_VERSIONS_DIR_NAME,
     AGENT_WANT_RUNNING,
+    AGENT_WANT_STOPPED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_NAME
@@ -85,7 +101,9 @@ from neutrino_agent.modules.samba.runner import (
     SambaNativeServerRunner,
 )
 from neutrino_agent.modules.shared import installers
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
+from neutrino_agent.modules.podman.container_runner import recipe_images
 from neutrino_agent.modules.shared.package import (
     check_received,
     drop_replaced,
@@ -101,6 +119,7 @@ from neutrino_agent.modules.shared.package import (
     verify_detail,
     verify_passes,
 )
+from neutrino_agent.modules.shared.step_locks import ordered
 from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
@@ -148,13 +167,12 @@ FAILURE_SUFFIX = ".json"
 # The artifacts the system's own installer puts on the machine: another
 # version replaces them by an uninstall and an install.
 SYSTEM_INSTALLED_KINDS = (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG)
-# The states that end a container module's hold on installing, beside its
-# want.
-HOLD_ENDING_STATES = (
-    AGENT_MODULE_STATE_INSTALL_FAILED,
-    AGENT_MODULE_STATE_FAILED,
-    AGENT_MODULE_STATE_UNSUPPORTED,
-)
+# The locks of a step that runs the system's installer.
+PACKAGE_MANAGER_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
+# The locks of a container module's step on Containers' engine.
+CONTAINERS_SHARED_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),)
+# The locks of a container module's uninstall. It drops its hub containers.
+CONTAINERS_ALONE_LOCKS = ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_ALONE),)
 
 
 class ReconcileWorker:
@@ -269,18 +287,14 @@ class ModuleEngine(ReconcileWorker):
             os.path.dirname(self._configured_dir), AGENT_VERSIONS_DIR_NAME
         )
         self._platform_tuple = platform_tuple()
-        self._on_line = None
+        # The line sink of the task running on each thread.
+        self._lines = threading.local()
         # A runner logs while it is made (the file share's fence that did not
         # load), so the log is set before the runners are.
         self._log = log
-        self._operation_lock = threading.Lock()
-        # The modules mid-operation, whose transient state a refresh keeps.
-        self._in_transit: set = set()
-        # The modules waiting behind the one the applier is on.
-        self._queued: set = set()
-        # The container modules that read installing until they read their
-        # want or a step fails.
-        self._held_installing: set = set()
+        # Module name to its task's overlay on the row, ``{"task", "state",
+        # "wait"}``; ``state`` empty while the row reads what the machine shows.
+        self._task_rows: dict = {}
         # Module name to its last failed step, ``{"state", "code",
         # "params"}``, as kept on disk.
         self._failures: dict = {}
@@ -398,7 +412,6 @@ class ModuleEngine(ReconcileWorker):
             }
             wanted = dict(self._wanted)
             dropped = [name for name in self._failures if name not in self._wanted]
-            self._held_installing &= set(self._wanted)
             for name, entry in wanted.items():
                 self._add_container_runner(name, _recipe_of(entry))
             runners = {**self._module_runners, **self._container_runners}
@@ -416,17 +429,19 @@ class ModuleEngine(ReconcileWorker):
             self.record_failure(name, None)
         self._wakeup.set()
 
-    def is_installed(self, name: str) -> bool:
+    def is_installed(self, name: str, entry: "dict | None" = None) -> bool:
         """Whether one module's software is on this machine, checked now.
 
         Args:
             name: The module name.
+            entry: The state's entry whose recipe is checked; None takes the
+                latest state's.
 
         Returns:
             True when the method's presence check passes; False for a module
             this agent has no runner for or cannot read.
         """
-        recipe = _recipe_of(self._wanted_of(name))
+        recipe = _recipe_of(entry if entry is not None else self._wanted_of(name))
         runner = self._runner_for(name, recipe)
         if runner is None:
             return False
@@ -505,100 +520,242 @@ class ModuleEngine(ReconcileWorker):
             failure = self._failures.get(name) or {}
         return failure.get("state") == AGENT_MODULE_STATE_INSTALL_FAILED
 
-    def set_queued(self, names) -> None:
-        """Report the modules waiting behind the one being applied as ``queued``.
-
-        A module that leaves the set is read again at once.
+    def publish_task(self, name: str, task: dict, state: str, wait: dict) -> None:
+        """Put one module's task on its row.
 
         Args:
-            names: The waiting modules; empty when none waits.
+            name: The module name.
+            task: The task's row, ``{steps, index, wait, is_running}``.
+            state: ``queued``, ``installing`` or ``uninstalling`` while the
+                task's plan has the row read it; empty keeps the state the
+                machine shows.
+            wait: The wait a ``queued`` or ``installing`` row carries as its
+                code, ``{code, params}``; empty for none.
         """
         with self._lock:
-            queued = set(names)
-            left = self._queued - queued
-            self._queued = queued
-            observed = self._observed()
-        for name in sorted(queued):
-            self._publish_observed(name, _typed(AGENT_MODULE_STATE_QUEUED))
-        for name in sorted(left):
-            if name in observed:
-                self._publish_observed(name, self._read_one(name, observed[name]))
+            was_transient = bool((self._task_rows.get(name) or {}).get("state"))
+            self._task_rows[name] = {
+                "task": dict(task),
+                "state": state,
+                "wait": dict(wait),
+            }
+            status = self._statuses.get(name)
+        if state:
+            self._publish_observed(name, _typed(state))
+        elif was_transient:
+            self.refresh_one(name)
+        elif status is not None:
+            self._publish_observed(name, dict(status))
 
-    def hold_installing(self, names) -> None:
-        """Read these container modules ``installing`` until each reads its ``want`` or fails.
-
-        A container module's install is its pull, after which Containers is
-        applied again for it and its first start runs; its row reads
-        ``installing`` through all of it.
+    def set_line_sink(self, on_line) -> None:
+        """Hand the lines the runners log on this thread to a task's stream.
 
         Args:
-            names: The container modules a state asks to be present that
-                are not installed.
+            on_line: Called with each line; None hands them to nobody.
         """
-        names = list(names)
-        with self._lock:
-            self._held_installing |= set(names)
-        for name in names:
-            self._publish_observed(name, _typed(AGENT_MODULE_STATE_INSTALLING))
+        self._lines.on_line = on_line
 
     def refresh_now(self) -> None:
         """Report every module again from what is true right now."""
         self._refresh(is_forced=True)
 
-    def install(self, name: str, *, receive, on_line=None) -> dict:
-        """Put one module's software on the machine, in the caller's thread.
-
-        Package operations run one at a time: a second caller waits for
-        the first. The row reads ``installing`` while it runs.
+    def refresh_one(self, name: str) -> None:
+        """Report one module again from what is true right now.
 
         Args:
-            name: The module name; its recipe is the one the state names.
-            receive: Called with the module name and each artifact a
-                ``hub`` recipe receives; returns ``{"path", "sha256"}``
-                naming the file on disk and its digest, or ``{"code",
-                "params"}``. The file is deleted once the install ran.
-            on_line: Called with each output line as the install produces
-                it.
-
-        Returns:
-            Empty when the software is there afterwards, ``{"code",
-            "params"}`` when it is not; the module then reads
-            ``install_failed``.
+            name: The module name.
         """
-        return self._operate(
-            name,
-            (AGENT_MODULE_STATE_INSTALLING, AGENT_MODULE_STATE_INSTALL_FAILED),
-            "install_failed",
-            on_line,
-            self._install,
-            receive,
-        )
+        with self._lock:
+            observed = self._observed()
+        if name in observed:
+            self._publish_observed(name, self._read_one(name, observed[name]))
 
-    def uninstall(self, name: str, *, on_line=None) -> dict:
-        """Take one module's software off the machine, in the caller's thread.
-
-        The configuration the hub wrote and the configured mark go with
-        it; the module's data stays. The row reads ``uninstalling`` while
-        it runs. On software the recipe's check does not find, what an
-        earlier install left, a step that fails is logged and the check
-        afterwards is the outcome.
+    def install_steps(self, name: str, entry: dict) -> list:
+        """The steps that put one module's software on the machine, by its recipe's method.
 
         Args:
-            name: The module name; its recipes are the ones the state names.
-            on_line: Called with each output line as the uninstall
-                produces it.
+            name: The module name.
+            entry: The state's entry the task plans from.
 
         Returns:
-            Empty when the software is gone afterwards, ``{"code",
-            "params"}`` when it is not; the module then reads ``failed``.
+            :class:`ModuleStep` each, with the runner's own changes:
+            ``packages`` for a ``system`` recipe and a ``hub`` recipe that
+            names system packages, ``artifact {name}`` per artifact a
+            ``hub`` recipe receives, then ``verify``; a ``container``
+            recipe's ``wait_containers``, ``pull {image}`` per image,
+            ``verify`` and ``render``.
         """
-        return self._operate(
-            name,
-            (AGENT_MODULE_STATE_UNINSTALLING, AGENT_MODULE_STATE_FAILED),
-            "uninstall_failed",
-            on_line,
-            self._uninstall,
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        method = str(recipe.get("method", "") or "")
+        if runner is None or method not in INSTALLED_METHODS:
+            return [self._refused_step(name, recipe, runner)]
+        if method == AGENT_METHOD_CONTAINER:
+            steps = [self._wait_containers_step(AGENT_MODULE_STATE_INSTALL_FAILED)]
+            steps += [
+                ModuleStep(
+                    name=AGENT_STEP_PULL,
+                    params={"image": image["name"]},
+                    run=functools.partial(self._run_pull, runner, image),
+                    locks=CONTAINERS_SHARED_LOCKS,
+                    failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                    error_code="install_failed",
+                )
+                for image in recipe_images(recipe)
+            ]
+            steps.append(
+                self._verify_step(name, runner, recipe, CONTAINERS_SHARED_LOCKS)
+            )
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_RENDER,
+                    run=_render_containers,
+                    failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                    error_code="install_failed",
+                )
+            )
+        else:
+            params = params_of(recipe)
+            steps = []
+            if (
+                method == AGENT_METHOD_SYSTEM
+                or params.get("packages")
+                or params.get("pre_install")
+            ):
+                steps.append(
+                    ModuleStep(
+                        name=AGENT_STEP_PACKAGES,
+                        run=functools.partial(self._run_packages, runner, recipe),
+                        locks=PACKAGE_MANAGER_LOCKS,
+                        failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                        error_code="install_failed",
+                    )
+                )
+            if method == AGENT_METHOD_HUB:
+                steps += [
+                    ModuleStep(
+                        name=AGENT_STEP_ARTIFACT,
+                        params={"name": str(artifact.get("name", "") or "")},
+                        run=functools.partial(
+                            self._run_artifact, runner, recipe, dict(artifact)
+                        ),
+                        locks=_installer_locks([artifact]),
+                        failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                        error_code="install_failed",
+                    )
+                    for artifact in received_artifacts(recipe)
+                ]
+            steps.append(self._verify_step(name, runner, recipe, ()))
+        return self._with_runner_locks(runner, runner.install_steps(recipe, steps))
+
+    def switch_steps(self, name: str, entry: dict) -> list:
+        """The one ``switch {version}`` step that puts the recipe's version in place of the one installed.
+
+        Args:
+            name: The module name.
+            entry: The state's entry the task plans from.
+
+        Returns:
+            The step, under ``package_manager`` when an artifact is an msi
+            or a pkg.
+        """
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        step = ModuleStep(
+            name=AGENT_STEP_SWITCH,
+            params={"version": str(params_of(recipe).get("version", "") or "")},
+            run=functools.partial(self._run_switch, name, dict(entry)),
+            locks=_installer_locks(received_artifacts(recipe)),
+            error_code="version_switch_failed",
         )
+        return self._with_runner_locks(runner, [step])
+
+    def configure_steps(self, name: str, entry: dict, want: str) -> list:
+        """The steps that apply one module's configuration and settle its unit.
+
+        Args:
+            name: The module name.
+            entry: The state's entry the task plans from.
+            want: ``running`` or ``stopped``.
+
+        Returns:
+            ``configure``, then ``start`` under ``running`` and ``stop``
+            under ``stopped``, with the runner's own changes; a container
+            module's begin with ``wait_containers``, and its ``start`` and
+            ``stop`` take ``containers`` shared.
+        """
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        config = entry.get("config")
+        config = dict(config) if isinstance(config, dict) else {}
+        is_container = str(recipe.get("method", "") or "") == AGENT_METHOD_CONTAINER
+        unit_locks = CONTAINERS_SHARED_LOCKS if is_container else ()
+        steps = (
+            [self._wait_containers_step(AGENT_MODULE_STATE_FAILED)]
+            if is_container
+            else []
+        )
+        steps.append(
+            ModuleStep(
+                name=AGENT_STEP_CONFIGURE,
+                run=functools.partial(_run_apply, runner, config),
+            )
+        )
+        if want == AGENT_WANT_RUNNING:
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_START,
+                    run=functools.partial(_run_start, runner),
+                    locks=unit_locks,
+                )
+            )
+        elif want == AGENT_WANT_STOPPED:
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_STOP,
+                    run=functools.partial(_run_stop, runner),
+                    locks=unit_locks,
+                )
+            )
+        return self._with_runner_locks(
+            runner, runner.configure_steps(config, want, steps)
+        )
+
+    def uninstall_steps(self, name: str, entry: dict) -> list:
+        """The one ``uninstall`` step that takes one module's software off the machine.
+
+        The configuration the hub wrote and the configured mark go with it;
+        the module's data stays where the recipe says so. On software the
+        recipe's check does not find, what an earlier install left, a part
+        that fails is logged and the check afterwards is the outcome.
+
+        Args:
+            name: The module name.
+            entry: The state's entry the task plans from.
+
+        Returns:
+            The step, under ``package_manager`` for a recipe that removes
+            system packages, an msi or a pkg, and ``containers`` alone for
+            a container module, with the runner's own changes.
+        """
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        method = str(recipe.get("method", "") or "")
+        if method == AGENT_METHOD_CONTAINER:
+            locks = CONTAINERS_ALONE_LOCKS
+        elif method == AGENT_METHOD_SYSTEM:
+            locks = PACKAGE_MANAGER_LOCKS
+        else:
+            locks = _installer_locks(received_artifacts(recipe))
+        step = ModuleStep(
+            name=AGENT_STEP_UNINSTALL,
+            run=functools.partial(self._run_uninstall, name, dict(entry)),
+            locks=locks,
+            error_code="uninstall_failed",
+        )
+        if runner is None:
+            return [step]
+        return self._with_runner_locks(runner, runner.uninstall_steps(recipe, [step]))
 
     def installed_version(self, name: str) -> dict:
         """The version of one ``hub`` module the agent installed, as it keeps it.
@@ -623,7 +780,7 @@ class ModuleEngine(ReconcileWorker):
             "digests": dict(digests) if isinstance(digests, dict) else {},
         }
 
-    def take_version_switch(self, name: str) -> bool:
+    def take_version_switch(self, name: str, entry: dict) -> bool:
         """Whether an installed ``hub`` module is to be switched to the version its recipe names.
 
         A module installed before the agent kept its version takes the
@@ -631,11 +788,12 @@ class ModuleEngine(ReconcileWorker):
 
         Args:
             name: The module name.
+            entry: The state's entry the task plans from.
 
         Returns:
             True when the kept version differs from the recipe's.
         """
-        recipe = _recipe_of(self._wanted_of(name))
+        recipe = _recipe_of(entry)
         if str(recipe.get("method", "") or "") != AGENT_METHOD_HUB:
             return False
         if self._runner_for(name, recipe) is None:
@@ -647,137 +805,117 @@ class ModuleEngine(ReconcileWorker):
             return False
         return bool(wanted) and held["version"] != wanted
 
-    def switch_version(self, name: str, *, receive, on_line=None) -> dict:
-        """Put the version a module's recipe names in place of the one it runs.
-
-        Each artifact whose digest differs from the installed one is staged
-        beside the files it replaces; the module's services stop, the staged
-        files are swapped in, ``verify`` runs, and the replaced files go. A
-        failure before the swap leaves the old version as it was; one after
-        it puts the old files back and starts the old version again. The
-        row reads ``installing`` meanwhile.
-
-        Args:
-            name: The module name.
-            receive: Fetches one artifact, as :meth:`install` takes it.
-            on_line: Called with each output line.
-
-        Returns:
-            Empty when the new version is in place; ``{"code", "params"}``
-            otherwise, ``version_switch_failed {version, detail}`` for a
-            failure after the swap; the module then reads ``failed``.
-        """
-        return self._operate(
-            name,
-            (AGENT_MODULE_STATE_INSTALLING, AGENT_MODULE_STATE_FAILED),
-            "version_switch_failed",
-            on_line,
-            self._switch,
-            receive,
+    def _verify_step(self, name: str, runner, recipe: dict, locks: tuple) -> ModuleStep:
+        """The ``verify`` step: the method's presence check, a ``hub`` module's version kept."""
+        return ModuleStep(
+            name=AGENT_STEP_VERIFY,
+            run=functools.partial(self._run_verify, name, runner, dict(recipe)),
+            locks=locks,
+            failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+            error_code="install_failed",
         )
 
-    def _operate(
-        self, name: str, states: tuple, failure: str, on_line, step, *extra
-    ) -> dict:
-        """Run one package operation under the machine's one lock.
+    def _wait_containers_step(self, failed_state: str) -> ModuleStep:
+        """The ``wait_containers`` step, holding no lock."""
+        return ModuleStep(
+            name=AGENT_STEP_WAIT_CONTAINERS,
+            run=_wait_for_containers,
+            failed_state=failed_state,
+            error_code="install_failed",
+        )
 
-        Its outcome replaces the module's kept failure before the row is
-        read again.
-
-        Args:
-            name: The module name.
-            states: The state the row shows while the operation runs, and
-                the state a failure of it is kept under.
-            failure: The code a step that raised is reported under.
-            on_line: Called with each output line.
-            step: The operation itself, given the name, its state entry
-                and ``extra``.
-            *extra: What the step takes beside them.
-
-        Returns:
-            Empty when the operation took, ``{"code", "params"}`` when not.
-        """
-        transient, failed_state = states
-        wanted = self._wanted_of(name)
-        if wanted is None:
-            return {"code": "unknown_module", "params": {"module": name}}
-        if _recipe_of(wanted).get("method") == AGENT_METHOD_AGENT:
-            return {"code": "module_not_orderable", "params": {"module": name}}
-        with self._operation_lock:
-            with self._lock:
-                self._in_transit.add(name)
-            self._on_line = on_line
-            self._publish(name, _typed(transient))
-            try:
-                refusal = step(name, wanted, *extra)
-            except PlatformUnsupportedError:
-                refusal = {"code": "unsupported_platform", "params": {}}
-            except ModuleApplyError as error:
-                self._collect(error.code)
-                refusal = {"code": error.code, "params": dict(error.params)}
-            except Exception as error:  # noqa: BLE001 - reported, never raised
-                self._collect(str(error))
-                refusal = {"code": failure, "params": {"detail": str(error)[:200]}}
-            finally:
-                self._on_line = None
-                with self._lock:
-                    self._in_transit.discard(name)
-            self.record_failure(
-                name, {"state": failed_state, **refusal} if refusal else None
+    def _refused_step(self, name: str, recipe: dict, runner) -> ModuleStep:
+        """A ``verify`` step that fails at once: no runner, a module the agent carries, or a method this agent does not install by."""
+        if recipe.get("method") == AGENT_METHOD_AGENT:
+            refusal = ModuleApplyError("module_not_orderable", {"module": name})
+        elif runner is None:
+            refusal = ModuleApplyError(
+                "runner_unknown", {"runner": str(recipe.get("runner", "") or "")}
             )
-            self._refresh(is_forced=True)
-        return refusal
+        else:
+            refusal = ModuleApplyError(
+                "method_unknown", {"method": str(recipe.get("method", "") or "")}
+            )
+        return ModuleStep(
+            name=AGENT_STEP_VERIFY,
+            run=functools.partial(_raise, refusal),
+            failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+        )
 
-    def _install(self, name: str, wanted: dict, receive) -> dict:
-        """Install by the recipe's method and check it took."""
-        recipe = _recipe_of(wanted)
-        method = str(recipe.get("method", "") or "")
-        runner = self._runner_for(name, recipe)
-        if runner is None:
-            return {
-                "code": "runner_unknown",
-                "params": {"runner": str(recipe.get("runner", "") or "")},
-            }
-        if method not in INSTALLED_METHODS:
-            return {"code": "method_unknown", "params": {"method": method}}
-        self._collect(f"{name}: installing")
+    def _with_runner_locks(self, runner, steps: list) -> list:
+        """Each step with the locks its runner adds, in the order they are taken."""
+        return [
+            dataclasses.replace(
+                step, locks=ordered((*step.locks, *runner.step_locks(step.name)))
+            )
+            for step in steps
+        ]
+
+    def _run_packages(self, runner, recipe: dict, context) -> None:
+        """Install the recipe's system packages by name, its ``pre_install`` first."""
         runner.install(recipe)
-        if method == AGENT_METHOD_HUB:
-            for artifact in received_artifacts(recipe):
-                refusal = self._install_artifact(
-                    runner, recipe, artifact, name, receive
-                )
-                if refusal:
-                    return refusal
-        # The check is the whole point of the step: a package manager that
-        # exits zero and installs nothing is a thing that happens.
-        if not self._is_present(runner, recipe):
-            return {"code": "install_unconfirmed", "params": {}}
-        if method == AGENT_METHOD_HUB:
-            self._keep_version(name, recipe)
-        return {}
 
-    def _install_artifact(
-        self, runner, recipe: dict, artifact: dict, name: str, receive
-    ) -> dict:
+    def _run_artifact(self, runner, recipe: dict, artifact: dict, context) -> None:
         """Receive one artifact, check its digest against the recipe, install it.
 
-        Returns:
-            Empty when it landed; the stream's own ``{"code", "params"}``
-            when the hub could not hand it down, ``package_digest_mismatch``
-            when its bytes are not the recipe's.
+        Raises:
+            ModuleApplyError: The stream's own ``{code, params}`` when the
+                hub could not hand it down; ``package_digest_mismatch`` when
+                its bytes are not the recipe's.
         """
-        received = receive(name, artifact)
+        received = context.receive(artifact)
         if "path" not in received:
-            return dict(received)
+            raise ModuleApplyError(
+                str(received.get("code", "") or "hub_unreachable"),
+                dict(received.get("params") or {}),
+            )
         try:
             refusal = check_received(artifact, received)
             if refusal:
-                return refusal
+                raise ModuleApplyError(refusal["code"], dict(refusal["params"]))
             runner.install_artifact(recipe, dict(artifact), received["path"])
         finally:
             remove_received(received["path"])
-        return {}
+
+    def _run_verify(self, name: str, runner, recipe: dict, context) -> None:
+        """Check the software is there by the method's check, and keep a ``hub`` module's version.
+
+        Raises:
+            ModuleApplyError: ``install_unconfirmed`` when the check fails;
+                a package manager that exits zero and installs nothing is a
+                thing that happens.
+        """
+        if not self._is_present(runner, recipe):
+            raise ModuleApplyError("install_unconfirmed", {})
+        if str(recipe.get("method", "") or "") == AGENT_METHOD_HUB:
+            self._keep_version(name, recipe)
+
+    def _run_pull(self, runner, image: dict, context) -> None:
+        """Have Containers' Podman pull one image of a container module."""
+        runner.pull_image(image)
+
+    def _run_switch(self, name: str, entry: dict, context) -> None:
+        """Run the version switch.
+
+        Raises:
+            ModuleApplyError: The switch's own ``{code, params}``.
+        """
+        refusal = self._switch(name, entry, context.receive)
+        if refusal:
+            raise ModuleApplyError(refusal["code"], dict(refusal["params"]))
+
+    def _run_uninstall(self, name: str, entry: dict, context) -> None:
+        """Run the uninstall.
+
+        Raises:
+            ModuleApplyError: ``module_not_orderable`` for a module the
+                agent carries; the uninstall's own ``{code, params}``.
+        """
+        if _recipe_of(entry).get("method") == AGENT_METHOD_AGENT:
+            raise ModuleApplyError("module_not_orderable", {"module": name})
+        refusal = self._uninstall(name, entry)
+        if refusal:
+            raise ModuleApplyError(refusal["code"], dict(refusal["params"]))
 
     def _switch(self, name: str, wanted: dict, receive) -> dict:
         """Stage, swap in and verify another version, or put the old one back."""
@@ -801,7 +939,7 @@ class ModuleEngine(ReconcileWorker):
         installed_by_kind: list = []
         try:
             for artifact in changed:
-                received = receive(name, artifact)
+                received = receive(artifact)
                 if "path" not in received:
                     remove_staged(staged)
                     for _artifact, path in installed_by_kind:
@@ -935,8 +1073,10 @@ class ModuleEngine(ReconcileWorker):
                 "code": "runner_unknown",
                 "params": {"runner": str(recipe.get("runner", "") or "")},
             }
-        is_leftover = not self.is_installed(name)
-        self._collect(f"{name}: uninstalling")
+        try:
+            is_leftover = not self._is_present(runner, recipe)
+        except Exception:  # noqa: BLE001 - an unreadable module is not installed
+            is_leftover = True
         try:
             self._remove(name, runner, recipe, removal)
         except Exception as error:  # noqa: BLE001 - logged; the check is the outcome
@@ -973,8 +1113,8 @@ class ModuleEngine(ReconcileWorker):
             runner.remove_data()
 
     def _collect(self, message: str) -> None:
-        """Log a line, handing it to the operation's stream as well."""
-        on_line = self._on_line
+        """Log a line, handing it to the stream of the task this thread runs as well."""
+        on_line = getattr(self._lines, "on_line", None)
         if on_line is not None:
             on_line(str(message))
         self._log(message)
@@ -1023,70 +1163,51 @@ class ModuleEngine(ReconcileWorker):
         self._details_at = time.monotonic()
         for name, wanted in observed.items():
             with self._lock:
-                is_held = name in self._in_transit or name in self._queued
+                overlay = self._task_rows.get(name) or {}
                 # Containers keeps its row while a container module pulls on
                 # its Podman, which a read then finds busy.
                 is_pulled_on = name == AGENT_CONTAINERS_MODULE and self._is_pulling()
             if is_pulled_on:
                 continue
-            if is_held:
-                self._publish_observed(name, _typed(AGENT_MODULE_STATE_QUEUED))
+            if overlay.get("state"):
+                self._publish_observed(name, _typed(overlay["state"]))
                 continue
             self._publish_observed(name, self._read_one(name, wanted))
         # A module no runner and no state names stops being reported.
         self._keep_only(observed)
 
     def _publish_observed(self, name: str, status: dict) -> None:
-        """Record one module's status as read, unless an operation or the queue holds its row.
+        """Record one module's status as read, with its task on the row.
 
-        A module mid-operation keeps its transient row, and a queued one
-        reads ``queued``, as they stand when the row is written: a read of
-        every module takes seconds, and an install can begin meanwhile.
+        A module whose task's plan has the row read ``queued``,
+        ``installing`` or ``uninstalling`` keeps that row, with the step's
+        wait as its code, as it stands when the row is written: a read of
+        every module takes seconds, and a task can begin meanwhile.
 
         Args:
             name: The module name.
             status: What a read found.
         """
         with self._lock:
-            if name in self._in_transit:
-                return
-            if name in self._queued:
-                status = _typed(AGENT_MODULE_STATE_QUEUED)
-            status = self._held_status(name, status)
+            status = _with_task(status, self._task_rows.get(name))
             is_news = self._statuses.get(name) != status
             self._statuses[name] = status
         if is_news and self._on_change is not None:
             self._on_change()
 
-    def _held_status(self, name: str, status: dict) -> dict:
-        """The row of a module held ``installing``, which ends the hold once
-        it reads its ``want`` or fails. Call under the lock."""
-        if name not in self._held_installing:
-            return status
-        want = str((self._wanted.get(name) or {}).get("want", "") or "")
-        if want not in AGENT_PRESENT_WANTS or status["state"] in (
-            want,
-            *HOLD_ENDING_STATES,
-        ):
-            self._held_installing.discard(name)
-            return status
-        if status["state"] == AGENT_MODULE_STATE_INSTALLING:
-            return status
-        return {
-            **status,
-            "state": AGENT_MODULE_STATE_INSTALLING,
-            "code": "",
-            "params": {},
-        }
-
     def _is_pulling(self) -> bool:
-        """Whether a container module's install runs. Call under the lock."""
-        return any(
-            name in self._in_transit
-            and (self._statuses.get(name) or {}).get("state")
-            == AGENT_MODULE_STATE_INSTALLING
-            for name in self._container_runners
-        )
+        """Whether a container module's task runs a ``pull``. Call under the lock."""
+        for name in self._container_runners:
+            task = (self._task_rows.get(name) or {}).get("task") or {}
+            steps = task.get("steps") or []
+            index = int(task.get("index", 0) or 0)
+            if (
+                task.get("is_running")
+                and 0 < index <= len(steps)
+                and steps[index - 1].get("name") == AGENT_STEP_PULL
+            ):
+                return True
+        return False
 
     def _read_one(self, name: str, wanted: "dict | None") -> dict:
         """What one module actually is on this machine, acting on nothing.
@@ -1295,6 +1416,69 @@ def _switch_failed(version: str, detail: str) -> dict:
     return {
         "code": "version_switch_failed",
         "params": {"version": version, "detail": detail[-500:]},
+    }
+
+
+def _installer_locks(artifacts) -> tuple:
+    """``package_manager`` when an artifact is an msi or a pkg, else no lock."""
+    kinds = {str(artifact.get("kind", "") or "") for artifact in artifacts}
+    return PACKAGE_MANAGER_LOCKS if kinds & set(SYSTEM_INSTALLED_KINDS) else ()
+
+
+def _run_apply(runner, config: dict, context) -> None:
+    """The ``configure`` step: the runner's apply of the configuration."""
+    runner.apply(dict(config))
+
+
+def _run_start(runner, context) -> None:
+    """The ``start`` step: the runner's start."""
+    runner.start()
+
+
+def _run_stop(runner, context) -> None:
+    """The ``stop`` step: the runner's stop."""
+    runner.stop()
+
+
+def _wait_for_containers(context) -> None:
+    """The ``wait_containers`` step: the task waits until Containers runs and has no task."""
+    context.wait_for_containers()
+
+
+def _render_containers(context) -> None:
+    """The ``render`` step: a configure task of Containers, asked for and waited for."""
+    context.render_containers()
+
+
+def _raise(error: Exception, context) -> None:
+    """A step that fails at once with the error it was made with."""
+    raise error
+
+
+def _with_task(status: dict, overlay: "dict | None") -> dict:
+    """One row with its module's task, transient while the task's plan reads so.
+
+    Args:
+        status: The row as read.
+        overlay: The module's ``{task, state, wait}``; None for a module
+            that has had no task.
+
+    Returns:
+        The row with ``task``; a ``queued``, ``installing`` or
+        ``uninstalling`` row carries the wait's code and params.
+    """
+    if not overlay:
+        return {**status, "task": None}
+    if not overlay.get("state"):
+        return {**status, "task": dict(overlay["task"])}
+    wait = overlay.get("wait") or {}
+    return {
+        "state": overlay["state"],
+        "is_active": False,
+        "code": str(wait.get("code", "") or ""),
+        "params": dict(wait.get("params") or {}),
+        "details": {},
+        "task": dict(overlay["task"]),
     }
 
 

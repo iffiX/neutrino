@@ -1,53 +1,48 @@
-"""The hub's state for this machine, kept and made true.
+"""The hub's state for this machine, kept and made true by one task per module.
 
 The hub sends one state per device: ``{hash, modules, desktop}``, with one
 entry per module it has a say about, ``{want, config, install}``, the
 recipe ``install`` being ``{runner, method, params}``, and the seat password
-this machine's desktop answers with. A copy lands
-here on every ``state`` frame, root-only on disk, and the applier makes
-each mentioned module's actual state equal its ``want``, in one fixed
-module order:
+this machine's desktop answers with. A copy lands here on every ``state``
+frame, root-only on disk, and each mentioned module whose entry is news
+gets a task, :class:`ModuleTask`, that makes its actual state equal its
+``want``:
 
-| ``want`` | The applier ensures |
+| ``want`` | The task ensures |
 | --- | --- |
 | ``absent`` | the software is uninstalled by its recipe, the configuration the hub wrote and the configured mark are gone; the data stays |
 | ``installed`` | the software is there; nothing is configured, nothing started |
 | ``stopped`` | the software is there, the configuration applied, the unit stopped |
 | ``running`` | the software is there, the configuration applied, the unit up |
 
-A module the state does not mention is left as it is. Each artifact an
-install receives comes down a ``package {module, artifact, digest}`` stream
-the applier opens, and an install's or an uninstall's output goes up a
-``log {module}`` stream.
+A module the state does not mention is left as it is. The tasks of two
+modules run at once, each step under the step locks it names, and a newer
+entry for a module whose task runs replaces the plan at the next step
+boundary. Each artifact an install receives comes down a ``package
+{module, artifact, digest}`` stream, and a task's lines go up one ``log
+{module}`` stream.
 
 The applied hash is what the hub compares against: it moves to the state's
-hash once no mentioned module's last step failed or waits. Each module's
-entry, and the ``ai_tools`` section, is tried once: the hash of the entry
-last tried is kept per section beside the state on disk, under the build of
-the agent that tried it, so a change to one entry, or a retry mark on it,
-runs that module's step alone, an agent that starts again tries nothing
-again, and an agent of another build tries every entry once again. A
-failure the socket caused keeps no hash, so the next state with that entry
-tries it again. Each step's outcome replaces the module's kept failure:
-``install_failed`` for an install, ``failed`` for any other step, nothing
-for a step that took. A module whose last install failed is installed again
-by its next attempt, and uninstalled by an ``absent`` whatever the check
-finds. The marks hold for one install, one build and one binding: the
-agent's removal, a join and a leave delete them, and another build reads
-none of them. Modules apply one at a time; while one applies, each other
-module the apply will reach whose ``want`` differs from its reported state
-reads ``queued``. A
-module whose apply waits on an install that still runs is no failure: the
-state is applied again every recheck interval until the install has ended.
+hash once every mentioned module's task has ended with no failure. Each
+module's entry, and the ``ai_tools`` section, is tried once: the hash of the
+entry a task last planned from is kept per section beside the state on
+disk, under the build of the agent that tried it, so a change to one entry,
+or a retry mark on it, runs that module's task alone, an agent that starts
+again tries nothing again, and an agent of another build tries every entry
+once again. A failure the socket caused keeps no hash, so the next state
+with that entry tries it again. Each task's outcome replaces the module's
+kept failure. The marks hold for one install, one build and one binding:
+the agent's removal, a join and a leave delete them, and another build
+reads none of them.
 
-Not pure: writes the state file, drives the module runners and opens
-streams.
+Not pure: writes the state file, starts the tasks and opens streams.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -60,21 +55,24 @@ from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
     AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
-    AGENT_MODULE_STATE_FAILED,
-    AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_PRESENT_WANTS,
+    AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
 )
-from neutrino_agent.exceptions import (
-    GatewayUnreachable,
-    ModuleApplyError,
-    ModuleInstallPending,
-    ModuleSetupError,
-    PlatformUnsupportedError,
+from neutrino_agent.core.tasks import (
+    PLAN_CONFIGURE,
+    PLAN_INSTALL,
+    PLAN_SWITCH,
+    PLAN_UNINSTALL,
+    ModuleTask,
+    module_wait,
 )
+from neutrino_agent.exceptions import GatewayUnreachable, ModuleApplyError
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
+from neutrino_agent.modules.shared import system_package
+from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
 from neutrino_agent.streams.log import LogStream
 from neutrino_agent.streams.package import PackageStream
@@ -103,9 +101,8 @@ CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
 # The one failure the next state frame tries again: the socket went away
 # under the operation, and nothing about the machine made it fail.
 RETRIED_CODE = "hub_unreachable"
-# What an apply that waits on a running install answers inside this file;
-# it is never reported.
-PENDING_CODE = "install_pending"
+# A container module's failure while Containers does not run.
+CODE_MODULE_NEEDED = "module_needed"
 # The file beside the state that keeps the hash last tried, per section.
 TRIED_SUFFIX = ".tried"
 # This agent's build, which the hashes last tried are kept under: its
@@ -115,8 +112,7 @@ AGENT_BUILD = f"{AGENT_VERSION} {AGENT_BUILT_AT}".strip()
 AI_TOOLS_SECTION = "ai_tools"
 # The state's section of the source sets its recipes name.
 SOURCE_SETS_SECTION = "source_sets"
-# The module whose Podman runs every container module, applied again once a
-# container module's install took.
+# The module whose Podman runs every container module.
 CONTAINERS_MODULE = AGENT_CONTAINERS_MODULE
 
 
@@ -274,7 +270,7 @@ class DesiredStateStore:
 
 
 class DesiredStateApplier:
-    """Takes states from the hub and makes the latest one true, in order."""
+    """Takes states from the hub and makes the latest one true, one task per module."""
 
     def __init__(
         self,
@@ -287,11 +283,13 @@ class DesiredStateApplier:
         open_stream=None,
         package_dir: str = "",
         ai_tools=None,
+        locks=None,
+        recheck_s: float = AGENT_MODULE_INSTALL_RECHECK_S,
     ):
         """
         Args:
             engine: The :class:`ModuleEngine`, which observes each module
-                against the state, reports it, and moves its software.
+                against the state, reports it, and builds its steps.
             runners: Module name to its runner, for the modules this agent
                 applies.
             store: Where the last taken state is kept.
@@ -305,9 +303,13 @@ class DesiredStateApplier:
                 ``hub_unreachable``.
             package_dir: Where a package's bytes land until their digest
                 is checked.
-            ai_tools: The :class:`AiToolsApplier` the state's ``ai_tools``
-                section is handed to, after the modules; None applies
-                nothing of it.
+            ai_tools: The :class:`AiToolsApplier` whose steps make the
+                state's ``ai_tools`` section true; None applies nothing of
+                it.
+            locks: The agent's :class:`StepLocks`; None makes a set of its
+                own.
+            recheck_s: How often a step that waits for something outside
+                the agent runs again.
         """
         self._engine = engine
         self._runners = dict(runners)
@@ -317,21 +319,25 @@ class DesiredStateApplier:
         self._open_stream = open_stream
         self._package_dir = package_dir
         self._ai_tools = ai_tools
+        self._locks = locks if locks is not None else StepLocks()
+        self._recheck_s = recheck_s
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
-        self._is_applying = False
         self._pending: "dict | None" = None
+        self._is_dispatching = False
+        # The latest state dispatched, its modules by name, and the names
+        # with a runner in the order they apply.
+        self._document: dict = {}
+        self._modules: dict = {}
+        self._order: list = []
+        # The running task of each module, and of ``ai_tools``, by name.
+        self._tasks: dict = {}
         self._applied_hash = ""
         self._tried = store.read_tried()
-        # Module name to its last step's ``{"code", "params"}`` in this
-        # process; None when it took.
+        # Module name to its last task's failure in this process, ``{"state",
+        # "code", "params", "step"}``; None when it took.
         self._outcomes: dict = {}
         self._state_error: "dict | None" = None
-        # The state whose apply waits on a running install, applied again.
-        self._rechecked: "dict | None" = None
-        # Set when a container module's install took, so Containers is
-        # applied again and renders its containers.
-        self._is_containers_marked = False
         self._wakeup = threading.Event()
         self._worker = threading.Thread(
             target=self._run, name="desired_state", daemon=True
@@ -340,7 +346,7 @@ class DesiredStateApplier:
 
     @property
     def applied_hash(self) -> str:
-        """The hash of the last state every mentioned module applied."""
+        """The hash of the last state every mentioned module's task applied."""
         with self._lock:
             return self._applied_hash
 
@@ -350,21 +356,28 @@ class DesiredStateApplier:
         with self._lock:
             return dict(self._state_error) if self._state_error else None
 
-    def settle(self, timeout_s: float) -> bool:
-        """Wait until no state is pending or mid-apply.
+    @property
+    def locks(self):
+        """The agent's step locks. The self-update and a verb take them too."""
+        return self._locks
 
-        A command that reads a module's configuration runs after the state
-        it was asked against has taken, not beside it.
+    def settle(self, module: str, timeout_s: float) -> bool:
+        """Wait until no state is pending and one module's task has ended.
+
+        A verb that acts on a module runs after that module's task, not
+        beside it.
 
         Args:
+            module: The module; empty waits for every task.
             timeout_s: How long to wait.
 
         Returns:
-            True when the applier is idle; False when the wait ran out.
+            True when nothing is pending and the task has ended; False when
+            the wait ran out.
         """
         with self._idle:
             return self._idle.wait_for(
-                lambda: self._pending is None and not self._is_applying, timeout_s
+                functools.partial(self._is_settled, module), timeout_s
             )
 
     def forget_tried(self) -> None:
@@ -409,21 +422,17 @@ class DesiredStateApplier:
         self._wakeup.set()
 
     def apply(self, document: dict) -> None:
-        """Make one state true now, in the caller's thread.
+        """Make one state's tasks in the caller's thread. Each task runs on a thread of its own.
 
-        Each mentioned module with a runner whose entry differs from the one
-        last tried is made to match its ``want``, one at a time in
-        ``APPLY_ORDER``, a container module the order does not name right
-        after Containers. A ``want`` outside the four is left alone, with a
-        line in the log. A container module whose install took marks
-        Containers to be applied again, and the state is applied once more;
-        a container module the state asks to be present while it is not
-        installed reads ``installing`` from here until it reads its want.
+        A module with a runner whose entry's hash is neither the one last
+        tried nor the one its running task works from gets a task, or hands
+        its running task the newer entry, in ``APPLY_ORDER``, a container
+        module the order does not name right after Containers. The
+        ``ai_tools`` section gets a task of its own the same way.
 
         Args:
             document: The state, ``{hash, modules, desktop, source_sets}``.
         """
-        state_hash = str(document.get("hash", "") or "")
         modules = document.get("modules")
         modules = {
             name: entry
@@ -435,9 +444,6 @@ class DesiredStateApplier:
             modules, source_sets if isinstance(source_sets, dict) else {}
         )
         self._apply_desktop(document.get("desktop"))
-        with self._lock:
-            tried = dict(self._tried)
-            self._is_containers_marked = False
         hashes = {
             name: _section_hash(
                 [entry, document.get("desktop")]
@@ -448,221 +454,226 @@ class DesiredStateApplier:
         }
         runners = {**self._runners, **self._engine.container_runners()}
         order = apply_order(modules, runners)
-        steps = [name for name in order if hashes[name] != tried.get(name)]
-        self._engine.hold_installing(
-            [name for name in steps if self._is_container_install(name, modules[name])]
-        )
-        reported = self._engine.report()
-        waiting = [
-            name
-            for name in steps
-            if str(modules[name].get("want", "") or "")
-            != str((reported.get(name) or {}).get("state", ""))
-        ]
-        for name in steps:
-            waiting = [other for other in waiting if other != name]
-            self._engine.set_queued(waiting)
-            failure = self._reconcile_one(name, runners[name], modules[name])
-            code = failure["code"] if failure else ""
-            is_failed = bool(code) and code != PENDING_CODE
-            self._engine.record_failure(name, failure if is_failed else None)
-            is_kept = code not in (PENDING_CODE, RETRIED_CODE)
-            self._keep_tried(name, hashes[name] if is_kept else "")
-            with self._lock:
-                self._outcomes[name] = failure
-        self._engine.set_queued(())
-        if self._ai_tools is not None:
-            section = document.get(AI_TOOLS_SECTION)
-            section_hash = _section_hash(section)
-            if section_hash != tried.get(AI_TOOLS_SECTION):
-                self._ai_tools.apply(section, state_hash, receive=self._receive)
-                self._keep_tried(AI_TOOLS_SECTION, section_hash)
-        self._settle_hash(state_hash, order, document)
+        made = []
         with self._lock:
-            is_marked = self._is_containers_marked
-        if is_marked:
-            self._keep_tried(CONTAINERS_MODULE, "")
-            with self._lock:
-                if self._pending is None:
-                    self._pending = dict(document)
-            self._wakeup.set()
+            self._document = dict(document)
+            self._modules = modules
+            self._order = order
+            for name in order:
+                made.append(self._offer(name, modules[name], hashes[name]))
+            if self._ai_tools is not None:
+                section = document.get(AI_TOOLS_SECTION)
+                made.append(
+                    self._offer(
+                        AI_TOOLS_SECTION, {"section": section}, _section_hash(section)
+                    )
+                )
+            self._settle_hash()
+        for task in made:
+            if task is not None:
+                task.start()
         self._engine.refresh_now()
 
-    def _is_container_install(self, name: str, wanted: dict) -> bool:
-        """Whether a state entry asks a container module to be present that is not installed."""
-        return (
-            _method_of(wanted) == AGENT_METHOD_CONTAINER
-            and str(wanted.get("want", "") or "") in AGENT_PRESENT_WANTS
-            and (
-                self._engine.is_install_failed(name)
-                or not self._engine.is_installed(name)
-            )
-        )
+    # --- what a task asks of its owner ---
 
-    def _apply_desktop(self, wanted) -> None:
-        """Give the desktop host the seat password the hub holds.
-
-        The Remote desktop module writes it into RustDesk's settings when it
-        applies, and only when it is not the one written there.
+    def task_started(self, task) -> None:
+        """Hand the lines the runners log on the task's thread to its log stream,
+        and the waits of its package runs to its row.
 
         Args:
-            wanted: The state's ``desktop`` section, or anything else when
-                it carries none.
+            task: The task, on its own thread.
         """
-        if self._rdp is None or not isinstance(wanted, dict):
-            return
-        self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
+        self._engine.set_line_sink(task.log)
+        system_package.set_wait_sink(task.set_wait)
 
-    def _keep_tried(self, name: str, entry_hash: str) -> None:
-        """Keep the hash one section was tried under, here and on disk; empty
-        keeps none."""
+    def plan_task(self, task, entry: dict, *, has_installed: bool) -> tuple:
+        """Plan a task's steps from its entry and what the machine shows.
+
+        ``absent`` plans the uninstall when the software is there, the last
+        install failed, or this task already ran an install step; a present
+        ``want`` plans the install when the software is missing or the last
+        install failed, the version switch when a ``hub`` module's kept
+        version differs from its recipe's, then the configure steps under
+        ``stopped`` and ``running``.
+
+        Args:
+            task: The task.
+            entry: The state's entry it plans from.
+            has_installed: Whether this task already ran an install step.
+
+        Returns:
+            ``(kind, steps)``: ``install``, ``switch``, ``uninstall`` or
+            ``configure``, and the :class:`ModuleStep` list.
+        """
+        name = task.name
+        if name == AI_TOOLS_SECTION:
+            return PLAN_CONFIGURE, self._ai_tools.steps(
+                entry.get("section"), receive=self.receive
+            )
+        want = str(entry.get("want", "") or "")
+        if want == AGENT_WANT_ABSENT:
+            if (
+                has_installed
+                or self._engine.is_install_failed(name)
+                or self._engine.is_installed(name, entry)
+            ):
+                return PLAN_UNINSTALL, self._engine.uninstall_steps(name, entry)
+            self._engine.clear_configured(name)
+            return PLAN_CONFIGURE, []
+        if want not in AGENT_PRESENT_WANTS:
+            self._log(f"{name}: want {want!r} is not one this agent knows")
+            return PLAN_CONFIGURE, []
+        kind = PLAN_CONFIGURE
+        steps = []
+        if self._engine.is_install_failed(name) or not self._engine.is_installed(
+            name, entry
+        ):
+            kind = PLAN_INSTALL
+            steps += self._engine.install_steps(name, entry)
+        elif self._engine.take_version_switch(name, entry):
+            kind = PLAN_SWITCH
+            steps += self._engine.switch_steps(name, entry)
+        if want in CONFIGURING_WANTS:
+            steps += self._engine.configure_steps(name, entry, want)
+        return kind, steps
+
+    def is_task_cut(self, task) -> bool:
+        """Whether a task ends at the next step boundary with no failure.
+
+        An installed container module's configure task ends there while
+        Containers' ``want`` is not ``running``.
+
+        Args:
+            task: The task.
+
+        Returns:
+            True when its next step is not to run.
+        """
+        if task.kind != PLAN_CONFIGURE:
+            return False
+        if _method_of(task.entry) != AGENT_METHOD_CONTAINER:
+            return False
+        return self._containers_want() != AGENT_WANT_RUNNING
+
+    def end_task(self, task, outcome, *, is_cut: bool, is_forced: bool = False) -> bool:
+        """End a task, unless a newer entry came: keep its outcome and its tried hash.
+
+        Args:
+            task: The task.
+            outcome: Its failure, ``{"state", "code", "params", "step"}``;
+                None when every step took.
+            is_cut: Whether it ended at a step boundary with no failure,
+                which keeps no tried hash.
+            is_forced: Whether it ends whatever newer entry it holds.
+
+        Returns:
+            True when the task ended; False when it holds a newer entry and
+            plans again.
+        """
+        name = task.name
+        entry = task.entry
         with self._lock:
-            if entry_hash:
-                self._tried[name] = entry_hash
+            if task.has_newer() and not is_forced:
+                return False
+            task.end()
+            is_kept = not is_cut and (
+                outcome is None or outcome.get("code") != RETRIED_CODE
+            )
+            if is_kept:
+                self._tried[name] = task.planned_hash
             else:
                 self._tried.pop(name, None)
             tried = dict(self._tried)
-        try:
-            self._store.write_tried(tried)
-        except OSError as error:
-            self._log(f"could not keep the tried state: {error}")
-
-    def _settle_hash(self, state_hash: str, order: list, document: dict) -> None:
-        """Move the applied hash and the state error by the last outcome of
-        every mentioned module, in the order they apply."""
-        with self._lock:
-            first_failure = None
-            is_pending = False
-            for name in order:
-                outcome = self._outcomes.get(name)
-                if outcome is None:
-                    continue
-                if outcome["code"] == PENDING_CODE:
-                    is_pending = True
-                elif first_failure is None:
-                    first_failure = {"module": name, **outcome}
-            self._rechecked = dict(document) if is_pending else None
-            if first_failure is not None:
-                self._state_error = {
-                    "code": first_failure["code"],
-                    "params": {
-                        "module": first_failure["module"],
-                        **first_failure["params"],
-                    },
-                }
-                return
-            self._state_error = None
-            if not is_pending:
-                self._applied_hash = state_hash
-
-    def _reconcile_one(self, name: str, runner, wanted: dict) -> "dict | None":
-        """Make one module's actual state equal its ``want``.
-
-        A module whose last install failed is installed again under a
-        present ``want`` and uninstalled under ``absent``, whatever its
-        check finds. An installed ``hub`` module whose recipe names another
-        version than the one installed is switched to it first.
-
-        Args:
-            name: The module name.
-            runner: Its runner.
-            wanted: The state's entry for it.
-
-        Returns:
-            None when it took, ``{"state", "code", "params"}`` when it did
-            not, ``state`` being the one the module reads afterwards.
-        """
-        want = str(wanted.get("want", "") or "")
-        is_install_failed = self._engine.is_install_failed(name)
-        if want == AGENT_WANT_ABSENT:
-            if is_install_failed or self._engine.is_installed(name):
-                return self._package_operation(
-                    name, self._uninstall, AGENT_MODULE_STATE_FAILED
+            if name != AI_TOOLS_SECTION:
+                self._outcomes[name] = dict(outcome) if outcome else None
+        self._write_tried(tried)
+        if name != AI_TOOLS_SECTION:
+            want = str(entry.get("want", "") or "")
+            if outcome is None and not is_cut and want in CONFIGURING_WANTS:
+                try:
+                    self._engine.mark_configured(name)
+                except OSError as error:
+                    self._log(f"{name}: could not mark it configured: {error}")
+            if outcome is not None:
+                said = " ".join(
+                    f"{key}={value}" for key, value in outcome["params"].items()
                 )
-            self._engine.clear_configured(name)
-            return None
-        if want not in AGENT_PRESENT_WANTS:
-            self._log(f"{name}: want {want!r} is not one this agent knows")
-            return None
-        if is_install_failed or not self._engine.is_installed(name):
-            failure = self._package_operation(
-                name, self._install, AGENT_MODULE_STATE_INSTALL_FAILED
-            )
-            if failure:
-                return failure
-            if _method_of(wanted) == AGENT_METHOD_CONTAINER:
-                with self._lock:
-                    self._is_containers_marked = True
-        elif self._engine.take_version_switch(name):
-            failure = self._package_operation(
-                name, self._switch_version, AGENT_MODULE_STATE_FAILED
-            )
-            if failure:
-                return failure
-        if want not in CONFIGURING_WANTS:
-            return None
-        failure = self._apply_one(name, runner, want, wanted.get("config"))
-        if failure is None:
-            self._engine.mark_configured(name)
-            return None
-        return {"state": AGENT_MODULE_STATE_FAILED, **failure}
+                self._log(f"{name}: {outcome['code']} {said}".rstrip()[:500])
+            self._engine.record_failure(name, outcome)
+            self._engine.publish_task(name, task.row(), "", {})
+            if task.kind == PLAN_CONFIGURE:
+                self._engine.refresh_one(name)
+        with self._idle:
+            if self._tasks.get(name) is task:
+                del self._tasks[name]
+            self._settle_hash()
+            self._idle.notify_all()
+        return True
 
-    def _install(self, name: str, on_line) -> dict:
-        return self._engine.install(name, receive=self._receive, on_line=on_line)
-
-    def _uninstall(self, name: str, on_line) -> dict:
-        return self._engine.uninstall(name, on_line=on_line)
-
-    def _switch_version(self, name: str, on_line) -> dict:
-        return self._engine.switch_version(name, receive=self._receive, on_line=on_line)
-
-    def _package_operation(
-        self, name: str, operation, failed_state: str
-    ) -> "dict | None":
-        """Run one package operation with its output up a log stream.
+    def task_changed(self, task) -> None:
+        """Put a module task's row on the module's report row.
 
         Args:
-            name: The module name.
-            operation: Called with ``(name, on_line)``; returns empty or
-                ``{"code", "params"}``.
-            failed_state: The state the module reads when the operation
-                fails, ``install_failed`` or ``failed``.
+            task: The task.
+        """
+        if task.name != AI_TOOLS_SECTION:
+            self._engine.publish_task(task.name, task.row(), task.state(), task.wait())
+
+    def pending_wait(self, task) -> dict:
+        """What a step waiting for something outside the agent names.
+
+        Args:
+            task: The task.
 
         Returns:
-            None when it took, ``{"state", "code", "params"}`` when it did
-            not.
+            The runner's own wait where it names one, ``reboot_required``
+            among them; else ``waiting_for_check {seconds}``.
         """
-        log = self._open_log(name)
-        refusal = operation(name, log.send if log is not None else None)
-        if log is not None:
-            if refusal:
-                state = failed_state
-            else:
-                state = str((self._engine.report().get(name) or {}).get("state", ""))
-            log.close(
-                state,
-                str(refusal.get("code", "") or "") if refusal else "",
-                dict(refusal.get("params") or {}) if refusal else {},
-            )
-        if refusal:
-            self._log(f"{name}: {refusal['code']}")
-            return {
-                "state": failed_state,
-                "code": refusal["code"],
-                "params": dict(refusal.get("params", {})),
-            }
-        return None
+        runner = self._runner_of(task.name)
+        wait = {}
+        if runner is not None:
+            try:
+                wait = dict(runner.install_wait() or {})
+            except Exception:  # noqa: BLE001 - a wait that cannot be read names none
+                wait = {}
+        if str(wait.get("code", "") or ""):
+            return {"code": wait["code"], "params": dict(wait.get("params") or {})}
+        return {
+            "code": AGENT_WAIT_CHECK,
+            "params": {"seconds": int(self._recheck_s)},
+        }
 
-    def _open_log(self, name: str) -> "LogStream | None":
-        """A ``log {module}`` stream to the hub, or None with no socket."""
-        if self._open_stream is None:
+    def closing_state(self, task) -> tuple:
+        """The state and the failure a task's log stream closes with.
+
+        Args:
+            task: The task, ended.
+
+        Returns:
+            ``(state, failure)``: the module's state as the report now
+            reads it, and its last task's failure, None when it took.
+        """
+        state = str((self._engine.report().get(task.name) or {}).get("state", ""))
+        with self._lock:
+            return state, self._outcomes.get(task.name)
+
+    def open_log(self, name: str) -> "LogStream | None":
+        """A ``log {module}`` stream to the hub, or None with no socket.
+
+        Args:
+            name: The module name; ``ai_tools`` opens none.
+
+        Returns:
+            The stream.
+        """
+        if self._open_stream is None or name == AI_TOOLS_SECTION:
             return None
         try:
             return LogStream(self._open_stream(STREAM_KIND_LOG, module=name))
         except GatewayUnreachable:
             return None
 
-    def _receive(self, name: str, artifact: dict) -> dict:
+    def receive(self, name: str, artifact: dict) -> dict:
         """One artifact's bytes, down a ``package {module, artifact, digest}`` stream.
 
         Args:
@@ -686,73 +697,192 @@ class DesiredStateApplier:
             return {"code": RETRIED_CODE, "params": {}}
         return PackageStream(channel, directory=self._package_dir).receive()
 
-    def _apply_one(self, name: str, runner, want: str, config) -> "dict | None":
-        """Apply one installed module's configuration and settle its unit.
+    def wait_for_containers(self, task) -> None:
+        """Wait until Containers reads ``running`` and has no task.
 
         Args:
-            name: The module name.
-            runner: Its runner.
-            want: ``running`` or ``stopped``.
-            config: The configuration the state carries for it.
+            task: The container module's task.
+
+        Raises:
+            ModuleApplyError: ``module_needed {module, state}`` when
+                Containers' ``want`` is not ``running``, or when it has no
+                task and does not read ``running``.
+            StepSuperseded: When the task holds a newer entry meanwhile.
+        """
+        while True:
+            with self._lock:
+                want = self._containers_want()
+                containers = self._tasks.get(CONTAINERS_MODULE)
+            if want != AGENT_WANT_RUNNING:
+                raise self._module_needed()
+            if containers is None:
+                if self._containers_state() == AGENT_WANT_RUNNING:
+                    task.set_wait({})
+                    return
+                raise self._module_needed()
+            task.set_wait(module_wait(CONTAINERS_MODULE))
+            task.wait_for_task(containers)
+
+    def render_containers(self, task) -> None:
+        """Ask Containers for a configure task, and wait for it to end.
+
+        Containers' running task takes the ask as a newer entry and
+        configures once more after its plan; two asks while it runs make
+        one more configure.
+
+        Args:
+            task: The container module's task.
+
+        Raises:
+            ModuleApplyError: ``module_needed {module, state}`` when
+                Containers is not to run, or does not read ``running``
+                afterwards.
+            StepSuperseded: When the task holds a newer entry meanwhile.
+        """
+        made = None
+        with self._lock:
+            entry = self._modules.get(CONTAINERS_MODULE)
+            if entry is None or self._containers_want() != AGENT_WANT_RUNNING:
+                containers = None
+            else:
+                containers = self._tasks.get(CONTAINERS_MODULE)
+                entry_hash = _section_hash(entry)
+                if containers is not None and containers.is_running:
+                    containers.offer(entry, entry_hash)
+                else:
+                    containers = made = self._new_task(
+                        CONTAINERS_MODULE, entry, entry_hash
+                    )
+        if containers is None:
+            raise self._module_needed()
+        if made is not None:
+            made.start()
+        task.set_wait(module_wait(CONTAINERS_MODULE))
+        task.wait_for_task(containers)
+        task.set_wait({})
+        if self._containers_state() != AGENT_WANT_RUNNING:
+            raise self._module_needed()
+
+    def _is_settled(self, module: str) -> bool:
+        """Whether no state is pending and the module's task has ended. Call under the lock."""
+        if self._pending is not None or self._is_dispatching:
+            return False
+        if module:
+            return module not in self._tasks
+        return not self._tasks
+
+    def _offer(self, name: str, entry: dict, entry_hash: str):
+        """Hand one entry to the module's running task, or make a task for it. Call under the lock.
 
         Returns:
-            None when it took, ``{"code", "params"}`` when it did not, with
-            ``state`` ``install_failed`` for a failed step of the module's
-            first start.
+            The task made, for the caller to start; None when none was.
         """
+        task = self._tasks.get(name)
+        if task is not None and task.is_running:
+            if task.entry_hash != entry_hash:
+                task.offer(entry, entry_hash)
+            return None
+        if entry_hash == self._tried.get(name):
+            return None
+        return self._new_task(name, entry, entry_hash)
+
+    def _new_task(self, name: str, entry: dict, entry_hash: str):
+        """A task for one module, kept as its running one. Call under the lock."""
+        task = ModuleTask(
+            name=name,
+            entry=entry,
+            entry_hash=entry_hash,
+            owner=self,
+            locks=self._locks,
+            log=self._log,
+            recheck_s=self._recheck_s,
+        )
+        self._tasks[name] = task
+        return task
+
+    def _runner_of(self, name: str):
+        """The runner of one module, a container module's made since the start among them."""
+        return self._runners.get(name) or self._engine.runner_of(name)
+
+    def _containers_want(self) -> str:
+        """Containers' ``want`` in the latest state. Call under the lock."""
+        entry = self._modules.get(CONTAINERS_MODULE) or {}
+        return str(entry.get("want", "") or "")
+
+    def _containers_state(self) -> str:
+        """Containers' state as its row reads it now."""
+        row = self._engine.report().get(CONTAINERS_MODULE) or {}
+        return str(row.get("state", "") or "")
+
+    def _module_needed(self) -> ModuleApplyError:
+        """``module_needed {module, state}`` naming Containers and the state it reads."""
+        return ModuleApplyError(
+            CODE_MODULE_NEEDED,
+            {"module": CONTAINERS_MODULE, "state": self._containers_state()},
+        )
+
+    def _apply_desktop(self, wanted) -> None:
+        """Give the desktop host the seat password the hub holds.
+
+        The Remote desktop module writes it into RustDesk's settings when it
+        applies, and only when it is not the one written there.
+
+        Args:
+            wanted: The state's ``desktop`` section, or anything else when
+                it carries none.
+        """
+        if self._rdp is None or not isinstance(wanted, dict):
+            return
+        self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
+
+    def _write_tried(self, tried: dict) -> None:
+        """Keep the hashes last tried on disk. A failure is a line in the log."""
         try:
-            runner.apply(dict(config) if isinstance(config, dict) else {})
-            if want == AGENT_WANT_RUNNING:
-                runner.start()
-            elif want == AGENT_WANT_STOPPED:
-                runner.stop()
-            self._log(f"{name}: {want}")
-        except ModuleInstallPending:
-            return {"code": PENDING_CODE, "params": {}}
-        except ModuleSetupError as error:
-            said = " ".join(f"{key}={value}" for key, value in error.params.items())
-            self._log(f"{name}: {error.code} {said}".rstrip()[:500])
-            return {
-                "state": AGENT_MODULE_STATE_INSTALL_FAILED,
-                "code": error.code,
-                "params": dict(error.params),
+            self._store.write_tried(tried)
+        except OSError as error:
+            self._log(f"could not keep the tried state: {error}")
+
+    def _settle_hash(self) -> None:
+        """Move the applied hash and the state error by every mentioned module's task. Call under the lock."""
+        first_failure = None
+        for name in self._order:
+            outcome = self._outcomes.get(name)
+            if outcome is not None and first_failure is None:
+                first_failure = {"module": name, **outcome}
+        if first_failure is not None:
+            self._state_error = {
+                "code": first_failure["code"],
+                "params": {
+                    "module": first_failure["module"],
+                    **first_failure["params"],
+                },
             }
-        except ModuleApplyError as error:
-            said = " ".join(f"{key}={value}" for key, value in error.params.items())
-            self._log(f"{name}: {error.code} {said}".rstrip()[:500])
-            return {"code": error.code, "params": dict(error.params)}
-        except PlatformUnsupportedError:
-            return {"code": "unsupported_platform", "params": {}}
-        except Exception as error:  # noqa: BLE001 - reported, never raised
-            self._log(f"{name}: {error}")
-            return {"code": "apply_failed", "params": {"detail": str(error)[:200]}}
-        return None
+            return
+        self._state_error = None
+        is_busy = any(name in self._tasks for name in self._order) or (
+            AI_TOOLS_SECTION in self._tasks
+        )
+        if not is_busy:
+            self._applied_hash = str(self._document.get("hash", "") or "")
 
     def _run(self) -> None:
         while True:
-            with self._lock:
-                timeout_s = AGENT_MODULE_INSTALL_RECHECK_S if self._rechecked else None
-            is_woken = self._wakeup.wait(timeout_s)
+            self._wakeup.wait()
             self._wakeup.clear()
-            if not is_woken:
-                with self._lock:
-                    if self._pending is None:
-                        self._pending = self._rechecked
             while True:
                 with self._lock:
                     pending = self._pending
                     self._pending = None
+                    self._is_dispatching = pending is not None
                 if pending is None:
                     with self._idle:
                         self._idle.notify_all()
                     break
-                with self._idle:
-                    self._is_applying = True
                 try:
                     self.apply(pending)
                 except Exception as error:  # noqa: BLE001 - the loop must survive
                     self._log(f"applying the desired state crashed: {error}")
                 finally:
                     with self._idle:
-                        self._is_applying = False
+                        self._is_dispatching = False
                         self._idle.notify_all()

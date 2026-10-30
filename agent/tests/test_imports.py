@@ -92,6 +92,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.core.network",
     "neutrino_agent.core.self_update",
     "neutrino_agent.core.session",
+    "neutrino_agent.core.tasks",
     "neutrino_agent.core.static_key",
     "neutrino_agent.core.store",
     "neutrino_agent.core.version",

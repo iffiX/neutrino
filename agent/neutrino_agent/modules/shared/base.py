@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from dataclasses import dataclass, field
 
 from neutrino_agent.constants import (
     AGENT_ARTIFACT_KEPT_SUFFIXES,
@@ -26,6 +27,7 @@ from neutrino_agent.constants import (
     AGENT_ARTIFACT_KIND_PKG,
     AGENT_LOG_ROTATED_SUFFIX,
     AGENT_MODULE_JOURNAL_LINES,
+    AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
 )
@@ -67,6 +69,32 @@ def command_outcome(
         "params": dict(params or {}),
         "output": output,
     }
+
+
+@dataclass(frozen=True)
+class ModuleStep:
+    """One step of a module's task: a named part with one start and one end.
+
+    Attributes:
+        name: The step's name, from the closed list every surface words.
+        run: Called with the task's context, which logs a line, receives an
+            artifact and waits for another module; raises
+            :class:`ModuleApplyError` when the step fails and
+            :class:`ModuleInstallPending` while what it waits for outside
+            the agent has not happened, after which it runs again.
+        params: What the step is about, such as ``{"account": "anna"}``.
+        locks: The step locks it takes, ``(lock, mode)`` pairs.
+        failed_state: The state a failure of the step reads,
+            ``install_failed`` or ``failed``.
+        error_code: The code an unexpected exception of the step reads.
+    """
+
+    name: str
+    run: object
+    params: dict = field(default_factory=dict)
+    locks: tuple = ()
+    failed_state: str = AGENT_MODULE_STATE_FAILED
+    error_code: str = "apply_failed"
 
 
 class ModuleRunner:
@@ -152,6 +180,55 @@ class ModuleRunner:
             source_sets: ``{name: {probe, sources, variables}}``, each set a
                 recipe of the state names.
         """
+
+    def step_locks(self, step: str) -> tuple:
+        """The step locks this module adds to one of its steps.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            ``(lock, mode)`` pairs; none by default.
+        """
+        return ()
+
+    def install_steps(self, recipe: dict, steps: list) -> list:
+        """The steps of this module's install.
+
+        Args:
+            recipe: The module's recipe.
+            steps: The :class:`ModuleStep` list the install method plans.
+
+        Returns:
+            The steps; the method's own by default.
+        """
+        return steps
+
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The steps that apply this module's configuration and settle its unit.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``, as the core
+                plans them.
+
+        Returns:
+            The steps; the core's own by default.
+        """
+        return steps
+
+    def uninstall_steps(self, recipe: dict, steps: list) -> list:
+        """The steps of this module's uninstall.
+
+        Args:
+            recipe: The module's recipe.
+            steps: The one ``uninstall`` step the core plans.
+
+        Returns:
+            The steps; the core's own by default.
+        """
+        return steps
 
     def install(self, recipe: dict) -> None:
         """Install what the recipe names by name: a ``hub`` entry's system packages.

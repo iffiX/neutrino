@@ -964,6 +964,16 @@ def test_a_stream_with_no_session_is_refused(fake, config_path):
         agent._open_stream("log", module="samba")
 
 
+def wait_for(check, timeout_s: float = 5.0) -> bool:
+    """Whether a check passes within the time."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def installer(monkeypatch) -> list:
     """The self-update replaced at its two seams."""
     installed: list = []
@@ -1035,6 +1045,37 @@ def test_a_reinstall_command_opens_the_same_package_stream(
 
     assert [kind for _, kind, _, _ in installed] == ["deb"]
     assert outcome["output"] == "reinstall launched\n"
+
+
+def test_the_self_update_waits_for_a_module_s_package_step_and_holds_the_lock(
+    fake, config_path, monkeypatch
+):
+    """The agent never cuts its own dpkg or msi run: the update launches once
+    a module's package step lets ``package_manager`` go, and holds it until
+    the install wrote its result."""
+    installed = installer(monkeypatch)
+    written = threading.Event()
+
+    def wait_reinstall_result(state_dir, timeout_s):
+        written.wait(timeout_s)
+
+    monkeypatch.setattr(
+        loop_module.self_update, "wait_reinstall_result", wait_reinstall_result
+    )
+    agent = live(agent_on(fake, config=config_path), fake)
+    locks = agent._desired.locks
+    package_manager = (("package_manager", "alone"),)
+    locks.acquire(package_manager, "samba")
+
+    outcome = agent._run_command("agent", "reinstall", {})
+
+    assert outcome["output"] == "reinstall launched\n"
+    assert installed == []
+    locks.release(package_manager, "samba")
+    assert wait_for(lambda: len(installed) == 1)
+    assert locks.holders("package_manager") == ["agent"]
+    written.set()
+    assert wait_for(lambda: locks.holders("package_manager") == [])
 
 
 def test_a_command_with_no_binding_is_typed(fake, config_path):

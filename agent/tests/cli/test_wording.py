@@ -52,12 +52,19 @@ UNSTRUCTURED_CODES = (
 
 # What a module runner refuses with, raised by name rather than emitted as
 # a literal, what the engine records against a built-in row, and what a
-# step's wait names.
+# task's wait names.
 MODULE_CODES = (
     "download_failed",
     "module_not_orderable",
+    "install_unconfirmed",
+    "uninstall_unconfirmed",
+    "runner_unknown",
+    "method_unknown",
     "waiting_for_lock",
     "waiting_for_package_manager",
+    "waiting_for_module",
+    "waiting_for_check",
+    "module_needed",
     "package_manager_busy",
     "rdp_takeover_failed",
     "rdp_restore_failed",
@@ -151,7 +158,7 @@ def test_the_scan_finds_the_codes_it_is_meant_to():
     # A scan that matched nothing would pass the completeness test silently.
     found = emitted_codes()
 
-    assert "module_not_orderable" in found
+    assert "apply_failed" in found
     assert "hub_unreachable" in found
     assert len(found) > 10
 

@@ -32,6 +32,7 @@ Not pure: runs cc-switch as accounts and writes the records.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import shutil
@@ -62,7 +63,9 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_STATE_SWITCHED_BACK,
 )
 from neutrino_agent.ai_tools.switcher import AiToolsAccountSwitcher
-from neutrino_agent.exceptions import ToolSwitchError
+from neutrino_agent.constants import AGENT_STEP_ARTIFACT, AGENT_STEP_TOOLS
+from neutrino_agent.exceptions import ModuleApplyError, ToolSwitchError
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.package import check_received, remove_received
 from neutrino_agent.streams.package import CODE_UNREACHABLE
 
@@ -104,7 +107,7 @@ class AiToolsApplier:
         self._results: "list | None" = None
 
     def apply(self, section, state_hash: str, receive=None) -> None:
-        """Make one state's section true, once per state.
+        """Make one state's section true, once per state, in the caller's thread.
 
         Args:
             section: The state's ``ai_tools``; anything but a dict leaves
@@ -117,11 +120,39 @@ class AiToolsApplier:
                 ``{"path", "sha256"}`` or ``{"code", "params"}``; None
                 fetches nothing.
         """
-        if not isinstance(section, dict):
-            return
         with self._lock:
             if state_hash and state_hash == self._applied_hash:
                 return
+        for step in self.steps(section, receive=receive):
+            try:
+                step.run(None)
+            except ModuleApplyError:
+                return
+        if isinstance(section, dict):
+            with self._lock:
+                self._applied_hash = state_hash
+
+    def steps(self, section, receive=None) -> list:
+        """The steps that make one state's section true.
+
+        ``artifact cc_switch`` comes first while no copy of the version the
+        section names is there, then one ``tools {account}`` per account
+        the section names, then one per account it switched that the
+        section no longer names. Each step puts its account's result in the
+        report as it ends.
+
+        Args:
+            section: The state's ``ai_tools``; anything but a dict plans
+                nothing.
+            receive: Called with the module and the artifact, as
+                :meth:`apply` takes it.
+
+        Returns:
+            :class:`ModuleStep` each; none for a section that names no
+            account and leaves none, whose results are then empty.
+        """
+        if not isinstance(section, dict):
+            return []
         is_enabled = bool(section.get("is_enabled"))
         named = []
         if is_enabled:
@@ -130,34 +161,58 @@ class AiToolsApplier:
                     named.append(entry)
         names = [str(entry["account"]) for entry in named]
         leaving = [name for name in self.switched_accounts() if name not in names]
-        if names or leaving:
-            version = str(section.get("cc_switch_version", "") or "")
-            if not is_enabled and os.path.isfile(self._binary):
-                version = ""
-            artifact = section.get(AI_TOOLS_CC_SWITCH_ARTIFACT_KEY)
-            refusal = self._ensure_copy(
-                version, artifact if isinstance(artifact, dict) else {}, receive
+        results: dict = {}
+        if not names and not leaving:
+            with self._lock:
+                self._results = []
+            return []
+        version = str(section.get("cc_switch_version", "") or "")
+        if not is_enabled and os.path.isfile(self._binary):
+            version = ""
+        artifact = section.get(AI_TOOLS_CC_SWITCH_ARTIFACT_KEY)
+        steps = []
+        if not self._is_copy_current(version):
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_ARTIFACT,
+                    params={"name": AI_TOOLS_CC_SWITCH_MODULE},
+                    run=functools.partial(
+                        self._run_copy,
+                        version,
+                        dict(artifact) if isinstance(artifact, dict) else {},
+                        receive,
+                        names + leaving,
+                    ),
+                )
             )
-            if refusal is not None:
-                with self._lock:
-                    self._results = self._refused_all(names + leaving, refusal)
-                return
-        results = []
         for entry in named:
             configs = entry.get("tool_configs")
-            switched = self._switch(
-                str(entry["account"]),
-                str(entry.get("password", "") or ""),
-                section,
-                configs if isinstance(configs, dict) else {},
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_TOOLS,
+                    params={"account": str(entry["account"])},
+                    run=functools.partial(
+                        self._run_switch,
+                        results,
+                        names + leaving,
+                        str(entry["account"]),
+                        str(entry.get("password", "") or ""),
+                        section,
+                        configs if isinstance(configs, dict) else {},
+                    ),
+                )
             )
-            if switched is not None:
-                results.append(switched)
         for account in leaving:
-            results.append(self._switch_back(account))
-        with self._lock:
-            self._results = results
-            self._applied_hash = state_hash
+            steps.append(
+                ModuleStep(
+                    name=AGENT_STEP_TOOLS,
+                    params={"account": account},
+                    run=functools.partial(
+                        self._run_switch_back, results, names + leaving, account
+                    ),
+                )
+            )
+        return steps
 
     def switch_back_all(self) -> list:
         """Switch back every account this agent switched, before it goes.
@@ -218,6 +273,58 @@ class AiToolsApplier:
             for name in names
             if not name.startswith(".") and self._has_records(name)
         )
+
+    def _is_copy_current(self, version: str) -> bool:
+        """Whether a copy of cc-switch of the version named is there. An empty version takes any copy."""
+        if not os.path.isfile(self._binary):
+            return False
+        return not version or switcher_copy.installed_version(self._root) == version
+
+    def _run_copy(
+        self, version: str, artifact: dict, receive, accounts: list, context
+    ) -> None:
+        """The ``artifact cc_switch`` step: a copy of the version named, fetched when it is not there.
+
+        Raises:
+            ModuleApplyError: The copy's refusal, which is every account's
+                result; the steps after it do not run.
+        """
+        refusal = self._ensure_copy(version, artifact, receive)
+        if refusal is None:
+            return
+        with self._lock:
+            self._results = self._refused_all(accounts, refusal)
+        raise ModuleApplyError(refusal["code"], dict(refusal["params"]))
+
+    def _run_switch(
+        self,
+        results: dict,
+        accounts: list,
+        account: str,
+        password: str,
+        section: dict,
+        tool_configs: dict,
+        context,
+    ) -> None:
+        """One ``tools {account}`` step that points an account's tools at the hub."""
+        switched = self._switch(account, password, section, tool_configs)
+        if switched is not None:
+            results[account] = switched
+        self._keep_results(results, accounts)
+
+    def _run_switch_back(
+        self, results: dict, accounts: list, account: str, context
+    ) -> None:
+        """One ``tools {account}`` step that puts an account's tools back."""
+        results[account] = self._switch_back(account)
+        self._keep_results(results, accounts)
+
+    def _keep_results(self, results: dict, accounts: list) -> None:
+        """The report's results: each account's done so far, in the plan's order."""
+        with self._lock:
+            self._results = [
+                results[account] for account in accounts if account in results
+            ]
 
     def _switch(
         self, account: str, password: str, section: dict, tool_configs: dict

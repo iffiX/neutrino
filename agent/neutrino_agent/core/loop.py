@@ -51,6 +51,9 @@ from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_NAME,
     AGENT_FAILURES_DIR_NAME,
     AGENT_HUB_SOFTWARE_PREFIX,
+    AGENT_LOCK_ALONE,
+    AGENT_LOCK_PACKAGE_MANAGER,
+    AGENT_LOCK_SELF_UPDATE_HOLDER,
     AGENT_PACKAGE_DIR_NAME,
     AGENT_PROBE_TIMEOUT_S,
     AGENT_REFUSAL_LOG_INTERVAL_S,
@@ -60,6 +63,7 @@ from neutrino_agent.constants import (
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
+    AGENT_UPDATE_HOLD_S,
     AGENT_UPDATE_UNIT,
     PROTOCOL,
 )
@@ -114,6 +118,8 @@ IDLE_POLL_INTERVAL_S = 2
 
 # What a version ends in when it was built from a checkout.
 DEV_VERSION_SUFFIX = "+dev"
+# The step lock the self-update takes before it launches.
+SELF_UPDATE_LOCKS = ((AGENT_LOCK_PACKAGE_MANAGER, AGENT_LOCK_ALONE),)
 
 # The events of the agent's local channel.
 EVENT_SESSION_OPEN = "session_open"
@@ -1354,6 +1360,7 @@ class Agent:
                     runner_of=self._engine.runner_of,
                     settle=self._desired.settle,
                     on_module_changed=self._report_module_now,
+                    locks=self._desired.locks,
                 )
             else:
                 self._operator = None
@@ -1482,6 +1489,40 @@ class Agent:
                 self._update_error = {"code": str(error), "params": {"target": target}}
             self._log(f"update to {target} refused: {error}")
             return False
+        launch = functools.partial(self._launch_update, target, path, kind, version)
+        locks = self._desired.locks
+        if locks.try_acquire(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER):
+            return launch()
+        self._log(f"update to {target} waits for a module's package step to end")
+        threading.Thread(
+            target=self._launch_when_free,
+            args=(launch,),
+            name="self_update",
+            daemon=True,
+        ).start()
+        return True
+
+    def _launch_when_free(self, launch) -> None:
+        """Take ``package_manager`` once a module's step lets it go, then launch the install."""
+        self._desired.locks.acquire(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER)
+        launch()
+
+    def _launch_update(self, target: str, path: str, kind: str, version: str) -> bool:
+        """Launch the install of this agent's package, holding ``package_manager``.
+
+        The lock is held until the install's result is written or the hold
+        runs out; an install that goes through restarts the agent first.
+
+        Args:
+            target: What the attempt is latched under.
+            path: The package file, its digest checked.
+            kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
+            version: The package's version, as :meth:`_install_from_hub`
+                takes it.
+
+        Returns:
+            True when the install was launched.
+        """
         try:
             self_update.run_update(
                 path,
@@ -1491,11 +1532,22 @@ class Agent:
                 is_reinstall=version in ("", AGENT_VERSION),
             )
         except SelfUpdateError as error:
+            self._desired.locks.release(
+                SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
+            )
             with self._lock:
                 self._update_error = {"code": str(error), "params": {"target": target}}
             self._log(f"update to {target} failed: {error}")
             return False
+        threading.Thread(
+            target=self._release_after_update, name="self_update_hold", daemon=True
+        ).start()
         return True
+
+    def _release_after_update(self) -> None:
+        """Let ``package_manager`` go once the launched install wrote its result."""
+        self_update.wait_reinstall_result(self._var_dir, timeout_s=AGENT_UPDATE_HOLD_S)
+        self._desired.locks.release(SELF_UPDATE_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER)
 
 
 def _framed(lines: queue.Queue):

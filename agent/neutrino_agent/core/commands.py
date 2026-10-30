@@ -9,7 +9,9 @@ field is the prefix. A module or a verb this build does not have is
 refused ``verb_unknown``.
 
 Installing a module is no verb: it follows from the hub's ``want``, and
-``reinstall`` only puts this agent's own package back.
+``reinstall`` only puts this agent's own package back. A module verb that
+acts waits for that module's task alone, and Containers' ``control`` runs
+holding the step lock ``containers`` shared.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -25,8 +27,11 @@ from dataclasses import dataclass, field
 from neutrino_agent.constants import (
     AGENT_COMMAND_MODULE,
     AGENT_COMMAND_TIMEOUT_S,
+    AGENT_CONTAINERS_MODULE,
     AGENT_KILL_GRACE_S,
     AGENT_KILL_PROTECTED_PIDS,
+    AGENT_LOCK_CONTAINERS,
+    AGENT_LOCK_SHARED,
     AGENT_MODULE_COMMAND_SETTLE_S,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
@@ -58,6 +63,10 @@ AGENT_VERBS = (
 POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
 # How often a signalled process is looked in on while its grace runs.
 KILL_POLL_S = 0.05
+# The step locks a module verb holds while it runs, by ``(module, verb)``.
+VERB_LOCKS = {
+    (AGENT_CONTAINERS_MODULE, "control"): ((AGENT_LOCK_CONTAINERS, AGENT_LOCK_SHARED),),
+}
 
 
 @dataclass
@@ -101,6 +110,7 @@ class DeviceOperator:
         remote_desktop=None,
         settle=None,
         on_module_changed=None,
+        locks=None,
     ):
         """
         Args:
@@ -114,11 +124,13 @@ class DeviceOperator:
                 runs none of. None refuses every module verb.
             remote_desktop: The reader the remote desktop verbs run on.
                 None reads this machine through the platform.
-            settle: Called with a timeout before a module verb that acts
-                runs, to let a pending desired state apply first; None
-                waits for nothing.
+            settle: Called with the module and a timeout before a verb of
+                it that acts runs; returns whether the module's task ended
+                in time. None waits for nothing.
             on_module_changed: Called with the module name after one of its
                 verbs succeeded, so its details are read again at once.
+            locks: The agent's :class:`StepLocks`, which a verb in
+                :data:`VERB_LOCKS` holds while it runs; None holds none.
         """
         self._platform = platform
         self._reinstall = reinstall
@@ -126,6 +138,7 @@ class DeviceOperator:
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
         self._settle = settle
         self._on_module_changed = on_module_changed
+        self._locks = locks
 
     def run(self, module: str, verb: str, args: dict, on_line=None) -> CommandOutcome:
         """Run one command.
@@ -165,11 +178,18 @@ class DeviceOperator:
         if (
             not is_reading
             and self._settle is not None
-            and not self._settle(AGENT_MODULE_COMMAND_SETTLE_S)
+            and not self._settle(module, AGENT_MODULE_COMMAND_SETTLE_S)
         ):
             return _refused("state_not_settled", module=module)
+        locks = VERB_LOCKS.get((module, verb), ()) if self._locks is not None else ()
         try:
-            outcome = runner.command(verb, dict(args), on_line)
+            if locks:
+                self._locks.acquire(locks, module)
+            try:
+                outcome = runner.command(verb, dict(args), on_line)
+            finally:
+                if locks:
+                    self._locks.release(locks, module)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             return _refused("agent_internal", error=type(error).__name__)
         exit_code = int(outcome.get("exit_code", 1))

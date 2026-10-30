@@ -157,6 +157,10 @@ AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
 AGENT_UPDATE_SCRIPT_NAME = "update.sh"
 AGENT_UPDATE_SCRIPT_MODE = 0o600
 AGENT_UPDATE_LOCK_TIMEOUT_S = 300
+# How long a launched self-update holds the step lock ``package_manager`` at
+# most, while no result tells it ended: the lock's wait and an install's own
+# timeout.
+AGENT_UPDATE_HOLD_S = 2100
 # The name before the kind's extension of the file a Linux or macOS install
 # links the received package to beside its script, and installs from: an
 # agent that starts clears the packages directory.
@@ -309,10 +313,9 @@ AGENT_REINSTALL_INSTALLED_CODES = (0, AGENT_UPDATE_MSI_REBOOT_CODE)
 # reads them again. The reporter never waits on a read.
 AGENT_MODULE_DETAILS_TTL_S = 5.0
 
-# How long a module command waits for a pending desired state to apply
-# before it runs against the configuration that state carries.
+# How long a module verb that acts waits for that module's task to end.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
-# How often a state whose apply waits on a running install is applied again.
+# How often a step that waits for something outside the agent checks it.
 AGENT_MODULE_INSTALL_RECHECK_S = 30.0
 
 # The step locks, in the one order a step takes them in.
@@ -327,13 +330,31 @@ AGENT_LOCK_ORDER = (
 # How a step takes a lock: beside other shared takers, or alone.
 AGENT_LOCK_SHARED = "shared"
 AGENT_LOCK_ALONE = "alone"
+# The holder a step lock names while the agent's own self-update holds it.
+AGENT_LOCK_SELF_UPDATE_HOLDER = "agent"
 # How often a module's dnf 5 runs again while another run holds the rpm
 # transaction lock, up to ``AGENT_UPDATE_LOCK_TIMEOUT_S``.
 AGENT_PACKAGE_LOCK_RETRY_S = 5
 
+# The steps the core plans. A module names its own steps beside them.
+AGENT_STEP_PACKAGES = "packages"
+AGENT_STEP_ARTIFACT = "artifact"
+AGENT_STEP_VERIFY = "verify"
+AGENT_STEP_SWITCH = "switch"
+AGENT_STEP_CONFIGURE = "configure"
+AGENT_STEP_START = "start"
+AGENT_STEP_STOP = "stop"
+AGENT_STEP_UNINSTALL = "uninstall"
+AGENT_STEP_WAIT_CONTAINERS = "wait_containers"
+AGENT_STEP_PULL = "pull"
+AGENT_STEP_RENDER = "render"
+AGENT_STEP_TOOLS = "tools"
+
 # The codes a task's wait names.
 AGENT_WAIT_LOCK = "waiting_for_lock"
 AGENT_WAIT_PACKAGE_MANAGER = "waiting_for_package_manager"
+AGENT_WAIT_MODULE = "waiting_for_module"
+AGENT_WAIT_CHECK = "waiting_for_check"
 
 # What this machine accumulated: the configured marks, a package in transit,
 # the last reinstall's result, all root-only, and the software the hub sends

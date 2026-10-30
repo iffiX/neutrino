@@ -251,17 +251,30 @@ class ContainerModuleRunner(ModuleRunner):
                 source serves an image; ``install_failed {detail}`` while
                 Containers has no Podman to pull with.
         """
+        for image in recipe_images(recipe):
+            self.pull_image(image)
+        self._hooks.installed(str(params_of(recipe).get("version", "") or ""))
+
+    def pull_image(self, image: dict) -> None:
+        """Pull one image the store lacks, from the fastest source that serves it.
+
+        Args:
+            image: ``{name, digest, sources}``, as :func:`recipe_images`
+                gives it.
+
+        Raises:
+            ModuleApplyError: ``download_failed {file, sources}`` when no
+                source serves it; ``install_failed {detail}`` while
+                Containers has no Podman to pull with.
+        """
         command = self._command()
         if not command:
             raise ModuleApplyError(
                 "install_failed", {"detail": "Containers has no Podman to pull with"}
             )
         references = image_references(podman=command)
-        for image in recipe_images(recipe):
-            if stored_reference(image["digest"], image["sources"], references):
-                continue
+        if not stored_reference(image["digest"], image["sources"], references):
             self._pull(command, image)
-        self._hooks.installed(str(params_of(recipe).get("version", "") or ""))
 
     def uninstall(self, recipe: dict) -> None:
         """Remove the module's containers, units, network, named volumes and unused images.

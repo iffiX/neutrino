@@ -103,7 +103,7 @@ CLI_CODE_WORDS = {
     "process_missing": "no process {pid} is running",
     "kill_failed": "process {pid} could not be ended: {detail}",
     "product_unknown": "{product} is not a remote desktop this agent reads",
-    "state_not_settled": "the machine is still applying its configuration; try again",
+    "state_not_settled": "{module} is still applying its configuration; try again",
     "unsupported_platform": "this machine cannot do this",
     "no_target_user": "that account does not exist on this machine",
     "rdp_takeover_failed": "RustDesk could not be taken over ({step}): {detail}",
@@ -226,6 +226,12 @@ CLI_CODE_WORDS = {
     "waiting_for_lock": "waiting for {lock}, held by {module}",
     "waiting_for_package_manager": (
         "waiting for the system's package manager, held by {holder}"
+    ),
+    "waiting_for_module": "waiting for {module} to be ready",
+    "waiting_for_check": "checking every {seconds} seconds",
+    "module_needed": (
+        "this module needs {module} running, and {module} is {state}; press "
+        "Install to try both again"
     ),
     "package_manager_busy": (
         "the system's package manager stayed busy for 5 minutes, held by "

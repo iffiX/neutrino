@@ -1,32 +1,34 @@
-"""The hub's state: kept root-only, made true in one order, hashed honestly.
+"""The hub's state: kept root-only, made true by one task per module, hashed honestly.
 
-What these pin: the fixed module order, what each ``want`` does to a
-module (absent uninstalls and clears the mark, installed puts the software
-there and nothing else, stopped and running install what is missing then
-configure and settle the unit, with the mark written on the first apply
-that took), a module the state does not mention untouched, an install's
-bytes asked for down a ``package {module, artifact, digest}`` stream and its output sent up
-a ``log {module}`` stream closed with the module's state, the applied
-hash moving only when every mentioned module applied, a failed module
-reported under the old hash and tried again only when its own entry changes
-unless the socket caused it, the hub's retry mark being such a change with
-the configuration unchanged and never running another module's failed step,
-the modules waiting behind a long step reported ``queued``, a failed install
-that left nothing keeping no hash, the first failure naming the state error,
-the file's mode and its older shapes read as nothing tried, the hashes kept
-under the agent's build so another build applies every module once again, the
-latest state winning when several arrive, and a state whose apply waits on a
-running install neither applied nor failed and applied again until the
-install has ended.
+What these pin: what each ``want`` plans (absent uninstalls and clears the
+mark, installed puts the software there and nothing else, stopped and
+running install what is missing then configure and settle the unit, with
+the mark written once the task took), a module the state does not mention
+untouched, an install's bytes asked for down a ``package {module, artifact,
+digest}`` stream, one ``log {module}`` stream per task with a ``step
+<i>/<n>`` line per step and closed with the module's state, the applied
+hash moving only when every mentioned module's task ended with no failure,
+the tried hash written at a task's end and none for ``hub_unreachable``, a
+failed module tried again only when its own entry changes, the hub's retry
+mark being such a change, the first failure in ``APPLY_ORDER`` naming the
+state error, the hashes kept under the agent's build, the tasks of two
+modules running at once, a newer entry taken at the next step boundary and
+at a waiting step's check, a step that waits for something outside the
+agent run again every recheck interval with no lock held, the wait of a
+step lock naming the module that holds it and a first step's wait reading
+``queued``, ``settle`` waiting for one module's task alone, a restart's
+replan from what the machine shows, and a container module waiting for
+Containers, asking it to render, and ending quietly while Containers is not
+to run.
 """
 
+import functools
 import hashlib
 import json
 import os
 import stat
 import threading
-
-import pytest
+import time
 
 import neutrino_agent.core.desired_state as desired_state_module
 from neutrino_agent.core.desired_state import (
@@ -41,6 +43,8 @@ from neutrino_agent.exceptions import (
     ModuleInstallPending,
     ModuleSetupError,
 )
+from neutrino_agent.modules.shared.base import ModuleStep
+from neutrino_agent.modules.shared.step_locks import StepLocks
 from tests.streams.fake_channel import FakeChannel
 
 INSTALL = {
@@ -52,34 +56,48 @@ INSTALL = {
         "uninstall": {"packages": ["x"], "post_uninstall": []},
     },
 }
+CONTAINER_INSTALL = {"runner": "container", "method": "container", "params": {}}
 # The artifact a module's recipe receives in these tests.
 ARTIFACT = {"name": "gitea", "kind": "binary", "digest": "sha256:" + "ab" * 32}
-
-
 # The module whose recipe installs from bytes; the rest install by name.
 BYTE_MODULES = ("gitea",)
+# How long a test waits for the tasks to end.
+SETTLE_S = 5.0
+PACKAGE_LOCKS = (("package_manager", "alone"),)
+
+
+def wait_for_containers(context):
+    context.wait_for_containers()
+
+
+def render_containers(context):
+    context.render_containers()
 
 
 class FakeEngine:
-    """Observes a scripted set of installed modules and records the rest."""
+    """Observes a scripted set of installed modules and builds steps that record what runs."""
 
-    def __init__(self, names, *, absent=(), install_refusal=None):
-        self.names = list(names)
-        self.installed = {name for name in names if name not in absent}
+    def __init__(self, runners, *, absent=(), install_refusal=None):
+        self.runners = dict(runners)
+        self.names = list(runners)
+        self.installed = {name for name in self.names if name not in absent}
         self.configured: set = set()
         self.states: list = []
+        self.source_sets = None
         self.results: dict = {}
-        # Module name to the state its kept failure reads as.
-        self.failed_states: dict = {}
-        self.refreshes = 0
+        self.failures: dict = {}
         self.installs: list = []
         self.uninstalls: list = []
-        self.install_refusal = install_refusal
-        self.queued: list = []
-        self.held: list = []
         self.switching: set = set()
         self.switches: list = []
         self.switch_refusal = None
+        self.install_refusal = install_refusal
+        # Module name to what its install step waits on before it ends.
+        self.install_gates: dict = {}
+        # Module name to every row published for it, in order.
+        self.published: dict = {}
+        self.containers_state = "running"
+        self.lock = threading.Lock()
 
     def take_state(self, modules, source_sets=None):
         self.states.append(modules)
@@ -88,11 +106,78 @@ class FakeEngine:
     def container_runners(self):
         return {}
 
-    def is_installed(self, name):
+    def runner_of(self, name):
+        return self.runners.get(name)
+
+    def is_installed(self, name, entry=None):
         return name in self.installed
 
-    def is_configured(self, name):
-        return name in self.configured
+    def is_install_failed(self, name):
+        return (self.failures.get(name) or {}).get("state") == "install_failed"
+
+    def take_version_switch(self, name, entry):
+        return name in self.switching
+
+    def install_steps(self, name, entry):
+        steps = [
+            ModuleStep(
+                name="packages",
+                run=functools.partial(self._install, name),
+                locks=PACKAGE_LOCKS,
+                failed_state="install_failed",
+                error_code="install_failed",
+            )
+        ]
+        if entry.get("install", {}).get("method") == "container":
+            steps = [
+                ModuleStep(
+                    name="wait_containers",
+                    run=wait_for_containers,
+                    failed_state="install_failed",
+                ),
+                *steps,
+                ModuleStep(
+                    name="render", run=render_containers, failed_state="install_failed"
+                ),
+            ]
+        return steps
+
+    def switch_steps(self, name, entry):
+        return [
+            ModuleStep(
+                name="switch",
+                params={"version": "2"},
+                run=functools.partial(self._switch, name),
+                error_code="version_switch_failed",
+            )
+        ]
+
+    def configure_steps(self, name, entry, want):
+        runner = self.runners[name]
+        config = dict(entry.get("config") or {})
+        steps = []
+        if entry.get("install", {}).get("method") == "container":
+            steps.append(ModuleStep(name="wait_containers", run=wait_for_containers))
+        steps.append(
+            ModuleStep(name="configure", run=functools.partial(_apply, runner, config))
+        )
+        if want == "running":
+            steps.append(
+                ModuleStep(name="start", run=functools.partial(_start, runner))
+            )
+        else:
+            steps.append(ModuleStep(name="stop", run=functools.partial(_stop, runner)))
+        return steps
+
+    def uninstall_steps(self, name, entry):
+        return [
+            ModuleStep(
+                name="uninstall",
+                run=functools.partial(self._uninstall, name),
+                locks=PACKAGE_LOCKS,
+                error_code="uninstall_failed",
+            )
+        ]
 
     def mark_configured(self, name):
         self.configured.add(name)
@@ -103,58 +188,88 @@ class FakeEngine:
     def record_failure(self, name, failure):
         if failure:
             self.results[name] = (failure["code"], dict(failure["params"]))
-            self.failed_states[name] = failure["state"]
+            self.failures[name] = dict(failure)
         else:
             self.results[name] = ("", {})
-            self.failed_states.pop(name, None)
+            self.failures.pop(name, None)
 
-    def is_install_failed(self, name):
-        return self.failed_states.get(name) == "install_failed"
+    def publish_task(self, name, task, state, wait):
+        with self.lock:
+            self.published.setdefault(name, []).append((dict(task), state, dict(wait)))
+
+    def set_line_sink(self, on_line):
+        pass
 
     def refresh_now(self):
-        self.refreshes += 1
+        pass
 
-    def set_queued(self, names):
-        self.queued.append(list(names))
-
-    def hold_installing(self, names):
-        self.held.append(list(names))
+    def refresh_one(self, name):
+        pass
 
     def report(self):
-        return {
-            name: {"state": "installed" if name in self.installed else "absent"}
-            for name in self.names
-        }
+        rows = {"podman": {"state": self.containers_state}}
+        for name in self.names:
+            failure = self.failures.get(name)
+            if failure:
+                rows[name] = {"state": failure["state"]}
+            elif name == "podman":
+                continue
+            elif name in self.installed:
+                rows[name] = {"state": "installed"}
+            else:
+                rows[name] = {"state": "absent"}
+        return rows
 
-    def install(self, name, *, receive, on_line=None):
-        received = receive(name, ARTIFACT) if name in BYTE_MODULES else {}
+    def last(self, name):
+        """The last row published for one module, ``(task, state, wait)``."""
+        with self.lock:
+            rows = self.published.get(name) or []
+            return rows[-1] if rows else ({}, "", {})
+
+    def states_of(self, name):
+        with self.lock:
+            return [state for _task, state, _wait in self.published.get(name, [])]
+
+    def _install(self, name, context):
+        gate = self.install_gates.get(name)
+        if gate is not None:
+            gate.wait(SETTLE_S)
+        received = context.receive(ARTIFACT) if name in BYTE_MODULES else {}
         self.installs.append((name, received))
-        if on_line is not None:
-            on_line(f"{name}: installing")
+        context.log(f"{name}: installing")
         if "code" in received:
-            return received
+            raise ModuleApplyError(received["code"], received.get("params"))
         if self.install_refusal is not None:
-            return dict(self.install_refusal)
+            raise ModuleApplyError(
+                self.install_refusal["code"], self.install_refusal["params"]
+            )
         self.installed.add(name)
-        return {}
 
-    def take_version_switch(self, name):
-        return name in self.switching
-
-    def switch_version(self, name, *, receive, on_line=None):
+    def _switch(self, name, context):
         self.switches.append(name)
-        if on_line is not None:
-            on_line(f"{name}: switching")
         self.switching.discard(name)
-        return dict(self.switch_refusal) if self.switch_refusal else {}
+        if self.switch_refusal:
+            raise ModuleApplyError(
+                self.switch_refusal["code"], self.switch_refusal["params"]
+            )
 
-    def uninstall(self, name, *, on_line=None):
+    def _uninstall(self, name, context):
         self.uninstalls.append(name)
-        if on_line is not None:
-            on_line(f"{name}: uninstalling")
+        context.log(f"{name}: uninstalling")
         self.installed.discard(name)
         self.configured.discard(name)
-        return {}
+
+
+def _apply(runner, config, context):
+    runner.apply(config)
+
+
+def _start(runner, context):
+    runner.start()
+
+
+def _stop(runner, context):
+    runner.stop()
 
 
 class FakeShareHost:
@@ -170,11 +285,12 @@ class FakeShareHost:
 class FakeRunner:
     """A runner that records the verbs it is asked, and refuses on cue."""
 
-    def __init__(self, *, failure=None, journal=None):
+    def __init__(self, *, failure=None, journal=None, wait=None):
         self.failure = failure
         self.journal = journal if journal is not None else []
         self.applied: list = []
         self.stops = 0
+        self.wait = wait or {}
 
     def apply(self, config):
         if self.failure is not None:
@@ -188,6 +304,9 @@ class FakeRunner:
     def stop(self):
         self.stops += 1
         self.journal.append(("stop", id(self)))
+
+    def install_wait(self):
+        return dict(self.wait)
 
 
 class FakeSocket:
@@ -204,6 +323,11 @@ class FakeSocket:
         self.next_id += 2
         self.channels.append(channel)
         return channel
+
+
+def lines_of(channel) -> list:
+    """The lines a log stream sent, without their newlines."""
+    return [line.decode("utf-8").rstrip("\n") for line in channel.sent]
 
 
 def state(state_hash: str = "h1", **wants) -> dict:
@@ -228,38 +352,35 @@ def marked(document: dict, name: str, mark: str = "a1b2c3d4") -> dict:
     return document
 
 
-def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
+def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None, **extra):
     engine = engine if engine is not None else FakeEngine(runners)
-    held = DesiredStateApplier.__new__(DesiredStateApplier)
-    held._engine = engine
-    held._runners = dict(runners)
-    held._store = DesiredStateStore(path=str(tmp_path / "desired.json"))
-    held._rdp = rdp
-    held._log = lambda message: None
-    held._open_stream = open_stream
-    held._package_dir = str(tmp_path / "packages")
-    held._ai_tools = None
-    held._lock = threading.Lock()
-    held._idle = threading.Condition(held._lock)
-    held._is_applying = False
-    held._pending = None
-    held._applied_hash = ""
-    held._tried = {}
-    held._outcomes = {}
-    held._state_error = None
-    held._rechecked = None
-    held._wakeup = threading.Event()
+    held = DesiredStateApplier(
+        engine=engine,
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        rdp=rdp,
+        log=lambda message: None,
+        open_stream=open_stream,
+        package_dir=str(tmp_path / "packages"),
+        **extra,
+    )
     return held, engine
 
 
-def drive_once(held) -> None:
-    """One turn of the worker's own loop, in this thread."""
-    with held._lock:
-        pending = held._pending
-        held._pending = None
-    if pending is None:
-        return
-    held.apply(pending)
+def run(held, document) -> None:
+    """Make the state's tasks and wait for every one of them to end."""
+    held.apply(document)
+    assert held.settle("", SETTLE_S)
+
+
+def wait_until(check, timeout_s: float = SETTLE_S) -> bool:
+    """Whether a check passes within the time, looked at every few milliseconds."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.005)
+    return False
 
 
 # --- the store ---
@@ -295,17 +416,19 @@ def test_the_latest_state_is_the_one_last_taken(tmp_path):
 # --- the order and the four wants ---
 
 
-def test_modules_apply_in_the_fixed_order(tmp_path):
+def test_every_module_gets_its_task_and_the_order_is_the_fixed_one(tmp_path):
     journal: list = []
     runners = {name: FakeRunner(journal=journal) for name in reversed(APPLY_ORDER)}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(**{name: "running" for name in APPLY_ORDER}))
+    run(held, state(**{name: "running" for name in APPLY_ORDER}))
 
-    applied = [entry[1] for entry in journal if entry[0] == "apply"]
-    assert [id(runners[name]) for name in APPLY_ORDER] == applied
-    assert {entry[0] for entry in journal} == {"apply", "start"}
-    assert engine.states[0].keys() == set(APPLY_ORDER)
+    assert apply_order(engine.states[0], runners) == list(APPLY_ORDER)
+    assert {entry[1] for entry in journal if entry[0] == "apply"} == {
+        id(runner) for runner in runners.values()
+    }
+    assert engine.configured == set(APPLY_ORDER)
+    assert held.applied_hash == "h1"
 
 
 def test_installed_puts_the_software_there_and_nothing_else(tmp_path):
@@ -313,7 +436,7 @@ def test_installed_puts_the_software_there_and_nothing_else(tmp_path):
     engine = FakeEngine(runners, absent=("samba",))
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    held.apply(state(samba="installed"))
+    run(held, state(samba="installed"))
 
     assert [name for name, _ in engine.installs] == ["samba"]
     assert runners["samba"].applied == []
@@ -328,59 +451,62 @@ def test_running_installs_what_is_missing_configures_and_writes_the_mark(tmp_pat
     engine = FakeEngine(runners, absent=("samba",))
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     assert [name for name, _ in engine.installs] == ["samba"]
     assert runners["samba"].applied == [{"n": "samba"}]
-    assert runners["samba"].stops == 0
     assert engine.configured == {"samba"}
-    assert held.applied_hash == "h1"
+    task, _state, _wait = engine.last("samba")
+    assert [step["name"] for step in task["steps"]] == [
+        "packages",
+        "configure",
+        "start",
+    ]
+    assert (task["index"], task["is_running"]) == (3, False)
+    # The install task reads installing from its start to its end.
+    assert set(engine.states_of("samba")[:-1]) == {"installing"}
+    assert engine.states_of("samba")[-1] == ""
 
 
 def test_running_on_software_that_is_there_installs_nothing(tmp_path):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     assert engine.installs == []
     assert runners["samba"].applied == [{"n": "samba"}]
-    assert engine.configured == {"samba"}
+    # A configure task leaves the state the machine shows.
+    assert set(engine.states_of("samba")) == {""}
 
 
 def test_an_installed_module_of_another_version_is_switched_then_applied(tmp_path):
-    runners = {"vscode": FakeRunner()}
-    engine = FakeEngine(runners)
-    engine.switching = {"vscode"}
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    runners = {"gitea": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.switching.add("gitea")
 
-    held.apply(state(vscode="running"))
+    run(held, state(gitea="running"))
 
-    assert engine.switches == ["vscode"]
-    assert engine.installs == []
-    assert runners["vscode"].applied == [{"n": "vscode"}]
-    assert held.applied_hash == "h1"
+    assert engine.switches == ["gitea"]
+    assert runners["gitea"].applied == [{"n": "gitea"}]
+    assert "installing" in engine.states_of("gitea")
 
 
 def test_a_switch_that_did_not_take_fails_the_module_and_applies_nothing(tmp_path):
-    runners = {"vscode": FakeRunner()}
-    engine = FakeEngine(runners)
-    engine.switching = {"vscode"}
+    runners = {"gitea": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.switching.add("gitea")
     engine.switch_refusal = {
         "code": "version_switch_failed",
-        "params": {"version": "2.0", "detail": "code: no such file"},
+        "params": {"version": "2", "detail": "no"},
     }
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    held.apply(state(vscode="running"))
+    run(held, state(gitea="running"))
 
-    assert runners["vscode"].applied == []
+    assert engine.results["gitea"][0] == "version_switch_failed"
+    assert engine.failures["gitea"]["state"] == "failed"
+    assert runners["gitea"].applied == []
     assert held.applied_hash == ""
-    assert engine.failed_states == {"vscode": "failed"}
-    assert engine.results["vscode"] == (
-        "version_switch_failed",
-        {"version": "2.0", "detail": "code: no such file"},
-    )
 
 
 def test_stopped_configures_then_stops_the_unit(tmp_path):
@@ -388,12 +514,10 @@ def test_stopped_configures_then_stops_the_unit(tmp_path):
     runners = {"samba": FakeRunner(journal=journal)}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="stopped"))
+    run(held, state(samba="stopped"))
 
-    assert runners["samba"].applied == [{"n": "samba"}]
     assert [entry[0] for entry in journal] == ["apply", "stop"]
     assert engine.configured == {"samba"}
-    assert held.applied_hash == "h1"
 
 
 def test_absent_uninstalls_what_is_there_and_touches_the_configuration_never(
@@ -403,23 +527,21 @@ def test_absent_uninstalls_what_is_there_and_touches_the_configuration_never(
     held, engine = applier(runners, tmp_path=tmp_path)
     engine.configured.add("samba")
 
-    held.apply(state(samba="absent"))
+    run(held, state(samba="absent"))
 
     assert engine.uninstalls == ["samba"]
     assert runners["samba"].applied == []
     assert engine.configured == set()
-    assert "samba" not in engine.installed
-    assert held.applied_hash == "h1"
-    assert engine.results["samba"] == ("", {})
+    assert "uninstalling" in engine.states_of("samba")
 
 
 def test_absent_on_software_that_is_not_there_only_clears_the_mark(tmp_path):
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(runners, absent=("samba",))
-    engine.configured.add("samba")
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    engine.configured.add("samba")
 
-    held.apply(state(samba="absent"))
+    run(held, state(samba="absent"))
 
     assert engine.uninstalls == []
     assert engine.configured == set()
@@ -430,124 +552,153 @@ def test_a_module_the_state_does_not_mention_is_untouched(tmp_path):
     runners = {"samba": FakeRunner(), "gitea": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     assert runners["gitea"].applied == []
-    assert runners["gitea"].stops == 0
-    assert engine.installs == []
-    assert "gitea" not in engine.results
-    assert held.applied_hash == "h1"
+    assert "gitea" not in engine.published
 
 
 def test_a_want_outside_the_four_is_left_alone(tmp_path):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="reticulated"))
+    run(held, state(samba="whatever"))
 
     assert runners["samba"].applied == []
-    assert engine.installs == []
-    assert held.applied_hash == "h1"
+    assert engine.uninstalls == []
 
 
 def test_a_failed_apply_writes_no_mark(tmp_path):
-    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("share_name_taken"))}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     assert engine.configured == set()
-    assert held.state_error["code"] == "samba_missing"
+    assert engine.results["samba"] == ("share_name_taken", {})
+    assert engine.failures["samba"]["state"] == "failed"
 
 
-def test_the_engine_observes_against_the_state_before_anything_applies(tmp_path):
+def test_the_engine_observes_against_the_state_before_any_task_runs(tmp_path):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
-    assert engine.states == [
-        {
-            "samba": {
-                "want": "running",
-                "config": {"n": "samba"},
-                "install": INSTALL,
-            }
-        }
-    ]
-    assert engine.refreshes == 1
+    assert list(engine.states[0]) == ["samba"]
+    assert engine.source_sets == {}
 
 
-# --- the streams an install and an uninstall ride ---
+def test_the_state_s_source_sets_reach_the_engine(tmp_path):
+    held, engine = applier({}, tmp_path=tmp_path)
+    document = state()
+    document["source_sets"] = {"pypi": {"probe": "/x", "sources": [], "variables": []}}
+
+    run(held, document)
+
+    assert engine.source_sets == document["source_sets"]
 
 
-def test_an_installs_output_goes_up_a_log_stream_closed_with_the_state(tmp_path):
+# --- the log and the bytes ---
+
+
+def test_a_task_s_lines_go_up_one_log_stream_with_a_line_per_step(tmp_path):
+    socket = FakeSocket()
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(runners, absent=("samba",))
-    socket = FakeSocket()
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     assert socket.opened == [("log", {"module": "samba"})]
     (log,) = socket.channels
-    assert log.sent == [b"samba: installing\n"]
+    assert lines_of(log) == [
+        "step 1/3: packages",
+        "samba: installing",
+        "step 2/3: configure",
+        "step 3/3: start",
+    ]
     assert log.closed == {"code": "", "params": {"state": "installed"}}
+
+
+def test_a_configure_task_opens_its_log_stream_too(tmp_path):
+    socket = FakeSocket()
+    runners = {"samba": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path, open_stream=socket)
+
+    run(held, state(samba="stopped"))
+
+    assert socket.opened == [("log", {"module": "samba"})]
+    assert lines_of(socket.channels[0]) == ["step 1/2: configure", "step 2/2: stop"]
+
+
+def test_a_task_with_no_step_opens_no_stream(tmp_path):
+    socket = FakeSocket()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+
+    run(held, state(samba="absent"))
+
+    assert socket.opened == []
 
 
 def test_a_failed_install_closes_the_log_install_failed_and_fails_the_state(
     tmp_path,
 ):
+    socket = FakeSocket()
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(
         runners,
         absent=("samba",),
-        install_refusal={"code": "install_unconfirmed", "params": {}},
+        install_refusal={"code": "install_failed", "params": {"detail": "E: x"}},
     )
-    socket = FakeSocket()
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
 
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     (log,) = socket.channels
     assert log.closed == {
-        "code": "install_unconfirmed",
-        "params": {"state": "install_failed"},
+        "code": "install_failed",
+        "params": {"detail": "E: x", "state": "install_failed"},
     }
+    assert "packages: install_failed detail=E: x" in lines_of(log)
     assert runners["samba"].applied == []
-    assert held.applied_hash == ""
     assert held.state_error == {
-        "code": "install_unconfirmed",
-        "params": {"module": "samba"},
+        "code": "install_failed",
+        "params": {"module": "samba", "detail": "E: x"},
     }
-    assert engine.results["samba"] == ("install_unconfirmed", {})
-    assert engine.failed_states == {"samba": "install_failed"}
+    # The kept failure names the step it failed at.
+    assert engine.failures["samba"]["step"] == {
+        "name": "packages",
+        "params": {},
+        "index": 1,
+        "count": 3,
+    }
+    task, _state, _wait = engine.last("samba")
+    assert (task["index"], task["is_running"]) == (1, False)
 
 
-def test_an_uninstalls_output_goes_up_a_log_stream_too(tmp_path):
+def test_an_uninstall_s_output_goes_up_a_log_stream_too(tmp_path):
     runners = {"samba": FakeRunner()}
     socket = FakeSocket()
-    held, engine = applier(runners, tmp_path=tmp_path, open_stream=socket)
+    held, _ = applier(runners, tmp_path=tmp_path, open_stream=socket)
 
-    held.apply(state(samba="absent"))
+    run(held, state(samba="absent"))
 
-    assert socket.opened == [("log", {"module": "samba"})]
     (log,) = socket.channels
-    assert log.sent == [b"samba: uninstalling\n"]
+    assert lines_of(log) == ["step 1/1: uninstall", "samba: uninstalling"]
     assert log.closed == {"code": "", "params": {"state": "absent"}}
 
 
 def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
-    import hashlib
-
     runners = {"gitea": FakeRunner()}
     engine = FakeEngine(runners, absent=("gitea",))
     socket = FakeSocket()
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
     channel = FakeChannel(stream_id=3)
     channel.feed(("data", b"gitea binary"))
     channel.feed(("close", "", {"sha256": hashlib.sha256(b"gitea binary").hexdigest()}))
-    socket.channels.append(channel)
 
     def open_stream(kind, **args):
         if kind == "package":
@@ -557,7 +708,7 @@ def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
 
     held._open_stream = open_stream
 
-    held.apply(state(gitea="installed"))
+    run(held, state(gitea="installed"))
 
     assert socket.opened == [
         ("log", {"module": "gitea"}),
@@ -575,21 +726,20 @@ def test_the_bytes_come_down_a_package_stream_the_applier_opens(tmp_path):
 def test_without_a_socket_the_bytes_cannot_come_and_the_next_state_tries_again(
     tmp_path,
 ):
-    """A dropped socket made nothing about the machine fail: the state is
+    """A dropped socket made nothing about the machine fail: the entry is
     not latched, so the hub's next push of the same hash runs it."""
     runners = {"gitea": FakeRunner()}
     engine = FakeEngine(runners, absent=("gitea",))
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    held.apply(state(gitea="installed"))
+    run(held, state(gitea="installed"))
 
     assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
     assert held.applied_hash == ""
     assert held.state_error["code"] == "hub_unreachable"
     assert held._tried == {}
 
-    held.take(state(gitea="installed"))
-    drive_once(held)
+    run(held, state(gitea="installed"))
     assert len(engine.installs) == 2
 
 
@@ -601,416 +751,405 @@ def test_a_socket_that_refuses_the_stream_is_the_same_as_none(tmp_path):
     engine = FakeEngine(runners, absent=("gitea",))
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=refuse)
 
-    held.apply(state(gitea="installed"))
+    run(held, state(gitea="installed"))
 
     assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
     assert held._tried == {}
 
 
-# --- the hash and the error ---
+# --- the applied hash, the error and the tried hash ---
 
 
-def test_the_hash_moves_only_when_every_mentioned_module_applied(tmp_path):
+def test_the_hash_moves_only_when_every_mentioned_module_s_task_took(tmp_path):
     runners = {
         "samba": FakeRunner(),
-        "gitea": FakeRunner(failure=ModuleApplyError("port_reserved", {"port": 80})),
-    }
-    held, engine = applier(runners, tmp_path=tmp_path)
-
-    held.apply(state(samba="running", gitea="running"))
-
-    assert held.applied_hash == ""
-    assert held.state_error == {
-        "code": "port_reserved",
-        "params": {"module": "gitea", "port": 80},
-    }
-    assert engine.results["gitea"] == ("port_reserved", {"port": 80})
-    assert engine.results["samba"] == ("", {})
-
-
-def test_the_state_error_names_the_first_failure(tmp_path):
-    runners = {
-        "samba": FakeRunner(failure=RuntimeError("disk on fire")),
-        "podman": FakeRunner(failure=ModuleApplyError("mirror_invalid")),
+        "gitea": FakeRunner(failure=ModuleApplyError("gitea_refused")),
     }
     held, _ = applier(runners, tmp_path=tmp_path)
 
-    held.apply(state(samba="running", podman="running"))
+    run(held, state("h1", samba="running", gitea="running"))
+    assert held.applied_hash == ""
 
-    assert held.state_error["code"] == "apply_failed"
-    assert held.state_error["params"]["module"] == "samba"
-    assert "disk on fire" in held.state_error["params"]["detail"]
+    runners["gitea"].failure = None
+    run(held, marked(state("h2", samba="running", gitea="running"), "gitea"))
+    assert held.applied_hash == "h2"
+
+
+def test_the_state_error_names_the_first_failure_in_the_order(tmp_path):
+    runners = {
+        "gitea": FakeRunner(failure=ModuleApplyError("gitea_refused")),
+        "samba": FakeRunner(failure=ModuleApplyError("share_name_taken")),
+    }
+    held, _ = applier(runners, tmp_path=tmp_path)
+
+    run(held, state(samba="running", gitea="running"))
+
+    assert held.state_error == {
+        "code": "share_name_taken",
+        "params": {"module": "samba"},
+    }
 
 
 def test_a_success_after_a_failure_clears_the_error(tmp_path):
-    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
-    held, _ = applier(runners, tmp_path=tmp_path)
-    held.apply(state(samba="running"))
-    assert held.state_error is not None
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("share_name_taken"))}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    run(held, state(samba="running"))
 
     runners["samba"].failure = None
-    held.apply(marked(state("h2", samba="running"), "samba"))
+    run(held, marked(state(samba="running"), "samba"))
 
-    assert held.applied_hash == "h2"
     assert held.state_error is None
+    assert engine.results["samba"] == ("", {})
 
 
-def test_an_apply_waiting_on_an_install_is_neither_applied_nor_failed(tmp_path):
-    runners = {
-        "samba": FakeRunner(),
-        "cloudcli": FakeRunner(failure=ModuleInstallPending("ann")),
-    }
-    held, engine = applier(runners, tmp_path=tmp_path)
-
-    held.apply(state(samba="running", cloudcli="running"))
-
-    assert held.applied_hash == ""
-    assert held.state_error is None
-    assert engine.results["cloudcli"] == ("", {})
-    assert engine.configured == {"samba"}
-    assert sorted(held._tried) == ["samba"]
-    assert held._rechecked["hash"] == "h1"
-
-
-def test_a_failed_step_of_a_first_start_reads_install_failed_and_installs_again(
-    tmp_path,
-):
-    failure = ModuleSetupError("ayakaleaf_setup_failed", {"step": "tex", "detail": "x"})
-    runners = {"samba": FakeRunner(failure=failure)}
-    held, engine = applier(runners, tmp_path=tmp_path)
-
-    held.apply(state(samba="running"))
-
-    assert engine.failed_states == {"samba": "install_failed"}
-    assert engine.results["samba"] == (
-        "ayakaleaf_setup_failed",
-        {"step": "tex", "detail": "x"},
-    )
-    assert held.state_error["code"] == "ayakaleaf_setup_failed"
-
-    runners["samba"].failure = None
-    held.apply(marked(state("h2", samba="running"), "samba"))
-
-    assert engine.installs[-1][0] == "samba"
-    assert engine.failed_states == {}
-
-
-def test_a_waiting_module_is_applied_again_and_a_failed_one_beside_it_is_not(
-    tmp_path,
-):
-    samba = _CountingRunner(failure=ModuleApplyError("samba_missing"))
-    cloudcli = _CountingRunner(failure=ModuleInstallPending("ann"))
-    held, _ = applier({"samba": samba, "cloudcli": cloudcli}, tmp_path=tmp_path)
-
-    held.apply(state(samba="running", cloudcli="running"))
-    held.apply(held._rechecked)
-
-    assert held.state_error["code"] == "samba_missing"
-    assert sorted(held._tried) == ["samba"]
-    assert held._rechecked["hash"] == "h1"
-    assert (samba.tries, cloudcli.tries) == (1, 2)
-
-
-def test_a_waiting_state_is_applied_again_until_its_install_ends(tmp_path, monkeypatch):
-    monkeypatch.setattr(desired_state_module, "AGENT_MODULE_INSTALL_RECHECK_S", 0.02)
-    runner = FakeRunner(failure=ModuleInstallPending("ann"))
-    calls = []
-
-    def apply(config):
-        calls.append(config)
-        if len(calls) >= 3:
-            runner.failure = None
-        FakeRunner.apply(runner, config)
-
-    runner.apply = apply
-    runners = {"cloudcli": runner}
-    held = DesiredStateApplier(
-        engine=FakeEngine(runners),
-        runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
-        log=lambda message: None,
-    )
-
-    held.take(state(cloudcli="running"))
-
-    deadline = 100
-    while held.applied_hash != "h1" and deadline:
-        threading.Event().wait(0.02)
-        deadline -= 1
-    assert held.applied_hash == "h1"
-    assert len(calls) == 3
-    assert held._rechecked is None
-
-
-# --- taking states from the hub ---
-
-
-def test_take_keeps_the_state_and_the_worker_applies_it(tmp_path):
+def test_take_keeps_the_state_and_the_worker_makes_its_tasks(tmp_path):
     runners = {"samba": FakeRunner()}
-    engine = FakeEngine(runners)
-    held = DesiredStateApplier(
-        engine=engine,
-        runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
-        log=lambda message: None,
-    )
+    held, _ = applier(runners, tmp_path=tmp_path)
 
     held.take(state(samba="running"))
 
-    deadline = 50
-    while held.applied_hash != "h1" and deadline:
-        threading.Event().wait(0.02)
-        deadline -= 1
-    assert held.applied_hash == "h1"
-    assert json.loads((tmp_path / "desired.json").read_text())["hash"] == "h1"
+    assert held.settle("", SETTLE_S)
     assert runners["samba"].applied == [{"n": "samba"}]
+    assert held.latest()["hash"] == "h1"
 
 
-def test_a_state_already_applied_is_not_applied_twice(tmp_path):
+def test_a_state_already_tried_is_not_tried_twice(tmp_path):
     runners = {"samba": FakeRunner()}
     held, _ = applier(runners, tmp_path=tmp_path)
-    held.apply(state(samba="running"))
 
-    held.take(state(samba="running"))
-    drive_once(held)
+    run(held, state(samba="running"))
+    run(held, state("h2", samba="running"))
 
-    assert runners["samba"].applied == [{"n": "samba"}]
+    assert len(runners["samba"].applied) == 1
 
 
 def test_a_failed_state_keeps_the_old_hash_and_is_not_tried_again_under_it(
     tmp_path,
 ):
-    """Trying again is a person's word: it arrives as a state with another
-    hash, never as the same one repeated."""
-    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
-    held, _ = applier(runners, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running"))
-    held._applied_hash = "h0"
-    held.apply(state("h1", samba="running"))
-    held._applied_hash = "h0"
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("share_name_taken"))}
+    held, engine = applier(runners, tmp_path=tmp_path)
 
-    held.take(state("h1", samba="running"))
-    drive_once(held)
+    run(held, state(samba="running"))
+    run(held, state("h2", samba="running"))
 
-    assert held.applied_hash == "h0"
-    assert held.state_error["code"] == "samba_missing"
-    assert len(runners["samba"].applied) == 0
-    assert "samba" in held._tried
+    assert engine.results["samba"] == ("share_name_taken", {})
+    assert held.applied_hash == ""
+    assert "samba" in held._store.read_tried()
 
 
 def test_a_failed_install_keeps_its_hash_and_installs_again_on_a_retry_mark(
     tmp_path,
 ):
-    """Nothing left on the machine: the same entry is not tried again, and
-    the hub's retry mark is a fresh install."""
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(
         runners,
         absent=("samba",),
-        install_refusal={"code": "install_failed", "params": {"detail": "dpkg"}},
+        install_refusal={"code": "install_failed", "params": {}},
     )
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-    held.apply(state("h1", samba="installed"))
-
-    assert "samba" in held._tried
-    assert held._store.read_tried() == held._tried
-    assert held.state_error["params"] == {"module": "samba", "detail": "dpkg"}
-    assert engine.results["samba"] == ("install_failed", {"detail": "dpkg"})
-    assert engine.failed_states == {"samba": "install_failed"}
+    run(held, state(samba="running"))
+    run(held, state(samba="running"))
+    assert len(engine.installs) == 1
 
     engine.install_refusal = None
-    held.take(state("h1", samba="installed"))
-    drive_once(held)
-    assert len(engine.installs) == 1
-
-    retried = state("h2", samba="installed")
-    retried["modules"]["samba"]["retry_mark"] = "m1"
-    held.take(retried)
-    drive_once(held)
+    run(held, marked(state(samba="running"), "samba"))
 
     assert len(engine.installs) == 2
-    assert held.applied_hash == "h2"
     assert engine.results["samba"] == ("", {})
-    assert engine.failed_states == {}
 
 
-def test_a_failed_install_that_left_the_software_installs_again_on_a_retry_mark(
-    tmp_path,
-):
-    """The check passes over what the failed install left, and the retry
-    runs the install all the same."""
-
-    class PartialEngine(FakeEngine):
-        def install(self, name, *, receive, on_line=None):
-            self.installs.append((name, {}))
-            self.installed.add(name)
-            if len(self.installs) == 1:
-                return {"code": "install_failed", "params": {"detail": "postinst"}}
-            return {}
-
+def test_a_failed_install_that_left_the_software_installs_again(tmp_path):
     runners = {"samba": FakeRunner()}
-    engine = PartialEngine(runners, absent=("samba",))
-    socket = FakeSocket()
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
-    held.apply(state("h1", samba="installed"))
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.failures["samba"] = {"state": "install_failed", "code": "x", "params": {}}
 
-    held.take(state("h1", samba="installed"))
-    drive_once(held)
+    run(held, state(samba="installed"))
 
-    assert len(engine.installs) == 1
-    assert "samba" in held._tried
-    assert socket.channels[0].closed == {
-        "code": "install_failed",
-        "params": {"state": "install_failed", "detail": "postinst"},
-    }
-    assert engine.failed_states == {"samba": "install_failed"}
-
-    retried = state("h2", samba="installed")
-    retried["modules"]["samba"]["retry_mark"] = "m1"
-    held.take(retried)
-    drive_once(held)
-
-    assert len(engine.installs) == 2
-    assert engine.failed_states == {}
-    assert held.applied_hash == "h2"
+    assert [name for name, _ in engine.installs] == ["samba"]
 
 
 def test_an_uninstall_of_a_failed_install_runs_whatever_the_check_finds(tmp_path):
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(runners, absent=("samba",))
-    engine.failed_states["samba"] = "install_failed"
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    engine.failures["samba"] = {"state": "install_failed", "code": "x", "params": {}}
 
-    held.apply(state(samba="absent"))
+    run(held, state(samba="absent"))
 
     assert engine.uninstalls == ["samba"]
-    assert engine.failed_states == {}
-    assert held.state_error is None
-
-
-def test_a_failed_configure_keeps_failed_and_its_hash(tmp_path):
-    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
-    engine = FakeEngine(runners)
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-
-    held.apply(state("h1", samba="running"))
-
-    assert engine.failed_states == {"samba": "failed"}
-    assert engine.results["samba"] == ("samba_missing", {})
-    assert "samba" in held._tried
-    assert engine.installs == []
 
 
 def test_a_changed_entry_is_tried_after_a_failure(tmp_path):
-    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("share_name_taken"))}
     held, _ = applier(runners, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running"))
+    run(held, state(samba="running"))
+
     runners["samba"].failure = None
+    changed = state(samba="running")
+    changed["modules"]["samba"]["config"] = {"n": "other"}
+    run(held, changed)
 
-    changed = state("h2", samba="running")
-    changed["modules"]["samba"]["config"] = {"n": "samba", "workgroup": "lab"}
-    held.take(changed)
-    drive_once(held)
-
-    assert held.applied_hash == "h2"
-    assert held.state_error is None
-    assert runners["samba"].applied == [{"n": "samba", "workgroup": "lab"}]
+    assert runners["samba"].applied == [{"n": "other"}]
 
 
-def test_settle_returns_once_the_taken_state_has_applied(tmp_path):
-    runners = {"samba": FakeRunner()}
-    engine = FakeEngine(runners)
-    held = DesiredStateApplier(
-        engine=engine,
-        runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
-        log=lambda message: None,
-    )
-
-    held.take(state(samba="running"))
-
-    assert held.settle(5.0)
-    assert held.applied_hash == "h1"
-    assert runners["samba"].applied == [{"n": "samba"}]
-    assert held.settle(0.1)
-
-
-# --- the desktop section of the state ---
-
-
-def test_the_seat_password_reaches_the_desktop_host(tmp_path):
-    host = FakeShareHost()
-    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
-    document = state(samba="running")
-    document["desktop"] = {"seat_password": "hunter2"}  # scan: allow
-
-    held.apply(document)
-
-    assert host.passwords == ["hunter2"]
-
-
-def test_a_state_with_no_desktop_section_hands_the_host_nothing(tmp_path):
-    host = FakeShareHost()
-    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
-    document = state(samba="running")
-    document.pop("desktop")
-
-    held.apply(document)
-
-    assert host.passwords == []
-
-
-def test_nothing_here_forces_a_state_again():
-    """An install is the reconcile's own step now; there is no second
-    pass to ask for after it."""
-    assert not hasattr(DesiredStateApplier, "apply_again")
-    assert pytest is not None
-
-
-# --- a failed state is not tried again by an agent that starts again ---
-
-
-def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again(
+def test_a_retry_mark_on_one_module_never_runs_another_failed_module_again(
     tmp_path,
 ):
+    runners = {
+        "samba": FakeRunner(failure=ModuleApplyError("share_name_taken")),
+        "gitea": FakeRunner(failure=ModuleApplyError("gitea_refused")),
+    }
+    held, _ = applier(runners, tmp_path=tmp_path)
+    run(held, state(samba="running", gitea="running"))
+    runners["gitea"].failure = None
+    runners["samba"].failure = None
+
+    run(held, marked(state(samba="running", gitea="running"), "gitea"))
+
+    assert runners["gitea"].applied == [{"n": "gitea"}]
+    assert runners["samba"].applied == []
+
+
+def test_a_new_seat_password_runs_the_remote_desktop_module_again(tmp_path):
+    runners = {"remote_desktop": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path, rdp=FakeShareHost())
+    run(held, state(remote_desktop="running"))
+
+    changed = state(remote_desktop="running")
+    changed["desktop"] = {"seat_password": "new"}  # scan: allow
+    run(held, changed)
+
+    assert len(runners["remote_desktop"].applied) == 2
+
+
+def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
+    """The agent's log says why, not only the code."""
+    runners = {
+        "samba": FakeRunner(
+            failure=ModuleApplyError(
+                "user_record_unusable",
+                {"user": "t3user3", "detail": "DS Error: -14120 (eDSPermissionError)"},
+            )
+        )
+    }
+    lines: list = []
+    held, _ = applier(runners, tmp_path=tmp_path)
+    held._log = lines.append
+
+    run(held, state(samba="running"))
+
+    assert (
+        "samba: user_record_unusable user=t3user3 "
+        "detail=DS Error: -14120 (eDSPermissionError)"
+    ) in lines
+
+
+# --- a step that waits for something outside the agent ---
+
+
+def test_a_failed_step_of_a_first_start_reads_install_failed(tmp_path):
+    runners = {"samba": FakeRunner(failure=ModuleSetupError("ayakaleaf_setup_failed"))}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    run(held, state(samba="running"))
+
+    assert engine.failures["samba"]["state"] == "install_failed"
+    assert engine.results["samba"] == ("ayakaleaf_setup_failed", {})
+
+
+def test_a_waiting_step_runs_again_every_recheck_and_holds_no_lock_between(
+    tmp_path,
+):
+    """The step runs again at each check, the task names the wait, and no
+    step lock is held while it waits."""
+    locks = StepLocks()
+    tries: list = []
+    seen: list = []
+
+    class FirstStartRunner(FakeRunner):
+        def start(self):
+            tries.append(1)
+            if len(tries) < 3:
+                raise ModuleInstallPending("first start")
+
+    runners = {"samba": FirstStartRunner()}
+    engine = FakeEngine(runners)
+
+    def configure_steps(name, entry, want):
+        steps = FakeEngine.configure_steps(engine, name, entry, want)
+        return [
+            ModuleStep(name=step.name, run=step.run, locks=PACKAGE_LOCKS)
+            for step in steps
+        ]
+
+    engine.configure_steps = configure_steps
+    held, _ = applier(
+        runners, engine=engine, tmp_path=tmp_path, locks=locks, recheck_s=0.2
+    )
+
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: len(tries) >= 1)
+    assert wait_until(lambda: engine.last("samba")[0].get("wait"))
+    seen.append(locks.holders("package_manager"))
+    seen.append((held.applied_hash, held.state_error))
+    assert held.settle("", SETTLE_S)
+
+    assert len(tries) == 3
+    assert seen == [[], ("", None)]
+    waits = [wait for _task, _state, wait in engine.published["samba"]]
+    assert {"code": "waiting_for_check", "params": {"seconds": 0}} in waits
+    assert held.applied_hash == "h1"
+    assert engine.results["samba"] == ("", {})
+
+
+def test_a_waiting_step_names_the_runner_s_own_wait(tmp_path):
     tries: list = []
 
-    class TriedRunner(FakeRunner):
+    class RebootRunner(FakeRunner):
         def apply(self, config):
-            tries.append(config)
-            super().apply(config)
+            tries.append(1)
+            if len(tries) < 2:
+                raise ModuleInstallPending("reboot_required")
 
-    runner = TriedRunner(failure=ModuleApplyError("cloudcli_install_out_of_memory"))
-    runners = {"cloudcli": runner}
-    store = DesiredStateStore(path=str(tmp_path / "desired.json"))
-    first = DesiredStateApplier(
-        engine=FakeEngine(runners),
-        runners=runners,
-        store=store,
-        log=lambda message: None,
+    runners = {"samba": RebootRunner(wait={"code": "reboot_required"})}
+    held, engine = applier(runners, tmp_path=tmp_path, recheck_s=0.05)
+
+    run(held, state(samba="running"))
+
+    waits = [wait for _task, _state, wait in engine.published["samba"]]
+    assert {"code": "reboot_required", "params": {}} in waits
+
+
+def test_a_newer_entry_is_taken_at_a_waiting_step_s_check(tmp_path):
+    class NeverRunner(FakeRunner):
+        def start(self):
+            raise ModuleInstallPending("first start")
+
+    runners = {"samba": NeverRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path, recheck_s=0.05)
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("wait"))
+
+    run(held, state("h2", samba="absent"))
+
+    assert engine.uninstalls == ["samba"]
+    assert held.applied_hash == "h2"
+
+
+# --- tasks of two modules at once, and the step locks ---
+
+
+def test_two_modules_tasks_run_at_once(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner(), "gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running", gitea="running"))
+
+    # Gitea's configure task ends while the file share's install waits.
+    assert held.settle("gitea", SETTLE_S)
+    assert runners["gitea"].applied == [{"n": "gitea"}]
+    assert runners["samba"].applied == []
+    assert not held.settle("samba", 0.05)
+    gate.set()
+    assert held.settle("", SETTLE_S)
+    assert runners["samba"].applied == [{"n": "samba"}]
+
+
+def test_a_first_step_waiting_for_a_lock_reads_queued_naming_its_holder(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner(), "gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba", "gitea"))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    held.apply(state("h2", samba="running", gitea="running"))
+
+    assert wait_until(lambda: engine.last("gitea")[1] == "queued")
+    assert engine.last("gitea")[2] == {
+        "code": "waiting_for_lock",
+        "params": {"lock": "package_manager", "module": "samba"},
+    }
+    gate.set()
+    assert held.settle("", SETTLE_S)
+    assert [name for name, _ in engine.installs] == ["samba", "gitea"]
+    assert engine.states_of("gitea")[-1] == ""
+
+
+def test_a_newer_entry_replaces_the_plan_at_the_next_step_boundary(tmp_path):
+    """An Uninstall arriving during an install's long step takes effect once
+    that step ends; the install's start never runs."""
+    gate = threading.Event()
+    journal: list = []
+    runners = {"samba": FakeRunner(journal=journal)}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    held.apply(state("h2", samba="absent"))
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert [name for name, _ in engine.installs] == ["samba"]
+    assert engine.uninstalls == ["samba"]
+    assert journal == []
+    assert held.applied_hash == "h2"
+    # The tried hash is the newer entry's, the one the task last planned from.
+    assert held._store.read_tried()["samba"] == held._tried["samba"]
+    task, _state, _wait = engine.last("samba")
+    assert [step["name"] for step in task["steps"]] == ["uninstall"]
+
+
+def test_a_new_plan_toward_absent_uninstalls_what_the_task_began(tmp_path):
+    """A partial install is the task's own leftover, uninstalled whatever the
+    check finds."""
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(
+        runners,
+        absent=("samba",),
+        install_refusal={"code": "download_failed", "params": {}},
     )
-    first.apply(state(cloudcli="running"))
-    assert sorted(store.read_tried()) == ["cloudcli"]
-    assert len(tries) == 1
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    again = DesiredStateApplier(
-        engine=FakeEngine(runners),
-        runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
-        log=lambda message: None,
-    )
-    again.take(state(cloudcli="running"))
-    assert again.settle(5.0)
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    held.apply(state("h2", samba="absent"))
+    gate.set()
+    assert held.settle("", SETTLE_S)
 
-    assert len(tries) == 1
-    assert again._tried == store.read_tried()
-    assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
+    assert engine.uninstalls == ["samba"]
 
 
-def _agent(runners, tmp_path, build=desired_state_module.AGENT_BUILD):
+def test_settle_waits_for_one_module_s_task_alone(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+
+    assert held.settle("gitea", 0.05)
+    assert not held.settle("samba", 0.05)
+    gate.set()
+    assert held.settle("samba", SETTLE_S)
+
+
+# --- a restart ---
+
+
+def _agent(runners, tmp_path, build=desired_state_module.AGENT_BUILD, engine=None):
     """A fresh agent's applier over the state files under ``tmp_path``."""
     return DesiredStateApplier(
-        engine=FakeEngine(runners),
+        engine=engine if engine is not None else FakeEngine(runners),
         runners=runners,
         store=DesiredStateStore(path=str(tmp_path / "desired.json"), build=build),
         log=lambda message: None,
@@ -1027,73 +1166,91 @@ class _CountingRunner(FakeRunner):
         super().apply(config)
 
 
-def test_a_removal_lets_the_next_agent_apply_the_same_state_again(tmp_path):
-    """Remove, install, join: the removal undid what the state made true, so
-    the agent that comes next applies the very same state."""
-    runner = _CountingRunner()
-    runners = {"remote_desktop": runner}
-    _agent(runners, tmp_path).apply(state(remote_desktop="running"))
-    assert runner.tries == 1
-
-    # nagent service uninstall, as every package's removal runs it.
-    DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
+def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again(
+    tmp_path,
+):
+    runner = _CountingRunner(failure=ModuleApplyError("cloudcli_install_out_of_memory"))
+    runners = {"cloudcli": runner}
+    first = _agent(runners, tmp_path)
+    run(first, state(cloudcli="running"))
+    assert sorted(first._store.read_tried()) == ["cloudcli"]
 
     again = _agent(runners, tmp_path)
+    again.take(state(cloudcli="running"))
+    assert again.settle("", SETTLE_S)
+
+    assert runner.tries == 1
+    assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
+
+
+def test_a_restart_mid_task_plans_the_module_again_from_what_the_machine_shows(
+    tmp_path,
+):
+    """The process died during the install's long step: no tried hash was
+    written, and the next agent plans from the machine, where the software
+    now is, so it configures and starts with no install."""
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    dying = _agent(runners, tmp_path, engine=engine)
+    dying.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    assert "samba" not in dying._store.read_tried()
+
+    machine = FakeEngine(runners)
+    again = _agent(runners, tmp_path, engine=machine)
+    again.take(state(samba="running"))
+    assert again.settle("", SETTLE_S)
+    gate.set()
+
+    assert machine.installs == []
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert again.applied_hash == "h1"
+
+
+def test_a_removal_lets_the_next_agent_apply_the_same_state_again(tmp_path):
+    runner = _CountingRunner()
+    runners = {"remote_desktop": runner}
+    run(_agent(runners, tmp_path), state(remote_desktop="running"))
+
+    DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
+    again = _agent(runners, tmp_path)
     again.take(state(remote_desktop="running"))
-    assert again.settle(5.0)
+    assert again.settle("", SETTLE_S)
 
     assert runner.tries == 2
     assert again.applied_hash == "h1"
 
 
-def test_a_failed_state_still_does_not_loop_after_a_plain_restart(tmp_path):
-    runner = _CountingRunner(failure=ModuleApplyError("cloudcli_install_failed"))
-    runners = {"cloudcli": runner}
-    _agent(runners, tmp_path).apply(state(cloudcli="running"))
-
-    again = _agent(runners, tmp_path)
-    again.take(state(cloudcli="running"))
-    assert again.settle(5.0)
-
-    assert runner.tries == 1
-
-
 def test_a_restart_of_the_same_build_applies_nothing_again(tmp_path):
-    """A reinstall of the same package restarts the agent; it neither
-    removes nor joins, and the build is the one that kept the mark."""
     runner = _CountingRunner()
     runners = {"samba": runner}
-    _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z").apply(
-        state(samba="running")
+    run(
+        _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z"),
+        state(samba="running"),
     )
 
     restarted = _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z")
     restarted.take(state(samba="running"))
-    assert restarted.settle(5.0)
+    assert restarted.settle("", SETTLE_S)
 
     assert runner.tries == 1
 
 
 def test_an_agent_of_another_build_applies_every_module_once_again(tmp_path):
-    """An upgrade, or a reinstall of another build of one version, applies
-    each module the state names once, a failed one included, whatever its
-    hash; the build after it keeps the marks again."""
     samba = _CountingRunner()
     cloudcli = _CountingRunner(failure=ModuleApplyError("cloudcli_install_failed"))
     runners = {"samba": samba, "cloudcli": cloudcli}
-    _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z").apply(
-        state(samba="running", cloudcli="running")
+    run(
+        _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z"),
+        state(samba="running", cloudcli="running"),
     )
 
     upgraded = _agent(runners, tmp_path, build="0.6.0 2026-10-24T15:00:00Z")
     assert upgraded._tried == {}
-    upgraded.take(state(samba="running", cloudcli="running"))
-    assert upgraded.settle(5.0)
+    run(upgraded, state(samba="running", cloudcli="running"))
 
-    assert (samba.tries, cloudcli.tries) == (2, 2)
-    again = _agent(runners, tmp_path, build="0.6.0 2026-10-24T15:00:00Z")
-    again.take(state(samba="running", cloudcli="running"))
-    assert again.settle(5.0)
     assert (samba.tries, cloudcli.tries) == (2, 2)
 
 
@@ -1109,32 +1266,33 @@ def test_the_tried_file_names_the_build_that_kept_it(tmp_path):
     assert other.read_tried() == {}
 
 
+def test_a_tried_file_of_an_older_shape_reads_as_nothing_tried(tmp_path):
+    (tmp_path / "desired.json.tried").write_text(json.dumps({"samba": "a1"}))
+
+    assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
+
+
 def test_forgetting_the_mark_applies_a_state_already_held(tmp_path):
     runner = _CountingRunner()
     runners = {"samba": runner}
     held = _agent(runners, tmp_path)
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     held.forget_tried()
-    held.take(state(samba="running"))
-    assert held.settle(5.0)
+    run(held, state(samba="running"))
 
     assert runner.tries == 2
-    assert sorted(held._store.read_tried()) == ["samba"]
 
 
 def test_a_mark_another_process_deleted_is_read_again(tmp_path):
-    """nagent join runs in its own process; the service reads the mark again
-    when it adopts the new binding."""
     runner = _CountingRunner()
     runners = {"samba": runner}
     held = _agent(runners, tmp_path)
-    held.apply(state(samba="running"))
+    run(held, state(samba="running"))
 
     DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
     held.reload_tried()
-    held.take(state(samba="running"))
-    assert held.settle(5.0)
+    run(held, state(samba="running"))
 
     assert runner.tries == 2
 
@@ -1143,386 +1301,229 @@ def test_clearing_a_mark_that_is_not_there_is_no_error(tmp_path):
     DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
 
 
-def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
-    """The agent's log says why, not only the code."""
-    runners = {
-        "samba": FakeRunner(
-            failure=ModuleApplyError(
-                "user_record_unusable",
-                {"user": "t3user3", "detail": "DS Error: -14120 (eDSPermissionError)"},
-            )
-        )
-    }
-    held, _ = applier(runners, tmp_path=tmp_path)
-    lines = []
-    held._log = lines.append
-
-    held.apply(state(samba="running"))
-
-    assert (
-        "samba: user_record_unusable user=t3user3 "
-        "detail=DS Error: -14120 (eDSPermissionError)"
-    ) in lines
+# --- the desktop and the AI tools ---
 
 
-class RecordedAiToolsSection:
+def test_the_seat_password_reaches_the_desktop_host(tmp_path):
+    host = FakeShareHost()
+    held, _ = applier({}, tmp_path=tmp_path, rdp=host)
+    document = state()
+    document["desktop"] = {"seat_password": "s3cret"}  # scan: allow
+
+    run(held, document)
+
+    assert host.passwords == ["s3cret"]  # scan: allow
+
+
+def test_a_state_with_no_desktop_section_hands_the_host_nothing(tmp_path):
+    host = FakeShareHost()
+    held, _ = applier({}, tmp_path=tmp_path, rdp=host)
+    document = state()
+    del document["desktop"]
+
+    run(held, document)
+
+    assert host.passwords == []
+
+
+class RecordedAiTools:
+    """The machine's AI tools, whose one step records each section it runs."""
+
     def __init__(self):
-        self.applied: list = []
+        self.ran: list = []
+        self.receive = None
 
-    def apply(self, section, state_hash, receive=None):
-        self.applied.append((section, state_hash))
+    def steps(self, section, receive=None):
         self.receive = receive
+        return [
+            ModuleStep(
+                name="tools",
+                params={"account": "ann"},
+                run=functools.partial(self._run, section),
+            )
+        ]
+
+    def _run(self, section, context):
+        self.ran.append(section)
 
 
-def test_the_ai_tools_section_is_handed_on_after_the_modules(tmp_path):
-    journal: list = []
-    runners = {"samba": FakeRunner(journal=journal)}
-    held, _engine = applier(runners, tmp_path=tmp_path)
-    tools = RecordedAiToolsSection()
-    held._ai_tools = tools
-    document = state(samba="running")
+def test_the_ai_tools_section_is_a_task_of_its_own_tried_once(tmp_path):
+    tools = RecordedAiTools()
+    held, engine = applier({}, tmp_path=tmp_path, ai_tools=tools)
+    document = state()
+    document["ai_tools"] = {"is_enabled": True, "accounts": [{"account": "ann"}]}
+
+    run(held, document)
+    run(held, dict(document, hash="h2"))
+
+    assert tools.ran == [document["ai_tools"]]
+    assert "ai_tools" in held._store.read_tried()
+    assert "ai_tools" not in engine.published
+    assert tools.receive == held.receive
+
+
+def test_the_ai_tools_section_runs_again_when_it_changes(tmp_path):
+    tools = RecordedAiTools()
+    held, _ = applier({}, tmp_path=tmp_path, ai_tools=tools)
+    document = state()
     document["ai_tools"] = {"is_enabled": False}
 
-    held.apply(document)
+    run(held, document)
+    run(held, dict(document, ai_tools={"is_enabled": True}))
 
-    assert tools.applied == [({"is_enabled": False}, "h1")]
-    assert tools.receive == held._receive
-    assert journal
-
-
-def test_the_same_state_with_a_retry_mark_tries_a_failed_install_again(tmp_path):
-    """The hub's press on a failed module adds ``retry_mark`` to its entry;
-    the hash moves, so the agent tries again, and the module's configuration
-    is the same as before."""
-    runners = {"samba": FakeRunner()}
-    engine = FakeEngine(
-        runners,
-        absent=("samba",),
-        install_refusal={"code": "install_failed", "params": {"detail": "dpkg"}},
-    )
-    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running"))
-    engine.install_refusal = None
-    retried = state("h1-retry", samba="running")
-    retried["modules"]["samba"]["retry_mark"] = "a1b2c3d4"
-
-    held.take(retried)
-    drive_once(held)
-
-    assert len(engine.installs) == 2
-    assert held.applied_hash == "h1-retry"
-    assert held.state_error is None
-    assert runners["samba"].applied == [{"n": "samba"}]
+    assert tools.ran == [{"is_enabled": False}, {"is_enabled": True}]
 
 
-def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
-    monkeypatch, tmp_path
-):
-    from neutrino_agent.core.engine import ModuleEngine
-    from neutrino_agent.platforms.base import AgentPlatform
+# --- a container module and Containers ---
 
-    class Carried(AgentPlatform):
-        os_name = "linux"
-        capabilities = frozenset({"metrics"})
 
-    engine = ModuleEngine(platform=Carried(), configured_dir=str(tmp_path / "marks"))
-    held, _ = applier(engine.module_runners, engine=engine, tmp_path=tmp_path)
-    settings = {
-        "accounts": [{"account": "ann", "shell_path": "/bin/zsh", "password": ""}]
-    }
-
-    held.apply(
-        {
-            "hash": "h1",
-            "modules": {"terminal": {"want": "running", "config": settings}},
-            "desktop": {"seat_password": ""},
+def container_state(state_hash="h1", podman="running", **wants) -> dict:
+    """A state naming Containers and container modules."""
+    document = state(state_hash, podman=podman)
+    for name, want in wants.items():
+        document["modules"][name] = {
+            "want": want,
+            "config": {"n": name},
+            "install": dict(CONTAINER_INSTALL),
         }
-    )
-    engine._refresh(is_forced=True)
-
-    assert engine.report()["terminal"]["state"] == "running"
-    assert engine.module_runners["terminal"].settings().to_dict() == settings
-    assert held.applied_hash == "h1"
-
-
-# --- one module at a time, each tried under its own entry ---
-
-
-def test_a_retry_mark_on_one_module_never_runs_another_failed_module_again(
-    tmp_path,
-):
-    samba = _CountingRunner(failure=ModuleApplyError("samba_missing"))
-    gitea = _CountingRunner(failure=ModuleApplyError("port_reserved"))
-    held, _ = applier({"samba": samba, "gitea": gitea}, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running", gitea="running"))
-    samba.failure = None
-
-    held.take(marked(state("h2", samba="running", gitea="running"), "samba"))
-    drive_once(held)
-
-    assert (samba.tries, gitea.tries) == (2, 1)
-    assert held.state_error["code"] == "port_reserved"
-    assert held.applied_hash == ""
-
-
-def test_a_change_to_one_module_s_entry_runs_that_module_alone(tmp_path):
-    samba = _CountingRunner()
-    gitea = _CountingRunner(failure=ModuleApplyError("port_reserved"))
-    held, _ = applier({"samba": samba, "gitea": gitea}, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running", gitea="running"))
-    gitea.failure = None
-
-    changed = state("h2", samba="running", gitea="running")
-    changed["modules"]["gitea"]["config"] = {"n": "gitea", "http_port": 3001}
-    held.take(changed)
-    drive_once(held)
-
-    assert (samba.tries, gitea.tries) == (1, 2)
-    assert held.applied_hash == "h2"
-    assert held.state_error is None
-
-
-def test_a_new_seat_password_runs_the_remote_desktop_module_again(tmp_path):
-    desktop = _CountingRunner()
-    samba = _CountingRunner()
-    held, _ = applier({"remote_desktop": desktop, "samba": samba}, tmp_path=tmp_path)
-    held.apply(state("h1", remote_desktop="running", samba="running"))
-
-    renewed = state("h2", remote_desktop="running", samba="running")
-    renewed["desktop"] = {"seat_password": "renewed"}  # scan: allow
-    held.apply(renewed)
-
-    assert (desktop.tries, samba.tries) == (2, 1)
-
-
-def test_the_ai_tools_section_is_handed_on_only_when_it_changes(tmp_path):
-    held, _ = applier({"samba": FakeRunner()}, tmp_path=tmp_path)
-    tools = RecordedAiToolsSection()
-    held._ai_tools = tools
-    first = state("h1", samba="running")
-    first["ai_tools"] = {"is_enabled": False}
-    held.apply(first)
-
-    other = state("h2", samba="stopped")
-    other["ai_tools"] = {"is_enabled": False}
-    held.apply(other)
-    retried = state("h3", samba="stopped")
-    retried["ai_tools"] = {"is_enabled": False, "retry_mark": "a1b2c3d4"}
-    held.apply(retried)
-
-    assert [entry[1] for entry in tools.applied] == ["h1", "h3"]
-
-
-class BlockingInstallEngine(FakeEngine):
-    """An engine whose install of one module waits until it is let go."""
-
-    def __init__(self, names, *, blocked, **kwargs):
-        super().__init__(names, **kwargs)
-        self.blocked = blocked
-        self.is_blocking = threading.Event()
-        self.release = threading.Event()
-
-    def install(self, name, *, receive, on_line=None):
-        if name == self.blocked:
-            self.is_blocking.set()
-            self.release.wait(5.0)
-        return super().install(name, receive=receive, on_line=on_line)
-
-
-def test_the_modules_behind_a_long_install_are_queued_until_reached(tmp_path):
-    runners = {name: FakeRunner() for name in ("samba", "terminal", "gitea", "podman")}
-    engine = BlockingInstallEngine(runners, blocked="terminal", absent=("terminal",))
-    held = DesiredStateApplier(
-        engine=engine,
-        runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
-        log=lambda message: None,
-    )
-
-    held.take(
-        state(
-            samba="running", terminal="installed", gitea="running", podman="installed"
-        )
-    )
-    assert engine.is_blocking.wait(5.0)
-
-    assert engine.queued == [["terminal", "gitea"], ["gitea"]]
-    engine.release.set()
-    assert held.settle(5.0)
-    assert engine.queued[-2:] == [[], []]
-    assert held.applied_hash == "h1"
-
-
-def test_a_tried_file_of_an_older_shape_reads_as_nothing_tried(tmp_path):
-    (tmp_path / "desired.json.tried").write_text("1234")
-    runner = _CountingRunner()
-    runners = {"samba": runner}
-    held = _agent(runners, tmp_path)
-    assert held._tried == {}
-
-    held.take(state(samba="running"))
-    assert held.settle(5.0)
-
-    assert runner.tries == 1
-    kept = json.loads((tmp_path / "desired.json.tried").read_text())
-    assert sorted(kept["hashes"]) == ["samba"]
-    (tmp_path / "desired.json.tried").write_text(json.dumps({"samba": "ab12cd"}))
-    assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
-    (tmp_path / "desired.json.tried").write_text("ab12cd")
-    assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
-
-
-def test_an_artifact_is_asked_for_by_its_module_its_name_and_its_digest(tmp_path):
-    runners = {"gitea": FakeRunner()}
-    held, _ = applier(runners, tmp_path=tmp_path, open_stream=FakeSocket())
-    opened = []
-
-    def open_stream(kind, **args):
-        opened.append((kind, args))
-        channel = FakeChannel(stream_id=3)
-        channel.feed(("data", b"bytes"))
-        channel.feed(("close", "", {"sha256": hashlib.sha256(b"bytes").hexdigest()}))
-        return channel
-
-    held._open_stream = open_stream
-
-    whole = held._receive("gitea", ARTIFACT)
-    node = held._receive("codeg", {"name": "node", "digest": "sha256:cd"})
-
-    assert opened == [
-        (
-            "package",
-            {"module": "gitea", "artifact": "gitea", "digest": ARTIFACT["digest"]},
-        ),
-        ("package", {"module": "codeg", "artifact": "node", "digest": "sha256:cd"}),
-    ]
-    assert whole["sha256"] == hashlib.sha256(b"bytes").hexdigest()
-    assert node["path"].startswith(str(tmp_path / "packages"))
-
-
-# --- container modules ---
-
-CONTAINER_INSTALL = {"runner": "container", "method": "container", "params": {}}
-
-
-def with_container(document: dict, name: str, want: str) -> dict:
-    """The same state naming one container module more."""
-    document["modules"][name] = {
-        "want": want,
-        "config": {"n": name},
-        "install": dict(CONTAINER_INSTALL),
-    }
     return document
 
 
-class ContainerEngine(FakeEngine):
-    """An engine whose container modules have runners of their own."""
-
-    def __init__(self, names, containers, **kwargs):
-        super().__init__(names, **kwargs)
-        self.containers = dict(containers)
-
-    def container_runners(self):
-        return dict(self.containers)
-
-
-def test_a_container_module_the_order_does_not_name_applies_right_after_containers():
-    runners = {name: object() for name in ("samba", "podman", "vscode", "demo", "box")}
+def test_a_container_module_the_order_does_not_name_comes_right_after_containers():
     modules = {
-        "vscode": {"install": {"method": "hub"}},
-        "samba": {"install": {"method": "system"}},
-        "box": {"install": {"method": "container"}},
-        "podman": {"install": {"method": "system"}},
-        "demo": {"install": {"method": "container"}},
-        "stray": {"install": {"method": "container"}},
+        name: {"install": {"method": "container"}}
+        for name in ("zeta", "podman", "samba", "vscode")
     }
+    runners = {name: object() for name in modules}
 
-    assert apply_order(modules, runners) == ["samba", "podman", "box", "demo", "vscode"]
-    assert apply_order(
-        {"demo": modules["demo"], "vscode": modules["vscode"]}, runners
-    ) == [
-        "demo",
-        "vscode",
-    ]
-    assert APPLY_ORDER.index("hermes_webui") == APPLY_ORDER.index("podman") + 1
+    assert apply_order(modules, runners) == ["samba", "podman", "zeta", "vscode"]
 
 
-def test_running_starts_the_unit_after_the_configuration_and_stopped_stops_it(
-    tmp_path,
-):
+def test_a_container_module_waits_for_containers_and_asks_it_to_render(tmp_path):
+    gate = threading.Event()
     journal: list = []
-    runners = {
-        "samba": FakeRunner(journal=journal),
-        "gitea": FakeRunner(journal=journal),
-    }
-    held, _engine = applier(runners, tmp_path=tmp_path)
+    runners = {"podman": FakeRunner(journal=journal), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("podman", "demo"))
+    engine.install_gates["podman"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
 
-    held.apply(state(samba="stopped", gitea="running"))
-
-    assert [entry[0] for entry in journal] == ["apply", "stop", "apply", "start"]
-
-
-def test_a_container_module_s_install_marks_containers_to_be_applied_again(tmp_path):
-    journal: list = []
-    podman = FakeRunner(journal=journal)
-    demo = FakeRunner(journal=journal)
-    engine = ContainerEngine(["podman", "demo"], {"demo": demo}, absent=("demo",))
-    held, _ = applier({"podman": podman}, engine=engine, tmp_path=tmp_path)
-    document = with_container(state(podman="running"), "demo", "running")
-
-    held.apply(document)
-
-    assert [name for name, _ in engine.installs] == ["demo"]
-    assert "podman" not in held._tried
-    assert held._pending == document
-    drive_once(held)
-    assert [name for name, _ in engine.installs] == ["demo"]
-    assert journal.count(("apply", id(podman))) == 2
-    assert "podman" in held._tried
-    assert held._pending is None
-
-
-def test_a_container_module_already_there_marks_nothing(tmp_path):
-    podman = FakeRunner()
-    demo = FakeRunner()
-    engine = ContainerEngine(["podman", "demo"], {"demo": demo})
-    held, _ = applier({"podman": podman}, engine=engine, tmp_path=tmp_path)
-
-    held.apply(with_container(state(podman="running"), "demo", "running"))
-
+    held.apply(container_state(demo="running"))
+    assert wait_until(
+        lambda: engine.last("demo")[2]
+        == {"code": "waiting_for_module", "params": {"module": "podman"}}
+    )
+    # It waits for Containers in its first step, reading installing.
+    assert engine.last("demo")[1] == "installing"
     assert engine.installs == []
-    assert held._pending is None
-    assert demo.applied == [{"n": "demo"}]
-    assert engine.held == [[]]
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    # Containers applied in its own task, then once more for the render.
+    assert [entry[0] for entry in journal] == ["apply", "start", "apply", "start"]
+    assert [name for name, _ in engine.installs] == ["podman", "demo"]
+    assert engine.results["demo"] == ("", {})
 
 
-def test_a_container_module_to_install_is_held_installing_from_the_state_on(
+def test_a_container_module_fails_module_needed_while_containers_is_not_to_run(
     tmp_path,
 ):
-    """Its row read queued, installing, installed, queued and installing again
-    between the press and running."""
-    engine = ContainerEngine(
-        ["podman", "demo", "samba"], {"demo": FakeRunner()}, absent=("demo", "samba")
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    engine.containers_state = "stopped"
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(podman="stopped", demo="running"))
+
+    assert engine.results["demo"] == (
+        "module_needed",
+        {"module": "podman", "state": "stopped"},
     )
-    held, _ = applier(
-        {"podman": FakeRunner(), "samba": FakeRunner()},
-        engine=engine,
-        tmp_path=tmp_path,
+    assert engine.failures["demo"]["state"] == "install_failed"
+
+
+def test_a_container_module_fails_when_containers_task_ends_not_running(tmp_path):
+    runners = {
+        "podman": FakeRunner(failure=ModuleApplyError("machine_unreachable")),
+        "demo": FakeRunner(),
+    }
+    engine = FakeEngine(runners, absent=("demo",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="running"))
+
+    assert engine.results["demo"] == (
+        "module_needed",
+        {"module": "podman", "state": "failed"},
     )
-    document = with_container(
-        state(podman="running", samba="running"), "demo", "running"
+
+
+def test_an_installed_container_module_ends_quietly_while_containers_is_stopped(
+    tmp_path,
+):
+    """Containers' Stop stops every hub container; the module's task runs
+    no step, keeps no failure and no tried hash, and the state that starts
+    Containers again starts the module."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    run(held, container_state(podman="stopped", demo="running"))
+
+    assert runners["demo"].applied == []
+    assert engine.results["demo"] == ("", {})
+    assert "demo" not in held._store.read_tried()
+    run(held, container_state("h2", podman="running", demo="running"))
+    assert runners["demo"].applied == [{"n": "demo"}]
+
+
+def test_render_asks_during_one_containers_task_make_one_more_configure(tmp_path):
+    """Three container modules pulled at once each ask Containers to render:
+    the first ask makes a configure task, and the two asks made while it
+    runs are one more configure after it."""
+    gate = threading.Event()
+    applies: list = []
+    names = ("one", "two", "three")
+    runners = {"podman": FakeRunner(), **{name: FakeRunner() for name in names}}
+    engine = FakeEngine(runners, absent=names)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    run(held, container_state())
+
+    def configure(context):
+        applies.append(1)
+        if len(applies) == 1:
+            gate.wait(SETTLE_S)
+
+    def podman_configure(name, entry, want):
+        steps = FakeEngine.configure_steps(engine, name, entry, want)
+        if name == "podman":
+            steps[0] = ModuleStep(name="configure", run=configure)
+        return steps
+
+    engine.configure_steps = podman_configure
+    first, others = threading.Event(), threading.Event()
+    engine.install_gates = {"one": first, "two": others, "three": others}
+    held.apply(container_state("h2", **{name: "installed" for name in names}))
+    assert wait_until(
+        lambda: all(engine.last(name)[0].get("index") == 2 for name in names)
     )
+    first.set()
+    # The first ask's configure task runs; the other two ask meanwhile.
+    assert wait_until(lambda: len(applies) == 1)
+    others.set()
+    assert wait_until(
+        lambda: all(
+            engine.last(name)[0].get("index") == 3
+            and engine.last(name)[2].get("code") == "waiting_for_module"
+            for name in names
+        )
+    )
+    gate.set()
+    assert held.settle("", SETTLE_S)
 
-    held.apply(document)
+    assert len(applies) == 2
+    assert all(engine.results[name] == ("", {}) for name in names)
 
-    assert engine.held == [["demo"]]
 
-
-def test_the_state_s_source_sets_reach_the_engine(tmp_path):
-    held, engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path)
-    document = state(samba="running")
-    document["source_sets"] = {"npm": {"probe": "/npm/latest", "sources": ["r"]}}
-
-    held.apply(document)
-
-    assert engine.source_sets == document["source_sets"]
+def test_nothing_here_applies_a_whole_state_again():
+    """A waiting step checks itself; no pass over the whole state remains."""
+    assert not hasattr(DesiredStateApplier, "apply_again")
+    assert not hasattr(DesiredStateApplier, "_rechecked")

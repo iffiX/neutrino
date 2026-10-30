@@ -85,10 +85,18 @@ class ModuleSetupError(ModuleApplyError):
 
 
 class ModuleInstallPending(RuntimeError):
-    """Raised when a module's apply waits on an install that still runs.
+    """Raised when a module's step waits on something outside the agent.
 
-    The module reads ``installing``, and the state is applied again until
-    the install has ended.
+    The module reads ``installing``, and its task runs the step again every
+    30 seconds until what it waits for has happened.
+    """
+
+
+class StepSuperseded(RuntimeError):
+    """Raised inside a step that waits for another module, once its task holds a newer entry.
+
+    The step has done nothing yet, and the task plans again from what the
+    machine shows.
     """
 
 
