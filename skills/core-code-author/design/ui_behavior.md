@@ -864,9 +864,22 @@ and an apply of its configuration give it the `want` `running`
 
 A module the machine reports `queued` is in transit, as `installing` and
 `uninstalling` are: every button of its tab is disabled until the machine
-reports another state ([agent.md](agent.md), "One module at a time"). After a
-press, the tab's optimistic step holds until the machine reports the module
-in a state other than the one it showed at the press, at most two minutes.
+reports another state, and the tab names what it waits for by the row's
+code ([agent.md](agent.md), "Step locks"). Every button of a module's tab is
+also disabled while its row's `task` runs, a configure task's among them.
+After a press, the tab's optimistic step holds until the machine reports the
+module in a state other than the one it showed at the press, at most two
+minutes.
+
+A module's tab shows its task's steps under the state line, one line each
+in the plan's order: done, running, waiting with the words of what it waits
+for, such as "waiting for the package manager, held by File share", and not
+yet run. A failed step reads in the error tone with its code's words under
+it. A step's words are `ui.modules.step.<name>` with its params, a lock's
+`ui.modules.lock.<lock>`, and a wait's the code catalog's. A finished
+task's steps stay until the next task starts. The module list shows `<i>/<n>`,
+the running step's index and the plan's length, beside the spinner of a row
+whose task runs ([agent.md](agent.md), "The steps").
 
 A module reported `install_failed` has an `error` dot in the module list.
 Its tab reads `state.install_failed` beside the same dot, and shows the
@@ -880,7 +893,7 @@ hub holds its task, and never the module's journal. No module has a
 
 A module reported `installing` with a code shows the code's words as a
 notice at the top of its tab, and its buttons stay disabled as for any
-module in transit. Its output box keeps the install's lines while the hub
+module in transit. Its output box keeps the task's lines while the hub
 holds the task, with `ui.modules.task_running` beside them, until the
 machine reports another state. A module reported `absent` with a code shows
 the code's words as the same notice, and its buttons are those of any

@@ -325,6 +325,13 @@ walk theirs. A new code and its wording are one change.
 | `share_name_invalid`, `share_account_not_enabled`, `folder_share_unknown` | `{name}`, `{account}`, `{name}` | the folder share routes: a name outside the form a folder share's name takes, an account the file share does not enable, and a name no folder share of the machine has | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `containers_not_applied` | none | the `code` of a `failed` container module row, its start while the last apply of Containers did not write the module's containers as the state names them ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container") | added |
+| `state_not_settled` | `{module}` | a module verb that acts, refused while that module's task runs on past 30 seconds ([agent.md](agent.md), "A retry is the same press again") | params added |
+| `waiting_for_lock` | `{lock, module}` | the `code` of a `queued` row and a task's `wait`: a step that waits for the step lock `lock`, which the task of `module` holds, `agent` for the self-update ([agent.md](agent.md), "Step locks") | added |
+| `waiting_for_package_manager` | `{holder}` | a task's `wait`, and the `code` of an `installing` row: the package helper waiting for the system's own lock, `holder` the process the system names, empty when it names none | added |
+| `waiting_for_module` | `{module}` | a task's `wait`, and the `code` of an `installing` row: a container module's `wait_containers` or `render` waiting for Containers' task | added |
+| `waiting_for_check` | `{seconds}` | a task's `wait`, and the `code` of an `installing` row: a step that checks something outside the agent every `seconds`, 30 | added |
+| `module_needed` | `{module, state}` | the `code` of an `install_failed` container module row: its `wait_containers` ended while Containers read `state` and not `running`, or while Containers' `want` was not `running` ([agent.md](agent.md), "A step that brings up another module") | added |
+| `package_manager_busy` | `{holder}` | the `code` of an `install_failed` or `failed` row: a step whose package helper waited 300 seconds for the system's own lock ([agent.md](agent.md), "The system's own lock") | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
 | `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
 | `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/destroy` naming no share | added |
@@ -1004,7 +1011,7 @@ and platform, which change between releases.
 | `machine` | | `{hostname, platform, accounts, account_details, metrics, sessions}`, `account_details` one `{account, home, shell}` per account | | `{hostname, platform, os_machine_id}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
-| `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details}}` | | |
+| `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details, task}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, accounts: [{account, password, tool_configs}], cc_switch_version, cc_switch_artifact, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
@@ -1029,6 +1036,15 @@ since the fastest source depends on the machine's own network
 ([agent/module_install.md](agent/module_install.md), "Source sets"). The
 section comes with 0.6.0, as the recipe's shape does, and keeps `PROTOCOL`
 4.
+
+`task` in a module row of the agent's report is the module's task
+([agent.md](agent.md), "The steps"): `{steps, index, wait, is_running}`,
+`steps` the plan as `[{name, params}]`, `index` the 1-based step that runs
+or the last one run, `wait` the `{code, params}` of what that step waits for
+now and empty while it works, and `is_running` whether the task runs. It is
+null for a module that has had no task since the agent started, and a row
+keeps its last task's `task` until the next one starts. It is an added
+field and keeps `PROTOCOL` 4.
 
 `sessions` lists the shells the agent keeps by id, oldest first, each
 `{session_id, account, started_at, title, owner, is_attached, is_persistent,
@@ -1267,7 +1283,7 @@ from the same facts, whoever installed the software:
 | `stopped` | the hub has configured it and the unit is stopped |
 | `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)) |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
-| `queued` | in transit: its `want` differs from what it reports, and the agent is applying another module first ([agent.md](agent.md), "One module at a time") |
+| `queued` | in transit: its task has not run its first step, which waits for a step lock, named by `waiting_for_lock {lock, module}` ([agent.md](agent.md), "Step locks") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
 
 `install_failed` and `failed` are kept by the agent across its restarts
@@ -1612,9 +1628,8 @@ stream as `package
 it, says `is_module: false`, and so stays out of the catalog's modules. When
 no source serves a file, the hub closes the stream `download_failed {file,
 sources}` ([agent/module_install.md](agent/module_install.md), "Choosing a
-source"). An install's or an uninstall's output
-goes up a `log {module}` stream line by line, and the machine page shows it
-under the module's tab as it arrives.
+source"). Every task's output goes up a `log {module}` stream line by
+line, and the machine page shows it under the module's tab as it arrives.
 
 ### The account layer in the state
 
@@ -1813,7 +1828,7 @@ the transport gives whole to the Python on its side.
 | hub, to an agent | `shell` | `{cols, rows, account}`, the shell running as `account`, an enabled account of the Terminal module, the first one when `account` is empty, with that account's shell; refused `terminal_account_missing` while the module enables none, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways as `data`, a later size as `resize`; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on. On the agent the transport hands it to the agent's Python, which holds the pseudo-terminal |
 | hub, to an agent | `exec` | `{argv, is_tty, cols, rows, account}`: one run of `argv`, a list of strings run as given with no shell between, as `account`, chosen as a `shell`'s is; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused as a `shell` is, and `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
 | hub, to an agent | `file` | `{op: list, path}`: one directory listing, every path absolute in the machine's own form, for the panel's path window ([ui_behavior.md](ui_behavior.md), "Modals, and where a record's detail lives"). It closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. Any other `op` is closed `op_unknown {op}`. Opened by the hub's Python and handed to the agent's |
-| agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as `data` line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
+| agent, to the hub | `log` | `{module}`: opened for every task of the module, one line `step <i>/<n>: <name> <params>` at each step's start and the step's output line by line, up as `data`, closed with `params: {state}`, and with the failure's code and params when the task failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{podman, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
 | client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |

@@ -260,8 +260,9 @@ owner:
    ([transport.md](../transport.md), "The stream layer"), writing `hub:
    sending <title>, <sent> / <total> MB to <device>` into the module's output
    as it goes.
-1. The agent installs each artifact as its kind says, and the system packages
-   the entry names before them.
+1. The agent installs each artifact as its kind says, each in one step
+   `artifact {name}`, and the system packages the entry names before them in
+   one step `packages` ([../agent.md](../agent.md), "The steps").
 1. The agent runs the entry's `verify` command; its success is `installed`.
 
 | Rule | Reason |
@@ -277,7 +278,7 @@ owner:
 | Rule | Reason |
 | --- | --- |
 | A `system` entry names `packages`, with `pre_install` where the system needs a step first, and no download. | The system's package manager fetches, checks and updates its own packages. |
-| The agent installs and removes the named packages with the system's package manager, one operation at a time, in `modules/shared/system_package.py`. | One package manager holds a machine-wide lock. |
+| The agent installs and removes the named packages with the system's package manager under the step lock `package_manager`, through one helper in `modules/shared/system_package.py` that waits up to 300 seconds for the system's own lock ([../agent.md](../agent.md), "The system's own lock"). | One package manager holds a machine-wide lock, and the system's own updaters take it without asking the agent; apt and dnf 5 fail at once on a held lock. |
 | An entry names the packages the module runs and leaves out a package that adds a convenience. | `podman-docker` adds a `docker` command and conflicts with Docker CE over `/usr/bin/docker`, so naming it failed the install on a machine with Docker. |
 | A unit a distribution installs disabled is enabled and started at the install and at every apply while the module's `want` is `running`, and the module's **Stop** disables it. Containers' `podman.socket` is that unit ([modules/containers.md](modules/containers.md)). | The software starts with the machine from its install on, on every distribution, and a stopped module stays stopped after a restart. |
 | An uninstall removes the named packages and keeps the data: share directories and declared containers' volumes stay. | The data is the person's, and the packages are the module's. |
@@ -302,7 +303,7 @@ containers").
 | The manifest has one `container` entry for each platform Containers runs on: `linux`, `windows-amd64`, `darwin-arm64` and `darwin-amd64`, all naming the same images, each built for amd64 and arm64. | Podman pulls the variant of the Linux it runs on: the machine's own on Linux, the Podman machine's on Windows and macOS. |
 | The agent chooses a source for each image and has the Containers module's Podman pull `<source>@<digest>`; the hub caches no image. | An image is often several GB, and the machine reaches the registries itself. |
 | A hub container names its image as `{digest, sources}`, and the agent renders the reference it finds in Podman's store with that digest. | An image pulled from a mirror is stored under the mirror's name. |
-| The module depends on Containers alone. Its install or **Start** sets Containers' `want` to `running` first, which installs Containers where it is absent. Containers' **Uninstall** is refused `module_in_use {modules}` while a container module is installed. | A container module runs on Containers' Podman, and two container modules share nothing but it. |
+| The module depends on Containers alone. Its install or **Start** sets Containers' `want` to `running` first, which installs Containers where it is absent. The module's task waits for Containers' task in its first step, `wait_containers`, and asks Containers for a configure task once its images are pulled, in its step `render` ([../agent.md](../agent.md), "A step that brings up another module"). Containers' **Uninstall** is refused `module_in_use {modules}` while a container module is installed. | A container module runs on Containers' Podman, and two container modules share nothing but it. |
 | Containers' **Stop** stops the hub containers with the declared ones, and each container module then reads `stopped`. | The containers stop with the engine that runs them. |
 | The module's data is in its named volumes, and it binds no host folder. | An uninstall removes everything the module wrote. |
 | An uninstall stops and removes the module's containers, their units, its network and its named volumes, and the images no other container uses. A `container` entry names no `uninstall`. | A container module is removed whole, and a person's container on the same image keeps it. |

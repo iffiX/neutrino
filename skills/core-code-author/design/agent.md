@@ -133,20 +133,26 @@ with a code. **An edit to a module of an
 offline device is rejected with `agent_offline`, never queued**: the person
 is told the machine is away, and asks again when it is back.
 
-**One module at a time.** The agent applies the modules a state mentions one
-after another, in the fixed order `APPLY_ORDER` names: the file share,
-Terminal, the SSH server, Gitea, Containers, Hermes WebUI, Ayakaleaf,
-VS Code, code-server, CloudCLI, Codeg, SiYuan, Remote desktop.
-While it applies one, each other module whose `want` differs from its last
-reported state reports `queued`, until the agent reaches it. The module it
-installs reads `installing`, and a read of every module taken meanwhile
-leaves that row as it is.
+**One task per module.** The agent brings each module the state mentions
+to its entry with one task: a list of steps planned from the module's
+`want` and what the machine shows, run on a thread of its own beside the
+other modules' tasks ("The steps"). A step takes the step locks it needs
+before it runs and lets them go when it ends ("Step locks"). A newer entry
+for a module whose task runs replaces the plan at the next step boundary.
+`APPLY_ORDER` is the order tasks are made in and rows and the state error
+are read in: the file share, Terminal, the SSH server, Gitea, Containers,
+Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, SiYuan,
+Remote desktop. A module whose task has not run its first step, since that
+step waits for a step lock, reads `queued` with the lock's code. A module
+whose task installs it or switches its version reads `installing` until the
+task ends, one whose task uninstalls it reads `uninstalling`, and a read of
+every module taken meanwhile leaves that row as it is.
 
 A `container` module that a state asks to be present while it is not
 installed reads `installing` from that state until it reads its `want` or
-a step fails: while it waits behind Containers, while its images are
-pulled, after the pull, while Containers is applied again for it, and while
-its first start runs. While its images are pulled, a read leaves the
+a step fails: while its task waits for Containers' task, while its images
+are pulled, while Containers' configure task renders its containers, and
+while its first start runs. While its images are pulled, a read leaves the
 Containers row as it is. The pull runs on Containers' Podman, and on
 Windows a read of the Podman machine failed while a 2.8 GB image was
 pulled, so Containers read `stopped`.
@@ -192,7 +198,8 @@ never runs another module's failed step again.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
 that reads its `want`, or is in transit, writes no mark and asks for
-nothing new.
+nothing new. A module verb that acts waits for that module's task alone, at
+most 30 seconds, else it is refused `state_not_settled {module}`.
 
 Software somebody installs or removes by hand is displayed, never fought
 ("Parallel, never take over"). A hand-installed Samba reports `installed` or
@@ -237,18 +244,19 @@ a module whose last install failed, whatever that install left on the
 machine ("An install that fails ends install_failed"); `stopped` and
 `running` are configured by the hub and told apart by the unit; `installing`
 also covers a module's own install that runs inside its apply or as a task
-the apply left running, and a state waiting on such a task is applied again
-every 30 seconds under the same hash until the task ends. An `installing`
+the apply left running, and the module's task checks such a task every 30
+seconds in its step, holding no step lock, until it ends. An `installing`
 row can hold `{code, params}` naming what holds up the install:
 `reboot_required` while a Windows machine owes the restart that the Windows
-features of Containers asked for. The agent never restarts the machine; a
-person does, from the module's tab or the device, and the same 30-second
-apply goes on with the install after it
+features of Containers asked for, and the code of the wait while its step
+waits ("The steps"). The agent never restarts the machine; a
+person does, from the module's tab or the device, and Containers' task goes
+on with the install after it
 ([modules/containers.md](agent/modules/containers.md)). An `absent` row
 can hold a kept failure's `{code, params}` ("A failure outlives a
-restart"). `queued` is a
-module the agent reaches after the one it is applying ("One module at a
-time").
+restart"). `queued` is a module whose task has not run its first step, with
+`{code, params}` naming the lock or the module that step waits for ("Step
+locks").
 
 **An install that fails ends install_failed.** An install that fails
 reports `install_failed` with the failure's `{code, params}`, whether the
@@ -264,8 +272,8 @@ on a module the machine has (start, stop, configure, uninstall) reports
 `failed`. No button cancels a step.
 
 **A failure outlives a restart.** The agent keeps each module's last failed
-step, its state (`install_failed` or `failed`) and its `{code, params}`,
-root-only in `failures/<module>.json` under the state root, and reports the
+step, its state (`install_failed` or `failed`), its `{code, params}` and the
+step it failed at, root-only in `failures/<module>.json` under the state root, and reports the
 module from it after a restart: a module whose install failed reads
 `install_failed`, and one whose configure, start, stop or uninstall failed
 reads `failed` while its software is there. The module's next attempt
@@ -285,6 +293,240 @@ drawn:
   two minutes; then the machine's own report, or its silence, takes over.
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
+
+## The steps
+
+A task is the work that brings one module from what the machine shows to
+its entry in the state: its `want`, its configuration and its recipe. It is
+a list of steps. A step is a named part of a task with one start and one
+end, and nothing cuts it or skips a part of it. Its name comes from a closed
+list, so each surface words it, and a step about one artifact, image or
+account carries it as a parameter.
+
+| Rule | Reason |
+| --- | --- |
+| A module has at most one task at a time. The `ai_tools` section is one task of its own, under the same rules, and reports through its own section. | Two tasks on one module would fight over the same files and units. |
+| A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing or the last install failed, the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. |
+| Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
+| A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
+| A module's task opens one `log {module}` stream for its whole run, writes `step <i>/<n>: <name> <params>` at each step's start, and then the step's output line by line. | The log box reads the steps in order, configure and start among them. |
+| The report goes up at the start and the end of every step. | Several tasks run at once, and a step of three seconds would otherwise start and end between two reports. |
+
+### From a state to tasks
+
+For each module the state names and the agent has a runner for, and for
+the `ai_tools` section, the agent compares the entry's hash:
+
+| The hash equals | The agent |
+| --- | --- |
+| the hash it last tried for that module | does nothing |
+| the hash of the entry the module's running task works from | does nothing |
+| neither, and the module has a running task | gives the task the newer entry |
+| neither, and the module has no task | makes a task for it |
+
+### A newer entry while a task runs
+
+| Rule | Reason |
+| --- | --- |
+| The running step ends as it would. The task then plans again from what the machine shows toward the newer entry, and goes on with that plan. | A step cut in the middle leaves its work half done, such as a dpkg run, an msi or a half-made Podman machine. A step done once is not run again, since the new plan starts from what the machine shows. |
+| A step that waits for something outside the agent, a restart owed, a first start or an install task left running on Windows, checks it every 30 seconds and holds no step lock between checks. Each check is a step boundary. | A module stuck waiting still takes a new `want`, an **Uninstall** among them, and every other module's task goes on. |
+| A new plan toward `absent` from a task that already ran an install step runs the module's uninstall whatever the presence check finds. | A partial pull or a half unpack is the task's own leftover, as an `install_failed` module's is. |
+| A configure step reads the configuration of the entry the task holds when the step starts. | A newer entry that changes only the configuration, a Web share's guest or an account added, reaches the configure steps that have not run yet. |
+| No button cancels a step, so a newer entry waits at most the running step's own time, about 5 minutes for Ayakaleaf's `tex`. | A cut differs on every system and leaves its work half done. |
+
+### The end of a task
+
+| How the task ends | The tried hash for the module | Its kept failure |
+| --- | --- | --- |
+| every step took | the hash of the entry the task last planned from | deleted |
+| a step failed | the same | the failure with its step, `{name, params, index, count}` |
+| a step failed `hub_unreachable` | none, so the next state runs the task again | the failure with its step |
+| the agent stopped mid-task | none, so the next state plans the module again | as before the task |
+
+The steps after a failed step do not run, and the other modules' tasks go
+on. The applied hash moves to the state's hash once every mentioned
+module's task has ended with no failure and none waits. The state error is
+the first failure in `APPLY_ORDER`.
+
+### The step names
+
+| Step | What runs | A failure reads |
+| --- | --- | --- |
+| `packages` | the recipe's `pre_install`, then the system packages, through the one package helper ("Step locks") | `install_failed` |
+| `artifact {name}` | one artifact: received down `package`, its digest checked, put in place by its kind ([module_install.md](agent/module_install.md), "Artifacts") | `install_failed` |
+| `verify` | the method's presence check; a `hub` module's version is kept | `install_failed` |
+| `switch {version}` | the whole version switch: stage, stop, swap, `verify`, start ([module_install.md](agent/module_install.md), "Module versions") | `failed` |
+| `configure` | the runner's apply of the configuration | `failed` |
+| `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's system account | `failed` |
+| `npm {account}` | CloudCLI's npm for one account | `failed` |
+| `start`, `stop` | the runner's start or stop | `failed` |
+| `uninstall` | the module stopped, the hub's configuration removed, the software, `post_uninstall`, and the data where the recipe says | `failed` |
+| `wait_containers` | waits until Containers reads `running` and has no task | `install_failed` |
+| `pull {image}` | one image of a container module, from the fastest source | `install_failed` |
+| `render` | a configure task of Containers, asked for and waited for | `install_failed` |
+| `windows_features`, `restart` | Containers on Windows: the two Windows features turned on with dism, and the restart they owe | `install_failed` |
+| `machine` | Containers on Windows and macOS: the Podman machine made or taken over, sized and started, and the wait until it answers | `failed` |
+| `first_start`, `update_check` | Hermes WebUI's first start and its one read of the update setting ([modules/hermes_webui.md](agent/modules/hermes_webui.md), "The first start") | `install_failed` |
+| `replica_set`, `wait_app`, `admin`, `tex`, `guests` | Ayakaleaf's first start ([modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | `install_failed` |
+| `tools {account}` | the `ai_tools` section's switch of one account ([ai_tools.md](agent/ai_tools.md)) | the account's own result |
+
+Every module's install task, from `absent` to `running`, with the steps
+that can pass 30 seconds by the lab's times:
+
+| Module | Its steps | Long steps |
+| --- | --- | --- |
+| File share on Linux | `packages`, `verify`, `configure`, `start` | `packages` |
+| File share on Windows and macOS | `verify`, `configure`, `start` | none |
+| Terminal, Remote desktop | `configure` | none |
+| SSH server | `configure`, then `account {account}` per enabled account | none |
+| Gitea | `packages` on Linux for `git`, `artifact gitea`, `verify`, `account {account}`, `configure`, `start` | `configure` waits for the server, about 30 seconds for the whole task |
+| Containers on Linux | `packages`, `verify`, `configure`, `start` | `packages`, and `configure` while it restarts containers |
+| Containers on Windows | `windows_features`, `restart`, `artifact wsl`, `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `restart` until a person restarts, `machine` about 40 seconds, `configure` 15 to 23 seconds |
+| Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |
+| Hermes WebUI | `wait_containers`, `pull webui`, `pull agent`, `verify`, `render`, `start`, `first_start`, `update_check` | `pull agent` 73 seconds, `first_start` 30 to 38 seconds |
+| Ayakaleaf | `wait_containers`, `pull redis`, `pull mongo`, `pull app`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
+| VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
+| CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
+
+Gitea's `account` is a step apart from its `configure`, so `system_accounts`
+is held for the one command that makes the account and not for Gitea's
+start. The `ai_tools` section's task is `artifact cc_switch` while the
+pinned cc-switch is missing, then `tools {account}` per account the section
+names.
+
+| Task | Its steps |
+| --- | --- |
+| A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_containers`, `start` and the first-start steps its record does not hold |
+| A stop | `configure`, then `stop` |
+| A configure | `configure` and the `account` steps, then `start` or `stop` by the `want` |
+| An uninstall | `uninstall`; a container module's drops its hub containers and removes its containers, network, volumes and unused images |
+| A version switch | `switch {version}`, then the steps of a configure |
+
+### A step that brings up another module
+
+| Rule | Reason |
+| --- | --- |
+| A container module's task never runs Containers' steps and never makes a task for Containers. Its `wait_containers` waits until Containers reads `running` and has no task. | One owner per module: two tasks never act on Containers at once, and a failure lands on the row of the module whose step failed. |
+| The hub writes Containers' `want` `running` at a container module's **Install** or **Start**, so the same state gives Containers a task of its own. | Containers' install stays Containers' task, and nothing on the hub changes. |
+| `wait_containers` ends the task `install_failed` with `module_needed {module: podman, state}` when Containers' task ends and Containers does not read `running`, or when Containers' `want` is not `running`. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks Containers too. |
+| An installed container module plans no step while Containers' `want` is not `running`: its task ends with no failure and no tried hash, and the module reads `stopped`. | Containers' **Stop** stops every hub container, and the state that starts Containers again plans the module's start. |
+| `render` asks Containers for a configure task and waits for it to end. Two asks while one Containers task runs become one more configure after it. | Containers renders a container module's containers once their images are in its store, and does it once for a run of pulls. |
+| Containers' task never waits for a container module. | Module waits then form no loop ("Step locks"). |
+
+### A restart mid-task
+
+The process ends, its tasks end with it, and none of them wrote a tried
+hash. The hub finds the applied hash empty and sends the state, and each
+module is planned again from what the machine shows:
+
+| Step | Safe to run again |
+| --- | --- |
+| `packages` with apt | apt installs what is missing; after a cut dpkg run the helper runs `dpkg --configure -a` once when apt says `dpkg was interrupted`, then apt again |
+| `packages` with dnf, an `artifact` of kind `msi` or `pkg` | an rpm transaction and the system installers' transactions finish whole or roll back |
+| an `artifact` that unpacks | the unpack goes to a staging directory and replaces the target |
+| `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
+| `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
+| Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}` |
+| `npm {account}` on Linux | the agent stops a transient unit of that name left from before the restart before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md)) |
+
+A self-update takes `package_manager` before it launches, so it never cuts
+a `packages` step or an msi of the agent's own. A step that needs the hub,
+an `artifact`, fails `hub_unreachable` while the session is down, and the
+next state runs the task again; a step that does not need it goes on. The
+`log` stream's lines are lost while the session is down and stay in the
+agent's own log, and the report's `task` keeps the steps.
+
+### The row's task
+
+Every module row of the report carries `task`, `{steps, index, wait,
+is_running}`, null for a module that has had no task since the agent
+started ([protocol.md](protocol.md), "The sections"):
+
+| Field | Holds |
+| --- | --- |
+| `steps` | the plan, each step `{name, params}`; a new plan replaces it |
+| `index` | 1-based: the step that runs, or the last one run once the task ended, the failed one among them |
+| `wait` | `{code, params}` naming what the step waits for now, empty while it works: `waiting_for_lock {lock, module}`, `waiting_for_package_manager {holder}`, `waiting_for_module {module}`, `reboot_required`, or `waiting_for_check {seconds}` for a step's own check |
+| `is_running` | true while the task runs; false once it ended, and the row keeps the last task's `task` until the next one starts |
+
+| Rule | Reason |
+| --- | --- |
+| `state` keeps the closed table. A task that installs or switches the module reads `installing`, one that uninstalls it `uninstalling`, and a configure, start or stop task leaves the state the machine shows, with `task` beside it. | No surface's state table changes. |
+| A module whose task has not run its first step, since that step waits for a step lock, reads `queued` with the wait's `waiting_for_lock {lock, module}`. An `installing` row whose step waits carries the wait's `{code, params}`. | The person reads why it waits, and the busy set stays as it is. |
+| The kept failure, `failures/<module>.json`, adds `step: {name, params, index, count}`, `count` the steps in the plan. | The row names the failed step, and a restart reports it unchanged. |
+
+## Step locks
+
+A step names its step locks before it runs, takes them in a fixed order, and
+lets them go when it ends. A task holds no step lock between steps.
+
+| Lock | What it guards | The steps that take it | Reason |
+| --- | --- | --- | --- |
+| `containers` | Containers' engine: its Podman on Linux or its Podman machine, its rendered files and units, its record and in-memory configuration, its page ports | alone: every step of Containers' own task, and a container module's `uninstall`; shared: a container module's `pull`, `verify`, `start`, `replica_set` and `tex`, Hermes WebUI's key write in `first_start`, and Containers' `control` verb | A pull or a `tlmgr` run must not meet a Containers apply that restarts units, resizes the machine or runs `wsl --shutdown`, and two pulls, or a pull and an exec, on one Podman are safe together. |
+| `package_manager` | the system's installer: apt and dpkg, dnf, yum and rpm, msiexec and dism, macOS `installer` | `packages`, an `artifact` of kind `msi` or `pkg`, `windows_features`, an `uninstall` that removes system packages or an msi, and the self-update before it launches | One package manager runs on a machine at a time, and apt and dnf 5 fail at once on a lock another run holds. dism and msiexec share Windows servicing. |
+| `system_accounts` | the machine's account database: `useradd` and `userdel` on Linux, `sysadminctl` and `dscl` on macOS, local accounts on Windows | the file share's `configure`, Gitea's `account`, and their `uninstall` | `useradd` fails at once with `cannot lock /etc/passwd` while another one runs. On Windows the PowerShell host already runs one request at a time, so the lock costs nothing there and keeps one rule. |
+
+| Rule | Reason |
+| --- | --- |
+| A step waiting to take `containers` alone keeps new shared takers out. | A run of pulls then never holds a **Stop** of Containers back for ever. |
+| Containers' **Stop** while a container module's step holds `containers` shared waits for that step to end, up to about 5 minutes for `tex`. The container module's next plan then finds Containers' `want` not `running`, and its task ends with no failure. | A cut step differs on every system: a `podman exec` goes on inside the container, and a pull on Windows runs in the machine. |
+| A step waiting for a step lock names it in its row: `waiting_for_lock {lock, module}`, `module` the module whose task holds the lock, `agent` for the self-update. | The person reads which module holds theirs back. |
+
+### The order
+
+The order is `containers`, then `package_manager`, then `system_accounts`.
+The locks the agent had before them come after all three, each held for one
+call: the run-as lock of each account, the batch logon record, the
+PowerShell host, Containers' page ports and the core's state lock.
+
+| Rule | Reason |
+| --- | --- |
+| A step takes all its step locks before it starts, in the order. | A step waiting for a lock then holds only locks before it in the order, and a loop of waits needs a step that holds a later lock while it waits for an earlier one. |
+| A step that waits for a module, `wait_containers` or `render`, holds no step lock. | A module wait then never joins a lock wait into a loop. |
+| Only a container module waits for a module, and only for Containers, whose task waits for none. | Module waits form no loop either. |
+| The inner locks take no step lock inside them, and a unit test checks every step's locks against the order. | A new step cannot break the first rule. |
+
+### Timeouts
+
+| Wait | Timeout | Reason |
+| --- | --- | --- |
+| for a step lock | none of its own | Every holder runs under its own command timeout, a pull 3600 seconds, `tlmgr` and npm 1800, an msi or apt 1800, a unit start 900, a machine init 900, and the row names the wait meanwhile. A second timeout would fail a module only because another one is slow. |
+| for the system's package lock | 300 seconds, then the step fails `package_manager_busy {holder}` | The self-update already waits 300 seconds, and a failure that names the holder beats an endless wait. |
+| for Containers, in `wait_containers` and `render` | none of its own: it ends with Containers' task | Containers' task has its own timeouts. |
+| a step's own check every 30 seconds | the module's own, as Ayakaleaf's replica set and CloudCLI's four-hour install task have | A step that waits for something outside the agent ends by its own rule. |
+
+### The system's own lock
+
+`package_manager` orders the agent's own runs. The system's updaters,
+unattended-upgrades, PackageKit and Windows Update, take the system's lock
+without asking the agent. The one helper every `package_manager` step runs,
+`modules/shared/system_package.py` on Linux and `modules/shared/installers.py`
+for an msi or a pkg, therefore waits on the system's lock too:
+
+| System | The wait |
+| --- | --- |
+| apt | `-o DPkg::Lock::Timeout=300` on every `apt-get` |
+| dnf 4, yum | none: they wait on the rpm lock themselves |
+| dnf 5 | runs again every 5 seconds, up to 300 seconds, while its output names `rpm transaction lock` |
+| msiexec | waits for the `Global\_MSIExecute` mutex up to 300 seconds, and runs once more on 1618 |
+| dism, macOS `installer` | none yet; the lab records what each prints while another run holds the system's lock |
+
+| Rule | Reason |
+| --- | --- |
+| While the helper waits on the system's lock, the step's wait is `waiting_for_package_manager {holder}`, `holder` the process apt names, such as `unattended-upgr`, and empty where none is named. | A person sees that the machine's own updater holds the install back. |
+| The self-update's script keeps its own copy of the same waits. | It runs outside the agent. |
+
+### What needs no lock
+
+| Shared thing | Why no step lock |
+| --- | --- |
+| One Windows account's scheduled tasks | Each task's name is its module's own. The one-shot run-as task of an account already takes turns under the account's lock, and the batch logon record changes under its own lock, which keeps "last task removed, right taken away" right when two modules act on one account. |
+| The firewall | No module task writes a firewall rule on Linux, and the relays write their own `neutrino_agent_relay` rules. On Windows the PowerShell host runs one request at a time, and on macOS only the file share writes its pf anchor. |
+| systemd's `daemon-reload` | systemd serves one call at a time, and a reload does not stop a start that runs. |
+| Loopback ports | Each module picks from its own base, 100 or more apart, and Containers' page ports come from the system's free ports. |
+| The packages directory | Each received file has a temporary name of its own. |
+| WSL | Only Containers runs WSL commands. |
+| Per-module files under the state root | Each module's configured mark, kept failure, kept version and record are written by that module's task alone, and the tried hashes are written whole under one lock. |
 
 ## Parallel, never take over
 

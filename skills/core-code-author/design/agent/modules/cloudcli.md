@@ -105,6 +105,8 @@ peer`. The service outlives an agent that stops during the install, and
 systemd refuses a second service of its name while it runs. So the install
 first waits for a service of its name that runs, polling every 5 seconds
 for at most the install's 30 minutes, and stops it when the time is up.
+The agent stops a transient unit of that name left from before its restart
+before it starts one.
 When CloudCLI's version is then in the account's app directory, the
 install takes that service's work and runs no npm. When the kernel kills the
 install for want of memory, the install ends
@@ -113,10 +115,11 @@ failed install is tried again only with a state of another hash, and the
 hash last tried is kept on disk, so an agent of the same build that starts
 again does not try it again either.
 
-**The install's state is `installing` until it ends.** On Linux and macOS
-npm runs inside the apply; on Windows the apply starts the install task and
-leaves it running (four hours at most), reads its state on every apply, and
-starts no instance until it has ended; an ended task is judged by its
+**The install's state is `installing` until it ends.** npm runs as the
+step `npm {account}` of CloudCLI's task ([agent.md](../../agent.md), "The
+steps"). On Linux and macOS it runs to its end; on Windows the step starts
+the install task and leaves it running (four hours at most), checks its
+state every 30 seconds, and starts no instance until it has ended; an ended task is judged by its
 result and by the app directory holding the package and the three native
 modules, then unregistered. The hub publishes an instance's `web` entry
 only while the device reports it running.
