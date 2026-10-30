@@ -397,7 +397,9 @@ its listener, and the listener a connection arrived on settles its
 `reached_through`. The hub's Python renders what the transport opens into
 `generated/transport.json` under the state root, `{listen_port,
 frp_listeners: [{port, listener}], control_socket}`, and the transport reads
-it at its start; a change of the file restarts the transport.
+it at its start; a change of the file restarts the transport. An upgrade of
+the hub's package restarts it too
+([../misc/operations.md](../misc/operations.md), "What an upgrade restarts").
 
 The agent port answers a sender inside every exposed segment, whatever the
 interface's role, an uplink's included, and on every exposed overlay
