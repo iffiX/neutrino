@@ -515,6 +515,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
 | `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
 | `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |
+| `ui.containers.run_stopped_hint`, in place of `ui.containers.run_apply_hint` while Containers is stopped | Containers are stopped; these settings take effect at the next Start. | 容器已停止，这些设置在下次启动时生效。 |
 | `ui.containers.run_restart_warning` | The machine restarts, and its containers stop for a moment. | 虚拟机会重启，容器会停一会儿。 |
 | `ui.containers.run_wsl_warning` | Every WSL system of this account restarts with the new settings. | 这个账户下的所有 WSL 系统都会重启并使用新设置。 |
 | `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
