@@ -40,9 +40,12 @@ from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.package import params_of
 
 # What apt prints while another process holds dpkg's lock, and that
-# process's name in it.
+# process's id and name in it.
 APT_LOCK_TEXT = "Could not get lock"
-APT_LOCK_HOLDER = re.compile(r"held by process \d+ \(([^)]*)\)")
+APT_LOCK_HOLDER = re.compile(r"held by process (\d+) \(([^)]*)\)")
+# Where the kernel shows each process: its name, cut at 15 characters, and
+# its command line.
+PROC_DIR = "/proc"
 # What apt prints after a dpkg run was cut.
 DPKG_INTERRUPTED_TEXT = "dpkg was interrupted"
 # The code a step fails with once the system's lock stayed held.
@@ -109,6 +112,41 @@ def run_package_manager(
     )
 
 
+def holder_name(pid: int, named: str = "") -> str:
+    """The whole name of a process that holds a package manager's lock.
+
+    The kernel's name of a process, the one apt prints, is cut at 15
+    characters, such as ``unattended-upgr``; the command line holds it
+    whole, after an interpreter's own words where the program is a script.
+
+    Args:
+        pid: The process.
+        named: The name already known of it; empty reads the kernel's.
+
+    Returns:
+        The last part of the first word of the command line that begins
+        with the kernel's name; that name where none does, or the command
+        line cannot be read.
+    """
+    base = os.path.join(PROC_DIR, str(pid))
+    if not named:
+        try:
+            with open(os.path.join(base, "comm"), encoding="utf-8") as stream:
+                named = stream.read().strip()
+        except (OSError, UnicodeDecodeError):
+            return ""
+    try:
+        with open(os.path.join(base, "cmdline"), "rb") as stream:
+            words = stream.read().split(b"\0")
+    except OSError:
+        return named
+    for word in words:
+        name = os.path.basename(word.decode("utf-8", "replace"))
+        if named and name.startswith(named):
+            return name
+    return named
+
+
 def _tell_wait(wait: dict) -> None:
     """Hand one wait to the sink of this thread's task."""
     on_wait = getattr(_sinks, "on_wait", None)
@@ -154,7 +192,8 @@ def _run_apt(command: list, timeout_s: int) -> tuple:
             held.append(line)
             if APT_LOCK_TEXT in line:
                 found = APT_LOCK_HOLDER.search(line)
-                holder = found.group(1) if found else holder
+                if found:
+                    holder = holder_name(int(found.group(1)), found.group(2))
                 if not is_waiting:
                     is_waiting = True
                     _tell_wait(_package_wait(holder))

@@ -159,6 +159,7 @@ def fakes(tmp_path, monkeypatch):
         path.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
     monkeypatch.setattr(system_package_module, "AGENT_PACKAGE_LOCK_RETRY_S", 0)
+    monkeypatch.setattr(system_package_module, "PROC_DIR", str(tmp_path / "proc"))
 
     class Fakes:
         def turns(self, program, *turns):
@@ -167,6 +168,13 @@ def fakes(tmp_path, monkeypatch):
         def args(self, program):
             path = tmp_path / f"{program}.args"
             return path.read_text().splitlines() if path.exists() else []
+
+        def process(self, pid, comm, *words):
+            """One process as the kernel shows it: its cut name and its command line."""
+            directory = tmp_path / "proc" / str(pid)
+            directory.mkdir(parents=True)
+            (directory / "comm").write_text(comm + "\n")
+            (directory / "cmdline").write_bytes(b"\0".join(words) + b"\0")
 
     return Fakes()
 
@@ -191,6 +199,25 @@ def test_apt_waits_for_dpkg_s_lock_and_names_its_holder(fakes):
         },
         {},
     ]
+
+
+def test_apt_s_holder_is_named_whole_from_its_command_line(fakes):
+    waits: list = []
+    fakes.process(
+        2345,
+        "unattended-upgr",
+        b"/usr/bin/python3",
+        b"/usr/bin/unattended-upgrade",
+        b"--download-only",
+    )
+    system_package_module.set_wait_sink(waits.append)
+    fakes.turns("apt-get", "wait")
+    try:
+        system_package_module.run_package_manager(["apt-get", "install", "-y", "x"])
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    assert waits[0]["params"] == {"holder": "unattended-upgrade"}
 
 
 def test_a_lock_held_past_the_wait_fails_package_manager_busy(fakes):
