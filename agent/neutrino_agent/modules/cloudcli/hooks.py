@@ -38,7 +38,7 @@ import time
 import urllib.parse
 
 from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S, AGENT_STEP_NPM
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli.config import (
     CloudcliConfig,
     CloudcliInstance,
@@ -79,6 +79,8 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_NPM_PARTS,
     CLOUDCLI_NPM_USERCONFIG_NAME,
     CLOUDCLI_OOM_RESULT,
+    CLOUDCLI_SYSTEM_STOPPING,
+    CLOUDCLI_UNIT_LOADED_TEXT,
     CLOUDCLI_PACKAGE_PARTS,
     CLOUDCLI_QUERY_TOKEN,
     CLOUDCLI_RECORD_FIELDS,
@@ -730,6 +732,8 @@ class CloudcliHooks(InstanceHooks):
                 ``cloudcli_native_module_failed``, or
                 ``cloudcli_install_out_of_memory`` and ``credential_invalid``
                 at once, each naming the account.
+            ModuleInstallPending: On Linux while a service of the install's
+                name is still loaded or the machine is shutting down.
             OSError: When a command cannot run, a file cannot be written, or
                 the PowerShell host fails.
             subprocess.SubprocessError: When a command does not finish.
@@ -1040,7 +1044,13 @@ class CloudcliHooks(InstanceHooks):
     def _install_linux(
         self, account: str, home: str, app: str, registry: str, settings: dict
     ) -> None:
-        """Run npm as the account in a transient service, then check the native modules."""
+        """Run npm as the account in a transient service, then check the native modules.
+
+        Raises:
+            ModuleApplyError: npm's or the native modules' failure.
+            ModuleInstallPending: While a service of the install's name is
+                still loaded, or the machine is shutting down and stopped it.
+        """
         node = self.node
         node_bin = os.path.dirname(node)
         environment = {
@@ -1088,6 +1098,8 @@ class CloudcliHooks(InstanceHooks):
         if not result.is_success:
             output = "\n".join([logged, result.stdout, result.stderr]).strip()
             self._log(f"{self.name}: npm for {account}: {output[-2000:]}")
+            if CLOUDCLI_UNIT_LOADED_TEXT in output or self._is_machine_stopping():
+                raise ModuleInstallPending(account)
             if self._is_out_of_memory(unit):
                 raise ModuleApplyError(
                     "cloudcli_install_out_of_memory", {"account": account}
@@ -1284,6 +1296,11 @@ class CloudcliHooks(InstanceHooks):
                     "detail": failure_detail(check.stderr),
                 },
             )
+
+    def _is_machine_stopping(self) -> bool:
+        """Whether the machine is shutting down, which stops an install's service."""
+        shown = self.machine.run(["systemctl", "is-system-running"], is_checked=False)
+        return shown.stdout.strip() == CLOUDCLI_SYSTEM_STOPPING
 
     def _is_out_of_memory(self, unit: str) -> bool:
         """Whether the kernel killed an install's service for want of memory; forgets the unit."""

@@ -12,7 +12,8 @@ with its cache inside the app directory and an empty file as the account's
 configuration, as a transient service that may take ``OOMPolicy=stop`` on
 Linux and as the account's own process on a Mac, and a failure names its
 step; on Linux an install service left running is waited for and its work
-taken, and stopped past the install's time; on Windows an install runs as a
+taken, and stopped past the install's time, and a service of the install's
+name still loaded or a machine shutting down makes the step wait; on Windows an install runs as a
 task left running, the account reads installing with the install's log
 meanwhile, and an ended task is judged by its result and the app directory,
 the account's batch logon right held from the task's start until then; each
@@ -46,7 +47,7 @@ import zipfile
 
 import pytest
 
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli import hooks as hooks_module
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
 from neutrino_agent.modules.cloudcli.hooks import (
@@ -392,6 +393,8 @@ class Machine:
         self.on_ended = None
         self.waiting_seen: list = []
         self.slept: list = []
+        self.run_error = ""
+        self.system_state = "running"
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         self.calls.append(list(command))
@@ -405,12 +408,14 @@ class Machine:
             return CommandResult(list(command), 0, state + "\n", "")
         if command[:2] == ["systemctl", "show"]:
             return CommandResult(list(command), 0, self.unit_result + "\n", "")
+        if command[:2] == ["systemctl", "is-system-running"]:
+            return CommandResult(list(command), 0, self.system_state + "\n", "")
         if command[0] == "systemd-run":
             self.installing_seen.append(self.hooks.installing)
             if self.npm_exit == 0:
                 land_package(command[command.index("--prefix") + 1])
             write_log(command, self.npm_output)
-            return CommandResult(list(command), self.npm_exit, "", "")
+            return CommandResult(list(command), self.npm_exit, "", self.run_error)
         if "-e" in command:
             return CommandResult(list(command), self.check_exit, self.check_output, "")
         return CommandResult(list(command), 0, "", "")
@@ -489,6 +494,32 @@ def test_a_failed_npm_install_names_its_step_and_reads_installing_no_more(linux)
 
     assert caught.value.code == "cloudcli_npm_install_failed"
     assert caught.value.params["detail"] == "npm error code ECONNRESET"
+    assert hooks.installing == frozenset()
+
+
+def test_an_install_unit_still_loaded_makes_the_step_wait(linux):
+    hooks, machine, entry = linux
+    machine.npm_exit = 1
+    machine.run_error = (
+        "Failed to start transient service unit: Unit "
+        "neutrino_cloudcli_install_ann.service was already loaded or has a "
+        "fragment file."
+    )
+
+    with pytest.raises(ModuleInstallPending):
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert len([call for call in machine.calls if call[0] == "systemd-run"]) == 1
+
+
+def test_an_install_a_shutdown_stopped_makes_the_step_wait(linux):
+    hooks, machine, entry = linux
+    machine.npm_exit = 143
+    machine.system_state = "stopping"
+
+    with pytest.raises(ModuleInstallPending):
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
     assert hooks.installing == frozenset()
 
 
