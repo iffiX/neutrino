@@ -2,10 +2,10 @@
 
 What these pin: a module's verb reaches its runner by the ``module`` field
 with the lines it prints handed on, ``validate`` and ``journal`` reach
-every runner without waiting on the state, a module this build has no
-runner for and a verb this agent does not have both refuse
-``verb_unknown``, a runner that raises answers ``agent_internal`` and never
-drops the stream, the power and reinstall verbs keep their answers,
+every runner without waiting on the state, they and the remote desktop
+read are the only reading commands, a module this build has no runner for
+and a verb this agent does not have both refuse ``verb_unknown``, a runner
+that raises answers ``agent_internal`` and never drops the stream, the power and reinstall verbs keep their answers,
 ``resize`` reaches the shell stream it names, a process is ended with a
 term and then a kill against a real child and through the platform on
 Windows, never one of the protected pids, and the remote desktop verbs
@@ -17,8 +17,14 @@ import signal
 import subprocess
 import time
 
+import pytest
+
 from neutrino_agent.core import commands
-from neutrino_agent.core.commands import AGENT_VERBS, DeviceOperator
+from neutrino_agent.core.commands import (
+    AGENT_VERBS,
+    DeviceOperator,
+    is_reading_command,
+)
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.platforms.base import AgentPlatform
@@ -200,6 +206,24 @@ def test_the_journal_reads_while_a_state_is_still_applying():
 
     assert (outcome.exit_code, outcome.code) == (0, "")
     assert settled == []
+
+
+@pytest.mark.parametrize(
+    "module, verb, is_reading",
+    [
+        ("samba", "journal", True),
+        ("podman", "journal", True),
+        ("samba", "validate", True),
+        ("agent", "remote_desktop_read", True),
+        ("podman", "control", False),
+        ("gitea", "password", False),
+        ("agent", "reboot", False),
+        ("agent", "remote_desktop_password_set", False),
+        ("agent", "journal", False),
+    ],
+)
+def test_only_the_reads_are_reading_commands(module, verb, is_reading):
+    assert is_reading_command(module, verb) is is_reading
 
 
 # --- the device verbs ---

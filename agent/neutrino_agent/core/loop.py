@@ -66,7 +66,7 @@ from neutrino_agent.constants import (
     PROTOCOL,
 )
 from neutrino_agent.core import enrollment, network, self_update
-from neutrino_agent.core.commands import DeviceOperator
+from neutrino_agent.core.commands import DeviceOperator, is_reading_command
 from neutrino_agent.core.container_relay import ContainerRelays, gateway_port_of
 from neutrino_agent.core.desired_state import DesiredStateApplier, DesiredStateStore
 from neutrino_agent.core.engine import ModuleEngine
@@ -1261,7 +1261,8 @@ class Agent:
                 "params": {},
                 "output": "",
             }
-        self._log(f"running {module} {verb}")
+        if not is_reading_command(module, verb):
+            self._log(f"running {module} {verb}")
         outcome = operator_.run(module, verb, args, on_line)
         reply = {
             "exit_code": outcome.exit_code,

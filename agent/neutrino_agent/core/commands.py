@@ -66,6 +66,24 @@ KILL_POLL_S = 0.05
 VERB_LOCKS = {
     (AGENT_CONTAINERS_MODULE, "control"): CONTAINERS_SHARED_LOCKS,
 }
+# The verbs every module answers that only read.
+MODULE_READING_VERBS = (AGENT_MODULE_VERB_VALIDATE, AGENT_MODULE_VERB_JOURNAL)
+
+
+def is_reading_command(module: str, verb: str) -> bool:
+    """Whether a command only reads: a module's ``validate`` or ``journal``, or the agent's remote desktop read.
+
+    Args:
+        module: The module the command names, ``agent`` for the agent's own
+            verbs.
+        verb: The verb.
+
+    Returns:
+        True for a command that changes nothing on the machine.
+    """
+    if module == AGENT_COMMAND_MODULE:
+        return verb == VERB_REMOTE_DESKTOP_READ
+    return verb in MODULE_READING_VERBS
 
 
 @dataclass
@@ -173,7 +191,7 @@ class DeviceOperator:
     def _module_verb(
         self, module: str, runner, verb: str, args: dict, on_line
     ) -> CommandOutcome:
-        is_reading = verb in (AGENT_MODULE_VERB_VALIDATE, AGENT_MODULE_VERB_JOURNAL)
+        is_reading = is_reading_command(module, verb)
         if (
             not is_reading
             and self._settle is not None

@@ -16,8 +16,9 @@ frame this build cannot read the typed error; the ``port`` question
 answered from the report and the last state; the AI gateway forward asked
 of the transport while the state says ``is_forwarded``; the streams this
 side opens on its own connections; the self-update a newer hub's
-``software`` triggers once the first report has gone out; a leave, a join,
-``sync`` and the status ``probe``; a binding of 0.5 taking the hub's key;
+``software`` triggers once the first report has gone out; a command's
+line in the agent's log, written for every command but a read; a leave, a
+join, ``sync`` and the status ``probe``; a binding of 0.5 taking the hub's key;
 and the relays run with the loop. Nothing here talks to a network beyond
 a Unix socket in a temporary directory.
 """
@@ -42,6 +43,7 @@ from neutrino_agent.constants import (
     AGENT_SOFTWARE_PREFIX,
     PROTOCOL,
 )
+from neutrino_agent.core.commands import CommandOutcome
 from neutrino_agent.core.loop import IDLE_POLL_INTERVAL_S, Agent, link_address
 from neutrino_agent.core.metrics import HostMetrics
 from neutrino_agent.exceptions import GatewayUnreachable, PlatformUnsupportedError
@@ -1082,6 +1084,37 @@ def test_a_command_with_no_binding_is_typed(fake, config_path):
     agent = agent_on(fake, config=config_path, is_bound=False)
 
     assert agent._run_command("agent", "reboot", {})["code"] == "hub_unreachable"
+
+
+class RecordingOperator:
+    """The device operator, recording each command and answering success."""
+
+    def __init__(self):
+        self.ran: list = []
+
+    def run(self, module, verb, args, on_line=None):
+        self.ran.append((module, verb))
+        return CommandOutcome(exit_code=0, output="")
+
+
+def test_a_reading_command_writes_no_line_in_the_agent_s_log(fake, config_path):
+    bind(config_path, url=LAN_URL)
+    lines = []
+    agent = Agent(
+        log=lines.append,
+        platform=default_platform(),
+        transport_starter=starter_for(fake),
+        one_shot=one_shot_for(fake),
+    )
+    agent._operator = RecordingOperator()
+
+    agent._run_command("podman", "journal", {"lines": 200})
+    agent._run_command("samba", "validate", {"shares": []})
+    agent._run_command("agent", "remote_desktop_read", {})
+    agent._run_command("podman", "control", {"name": "web", "action": "restart"})
+
+    assert len(agent._operator.ran) == 4
+    assert lines == ["running podman control"]
 
 
 # --- sync, probe, join ---
