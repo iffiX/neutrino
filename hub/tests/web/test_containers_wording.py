@@ -41,7 +41,7 @@ WORDS = {
         "ui.containers.run_default_hint_windows": "A 0 for CPUs or memory uses the default: half the CPUs, half the memory up to 4 GiB.",
         "ui.containers.run_memory_need": "Set {need} GiB or more for the container modules installed here.",
         "ui.modules.memory_need": "The Podman machine has {memory} GiB of memory; set {need} GiB under Containers, Run settings.",
-        "ui.containers.run_stopped_hint": "Containers are stopped; these settings take effect at the next Start.",
+        "ui.modules.stopped_hint": "The module is stopped; these settings take effect at the next Start.",
     },
     "zh-CN": {
         "ui.containers.hub_title": "中枢的容器",
@@ -54,7 +54,7 @@ WORDS = {
         "ui.containers.run_default_hint_windows": "CPU 数或内存填 0 用默认值：一半的 CPU、一半的内存（最多 4 GiB）。",
         "ui.containers.run_memory_need": "为这里安装的容器模块，设为 {need} GiB 或更多。",
         "ui.modules.memory_need": "Podman 虚拟机现有 {memory} GiB 内存；请在“容器”的“运行设置”里设为 {need} GiB。",
-        "ui.containers.run_stopped_hint": "容器已停止，这些设置在下次启动时生效。",
+        "ui.modules.stopped_hint": "模块已停止，这些设置在下次启动时生效。",
     },
 }
 CODES = ("container_name_reserved", "module_in_use", "container_hub_owned")
@@ -129,7 +129,7 @@ def test_the_run_settings_hint_names_the_next_start_while_the_module_is_stopped(
     hint = re.search(r"\n\s*hint=\{([^{}]*)\}\n", bar)
     assert hint is not None
     assert " ".join(hint.group(1).split()) == (
-        'want === WANT_STOPPED ? t("ui.containers.run_stopped_hint")'
+        'want === WANT_STOPPED ? t("ui.modules.stopped_hint")'
         ' : t("ui.containers.run_apply_hint")'
     )
     assert 'const WANT_STOPPED = "stopped";' in source

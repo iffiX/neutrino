@@ -224,7 +224,7 @@ export function ContainersRunSettings({
         label={t("ui.containers.run_apply")}
         hint={
           want === WANT_STOPPED
-            ? t("ui.containers.run_stopped_hint")
+            ? t("ui.modules.stopped_hint")
             : t("ui.containers.run_apply_hint")
         }
         warning={runWarning(stored, draft, saved.machine_state, isWindows)}

@@ -37,8 +37,9 @@ const STATE_UNSUPPORTED = "unsupported";
 /** The module whose rows end with the machine's host key. */
 const SSH_SERVER_MODULE = "ssh_server";
 
-/** What the apply asks of the module. */
+/** What the apply asks of the module: running, or stopped while it is. */
 const WANT_RUNNING = "running";
+const WANT_STOPPED = "stopped";
 
 /** The words a row's field shows while it is empty and the default holds. */
 const FIELD_DEFAULT_KEYS: Record<string, string> = {
@@ -59,6 +60,9 @@ interface InstancesPanelProps {
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
   isEditable: boolean;
+  /** Whether the module is stopped: an apply keeps it stopped, and the
+   * change takes effect at its next Start. */
+  isStopped: boolean;
 }
 
 export function InstancesPanel({
@@ -66,6 +70,7 @@ export function InstancesPanel({
   deviceId,
   basePath,
   isEditable,
+  isStopped,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -82,7 +87,10 @@ export function InstancesPanel({
   const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const settle = useSettledApply(reportOf(saved), WANT_RUNNING);
+  const settle = useSettledApply(
+    reportOf(saved),
+    isStopped ? WANT_STOPPED : WANT_RUNNING,
+  );
 
   if (resource.error !== null && saved === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
@@ -170,7 +178,9 @@ export function InstancesPanel({
           isDirty={isDirty}
           isBusy={isBusy || settle.isSettling}
           label={t(descriptor.apply)}
-          hint={t(descriptor.applyHint)}
+          hint={
+            isStopped ? t("ui.modules.stopped_hint") : t(descriptor.applyHint)
+          }
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isUnsupported}
           error={error}

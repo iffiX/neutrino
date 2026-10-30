@@ -25,7 +25,8 @@ import "./folder_shares_panel.css";
  * **Add** opens the inline form under the list, lit with the accent frame;
  * **Edit** opens the same form in the row's place, its name fixed. A row is
  * the share's name, its folder and its accounts. **Remove** asks first. Each
- * write acts at once, with no apply bar. The checkboxes list the accounts
+ * write acts at once, with no apply bar, and while the module is stopped
+ * it takes effect at the next Start. The checkboxes list the accounts
  * **Home shares** enables as applied, and **Add** waits for one.
  */
 
@@ -37,12 +38,15 @@ interface FolderSharesPanelProps {
   /** Where the file share answers: `/agent/module/samba`. */
   basePath: string;
   isEditable: boolean;
+  /** Whether the file share is stopped. */
+  isStopped: boolean;
 }
 
 export function FolderSharesPanel({
   deviceId,
   basePath,
   isEditable,
+  isStopped,
 }: FolderSharesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -115,6 +119,9 @@ export function FolderSharesPanel({
         </button>
       </div>
       <p className="field_hint">{t("ui.samba.folder_shares_hint")}</p>
+      {isStopped && (
+        <p className="field_hint">{t("ui.modules.stopped_hint")}</p>
+      )}
 
       {resource.error !== null && view === null ? (
         <ErrorPanel message={resource.error} onRetry={resource.reload} />

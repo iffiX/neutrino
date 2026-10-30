@@ -76,9 +76,15 @@ interface PanelTarget {
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
   want: string;
+  /** Whether the agent's package carries the module, with no Start of its
+   * own. */
+  isCarried: boolean;
   /** Each module's title as its manifest gives it, by name. */
   manifestTitles: Record<string, string>;
 }
+
+/** The want of a module the person stopped; an apply keeps it stopped. */
+const WANT_STOPPED = "stopped";
 
 /** The account layer's panels, one per module of the descriptor table. */
 const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
@@ -91,6 +97,7 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
           deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
+          isStopped={!target.isCarried && target.want === WANT_STOPPED}
         />
       ),
     ]),
@@ -106,6 +113,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
         deviceId={target.deviceId}
         basePath={target.basePath}
         isEditable={target.isEditable}
+        isStopped={target.want === WANT_STOPPED}
       />
       <SambaStatusPanel deviceId={target.deviceId} basePath={target.basePath} />
     </>
@@ -681,6 +689,7 @@ export function MachineModules({
                       isEditable: isAgentOnline,
                       platformOs,
                       want: activeRow.want,
+                      isCarried: isCarriedRow,
                       manifestTitles,
                     })}
                   </fieldset>
