@@ -129,7 +129,10 @@ changes only the shares and accounts it made, the ones its record under the
 state root lists and its marker names, and fences nothing: it writes no
 firewall rule on Windows and no pf anchor on macOS, and the first apply
 after an upgrade removes the `neutrino_smb_fence` rule and the
-`com.apple/neutrino_smb` anchor an earlier version left. On Windows each
+`com.apple/neutrino_smb` anchor an earlier version left. The record is
+read and written one open at a time: a report reads it while a task's
+`configure` writes it, and on Windows a replace of a file that another
+thread has open fails with `Access is denied`. On Windows each
 share's folder is granted to the SMB users of its accounts with `icacls`,
 one user for a Home share and each checked account's for a folder share,
 and a `.ssh` folder directly under a share's folder, the account's own
