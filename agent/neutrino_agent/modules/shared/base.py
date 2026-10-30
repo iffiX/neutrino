@@ -16,6 +16,7 @@ sentence, so every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import functools
 import os
 import subprocess
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
+    AGENT_TASK_LINE_PREFIX,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared import installers
@@ -493,20 +495,23 @@ class ModuleRunner:
         """The agent's own log lines that name this module, empty in a journal.
 
         The file the last rotation left is read before the current one, so
-        a rotation does not empty the box.
+        a rotation does not empty the box. The lines the module's task
+        writes about itself are left out.
         """
         path = self._platform.agent_log_path()
         if not path:
             return []
         rotated = path + AGENT_LOG_ROTATED_SUFFIX
+        tail = functools.partial(
+            file_tail,
+            lines=lines,
+            needle=self.name,
+            skipped=AGENT_TASK_LINE_PREFIX.format(module=self.name),
+        )
         held = []
         if os.path.isfile(rotated):
-            held = self._read_source(
-                rotated, lambda: file_tail(rotated, lines, needle=self.name)
-            )
-        held += self._read_source(
-            path, lambda: file_tail(path, lines, needle=self.name)
-        )
+            held = self._read_source(rotated, functools.partial(tail, rotated))
+        held += self._read_source(path, functools.partial(tail, path))
         return held[-lines:]
 
     def _with_agent_lines(self, own: list, lines: int) -> list:

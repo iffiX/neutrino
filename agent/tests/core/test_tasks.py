@@ -247,7 +247,7 @@ def test_a_step_s_line_is_written_once_its_locks_are_taken():
     assert logged == []
     locks.release(locked, "gitea")
     assert task.ended.wait(SETTLE_S)
-    assert logged == ["samba: step 1/1: packages"]
+    assert logged == ["samba task: step 1/1: packages"]
 
 
 def test_a_step_run_again_after_its_check_writes_its_line_once():
@@ -273,7 +273,7 @@ def test_a_step_run_again_after_its_check_writes_its_line_once():
     run_task(task)
 
     assert len(tries) == 3
-    assert logged == ["samba: step 1/1: first_start"]
+    assert logged == ["samba task: step 1/1: first_start"]
 
 
 def test_a_waiting_step_runs_again_until_it_takes_and_holds_no_lock_between():

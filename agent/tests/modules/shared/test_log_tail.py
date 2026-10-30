@@ -2,7 +2,7 @@
 
 What these pin: the lines come oldest first, capped, blank lines dropped; a
 needle keeps only the lines that hold it and reads further back than a
-plain tail; a file longer than the read starts at its first whole line; a
+plain tail; a skipped text leaves out the lines that hold it before the cap; a file longer than the read starts at its first whole line; a
 file another handle holds open for writing reads; a file not written yet
 reads as no lines, and a path that is no file is an OSError. The mask hides a token in a URL's query and a token on
 a line of its own, and leaves every other line as it was.
@@ -34,6 +34,20 @@ def test_a_needle_keeps_only_the_lines_that_hold_it(tmp_path):
     assert file_tail(str(log), 10, needle="samba") == [
         "10:00 samba: created share media",
         "10:02 samba validate refused: share_path_relative",
+    ]
+
+
+def test_a_skipped_text_leaves_its_lines_out_before_the_cap(tmp_path):
+    log = tmp_path / "agent.log"
+    log.write_text(
+        "10:00 samba: created share media\n"
+        "10:01 samba task: step 1/2: configure\n"
+        "10:02 samba task: step 2/2: start\n",
+        encoding="utf-8",
+    )
+
+    assert file_tail(str(log), 1, needle="samba", skipped="samba task: ") == [
+        "10:00 samba: created share media"
     ]
 
 

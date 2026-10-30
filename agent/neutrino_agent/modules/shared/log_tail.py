@@ -49,13 +49,14 @@ def mask_secrets(text: str) -> str:
     return SECRET_LINE_PATTERN.sub(r"\1" + SECRET_MASK, text)
 
 
-def file_tail(path: str, lines: int, *, needle: str = "") -> list:
+def file_tail(path: str, lines: int, *, needle: str = "", skipped: str = "") -> list:
     """The last lines of one file, oldest first.
 
     Args:
         path: The file.
         lines: How many lines to return at most.
         needle: Text a line holds to be returned; empty returns every line.
+        skipped: Text a line holds to be left out; empty leaves none out.
 
     Returns:
         The non-blank lines; none while the file does not exist. With a
@@ -79,5 +80,9 @@ def file_tail(path: str, lines: int, *, needle: str = "") -> list:
     held = data.decode("utf-8", errors="replace").splitlines()
     if start > 0 and held:
         held = held[1:]
-    kept = [line for line in held if line.strip() and needle in line]
+    kept = [
+        line
+        for line in held
+        if line.strip() and needle in line and not (skipped and skipped in line)
+    ]
     return kept[-lines:] if lines > 0 else []

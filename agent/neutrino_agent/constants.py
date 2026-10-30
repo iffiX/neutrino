@@ -355,6 +355,9 @@ AGENT_WAIT_LOCK = "waiting_for_lock"
 AGENT_WAIT_PACKAGE_MANAGER = "waiting_for_package_manager"
 AGENT_WAIT_MODULE = "waiting_for_module"
 AGENT_WAIT_CHECK = "waiting_for_check"
+# The start of each line a module's task writes about itself in the agent's
+# own log. A module's journal leaves these lines out.
+AGENT_TASK_LINE_PREFIX = "{module} task: "
 
 # What this machine accumulated: the configured marks, a package in transit,
 # the last reinstall's result, all root-only, and the software the hub sends

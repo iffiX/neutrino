@@ -68,6 +68,7 @@ from neutrino_agent.core.tasks import (
     PLAN_UNINSTALL,
     ModuleTask,
     module_wait,
+    task_line,
 )
 from neutrino_agent.exceptions import GatewayUnreachable, ModuleApplyError
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
@@ -523,7 +524,7 @@ class DesiredStateApplier:
             self._engine.clear_configured(name)
             return PLAN_CONFIGURE, []
         if want not in AGENT_PRESENT_WANTS:
-            self._log(f"{name}: want {want!r} is not one this agent knows")
+            self._log(task_line(name, f"want {want!r} is not one this agent knows"))
             return PLAN_CONFIGURE, []
         kind = PLAN_CONFIGURE
         steps = []
@@ -778,12 +779,12 @@ class DesiredStateApplier:
             try:
                 self._engine.mark_configured(name)
             except OSError as error:
-                self._log(f"{name}: could not mark it configured: {error}")
+                self._log(task_line(name, f"could not mark it configured: {error}"))
         if outcome is not None:
             said = " ".join(
                 f"{key}={value}" for key, value in outcome["params"].items()
             )
-            self._log(f"{name}: {outcome['code']} {said}".rstrip()[:500])
+            self._log(task_line(name, f"{outcome['code']} {said}".rstrip()[:500]))
         self._engine.record_failure(name, outcome)
         self._engine.publish_task(name, task.row(), "", {})
         if task.kind == PLAN_CONFIGURE:

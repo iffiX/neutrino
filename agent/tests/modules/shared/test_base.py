@@ -4,7 +4,8 @@ What these pin: ``validate`` closes typed either way, and a refusal writes
 one log line naming the module, the code and its params; ``journal``
 answers the runner's own log, the units' journal by default, capped at the
 newest lines; the agent's own lines about a module are the ones that
-name it, from the file the last rotation left and then the current one;
+name it, from the file the last rotation left and then the current one,
+less the lines the module's task writes about itself;
 they follow the module's own lines and take at most half the box when
 there are any; a source that cannot be read is one line in the agent's log
 naming the module and the source, once until it reads again; and a module
@@ -123,6 +124,24 @@ def test_the_agent_s_own_lines_are_the_ones_naming_the_module(tmp_path):
 
     assert runner._agent_log_lines(10) == ["10:00 samba: created share media"]
     assert PickyRunner(platform=LoggedPlatform(""))._agent_log_lines(10) == []
+
+
+def test_the_agent_s_lines_leave_out_what_the_module_s_task_wrote(tmp_path):
+    log = tmp_path / "agent.log"
+    log.write_text(
+        "10:00 samba task: step 1/2: configure\n"
+        "10:01 samba: created share media\n"
+        "10:02 samba task: share_name_taken name=media\n"
+        "10:03 samba task: step 2/2: start\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "agent.log.1").write_text(
+        "09:00 samba task: step 1/1: verify\n", encoding="utf-8"
+    )
+    runner = PickyRunner(platform=LoggedPlatform(str(log)))
+
+    assert runner._agent_log_lines(10) == ["10:01 samba: created share media"]
+    assert runner._with_agent_lines([], 10) == ["10:01 samba: created share media"]
 
 
 def test_the_agent_s_lines_read_the_rotated_file_first(tmp_path):

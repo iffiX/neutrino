@@ -27,6 +27,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_INSTALLING,
     AGENT_MODULE_STATE_QUEUED,
     AGENT_MODULE_STATE_UNINSTALLING,
+    AGENT_TASK_LINE_PREFIX,
     AGENT_WAIT_LOCK,
     AGENT_WAIT_MODULE,
 )
@@ -138,6 +139,19 @@ def step_line(index: int, count: int, step) -> str:
     """
     said = " ".join(str(value) for value in step.params.values())
     return f"step {index}/{count}: {step.name} {said}".rstrip()
+
+
+def task_line(module: str, text: str) -> str:
+    """One line a module's task writes about itself in the agent's own log.
+
+    Args:
+        module: The module, or ``ai_tools``.
+        text: What the line says.
+
+    Returns:
+        ``<module> task: <text>``, the shape a module's journal leaves out.
+    """
+    return AGENT_TASK_LINE_PREFIX.format(module=module) + text
 
 
 def module_wait(module: str) -> dict:
@@ -384,7 +398,7 @@ class ModuleTask:
                 if self._owner.end_task(self, outcome, is_cut=how == RUN_CUT):
                     break
         except Exception as error:  # noqa: BLE001 - the task must end
-            self._log(f"{self.name}: the task crashed: {error}")
+            self._log(task_line(self.name, f"crashed: {error}"))
             failure = {
                 "state": AGENT_MODULE_STATE_FAILED,
                 "code": "apply_failed",
@@ -478,7 +492,7 @@ class ModuleTask:
         if self._log_stream is None:
             self._log_stream = self._owner.open_log(self.name)
         line = step_line(index, count, step)
-        self._log(f"{self.name}: {line}")
+        self._log(task_line(self.name, line))
         self.log(line)
 
     def _close_log(self) -> None:

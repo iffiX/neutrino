@@ -944,7 +944,7 @@ def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
     run(held, state(samba="running"))
 
     assert (
-        "samba: user_record_unusable user=t3user3 "
+        "samba task: user_record_unusable user=t3user3 "
         "detail=DS Error: -14120 (eDSPermissionError)"
     ) in lines
 
