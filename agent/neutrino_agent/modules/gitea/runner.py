@@ -84,7 +84,7 @@ class GiteaLinuxApplier:
         return GiteaConfigApplier().apply(rendered)
 
     def stop(self) -> None:
-        """Stop the unit."""
+        """Stop the unit and disable it."""
         GiteaConfigApplier().stop()
 
     def is_active(self) -> bool:
@@ -280,7 +280,7 @@ class GiteaModuleRunner(ModuleRunner):
         self._log(f"gitea: {note}")
 
     def stop(self) -> None:
-        """Take the server down, leaving the repositories in place."""
+        """Take the server down and keep it from starting at boot, leaving the repositories in place."""
         self._applier.stop()
 
     def is_active(self) -> bool:

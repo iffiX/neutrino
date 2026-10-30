@@ -286,7 +286,10 @@ class GiteaDarwinApplier:
         return "started"
 
     def stop(self) -> None:
-        """Unload the job until the next apply; its plist loads it at boot."""
+        """Disable the job and unload it, so it stays unloaded at boot until the next apply."""
+        self._run(
+            ["launchctl", "disable", f"system/{GITEA_DARWIN_LABEL}"], is_checked=False
+        )
         self._unload()
 
     def is_active(self) -> bool:
@@ -447,6 +450,8 @@ class GiteaDarwinApplier:
         ).is_success
 
     def _load(self) -> None:
+        """Enable the job, then load it."""
+        self._run(["launchctl", "enable", f"system/{GITEA_DARWIN_LABEL}"])
         self._run(["launchctl", "bootstrap", "system", self._plist_path])
 
     def _unload(self) -> None:

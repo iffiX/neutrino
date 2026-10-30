@@ -6,8 +6,9 @@ service reads it, and under ``%ProgramFiles%\\Git\\cmd`` when the ``Path``
 names none; the layout's ``RUN_USER``, forward slashes and service name; the
 service made with ``sc.exe`` as LocalSystem, started at boot and again after
 a failure, its binary path quoted; a running server stopped before its
-binary is replaced; an apply that starts, keeps or restarts it; the CLI run
-by the agent itself; and an uninstall that deletes the service and keeps
+binary is replaced; an apply that starts, keeps or restarts it, its start
+type ``auto`` before each start; a stop that gives it the start type
+``disabled``; the CLI run by the agent itself; and an uninstall that deletes the service and keeps
 the data.
 """
 
@@ -178,6 +179,30 @@ def test_an_apply_starts_keeps_or_restarts_the_service(sc, tmp_path, state):
     conf = tmp_path / "state" / "gitea_data" / "custom" / "conf" / "app.ini"
     assert conf.read_text() == "two\n"
     assert applier.is_active() is True
+
+
+def test_a_stop_disables_the_service_and_a_start_sets_it_auto_first(
+    sc, tmp_path, state
+):
+    applier = make(sc, tmp_path, state=state)
+    sc.exists = True
+    applier.apply("one\n", git_path="C:\\git.exe")
+    sc.calls.clear()
+
+    applier.stop()
+    stopped = [call[1:] for call in sc.calls if call[1] in ("stop", "config")]
+    sc.calls.clear()
+    applier.apply("one\n", git_path="C:\\git.exe")
+    started = [call[1:] for call in sc.calls if call[1] in ("start", "config")]
+
+    assert stopped == [
+        ["stop", "neutrino_gitea"],
+        ["config", "neutrino_gitea", "start=", "disabled"],
+    ]
+    assert started == [
+        ["config", "neutrino_gitea", "start=", "auto"],
+        ["start", "neutrino_gitea"],
+    ]
 
 
 def test_the_cli_is_run_by_the_agent_itself(sc, tmp_path, state):

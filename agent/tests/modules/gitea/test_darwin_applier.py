@@ -5,7 +5,8 @@ the hidden account made with ``sysadminctl`` and read back, its refusal
 carrying the tool's line when the record is not usable; the data directory
 and ``app.ini`` the account's own; the LaunchDaemon run as the account with
 the git's directory first on its ``PATH``; an apply that starts, keeps or
-restarts the job; a stop that waits until launchd lets go; the CLI run as
+restarts the job, enabled before it loads; a stop that disables the job
+and waits until launchd lets go; the CLI run as
 the account; and an uninstall that keeps the data and the account.
 """
 
@@ -227,14 +228,27 @@ def test_a_second_apply_keeps_a_running_job_and_a_changed_app_ini_restarts_it(
     ]
 
 
-def test_a_stop_unloads_the_job_and_keeps_its_plist(applier, tools, tmp_path):
+def test_a_stop_disables_and_unloads_the_job_and_keeps_its_plist(
+    applier, tools, tmp_path
+):
     tools.has_account = True
     applier.apply("one\n", git_path="/opt/homebrew/bin/git")
 
     applier.stop()
+    stopped = list(tools.calls)
+    applier.apply("one\n", git_path="/opt/homebrew/bin/git")
+    started = tools.calls[len(stopped) :]
 
-    assert applier.is_active() is False
+    assert applier.is_active() is True
     assert (tmp_path / "LaunchDaemons" / "com.neutrino.gitea.plist").exists()
+    launchctl = [call[:2] for call in stopped if call[0] == "launchctl"]
+    assert launchctl.index(["launchctl", "disable"]) < launchctl.index(
+        ["launchctl", "bootout"]
+    )
+    again = [call[:2] for call in started if call[0] == "launchctl"]
+    assert again.index(["launchctl", "enable"]) < again.index(
+        ["launchctl", "bootstrap"]
+    )
 
 
 def test_the_cli_runs_as_the_servers_account(applier, tools, binary):

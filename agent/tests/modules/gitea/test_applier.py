@@ -161,12 +161,14 @@ def test_the_unit_is_rewritten_only_when_it_differs(box):
     assert commands.calls == []
 
 
-def test_stop_stops_the_unit_and_leaves_it_enabled(box):
+def test_stop_stops_the_unit_and_disables_it(box):
     commands, _, _ = box
 
     GiteaConfigApplier().stop()
 
-    assert commands.calls == [["systemctl", "stop", "neutrino_gitea.service"]]
+    assert commands.calls == [
+        ["systemctl", "disable", "--now", "neutrino_gitea.service"]
+    ]
 
 
 def test_uninstall_removes_the_unit_binary_and_config_but_keeps_the_data(box):

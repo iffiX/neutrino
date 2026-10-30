@@ -253,8 +253,12 @@ class GiteaWindowsApplier:
         return "started"
 
     def stop(self) -> None:
-        """Stop the service until the next apply; it starts again at boot."""
+        """Stop the service and give it the start type ``disabled`` until the next apply."""
         self._stop_and_wait()
+        self._run(
+            ["sc.exe", "config", GITEA_WINDOWS_SERVICE, "start=", "disabled"],
+            is_checked=False,
+        )
 
     def is_active(self) -> bool:
         """Whether the service runs now."""
@@ -374,6 +378,8 @@ class GiteaWindowsApplier:
         return result.exit_code != SC_SERVICE_DOES_NOT_EXIST
 
     def _start(self) -> None:
+        """Give the service the start type ``auto``, then start it."""
+        self._run(["sc.exe", "config", GITEA_WINDOWS_SERVICE, "start=", "auto"])
         result = self._run(["sc.exe", "start", GITEA_WINDOWS_SERVICE], is_checked=False)
         if result.is_success or result.exit_code == SC_ALREADY_RUNNING:
             return
