@@ -14,7 +14,7 @@ import { InstancesPanel } from "./instances_panel";
 import { ModuleCatalogModal } from "./module_catalog_modal";
 import { ModuleIcon } from "./module_icon";
 import { ModuleLog } from "./module_log";
-import { ModuleTaskSteps } from "./module_task_steps";
+import { ModuleTaskSteps, REBOOT_REQUIRED_CODE } from "./module_task_steps";
 import { ModuleVersionBlock } from "./module_version_block";
 import { RemoteDesktopPanels } from "./remote_desktop_panels";
 import { SambaStatusPanel } from "./samba_status_panel";
@@ -223,9 +223,6 @@ const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
  * up an install or a queued task, and what is missing of software that is
  * partly there. */
 const NOTICED_STATES = ["installing", "queued", "absent"];
-
-/** The code of an install that goes on only after the machine restarts. */
-const REBOOT_REQUIRED_CODE = "reboot_required";
 
 /** The route that restarts a managed machine, as the Agents page's Reboot. */
 const REBOOT_PATH = "/hub/device/reboot";

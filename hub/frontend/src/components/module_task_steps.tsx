@@ -16,6 +16,10 @@ import "./module_task_steps.css";
  * finished task's steps stay until the next task starts.
  */
 
+/** The wait the tab's notice words beside **Restart now**. Its step reads
+ * waiting with no words under it. */
+export const REBOOT_REQUIRED_CODE = "reboot_required";
+
 /** Where one step of the plan stands. */
 type StepStatus = "done" | "running" | "waiting" | "pending" | "failed";
 
@@ -59,7 +63,9 @@ export function ModuleTaskSteps({
         const status = stepStatus(task, at + 1, isFailed);
         const detail =
           status === "waiting"
-            ? waitWords(task.wait, manifestTitles)
+            ? task.wait.code === REBOOT_REQUIRED_CODE
+              ? ""
+              : waitWords(task.wait, manifestTitles)
             : status === "failed"
               ? failure
               : "";
