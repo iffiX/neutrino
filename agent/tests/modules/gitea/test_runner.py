@@ -414,6 +414,20 @@ def test_the_journal_on_macos_and_windows_is_the_servers_own_log(tmp_path):
     assert outcome["output"].endswith("Listen")
 
 
+def test_a_log_gitea_has_not_written_yet_reads_empty_and_logs_nothing(tmp_path):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    lines: list = []
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lines.append, applier=applier
+    )
+
+    outcome = runner.command("journal", {"lines": 20})
+
+    assert outcome["exit_code"] == 0
+    assert outcome["output"] == ""
+    assert lines == []
+
+
 @pytest.mark.parametrize(
     "os_name, kind",
     [("darwin", "GiteaDarwinApplier"), ("windows", "GiteaWindowsApplier")],
