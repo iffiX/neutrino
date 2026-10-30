@@ -13,7 +13,8 @@ the hooks name for its preparation and ``account``, each account step
 starting its own instance, with no account step under ``stopped``; a
 stop closes the forwarders and keeps the records; a restarted agent
 starts the forwarders from the records; a row runs only while its service
-runs and its forwarder listens; the forwarder ports the relays carry are
+runs and its forwarder listens, a reading that finds a service stopped just
+after an apply read again at the next report; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
 journal is the units' or the log files', the module's own log first
 where the hooks name one and nothing of a service whose output is
@@ -636,6 +637,34 @@ def test_a_row_runs_only_while_its_unit_runs_and_its_forwarder_listens(runner, s
             }
         ],
     }
+
+
+def test_a_service_read_stopped_just_after_its_start_is_read_again(
+    machine, platform, systemd
+):
+    now = [100.0]
+    FakeForwarder.made = []
+    HELD_PORTS.clear()
+    runner = InstancesModuleRunner(
+        hooks_class=DemoHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+        is_port_free=lambda port: port not in HELD_PORTS,
+        clock=lambda: now[0],
+    )
+    runner.apply(CONFIG)
+    FakeForwarder.made[0].is_listening = True
+    assert runner.is_active() is False
+
+    systemd.active.add("neutrino_demo@ann.service")
+    now[0] += 5
+
+    assert runner.is_active() is True
+    systemd.active.clear()
+    now[0] += 5
+    assert runner.is_active() is True
 
 
 def test_the_forwarder_ports_are_the_ones_a_forwarder_listens_on(runner):

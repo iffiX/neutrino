@@ -66,6 +66,10 @@ except ImportError:  # Windows has no account database module.
 
 # How long one reading of the instances is believed.
 STATUS_TTL_S = 30.0
+# How long a reading that finds an instance not running is believed within
+# STATUS_TTL_S of an apply or a stop. A service just started can read
+# stopped for a moment.
+STATUS_SETTLING_TTL_S = 2.0
 # The account the template unit is rendered for, systemd's own name for it.
 TEMPLATE_ACCOUNT = ACCOUNT_SERVICE_TEMPLATE_ACCOUNT
 # What an account the machine does not have reads as, where a service is
@@ -463,6 +467,8 @@ class InstancesModuleRunner(ModuleRunner):
         self._is_stopped = False
         self._applied: "dict | None" = None
         self._applied_at = 0.0
+        # When an apply or a stop last forgot the reading.
+        self._changed_at = float("-inf")
         self._refusal: "tuple | None" = None
         # One change of the records at a time: a step's, or the hooks'.
         self._apply_lock = threading.Lock()
@@ -1052,9 +1058,15 @@ class InstancesModuleRunner(ModuleRunner):
         records = self._records.read_all()
         with self._lock:
             applied = self._applied
-            is_fresh = (
-                applied is not None and self._clock() - self._applied_at < STATUS_TTL_S
-            )
+            now = self._clock()
+            ttl = STATUS_TTL_S
+            if (
+                applied is not None
+                and now - self._changed_at < STATUS_TTL_S
+                and not all(seen.get("is_running") for seen in applied.values())
+            ):
+                ttl = STATUS_SETTLING_TTL_S
+            is_fresh = applied is not None and now - self._applied_at < ttl
         if not is_fresh:
             services = [self._service_of(record) for record in records]
             applied = account_service.states(services, self._machine)
@@ -1165,3 +1177,4 @@ class InstancesModuleRunner(ModuleRunner):
     def _forget_states(self) -> None:
         with self._lock:
             self._applied = None
+            self._changed_at = self._clock()
