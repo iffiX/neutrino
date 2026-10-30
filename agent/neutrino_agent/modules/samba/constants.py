@@ -90,6 +90,13 @@ SAMBA_WINDOWS_SHARE_CHANGE = "Change"
 SAMBA_WINDOWS_SHARE_READ = "Read"
 SAMBA_WINDOWS_FOLDER_CHANGE = "(OI)(CI)M"
 SAMBA_WINDOWS_FOLDER_READ = "(OI)(CI)RX"
+# The access rule each folder right leaves, as the PowerShell host reads it:
+# the FileSystemRights, the InheritanceFlags (ContainerInherit and
+# ObjectInherit) and the PropagationFlags.
+SAMBA_WINDOWS_FOLDER_RULES = {
+    SAMBA_WINDOWS_FOLDER_CHANGE: (0x1301BF, 3, 0),
+    SAMBA_WINDOWS_FOLDER_READ: (0x1200A9, 3, 0),
+}
 # The account a share with no users is granted to, so the server never
 # falls back to granting Everyone.
 SAMBA_WINDOWS_SHARE_OWNER = "BUILTIN\\Administrators"

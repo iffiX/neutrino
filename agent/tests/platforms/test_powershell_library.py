@@ -8,7 +8,9 @@ kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
 share or account, the share accounts' sign-in denial and hiding; the file
-share under ``stopped`` starting no server and making no share; a relay's
+share under ``stopped`` starting no server and making no share; the
+folders' access read listing each folder's own allow rules by SID and
+whether it inherits, and changing nothing; a relay's
 rule allows inbound TCP to its port on its adapter alone; nothing there
 starts icacls or lists processes, which the agent does itself; a
 function of a verb that changes the machine asks ``ShouldProcess``; and the
@@ -178,6 +180,18 @@ def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
     assert apply.index("New-Item -ItemType Directory") < unserved
     assert unserved < apply.index("New-SmbShare")
     assert unserved < apply.index("Grant-SmbShareAccess")
+
+
+def test_the_folder_access_read_lists_each_folder_s_own_allow_rules():
+    read = body("folder_access")
+
+    assert (
+        "GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier])" in read
+    )
+    assert "-ne 'Allow'" in read
+    assert "AreAccessRulesProtected" in read
+    assert "Get-Acl -LiteralPath $path" in read
+    assert "Set-Acl" not in LIBRARY
 
 
 def test_the_share_s_other_operations_keep_what_their_scripts_did():

@@ -42,6 +42,7 @@ HOST_READS = {
     "task_read",
     "task_states",
     "share_status",
+    "folder_access",
     "share_log",
     "thermal_zones",
     "added_list",

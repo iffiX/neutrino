@@ -8,8 +8,10 @@ lists, an account the record lists. Accounts are local, in no group, hidden
 from the sign-in screen and denied the console and RDP. Each share's folder
 is granted to its accounts with ``icacls`` once the host has made it, and
 the account's ``.ssh`` folder under it is taken back from them, so OpenSSH
-goes on reading the account's own files. The module fences nothing: the
-block rule an earlier version made goes at the first apply that finds it.
+goes on reading the account's own files. The host reads each folder's
+access list first, and icacls runs only for an entry that differs. The
+module fences nothing: the block rule an earlier version made goes at the
+first apply that finds it.
 
 Not pure: drives the PowerShell host, runs icacls and calls the local
 security policy.
@@ -30,6 +32,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_FENCE_RULE,
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
+    SAMBA_WINDOWS_FOLDER_RULES,
     SAMBA_WINDOWS_MARKER,
     SAMBA_WINDOWS_SERVER_LOG,
     SAMBA_WINDOWS_SHARE_CHANGE,
@@ -248,7 +251,9 @@ class SambaWindowsApplier:
         deletes the block rule an earlier version made, when it finds one.
         Once the host has converged the server, each share's folder is
         granted to its accounts and taken from the module's others, and
-        the ``.ssh`` folder under it is taken from them all.
+        the ``.ssh`` folder under it is taken from them all. Each folder's
+        access list is read before the host converges the server, and
+        icacls changes only an entry that differs from it.
 
         Args:
             config: The validated configuration.
@@ -272,6 +277,17 @@ class SambaWindowsApplier:
         known_accounts = owned_accounts + [
             name for name in config.users if name not in owned_accounts
         ]
+        grants = folder_grants(served)
+        left = _paths_left(owned_shares, grants)
+        access = self._read_access(
+            left
+            + [
+                folder
+                for path in grants
+                for folder in (path, os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME))
+            ],
+            known_accounts,
+        )
         answer = self._powershell.call(
             "share_apply",
             {
@@ -291,12 +307,11 @@ class SambaWindowsApplier:
                 "is_served": is_served,
             },
         )
-        grants = folder_grants(served)
-        for path in _paths_left(owned_shares, grants):
-            for name in known_accounts:
+        for path in left:
+            for name in _holders(access, path, known_accounts):
                 icacls(self._run, [path, "/remove:g", name])
         for path, rights in grants.items():
-            self._grant_folder(path, rights, known_accounts)
+            self._grant_folder(path, rights, known_accounts, access)
         for name in config.users:
             self._deny_logon(name)
         return [str(note) for note in _listed(answer.get("notes"))]
@@ -354,25 +369,76 @@ class SambaWindowsApplier:
         """
         self._powershell.call("share_password", {"name": name, "password": password})
 
-    def _grant_folder(self, path: str, rights: dict, known_accounts: list) -> None:
+    def _read_access(self, paths: list, accounts: list) -> dict:
+        """Each folder's own allow rules for the accounts, read through the host.
+
+        Args:
+            paths: The folders.
+            accounts: The module's accounts.
+
+        Returns:
+            Folder, spelled as asked, to ``{"is_protected", "rules"}``:
+            whether the folder inherits nothing, and each account holding
+            a rule of its own there to the sorted ``(rights, inheritance,
+            propagation)`` of those rules. A folder the host does not find
+            is left out.
+
+        Raises:
+            OSError: When the host fails.
+            ModuleApplyError: When the host refuses.
+        """
+        read = self._powershell.call(
+            "folder_access", {"paths": paths, "accounts": list(accounts)}
+        )
+        access: dict = {}
+        for entry in _listed(read.get("folders")):
+            if not isinstance(entry, dict) or not entry.get("is_present"):
+                continue
+            rules: dict = {}
+            for rule in _listed(entry.get("rules")):
+                if isinstance(rule, dict):
+                    rules.setdefault(str(rule.get("account", "")), []).append(
+                        (
+                            int(rule.get("rights", 0)),
+                            int(rule.get("inheritance", 0)),
+                            int(rule.get("propagation", 0)),
+                        )
+                    )
+            access[str(entry.get("path", ""))] = {
+                "is_protected": bool(entry.get("is_protected")),
+                "rules": {name: sorted(held) for name, held in rules.items()},
+            }
+        return access
+
+    def _grant_folder(
+        self, path: str, rights: dict, known_accounts: list, access: dict
+    ) -> None:
         """Grant a folder to its shares' accounts and take it from the module's others.
 
         The ``.ssh`` folder directly under it, when there is one, stops
         inheriting the folder's entries and loses every module account's.
-        OpenSSH's check of the account's own files then passes.
+        OpenSSH's check of the account's own files then passes. icacls runs
+        only where ``access``, as :meth:`_read_access` reads it, differs.
+        An account's grant replaces every rule of its own on the folder.
         """
-        for name in known_accounts:
+        held = access.get(path, {}).get("rules", {})
+        for name in _holders(access, path, known_accounts):
             if name not in rights:
                 icacls(self._run, [path, "/remove:g", name])
         for name, right in rights.items():
-            if icacls(self._run, [path, "/grant", f"{name}:{right}"]) != 0:
+            if held.get(name) == [SAMBA_WINDOWS_FOLDER_RULES[right]]:
+                continue
+            if icacls(self._run, [path, "/grant:r", f"{name}:{right}"]) != 0:
                 raise OSError(f"icacls refused {name} on {path}")
         ssh_dir = os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME)
         if not os.path.isdir(ssh_dir):
             return
-        if icacls(self._run, [ssh_dir, "/inheritance:d"]) != 0:
-            raise OSError(f"icacls could not keep {ssh_dir} the account's own")
-        for name in known_accounts:
+        holders = _holders(access, ssh_dir, known_accounts)
+        if not access.get(ssh_dir, {}).get("is_protected"):
+            if icacls(self._run, [ssh_dir, "/inheritance:d"]) != 0:
+                raise OSError(f"icacls could not keep {ssh_dir} the account's own")
+            holders = known_accounts
+        for name in holders:
             icacls(self._run, [ssh_dir, "/remove:g", name])
 
 
@@ -412,6 +478,22 @@ def _folder_key(path: str, grants: dict) -> str:
 def _is_same_folder(one: str, other: str) -> bool:
     """Whether two Windows paths name one folder, without regard to case."""
     return one.rstrip("\\/").lower() == other.rstrip("\\/").lower()
+
+
+def _holders(access: dict, path: str, accounts: list) -> list:
+    """The accounts holding a rule of their own on a folder.
+
+    Args:
+        access: The folders' rules, as :meth:`SambaWindowsApplier._read_access`
+            reads them.
+        path: The folder, spelled as it was read.
+        accounts: The accounts asked about, in their order.
+
+    Returns:
+        Each of ``accounts`` that holds a rule there.
+    """
+    held = access.get(path, {}).get("rules", {})
+    return [name for name in accounts if held.get(name)]
 
 
 def _paths_left(owned_shares: dict, grants: dict) -> list:

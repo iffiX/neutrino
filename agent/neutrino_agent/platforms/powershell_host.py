@@ -43,6 +43,7 @@ WINDOWS_POWERSHELL_HOST_OPS = {
     "added_remove": "Remove-NeutrinoAddition",
     "thermal_zones": "Get-NeutrinoThermalZone",
     "share_status": "Get-NeutrinoShare",
+    "folder_access": "Get-NeutrinoFolderAccess",
     "share_apply": "Set-NeutrinoShare",
     "share_withdraw": "Remove-NeutrinoShare",
     "share_log": "Get-NeutrinoShareLog",

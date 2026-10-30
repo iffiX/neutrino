@@ -273,6 +273,52 @@ function Get-NeutrinoShare($Request) {
     }
 }
 
+# Each path's own allow rules for the listed accounts, and whether the path
+# inherits nothing from its parent. A path that is missing or unreadable is
+# not present, and an account with no SID holds no rule.
+function Get-NeutrinoFolderAccess($Request) {
+    $names = @{}
+    foreach ($name in @($Request.accounts)) {
+        try {
+            $account = New-Object -TypeName Security.Principal.NTAccount -ArgumentList $name
+            $names["$($account.Translate([Security.Principal.SecurityIdentifier]).Value)"] = $name
+        } catch {
+            continue
+        }
+    }
+    $folders = @()
+    foreach ($path in @($Request.paths)) {
+        $acl = $null
+        if (Test-Path -LiteralPath $path) {
+            $acl = Get-Acl -LiteralPath $path -ErrorAction SilentlyContinue
+        }
+        if (-not $acl) {
+            $folders += @{path = $path; is_present = $false; is_protected = $false; rules = @()}
+            continue
+        }
+        $rules = @()
+        foreach ($rule in @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))) {
+            $sid = "$($rule.IdentityReference.Value)"
+            if ("$($rule.AccessControlType)" -ne 'Allow' -or -not $names.ContainsKey($sid)) {
+                continue
+            }
+            $rules += @{
+                account = $names[$sid]
+                rights = [int]$rule.FileSystemRights
+                inheritance = [int]$rule.InheritanceFlags
+                propagation = [int]$rule.PropagationFlags
+            }
+        }
+        $folders += @{
+            path = $path
+            is_present = $true
+            is_protected = [bool]$acl.AreAccessRulesProtected
+            rules = $rules
+        }
+    }
+    return @{folders = $folders}
+}
+
 # Refuses a share or an account name the module did not make, then
 # converges the server, the accounts and the shares, and deletes the block
 # rule an earlier version made when it finds one; the shares' folders are
@@ -506,6 +552,7 @@ $NeutrinoOperations = @{
     'added_remove' = 'Remove-NeutrinoAddition'
     'thermal_zones' = 'Get-NeutrinoThermalZone'
     'share_status' = 'Get-NeutrinoShare'
+    'folder_access' = 'Get-NeutrinoFolderAccess'
     'share_apply' = 'Set-NeutrinoShare'
     'share_withdraw' = 'Remove-NeutrinoShare'
     'share_log' = 'Get-NeutrinoShareLog'

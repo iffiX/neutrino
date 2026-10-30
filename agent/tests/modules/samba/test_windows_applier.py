@@ -2,11 +2,13 @@
 
 What these pin: the request an apply sends the host names only what the
 module made, each share's right, the accounts to retire and the block rule
-an earlier version made for the host to delete; once the host has converged
-the server each share's folder is granted to its accounts and taken from
-the module's others through icacls, a grant icacls refuses failing the
-apply, and the ``.ssh`` folder under a share stops inheriting and loses
-every module account; each
+an earlier version made for the host to delete; the folders' access lists
+are read before the host converges the server; each share's folder is
+then granted to its accounts and taken from the module's others through
+icacls, only where the list differs, a grant replacing the account's own
+rules and a grant icacls refuses failing the apply; the ``.ssh`` folder
+under a share stops inheriting and loses every module account, and once it
+inherits nothing loses only the accounts holding a rule there; each
 configured account is denied the console and RDP through the local policy;
 an apply under ``stopped`` names every share of the module's to remove and
 still grants the folders; a refusal stops before any folder or policy; the
@@ -16,11 +18,13 @@ and the status reading is shaped the way the Linux module reports.
 """
 
 import ctypes
+import os
 
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_FOLDER_RULES
 from neutrino_agent.modules.samba.windows_applier import (
     SambaWindowsApplier,
     deny_interactive_logon,
@@ -62,6 +66,40 @@ class Icacls:
         return CommandResult(command=list(argv), exit_code=code, stdout="", stderr="")
 
 
+def folders_holding(held: dict, protected=()):
+    """The host's answer to ``folder_access``.
+
+    Each folder ``held`` names is present with each of its accounts' one
+    rule, given as an icacls folder right, and each folder in ``protected``
+    inherits nothing. Every other folder asked is missing.
+    """
+
+    def answer(args):
+        folders = []
+        for path in args["paths"]:
+            rights = held.get(path)
+            folders.append(
+                {
+                    "path": path,
+                    "is_present": rights is not None,
+                    "is_protected": path in protected,
+                    "rules": [
+                        dict(
+                            zip(
+                                ("rights", "inheritance", "propagation"),
+                                SAMBA_WINDOWS_FOLDER_RULES[right],
+                            ),
+                            account=name,
+                        )
+                        for name, right in (rights or {}).items()
+                    ],
+                }
+            )
+        return {"folders": folders}
+
+    return answer
+
+
 def applier_with(host, *, run=None, denied=None) -> SambaWindowsApplier:
     return SambaWindowsApplier(
         powershell=host,
@@ -71,7 +109,22 @@ def applier_with(host, *, run=None, denied=None) -> SambaWindowsApplier:
 
 
 def test_an_apply_names_only_what_the_module_made():
-    host = RecordingHost({"share_apply": {"notes": ["created share media"]}})
+    host = RecordingHost(
+        {
+            "share_apply": {"notes": ["created share media"]},
+            "folder_access": folders_holding(
+                {
+                    "D:\\old": {
+                        "eve": "(OI)(CI)M",
+                        "ann": "(OI)(CI)M",
+                        "bob": "(OI)(CI)M",
+                    },
+                    "D:\\media": {"eve": "(OI)(CI)M"},
+                    "D:\\docs": {"eve": "(OI)(CI)RX", "bob": "(OI)(CI)RX"},
+                }
+            ),
+        }
+    )
     denied = []
     icacls = Icacls()
     applier = applier_with(host, run=icacls, denied=denied)
@@ -81,6 +134,19 @@ def test_an_apply_names_only_what_the_module_made():
 
     assert notes == ["created share media"]
     assert host.calls == [
+        (
+            "folder_access",
+            {
+                "paths": [
+                    "D:\\old",
+                    "D:\\media",
+                    os.path.join("D:\\media", ".ssh"),
+                    "D:\\docs",
+                    os.path.join("D:\\docs", ".ssh"),
+                ],
+                "accounts": ["eve", "ann", "bob"],
+            },
+        ),
         (
             "share_apply",
             {
@@ -112,20 +178,85 @@ def test_an_apply_names_only_what_the_module_made():
                 "user_prefix": "neutrino-",
                 "is_served": True,
             },
-        )
+        ),
     ]
     assert icacls.calls == [
         ["icacls.exe", "D:\\old", "/remove:g", "eve"],
         ["icacls.exe", "D:\\old", "/remove:g", "ann"],
         ["icacls.exe", "D:\\old", "/remove:g", "bob"],
         ["icacls.exe", "D:\\media", "/remove:g", "eve"],
-        ["icacls.exe", "D:\\media", "/grant", "ann:(OI)(CI)M"],
-        ["icacls.exe", "D:\\media", "/grant", "bob:(OI)(CI)M"],
+        ["icacls.exe", "D:\\media", "/grant:r", "ann:(OI)(CI)M"],
+        ["icacls.exe", "D:\\media", "/grant:r", "bob:(OI)(CI)M"],
         ["icacls.exe", "D:\\docs", "/remove:g", "eve"],
         ["icacls.exe", "D:\\docs", "/remove:g", "bob"],
-        ["icacls.exe", "D:\\docs", "/grant", "ann:(OI)(CI)RX"],
+        ["icacls.exe", "D:\\docs", "/grant:r", "ann:(OI)(CI)RX"],
     ]
     assert denied == ["ann", "bob"]
+
+
+def test_an_apply_whose_folders_hold_their_grants_runs_no_icacls(tmp_path):
+    (tmp_path / ".ssh").mkdir()
+    ssh_dir = str(tmp_path / ".ssh")
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "ann", "path": str(tmp_path), "valid_users": ["ann"]},
+                {
+                    "name": "docs",
+                    "path": "D:\\docs",
+                    "is_read_only": True,
+                    "valid_users": ["ann", "bob"],
+                },
+            ],
+            "users": ["ann", "bob"],
+        }
+    )
+    host = RecordingHost(
+        {
+            "folder_access": folders_holding(
+                {
+                    str(tmp_path): {"ann": "(OI)(CI)M"},
+                    ssh_dir: {},
+                    "D:\\docs": {"ann": "(OI)(CI)RX", "bob": "(OI)(CI)RX"},
+                },
+                protected=[ssh_dir],
+            )
+        }
+    )
+    icacls = Icacls()
+    denied = []
+
+    applier_with(host, run=icacls, denied=denied).apply(
+        config, {"shares": {"ann": str(tmp_path)}, "accounts": ["ann", "bob"]}
+    )
+
+    assert host.ops() == ["folder_access", "share_apply"]
+    assert icacls.calls == []
+    assert denied == ["ann", "bob"]
+
+
+def test_a_grant_that_differs_from_the_folder_s_replaces_the_account_s_rules():
+    """An account holding the read right on a folder now writable is
+    granted the change right in place of it, and one holding the change
+    right where the read right is asked is granted the read right."""
+    host = RecordingHost(
+        {
+            "folder_access": folders_holding(
+                {
+                    "D:\\media": {"ann": "(OI)(CI)RX", "bob": "(OI)(CI)M"},
+                    "D:\\docs": {"ann": "(OI)(CI)M"},
+                }
+            )
+        }
+    )
+    icacls = Icacls()
+
+    applier_with(host, run=icacls, denied=[]).apply(CONFIG, {})
+
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\media", "/grant:r", "ann:(OI)(CI)M"],
+        ["icacls.exe", "D:\\docs", "/grant:r", "ann:(OI)(CI)RX"],
+    ]
 
 
 def test_the_ssh_folder_under_a_share_is_taken_from_every_module_account(
@@ -141,20 +272,51 @@ def test_the_ssh_folder_under_a_share_is_taken_from_every_module_account(
         }
     )
     icacls = Icacls()
-    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+    host = RecordingHost(
+        {"folder_access": folders_holding({str(tmp_path): {"eve": "(OI)(CI)M"}})}
+    )
+    applier = applier_with(host, run=icacls, denied=[])
 
     applier.apply(config, {"shares": {}, "accounts": ["eve"]})
 
     ssh_dir = str(tmp_path / ".ssh")
     assert icacls.calls == [
         ["icacls.exe", str(tmp_path), "/remove:g", "eve"],
-        ["icacls.exe", str(tmp_path), "/grant", "ann:(OI)(CI)M"],
-        ["icacls.exe", str(tmp_path), "/grant", "bob:(OI)(CI)M"],
+        ["icacls.exe", str(tmp_path), "/grant:r", "ann:(OI)(CI)M"],
+        ["icacls.exe", str(tmp_path), "/grant:r", "bob:(OI)(CI)M"],
         ["icacls.exe", ssh_dir, "/inheritance:d"],
         ["icacls.exe", ssh_dir, "/remove:g", "eve"],
         ["icacls.exe", ssh_dir, "/remove:g", "ann"],
         ["icacls.exe", ssh_dir, "/remove:g", "bob"],
     ]
+
+
+def test_an_ssh_folder_that_inherits_nothing_loses_only_the_accounts_holding_a_rule(
+    tmp_path,
+):
+    (tmp_path / ".ssh").mkdir()
+    ssh_dir = str(tmp_path / ".ssh")
+    config = SambaConfig.from_dict(
+        {
+            "shares": [{"name": "ann", "path": str(tmp_path), "valid_users": ["ann"]}],
+            "users": ["ann", "bob"],
+        }
+    )
+    host = RecordingHost(
+        {
+            "folder_access": folders_holding(
+                {str(tmp_path): {"ann": "(OI)(CI)M"}, ssh_dir: {"bob": "(OI)(CI)M"}},
+                protected=[ssh_dir],
+            )
+        }
+    )
+    icacls = Icacls()
+
+    applier_with(host, run=icacls, denied=[]).apply(
+        config, {"shares": {}, "accounts": ["ann", "bob"]}
+    )
+
+    assert icacls.calls == [["icacls.exe", ssh_dir, "/remove:g", "bob"]]
 
 
 def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
@@ -174,7 +336,7 @@ def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
 
 def test_a_folder_icacls_refuses_fails_the_apply_and_denies_nobody():
     denied = []
-    icacls = Icacls(refused=[("/grant", "bob:(OI)(CI)M")])
+    icacls = Icacls(refused=[("/grant:r", "bob:(OI)(CI)M")])
     applier = applier_with(RecordingHost(), run=icacls, denied=denied)
 
     with pytest.raises(OSError, match="icacls refused bob on D:\\\\media"):
@@ -397,7 +559,12 @@ def test_a_server_log_the_host_cannot_give_is_an_os_error():
 
 
 def test_an_apply_under_stopped_takes_every_share_off_and_grants_the_folders():
-    host = RecordingHost({"share_apply": {"notes": ["removed share media"]}})
+    host = RecordingHost(
+        {
+            "share_apply": {"notes": ["removed share media"]},
+            "folder_access": folders_holding({}),
+        }
+    )
     denied = []
     icacls = Icacls()
     applier = applier_with(host, run=icacls, denied=denied)
@@ -406,13 +573,12 @@ def test_an_apply_under_stopped_takes_every_share_off_and_grants_the_folders():
     notes = applier.apply(CONFIG, record, is_served=False)
 
     assert notes == ["removed share media"]
-    ((verb, request),) = host.calls
-    assert verb == "share_apply"
+    (request,) = host.args_of("share_apply")
     assert request["is_served"] is False
     assert request["removed_shares"] == ["media", "old"]
     assert [share["name"] for share in request["shares"]] == ["media", "docs"]
-    assert ["icacls.exe", "D:\\media", "/grant", "ann:(OI)(CI)M"] in icacls.calls
-    assert ["icacls.exe", "D:\\docs", "/grant", "ann:(OI)(CI)RX"] in icacls.calls
+    assert ["icacls.exe", "D:\\media", "/grant:r", "ann:(OI)(CI)M"] in icacls.calls
+    assert ["icacls.exe", "D:\\docs", "/grant:r", "ann:(OI)(CI)RX"] in icacls.calls
     assert denied == ["ann", "bob"]
 
 
@@ -432,7 +598,13 @@ def test_the_first_apply_asks_the_host_to_sweep_what_the_marker_names():
 def test_a_folder_share_with_no_account_stays_off_and_its_folder_loses_the_grants():
     """A share whose users are none is no request of the host's, the host
     removes it as the module's, and its folder loses every module account."""
-    host = RecordingHost()
+    host = RecordingHost(
+        {
+            "folder_access": folders_holding(
+                {"D:\\lab": {"ann": "(OI)(CI)M", "bob": "(OI)(CI)RX"}}
+            )
+        }
+    )
     icacls = Icacls()
     applier = applier_with(host, run=icacls, denied=[])
     config = SambaConfig.from_dict(
@@ -447,7 +619,7 @@ def test_a_folder_share_with_no_account_stays_off_and_its_folder_loses_the_grant
 
     applier.apply(config, {"shares": {"lab": "D:\\lab"}, "accounts": ["ann", "bob"]})
 
-    request = host.calls[0][1]
+    (request,) = host.args_of("share_apply")
     assert [share["name"] for share in request["shares"]] == ["ann"]
     assert request["removed_shares"] == ["lab"]
     assert icacls.calls[:2] == [
@@ -461,7 +633,10 @@ def test_a_folder_two_shares_name_is_granted_each_of_their_accounts_once():
     and adds its own; the change right wins over the read right, and an
     account taken out of both loses its grant."""
     icacls = Icacls()
-    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+    host = RecordingHost(
+        {"folder_access": folders_holding({"C:\\Users\\ann": {"carol": "(OI)(CI)M"}})}
+    )
+    applier = applier_with(host, run=icacls, denied=[])
     config = SambaConfig.from_dict(
         {
             "shares": [
@@ -481,14 +656,17 @@ def test_a_folder_two_shares_name_is_granted_each_of_their_accounts_once():
 
     assert icacls.calls == [
         ["icacls.exe", "C:\\Users\\ann", "/remove:g", "carol"],
-        ["icacls.exe", "C:\\Users\\ann", "/grant", "ann:(OI)(CI)M"],
-        ["icacls.exe", "C:\\Users\\ann", "/grant", "bob:(OI)(CI)RX"],
+        ["icacls.exe", "C:\\Users\\ann", "/grant:r", "ann:(OI)(CI)M"],
+        ["icacls.exe", "C:\\Users\\ann", "/grant:r", "bob:(OI)(CI)RX"],
     ]
 
 
 def test_a_folder_share_that_moved_takes_its_grants_off_the_old_folder():
     icacls = Icacls()
-    applier = applier_with(RecordingHost(), run=icacls, denied=[])
+    host = RecordingHost(
+        {"folder_access": folders_holding({"D:\\lab": {"ann": "(OI)(CI)M"}})}
+    )
+    applier = applier_with(host, run=icacls, denied=[])
     config = SambaConfig.from_dict(
         {
             "shares": [{"name": "lab", "path": "E:\\lab", "valid_users": ["ann"]}],
@@ -500,5 +678,5 @@ def test_a_folder_share_that_moved_takes_its_grants_off_the_old_folder():
 
     assert icacls.calls == [
         ["icacls.exe", "D:\\lab", "/remove:g", "ann"],
-        ["icacls.exe", "E:\\lab", "/grant", "ann:(OI)(CI)M"],
+        ["icacls.exe", "E:\\lab", "/grant:r", "ann:(OI)(CI)M"],
     ]
