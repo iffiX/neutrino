@@ -1,7 +1,8 @@
 """A module's task: its steps, its row, its waits, its end.
 
-What these pin: each kind of exception a step raises read as its failure
-and named in the log; the step's line, written once its locks are taken
+What these pin: each kind of exception a step raises read as its failure,
+an install's keeping its command and the end of its output, and named in
+the log; the step's line, written once its locks are taken
 and once for a step run again; the row a task publishes, its plan's steps
 and the step it is on; ``queued`` while the first step waits
 for a step lock, ``installing`` and ``uninstalling`` by the plan's kind and
@@ -23,6 +24,7 @@ from neutrino_agent.core.tasks import (
     step_line,
 )
 from neutrino_agent.exceptions import (
+    InstallError,
     ModuleApplyError,
     ModuleInstallPending,
     ModuleSetupError,
@@ -132,6 +134,23 @@ def test_each_kind_of_exception_reads_as_its_failure():
         "code": "install_failed",
         "params": {"detail": "disk full"},
     }
+
+
+def test_an_install_s_failure_keeps_its_command_and_the_end_of_its_output():
+    output = "\n".join(f"Reading package lists... {n}" for n in range(500))
+    error = InstallError(
+        f"apt-get failed: {output}\nE: Unable to locate package nope", exit_code=100
+    )
+
+    failure = step_failure(
+        step("packages", failed_state="install_failed", error_code="install_failed"),
+        error,
+    )
+
+    detail = failure["params"]["detail"]
+    assert len(detail) <= 500
+    assert detail.startswith("apt-get failed: ... ")
+    assert detail.endswith("E: Unable to locate package nope")
 
 
 def test_a_failed_step_names_its_failure_in_the_log():

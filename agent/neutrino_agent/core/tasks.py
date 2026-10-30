@@ -38,6 +38,7 @@ from neutrino_agent.exceptions import (
     PlatformUnsupportedError,
     StepSuperseded,
 )
+from neutrino_agent.modules.shared.subprocess_run import bounded_detail
 
 # The kinds of plan, by what the task does to the module.
 PLAN_INSTALL = "install"
@@ -59,7 +60,7 @@ RUN_CUT = "cut"
 MODULE_WAIT_LOOK_S = 0.5
 # How much of an unexpected exception's words a failure keeps, and how much
 # of a failure's line the log stream takes.
-DETAIL_CHARS = 200
+DETAIL_CHARS = 500
 DETAIL_LINE_CHARS = 500
 
 
@@ -74,7 +75,8 @@ def step_failure(step, error: Exception) -> dict:
         ``{"state", "code", "params"}``: the module's own code from
         :class:`ModuleApplyError`, ``install_failed`` for
         :class:`ModuleSetupError`, ``unsupported_platform``, and the step's
-        ``error_code`` with ``{detail}`` for anything else.
+        ``error_code`` with ``{detail}`` for anything else, the words' lead
+        and their last lines as :func:`bounded_detail` keeps them.
     """
     if isinstance(error, ModuleSetupError):
         state = AGENT_MODULE_STATE_INSTALL_FAILED
@@ -90,7 +92,7 @@ def step_failure(step, error: Exception) -> dict:
     return {
         "state": step.failed_state,
         "code": step.error_code,
-        "params": {"detail": str(error)[:DETAIL_CHARS]},
+        "params": {"detail": bounded_detail(str(error), DETAIL_CHARS)},
     }
 
 
@@ -402,7 +404,7 @@ class ModuleTask:
             failure = {
                 "state": AGENT_MODULE_STATE_FAILED,
                 "code": "apply_failed",
-                "params": {"detail": str(error)[:DETAIL_CHARS]},
+                "params": {"detail": bounded_detail(str(error), DETAIL_CHARS)},
             }
             self._owner.end_task(self, failure, is_cut=False, is_forced=True)
         finally:

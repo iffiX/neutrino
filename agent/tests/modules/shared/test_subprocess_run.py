@@ -5,7 +5,12 @@ import subprocess
 import pytest
 
 from neutrino_agent.modules.shared import subprocess_run
-from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import (
+    bounded_detail,
+    command_detail,
+    run,
+    unit_state,
+)
 
 
 class Completed:
@@ -117,3 +122,34 @@ def test_output_a_byte_the_encoding_cannot_read_is_replaced_not_lost():
     )
 
     assert result.stdout == "{\ufffd}"
+
+
+def test_bounded_words_that_fit_are_kept_whole():
+    assert bounded_detail("  disk full\n", 50) == "disk full"
+
+
+def test_bounded_words_keep_the_command_and_the_last_lines_that_fit():
+    output = "\n".join(["Reading package lists..."] * 40)
+    text = f"apt-get failed: {output}\nE: Unable to locate package nope"
+
+    held = bounded_detail(text, 120)
+
+    assert held == "apt-get failed: ... " + "\n".join(
+        ["Reading package lists..."] * 2 + ["E: Unable to locate package nope"]
+    )
+
+
+def test_a_last_line_too_long_to_fit_keeps_its_end():
+    text = "step failed: " + "x" * 300 + "END"
+
+    held = bounded_detail(text, 60)
+
+    assert len(held) == 60
+    assert held.startswith("step failed: ... ")
+    assert held.endswith("xEND")
+
+
+def test_words_with_no_short_lead_keep_their_end_alone():
+    text = "y" * 300 + "\nlast words"
+
+    assert bounded_detail(text, 40) == "... last words"

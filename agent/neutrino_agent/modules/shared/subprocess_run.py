@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from neutrino_agent.constants import AGENT_MODULE_OUTPUT_LIMIT_BYTES
 
 RUN_TIMEOUT_S = 120
+# What stands for the words a bounded detail leaves out.
+DETAIL_ELLIPSIS = "... "
 
 
 @dataclass
@@ -118,6 +120,42 @@ def command_detail(error: BaseException) -> str:
         command = error.cmd[0] if isinstance(error.cmd, list) else str(error.cmd)
         return f"{command} exited {error.returncode}"
     return str(error)[:AGENT_MODULE_OUTPUT_LIMIT_BYTES]
+
+
+def bounded_detail(text: str, limit: int) -> str:
+    """One failure's words within a number of characters, with their end kept.
+
+    Words that fit are kept whole. Longer words keep their lead, the text
+    before the first ``": "`` of their first line, such as the command an
+    install names, then ``...`` and the last whole lines that fit; the end of
+    the last line where no whole line fits.
+
+    Args:
+        text: The words, one or more lines.
+        limit: How many characters the result holds at most.
+
+    Returns:
+        The bounded words.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    head, colon, _ = text.split("\n", 1)[0].partition(": ")
+    lead = head + colon if colon and len(head) < limit // 4 else ""
+    lines = [line.rstrip() for line in text[len(lead) :].splitlines()]
+    lines = [line for line in lines if line.strip()]
+    lead += DETAIL_ELLIPSIS
+    room = limit - len(lead)
+    kept: list = []
+    for line in reversed(lines):
+        cost = len(line) + (1 if kept else 0)
+        if cost > room:
+            break
+        kept.insert(0, line)
+        room -= cost
+    if not kept and lines:
+        kept = [lines[-1][-room:]] if room > 0 else []
+    return lead + "\n".join(kept)
 
 
 def unit_state(unit: str) -> str:
