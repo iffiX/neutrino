@@ -586,28 +586,16 @@ class DesiredStateApplier:
             tried = dict(self._tried)
             if name != AI_TOOLS_SECTION:
                 self._outcomes[name] = dict(outcome) if outcome else None
-        self._write_tried(tried)
-        if name != AI_TOOLS_SECTION:
-            want = str(entry.get("want", "") or "")
-            if outcome is None and not is_cut and want in CONFIGURING_WANTS:
-                try:
-                    self._engine.mark_configured(name)
-                except OSError as error:
-                    self._log(f"{name}: could not mark it configured: {error}")
-            if outcome is not None:
-                said = " ".join(
-                    f"{key}={value}" for key, value in outcome["params"].items()
-                )
-                self._log(f"{name}: {outcome['code']} {said}".rstrip()[:500])
-            self._engine.record_failure(name, outcome)
-            self._engine.publish_task(name, task.row(), "", {})
-            if task.kind == PLAN_CONFIGURE:
-                self._engine.refresh_one(name)
-        with self._idle:
-            if self._tasks.get(name) is task:
-                del self._tasks[name]
-            self._settle_hash()
-            self._idle.notify_all()
+        try:
+            self._write_tried(tried)
+            if name != AI_TOOLS_SECTION:
+                self._keep_outcome(task, entry, outcome, is_cut=is_cut)
+        finally:
+            with self._idle:
+                if self._tasks.get(name) is task:
+                    del self._tasks[name]
+                self._settle_hash()
+                self._idle.notify_all()
         return True
 
     def task_changed(self, task) -> None:
@@ -762,6 +750,25 @@ class DesiredStateApplier:
         task.set_wait({})
         if self._containers_state() != AGENT_WANT_RUNNING:
             raise self._module_needed()
+
+    def _keep_outcome(self, task, entry: dict, outcome, *, is_cut: bool) -> None:
+        """Mark a module configured once its task took, keep its failure, and read its row again."""
+        name = task.name
+        want = str(entry.get("want", "") or "")
+        if outcome is None and not is_cut and want in CONFIGURING_WANTS:
+            try:
+                self._engine.mark_configured(name)
+            except OSError as error:
+                self._log(f"{name}: could not mark it configured: {error}")
+        if outcome is not None:
+            said = " ".join(
+                f"{key}={value}" for key, value in outcome["params"].items()
+            )
+            self._log(f"{name}: {outcome['code']} {said}".rstrip()[:500])
+        self._engine.record_failure(name, outcome)
+        self._engine.publish_task(name, task.row(), "", {})
+        if task.kind == PLAN_CONFIGURE:
+            self._engine.refresh_one(name)
 
     def _is_settled(self, module: str) -> bool:
         """Whether no state is pending and the module's task has ended. Call under the lock."""
