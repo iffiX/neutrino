@@ -352,6 +352,14 @@ class GiteaWindowsApplier:
         """The server's own log file."""
         return self._join(self.data_dir, *GITEA_LOG_PARTS)
 
+    def server_log_path(self) -> str:
+        """The log file the server writes itself."""
+        return self.log_path()
+
+    def output_path(self) -> str:
+        """The server's own log file: the service's output goes nowhere else."""
+        return self.log_path()
+
     def _cli(self, *arguments: str) -> list:
         return [self.binary_path, *arguments, "--config", self.conf_path]
 

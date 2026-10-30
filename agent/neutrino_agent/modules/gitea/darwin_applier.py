@@ -404,6 +404,14 @@ class GiteaDarwinApplier:
         """The server's own log file."""
         return os.path.join(self.data_dir, *GITEA_LOG_PARTS)
 
+    def server_log_path(self) -> str:
+        """The log file the server writes itself."""
+        return self.log_path()
+
+    def output_path(self) -> str:
+        """The file launchd writes the server's output to."""
+        return self._output_path
+
     def _ensure_account(self) -> tuple:
         """The account's uid and gid, made first when it is missing.
 

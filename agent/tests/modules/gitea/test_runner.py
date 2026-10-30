@@ -4,8 +4,11 @@ What these pin beside the verbs: the runner's own check is the binary on
 disk, the system packages a recipe names install before the binary, the
 server's account is a step of its own before ``configure`` taking
 ``system_accounts`` as the uninstall does, none where the server runs as
-LocalSystem, and the details name the port the server answers on, from the
-held configuration or the installed ``app.ini``.
+LocalSystem, a configure that runs the server waits until it listens and
+fails ``apply_failed`` with its last logged error, else its last output
+line, when it never does, and
+the details name the port the server answers on, from the held
+configuration or the installed ``app.ini``.
 """
 
 import subprocess
@@ -87,6 +90,12 @@ class FakeAdmins:
 
     def change_password(self, *, username, password):
         FakeAdmins.changed.append(username)
+
+
+@pytest.fixture(autouse=True)
+def _server_listens(monkeypatch):
+    """Every server listens on its port at once, unless a test says otherwise."""
+    monkeypatch.setattr(runner_module, "loopback_is_listening", lambda port: True)
 
 
 @pytest.fixture
@@ -393,6 +402,7 @@ class SystemApplier:
         self.applied: list = []
         self.installed: list = []
         self.log = tmp_path / "gitea.log"
+        self.output = tmp_path / "output.log"
 
     def find_git(self):
         return self.git
@@ -431,9 +441,85 @@ class SystemApplier:
     def log_path(self):
         return str(self.log)
 
+    def output_path(self):
+        return str(self.output)
+
+    def server_log_path(self):
+        return str(self.log)
+
 
 class MacPlatform(AgentPlatform):
     os_name = "darwin"
+
+
+def test_a_configure_that_runs_the_server_waits_until_it_listens(tmp_path):
+    looks: list = []
+    now = [0.0]
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=SystemApplier(tmp_path, git="/opt/homebrew/bin/git"),
+        record_dir=str(tmp_path / "record"),
+        is_listening=lambda port: looks.append(port) or len(looks) > 3,
+        clock=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    runner.apply(CONFIG)
+
+    assert looks == [CONFIG["listen_port"]] * 4
+    assert now[0] == 1.5
+
+
+def test_a_server_that_never_listens_fails_the_configure_with_its_last_error(
+    tmp_path,
+):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    applier.log.write_text(
+        "db.go:35:InitDBEngine() [E] unable to open database file (14)\n"
+        "db.go:36:InitDBEngine() [I] Backing off for 3 seconds\n"
+    )
+    applier.output.write_text("[W] sha256 hash support is disabled\n")
+    lines: list = []
+    now = [0.0]
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lines.append,
+        applier=applier,
+        record_dir=str(tmp_path / "record"),
+        is_listening=lambda port: False,
+        clock=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.apply(CONFIG)
+
+    assert refused.value.code == "apply_failed"
+    assert refused.value.params == {
+        "detail": f"gitea did not listen on 127.0.0.1:{CONFIG['listen_port']}: "
+        "db.go:35:InitDBEngine() [E] unable to open database file (14)"
+    }
+    applier.log.write_text("")
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.apply(CONFIG)
+    assert refused.value.params["detail"].endswith(
+        ": [W] sha256 hash support is disabled"
+    )
+    assert now[0] >= 60
+    assert "gitea: started" not in lines
+
+
+def test_a_configure_under_stopped_waits_for_no_server(tmp_path):
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=SystemApplier(tmp_path, git="/opt/homebrew/bin/git"),
+        record_dir=str(tmp_path / "record"),
+        is_listening=lambda port: False,
+    )
+
+    runner.apply_stopped(CONFIG)
 
 
 def test_without_git_an_install_and_an_apply_are_refused(tmp_path):

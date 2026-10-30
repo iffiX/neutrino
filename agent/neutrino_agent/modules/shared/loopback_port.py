@@ -6,7 +6,7 @@ is free when a listener can bind it on ``127.0.0.1`` now, and the pick is
 the first free one from a module's base port up, past the ports the module
 already keeps for another of its instances.
 
-Not pure: binds sockets to test them.
+Not pure: binds and connects sockets to test them.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,6 +20,8 @@ from neutrino_agent.constants import AGENT_FORWARD_LISTEN_HOST
 
 # The highest port a pick reaches.
 LOOPBACK_PORT_MAX = 65535
+# How long a connection to a loopback listener may take to open.
+LOOPBACK_CONNECT_TIMEOUT_S = 1.0
 
 
 def is_port_free(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
@@ -46,6 +48,25 @@ def is_port_free(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
     finally:
         probe.close()
     return True
+
+
+def is_listening(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
+    """Whether a listener on loopback accepts a connection on one port now.
+
+    Args:
+        port: The port.
+        host: The address to connect to.
+
+    Returns:
+        True when the connection opens; it is closed at once.
+    """
+    try:
+        with socket.create_connection(
+            (host, int(port)), timeout=LOOPBACK_CONNECT_TIMEOUT_S
+        ):
+            return True
+    except OSError:
+        return False
 
 
 def pick_port(base: int, *, taken=(), is_free=is_port_free) -> int:

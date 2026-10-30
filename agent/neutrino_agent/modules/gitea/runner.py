@@ -50,9 +50,15 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_CODE_GIT_MISSING,
     GITEA_COMMAND_ADMIN,
     GITEA_COMMAND_PASSWORD,
+    GITEA_DIR,
+    GITEA_FAILURE_LEVELS,
+    GITEA_FAILURE_LINES,
+    GITEA_LOG_PARTS,
     GITEA_RECORD_FIELDS,
     GITEA_RECORD_NAME,
     GITEA_SSH_BASE_PORT,
+    GITEA_START_POLL_S,
+    GITEA_START_WAIT_S,
     GITEA_SURVEY_TTL_S,
     GITEA_UNIT,
     GITEA_USER,
@@ -61,10 +67,17 @@ from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
 from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.loopback_port import (
+    is_listening as loopback_is_listening,
+)
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
-from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
+from neutrino_agent.modules.shared.subprocess_run import (
+    command_detail,
+    unit_state,
+    units_journal,
+)
 
 
 class GiteaLinuxApplier:
@@ -146,6 +159,14 @@ class GiteaLinuxApplier:
         """Empty: the journal holds the log."""
         return ""
 
+    def output_path(self) -> str:
+        """Empty: the journal holds the server's output."""
+        return ""
+
+    def server_log_path(self) -> str:
+        """The log file the server writes itself."""
+        return os.path.join(GITEA_DIR, *GITEA_LOG_PARTS)
+
 
 def gitea_applier_for(platform):
     """The applier that runs the git server on this system.
@@ -183,6 +204,9 @@ class GiteaModuleRunner(ModuleRunner):
         applier=None,
         record_dir: str = "",
         is_port_free=is_port_free,
+        is_listening=None,
+        clock=time.monotonic,
+        sleep=time.sleep,
     ):
         """
         Args:
@@ -193,6 +217,10 @@ class GiteaModuleRunner(ModuleRunner):
             record_dir: Where the module's record lives; empty is
                 ``gitea`` under ``platform.agent_var_dir()``.
             is_port_free: Answers whether a loopback port can be bound now.
+            is_listening: Answers whether a loopback port accepts a
+                connection now; None connects to it.
+            clock: The monotonic clock the wait for the server ages on.
+            sleep: Waits between two looks at the server's port.
 
         Raises:
             PlatformUnsupportedError: On a system with no applier.
@@ -205,6 +233,11 @@ class GiteaModuleRunner(ModuleRunner):
             fields=GITEA_RECORD_FIELDS,
         )
         self._is_port_free = is_port_free
+        self._is_listening = (
+            is_listening if is_listening is not None else loopback_is_listening
+        )
+        self._clock = clock
+        self._sleep = sleep
         self._config: "GiteaConfig | None" = None
         self._survey = None
         self._surveyed_at = 0.0
@@ -283,11 +316,18 @@ class GiteaModuleRunner(ModuleRunner):
         Args:
             config: The desired configuration.
 
+        The server is waited for until it listens on its port, at most
+        60 seconds.
+
+        Args:
+            config: The desired configuration.
+
         Raises:
             ModuleApplyError: When the configuration is refused, the
                 machine has no git (``gitea_git_missing``), no port from
                 2222 up is free for its SSH server, or the server will not
-                come up.
+                come up; ``apply_failed {detail}`` with the server's last
+                output line when it does not listen in time.
         """
         self._apply(config, is_started=True)
 
@@ -321,6 +361,8 @@ class GiteaModuleRunner(ModuleRunner):
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
         self._config = parsed
+        if is_started:
+            self._wait_for_server(parsed.listen_port)
         self._log(f"gitea: {note}")
 
     def stop(self) -> None:
@@ -489,6 +531,51 @@ class GiteaModuleRunner(ModuleRunner):
         """The ``account`` step: the server's account made when it is missing, and its directories."""
         if self._applier.ensure_account():
             self._log(f"gitea: gave its data to {self._applier.account}")
+
+    def _wait_for_server(self, port: int) -> None:
+        """Wait until the server listens on its port on loopback.
+
+        Raises:
+            ModuleApplyError: ``apply_failed {detail}`` naming the port and
+                the server's last words when the wait runs out.
+        """
+        deadline = self._clock() + GITEA_START_WAIT_S
+        while not self._is_listening(port):
+            if self._clock() >= deadline:
+                detail = f"gitea did not listen on 127.0.0.1:{port}"
+                said = self._last_words()
+                if said:
+                    detail += f": {said}"
+                raise ModuleApplyError("apply_failed", {"detail": detail[:500]})
+            self._sleep(GITEA_START_POLL_S)
+
+    def _last_words(self) -> str:
+        """The last error the server logged, else the last line of its output.
+
+        The output is the unit's journal on Linux and the output file
+        elsewhere.
+        """
+        try:
+            logged = file_tail(self._applier.server_log_path(), GITEA_FAILURE_LINES)
+        except OSError:
+            logged = []
+        errors = [
+            line
+            for line in logged
+            if any(level in line for level in GITEA_FAILURE_LEVELS)
+        ]
+        if errors:
+            return errors[-1].strip()
+        path = self._applier.output_path()
+        try:
+            lines = (
+                file_tail(path, 1)
+                if path
+                else units_journal(self._applier.journal_units(), 1)
+            )
+        except OSError:
+            return ""
+        return lines[-1].strip() if lines else ""
 
     def _kept_ssh_port(self) -> int:
         """The port the record keeps for Gitea's own SSH server, 0 when none."""

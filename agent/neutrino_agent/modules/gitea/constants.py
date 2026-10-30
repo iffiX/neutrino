@@ -37,6 +37,15 @@ GITEA_SURVEY_TTL_S = 60.0
 # The words ``gitea --version`` opens with, compared in lower case.
 GITEA_VERSION_PREFIX = "gitea version"
 
+# How long a configure that runs the server waits for it to listen on its
+# port, and how often it looks.
+GITEA_START_WAIT_S = 60.0
+GITEA_START_POLL_S = 0.5
+# How many of the server's last log lines a failed start searches for an
+# error, and the levels that mark one.
+GITEA_FAILURE_LINES = 50
+GITEA_FAILURE_LEVELS = (" [E] ", " [F] ")
+
 # The refusal of an install or an apply on macOS or Windows while the
 # machine has no git the server can run.
 GITEA_CODE_GIT_MISSING = "gitea_git_missing"
