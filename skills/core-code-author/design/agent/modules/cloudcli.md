@@ -84,8 +84,10 @@ path that answers to it.
 an install that no source served Node.js, or that no registry served the
 package's integrity. `cloudcli_npm_install_failed` is a failed npm, and
 `cloudcli_native_module_failed` is better-sqlite3, node-pty or bcrypt unable
-to fetch its prebuilt binary. Both npm codes hold `detail`, the last lines
-prebuild-install, node-gyp and npm wrote. node-pty and bcrypt hold their binaries inside their npm packages.
+to fetch its prebuilt binary. Both npm codes hold `detail`, the last four
+distinct lines prebuild-install, node-gyp and npm wrote, else the last four
+distinct error lines Node.js wrote, such as `Error: EPERM: ...`. It keeps
+the last whole lines that fit in 400 characters. node-pty and bcrypt hold their binaries inside their npm packages.
 better-sqlite3 fetches its own from the host
 `npm_config_better_sqlite3_binary_host` names: the artifact's `hosts` list
 that setting's hosts, its GitHub releases and then npmmirror's copy, and the
