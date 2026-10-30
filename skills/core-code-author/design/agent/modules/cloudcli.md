@@ -122,7 +122,8 @@ steps"). On Linux and macOS it runs to its end; on Windows the step starts
 the install task and leaves it running (four hours at most), checks its
 state every 30 seconds, and starts no instance until it has ended; an ended task is judged by its
 result and by the app directory holding the package and the three native
-modules, then unregistered. The hub publishes an instance's `web` entry
+modules, then unregistered. A task whose result says a shutdown or a
+sign-out ended it is unregistered and started again, and keeps no failure. The hub publishes an instance's `web` entry
 only while the device reports it running.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
