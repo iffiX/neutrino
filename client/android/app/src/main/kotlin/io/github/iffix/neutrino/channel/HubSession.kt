@@ -586,7 +586,7 @@ class HubSession(
             refusal != null && (refusal.code in CLIENT_PROTOCOL_REFUSAL_CODES || held == HubWaitReason.TOO_OLD) ->
                 hold(HubWaitReason.TOO_OLD, refusal)
 
-            refusal != null -> waitFor(silentReason(), refusal, CLIENT_BACKOFF_MAX_S)
+            refusal != null -> waitFor(silentReason(), refusal, retryAfterS(refusal))
 
             else -> current.update { it.dialling() }
         }

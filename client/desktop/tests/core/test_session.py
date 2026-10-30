@@ -578,6 +578,33 @@ def test_a_session_that_ends_with_no_code_is_connecting_at_once(harness):
     assert harness.session.service_entries() == []
 
 
+@pytest.mark.parametrize("is_frame_first", [True, False])
+@pytest.mark.parametrize(
+    "params, wait_s",
+    [({"retry_after_s": 5}, 5), ({}, CLIENT_BACKOFF_MAX_S)],
+)
+def test_a_session_refused_mid_session_counts_down_the_transports_wait(
+    harness, is_frame_first, params, wait_s
+):
+    harness.connect()
+    if is_frame_first:
+        harness.transport.frame(
+            "c1", {"type": "refused", "code": "control_unavailable", "params": params}
+        )
+    harness.transport.emit(
+        {
+            "event": "session_end",
+            "binding": "c1",
+            "code": "control_unavailable",
+            "params": params,
+        }
+    )
+    assert wait_for(lambda: harness.session.waiting() is not None)
+    waiting = harness.session.waiting()
+    assert waiting["reason"] == "hub_silent"
+    assert wait_s - 2 < waiting["next_round_at"] - time.time() <= wait_s
+
+
 def test_a_round_end_while_connected_changes_nothing(harness):
     harness.connect()
     harness.transport.emit(

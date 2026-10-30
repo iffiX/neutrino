@@ -317,6 +317,31 @@ class HubSessionTest {
     }
 
     @Test
+    fun aSessionRefusedMidSessionCountsDownTheTransportsWait() {
+        val (session, _) = session()
+        connected(session)
+        val params = buildJsonObject { put("retry_after_s", 5) }
+        val refused = buildJsonObject {
+            put("type", "refused")
+            put("code", "control_unavailable")
+            put("params", params)
+        }
+        fake.frame("b1", refused)
+        fake.event("session_end", "b1", "code" to "control_unavailable", "params" to params)
+        eventually("waiting") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
+        assertEquals(CLOCK_MILLIS + 5_000, session.view.value.nextRoundAtMillis)
+    }
+
+    @Test
+    fun aSessionRefusedWithNoSecondsCountsDownAMinute() {
+        val (session, _) = session()
+        connected(session)
+        fake.event("session_end", "b1", "code" to "channel_full", "params" to JsonObject(emptyMap()))
+        eventually("waiting") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
+        assertEquals(CLOCK_MILLIS + 60_000, session.view.value.nextRoundAtMillis)
+    }
+
+    @Test
     fun aMoveGreetsTheNewSessionAndStaysConnected() {
         val (session, _) = session()
         connected(session)

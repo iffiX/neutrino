@@ -543,7 +543,7 @@ final class HubSession {
         {
             hold(.tooOld, refusal)
         } else if let refusal {
-            _ = waitFor(.hubSilent, refusal, Channel.backoffMaxSeconds)
+            _ = waitFor(.hubSilent, refusal, retryAfter(refusal))
         } else {
             view = dialling(view)
         }

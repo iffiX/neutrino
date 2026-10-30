@@ -237,6 +237,24 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.connectedAddress, "")
     }
 
+    func testASessionRefusedMidSessionCountsDownTheTransportsWait() throws {
+        let session = try self.session()
+        connected(session)
+        let params: JSONValue = .object(["retry_after_s": .int(5)])
+        fake.frame("b1", ["type": .string("refused"), "code": .string("control_unavailable"), "params": params])
+        fake.event("session_end", "b1", ["code": .string("control_unavailable"), "params": params])
+        XCTAssertTrue(RunLoopWait.until { session.view.waitReason == .hubSilent })
+        XCTAssertEqual(session.view.nextRoundAt, clock.now + 5)
+    }
+
+    func testASessionRefusedWithNoSecondsCountsDownAMinute() throws {
+        let session = try self.session()
+        connected(session)
+        fake.event("session_end", "b1", ["code": .string("channel_full"), "params": .object([:])])
+        XCTAssertTrue(RunLoopWait.until { session.view.waitReason == .hubSilent })
+        XCTAssertEqual(session.view.nextRoundAt, clock.now + 60)
+    }
+
     func testAMoveGreetsTheNewSessionAndStaysConnected() throws {
         let session = try self.session()
         connected(session)

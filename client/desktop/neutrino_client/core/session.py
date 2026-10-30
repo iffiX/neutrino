@@ -1505,7 +1505,9 @@ class ClientHubSession:
 
         ``binding_unknown`` unbinds, ``replaced`` is another client taking
         the binding, a protocol refusal waits for a new client, and every
-        other code waits for the transport's next round.
+        other code waits for the transport's next round. A session's refusal
+        names no next round, and the transport dials again after its
+        ``retry_after_s``, else a minute later.
         """
         name = code["code"]
         if name == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
@@ -1521,7 +1523,9 @@ class ClientHubSession:
             self._unreachable(code, next_round_s)
         else:
             self._wait(
-                self._silent_reason(), code, next_round_s or CLIENT_BACKOFF_MAX_S
+                self._silent_reason(),
+                code,
+                next_round_s or _retry_after_s(code, CLIENT_BACKOFF_MAX_S),
             )
             self._log_refusal(name)
 
@@ -1967,7 +1971,7 @@ def _retry_after_s(code: dict, default_s: float) -> float:
         default_s: The seconds when the refusal names none.
 
     Returns:
-        The seconds before the join runs again.
+        The seconds before the join or the round runs again.
     """
     try:
         delay = float(code["params"].get("retry_after_s") or default_s)
