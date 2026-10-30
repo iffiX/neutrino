@@ -21,6 +21,10 @@
 .module_step_detail {
   grid-column: 2;
   font-size: 12px;
+  /* A failure's detail keeps the lines of the command's output, and a long
+     address wraps inside the tab. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .module_step--running,

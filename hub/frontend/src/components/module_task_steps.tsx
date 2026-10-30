@@ -2,6 +2,7 @@ import { StatusDot } from "./status_dot";
 import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
 import { withModuleTitle } from "../module_title";
+import { stripAnsi } from "../strip_ansi";
 import type { StatusTone } from "./status_dot";
 import type { ModuleTask, ModuleTaskStep, ModuleTaskWait } from "../api_types";
 
@@ -94,7 +95,7 @@ export function ModuleTaskSteps({
               {stepWords(step, module, artifactCount)}
             </span>
             {detail !== "" && (
-              <span className="module_step_detail">{detail}</span>
+              <span className="module_step_detail">{stripAnsi(detail)}</span>
             )}
           </li>
         );
