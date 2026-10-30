@@ -13,8 +13,10 @@ import build_deb
 import build_pkg
 import build_rpm
 import venv_tree
+from neutrino_hub.modules.hub_update.constants import HUB_UPDATE_HEALTH_PATH
 from neutrino_hub.modules.transport.constants import TRANSPORT_UNIT
 from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
+from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 
 
 def _spec(geodata="/var/lib/neutrino/hub/geodata\n"):
@@ -40,6 +42,7 @@ def _spec(geodata="/var/lib/neutrino/hub/geodata\n"):
         desktop=venv_tree.DESKTOP_ENTRY_NAME,
         first_install=venv_tree.FIRST_INSTALL,
         is_set_up=venv_tree.HUB_IS_SET_UP,
+        wait_for_panel=venv_tree.HUB_WAIT_FOR_PANEL,
     )
 
 
@@ -340,15 +343,18 @@ FRESH_SETTINGS = (
 )
 
 
-def _upgrade_calls(tmp_path, upgrade: str, command: list, settings) -> list:
+def _upgrade_calls(
+    tmp_path, upgrade: str, command: list, settings, bodies: "dict | None" = None
+) -> list:
     """Run the upgrade part of a maintainer script against this test's settings.
 
     Args:
         tmp_path: Where the script, the settings and the fakes go.
-        upgrade: The script's text from its upgrade on, the set-up check
+        upgrade: The script's text from its upgrade on, the shared functions
             first.
         command: How the script is run.
         settings: The panel settings' text, or None for no settings.
+        bodies: Shell lines a fake runs after it records its call, by name.
 
     Returns:
         The commands it ran.
@@ -358,19 +364,23 @@ def _upgrade_calls(tmp_path, upgrade: str, command: list, settings) -> list:
         path.write_text(settings)
     script = tmp_path / "upgrade.sh"
     script.write_text(upgrade.replace(venv_tree.HUB_SETTINGS_LINUX, str(path)))
-    return _run_with_fakes(tmp_path, [*command[:1], str(script), *command[1:]])
+    return _run_with_fakes(tmp_path, [*command[:1], str(script), *command[1:]], bodies)
 
 
 def _deb_upgrade(tmp_path) -> str:
     build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
     postinst = (tmp_path / "tree/DEBIAN/postinst").read_text()
-    return venv_tree.HUB_IS_SET_UP + postinst[postinst.index("# An upgrade can") :]
+    return (
+        venv_tree.HUB_IS_SET_UP
+        + venv_tree.HUB_WAIT_FOR_PANEL
+        + postinst[postinst.index("# An upgrade can") :]
+    )
 
 
 def _rpm_upgrade() -> str:
     spec = _spec()
     post = spec[spec.index("# An upgrade can") : spec.index("\n%preun")]
-    return venv_tree.HUB_IS_SET_UP + post
+    return venv_tree.HUB_IS_SET_UP + venv_tree.HUB_WAIT_FOR_PANEL + post
 
 
 def _arch_upgrade() -> str:
@@ -453,10 +463,81 @@ def test_an_upgrade_over_a_hub_set_up_restarts_a_running_transport_after_the_pan
         "nhub apply",
         "systemctl restart neutrino_hub_router.service",
         "systemctl try-restart neutrino_hub_web.service",
+        "curl",
         transport,
     ]
+    steps = [
+        call.split()[0] if call.startswith("curl ") else call
+        for call in calls
+        if call in order or call.startswith("curl ")
+    ]
     assert calls.count(transport) == 1
-    assert [call for call in calls if call in order] == order
+    assert steps == order
+    assert _probes(calls) == [
+        f"http://127.0.0.1:{WEB_DEFAULT_LISTEN_PORT}{HUB_UPDATE_HEALTH_PATH}"
+    ]
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_restarts_the_transport_after_ten_tries_of_a_silent_panel(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+    settings = SET_UP_SETTINGS.replace("{\n", '{\n  "listen_port": 9090,\n')
+
+    calls = _upgrade_calls(
+        tmp_path, upgrade, command, settings, bodies={"curl": "exit 7"}
+    )
+
+    transport = f"systemctl try-restart {TRANSPORT_UNIT}"
+    assert _probes(calls) == [f"http://127.0.0.1:9090{HUB_UPDATE_HEALTH_PATH}"] * 10
+    assert calls[-1] == transport
+    assert calls.count("sleep 1") == 9
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_restarts_the_transport_at_once_while_no_panel_runs(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+
+    calls = _upgrade_calls(
+        tmp_path,
+        upgrade,
+        command,
+        SET_UP_SETTINGS,
+        bodies={"systemctl": '[ "$1" = is-active ] && exit 3\nexit 0'},
+    )
+
+    assert _probes(calls) == []
+    assert f"systemctl try-restart {TRANSPORT_UNIT}" in calls
+
+
+def _probes(calls: list) -> list:
+    """The addresses the script asked the panel's page at, in order."""
+    return [call.split()[-1] for call in calls if call.startswith("curl ")]
 
 
 def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
@@ -466,13 +547,14 @@ def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
     assert "RestartForceExitStatus=75\n" in unit
 
 
-def _run_with_fakes(tmp_path, command: list) -> list:
-    """Run a maintainer script with nhub, systemctl, nft, ip and install
-    recording calls.
+def _run_with_fakes(tmp_path, command: list, bodies: "dict | None" = None) -> list:
+    """Run a maintainer script with nhub, systemctl, nft, ip, install, curl
+    and sleep recording calls.
 
     Args:
         tmp_path: Where the fakes and their record go.
         command: The script's command line.
+        bodies: Shell lines a fake runs after it records its call, by name.
 
     Returns:
         The commands it ran, one line each.
@@ -480,9 +562,10 @@ def _run_with_fakes(tmp_path, command: list) -> list:
     fakes = tmp_path / "fakes"
     fakes.mkdir(exist_ok=True)
     record = tmp_path / "calls"
-    for name in ("nhub", "systemctl", "nft", "ip", "install"):
+    for name in ("nhub", "systemctl", "nft", "ip", "install", "curl", "sleep"):
         fake = fakes / name
-        fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
+        body = (bodies or {}).get(name, "")
+        fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n{body}\n')
         fake.chmod(0o755)
     environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
     subprocess.run(command, env=environment, check=True)

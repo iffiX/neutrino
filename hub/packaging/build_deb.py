@@ -46,6 +46,7 @@ from venv_tree import (
     WRAPPER,
     FIRST_INSTALL,
     HUB_IS_SET_UP,
+    HUB_WAIT_FOR_PANEL,
     stage_desktop_entry,
 )
 from shared import deb_build  # noqa: E402
@@ -69,6 +70,7 @@ set -e
 
 {prune}
 {is_set_up}
+{wait_for_panel}
 if [ "$1" = configure ]; then
     listing=/var/lib/dpkg/info/{package}.list
     if [ -r "$listing" ]; then
@@ -109,8 +111,9 @@ if [ "$1" = configure ] && [ -n "$2" ] && hub_is_set_up; then
     # asking for fields the old API does not send. Only when it is already up.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
     # The transport unit still runs the program this package replaced. It
-    # restarts last and only while it runs, so the peers that dial again
-    # reach the new panel.
+    # restarts last and only while it runs, once the new panel serves its
+    # page, so the peers that dial again reach the new panel.
+    wait_for_panel >/dev/null 2>&1 || true
     systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
     exit 0
 fi
@@ -250,6 +253,7 @@ def _lay_out(
             prefix=INSTALL_PREFIX,
             first_install=FIRST_INSTALL,
             is_set_up=HUB_IS_SET_UP,
+            wait_for_panel=HUB_WAIT_FOR_PANEL,
             lease_client=lease_client_lines(),
         ),
         is_executable=True,

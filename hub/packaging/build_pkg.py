@@ -35,6 +35,7 @@ from venv_tree import (
     WRAPPER,
     FIRST_INSTALL,
     HUB_IS_SET_UP,
+    HUB_WAIT_FOR_PANEL,
     stage_desktop_entry,
 )
 from shared import edition_build  # noqa: E402
@@ -64,6 +65,7 @@ package() {{
 """
 
 INSTALL_SCRIPT = """@IS_SET_UP@
+@WAIT_FOR_PANEL@
 pre_upgrade() {
     # Python writes __pycache__ into the carried tree while the hub runs;
     # pacman does not own those files, and a directory the new version no
@@ -113,8 +115,9 @@ post_upgrade() {
     # asking for fields the old API does not send. Only when it is already up.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
     # The transport unit still runs the program this package replaced. It
-    # restarts last and only while it runs, so the peers that dial again
-    # reach the new panel.
+    # restarts last and only while it runs, once the new panel serves its
+    # page, so the peers that dial again reach the new panel.
+    wait_for_panel >/dev/null 2>&1 || true
     systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
 }
 
@@ -148,6 +151,7 @@ def install_script() -> str:
         INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL)
         .replace("@STOP_HUB@", stop_hub_lines())
         .replace("@IS_SET_UP@", HUB_IS_SET_UP)
+        .replace("@WAIT_FOR_PANEL@", HUB_WAIT_FOR_PANEL)
     )
 
 

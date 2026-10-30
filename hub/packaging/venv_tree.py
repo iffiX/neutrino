@@ -311,6 +311,29 @@ HUB_IS_SET_UP = f"""hub_is_set_up() {{
 }}
 """
 
+# The shell function an upgrade waits for the new panel with. While the
+# panel's unit runs, it requests the panel's page on loopback once a second,
+# at most HUB_PANEL_WAIT_TRIES times.
+HUB_PANEL_WAIT_TRIES = 10
+HUB_PANEL_HEALTH_PATH = _runtime(
+    "neutrino_hub.modules.hub_update.constants", "HUB_UPDATE_HEALTH_PATH"
+)
+HUB_PANEL_DEFAULT_PORT = _runtime(
+    "neutrino_hub.web.constants", "WEB_DEFAULT_LISTEN_PORT"
+)
+HUB_WAIT_FOR_PANEL = f"""wait_for_panel() {{
+    port=$(sed -n 's/.*"listen_port"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p' {HUB_SETTINGS_LINUX} 2>/dev/null | head -n 1)
+    tries=0
+    while systemctl is-active --quiet neutrino_hub_web.service; do
+        curl -fs -m 1 -o /dev/null http://127.0.0.1:${{port:-{HUB_PANEL_DEFAULT_PORT}}}{HUB_PANEL_HEALTH_PATH} && return 0
+        tries=$((tries + 1))
+        [ "$tries" -lt {HUB_PANEL_WAIT_TRIES} ] || return 1
+        sleep 1
+    done
+    return 1
+}}
+"""
+
 # What a first install runs once the files are in place, and an upgrade over
 # a hub nobody set up: the panel's unit serves the setup wizard on this
 # version, and its address is printed.
