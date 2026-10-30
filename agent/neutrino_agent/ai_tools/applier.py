@@ -320,10 +320,13 @@ class AiToolsApplier:
         self._keep_results(results, accounts)
 
     def _keep_results(self, results: dict, accounts: list) -> None:
-        """The report's results: each account's done so far, in the plan's order."""
+        """The report's results in the plan's order: each account's done so far, the last one before for the rest."""
         with self._lock:
+            held = {entry["account"]: entry for entry in self._results or []}
             self._results = [
-                results[account] for account in accounts if account in results
+                results.get(account) or held[account]
+                for account in accounts
+                if account in results or account in held
             ]
 
     def _switch(

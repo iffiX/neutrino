@@ -9,7 +9,9 @@ account when it is off, is switched back and its records removed; an
 account the machine lacks is ``account_unknown``; on Windows an account with
 no login is ``credential_missing`` and the login it was switched with is
 kept, root's own, for the switch back; a refusing account does not stop the
-next; the report before any state is the accounts whose records stand; and
+next; the report while the section's steps run keeps the last result of
+each account whose step has not run; the report before any state is the
+accounts whose records stand; and
 the switch back before the agent goes takes every account. cc-switch is
 fetched from the hub by the artifact the section names when no copy is
 there or its version is not the section's, and a copy of that version is
@@ -126,6 +128,27 @@ def test_nothing_runs_when_nothing_changed_and_a_state_is_applied_once(
 
     assert platform.runs == []
     assert states(applier) == {"ann": ("switched", "")}
+
+
+def test_an_account_whose_step_has_not_run_keeps_its_last_result(tmp_path, binary):
+    applier, platform = make(
+        tmp_path, binary, homes={"ann": "/home/ann", "bob": "/home/bob"}
+    )
+    applier.apply(section("ann", "bob"), "h1")
+    retried = section("ann", "bob")
+    retried["retry_mark"] = "a1b2"
+    first, second = applier.steps(retried)
+
+    first.run(None)
+    between = states(applier)
+    second.run(None)
+
+    assert [step.params for step in (first, second)] == [
+        {"account": "ann"},
+        {"account": "bob"},
+    ]
+    assert between == {"ann": ("switched", ""), "bob": ("switched", "")}
+    assert states(applier) == between
 
 
 def test_an_account_no_longer_named_is_switched_back(tmp_path, binary):
