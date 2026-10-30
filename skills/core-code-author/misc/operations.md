@@ -263,21 +263,24 @@ above.
 ## What an upgrade restarts
 
 An install of the hub's package over a hub somebody set up restarts the
-transport and the panel on the package's new programs. The panel's update
-and its rollback run the package manager, and with it the same scripts.
+panel, the transport, and each of NetBird, EasyTier, frpc and tun2socks whose
+program it replaced, on the package's new programs. The panel's update and its
+rollback run the package manager, and with it the same scripts.
 
 | Package | Its install over a hub somebody set up |
 | --- | --- |
-| `.deb`, `.rpm`, Arch | The script runs `nhub apply`. It then restarts `neutrino_hub_router` where it is enabled and `neutrino_hub_web` while it runs. It waits until the panel serves `/api/hub/display` on loopback, at most 10 seconds, and then restarts `neutrino_hub_transport` while it runs. |
-| macOS `.pkg` | The preinstall stops `com.neutrino.hub` before the installer writes the files, and every daemon it supervises ends with it, the transport among them. The postinstall starts it again. |
-| Windows `.msi` | The installer stops `neutrino_hub` before it replaces the files and starts it after them. The daemons it supervises run in its job and end with it. |
+| `.deb`, `.rpm`, Arch | The script runs `nhub apply`. It then restarts `neutrino_hub_router` where it is enabled and `neutrino_hub_web` while it runs. It waits until the panel serves `/api/hub/display` on loopback, at most 10 seconds, and then restarts `neutrino_hub_transport` while it runs. Last it restarts each of `neutrino_hub_netbird`, `neutrino_hub_easytier`, `neutrino_hub_sakurafrp` and `neutrino_hub_openfrp` whose main process runs a program other than the file the package installed. |
+| macOS `.pkg` | The preinstall stops `com.neutrino.hub` before the installer writes the files, and every daemon it supervises ends with it, the transport, NetBird, EasyTier, frpc and tun2socks among them. The postinstall starts it again. |
+| Windows `.msi` | The installer stops `neutrino_hub` before it replaces the files and starts it after them. The daemons it supervises, the transport, NetBird, EasyTier, frpc and tun2socks among them, run in its job and end with it. |
 
 | Rule | Reason |
 | --- | --- |
 | On Linux the script restarts the transport's unit after `nhub apply`, whether or not `nhub apply` restarted it. | A running process keeps the program it started from, and `nhub apply` restarts the transport only when `transport.json` changes. The restart runs the unit `nhub apply` wrote. |
-| The transport restarts last. | The restart ends every session, and each peer dials again at once ([../design/transport.md](../design/transport.md), "The redial"). The new panel already runs and admits each peer. A peer that dials while no panel runs reads `control_unavailable` and dials again 5 seconds later. |
+| The transport restarts after the router and the panel. | The restart ends every session, and each peer dials again at once ([../design/transport.md](../design/transport.md), "The redial"). The new panel already runs and admits each peer. A peer that dials while no panel runs reads `control_unavailable` and dials again 5 seconds later. |
 | The transport restarts once the new panel serves `/api/hub/display`, or after 10 seconds. | The panel's unit counts as started as soon as its process starts, and on the lab box the panel opened its channel to the transport 0.6 seconds after that. A peer's second dial comes about a second after the first. |
-| On macOS and Windows no script names the transport. | The transport runs there as a child of the one service, and the install stops and starts that service. |
+| On Linux the script restarts NetBird's, EasyTier's and each frpc's unit while it runs, when the program its main process runs differs byte for byte from the file at the same path. | `nhub apply` restarts these units only when their configuration changes, and a running process keeps the program it started from. A reinstall of the same version writes the same bytes and restarts none of them. |
+| These units restart after the transport. | Each restart ends the sessions through its program for a moment. On the lab box NetBird's unit is down 2.0 seconds at a restart, and EasyTier's under 0.1 seconds. An install run in a terminal over NetBird or EasyTier has done every other step by then. |
+| On macOS and Windows no script names the transport or these programs. | They run there as children of the one service, tun2socks among them, and the install stops and starts that service. |
 
 ## The hub's own agent follows its hub
 
