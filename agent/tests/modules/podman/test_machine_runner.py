@@ -688,6 +688,7 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
             "names": ["web"],
             "hub_names": {},
             "images": None,
+            "is_stopped": None,
         }
     ]
     assert rig.lines[-1] == "podman: made the machine of me; containers unchanged"
@@ -1238,6 +1239,83 @@ def test_a_stopped_machine_is_held_awake_for_a_container_module_s_uninstall(rig)
     assert rig.launchctl.verbs() == ["bootout", "bootstrap", "bootout"]
     assert rig.world.calls[-1] == ("me", "stop", "")
     assert rig.plist().is_file()
+
+
+def _stopped_by_stop(rig):
+    """Apply, press Stop, and leave the machine silent; the scripts run so far."""
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.world.is_answering = False
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+    rig.launchctl.on_bootstrap = functools.partial(
+        setattr, rig.world, "is_answering", True
+    )
+    rig.launchctl.calls.clear()
+    rig.world.calls.clear()
+    rig.system.calls.clear()
+    return len(rig.world.scripts)
+
+
+CHANGED_RUN = {**CONFIG, "machine": {**MACHINE, "cpus": 3}}
+
+
+def test_an_apply_during_stop_keeps_the_configuration_and_wakes_nothing(rig):
+    scripts = _stopped_by_stop(rig)
+
+    rig.runner.apply(CHANGED_RUN)
+    rig.runner.stop()
+
+    assert rig.launchctl.verbs() == []
+    assert len(rig.world.scripts) == scripts
+    assert rig.world.calls == []
+    assert rig.system.calls == []
+    assert rig.record()[0]["cpus"] == 2
+    assert rig.world.is_answering is False
+
+
+def test_start_after_an_apply_during_stop_wakes_the_machine_once_and_writes_it(rig):
+    scripts = _stopped_by_stop(rig)
+    rig.runner.apply(CHANGED_RUN)
+    rig.runner.stop()
+
+    rig.runner.apply(CHANGED_RUN)
+    rig.runner.start()
+
+    assert rig.launchctl.verbs().count("bootstrap") == 1
+    assert ("me", "stop", "") not in rig.world.calls
+    assert len(rig.world.scripts) == scripts + 1
+    assert rig.world.answering_at_shell[-1] is True
+    assert rig.record()[0]["cpus"] == 3
+    assert rig.record()[0]["is_stopped"] is None
+    assert rig.runner.is_active()
+
+
+def test_an_uninstall_during_stop_wakes_the_machine_once(rig):
+    _stopped_by_stop(rig)
+
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    with rig.runner.engine_awake():
+        pass
+
+    assert rig.launchctl.verbs() == ["bootout", "bootstrap", "bootout"]
+    assert rig.world.calls.count(("me", "stop", "")) == 1
+    assert rig.record()[0]["is_stopped"] is True
+
+
+def test_stop_stops_a_machine_its_keeper_started_again_after_a_stop(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+    rig.world.calls.clear()
+
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+
+    assert rig.world.scripts[-1][2] == machine_stop_script()
+    assert rig.world.calls[-1] == ("me", "stop", "")
 
 
 def test_a_running_machine_is_left_as_it_is_around_an_uninstall(rig):

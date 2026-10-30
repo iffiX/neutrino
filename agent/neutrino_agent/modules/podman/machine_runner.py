@@ -339,6 +339,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # under it.
         self._record_lock = threading.Lock()
         self._config: "PodmanConfig | None" = None
+        # The configuration an apply kept while Stop had the machine stopped,
+        # for the next start.
+        self._kept: "dict | None" = None
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
@@ -439,7 +442,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Make the account's machine run the declared containers.
 
         A declared container the checks refuse is left out, and the rest is
-        applied.
+        applied. While Stop has the machine stopped, the configuration is
+        checked and kept for :meth:`start`.
 
         Args:
             config: The desired configuration.
@@ -449,6 +453,33 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 cannot be made, sized or reached, or systemd in the machine
                 refuses a unit; the first left-out container's refusal once
                 the rest is applied.
+            ModuleInstallPending: While the computer owes a restart.
+        """
+        self._apply(config, is_kept_while_stopped=True)
+
+    def start(self) -> None:
+        """Apply the configuration an apply kept while Stop had the machine stopped.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+            ModuleInstallPending: While the computer owes a restart.
+        """
+        with self._apply_lock:
+            kept = self._kept
+            self._kept = None
+        if kept is not None:
+            self._apply(kept, is_kept_while_stopped=False)
+
+    def _apply(self, config: dict, *, is_kept_while_stopped: bool) -> None:
+        """Apply a configuration, or keep it while Stop has the machine stopped.
+
+        Args:
+            config: The desired configuration.
+            is_kept_while_stopped: Whether a machine Stop stopped keeps the
+                configuration unwritten.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
             ModuleInstallPending: While the computer owes a restart.
         """
         with self._apply_lock:
@@ -462,6 +493,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
             if self._system.is_reboot_pending():
                 raise ModuleInstallPending("reboot_required")
             record = self._record()
+            if is_kept_while_stopped and self._is_halted(record):
+                self._kept = dict(config)
+                self._log("podman: kept the configuration for the next Start")
+                self._refuse_left_out(refused)
+                return
+            self._kept = None
             if record and record.get("account") != settings.account:
                 self._retire(record)
                 record = {}
@@ -544,7 +581,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         with self._apply_lock:
             record = self._record()
-            if not record:
+            if not record or self._is_halted(record):
                 return
             machine = self._machine_of_record(record)
             self._run_quietly(machine, machine_stop_script())
@@ -558,6 +595,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         with self._apply_lock:
             self._config = None
+            self._kept = None
             record = self._record()
             if not record:
                 return
@@ -1258,7 +1296,21 @@ class PodmanMachineModuleRunner(ModuleRunner):
         finally:
             with self._lock:
                 self._reading = None
+        with self._record_lock:
+            held = self._record()
+            if held.get("account") == machine.account:
+                try:
+                    self._records.write({**held, "is_stopped": True})
+                except OSError as error:
+                    self._log(f"podman: the record was not written: {error}")
         self._log(f"podman: stopped the machine of {machine.account}")
+
+    def _is_halted(self, record: dict) -> bool:
+        """Whether Stop stopped the record's machine and the machine does not answer the read."""
+        if not record.get("is_stopped"):
+            return False
+        _command, info = self._read(self._machine_of_record(record))
+        return info is None
 
     def _save_images(self, machine: PodmanMachine) -> "set | None":
         """Read the store's image references and save them in the record, logging a failed write.
