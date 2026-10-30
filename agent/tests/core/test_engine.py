@@ -137,6 +137,7 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
     engine._failures = {}
+    engine._verify_failures = {}
     engine._details_at = 0.0
     runner = runner if runner is not None else HubRunner()
     engine._module_runners = {runner.name: runner}
@@ -953,6 +954,34 @@ def test_modules_are_observed_again_only_once_the_details_are_stale(monkeypatch)
     engine._refresh(is_forced=False)
     assert runner.detail_reads == 2
     assert engine.report()["samba"]["details"] == {"sessions": [2]}
+
+
+def test_a_module_that_cannot_be_read_is_logged_once_per_change():
+    runner = ConfigurableRunner()
+    errors = ["byte 0xff", "byte 0xff", "byte 0xfe", None, "byte 0xff"]
+
+    def details(recipe):
+        error = errors.pop(0)
+        if error is not None:
+            raise ValueError(error)
+        return {}
+
+    runner.details = details
+    engine = module_engine(runner)
+    lines: list = []
+    engine._log = lines.append
+    rows = []
+
+    for _ in range(5):
+        engine._refresh(is_forced=True)
+        rows.append(engine.report()["samba"]["code"])
+
+    assert rows == ["verify_failed"] * 3 + ["", "verify_failed"]
+    assert lines == [
+        "samba: verify_failed: byte 0xff",
+        "samba: verify_failed: byte 0xfe",
+        "samba: verify_failed: byte 0xff",
+    ]
 
 
 def test_report_wakes_the_worker_for_stale_details_and_never_waits():

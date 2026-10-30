@@ -284,6 +284,8 @@ class ModuleEngine(ReconcileWorker):
         # Module name to its last failed step, ``{"state", "code",
         # "params"}``, as kept on disk.
         self._failures: dict = {}
+        # Module name to the detail of the read that last failed, logged once.
+        self._verify_failures: dict = {}
         self._details_at = 0.0
         # The modules this agent applies the hub's configuration to, by
         # name; each also answers its own verbs. A platform that installs no
@@ -1116,6 +1118,8 @@ class ModuleEngine(ReconcileWorker):
             return status
         try:
             if not self._is_present(runner, recipe):
+                with self._lock:
+                    self._verify_failures.pop(name, None)
                 return self._with_failure(
                     name, _typed(AGENT_MODULE_STATE_ABSENT), is_present=False
                 )
@@ -1138,10 +1142,15 @@ class ModuleEngine(ReconcileWorker):
         except PlatformUnsupportedError:
             return _typed(AGENT_MODULE_STATE_FAILED, "unsupported_platform")
         except Exception as error:  # noqa: BLE001 - reported, never raised
-            self._log(f"{name}: verify_failed: {str(error)[:200]}")
-            return _typed(
-                AGENT_MODULE_STATE_FAILED, "verify_failed", detail=str(error)[:200]
-            )
+            detail = str(error)[:200]
+            with self._lock:
+                is_new = self._verify_failures.get(name) != detail
+                self._verify_failures[name] = detail
+            if is_new:
+                self._log(f"{name}: verify_failed: {detail}")
+            return _typed(AGENT_MODULE_STATE_FAILED, "verify_failed", detail=detail)
+        with self._lock:
+            self._verify_failures.pop(name, None)
         return self._with_failure(name, status)
 
     def _with_failure(
