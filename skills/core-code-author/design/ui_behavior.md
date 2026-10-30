@@ -884,8 +884,9 @@ notice of the tab repeats them. The notice at the top of the tab words a
 row's code where the step list does not. Such a row has no task, as an
 `absent` row with a code or a failed row after the agent restarted
 ([agent.md](agent.md), "A failure outlives a restart"), or is a failed row
-whose next task runs. A `reboot_required` row keeps the notice too, since the
-notice holds **Restart now**. A step's words are
+whose next task runs. A `reboot_required` row words its code in the notice
+alone, beside **Restart now**, and its `restart` step reads waiting with no
+words under it. A step's words are
 `ui.modules.step.<name>` with its params, a lock's
 `ui.modules.lock.<lock>`, and a wait's the code catalog's. A finished
 task's steps stay until the next task starts. The module list shows `<i>/<n>`,
@@ -901,7 +902,8 @@ install left ([agent.md](agent.md), "An install that fails ends
 install_failed"). No module has a **Cancel** button.
 
 A module reported `installing` with a code shows the code's words under its
-waiting step, and its buttons stay disabled as for any module in transit. A
+waiting step, `reboot_required` excepted, and its buttons stay disabled as
+for any module in transit. A
 module reported `absent` with a code shows the code's words as a notice at
 the top of its tab, and its buttons are those of any `absent` module. A
 `reboot_required` row shows the same notice with **Restart now**
