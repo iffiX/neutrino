@@ -320,6 +320,7 @@ The tools inside its containers fetch from the source sets its entry lists
 | Rule | Reason |
 | --- | --- |
 | The method's presence check is the one test that the software is there: `verify` for `system` and `hub`, every image's digest for `container`. On Windows and macOS, while Containers' machine does not answer the read, the digests are read from the list Containers saved at its last read ([modules/containers.md](modules/containers.md), "The keeper"). | Two checks that disagree give a module that is present and never `running`. A stopped machine lists no images. |
+| A `verify` that names its program by an absolute path, as every `hub` entry's does, runs again only once that file changes its size, its time or its inode. A pass stands until then, and a failure runs again at the next read. | The agent reads every module at each report, every 5 seconds: on the lab Mac `gitea --version` and `code --version` each ran 12 times a minute as root. |
 | `is_active` and `details` are read whenever the presence check passes, and a runner adds no check of its own in front of them. | A runner check stricter than `verify` read Containers as `stopped` with an empty list on a machine whose Docker CE kept `podman-docker` off. |
 | A runner's own check answers only for a `builtin` entry and for a module the hub does not name in the machine's state, which the agent still observes and reports, such as a Samba a person installed by hand. | Neither comes with a `verify` to run. |
 
