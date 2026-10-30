@@ -142,6 +142,13 @@ def tool_line(result) -> str:
     return f"{result.command[0]} exited {result.exit_code}"
 
 
+def _sweep_note(kind: str, name: str, result) -> str:
+    """The sweep's note for one share point or account, as the tool's exit says."""
+    if result.is_success:
+        return f"swept {kind} {name}"
+    return f"did not sweep {kind} {name}: {tool_line(result)}"
+
+
 class SambaDarwinApplier:
     """Converges macOS's SMB server with the module's configuration."""
 
@@ -254,13 +261,16 @@ class SambaDarwinApplier:
         """Delete every share point and account the module's marks name.
 
         Returns:
-            One note per point and per account removed.
+            One note per point and per account: ``swept`` when the tool
+            removed it, else ``did not sweep`` with the tool's last line.
         """
         notes = []
         for point in points:
             if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX):
-                self._run(["sharing", "-r", point["record"]], is_checked=False)
-                notes.append(f"swept share {point['smb_name']}")
+                removed = self._run(
+                    ["sharing", "-r", point["record"]], is_checked=False
+                )
+                notes.append(_sweep_note("share", point["smb_name"], removed))
         listing = self._read(["dscl", ".", "-list", "/Users", "RealName"])
         for line in listing.splitlines():
             name, _, full_name = line.partition(" ")
@@ -270,8 +280,10 @@ class SambaDarwinApplier:
             if name.startswith(SAMBA_LINUX_USER_PREFIX) or is_module_full_name(
                 full_name
             ):
-                self._run(["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False)
-                notes.append(f"swept account {name}")
+                deleted = self._run(
+                    ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
+                )
+                notes.append(_sweep_note("account", name, deleted))
         return notes
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:

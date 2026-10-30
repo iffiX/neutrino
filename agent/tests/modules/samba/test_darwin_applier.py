@@ -14,7 +14,8 @@ making no point and taking the module's off; folders granted with
 ``chmod +a``; no fence, the
 pf anchor an earlier version kept emptied and its file deleted at the first
 apply that finds the file; foreign names
-refused before anything is touched; and the status read from launchctl,
+refused before anything is touched; the first apply's sweep noting each
+point and account the tool refused with its words; and the status read from launchctl,
 the share list and lsof, a password counted only once the record says one
 was set.
 """
@@ -712,6 +713,7 @@ def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
     tools.answers[("dscl", ".", "-list")] = (
         "neutrino-old  neutrino file share\nbob  Bob Example\n_smb  SMB Server\n"
     )
+    tools.users["neutrino-old"] = account("neutrino file share")
 
     notes = applier.apply(CONFIG, {}, is_sweep=True)
 
@@ -719,6 +721,26 @@ def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
     assert ["dscl", ".", "-delete", "/Users/neutrino-old"] in tools.calls
     assert ["dscl", ".", "-delete", "/Users/bob"] not in tools.calls
     assert notes[:2] == ["swept share old", "swept account neutrino-old"]
+
+
+def test_a_sweep_the_system_refuses_says_so_with_the_tools_words(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_old", "/srv/old", "old", False)
+    )
+    tools.answers[("dscl", ".", "-list")] = (
+        "neutrino-old  neutrino file share\nneutrino-gone  neutrino file share\n"
+    )
+    tools.users["neutrino-gone"] = account("neutrino file share")
+    tools.failing.add(("sharing", "-r", "neutrino_old"))
+    tools.failing.add(("dscl", ".", "-delete", "/Users/neutrino-old"))
+
+    notes = applier.apply(CONFIG, {}, is_sweep=True)
+
+    assert notes[:3] == [
+        "did not sweep share old: refused",
+        "did not sweep account neutrino-old: refused",
+        "swept account neutrino-gone",
+    ]
 
 
 def test_a_folder_share_with_no_account_has_no_point_and_its_folder_loses_the_entries(
