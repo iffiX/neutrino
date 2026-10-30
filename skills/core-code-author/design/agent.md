@@ -372,7 +372,7 @@ the first failure in `APPLY_ORDER`.
 | `npm {account}` | CloudCLI's npm for one account | `failed` |
 | `start`, `stop` | the runner's start or stop | `failed` |
 | `uninstall` | the module stopped, the hub's configuration removed, the software, `post_uninstall`, and the data where the recipe says | `failed` |
-| `wait_containers` | waits until Containers reads `running` and has no task | `install_failed` |
+| `wait_containers` | waits until Containers reads `running` and has no task | `install_failed` in an install, `failed` in a start or a configure |
 | `pull {image}` | one image of a container module, from the fastest source | `install_failed` |
 | `render` | a configure task of Containers, asked for and waited for | `install_failed` |
 | `windows_features`, `restart` | Containers on Windows: the two Windows features turned on with dism, and the restart they owe | `install_failed` |
@@ -419,7 +419,7 @@ names.
 | --- | --- |
 | A container module's task never runs Containers' steps and never makes a task for Containers. Its `wait_containers` waits until Containers reads `running` and has no task. | One owner per module: two tasks never act on Containers at once, and a failure lands on the row of the module whose step failed. |
 | The hub writes Containers' `want` `running` at a container module's **Install** or **Start**, so the same state gives Containers a task of its own. | Containers' install stays Containers' task, and nothing on the hub changes. |
-| `wait_containers` ends the task `install_failed` with `module_needed {module: podman, state}` when Containers' task ends and Containers does not read `running`, or when Containers' `want` is not `running`. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks Containers too. |
+| `wait_containers` ends the task with `module_needed {module: podman, state}`, `install_failed` in an install and `failed` after it, when Containers' task ends and Containers does not read `running`, or when Containers' `want` is not `running`. Containers' row is read first when nothing read it since the agent started. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks Containers too. |
 | An installed container module plans no step while Containers' `want` is not `running`: its task ends with no failure and no tried hash, and the module reads `stopped`. | Containers' **Stop** stops every hub container, and the state that starts Containers again plans the module's start. |
 | `render` asks Containers for a configure task and waits for it to end. Two asks while one Containers task runs become one more configure after it. | Containers renders a container module's containers once their images are in its store, and does it once for a run of pulls. |
 | Containers' task never waits for a container module. | Module waits then form no loop ("Step locks"). |
