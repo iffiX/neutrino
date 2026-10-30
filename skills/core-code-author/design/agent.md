@@ -405,7 +405,7 @@ that can pass 30 seconds by the lab's times:
 | Containers on Windows | `windows_features`, `restart`, `artifact wsl`, `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `restart` until a person restarts, `machine` about 40 seconds, `configure` 15 to 23 seconds |
 | Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |
 | Hermes WebUI | `wait_containers`, `pull webui`, `pull agent`, `verify`, `render`, `start`, `first_start`, `update_check` | `pull agent` 73 seconds, `first_start` 30 to 38 seconds |
-| Ayakaleaf | `wait_containers`, `pull redis`, `pull mongo`, `pull app`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
+| Ayakaleaf | `wait_containers`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
 
@@ -422,7 +422,7 @@ names.
 | Task | Its steps |
 | --- | --- |
 | A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_containers`, `start` and the first-start steps its record does not hold |
-| A stop | `configure`, then `stop` |
+| A stop | `configure`, then `stop`; a container module's `wait_containers`, then `stop` |
 | A configure | `configure` and, under `running`, the `account` steps, then `start` or `stop` by the `want` |
 | An uninstall | `uninstall`; a container module's drops its hub containers and removes its containers, network, volumes and unused images |
 | A version switch | `switch {version}`, then the steps of a configure |
