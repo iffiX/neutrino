@@ -145,9 +145,9 @@ def start(service, machine, *, is_restart: bool) -> None:
 
 
 def stop(service, machine) -> None:
-    """Stop the unit; it stays enabled."""
+    """Stop and disable the unit, so it stays stopped across a reboot."""
     unit = unit_name(service.name, service.account)
-    machine.run(["systemctl", "stop", unit], is_checked=False)
+    machine.run(["systemctl", "disable", "--now", unit], is_checked=False)
 
 
 def remove(service, machine) -> None:

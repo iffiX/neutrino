@@ -101,16 +101,18 @@ def write(service, machine) -> bool:
 
 
 def start(service, machine, *, is_restart: bool) -> None:
-    """Load the job, booting it out first when it changed or is not held."""
+    """Enable the job, then load it, booting it out first when it changed or is not held."""
     name = label(service.name, service.account)
+    machine.run(["launchctl", "enable", f"system/{name}"], is_checked=False)
     if is_restart or not _is_loaded(name, machine):
         machine.run(["launchctl", "bootout", f"system/{name}"], is_checked=False)
         machine.run(["launchctl", "bootstrap", "system", plist_path(service, machine)])
 
 
 def stop(service, machine) -> None:
-    """Boot the job out; its plist loads it again at boot."""
+    """Disable the job and boot it out, so it stays stopped across a reboot."""
     name = label(service.name, service.account)
+    machine.run(["launchctl", "disable", f"system/{name}"], is_checked=False)
     machine.run(["launchctl", "bootout", f"system/{name}"], is_checked=False)
 
 

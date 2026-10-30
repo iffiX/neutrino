@@ -373,7 +373,7 @@ def test_the_settings_are_written_as_the_account_with_the_kernel_stopped(tmp_pat
     assert written["system"]["downloadInstallPkg"] is False
     assert os.stat(path).st_mode & 0o777 == 0o600
     assert recorder.calls == [
-        ["systemctl", "stop", "neutrino_siyuan@ann.service"],
+        ["systemctl", "disable", "--now", "neutrino_siyuan@ann.service"],
         ["systemctl", "enable", "--now", "neutrino_siyuan@ann.service"],
     ]
     writes = [argv for account, argv in platform.run_calls if "sh" in argv[:1]]

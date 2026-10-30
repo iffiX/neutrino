@@ -98,24 +98,26 @@ function Invoke-NeutrinoOneShotTask($Request) {
     return @{}
 }
 
-# Starts a task.
+# Enables a task and starts it.
 function Start-NeutrinoTask {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
     param($Request)
     if ($PSCmdlet.ShouldProcess($Request.task)) {
+        Enable-ScheduledTask -TaskName $Request.task | Out-Null
         Start-ScheduledTask -TaskName $Request.task | Out-Null
     }
     return @{}
 }
 
-# Stops a task's run; a task that is not there or not running is left.
+# Stops a task's run and disables it; a task that is not there is left.
 function Stop-NeutrinoTask {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
     param($Request)
     if ($PSCmdlet.ShouldProcess($Request.task)) {
         Stop-ScheduledTask -TaskName $Request.task -ErrorAction SilentlyContinue | Out-Null
+        Disable-ScheduledTask -TaskName $Request.task -ErrorAction SilentlyContinue | Out-Null
     }
     return @{}
 }

@@ -206,7 +206,7 @@ def test_a_changed_instance_is_started_again_and_an_unchanged_one_kept_up(
     ]
 
 
-def test_a_stop_keeps_the_unit_enabled_and_a_remove_takes_everything(
+def test_a_stop_disables_the_unit_and_a_remove_takes_everything(
     machine, systemd, tmp_path
 ):
     token = str(tmp_path / "tokens" / "ann.token")
@@ -219,8 +219,9 @@ def test_a_stop_keeps_the_unit_enabled_and_a_remove_takes_everything(
     account_service.stop(service, machine)
     account_service.remove(service, machine)
 
+    # A stopped instance stays stopped across a reboot.
     assert systemd.calls == [
-        ["systemctl", "stop", "neutrino_demo@ann.service"],
+        ["systemctl", "disable", "--now", "neutrino_demo@ann.service"],
         ["systemctl", "disable", "--now", "neutrino_demo@ann.service"],
     ]
     assert not os.path.exists(tmp_path / "config" / "demo" / "ann.env")

@@ -2,10 +2,11 @@
 
 A module describes an instance's service once, as an :class:`AccountService`,
 and names nothing of the system. The functions here write that definition,
-start, stop, remove and query the service, each dispatched to the system's
-own file: a systemd unit with ``User=`` on Linux, a LaunchDaemon with
-``UserName`` on macOS, a scheduled task registered with the account's login
-on Windows.
+start and enable, stop and disable, remove and query the service, each
+dispatched to the system's own file: a systemd unit with ``User=`` on Linux,
+a LaunchDaemon with ``UserName`` on macOS, a scheduled task registered with
+the account's login on Windows. A stopped instance stays stopped across a
+reboot.
 
 Not pure: the system files write definitions and drive the service manager.
 """
@@ -285,7 +286,7 @@ def write(service: AccountService, machine: ServiceMachine) -> bool:
 def start(
     service: AccountService, machine: ServiceMachine, *, is_restart: bool
 ) -> None:
-    """Start one instance, or start it again when it must take a change.
+    """Enable and start one instance, or start it again when it must take a change.
 
     Args:
         service: The service.
@@ -301,7 +302,7 @@ def start(
 
 
 def stop(service: AccountService, machine: ServiceMachine) -> None:
-    """Stop one instance; its definition stays and starts it again at boot.
+    """Stop and disable one instance. Its definition stays, and it stays stopped across a reboot.
 
     Args:
         service: The service.

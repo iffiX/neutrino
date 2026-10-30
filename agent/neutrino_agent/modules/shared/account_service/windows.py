@@ -238,7 +238,7 @@ def write(service, machine) -> bool:
 
 
 def start(service, machine, *, is_restart: bool) -> None:
-    """Start the task unless it runs, ending what is left of the instance first."""
+    """Enable and start the task unless it runs, ending what is left of the instance first."""
     task = task_name(service.name, service.account)
     held = machine.powershell.call("task_read", {"task": task})
     if held.get("state") == ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING:
@@ -248,7 +248,7 @@ def start(service, machine, *, is_restart: bool) -> None:
 
 
 def stop(service, machine) -> None:
-    """Stop the task and end the instance's process tree; it starts again at boot."""
+    """Stop and disable the task and end the instance's process tree. It stays stopped across a reboot."""
     _stop_instance(
         task_name(service.name, service.account),
         output_mark(service, machine),

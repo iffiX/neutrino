@@ -671,7 +671,7 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
     assert rig.world.calls[0] == ("me", "init", image, 2, 4, 100)
     assert rig.system.calls == []
     assert rig.plist().is_file()
-    assert rig.launchctl.verbs() == ["bootout", "bootstrap"]
+    assert rig.launchctl.verbs() == ["enable", "bootout", "bootstrap"]
     keeper = rig.tmp_path / "state" / "podman" / "keeper.sh"
     assert "podman machine start podman-machine-default" in keeper.read_text()
     expected = PodmanMachineScriptRenderer(
@@ -847,7 +847,13 @@ def test_a_machine_taken_over_is_made_rootful_and_sized_with_the_keeper_stopped(
         ("me", "set_rootful"),
     ]
     assert rig.system.calls == [("halt", "me"), ("resources", "me", 2, 4)]
-    assert rig.launchctl.verbs() == ["bootout", "bootout", "bootstrap"]
+    assert rig.launchctl.verbs() == [
+        "disable",
+        "bootout",
+        "enable",
+        "bootout",
+        "bootstrap",
+    ]
     assert rig.record()[0]["disk_gib"] == 300
 
 
@@ -867,7 +873,7 @@ def test_a_wsl_machine_on_user_mode_networking_is_set_back_to_nat_and_ended(tmp_
         ("me", "set_nat_networking"),
     ]
     assert rig.system.calls[0] == ("terminate", "me")
-    assert rig.launchctl.verbs()[0] == "bootout"
+    assert rig.launchctl.verbs()[:2] == ["disable", "bootout"]
     assert "set the machine back to WSL's NAT networking" in rig.lines[-1]
     assert rig.world.user_mode == set()
 
@@ -883,7 +889,7 @@ def test_an_unchanged_apply_sizes_nothing_and_leaves_the_keeper_running(rig):
 
     assert rig.world.calls[0] == ("me", "inspect")
     assert rig.system.calls == []
-    assert rig.launchctl.verbs() == []
+    assert rig.launchctl.verbs() == ["enable"]
     assert len(rig.world.scripts) == 2
 
 
@@ -1157,7 +1163,7 @@ def test_stop_stops_the_containers_then_the_keeper_then_the_machine(rig):
     rig.world.is_answering = False
 
     assert rig.world.scripts[-1][2] == machine_stop_script()
-    assert rig.launchctl.verbs() == ["bootout"]
+    assert rig.launchctl.verbs() == ["disable", "bootout"]
     assert "com.neutrino.podman.me" not in rig.launchctl.loaded
     assert rig.world.calls == [("me", "stop", "")]
     assert "me" not in rig.world.running
@@ -1174,7 +1180,7 @@ def test_start_after_a_stop_brings_the_keeper_and_the_machine_back(rig):
     rig.runner.apply(CONFIG)
     rig.runner.start()
 
-    assert rig.launchctl.verbs() == ["bootout", "bootstrap"]
+    assert rig.launchctl.verbs() == ["enable", "bootout", "bootstrap"]
     assert "com.neutrino.podman.me" in rig.launchctl.loaded
     assert "me" in rig.world.running
     assert rig.runner.is_active()
@@ -1208,7 +1214,7 @@ def test_removal_of_a_stopped_module_wakes_the_machine_for_its_script(rig):
 
     rig.runner.remove_configuration()
 
-    assert rig.launchctl.verbs()[:2] == ["bootout", "bootstrap"]
+    assert rig.launchctl.verbs()[:3] == ["enable", "bootout", "bootstrap"]
     assert (
         rig.world.scripts[-1][2]
         == PodmanMachineScriptRenderer(config=PodmanConfig(), os_name="darwin").render()
@@ -1235,8 +1241,14 @@ def test_a_stopped_machine_is_held_awake_for_a_container_module_s_uninstall(rig)
         seen.append(rig.world.is_answering)
         seen.append(rig.launchctl.verbs())
 
-    assert seen == [True, ["bootout", "bootstrap"]]
-    assert rig.launchctl.verbs() == ["bootout", "bootstrap", "bootout"]
+    assert seen == [True, ["enable", "bootout", "bootstrap"]]
+    assert rig.launchctl.verbs() == [
+        "enable",
+        "bootout",
+        "bootstrap",
+        "disable",
+        "bootout",
+    ]
     assert rig.world.calls[-1] == ("me", "stop", "")
     assert rig.plist().is_file()
 
@@ -1299,7 +1311,13 @@ def test_an_uninstall_during_stop_wakes_the_machine_once(rig):
     with rig.runner.engine_awake():
         pass
 
-    assert rig.launchctl.verbs() == ["bootout", "bootstrap", "bootout"]
+    assert rig.launchctl.verbs() == [
+        "enable",
+        "bootout",
+        "bootstrap",
+        "disable",
+        "bootout",
+    ]
     assert rig.world.calls.count(("me", "stop", "")) == 1
     assert rig.record()[0]["is_stopped"] is True
 

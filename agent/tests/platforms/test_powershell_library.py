@@ -143,6 +143,15 @@ def test_the_task_states_and_the_stops_are_the_task_scheduler_s_alone():
     assert "icacls" not in LIBRARY.lower()
 
 
+def test_a_stopped_task_is_disabled_and_a_started_one_enabled_first():
+    """A stopped instance stays stopped across a reboot."""
+    stop = body("task_stop")
+    start = body("task_start")
+
+    assert stop.index("Stop-ScheduledTask") < stop.index("Disable-ScheduledTask")
+    assert start.index("Enable-ScheduledTask") < start.index("Start-ScheduledTask")
+
+
 def test_the_file_share_refuses_foreign_names_and_never_grants_everyone():
     apply = body("share_apply")
 

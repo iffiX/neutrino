@@ -593,7 +593,9 @@ def test_a_stop_closes_the_forwarders_stops_the_units_and_keeps_the_records(
     runner.stop()
 
     assert FakeForwarder.made[0].is_closed
-    assert systemd.calls == [["systemctl", "stop", "neutrino_demo@ann.service"]]
+    assert systemd.calls == [
+        ["systemctl", "disable", "--now", "neutrino_demo@ann.service"]
+    ]
     assert sorted(os.listdir(tmp_path / "config" / "demo")) == ["ann.env", "ann.json"]
     assert runner.details({})["instances"][0]["is_running"] is False
 

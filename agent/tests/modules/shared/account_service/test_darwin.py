@@ -182,17 +182,22 @@ def test_a_changed_or_unheld_job_is_loaded_again_and_a_held_one_left(
     account_service.start(service, machine, is_restart=False)
     account_service.start(service, machine, is_restart=True)
 
+    # Each start enables the job first, so one a stop disabled loads again.
+    enable = ["launchctl", "enable", f"system/{LABEL}"]
     assert launchd.calls == [
+        enable,
         ["launchctl", "print", f"system/{LABEL}"],
         ["launchctl", "bootout", f"system/{LABEL}"],
         ["launchctl", "bootstrap", "system", plist_path],
+        enable,
         ["launchctl", "print", f"system/{LABEL}"],
+        enable,
         ["launchctl", "bootout", f"system/{LABEL}"],
         ["launchctl", "bootstrap", "system", plist_path],
     ]
 
 
-def test_a_stop_boots_the_job_out_and_a_remove_deletes_its_files(
+def test_a_stop_disables_and_boots_the_job_out_and_a_remove_deletes_its_files(
     machine, launchd, tmp_path
 ):
     token = str(tmp_path / "tokens" / "ann.token")
@@ -203,7 +208,15 @@ def test_a_stop_boots_the_job_out_and_a_remove_deletes_its_files(
     account_service.stop(service, machine)
     account_service.remove(service, machine)
 
-    assert launchd.calls == [["launchctl", "bootout", f"system/{LABEL}"]] * 2
+    # A stopped job stays stopped across a reboot.
+    assert (
+        launchd.calls
+        == [
+            ["launchctl", "disable", f"system/{LABEL}"],
+            ["launchctl", "bootout", f"system/{LABEL}"],
+        ]
+        * 2
+    )
     assert os.listdir(tmp_path / "LaunchDaemons") == []
     assert os.listdir(tmp_path / "Logs") == []
     assert not os.path.exists(token) and not os.path.exists(tmp_path / "run")
