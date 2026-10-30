@@ -73,7 +73,11 @@ from neutrino_agent.core.tasks import (
     module_wait,
     task_line,
 )
-from neutrino_agent.exceptions import GatewayUnreachable, ModuleApplyError
+from neutrino_agent.exceptions import (
+    GatewayUnreachable,
+    ModuleApplyError,
+    StepSuperseded,
+)
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.modules.shared import system_package
 from neutrino_agent.modules.shared.step_locks import StepLocks
@@ -733,20 +737,27 @@ class DesiredStateApplier:
     def wait_for_containers(self, task) -> None:
         """Wait until Containers reads ``running`` and has no task.
 
+        A configure task of an installed container module plans again once
+        Containers' ``want`` is not ``running``, and so ends with no
+        failure, as :meth:`is_task_cut` has it.
+
         Args:
             task: The container module's task.
 
         Raises:
             ModuleApplyError: ``module_needed {module, state}`` when
-                Containers' ``want`` is not ``running``, or when it has no
-                task and does not read ``running``.
-            StepSuperseded: When the task holds a newer entry meanwhile.
+                Containers' ``want`` is not ``running`` in an install, or
+                when Containers has no task and does not read ``running``.
+            StepSuperseded: When the task holds a newer entry meanwhile, or
+                is a configure task that ends at the step's boundary.
         """
         while True:
             with self._lock:
                 want = self._containers_want()
                 containers = self._tasks.get(CONTAINERS_MODULE)
             if want != AGENT_WANT_RUNNING:
+                if self.is_task_cut(task):
+                    raise StepSuperseded(task.name)
                 raise self._module_needed()
             if containers is None:
                 if self._containers_state() == AGENT_WANT_RUNNING:

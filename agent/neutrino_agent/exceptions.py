@@ -93,8 +93,10 @@ class ModuleInstallPending(RuntimeError):
 
 
 class StepSuperseded(RuntimeError):
-    """Raised inside a step that waits for another module, once its task holds a newer entry.
+    """Raised inside a step that waits for another module, once its task is to plan again.
 
+    The task holds a newer entry, or its next plan runs no step, as a
+    configure task of a container module while Containers is not to run.
     The step has done nothing yet, and the task plans again from what the
     machine shows.
     """

@@ -1542,6 +1542,34 @@ def test_an_installed_container_module_ends_quietly_while_containers_is_stopped(
     assert runners["demo"].applied == [{"n": "demo"}]
 
 
+def test_a_stop_waiting_for_containers_ends_quietly_when_containers_is_stopped_too(
+    tmp_path,
+):
+    """Containers and a container module pressed Stop together: the module's
+    stop waits for Containers' task, and the state that stops Containers
+    arrives meanwhile. The module's task ends with no failure, no tried hash
+    and no step run."""
+    gate = threading.Event()
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("podman",))
+    engine.install_gates["podman"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(container_state(demo="stopped"))
+    assert wait_until(
+        lambda: engine.last("demo")[2]
+        == {"code": "waiting_for_module", "params": {"module": "podman"}}
+    )
+
+    held.apply(container_state("h2", podman="stopped", demo="stopped"))
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.results["demo"] == ("", {})
+    assert "demo" not in engine.failures
+    assert "demo" not in held._store.read_tried()
+    assert runners["demo"].stops == 0
+
+
 def test_render_asks_during_one_containers_task_make_one_more_configure(tmp_path):
     """Three container modules pulled at once each ask Containers to render:
     the first ask makes a configure task, and the two asks made while it
