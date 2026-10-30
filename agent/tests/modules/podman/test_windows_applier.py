@@ -195,7 +195,8 @@ def test_windows_gets_the_wsl_applier_with_podmans_program_under_program_files(
 # --- the features and the msis ---
 
 
-def test_both_features_are_turned_on_once_before_the_first_msi(rig):
+def test_the_features_step_turns_both_features_on_and_an_msi_runs_no_dism(rig):
+    rig.applier.enable_features()
     rig.install(WSL_ARTIFACT)
     rig.install(PODMAN_ARTIFACT)
 
@@ -212,11 +213,11 @@ def test_both_features_are_turned_on_once_before_the_first_msi(rig):
 def test_a_feature_that_owes_a_restart_writes_the_mark_with_this_boot(rig):
     rig.dism_codes["VirtualMachinePlatform"] = 3010
 
-    rig.install(WSL_ARTIFACT)
+    rig.applier.enable_features()
 
     assert rig.mark().read_text().strip() == "1000000"
     assert rig.applier.is_reboot_pending()
-    assert [name for name, _log, _properties in rig.installs] == ["wsl.msi"]
+    assert len(rig.dism_calls) == 2
 
 
 @pytest.mark.parametrize("answer, exit_code", [(87, 87), (OSError("gone"), -1)])
@@ -225,14 +226,13 @@ def test_a_feature_dism_refuses_ends_the_install_with_its_exit_code(
 ):
     rig.dism_codes["Microsoft-Windows-Subsystem-Linux"] = answer
 
-    refused = refusal(lambda: rig.install(WSL_ARTIFACT))
+    refused = refusal(rig.applier.enable_features)
 
     assert refused.code == "windows_feature_failed"
     assert refused.params == {
         "feature": "Microsoft-Windows-Subsystem-Linux",
         "exit_code": exit_code,
     }
-    assert rig.installs == []
 
 
 @pytest.mark.parametrize("version", ["", "2.6.1.0", "3.0.2.0"])
@@ -257,7 +257,7 @@ def test_the_wsl_msi_is_skipped_at_the_pinned_version_or_newer(rig, version):
     rig.install(WSL_ARTIFACT)
 
     assert rig.installs == []
-    assert len(rig.dism_calls) == 2
+    assert rig.dism_calls == []
 
 
 def test_another_wsl_answered_by_msiexec_counts_as_installed(rig):
@@ -319,7 +319,7 @@ def test_no_mark_owes_no_restart_whatever_servicing_holds(rig):
 
 def test_the_mark_holds_this_boot_and_goes_once_windows_restarted(rig):
     rig.dism_codes["VirtualMachinePlatform"] = 3010
-    rig.install(WSL_ARTIFACT)
+    rig.applier.enable_features()
     rig.boot[0] += 12.5
 
     assert rig.applier.is_reboot_pending()
@@ -334,7 +334,7 @@ def test_the_mark_holds_this_boot_and_goes_once_windows_restarted(rig):
 
 def test_a_restart_servicing_still_waits_for_keeps_the_mark_after_a_boot(rig):
     rig.dism_codes["Microsoft-Windows-Subsystem-Linux"] = 3010
-    rig.install(WSL_ARTIFACT)
+    rig.applier.enable_features()
     rig.boot[0] += 3600
     rig.is_key = True
 

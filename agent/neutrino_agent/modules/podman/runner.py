@@ -9,7 +9,8 @@ rendered once its images are in the store. Every container podman knows is
 read back with its owner, image, ports, volumes and environment, which is
 what the hub imports the first time it configures an engine somebody set
 up by hand. The names of the declared and hub containers are kept in a
-root-only record, read until the first apply after a start.
+root-only record, read until the first apply after a start. Every step of
+the module's task takes the step lock ``containers`` alone.
 
 Not pure: drives podman and systemd through the applier.
 """
@@ -52,6 +53,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
     PODMAN_RUNTIME,
+    PODMAN_STEP_LOCKS,
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
@@ -137,6 +139,17 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """
         super().install(without_present_runtime(recipe))
         run(["systemctl", "enable", "--now", PODMAN_UNIT])
+
+    def step_locks(self, step: str) -> tuple:
+        """``containers`` alone, for every step of the module's own task.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            The ``(lock, mode)`` pair.
+        """
+        return PODMAN_STEP_LOCKS
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration.

@@ -1,8 +1,9 @@
 """Containers on Windows: what a Podman machine on WSL needs of the computer.
 
-The install turns on the two Windows features WSL 2 needs with dism,
-installs Microsoft's WSL msi unless the WSL the manifest pins or a newer one
-is installed, and installs Podman's msi for every account. A dism or an msi
+The install's own step turns on the two Windows features WSL 2 needs with
+dism. Its artifact steps install Microsoft's WSL msi unless the WSL the
+manifest pins or a newer one is installed, and Podman's msi for every
+account. A dism or an msi
 exit 3010 writes the reboot mark, the boot time of the boot that owes the
 restart, which holds the module installing until Windows has restarted. WSL
 holds the machine's size: its processors and memory in the account's
@@ -367,6 +368,7 @@ class PodmanWindowsApplier(PodmanSystemApplier):
     """The computer's part of a Podman machine on Windows, on WSL 2."""
 
     provider = PODMAN_MACHINE_PROVIDER_WSL
+    has_windows_features = True
 
     def __init__(
         self,
@@ -422,31 +424,34 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         self._wsl = ntpath.join(system32, "wsl.exe")
         self._module_dir = join(platform.agent_var_dir(), PODMAN_MODULE_NAME)
         self._mark_path = join(self._module_dir, PODMAN_WINDOWS_REBOOT_MARK)
-        # The features are turned on once per install, before its first msi.
-        self._has_features = False
+
+    def enable_features(self) -> None:
+        """Turn on the two Windows features WSL 2 needs with dism.
+
+        Raises:
+            ModuleApplyError: ``windows_feature_failed {feature, exit_code}``
+                when dism refuses a feature.
+        """
+        for feature in PODMAN_WINDOWS_FEATURES:
+            self._enable_feature(feature)
 
     def install_artifact(self, artifact: dict, path: str) -> None:
-        """Turn on the Windows features once, then install the WSL or Podman msi.
+        """Install the WSL or Podman msi.
 
         Args:
             artifact: ``{name, kind, digest, directory}``.
             path: The kept msi.
 
         Raises:
-            ModuleApplyError: ``windows_feature_failed {feature, exit_code}``
-                when dism refuses a feature; ``podman_install_failed
-                {artifact, exit_code}`` when an msi fails; ``install_failed``
-                for an artifact that is not an msi.
+            ModuleApplyError: ``podman_install_failed {artifact, exit_code}``
+                when an msi fails; ``install_failed`` for an artifact that
+                is not an msi.
         """
         name = str(artifact.get("name", "") or "")
         if artifact.get("kind") != "msi":
             raise ModuleApplyError(
                 "install_failed", {"detail": f"artifact {name!r} is not an msi"}
             )
-        if not self._has_features:
-            for feature in PODMAN_WINDOWS_FEATURES:
-                self._enable_feature(feature)
-            self._has_features = True
         is_wsl = name == PODMAN_WINDOWS_WSL_ARTIFACT
         if is_wsl:
             installed = self._installed_wsl()

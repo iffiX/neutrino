@@ -52,6 +52,7 @@ from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
 )
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -515,6 +516,104 @@ def test_a_restart_owed_holds_the_apply_and_names_itself(rig):
     assert rig.runner.install_wait() == {}
 
 
+# --- the steps of the module's task ---
+
+
+def plain_step(name):
+    return ModuleStep(name=name, run=None)
+
+
+class FeaturesSystem(FakeSystem):
+    """The system's part with Windows features, recorded."""
+
+    has_windows_features = True
+
+    def enable_features(self):
+        self.calls.append(("features",))
+
+
+def test_on_windows_the_install_turns_the_features_on_then_waits_for_the_restart(
+    tmp_path,
+):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.system = FeaturesSystem(rig.system.binary, "wsl")
+    rig.runner = rig.make_runner()
+    planned = [plain_step("artifact"), plain_step("verify")]
+
+    steps = rig.runner.install_steps({}, planned)
+    steps[0].run(None)
+    rig.system.is_pending = True
+
+    assert [step.name for step in steps] == [
+        "windows_features",
+        "restart",
+        "artifact",
+        "verify",
+    ]
+    assert steps[0].locks == (("package_manager", "alone"),)
+    assert [step.failed_state for step in steps[:2]] == ["install_failed"] * 2
+    assert rig.system.calls == [("features",)]
+    with pytest.raises(ModuleInstallPending):
+        steps[1].run(None)
+    rig.system.is_pending = False
+    steps[1].run(None)
+
+
+def test_a_system_with_no_windows_features_plans_the_method_s_install(rig):
+    planned = [plain_step("artifact"), plain_step("verify")]
+
+    assert rig.runner.install_steps({}, planned) is planned
+
+
+def test_every_step_takes_containers_alone_and_the_restart_none(rig):
+    assert rig.runner.step_locks("machine") == (("containers", "alone"),)
+    assert rig.runner.step_locks("windows_features") == (("containers", "alone"),)
+    assert rig.runner.step_locks("restart") == ()
+
+
+def test_under_running_the_apply_is_the_machine_then_the_containers(rig):
+    rig.keep_image()
+    steps = rig.runner.configure_steps(
+        CONFIG, "running", [plain_step("configure"), plain_step("start")]
+    )
+
+    assert [step.name for step in steps] == ["machine", "configure", "start"]
+    steps[0].run(None)
+    assert rig.world.scripts == []
+    assert rig.record()[0]["cpus"] == 2
+    steps[1].run(None)
+    assert len(rig.world.scripts) == 1
+    assert rig.record()[0]["names"] == ["web"]
+
+
+def test_under_stopped_the_core_s_steps_keep_the_configuration(rig):
+    steps = [plain_step("configure"), plain_step("stop")]
+
+    assert rig.runner.configure_steps(CONFIG, "stopped", steps) is steps
+
+
+def test_a_machine_step_run_again_after_a_new_size_sizes_nothing_again(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.system.calls.clear()
+    resized = dict(CONFIG, machine=dict(MACHINE, cpus=4))
+
+    rig.runner.prepare_machine(resized)
+    rig.runner.prepare_machine(resized)
+
+    assert rig.system.calls == [("halt", "me"), ("resources", "me", 4, 4)]
+    assert rig.record()[0]["names"] == ["web"]
+
+
+def test_the_machine_step_waits_while_a_restart_is_owed(rig):
+    rig.system.is_pending = True
+
+    with pytest.raises(ModuleInstallPending):
+        rig.runner.prepare_machine(CONFIG)
+
+    assert rig.world.calls == []
+
+
 # --- refusals ---
 
 
@@ -691,7 +790,10 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
             "is_stopped": None,
         }
     ]
-    assert rig.lines[-1] == "podman: made the machine of me; containers unchanged"
+    assert rig.lines[-2:] == [
+        "podman: made the machine of me",
+        "podman: containers unchanged",
+    ]
 
 
 def test_every_machine_carries_the_systems_variables_for_its_account(rig):
@@ -874,7 +976,7 @@ def test_a_wsl_machine_on_user_mode_networking_is_set_back_to_nat_and_ended(tmp_
     ]
     assert rig.system.calls[0] == ("terminate", "me")
     assert rig.launchctl.verbs()[:2] == ["disable", "bootout"]
-    assert "set the machine back to WSL's NAT networking" in rig.lines[-1]
+    assert "set the machine back to WSL's NAT networking" in rig.lines[-2]
     assert rig.world.user_mode == set()
 
 

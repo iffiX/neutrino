@@ -8,10 +8,14 @@ WSL's NAT network on Windows and the size the Run settings name, writes and
 starts the keeper that brings it up at boot, waits until the machine answers
 the read, and writes the declared containers, and the hub containers of each
 module whose images are in the machine's store, into it with one root
-script. What differs between Windows and macOS around the machine is the
-system's applier, a
-:class:`PodmanSystemApplier`. A root-only record of the last apply lets the
-reads, the journal and the verbs go on after the agent restarts.
+script. Under ``running`` the module's task runs the apply as two steps,
+``machine`` and ``configure``. On Windows the install's ``windows_features``
+step comes first, and its ``restart`` step waits while the computer owes the
+restart, holding no step lock. Every other step takes ``containers`` alone.
+What differs between Windows and macOS around the machine is the system's
+applier, a :class:`PodmanSystemApplier`. A root-only record of the last
+apply lets the reads, the journal and the verbs go on after the agent
+restarts.
 
 Not pure: drives the machine, the keeper and the computer's installer.
 """
@@ -21,6 +25,7 @@ Not pure: drives the machine, the keeper and the computer's installer.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import ntpath
 import os
@@ -28,7 +33,13 @@ import subprocess
 import threading
 import time
 
-from neutrino_agent.constants import AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG
+from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KIND_MSI,
+    AGENT_ARTIFACT_KIND_PKG,
+    AGENT_MODULE_STATE_INSTALL_FAILED,
+    AGENT_STEP_CONFIGURE,
+    AGENT_WANT_RUNNING,
+)
 from neutrino_agent.exceptions import (
     ModuleApplyError,
     ModuleInstallPending,
@@ -52,6 +63,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
     PODMAN_CONTAINER_ACTIONS,
+    PODMAN_FEATURES_LOCKS,
     PODMAN_GIB,
     PODMAN_JOURNAL_LINES,
     PODMAN_MACHINE_API_POLL_S,
@@ -68,6 +80,10 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
     PODMAN_SOURCE_MANUAL,
+    PODMAN_STEP_LOCKS,
+    PODMAN_STEP_MACHINE,
+    PODMAN_STEP_RESTART,
+    PODMAN_STEP_WINDOWS_FEATURES,
     PODMAN_WINDOWS_WSL_ARTIFACT,
 )
 from neutrino_agent.modules.podman.machine import PodmanMachine
@@ -84,7 +100,11 @@ from neutrino_agent.modules.podman.renderer import (
 )
 from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared import account_service
-from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
+from neutrino_agent.modules.shared.base import (
+    ModuleRunner,
+    ModuleStep,
+    command_outcome,
+)
 from neutrino_agent.modules.shared.instances import machine_for
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.package import keep_artifact, kept_artifact_path
@@ -161,10 +181,23 @@ class PodmanSystemApplier:
     Attributes:
         provider: The machine provider, ``wsl`` or ``applehv``.
         binary: Podman's program on the computer.
+        has_windows_features: Whether the install turns on Windows features
+            first, in its own step.
     """
 
     provider = ""
     binary = ""
+    has_windows_features = False
+
+    def enable_features(self) -> None:
+        """Turn on the Windows features a machine needs.
+
+        Raises:
+            ModuleApplyError: ``windows_feature_failed {feature, exit_code}``
+                when the system refuses a feature.
+            PlatformUnsupportedError: On a system with none.
+        """
+        raise PlatformUnsupportedError("no Windows features here")
 
     def install_artifact(self, artifact: dict, path: str) -> None:
         """Install one artifact the system's installer takes, an msi or a pkg.
@@ -364,6 +397,78 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         return bool(self._system.binary) and os.path.isfile(self._system.binary)
 
+    def step_locks(self, step: str) -> tuple:
+        """``containers`` alone for every step of the module's own task but ``restart``.
+
+        Args:
+            step: The step's name.
+
+        Returns:
+            The ``(lock, mode)`` pairs; none for ``restart``, which waits
+            for a person.
+        """
+        return () if step == PODMAN_STEP_RESTART else PODMAN_STEP_LOCKS
+
+    def install_steps(self, recipe: dict, steps: list) -> list:
+        """The install's steps, ``windows_features`` and ``restart`` first where the system has them.
+
+        Args:
+            recipe: The module's recipe.
+            steps: The artifacts and ``verify``, as the method plans them.
+
+        Returns:
+            The steps.
+        """
+        if not self._system.has_windows_features:
+            return steps
+        return [
+            ModuleStep(
+                name=PODMAN_STEP_WINDOWS_FEATURES,
+                run=self._run_features,
+                locks=PODMAN_FEATURES_LOCKS,
+                failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                error_code="install_failed",
+            ),
+            ModuleStep(
+                name=PODMAN_STEP_RESTART,
+                run=self._run_restart,
+                failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+                error_code="install_failed",
+            ),
+            *steps,
+        ]
+
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The core's steps, the ``configure`` under ``running`` cut into ``machine`` and the containers' ``configure``.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``.
+
+        Returns:
+            The steps.
+        """
+        if want != AGENT_WANT_RUNNING:
+            return steps
+        planned = []
+        for step in steps:
+            if step.name != AGENT_STEP_CONFIGURE:
+                planned.append(step)
+                continue
+            planned.append(
+                ModuleStep(
+                    name=PODMAN_STEP_MACHINE,
+                    run=functools.partial(self._run_machine, dict(config)),
+                )
+            )
+            planned.append(
+                dataclasses.replace(
+                    step, run=functools.partial(self._run_containers, dict(config))
+                )
+            )
+        return planned
+
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
         """Keep one artifact as the publisher's file, and have the system install an msi or a pkg.
 
@@ -470,86 +575,37 @@ class PodmanMachineModuleRunner(ModuleRunner):
         if kept is not None:
             self._apply(kept, is_kept_while_stopped=False)
 
-    def _apply(self, config: dict, *, is_kept_while_stopped: bool) -> None:
-        """Apply a configuration, or keep it while Stop has the machine stopped.
+    def prepare_machine(self, config: dict) -> None:
+        """Make the account's machine exist at its size, run its keeper, and wait until it answers.
+
+        The record keeps the account, its login and the Run settings, so a
+        second call sizes nothing again.
 
         Args:
             config: The desired configuration.
-            is_kept_while_stopped: Whether a machine Stop stopped keeps the
-                configuration unwritten.
 
         Raises:
-            ModuleApplyError: As :meth:`apply` does.
+            ModuleApplyError: When the configuration is refused, or the
+                machine cannot be made, sized or reached.
             ModuleInstallPending: While the computer owes a restart.
         """
         with self._apply_lock:
-            # A failed first apply after a start leaves every module unwritten.
-            if self._written is None:
-                self._written = PodmanConfig()
-            parsed, refused = PodmanConfig.from_dict(config).without_refused(
-                os_name=self._platform.os_name
-            )
-            settings = self._checked(parsed)
-            if self._system.is_reboot_pending():
-                raise ModuleInstallPending("reboot_required")
-            record = self._record()
-            if is_kept_while_stopped and self._is_halted(record):
-                self._kept = dict(config)
-                self._log("podman: kept the configuration for the next Start")
-                self._refuse_left_out(refused)
-                return
-            self._kept = None
-            if record and record.get("account") != settings.account:
-                self._retire(record)
-                record = {}
-            # Held before the script runs: a start waits on the image pull,
-            # and a report taken meanwhile lists a declared container.
-            self._config = parsed
-            if not settings.account:
-                self._log("podman: no account is named; no machine runs")
-                self._refuse_left_out(refused)
-                return
-            machine = self._machine_of(settings.account, settings.password)
-            try:
-                notes, disk_gib = self._prepare(machine, settings, record)
-            except (OSError, subprocess.SubprocessError) as error:
-                raise ModuleApplyError(
-                    "apply_failed",
-                    {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
-                ) from error
-            self._wait_for_machine(machine)
-            try:
-                rendered, context = self._rendered_config(machine, parsed)
-            except (OSError, subprocess.SubprocessError) as error:
-                raise ModuleApplyError(
-                    "apply_failed",
-                    {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
-                ) from error
-            self._config = rendered
-            self._write_record(settings, disk_gib, rendered)
-            script = PodmanMachineScriptRenderer(
-                config=rendered, os_name=self._platform.os_name, context=context
-            ).render()
-            done = machine.shell(script)
-            output = f"{done.stdout or ''}{done.stderr or ''}"
-            if done.returncode != 0:
-                raise ModuleApplyError(
-                    "apply_failed",
-                    {"detail": output.strip()[-PODMAN_MACHINE_DETAIL_CHARS:]},
-                )
-            self._written = rendered
-            changed = [
-                line[len(PODMAN_MACHINE_CHANGED_PREFIX) :]
-                for line in output.splitlines()
-                if line.startswith(PODMAN_MACHINE_CHANGED_PREFIX)
-            ]
-            notes.append(
-                f"containers: {', '.join(changed)}"
-                if changed
-                else "containers unchanged"
-            )
-            self._log(f"podman: {'; '.join(notes)}")
-            self._refuse_left_out(refused)
+            self._prepare_machine(config)
+
+    def write_containers(self, config: dict) -> None:
+        """Write the declared containers, and each module's hub containers whose images the store holds, into the machine.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: When the configuration is refused, the machine
+                cannot be reached, or systemd in the machine refuses a unit;
+                the first left-out container's refusal once the rest is
+                written.
+        """
+        with self._apply_lock:
+            self._write_containers(config)
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.
@@ -959,6 +1015,145 @@ class PodmanMachineModuleRunner(ModuleRunner):
             OSError: When no port can be picked or kept.
         """
         return self._page_ports.port_for(module, name)
+
+    def _run_features(self, context) -> None:
+        """The ``windows_features`` step."""
+        self._system.enable_features()
+
+    def _run_restart(self, context) -> None:
+        """The ``restart`` step, which waits while the computer owes the restart.
+
+        Raises:
+            ModuleInstallPending: While the restart is owed.
+        """
+        if self._system.is_reboot_pending():
+            raise ModuleInstallPending("reboot_required")
+
+    def _run_machine(self, config: dict, context) -> None:
+        """The ``machine`` step."""
+        self.prepare_machine(config)
+
+    def _run_containers(self, config: dict, context) -> None:
+        """The ``configure`` step under ``running``."""
+        self.write_containers(config)
+
+    def _apply(self, config: dict, *, is_kept_while_stopped: bool) -> None:
+        """Apply a configuration, or keep it while Stop has the machine stopped.
+
+        Args:
+            config: The desired configuration.
+            is_kept_while_stopped: Whether a machine Stop stopped keeps the
+                configuration unwritten.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+            ModuleInstallPending: While the computer owes a restart.
+        """
+        with self._apply_lock:
+            if is_kept_while_stopped:
+                parsed, refused = PodmanConfig.from_dict(config).without_refused(
+                    os_name=self._platform.os_name
+                )
+                self._checked(parsed)
+                if self._system.is_reboot_pending():
+                    raise ModuleInstallPending("reboot_required")
+                if self._is_halted(self._record()):
+                    self._kept = dict(config)
+                    self._log("podman: kept the configuration for the next Start")
+                    self._refuse_left_out(refused)
+                    return
+            self._prepare_machine(config)
+            self._write_containers(config)
+
+    def _prepare_machine(self, config: dict) -> None:
+        """Make, size and wake the account's machine, and keep its size in the record. Call under the apply lock.
+
+        Raises:
+            ModuleApplyError: As :meth:`prepare_machine` does.
+            ModuleInstallPending: While the computer owes a restart.
+        """
+        parsed = PodmanConfig.from_dict(config).without_refused(
+            os_name=self._platform.os_name
+        )[0]
+        settings = self._checked(parsed)
+        if self._system.is_reboot_pending():
+            raise ModuleInstallPending("reboot_required")
+        self._kept = None
+        record = self._record()
+        if record and record.get("account") != settings.account:
+            self._retire(record)
+            record = {}
+        if not settings.account:
+            self._log("podman: no account is named; no machine runs")
+            return
+        machine = self._machine_of(settings.account, settings.password)
+        try:
+            notes, disk_gib = self._prepare(machine, settings, record)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed",
+                {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
+            ) from error
+        self._wait_for_machine(machine)
+        self._write_record(settings, disk_gib)
+        if notes:
+            self._log(f"podman: {'; '.join(notes)}")
+
+    def _write_containers(self, config: dict) -> None:
+        """Write the containers into the running machine with one root script. Call under the apply lock.
+
+        Raises:
+            ModuleApplyError: As :meth:`write_containers` does.
+        """
+        # A failed first apply after a start leaves every module unwritten.
+        if self._written is None:
+            self._written = PodmanConfig()
+        parsed, refused = PodmanConfig.from_dict(config).without_refused(
+            os_name=self._platform.os_name
+        )
+        settings = self._checked(parsed)
+        self._kept = None
+        # Held before the script runs: a start waits on the image pull, and a
+        # report taken meanwhile lists a declared container.
+        self._config = parsed
+        if not settings.account:
+            self._refuse_left_out(refused)
+            return
+        record = self._record()
+        machine = self._machine_of(settings.account, settings.password)
+        if self._read(machine)[1] is None:
+            self._wait_for_machine(machine)
+        try:
+            rendered, context = self._rendered_config(machine, parsed)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed",
+                {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
+            ) from error
+        self._config = rendered
+        self._write_record(settings, self._disk_now(machine, record), rendered)
+        script = PodmanMachineScriptRenderer(
+            config=rendered, os_name=self._platform.os_name, context=context
+        ).render()
+        done = machine.shell(script)
+        output = f"{done.stdout or ''}{done.stderr or ''}"
+        if done.returncode != 0:
+            raise ModuleApplyError(
+                "apply_failed",
+                {"detail": output.strip()[-PODMAN_MACHINE_DETAIL_CHARS:]},
+            )
+        self._written = rendered
+        changed = [
+            line[len(PODMAN_MACHINE_CHANGED_PREFIX) :]
+            for line in output.splitlines()
+            if line.startswith(PODMAN_MACHINE_CHANGED_PREFIX)
+        ]
+        self._log(
+            f"podman: containers: {', '.join(changed)}"
+            if changed
+            else "podman: containers unchanged"
+        )
+        self._refuse_left_out(refused)
 
     def _record(self) -> dict:
         """The last apply's record, empty when none is held."""
@@ -1380,17 +1575,22 @@ class PodmanMachineModuleRunner(ModuleRunner):
         raise ModuleApplyError("machine_image_missing", {})
 
     def _write_record(
-        self, settings: PodmanMachineSettings, disk_gib: int, parsed: PodmanConfig
+        self,
+        settings: PodmanMachineSettings,
+        disk_gib: int,
+        parsed: "PodmanConfig | None" = None,
     ) -> None:
         """Keep the last apply: the account, its login, the Run settings, the disk's size, the declared names and the hub names by module.
 
-        The account's saved images stay.
+        The account's saved images stay, and with no configuration given so
+        do the names the record holds.
 
         Raises:
             ModuleApplyError: ``apply_failed`` when the record cannot be written.
         """
         try:
             with self._record_lock:
+                held = self._records.read(settings.account)
                 self._records.write(
                     {
                         "account": settings.account,
@@ -1398,9 +1598,17 @@ class PodmanMachineModuleRunner(ModuleRunner):
                         "cpus": settings.cpus,
                         "memory_gib": settings.memory_gib,
                         "disk_gib": disk_gib,
-                        "names": parsed.declared_names,
-                        "hub_names": parsed.hub_names(),
-                        "images": self._records.read(settings.account).get("images"),
+                        "names": (
+                            parsed.declared_names
+                            if parsed is not None
+                            else held.get("names") or []
+                        ),
+                        "hub_names": (
+                            parsed.hub_names()
+                            if parsed is not None
+                            else held.get("hub_names") or {}
+                        ),
+                        "images": held.get("images"),
                     }
                 )
         except OSError as error:

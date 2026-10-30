@@ -1992,6 +1992,143 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
     assert engine.report()["podman"]["state"] != "running"
 
 
+# --- the steps of Containers, Ayakaleaf and Hermes WebUI ---
+
+CONTAINERS_ALONE = ("containers", "alone")
+PACKAGE_MANAGER = ("package_manager", "alone")
+
+
+class StateRootPlatform(FakePlatform):
+    """A Linux platform whose state roots are the test's directory."""
+
+    capabilities = frozenset({"packages"})
+
+    def __init__(self, root):
+        super().__init__()
+        self._root = root
+
+    def agent_var_dir(self):
+        return self._root
+
+    def agent_data_dir(self):
+        return self._root
+
+
+class DarwinPackagesPlatform(HubPackagesPlatform):
+    """A platform that unpacks the hub's software, the way macOS does."""
+
+    os_name = "darwin"
+
+
+def planned(steps) -> list:
+    """Each step's name, params and locks."""
+    return [(step.name, step.params, step.locks) for step in steps]
+
+
+def podman_entry(engine, want="running") -> dict:
+    """Containers' entry with the recipe its runner takes on the engine's system."""
+    runner = engine.module_runners["podman"]
+    if runner.runner == "podman":
+        recipe = {
+            "runner": "podman",
+            "method": "system",
+            "params": {"packages": ["podman", "runc"], "verify": "podman --version"},
+        }
+    else:
+        recipe = {
+            "runner": "podman_machine",
+            "method": "hub",
+            "params": {
+                "version": "6.1.4",
+                "artifacts": [
+                    {"name": name, "kind": kind, "digest": "sha256:" + DIGEST}
+                    for name, kind in (
+                        ("wsl", "msi"),
+                        ("podman", "msi"),
+                        ("image", "tar_zst"),
+                    )
+                    if runner._system.has_windows_features or name != "wsl"
+                ],
+                "verify": "podman --version",
+            },
+        }
+    return {"want": want, "config": {}, "install": recipe}
+
+
+def test_containers_on_linux_plans_its_steps_under_containers_alone(tmp_path):
+    engine = ModuleEngine(
+        platform=StateRootPlatform(str(tmp_path)), configured_dir=str(tmp_path / "c")
+    )
+    entry = podman_entry(engine)
+
+    steps = engine.install_steps("podman", entry) + engine.configure_steps(
+        "podman", entry, "running"
+    )
+
+    assert planned(steps) == [
+        ("packages", {}, (CONTAINERS_ALONE, PACKAGE_MANAGER)),
+        ("verify", {}, (CONTAINERS_ALONE,)),
+        ("configure", {}, (CONTAINERS_ALONE,)),
+        ("start", {}, (CONTAINERS_ALONE,)),
+    ]
+    assert planned(engine.configure_steps("podman", entry, "stopped")) == [
+        ("configure", {}, (CONTAINERS_ALONE,)),
+        ("stop", {}, (CONTAINERS_ALONE,)),
+    ]
+
+
+def test_containers_on_windows_plans_the_features_and_the_restart_first(tmp_path):
+    engine = ModuleEngine(
+        platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "c"),
+    )
+    entry = podman_entry(engine)
+
+    steps = engine.install_steps("podman", entry) + engine.configure_steps(
+        "podman", entry, "running"
+    )
+
+    assert planned(steps) == [
+        ("windows_features", {}, (CONTAINERS_ALONE, PACKAGE_MANAGER)),
+        ("restart", {}, ()),
+        ("artifact", {"name": "wsl"}, (CONTAINERS_ALONE, PACKAGE_MANAGER)),
+        ("artifact", {"name": "podman"}, (CONTAINERS_ALONE, PACKAGE_MANAGER)),
+        ("artifact", {"name": "image"}, (CONTAINERS_ALONE,)),
+        ("verify", {}, (CONTAINERS_ALONE,)),
+        ("machine", {}, (CONTAINERS_ALONE,)),
+        ("configure", {}, (CONTAINERS_ALONE,)),
+        ("start", {}, (CONTAINERS_ALONE,)),
+    ]
+    assert [
+        step.name for step in engine.configure_steps("podman", entry, "stopped")
+    ] == [
+        "configure",
+        "stop",
+    ]
+
+
+def test_containers_on_macos_plans_the_pkg_then_the_machine(tmp_path):
+    engine = ModuleEngine(
+        platform=DarwinPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "c"),
+    )
+    entry = podman_entry(engine)
+    entry["install"]["params"]["artifacts"][0]["kind"] = "pkg"
+
+    steps = engine.install_steps("podman", entry) + engine.configure_steps(
+        "podman", entry, "running"
+    )
+
+    assert planned(steps) == [
+        ("artifact", {"name": "podman"}, (CONTAINERS_ALONE, PACKAGE_MANAGER)),
+        ("artifact", {"name": "image"}, (CONTAINERS_ALONE,)),
+        ("verify", {}, (CONTAINERS_ALONE,)),
+        ("machine", {}, (CONTAINERS_ALONE,)),
+        ("configure", {}, (CONTAINERS_ALONE,)),
+        ("start", {}, (CONTAINERS_ALONE,)),
+    ]
+
+
 # --- another version ---
 
 

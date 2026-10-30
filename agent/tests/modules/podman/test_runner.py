@@ -283,6 +283,12 @@ def test_stop_takes_every_container_down_then_turns_the_socket_off(runner, syste
     assert system.calls == [["systemctl", "disable", "--now", "podman.socket"]]
 
 
+def test_every_step_of_the_module_s_own_task_takes_containers_alone(runner):
+    assert runner.step_locks("packages") == (("containers", "alone"),)
+    assert runner.step_locks("configure") == (("containers", "alone"),)
+    assert runner.step_locks("stop") == (("containers", "alone"),)
+
+
 def test_start_turns_the_socket_on(runner, system):
     runner.start()
 
