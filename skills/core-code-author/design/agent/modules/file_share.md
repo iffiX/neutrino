@@ -164,4 +164,7 @@ it `share_name_taken {name}` until the person removes that share.
 Its journal on Windows reads the SMB server's latest events from
 `Microsoft-Windows-SMBServer/Operational`, and on macOS what the unified
 log holds of `smbd` over the last 15 minutes ([agent.md](../../agent.md),
-"Which modules each system runs").
+"Which modules each system runs"). On Windows `wevtutil qe` renders the
+events' messages, in UTF-16 with `/uni:true`: on the lab machine it read
+200 events in about 0.4 seconds, where `Get-WinEvent` took 9 seconds to
+render the same messages.
