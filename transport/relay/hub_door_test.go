@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -222,16 +224,24 @@ func TestRefusedConnectionsAreClosedFirst(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("the peer took %v to get in", elapsed)
 	}
+	// The ledger lists the held connections in the order their goroutines
+	// reached it. That order can differ from the dial order. A read after
+	// the shared deadline returns no reset, so every connection is read at
+	// once.
 	readUntil := time.Now().Add(time.Second)
-	resets := 0
+	var resets atomic.Int32
+	var reads sync.WaitGroup
 	for _, conn := range held {
-		_ = conn.SetReadDeadline(readUntil)
-		if _, err := conn.Read(make([]byte, 1)); isReset(err) {
-			resets++
-		}
+		reads.Go(func() {
+			_ = conn.SetReadDeadline(readUntil)
+			if _, err := conn.Read(make([]byte, 1)); isReset(err) {
+				resets.Add(1)
+			}
+		})
 	}
-	if resets != 1 {
-		t.Fatalf("%d refused connections reset, want the one the peer's place took", resets)
+	reads.Wait()
+	if count := resets.Load(); count != 1 {
+		t.Fatalf("%d refused connections reset, want the one the peer's place took", count)
 	}
 }
 
