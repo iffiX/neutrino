@@ -196,6 +196,57 @@ def test_a_lan_address_wins_over_the_overlay_the_socket_came_by(config_dir):
     assert DeviceRegistry().get(stored.id).link_mac == LINK_MAC
 
 
+@pytest.fixture
+def hub_box(config_dir, monkeypatch):
+    """The hub's own machine, its agent's session on the WSL adapter."""
+    monkeypatch.setattr(agent_reports, "machine_id", lambda: "hub-machine")
+    return (
+        FakeRuntime(lans=[("172.20.208.1", "172.20.208.0/20")]),
+        ManagedDevice(id=DEVICE, name="hub", machine_id="hub-machine"),
+    )
+
+
+def test_the_hub_s_own_machine_records_loopback_whatever_its_session_came_by(
+    hub_box,
+):
+    runtime, device = hub_box
+
+    agent_reports.record_hello(
+        runtime,
+        device,
+        name="hub",
+        peer_host="172.20.208.1",
+        reached_host="172.20.208.1",
+    )
+    at_hello = runtime.device_address[DEVICE]
+    agent_reports.record_report(
+        runtime,
+        device,
+        report(network=network("172.20.208.1")),
+        peer_host="172.20.208.1",
+    )
+
+    assert at_hello == "127.0.0.1"
+    assert runtime.device_address[DEVICE] == "127.0.0.1"
+    assert runtime.device_scope[DEVICE] == HostScope(
+        id="172.20.208.0/20", cidr="172.20.208.0/20", hub_address="172.20.208.1"
+    )
+
+
+def test_another_machine_keeps_its_link_address(hub_box):
+    runtime, _ = hub_box
+    device = ManagedDevice(id=DEVICE, name="box", machine_id="box-machine")
+
+    agent_reports.record_report(
+        runtime,
+        device,
+        report(network=network("172.20.208.9")),
+        peer_host="172.20.208.9",
+    )
+
+    assert runtime.device_address[DEVICE] == "172.20.208.9"
+
+
 def test_a_report_naming_no_address_records_the_peer(box):
     runtime, device = box
 

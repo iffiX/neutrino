@@ -20,6 +20,9 @@ DEVICE_LAN_SCAN_PREFIX_MIN = 24
 DEVICE_AGENT_ONLINE_WINDOW_S = 30
 
 DEVICE_WOL_PORT = 9
+# The address recorded for the hub's own machine, whatever path its agent's
+# session takes.
+DEVICE_HUB_ADDRESS = "127.0.0.1"
 # Pure Python over the network; nothing architecture-bound is installed here.
 DEVICE_SUPPORTED_ARCHITECTURES = ("*",)
 

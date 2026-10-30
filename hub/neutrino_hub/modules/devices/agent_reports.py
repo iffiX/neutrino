@@ -27,7 +27,10 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
 )
-from neutrino_hub.modules.devices.constants import DEVICE_GITEA_MODULE
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_GITEA_MODULE,
+    DEVICE_HUB_ADDRESS,
+)
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
     import_module_config,
@@ -38,6 +41,7 @@ from neutrino_hub.modules.services.host_scope import (
     lan_in_place_of_overlay,
     scope_of,
 )
+from neutrino_hub.system.machine import machine_id
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,9 +63,11 @@ def record_hello(
     if name:
         runtime.device_hostname[key] = name
     if peer_host:
-        runtime.device_address[key] = peer_host
+        runtime.device_address[key] = _recorded_address(runtime, device, peer_host)
     runtime.device_scope[key] = scope_of(
-        runtime.device_address.get(key, ""), reached_host, runtime.host_scopes()
+        peer_host or runtime.device_address.get(key, ""),
+        reached_host,
+        runtime.host_scopes(),
     )
 
 
@@ -364,6 +370,20 @@ def _record_network(runtime, device, network, *, peer_host: str) -> None:
         if lan_address:
             address, mac = lan_address, lan_mac
     if address:
-        runtime.device_address[key] = address
+        runtime.device_address[key] = _recorded_address(runtime, device, address)
     if mac:
         DeviceRegistry().note_machine(key, link_mac=mac)
+
+
+def _recorded_address(runtime, device, address: str) -> str:
+    """The address recorded for a device, ``DEVICE_HUB_ADDRESS`` for the hub's own machine.
+
+    The box's machine id is read only for an address other than the one
+    recorded.
+    """
+    if address == runtime.device_address.get(device.id):
+        return address
+    own_machine = machine_id()
+    if own_machine and device.machine_id == own_machine:
+        return DEVICE_HUB_ADDRESS
+    return address
