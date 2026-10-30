@@ -321,6 +321,26 @@ def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
     assert held["npm_config_x"] == "y" and held["npm_config_cache"] == app + "/.npm"
 
 
+# What a Node.js that cannot resolve npm's own script prints, as on Windows
+# for an account that cannot read the attributes of a parent directory.
+NODE_CRASH = """node:fs:2791
+      const stats = binding.lstat(base, true, undefined, true /* throwIfNoEntry */);
+                            ^
+
+Error: EPERM: operation not permitted, lstat 'C:\\ProgramData\\Neutrino\\agent\\state'
+    at Object.realpathSync (node:fs:2791:29)
+    at toRealPath (node:internal/modules/helpers:61:13)
+    at Function._findPath (node:internal/modules/cjs/loader:760:22) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'lstat',
+  path: 'C:\\\\ProgramData\\\\Neutrino\\\\agent\\\\state'
+}
+
+Node.js v22.23.3
+"""
+
+
 @pytest.mark.parametrize(
     "output, expected",
     [
@@ -333,7 +353,7 @@ def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
                     "account": "ann",
                     "module": "node-pty",
                     "detail": "prebuild-install warn install No prebuilt binaries "
-                    "found | gyp ERR! build error | npm error path "
+                    "found\ngyp ERR! build error\nnpm error path "
                     ".../node_modules/node-pty",
                 },
             ),
@@ -344,7 +364,7 @@ def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
                 "cloudcli_npm_install_failed",
                 {
                     "account": "ann",
-                    "detail": "npm error code ETIMEDOUT | npm error network "
+                    "detail": "npm error code ETIMEDOUT\nnpm error network "
                     "request failed",
                 },
             ),
@@ -356,12 +376,34 @@ def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
                 {"account": "ann", "detail": "just one line"},
             ),
         ),
+        (
+            NODE_CRASH + NODE_CRASH,
+            (
+                "cloudcli_npm_install_failed",
+                {
+                    "account": "ann",
+                    "detail": "Error: EPERM: operation not permitted, lstat "
+                    "'C:\\ProgramData\\Neutrino\\agent\\state'",
+                },
+            ),
+        ),
     ],
 )
 def test_a_failed_install_names_its_step(output, expected):
     failure = npm_failure(output, "ann")
 
     assert (failure.code, failure.params) == expected
+
+
+def test_a_failure_keeps_its_last_whole_lines_within_its_length():
+    last = "npm error " + "x" * 150 + " 5"
+    output = "\n".join(f"npm error {'x' * 150} {n}" for n in range(5)) + "\n" + last
+
+    detail = npm_failure(output, "ann").params["detail"]
+
+    assert len(detail) <= 400
+    assert detail.startswith("... ")
+    assert detail.endswith("\n" + last)
 
 
 # --- the install on Linux ---

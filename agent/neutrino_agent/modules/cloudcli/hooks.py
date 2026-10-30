@@ -32,6 +32,7 @@ import http.client
 import json
 import ntpath
 import os
+import re
 import socket
 import subprocess
 import time
@@ -122,7 +123,10 @@ from neutrino_agent.modules.shared.http_forward import (
     unpadded_decode,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import (
+    CommandResult,
+    bounded_detail,
+)
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.package import npm_artifact, params_of
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
@@ -133,6 +137,8 @@ from neutrino_agent.modules.shared.windows_acl import grant_account_alone
 NATIVE_FAILURE_WORDS = ("gyp", "prebuild")
 # The lines of npm's output that are its tools' own account of a failure.
 FAILURE_LINE_WORDS = ("prebuild-install", "gyp err", "npm error", "npm err!")
+# A line naming an error Node.js threw, such as ``Error: EPERM: ...``.
+ERROR_LINE = re.compile(r"\w*Error( \[\w+\])?: ")
 # The exit status the native check ends with, the module's name printed.
 NATIVE_CHECK_EXIT = 3
 NATIVE_CHECK_SCRIPT = (
@@ -347,8 +353,10 @@ def failure_detail(output: str) -> str:
         output: What npm printed.
 
     Returns:
-        Up to four lines naming prebuild-install, node-gyp or npm's own
-        errors, joined by `` | ``; the output's last line when none does.
+        Up to four distinct lines naming prebuild-install, node-gyp or npm's
+        own errors; else up to four distinct lines naming an error Node.js
+        threw; else the output's last line. Joined by newlines and bounded
+        as :func:`bounded_detail` bounds them.
     """
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     named = [
@@ -356,8 +364,22 @@ def failure_detail(output: str) -> str:
         for line in lines
         if any(word in line.lower() for word in FAILURE_LINE_WORDS)
     ]
-    kept = named[-CLOUDCLI_FAILURE_LINES:] or lines[-1:]
-    return " | ".join(kept)[-CLOUDCLI_FAILURE_DETAIL_CHARS:]
+    thrown = [line for line in lines if ERROR_LINE.match(line)]
+    kept = last_distinct(named) or last_distinct(thrown) or lines[-1:]
+    return bounded_detail("\n".join(kept), CLOUDCLI_FAILURE_DETAIL_CHARS)
+
+
+def last_distinct(lines: list) -> list:
+    """The last lines of a list that differ from each other, in their order.
+
+    Args:
+        lines: The lines.
+
+    Returns:
+        Up to four lines, each at its last place in the list.
+    """
+    kept = list(dict.fromkeys(reversed(lines)))[:CLOUDCLI_FAILURE_LINES]
+    return kept[::-1]
 
 
 def install_output(log_file: str) -> str:
