@@ -7,6 +7,8 @@ process, so the relays' firewall rules go with the agent.
 """
 
 import signal
+import sys
+import threading
 
 import pytest
 
@@ -110,10 +112,56 @@ def test_run_takes_no_flags(monkeypatch):
     assert passed == {"ran": True}
 
 
-def test_the_log_is_a_flushed_print_where_a_journal_reads_the_output(run_stack):
+class InterleavingStdout:
+    """A stdout whose first write of text with no newline waits for another thread's write."""
+
+    def __init__(self):
+        self.text = ""
+        self.flushes = 0
+        self.entered = threading.Event()
+        self._other_wrote = threading.Event()
+        self._lock = threading.Lock()
+        self._first = None
+
+    def write(self, text: str) -> int:
+        with self._lock:
+            self.text += text
+            if self._first is None:
+                self._first = threading.current_thread()
+            is_first = self._first is threading.current_thread()
+        if not is_first:
+            self._other_wrote.set()
+        elif not text.endswith("\n") and not self.entered.is_set():
+            self.entered.set()
+            self._other_wrote.wait(timeout=2.0)
+        self.entered.set()
+        return len(text)
+
+    def flush(self) -> None:
+        self.flushes += 1
+
+
+def test_the_log_prints_whole_flushed_lines_where_a_journal_reads_the_output(
+    run_stack, monkeypatch
+):
     platform, _, _ = run_stack
+    stdout = InterleavingStdout()
+    monkeypatch.setattr(sys, "stdout", stdout)
     sink = run_cli.log_sink(platform)
-    assert sink.func is print and sink.keywords == {"flush": True}
+
+    first = threading.Thread(target=sink, args=("ayakaleaf: answers on port 8900",))
+    first.start()
+    assert stdout.entered.wait(timeout=2.0)
+    second = threading.Thread(target=sink, args=("ayakaleaf: running",))
+    second.start()
+    first.join(timeout=5.0)
+    second.join(timeout=5.0)
+
+    assert stdout.text.splitlines() == [
+        "ayakaleaf: answers on port 8900",
+        "ayakaleaf: running",
+    ]
+    assert stdout.flushes == 2
 
 
 def test_the_log_is_the_agent_log_file_on_macos(run_stack, monkeypatch, tmp_path):

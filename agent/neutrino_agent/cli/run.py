@@ -7,8 +7,9 @@ SIGTERM asks the agent to stop, so its relays close and their firewall rules
 go before the process ends.
 """
 
-import functools
 import signal
+import sys
+import threading
 
 from neutrino_agent.cli.service import service_log
 from neutrino_agent.control.server import ControlServer
@@ -19,6 +20,9 @@ from neutrino_agent.platforms.detect import detect_platform
 # a journal, so the agent writes that file itself; a print would sit in a
 # block buffer until the process ends.
 FILE_LOGGED_OS = "darwin"
+# Every line the running agent prints is written under this lock. Two threads
+# printing at once otherwise put one line's text before another's newline.
+_PRINT_LOCK = threading.Lock()
 
 
 def main() -> int:
@@ -47,9 +51,20 @@ def log_sink(platform):
         platform: The running platform.
 
     Returns:
-        The agent's log file on macOS, a line-flushed print elsewhere, where
+        The agent's log file on macOS, :func:`print_line` elsewhere, where
         the journal reads the process's output.
     """
     if platform.os_name == FILE_LOGGED_OS:
         return service_log(platform.agent_log_path())
-    return functools.partial(print, flush=True)
+    return print_line
+
+
+def print_line(message) -> None:
+    """Print one message and its newline in one write, flushed.
+
+    Args:
+        message: The line, without its newline.
+    """
+    with _PRINT_LOCK:
+        sys.stdout.write(f"{message}\n")
+        sys.stdout.flush()
