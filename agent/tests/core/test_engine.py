@@ -21,7 +21,8 @@ the modules waiting behind the one being applied reading queued; a failed
 install reading install_failed with its code whatever the machine has, any
 other failed step reading failed while the software is there, both kept
 root-only on disk and read the same by an engine that starts again, until
-the next attempt replaces them or a state stops naming the module; an
+the next attempt replaces them or a state stops naming the module, and kept
+off the row while the module's task runs; an
 uninstall of what a failed install left judged by the check afterwards;
 and that nothing in it ever retries anything.
 """
@@ -1309,6 +1310,42 @@ def test_a_task_s_row_carries_its_steps_and_its_transient_state(tmp_path):
     # A configure task leaves the state the machine shows, with the task beside it.
     assert observed["state"] == "installed"
     assert observed["task"] == TASK_ROW
+
+
+def test_a_kept_failure_stays_off_the_row_while_the_module_s_task_runs(tmp_path):
+    engine = module_engine(ConfigurableRunner(is_active_now=True), tmp_path=tmp_path)
+    engine.mark_configured("samba")
+    engine.record_failure(
+        "samba", failure("failed", "cloudcli_npm_install_failed", account="anna")
+    )
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "failed"
+
+    engine.publish_task("samba", TASK_ROW, "", {})
+    running = engine.report()["samba"]
+    engine._refresh(is_forced=True)
+    refreshed = engine.report()["samba"]
+    engine.publish_task("samba", dict(TASK_ROW, is_running=False), "", {})
+    engine._refresh(is_forced=True)
+    ended = engine.report()["samba"]
+
+    assert (running["state"], running["code"]) == ("running", "")
+    assert (refreshed["state"], refreshed["code"]) == ("running", "")
+    assert (ended["state"], ended["code"]) == ("failed", "cloudcli_npm_install_failed")
+
+
+def test_a_retried_failed_install_reads_installing_from_its_task_s_start(tmp_path):
+    engine = module_engine(ConfigurableRunner(is_installed=True), tmp_path=tmp_path)
+    engine.record_failure(
+        "samba", failure("install_failed", "download_failed", file="x", sources=[])
+    )
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "install_failed"
+
+    engine.publish_task("samba", dict(TASK_ROW, index=0), "installing", {})
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "installing"
 
 
 def test_a_refresh_keeps_a_task_s_transient_row(tmp_path):

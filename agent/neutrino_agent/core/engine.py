@@ -525,6 +525,9 @@ class ModuleEngine(ReconcileWorker):
     def publish_task(self, name: str, task: dict, state: str, wait: dict) -> None:
         """Put one module's task on its row.
 
+        A kept failure stays off the row while the task runs, so a module
+        with one is read again when its task starts.
+
         Args:
             name: The module name.
             task: The task's row, ``{steps, index, wait, is_running}``.
@@ -536,15 +539,21 @@ class ModuleEngine(ReconcileWorker):
         """
         with self._lock:
             was_transient = bool((self._task_rows.get(name) or {}).get("state"))
+            was_running = self._is_task_running(name)
             self._task_rows[name] = {
                 "task": dict(task),
                 "state": state,
                 "wait": dict(wait),
             }
             status = self._statuses.get(name)
+            is_failure_hidden = (
+                self._is_task_running(name)
+                and not was_running
+                and name in self._failures
+            )
         if state:
             self._publish_observed(name, _typed(state))
-        elif was_transient:
+        elif was_transient or is_failure_hidden:
             self.refresh_one(name)
         elif status is not None:
             self._publish_observed(name, dict(status))
@@ -1210,6 +1219,17 @@ class ModuleEngine(ReconcileWorker):
         if is_news and self._on_change is not None:
             self._on_change()
 
+    def _is_task_running(self, name: str) -> bool:
+        """Whether one module's task runs. Call under the lock."""
+        task = (self._task_rows.get(name) or {}).get("task") or {}
+        return bool(task.get("is_running"))
+
+    def _kept_failure(self, name: str) -> "dict | None":
+        """One module's kept failure as its row reads it: none while its task runs. Call under the lock."""
+        if self._is_task_running(name):
+            return None
+        return self._failures.get(name)
+
     def _is_pulling(self) -> bool:
         """Whether a container module's task runs a ``pull``. Call under the lock."""
         for name in self._container_runners:
@@ -1237,14 +1257,14 @@ class ModuleEngine(ReconcileWorker):
             ``installing`` row carries the runner's install wait as its
             code and params, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
-            whatever is on the machine.
+            whatever is on the machine, except while its task runs.
         """
         recipe = _recipe_of(wanted)
         runner = self._runner_for(name, recipe)
         if runner is None:
             return _typed(AGENT_MODULE_STATE_UNSUPPORTED)
         with self._lock:
-            failure = self._failures.get(name)
+            failure = self._kept_failure(name)
         if (
             failure is not None
             and failure["state"] == AGENT_MODULE_STATE_INSTALL_FAILED
@@ -1295,7 +1315,7 @@ class ModuleEngine(ReconcileWorker):
         """One row with the last failed step's code, failed when the software
         is there."""
         with self._lock:
-            failure = self._failures.get(name)
+            failure = self._kept_failure(name)
         if failure is not None:
             if is_present:
                 status["state"] = AGENT_MODULE_STATE_FAILED
