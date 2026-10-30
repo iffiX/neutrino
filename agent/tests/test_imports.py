@@ -163,6 +163,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.shared.loopback_port",
     "neutrino_agent.modules.shared.package",
     "neutrino_agent.modules.shared.source_fetch",
+    "neutrino_agent.modules.shared.step_locks",
     "neutrino_agent.modules.shared.record_store",
     "neutrino_agent.modules.shared.seven_zip",
     "neutrino_agent.modules.shared.subprocess_run",

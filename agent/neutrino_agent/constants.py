@@ -315,6 +315,26 @@ AGENT_MODULE_COMMAND_SETTLE_S = 30.0
 # How often a state whose apply waits on a running install is applied again.
 AGENT_MODULE_INSTALL_RECHECK_S = 30.0
 
+# The step locks, in the one order a step takes them in.
+AGENT_LOCK_CONTAINERS = "containers"
+AGENT_LOCK_PACKAGE_MANAGER = "package_manager"
+AGENT_LOCK_SYSTEM_ACCOUNTS = "system_accounts"
+AGENT_LOCK_ORDER = (
+    AGENT_LOCK_CONTAINERS,
+    AGENT_LOCK_PACKAGE_MANAGER,
+    AGENT_LOCK_SYSTEM_ACCOUNTS,
+)
+# How a step takes a lock: beside other shared takers, or alone.
+AGENT_LOCK_SHARED = "shared"
+AGENT_LOCK_ALONE = "alone"
+# How often a module's dnf 5 runs again while another run holds the rpm
+# transaction lock, up to ``AGENT_UPDATE_LOCK_TIMEOUT_S``.
+AGENT_PACKAGE_LOCK_RETRY_S = 5
+
+# The codes a task's wait names.
+AGENT_WAIT_LOCK = "waiting_for_lock"
+AGENT_WAIT_PACKAGE_MANAGER = "waiting_for_package_manager"
+
 # What this machine accumulated: the configured marks, a package in transit,
 # the last reinstall's result, all root-only, and the software the hub sends
 # for every account to run.

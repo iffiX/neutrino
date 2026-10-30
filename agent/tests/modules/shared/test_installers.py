@@ -17,7 +17,7 @@ import sys
 
 import pytest
 
-from neutrino_agent.exceptions import InstallError
+from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.shared import installers
 
 MSI = "C:\\ProgramData\\Neutrino\\agent\\state\\podman\\installer\\podman.msi"
@@ -123,7 +123,21 @@ def test_an_install_that_owes_a_restart_is_a_success_that_says_so(powershell):
     assert installers.install_msi(MSI, log_path=LOG) is True
 
 
-@pytest.mark.parametrize("code", [1603, 1618, 1619])
+def test_a_windows_installer_still_busy_after_the_wait_is_package_manager_busy(
+    powershell,
+):
+    powershell.answers.append((1618, ""))
+
+    with pytest.raises(ModuleApplyError) as caught:
+        installers.install_msi(MSI, log_path=LOG)
+
+    assert (caught.value.code, caught.value.params) == (
+        "package_manager_busy",
+        {"holder": ""},
+    )
+
+
+@pytest.mark.parametrize("code", [1603, 1619])
 def test_any_other_exit_is_an_install_error_with_the_code(powershell, code):
     powershell.answers.append((code, ""))
 
@@ -275,8 +289,8 @@ def test_a_busy_windows_installer_is_tried_once_more(tmp_path, monkeypatch):
 def test_a_second_busy_answer_is_the_failure(tmp_path, monkeypatch):
     asked = run_in_pwsh(tmp_path, monkeypatch, "1618,1618,0")
 
-    with pytest.raises(InstallError) as caught:
+    with pytest.raises(ModuleApplyError) as caught:
         installers.install_msi(MSI, log_path=LOG)
 
-    assert caught.value.exit_code == 1618
+    assert caught.value.code == "package_manager_busy"
     assert len(asked.read_text().splitlines()) == 2

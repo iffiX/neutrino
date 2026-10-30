@@ -51,10 +51,14 @@ UNSTRUCTURED_CODES = (
 )
 
 # What a module runner refuses with, raised by name rather than emitted as
-# a literal, and what the engine records against a built-in row.
+# a literal, what the engine records against a built-in row, and what a
+# step's wait names.
 MODULE_CODES = (
     "download_failed",
     "module_not_orderable",
+    "waiting_for_lock",
+    "waiting_for_package_manager",
+    "package_manager_busy",
     "rdp_takeover_failed",
     "rdp_restore_failed",
     "verb_unknown",

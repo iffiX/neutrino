@@ -39,7 +39,7 @@ from neutrino_agent.core.metrics import (
     busiest_processes,
     read_nvidia_gpus,
 )
-from neutrino_agent.modules.shared import installers
+from neutrino_agent.modules.shared.system_package import run_package_manager
 from neutrino_agent.platforms.answered_run import run_on_pty
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 from neutrino_agent.platforms.linux_relay import LinuxRelayFirewall, read_bridges
@@ -331,8 +331,10 @@ class LinuxPlatform(AgentPlatform):
             The installers' combined output.
 
         Raises:
-            InstallError: If the package manager refuses — no repository
+            InstallError: If the package manager refuses: no repository
                 reachable, or a package unknown.
+            ModuleApplyError: ``package_manager_busy {holder}`` when the
+                system's own lock stayed held for 300 seconds.
         """
         return "\n".join(self._install_system_package(name) for name in names)
 
@@ -377,19 +379,13 @@ class LinuxPlatform(AgentPlatform):
         else:
             manager = "dnf" if shutil.which("dnf") else "yum"
             command = [manager, "remove", "-y"] + list(names)
-        return installers.run_checked(command, timeout_s=installers.INSTALL_TIMEOUT_S)
+        return run_package_manager(command)
 
     def _install_system_package(self, package: str) -> str:
         if shutil.which("apt-get"):
-            return installers.run_checked(
-                ["apt-get", "install", "-y", package],
-                timeout_s=installers.INSTALL_TIMEOUT_S,
-            )
+            return run_package_manager(["apt-get", "install", "-y", package])
         manager = "dnf" if shutil.which("dnf") else "yum"
-        return installers.run_checked(
-            [manager, "install", "-y", package],
-            timeout_s=installers.INSTALL_TIMEOUT_S,
-        )
+        return run_package_manager([manager, "install", "-y", package])
 
     def read_agent_service_state(self) -> str:
         """What systemd says about the agent's own service.

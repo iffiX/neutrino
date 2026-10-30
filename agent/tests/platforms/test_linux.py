@@ -266,10 +266,10 @@ def test_linux_system_packages_ride_the_machines_own_package_manager(monkeypatch
     calls = []
 
     def record(command, **kwargs):
-        calls.append((list(command), kwargs.get("timeout_s")))
+        calls.append(list(command))
         return "ok"
 
-    monkeypatch.setattr(linux_module.installers, "run_checked", record)
+    monkeypatch.setattr(linux_module, "run_package_manager", record)
     platform = LinuxPlatform()
 
     assert platform.install_system_packages(["cifs-utils"]) == "ok"
@@ -278,19 +278,11 @@ def test_linux_system_packages_ride_the_machines_own_package_manager(monkeypatch
     present["dnf"] = None
     platform.install_system_packages(["cifs-utils"])
 
+    # Every run goes through the one helper that waits for the system's lock.
     assert calls == [
-        (
-            ["apt-get", "install", "-y", "cifs-utils"],
-            linux_module.installers.INSTALL_TIMEOUT_S,
-        ),
-        (
-            ["dnf", "install", "-y", "cifs-utils"],
-            linux_module.installers.INSTALL_TIMEOUT_S,
-        ),
-        (
-            ["yum", "install", "-y", "cifs-utils"],
-            linux_module.installers.INSTALL_TIMEOUT_S,
-        ),
+        ["apt-get", "install", "-y", "cifs-utils"],
+        ["dnf", "install", "-y", "cifs-utils"],
+        ["yum", "install", "-y", "cifs-utils"],
     ]
 
 
@@ -303,7 +295,7 @@ def test_linux_system_package_removal_purges_on_apt(monkeypatch):
         calls.append(list(command))
         return ""
 
-    monkeypatch.setattr(linux_module.installers, "run_checked", record)
+    monkeypatch.setattr(linux_module, "run_package_manager", record)
     platform = LinuxPlatform()
 
     platform.remove_system_packages(["cifs-utils"])

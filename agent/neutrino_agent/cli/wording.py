@@ -20,6 +20,9 @@ from neutrino_agent.constants import (
     AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_CONTROL_ACTION_TIMEOUT_S,
     AGENT_CONTROL_REQUEST_TIMEOUT_S,
+    AGENT_LOCK_CONTAINERS,
+    AGENT_LOCK_PACKAGE_MANAGER,
+    AGENT_LOCK_SYSTEM_ACCOUNTS,
     AGENT_SERVICE_NAME,
 )
 from neutrino_agent.control import client
@@ -220,6 +223,21 @@ CLI_CODE_WORDS = {
         "Containers did not apply this module's containers; fix Containers, "
         "then start this module again"
     ),
+    "waiting_for_lock": "waiting for {lock}, held by {module}",
+    "waiting_for_package_manager": (
+        "waiting for the system's package manager, held by {holder}"
+    ),
+    "package_manager_busy": (
+        "the system's package manager stayed busy for 5 minutes, held by "
+        "{holder}; try again later"
+    ),
+}
+
+# What each step lock is called where a code names it.
+CLI_LOCK_WORDS = {
+    AGENT_LOCK_CONTAINERS: "the container engine",
+    AGENT_LOCK_PACKAGE_MANAGER: "the package manager",
+    AGENT_LOCK_SYSTEM_ACCOUNTS: "the system accounts",
 }
 
 # Where a shared desktop stands, plus the word for a machine that has not
@@ -248,6 +266,9 @@ def word_code(code: str, params: "dict | None" = None) -> str:
     if not word:
         return code
     filled = dict(params or {})
+    lock = filled.get("lock")
+    if isinstance(lock, str) and lock in CLI_LOCK_WORDS:
+        filled["lock"] = CLI_LOCK_WORDS[lock]
     sources = filled.get("sources")
     if isinstance(sources, list):
         filled["sources"] = _sources_text(sources)

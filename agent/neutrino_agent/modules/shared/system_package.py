@@ -2,7 +2,12 @@
 
 A ``system`` recipe names distro packages, never a download: its install
 asks the hub for no bytes and the platform installs the names with its own
-tooling, one operation at a time. A recipe may name ``pre_install`` shell
+tooling, one operation at a time under the step lock ``package_manager``.
+:func:`run_package_manager` is the one helper every such run goes through:
+it waits up to 300 seconds for the system's own lock, which unattended
+upgrades and PackageKit take without asking the agent, names the process
+that holds it as the running step's wait, and runs ``dpkg --configure -a``
+once after a cut dpkg run. A recipe may name ``pre_install`` shell
 steps, run before the packages, for a repository the distribution keeps the
 software in. Whether the software is there is the recipe's ``verify``; the
 runner's own check, its binary on the path, answers only for a module the
@@ -15,11 +20,198 @@ Not pure: runs the package manager.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import subprocess
+import threading
+import time
 
+from neutrino_agent.constants import (
+    AGENT_MODULE_OUTPUT_LIMIT_BYTES,
+    AGENT_PACKAGE_LOCK_RETRY_S,
+    AGENT_UPDATE_DNF_LOCK_TEXT,
+    AGENT_UPDATE_LOCK_TIMEOUT_S,
+    AGENT_WAIT_PACKAGE_MANAGER,
+)
+from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.package import params_of
+
+# What apt prints while another process holds dpkg's lock, and that
+# process's name in it.
+APT_LOCK_TEXT = "Could not get lock"
+APT_LOCK_HOLDER = re.compile(r"held by process \d+ \(([^)]*)\)")
+# What apt prints after a dpkg run was cut.
+DPKG_INTERRUPTED_TEXT = "dpkg was interrupted"
+# The code a step fails with once the system's lock stayed held.
+CODE_PACKAGE_MANAGER_BUSY = "package_manager_busy"
+# The wait sink of the task running on each thread.
+_sinks = threading.local()
+
+
+def set_wait_sink(on_wait) -> None:
+    """Hand the waits of the package runs on this thread to a task's row.
+
+    Args:
+        on_wait: Called with ``{code, params}`` while the system's lock is
+            held, and with ``{}`` once the run goes on; None tells nobody.
+    """
+    _sinks.on_wait = on_wait
+
+
+def run_package_manager(
+    command: list, *, timeout_s: int = installers.INSTALL_TIMEOUT_S
+) -> str:
+    """Run one ``apt-get``, ``dnf`` or ``yum`` command, waiting for the system's own lock.
+
+    apt waits up to 300 seconds through ``DPkg::Lock::Timeout`` and names
+    the process that holds the lock; dnf runs again every few seconds while
+    its output names the rpm transaction lock, up to 300 seconds. A run
+    apt refuses because a dpkg run was cut runs ``dpkg --configure -a``
+    once, then the command again.
+
+    Args:
+        command: The argument vector, the package manager first.
+        timeout_s: How long one run of the command may take.
+
+    Returns:
+        Standard output.
+
+    Raises:
+        ModuleApplyError: ``package_manager_busy {holder}`` when the system's
+            lock stayed held past the wait.
+        InstallError: When the package manager refuses or cannot run.
+    """
+    program = os.path.basename(command[0])
+    if program in ("dnf", "yum"):
+        return _run_dnf(command, timeout_s)
+    if program != "apt-get":
+        return installers.run_checked(command, timeout_s=timeout_s)
+    apt = [
+        command[0],
+        "-o",
+        f"DPkg::Lock::Timeout={AGENT_UPDATE_LOCK_TIMEOUT_S}",
+        *command[1:],
+    ]
+    code, output, holder = _run_apt(apt, timeout_s)
+    if code != 0 and DPKG_INTERRUPTED_TEXT in output:
+        installers.run_checked(["dpkg", "--configure", "-a"], timeout_s=timeout_s)
+        code, output, holder = _run_apt(apt, timeout_s)
+    if code == 0:
+        return output
+    if APT_LOCK_TEXT in output:
+        raise ModuleApplyError(CODE_PACKAGE_MANAGER_BUSY, {"holder": holder})
+    raise InstallError(
+        f"{command[0]} failed: {output[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]}",
+        exit_code=code,
+    )
+
+
+def _tell_wait(wait: dict) -> None:
+    """Hand one wait to the sink of this thread's task."""
+    on_wait = getattr(_sinks, "on_wait", None)
+    if on_wait is not None:
+        on_wait(wait)
+
+
+def _package_wait(holder: str) -> dict:
+    """``waiting_for_package_manager {holder}``."""
+    return {"code": AGENT_WAIT_PACKAGE_MANAGER, "params": {"holder": holder}}
+
+
+def _run_apt(command: list, timeout_s: int) -> tuple:
+    """Run apt, reading its output as it comes, so a wait for dpkg's lock is named.
+
+    Returns:
+        ``(exit_code, output, holder)``, ``holder`` the process apt named as
+        holding dpkg's lock, empty when it named none.
+
+    Raises:
+        InstallError: When apt cannot run.
+    """
+    environment = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            env=environment,
+        )
+    except OSError as error:
+        raise InstallError(f"{command[0]} could not run: {error}")
+    killer = threading.Timer(timeout_s, process.kill)
+    killer.daemon = True
+    killer.start()
+    held = []
+    holder = ""
+    is_waiting = False
+    try:
+        for line in _lines(process.stdout):
+            held.append(line)
+            if APT_LOCK_TEXT in line:
+                found = APT_LOCK_HOLDER.search(line)
+                holder = found.group(1) if found else holder
+                if not is_waiting:
+                    is_waiting = True
+                    _tell_wait(_package_wait(holder))
+            elif is_waiting and line.strip():
+                is_waiting = False
+                _tell_wait({})
+        code = process.wait()
+    finally:
+        killer.cancel()
+        if is_waiting:
+            _tell_wait({})
+    return code, "\n".join(held), holder
+
+
+def _run_dnf(command: list, timeout_s: int) -> str:
+    """Run dnf or yum again while another run holds the rpm transaction lock, up to the wait."""
+    waited = 0
+    is_waiting = False
+    while True:
+        try:
+            output = installers.run_checked(command, timeout_s=timeout_s)
+        except InstallError as error:
+            if AGENT_UPDATE_DNF_LOCK_TEXT not in str(error):
+                if is_waiting:
+                    _tell_wait({})
+                raise
+            if waited >= AGENT_UPDATE_LOCK_TIMEOUT_S:
+                if is_waiting:
+                    _tell_wait({})
+                raise ModuleApplyError(
+                    CODE_PACKAGE_MANAGER_BUSY, {"holder": ""}
+                ) from None
+        else:
+            if is_waiting:
+                _tell_wait({})
+            return output
+        if not is_waiting:
+            is_waiting = True
+            _tell_wait(_package_wait(""))
+        time.sleep(AGENT_PACKAGE_LOCK_RETRY_S)
+        waited += AGENT_PACKAGE_LOCK_RETRY_S
+
+
+def _lines(stream):
+    """The lines of a stream as they come, a carriage return ending one too."""
+    pending = ""
+    while True:
+        chunk = stream.read(1)
+        if not chunk:
+            break
+        if chunk in "\r\n":
+            yield pending
+            pending = ""
+            continue
+        pending += chunk
+    if pending:
+        yield pending
 
 
 def _recipe_packages(recipe: dict) -> list:

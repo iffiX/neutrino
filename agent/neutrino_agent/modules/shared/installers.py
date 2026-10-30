@@ -22,7 +22,7 @@ from neutrino_agent.constants import (
     AGENT_UPDATE_MSI_MUTEX,
     AGENT_UPDATE_MSI_REBOOT_CODE,
 )
-from neutrino_agent.exceptions import InstallError
+from neutrino_agent.exceptions import InstallError, ModuleApplyError
 
 INSTALL_TIMEOUT_S = 1800
 COMMAND_TIMEOUT_S = 120
@@ -177,6 +177,8 @@ def install_msi(path: str, *, log_path: str, properties=()) -> bool:
         Whether the install finished with a restart owed, exit code 3010.
 
     Raises:
+        ModuleApplyError: ``package_manager_busy {holder}`` when another
+            install still held the Windows Installer after the wait.
         InstallError: When msiexec exits other than 0 and 3010, with its
             exit code, 1 when msiexec did not start; when PowerShell cannot
             run, with none.
@@ -197,6 +199,8 @@ def uninstall_msi(product_code: str, *, log_path: str) -> bool:
         Whether the uninstall finished with a restart owed, exit code 3010.
 
     Raises:
+        ModuleApplyError: ``package_manager_busy {holder}`` when another
+            install still held the Windows Installer after the wait.
         InstallError: When msiexec exits other than 0 and 3010, with its
             exit code, 1 when msiexec did not start; when PowerShell cannot
             run, with none.
@@ -267,6 +271,8 @@ def _run_msiexec(arguments: str) -> int:
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"msiexec could not run: {error}")
     code = result.returncode
+    if code == AGENT_UPDATE_MSI_BUSY_CODE:
+        raise ModuleApplyError("package_manager_busy", {"holder": ""})
     if code not in AGENT_REINSTALL_INSTALLED_CODES:
         message = f"msiexec exited {code}"
         said = (result.stderr or "").strip()
