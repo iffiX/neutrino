@@ -22,9 +22,10 @@ install reading install_failed with its code whatever the machine has, any
 other failed step reading failed while the software is there, both kept
 root-only on disk and read the same by an engine that starts again, until
 the next attempt replaces them or a state stops naming the module, and kept
-off the row while the module's task runs; an
-uninstall of what a failed install left judged by the check afterwards;
-and that nothing in it ever retries anything.
+off the row while the module's task runs; an uninstall of what a failed
+install left judged by the check afterwards; the steps of the programs run
+as an account, the file share and Gitea with their locks; and that nothing
+in it ever retries anything.
 """
 
 import os
@@ -2424,3 +2425,114 @@ def test_every_runner_asks_for_a_configure_task_of_its_own_module(tmp_path):
 
 def test_a_runner_with_nobody_to_ask_takes_no_ask():
     assert HubRunner().ask_configure() is False
+
+
+# --- the steps of the programs run as an account, the file share and Gitea ---
+
+# An SSH public key an account's SSH server instance admits.
+PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPbg3nX0Oi4lmPN3XHwV4yl1/aAMviQsLSIiP50dOkkz"  # scan: allow
+# One enabled account, with the field each module's configuration checks.
+ACCOUNT_INSTANCE = {
+    "account": "ann",
+    "secret": "s",
+    "token": "t",
+    "token_secret": "ts",
+    "web_password": "w",
+    "access_code": "a",
+    "password": "p",
+    "authorized_key": PUBLIC_KEY,
+}
+ACCOUNT_MODULES = ("vscode", "code_server", "cloudcli", "codeg", "siyuan", "ssh_server")
+
+
+def planned(steps) -> list:
+    """Each step's name, account and locks."""
+    return [(step.name, step.params.get("account", ""), step.locks) for step in steps]
+
+
+class PackagesPlatform(FakePlatform):
+    capabilities = frozenset({"packages"})
+
+
+@pytest.mark.parametrize("module", ACCOUNT_MODULES)
+def test_a_running_program_run_as_an_account_steps_through_each_account(
+    tmp_path, module
+):
+    engine = ModuleEngine(platform=PackagesPlatform(), configured_dir=str(tmp_path))
+    runner = engine.runner_of(module)
+    entry = {
+        "want": "running",
+        "config": {"instances": [dict(ACCOUNT_INSTANCE)]},
+        "install": {"runner": runner.runner, "method": "builtin", "params": {}},
+    }
+
+    running = engine.configure_steps(module, entry, "running")
+    stopped = engine.configure_steps(module, entry, "stopped")
+
+    npm = [("npm", "ann", ())] if module == "cloudcli" else []
+    assert planned(running) == [
+        ("configure", "", ()),
+        *npm,
+        ("account", "ann", ()),
+        ("start", "", ()),
+    ]
+    assert planned(stopped) == [("configure", "", ()), ("stop", "", ())]
+    assert {step.name for step in running + stopped} <= STEP_NAMES
+
+
+def test_the_file_share_and_gitea_take_system_accounts_for_their_accounts(tmp_path):
+    engine = ModuleEngine(platform=PackagesPlatform(), configured_dir=str(tmp_path))
+    samba = {
+        "want": "running",
+        "config": {},
+        "install": {
+            "runner": "samba",
+            "method": "system",
+            "params": {"packages": ["samba"], "verify": "smbd -V"},
+        },
+    }
+    gitea = {
+        "want": "running",
+        "config": {},
+        "install": {
+            "runner": "gitea",
+            "method": "hub",
+            "params": {
+                "version": "1.27.3",
+                "packages": ["git"],
+                "artifacts": [
+                    {"name": "gitea", "kind": "binary", "digest": "sha256:" + DIGEST}
+                ],
+            },
+        },
+    }
+    manager = (("package_manager", "alone"),)
+    accounts = (("system_accounts", "alone"),)
+
+    file_share = engine.install_steps("samba", samba) + engine.configure_steps(
+        "samba", samba, "running"
+    )
+    server = engine.install_steps("gitea", gitea) + engine.configure_steps(
+        "gitea", gitea, "running"
+    )
+
+    assert planned(file_share) == [
+        ("packages", "", manager),
+        ("verify", "", ()),
+        ("configure", "", accounts),
+        ("start", "", ()),
+    ]
+    assert planned(server) == [
+        ("packages", "", manager),
+        ("artifact", "", ()),
+        ("verify", "", ()),
+        ("account", "git", accounts),
+        ("configure", "", ()),
+        ("start", "", ()),
+    ]
+    assert planned(engine.uninstall_steps("samba", samba)) == [
+        ("uninstall", "", (*manager, *accounts))
+    ]
+    assert planned(engine.uninstall_steps("gitea", gitea)) == [
+        ("uninstall", "", accounts)
+    ]
