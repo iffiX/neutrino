@@ -628,6 +628,10 @@ def test_a_refresh_on_a_connected_hub_asks_for_the_whole_state(harness):
 
 def test_a_refresh_on_a_waiting_hub_starts_a_round(harness):
     harness.transport.next_command("dial")
+    # The session takes the dial's answer first. A refresh before it starts no round.
+    assert wait_for(
+        lambda: any(line.startswith("dialling the hub at") for line in harness.lines)
+    )
     harness.transport.emit(
         {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
     )
