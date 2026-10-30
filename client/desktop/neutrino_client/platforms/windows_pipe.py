@@ -76,7 +76,7 @@ def open_pipe_connection(pipe_name: str, *, api=None) -> "PipeConnection":
     """
     pipe_api = api if api is not None else Win32PipeApi()
     handle = pipe_api.open_client(pipe_name)
-    return PipeConnection(api=pipe_api, handle=handle, is_server_end=False)
+    return PipeConnection(api=pipe_api, handle=handle)
 
 
 class Win32PipeApi:
@@ -312,11 +312,6 @@ class Win32PipeApi:
                 raise ctypes.WinError(ctypes.get_last_error())
             view = view[written.value :]
 
-    def disconnect(self, handle: int) -> None:
-        """Flush and disconnect a served client. Best-effort."""
-        self._kernel32.FlushFileBuffers(handle)
-        self._kernel32.DisconnectNamedPipe(handle)
-
     def close(self, handle: int) -> None:
         """Close a handle. Best-effort."""
         self._kernel32.CloseHandle(handle)
@@ -374,16 +369,14 @@ class Win32PipeApi:
 class PipeConnection:
     """One pipe end, shaped like the socket the request handler expects."""
 
-    def __init__(self, *, api, handle: int, is_server_end: bool = True):
+    def __init__(self, *, api, handle: int):
         """
         Args:
             api: The Win32 seam.
             handle: The pipe handle this connection owns.
-            is_server_end: Whether closing should disconnect the instance.
         """
         self.pipe_handle = handle
         self._api = api
-        self._is_server_end = is_server_end
         self._is_closed = False
         # Each makefile wrapper is counted here so the handle outlives an
         # http.client close until the last reader closes.
@@ -417,7 +410,7 @@ class PipeConnection:
         self._api.write(self.pipe_handle, bytes(data))
 
     def shutdown(self, how) -> None:
-        """Accepted for socket shape; the close does the disconnecting."""
+        """Accept a shutdown for socket shape. The close ends the stream."""
 
     def close(self) -> None:
         """Close the handle once the last makefile wrapper is also closed."""
@@ -435,12 +428,14 @@ class PipeConnection:
             self._close_handle()
 
     def _close_handle(self) -> None:
-        """Disconnect a served client and close the handle, at most once."""
+        """Close the handle at most once, and never wait for the peer to read.
+
+        The peer reads every byte written before the close, then the end of
+        the stream.
+        """
         if self._is_handle_closed:
             return
         self._is_handle_closed = True
-        if self._is_server_end:
-            self._api.disconnect(self.pipe_handle)
         self._api.close(self.pipe_handle)
 
 

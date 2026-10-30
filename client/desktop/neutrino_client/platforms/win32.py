@@ -628,8 +628,6 @@ class Win32Libraries:
         self.kernel32.GetCurrentProcess.restype = ctypes.c_void_p
         self.kernel32.GetCurrentThread.restype = ctypes.c_void_p
         for name in (
-            "FlushFileBuffers",
-            "DisconnectNamedPipe",
             "CloseHandle",
             "LocalFree",
         ):

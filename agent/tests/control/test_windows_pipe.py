@@ -138,17 +138,17 @@ def test_shutdown_dials_the_pipe_to_wake_the_accept():
     assert api.opened_clients == [PIPE_NAME]
 
 
-def test_a_served_client_is_disconnected_and_closed():
+def test_a_served_client_is_closed_and_never_waited_on():
     api = FakePipeApi([STATE_REQUEST])
 
     serve_one_exchange(api)
 
     handle = next(iter(api.readers))
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and handle not in api.disconnected:
+    while time.monotonic() < deadline and handle not in api.closed:
         time.sleep(0.01)
-    assert handle in api.disconnected
     assert handle in api.closed
+    assert api.disconnected == []
 
 
 def test_the_control_server_builds_the_pipe_transport_for_a_pipe_path(monkeypatch):
@@ -186,7 +186,7 @@ def test_the_client_dials_the_pipe_for_a_pipe_path(monkeypatch):
     def open_pipe_connection(pipe_name):
         dialed.append(pipe_name)
         api.readers[999] = io.BytesIO(reply)
-        return PipeConnection(api=api, handle=999, is_server_end=False)
+        return PipeConnection(api=api, handle=999)
 
     monkeypatch.setattr(windows_pipe, "open_pipe_connection", open_pipe_connection)
 
@@ -217,14 +217,14 @@ def test_a_pipe_connection_is_shaped_like_a_socket():
     stream.close()
     connection.close()
     connection.close()
-    assert api.disconnected == [5]
+    assert api.disconnected == []
     assert api.closed == [5]
 
 
 def test_a_body_survives_a_connection_close_until_the_reader_closes():
     api = FakePipeApi([])
     api.readers[7] = io.BytesIO(b"the body")
-    connection = PipeConnection(api=api, handle=7, is_server_end=False)
+    connection = PipeConnection(api=api, handle=7)
 
     reader = connection.makefile("rb", -1)
     connection.close()

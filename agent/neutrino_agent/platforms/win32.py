@@ -812,8 +812,6 @@ class Win32Libraries:
             ctypes.c_void_p,
         ]
         for name in (
-            "FlushFileBuffers",
-            "DisconnectNamedPipe",
             "CloseHandle",
             "LocalFree",
         ):

@@ -51,9 +51,7 @@ def test_a_pipe_path_dials_the_named_pipe(monkeypatch):
     api = ScriptedPipeApi(canned_response({"hostname": "box"}))
 
     def open_scripted(pipe_name, **kwargs):
-        return windows_pipe.PipeConnection(
-            api=api, handle=api.open_client(pipe_name), is_server_end=False
-        )
+        return windows_pipe.PipeConnection(api=api, handle=api.open_client(pipe_name))
 
     monkeypatch.setattr(windows_pipe, "open_pipe_connection", open_scripted)
 
@@ -76,9 +74,7 @@ def test_a_pipe_that_answers_no_object_is_refused(monkeypatch):
     api = ScriptedPipeApi(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]")
 
     def open_scripted(pipe_name, **kwargs):
-        return windows_pipe.PipeConnection(
-            api=api, handle=api.open_client(pipe_name), is_server_end=False
-        )
+        return windows_pipe.PipeConnection(api=api, handle=api.open_client(pipe_name))
 
     monkeypatch.setattr(windows_pipe, "open_pipe_connection", open_scripted)
 
