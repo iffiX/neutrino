@@ -61,6 +61,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_INSTALL_LOG_PATTERN,
     CLOUDCLI_INSTALL_PATH,
     CLOUDCLI_INSTALL_POLL_S,
+    CLOUDCLI_INSTALL_RESOLVER_OPTIONS,
     CLOUDCLI_INSTALL_RUNNING_STATES,
     CLOUDCLI_INSTALL_SCRIPT_PATTERN,
     CLOUDCLI_INSTALL_TASK_PREFIX,
@@ -1059,6 +1060,7 @@ class CloudcliHooks(InstanceHooks):
             "USER": account,
             "LOGNAME": account,
             "PATH": ":".join([node_bin, *CLOUDCLI_INSTALL_PATH["linux"]]),
+            "RES_OPTIONS": CLOUDCLI_INSTALL_RESOLVER_OPTIONS,
             **npm_environment(app, extra=settings),
         }
         prefix = ["runuser", "-u", account, "--", "env", "-i"] + [

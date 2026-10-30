@@ -68,6 +68,9 @@ CLOUDCLI_INSTALL_PATH = {
     "linux": ("/usr/bin", "/bin"),
     "darwin": ("/usr/bin", "/bin", "/usr/sbin", "/sbin"),
 }
+# glibc's resolver options npm runs with on Linux: the A and the AAAA lookup
+# one after the other, each on a socket of its own.
+CLOUDCLI_INSTALL_RESOLVER_OPTIONS = "single-request-reopen"
 
 # CloudCLI listens on loopback alone, on a port the agent picks.
 CLOUDCLI_UPSTREAM_HOST = "127.0.0.1"

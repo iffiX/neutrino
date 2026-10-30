@@ -470,6 +470,7 @@ def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_pa
     assert not any(part.startswith("npm_config_registry=") for part in install)
     assert "npm_config_better_sqlite3_binary_host=https://m/bs3" in install
     assert f"HOME={entry.home}" in install
+    assert "RES_OPTIONS=single-request-reopen" in install
     assert install[-6:] == [
         "install",
         "@cloudcli-ai/cloudcli@1.37.3",
