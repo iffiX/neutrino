@@ -77,6 +77,29 @@ def account_step_locks(step: str) -> tuple:
     return SYSTEM_ACCOUNTS_LOCKS if step in ACCOUNT_STEPS else ()
 
 
+def stopped_configure_steps(want: str, steps: list, run_stopped) -> list:
+    """The core's steps, the ``configure`` under ``stopped`` running ``run_stopped``.
+
+    Args:
+        want: ``running`` or ``stopped``.
+        steps: ``configure``, then ``start`` or ``stop``.
+        run_stopped: The ``configure`` step's run under ``stopped``.
+
+    Returns:
+        The steps.
+    """
+    if want != AGENT_WANT_STOPPED:
+        return steps
+    return [
+        (
+            dataclasses.replace(step, run=run_stopped)
+            if step.name == AGENT_STEP_CONFIGURE
+            else step
+        )
+        for step in steps
+    ]
+
+
 class SambaModuleRunner(SystemPackageModuleRunner):
     """Installs Samba by package and keeps it serving what the hub says."""
 
@@ -146,18 +169,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         Returns:
             The steps.
         """
-        if want != AGENT_WANT_STOPPED:
-            return steps
-        return [
-            (
-                dataclasses.replace(
-                    step, run=functools.partial(self._run_apply_stopped, dict(config))
-                )
-                if step.name == AGENT_STEP_CONFIGURE
-                else step
-            )
-            for step in steps
-        ]
+        return stopped_configure_steps(
+            want, steps, functools.partial(self._run_apply_stopped, dict(config))
+        )
 
     def apply(self, config: dict) -> None:
         """Make each SMB user, render the configuration, load it, and set each user's password.
@@ -440,6 +454,21 @@ class SambaNativeServerRunner(ModuleRunner):
         """
         SambaConfig.from_dict(config).validate(os_name=self._platform.os_name)
 
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The core's steps, the ``configure`` under ``stopped`` serving no share and starting no server.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``.
+
+        Returns:
+            The steps.
+        """
+        return stopped_configure_steps(
+            want, steps, functools.partial(self._run_apply_stopped, dict(config))
+        )
+
     def apply(self, config: dict) -> None:
         """Converge the server with the configuration and serve it.
 
@@ -456,6 +485,28 @@ class SambaNativeServerRunner(ModuleRunner):
             ModuleApplyError: When the configuration is refused or the
                 server will not take it.
         """
+        self._apply(config, is_served=True)
+
+    def apply_stopped(self, config: dict) -> None:
+        """Make each account, grant the folders and set the passwords under ``stopped``, serving no share and starting no server.
+
+        The module's shares come off the server, as :meth:`stop` takes
+        them off.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+        """
+        self._apply(config, is_served=False)
+
+    def _run_apply_stopped(self, config: dict, context) -> None:
+        """The ``configure`` step under ``stopped``."""
+        self.apply_stopped(config)
+
+    def _apply(self, config: dict, *, is_served: bool) -> None:
+        """Converge the server with the configuration. With ``is_served`` false no share is served."""
         parsed = SambaConfig.from_dict(config)
         parsed.validate(os_name=self._platform.os_name)
         record = self._read_record()
@@ -473,7 +524,10 @@ class SambaNativeServerRunner(ModuleRunner):
         refusal = None
         try:
             notes = self._applier.apply(
-                parsed, dict(record, shares=shares), is_sweep=is_sweep
+                parsed,
+                dict(record, shares=shares),
+                is_sweep=is_sweep,
+                is_served=is_served,
             )
         except ModuleApplyError as error:
             if error.code not in SAMBA_ACCOUNT_REFUSALS:
@@ -499,10 +553,12 @@ class SambaNativeServerRunner(ModuleRunner):
             self._forget_status()
         self._write_record(
             {
-                "shares": {share.name: share.path for share in served},
+                "shares": (
+                    {share.name: share.path for share in served} if is_served else {}
+                ),
                 "accounts": accounts,
                 "passwords": passwords,
-                "is_served": True,
+                "is_served": is_served,
             }
         )
         self._config = parsed

@@ -7,7 +7,8 @@ agent's own; the loop answers one compressed line per request with arrays
 kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
-share or account, the share accounts' sign-in denial and hiding; a relay's
+share or account, the share accounts' sign-in denial and hiding; the file
+share under ``stopped`` starting no server and making no share; a relay's
 rule allows inbound TCP to its port on its adapter alone; nothing there
 starts icacls or lists processes, which the agent does itself; a
 function of a verb that changes the machine asks ``ShouldProcess``; and the
@@ -165,6 +166,18 @@ def test_the_file_share_refuses_foreign_names_and_never_grants_everyone():
     assert "Set-NetFirewallRule" not in apply
     assert "Remove-NetFirewallRule -Name $Request.retired_rule_name" in apply
     assert apply.index("share_name_taken") < apply.index("Start-Service")
+
+
+def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
+    apply = body("share_apply")
+    served = apply.index("if ($Request.is_served) {")
+    unserved = apply.index("if (-not $Request.is_served) {")
+
+    assert served < apply.index("Set-Service -Name LanmanServer")
+    assert served < apply.index("Start-Service -Name LanmanServer")
+    assert apply.index("New-Item -ItemType Directory") < unserved
+    assert unserved < apply.index("New-SmbShare")
+    assert unserved < apply.index("Grant-SmbShareAccess")
 
 
 def test_the_share_s_other_operations_keep_what_their_scripts_did():

@@ -9,7 +9,9 @@ record a failed attempt left made again, hidden and put in the SMB group,
 the account enabled and the NT hash turned on before ``dscl -passwd``, and
 an account the password reaches first made by it; one share point per
 share, kept across applies, the module's duplicates removed and all of a
-name's points withdrawn; folders granted with ``chmod +a``; no fence, the
+name's points withdrawn; an apply under ``stopped`` starting no smbd,
+making no point and taking the module's off; folders granted with
+``chmod +a``; no fence, the
 pf anchor an earlier version kept emptied and its file deleted at the first
 apply that finds the file; foreign names
 refused before anything is touched; and the status read from launchctl,
@@ -262,6 +264,29 @@ def test_an_apply_makes_the_server_the_accounts_and_the_shares_and_no_fence(
     assert len(granted) == 3
     assert "created share media" in notes
     assert "started the server" in notes
+
+
+def test_an_apply_under_stopped_starts_no_smbd_and_takes_every_point_off(
+    applier, tools
+):
+    tools.failing.add(("launchctl", "print"))
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media", "/Volumes/data/media", "media", 0),
+        ("Public", "/p", "Public", 0),
+    )
+    record = {"shares": {"media": "/Volumes/data/media", "docs": "/Volumes/data/docs"}}
+
+    notes = applier.apply(CONFIG, record, is_served=False)
+
+    assert tools.ran("launchctl", "enable") == []
+    assert tools.ran("launchctl", "bootstrap") == []
+    assert tools.ran("launchctl", "kickstart") == []
+    assert tools.ran("sharing", "-a") == []
+    assert tools.ran("sharing", "-r") == [["sharing", "-r", "neutrino_media"]]
+    assert tools.ran("sysadminctl", "-addUser", "ann")
+    assert len(tools.ran("chmod", "+a")) == 3
+    assert "removed share media" in notes
+    assert "started the server" not in notes
 
 
 def test_a_loaded_smbd_is_left_as_it_is(applier, tools):

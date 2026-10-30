@@ -8,8 +8,10 @@ the module's others through icacls, a grant icacls refuses failing the
 apply, and the ``.ssh`` folder under a share stops inheriting and loses
 every module account; each
 configured account is denied the console and RDP through the local policy;
-a refusal stops before any folder or policy; the withdrawal, the server's
-log and a password are one request each, the password in the request alone;
+an apply under ``stopped`` names every share of the module's to remove and
+still grants the folders; a refusal stops before any folder or policy; the
+withdrawal, the server's log and a password are one request each, the
+password in the request alone;
 and the status reading is shaped the way the Linux module reports.
 """
 
@@ -108,6 +110,7 @@ def test_an_apply_names_only_what_the_module_made():
                 "share_owner": "BUILTIN\\Administrators",
                 "is_sweep": False,
                 "user_prefix": "neutrino-",
+                "is_served": True,
             },
         )
     ]
@@ -391,6 +394,26 @@ def test_a_server_log_the_host_cannot_give_is_an_os_error():
 
     with pytest.raises(OSError):
         applier_with(host).read_server_log(50)
+
+
+def test_an_apply_under_stopped_takes_every_share_off_and_grants_the_folders():
+    host = RecordingHost({"share_apply": {"notes": ["removed share media"]}})
+    denied = []
+    icacls = Icacls()
+    applier = applier_with(host, run=icacls, denied=denied)
+    record = {"shares": {"old": "D:\\old", "media": "D:\\media"}, "accounts": ["eve"]}
+
+    notes = applier.apply(CONFIG, record, is_served=False)
+
+    assert notes == ["removed share media"]
+    ((verb, request),) = host.calls
+    assert verb == "share_apply"
+    assert request["is_served"] is False
+    assert request["removed_shares"] == ["media", "old"]
+    assert [share["name"] for share in request["shares"]] == ["media", "docs"]
+    assert ["icacls.exe", "D:\\media", "/grant", "ann:(OI)(CI)M"] in icacls.calls
+    assert ["icacls.exe", "D:\\docs", "/grant", "ann:(OI)(CI)RX"] in icacls.calls
+    assert denied == ["ann", "bob"]
 
 
 def test_the_first_apply_asks_the_host_to_sweep_what_the_marker_names():

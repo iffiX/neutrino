@@ -11,6 +11,8 @@ the SMB users are made before the file is written; ``configure`` and
 ``uninstall`` take ``system_accounts``; the ``set_password`` verb is gone.
 On Windows and macOS the apply sets each account's password the same way,
 after the server has made the account, and a removal forgets the digests.
+A ``configure`` under ``stopped`` starts no server on any system and serves
+no share on Windows and macOS.
 """
 
 import json
@@ -547,6 +549,7 @@ class FakeNativeApplier:
     def __init__(self):
         self.calls: list = []
         self.sweeps: list = []
+        self.served: list = []
         self.status = {"is_present": True, "is_running": True, "shares": []}
         self.reads = 0
         self.error = None
@@ -555,9 +558,10 @@ class FakeNativeApplier:
         self.reads += 1
         return dict(self.status)
 
-    def apply(self, config, record, *, is_sweep=False):
+    def apply(self, config, record, *, is_sweep=False, is_served=True):
         self.calls.append(("apply", config.to_dict(), record))
         self.sweeps.append(is_sweep)
+        self.served.append(is_served)
         if self.error is not None:
             raise self.error
         return ["created share share"]
@@ -737,6 +741,33 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
         "is_served": False,
     }
     assert native.is_active() is False
+
+
+def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(native):
+    native.apply(WINDOWS_CONFIG)
+    planned = [
+        ModuleStep(name="configure", run=lambda context: None),
+        ModuleStep(name="stop", run=lambda context: None),
+    ]
+
+    steps = native.configure_steps(
+        {**WINDOWS_CONFIG, "passwords": {"ann": "pw2"}}, "stopped", planned
+    )
+    steps[0].run(None)
+
+    assert [step.name for step in steps] == ["configure", "stop"]
+    assert steps[1] is planned[1]
+    assert native.applier.served == [True, False]
+    assert native.applier.calls[-2][2]["shares"] == {"share": "D:\\share"}
+    assert native.applier.calls[-1] == ("set_password", "ann", "pw2")
+    assert record_of(native) == {
+        "shares": {},
+        "accounts": ["ann"],
+        "passwords": {"ann": password_digest("pw2")},
+        "is_served": False,
+    }
+    assert native.is_active() is False
+    assert native.configure_steps(WINDOWS_CONFIG, "running", planned) == planned
 
 
 def test_removing_the_configuration_is_a_removal(native):

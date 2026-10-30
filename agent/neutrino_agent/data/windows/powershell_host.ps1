@@ -276,7 +276,8 @@ function Get-NeutrinoShare($Request) {
 # Refuses a share or an account name the module did not make, then
 # converges the server, the accounts and the shares, and deletes the block
 # rule an earlier version made when it finds one; the shares' folders are
-# made here and granted by the agent afterwards.
+# made here and granted by the agent afterwards. Without is_served the
+# server is left as it is and no share is made.
 function Set-NeutrinoShare {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
@@ -318,15 +319,17 @@ function Set-NeutrinoShare {
             return @{refusal = @{code = 'user_name_taken'; params = @{user = $u}}}
         }
     }
-    $svc = Get-Service -Name LanmanServer
-    if ("$($svc.StartType)" -eq 'Disabled') {
-        Set-Service -Name LanmanServer -StartupType Automatic | Out-Null
+    if ($Request.is_served) {
+        $svc = Get-Service -Name LanmanServer
+        if ("$($svc.StartType)" -eq 'Disabled') {
+            Set-Service -Name LanmanServer -StartupType Automatic | Out-Null
+        }
+        if ($svc.Status -ne 'Running') {
+            Start-Service -Name LanmanServer | Out-Null
+            $notes += 'started the server'
+        }
     }
-    if ($svc.Status -ne 'Running') {
-        Start-Service -Name LanmanServer | Out-Null
-        $notes += 'started the server'
-    }
-    $retired = Get-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue
+    $retired =Get-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue
     if ($retired) {
         Remove-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue | Out-Null
         $notes += 'removed the fence'
@@ -361,6 +364,9 @@ function Set-NeutrinoShare {
     foreach ($s in @($Request.shares)) {
         if (-not (Test-Path -LiteralPath $s.path)) {
             New-Item -ItemType Directory -Path $s.path -Force | Out-Null
+        }
+        if (-not $Request.is_served) {
+            continue
         }
         $wanted = @()
         foreach ($u in @($s.accounts)) {

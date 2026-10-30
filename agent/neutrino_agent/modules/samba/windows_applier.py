@@ -233,7 +233,12 @@ class SambaWindowsApplier:
         }
 
     def apply(
-        self, config: SambaConfig, record: dict, *, is_sweep: bool = False
+        self,
+        config: SambaConfig,
+        record: dict,
+        *,
+        is_sweep: bool = False,
+        is_served: bool = True,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -248,6 +253,9 @@ class SambaWindowsApplier:
         Args:
             config: The validated configuration.
             record: The module's record: ``{"shares", "accounts"}``.
+            is_served: Whether the server is started and the shares made.
+                False takes every share of the module's off the server and
+                makes the accounts and the folders alone.
 
         Returns:
             What changed, one note each.
@@ -260,7 +268,7 @@ class SambaWindowsApplier:
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
         served = config.served_shares()
-        wanted_shares = {share.name for share in served}
+        wanted_shares = {share.name for share in served} if is_served else set()
         known_accounts = owned_accounts + [
             name for name in config.users if name not in owned_accounts
         ]
@@ -280,6 +288,7 @@ class SambaWindowsApplier:
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
                 "is_sweep": is_sweep,
                 "user_prefix": SAMBA_LINUX_USER_PREFIX,
+                "is_served": is_served,
             },
         )
         grants = folder_grants(served)

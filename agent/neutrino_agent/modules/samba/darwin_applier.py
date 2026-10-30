@@ -176,7 +176,12 @@ class SambaDarwinApplier:
             return {"is_present": False, "is_running": False}
 
     def apply(
-        self, config: SambaConfig, record: dict, *, is_sweep: bool = False
+        self,
+        config: SambaConfig,
+        record: dict,
+        *,
+        is_sweep: bool = False,
+        is_served: bool = True,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -191,6 +196,9 @@ class SambaDarwinApplier:
         Args:
             config: The validated configuration.
             record: The module's record: ``{"shares", "accounts"}``.
+            is_served: Whether smbd is started and the share points made.
+                False takes every point of the module's off the server and
+                makes the accounts and grants the folders alone.
 
         Returns:
             What changed, one note each.
@@ -225,12 +233,18 @@ class SambaDarwinApplier:
             if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
         notes = swept + self._remove_fence()
-        notes += self._serve()
+        if is_served:
+            notes += self._serve()
         account_notes, refusals = self._converge_accounts(config, owned_accounts)
         notes += account_notes
         refused = {refusal.params["user"] for refusal in refusals}
         notes += self._converge_shares(
-            config, owned_shares, owned_accounts, points, refused=refused
+            config,
+            owned_shares,
+            owned_accounts,
+            points,
+            refused=refused,
+            is_served=is_served,
         )
         if refusals:
             raise refusals[0]
@@ -528,16 +542,18 @@ class SambaDarwinApplier:
         points: list,
         *,
         refused: "set | None" = None,
+        is_served: bool = True,
     ) -> list:
         """Keep one point per served share, and remove the module's others.
 
         An account in ``refused`` does not exist as one, so no folder names
-        it.
+        it. With ``is_served`` false every point of the module's goes and
+        the folders are granted alone.
         """
         refused = refused or set()
         notes = []
         served = config.served_shares()
-        wanted = {share.name for share in served}
+        wanted = {share.name for share in served} if is_served else set()
         ours = [
             point
             for point in points
@@ -561,6 +577,8 @@ class SambaDarwinApplier:
             self._take_back(path, known)
             for name, entry in rights.items():
                 self._run(["chmod", "+a", f"user:{name} allow {entry}", path])
+        if not is_served:
+            return notes
         for share in served:
             held = [point for point in ours if point["smb_name"] == share.name]
             kept = _kept_point(held, share)
