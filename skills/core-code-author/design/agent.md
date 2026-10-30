@@ -452,7 +452,11 @@ names.
 ### A restart mid-task
 
 The process ends, its tasks end with it, and none of them wrote a tried
-hash. The hub finds the applied hash empty and sends the state, and each
+hash. The stop's signal also ends the commands a step runs, such as a pull
+or a `tlmgr` run, and a command ended so can exit 0 or fail. So a step whose
+result comes after the agent began to stop counts as the stop: the task
+starts no further step, keeps no tried hash and leaves the kept failure as
+it was. The hub finds the applied hash empty and sends the state, and each
 module is planned again from what the machine shows:
 
 | Step | Safe to run again |
