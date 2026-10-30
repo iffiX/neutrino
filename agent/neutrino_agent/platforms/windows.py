@@ -70,6 +70,7 @@ from neutrino_agent.modules.shared.account_service.windows import (
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.windows_acl import (
     grant_account_alone,
+    let_users_through,
     open_to_users,
 )
 from neutrino_agent.platforms import win32
@@ -167,6 +168,29 @@ def windows_agent_dir(name: str) -> str:
     """
     program_data = os.environ.get("ProgramData") or AGENT_WINDOWS_PROGRAM_DATA_DEFAULT
     return ntpath.join(program_data, *AGENT_WINDOWS_AGENT_SUBDIR, name)
+
+
+def directories_above(path: str, top: str) -> list:
+    """The directories from one directory down to the one above a path.
+
+    Args:
+        path: The path.
+        top: The directory to start from.
+
+    Returns:
+        ``top`` first, then each directory under it down to the path's own;
+        empty when the path is not under ``top``.
+    """
+    top = ntpath.normpath(top)
+    above: list = []
+    current = ntpath.dirname(ntpath.normpath(path))
+    while ntpath.normcase(current) != ntpath.normcase(top):
+        parent = ntpath.dirname(current)
+        if parent == current:
+            return []
+        above.insert(0, current)
+        current = parent
+    return [top, *above]
 
 
 def cmd_argument(argument: str) -> str:
@@ -842,12 +866,18 @@ class WindowsPlatform(AgentPlatform):
     def open_to_accounts(self, directory: str) -> None:
         """Grant the Users group read and run on one directory and what it holds.
 
+        Each directory from the agent's own down to the one above it lets
+        the group pass through and read its attributes.
+
         Args:
             directory: An existing directory under the state root.
 
         Raises:
             OSError: When icacls fails.
         """
+        top = ntpath.dirname(self.agent_var_dir())
+        for parent in directories_above(directory, top):
+            let_users_through(self._run, parent)
         open_to_users(self._run, directory)
 
     def remove_added(self) -> list:

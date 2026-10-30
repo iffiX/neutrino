@@ -3,8 +3,9 @@
 What these pin: a path left to an account drops what it inherits and
 grants the account its right, SYSTEM and the administrators full control,
 each by its well-known SID, the grants reaching a directory's contents
-when it is a tree; the Users group is granted read and run on a tree; a
-refusal or a tool that does not finish is ``OSError``.
+when it is a tree; the Users group is granted read and run on a tree, and
+passing through a directory with its attributes read and nothing inherited;
+a refusal or a tool that does not finish is ``OSError``.
 """
 
 import subprocess
@@ -16,6 +17,7 @@ from neutrino_agent.modules.shared.windows_acl import (
     grant_account_alone,
     icacls,
     leave_to_system,
+    let_users_through,
     open_to_users,
 )
 
@@ -76,6 +78,21 @@ def test_the_users_group_reads_and_runs_a_tree():
     ]
 
 
+def test_the_users_group_passes_through_a_directory_and_reads_its_attributes():
+    run = Icacls()
+
+    let_users_through(run, "D:\\Neutrino\\agent\\state")
+
+    assert run.calls == [
+        [
+            "icacls.exe",
+            "D:\\Neutrino\\agent\\state",
+            "/grant",
+            "*S-1-5-32-545:(S,X,RA)",
+        ]
+    ]
+
+
 def test_a_record_is_left_to_system_and_the_administrators_alone():
     run = Icacls()
 
@@ -100,5 +117,7 @@ def test_a_refusal_or_a_tool_that_does_not_finish_is_an_os_error():
         grant_account_alone(Icacls(5), "D:\\x", "ann", "R", is_tree=False)
     with pytest.raises(OSError, match="icacls exited 5"):
         open_to_users(Icacls(5), "D:\\x")
+    with pytest.raises(OSError, match="icacls exited 5"):
+        let_users_through(Icacls(5), "D:\\x")
     with pytest.raises(OSError, match="did not finish"):
         icacls(Icacls(error=subprocess.TimeoutExpired("icacls.exe", 120)), ["D:\\x"])

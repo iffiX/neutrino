@@ -804,6 +804,33 @@ def test_a_directory_opened_to_accounts_grants_the_users_group_read_and_run():
     ]
 
 
+def test_a_directory_opened_to_accounts_lets_the_users_group_through_its_parents(
+    monkeypatch,
+):
+    monkeypatch.setenv("ProgramData", "D:\\Data")
+    icacls = Icacls()
+
+    WindowsPlatform(run=icacls).open_to_accounts(
+        "D:\\Data\\Neutrino\\agent\\state\\cloudcli"
+    )
+
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\Data\\Neutrino\\agent", "/grant", "*S-1-5-32-545:(S,X,RA)"],
+        [
+            "icacls.exe",
+            "D:\\Data\\Neutrino\\agent\\state",
+            "/grant",
+            "*S-1-5-32-545:(S,X,RA)",
+        ],
+        [
+            "icacls.exe",
+            "D:\\Data\\Neutrino\\agent\\state\\cloudcli",
+            "/grant",
+            "*S-1-5-32-545:(OI)(CI)RX",
+        ],
+    ]
+
+
 def test_a_directory_icacls_will_not_open_is_an_os_error():
     with pytest.raises(OSError, match="icacls exited 5"):
         WindowsPlatform(run=Icacls(5)).open_to_accounts("D:\\state\\vscode")

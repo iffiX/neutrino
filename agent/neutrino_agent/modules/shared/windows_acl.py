@@ -18,6 +18,8 @@ WINDOWS_ACL_ADMINISTRATORS = "*S-1-5-32-544"
 WINDOWS_ACL_USERS = "*S-1-5-32-545"
 # What a grant on a directory adds so its files and folders inherit it.
 WINDOWS_ACL_INHERITED = "(OI)(CI)"
+# Passing through a directory and reading its attributes, on the directory alone.
+WINDOWS_ACL_PASS_THROUGH = "(S,X,RA)"
 
 
 def icacls(run, arguments: list) -> int:
@@ -85,6 +87,26 @@ def open_to_users(run, directory: str) -> None:
     """
     code = icacls(
         run, [directory, "/grant", f"{WINDOWS_ACL_USERS}:{WINDOWS_ACL_INHERITED}RX"]
+    )
+    if code != 0:
+        raise OSError(f"icacls exited {code}")
+
+
+def let_users_through(run, directory: str) -> None:
+    """Let the Users group pass through one directory and read its attributes.
+
+    Nothing under the directory inherits the grant, and nothing in it is
+    listed.
+
+    Args:
+        run: Runs one command as :func:`subprocess_run.run` does.
+        directory: The directory.
+
+    Raises:
+        OSError: When icacls refuses or cannot run.
+    """
+    code = icacls(
+        run, [directory, "/grant", f"{WINDOWS_ACL_USERS}:{WINDOWS_ACL_PASS_THROUGH}"]
     )
     if code != 0:
         raise OSError(f"icacls exited {code}")
