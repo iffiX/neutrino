@@ -438,7 +438,7 @@ module is planned again from what the machine shows:
 | `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
 | `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
 | Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}` |
-| `npm {account}` on Linux | the agent stops a transient unit of that name left from before the restart before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md)) |
+| `npm {account}` on Linux | the transient service of that name outlives the agent, and the step waits for it, at most the install's 30 minutes, before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md), "npm cannot take the agent down") |
 
 A self-update takes `package_manager` before it launches, so it never cuts
 a `packages` step or an msi of the agent's own. A step that needs the hub,

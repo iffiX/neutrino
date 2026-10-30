@@ -105,8 +105,6 @@ peer`. The service outlives an agent that stops during the install, and
 systemd refuses a second service of its name while it runs. So the install
 first waits for a service of its name that runs, polling every 5 seconds
 for at most the install's 30 minutes, and stops it when the time is up.
-The agent stops a transient unit of that name left from before its restart
-before it starts one.
 When CloudCLI's version is then in the account's app directory, the
 install takes that service's work and runs no npm. When the kernel kills the
 install for want of memory, the install ends
