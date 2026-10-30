@@ -101,6 +101,10 @@ post_upgrade() {
     fi
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
+    # The transport unit still runs the program this package replaced. It
+    # restarts after `nhub apply` wrote its unit and before the panel, only
+    # while it runs.
+    systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
     # The router unit is resident, so restarting it is what moves the box
     # onto this version. It stops without tearing the firewall down.
     if systemctl is-enabled --quiet neutrino_hub_router.service 2>/dev/null; then

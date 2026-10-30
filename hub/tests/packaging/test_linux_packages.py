@@ -13,6 +13,7 @@ import build_deb
 import build_pkg
 import build_rpm
 import venv_tree
+from neutrino_hub.modules.transport.constants import TRANSPORT_UNIT
 from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
 
 
@@ -426,6 +427,36 @@ def test_an_upgrade_over_a_hub_set_up_applies_and_shows_no_wizard(
     assert "systemctl try-restart neutrino_hub_web.service" in calls
     assert "nhub open --print" not in calls
     assert "systemctl enable --now neutrino_hub_web.service" not in calls
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_over_a_hub_set_up_restarts_a_running_transport_before_the_panel(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+
+    calls = _upgrade_calls(tmp_path, upgrade, command, SET_UP_SETTINGS)
+
+    transport = f"systemctl try-restart {TRANSPORT_UNIT}"
+    order = [
+        "nhub apply",
+        transport,
+        "systemctl restart neutrino_hub_router.service",
+        "systemctl try-restart neutrino_hub_web.service",
+    ]
+    assert calls.count(transport) == 1
+    assert [call for call in calls if call in order] == order
 
 
 def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():

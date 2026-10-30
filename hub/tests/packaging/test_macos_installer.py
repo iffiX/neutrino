@@ -426,6 +426,61 @@ def test_an_upgrade_starts_the_hub_again_or_fails_the_install(tmp_path):
     )
 
 
+def test_an_upgrade_over_a_loaded_hub_stops_its_service_before_the_files_and_starts_it_after(
+    tmp_path,
+):
+    """The transport runs as the service's child and ends and starts with it."""
+    hub_dir = tmp_path / "hub"
+    (hub_dir / "state").mkdir(parents=True)
+    (hub_dir / "app").mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    record = tmp_path / "calls"
+    loaded = tmp_path / "loaded"
+    loaded.touch()
+    fakes = {
+        "launchctl": f'echo "launchctl $*" >>"{record}"\n'
+        'case "$1" in\n'
+        f'print) [ -f "{loaded}" ] ;;\n'
+        f'bootout) rm -f "{loaded}" ;;\n'
+        f'bootstrap) touch "{loaded}" ;;\n'
+        "esac\n",
+        "chown": "exit 0\n",
+    }
+    for name, body in fakes.items():
+        fake = bin_dir / name
+        fake.write_text("#!/bin/sh\n" + body)
+        fake.chmod(0o755)
+    moved = {
+        str(build_hub_macos.INSTALL_HUB_DIR): str(hub_dir),
+        str(build_hub_macos.INSTALL_LOG_DIR): str(tmp_path / "log"),
+    }
+    calls = {}
+    for name in ("PREINSTALL", "POSTINSTALL"):
+        script = getattr(build_hub_macos, name)
+        for installed, here in moved.items():
+            script = script.replace(installed, here)
+        subprocess.run(
+            ["sh", "-c", script],
+            check=True,
+            env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        )
+        calls[name] = record.read_text().splitlines()
+        record.unlink()
+
+    label = f"system/{build_hub_macos.HUB_LAUNCHD_LABEL}"
+    assert calls["PREINSTALL"] == [
+        f"launchctl print {label}",
+        f"launchctl bootout {label}",
+    ]
+    assert calls["POSTINSTALL"] == [
+        f"launchctl print {label}",
+        f"launchctl bootstrap system {build_hub_macos.HUB_LAUNCHD_PLIST}",
+    ]
+    assert not (hub_dir / "app").exists()
+    assert loaded.exists()
+
+
 def test_an_intel_package_declares_its_entry_intel(tmp_path):
     bundle = build_hub_macos.write_app_entry(tmp_path, "9.9.9", "amd64")
 

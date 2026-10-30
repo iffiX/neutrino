@@ -77,6 +77,16 @@ def test_the_hub_is_a_localsystem_service_registered_and_started(document):
     )
 
 
+def test_an_upgrade_stops_the_service_before_the_files_and_starts_it_after(document):
+    """The transport runs in the service's job and ends and starts with it."""
+    _source, root = document
+
+    control = by_id(root, WXS + "ServiceControl", "HubServiceControl")
+    assert control.get("Stop") == "both"
+    assert control.get("Wait") == "yes"
+    assert control.get("Start") == "install"
+
+
 def test_the_service_is_started_again_when_it_ends(document):
     _source, root = document
 
