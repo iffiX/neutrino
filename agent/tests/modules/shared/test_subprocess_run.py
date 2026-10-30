@@ -10,6 +10,7 @@ from neutrino_agent.modules.shared.subprocess_run import (
     command_detail,
     run,
     unit_state,
+    units_journal,
 )
 
 
@@ -92,6 +93,21 @@ def test_unit_state_reads_systemds_word_and_survives_no_systemd(monkeypatch):
 
     monkeypatch.setattr(subprocess_run.subprocess, "run", broken)
     assert unit_state("smbd.service") == ""
+
+
+def test_a_units_journal_asks_journald_for_its_lines_alone(monkeypatch):
+    asked: list = []
+
+    def fake_run(command, **kwargs):
+        asked.append(command)
+        return Completed(0, "2026-10-30T10:00:00+0000 box smbd[1]: up\n", "")
+
+    monkeypatch.setattr(subprocess_run.subprocess, "run", fake_run)
+
+    lines = units_journal(["smbd.service"], 200)
+
+    assert lines == ["2026-10-30T10:00:00+0000 box smbd[1]: up"]
+    assert "--quiet" in asked[0]
 
 
 def test_a_blank_standard_error_does_not_hide_the_words_on_standard_output():

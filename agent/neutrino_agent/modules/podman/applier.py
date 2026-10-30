@@ -812,6 +812,7 @@ def journal_lines(name: str, lines: int) -> list:
                 "-n",
                 str(lines),
                 "--no-pager",
+                "--quiet",
                 "--output",
                 "short-iso",
             ],

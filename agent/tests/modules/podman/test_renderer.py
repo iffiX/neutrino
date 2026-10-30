@@ -666,7 +666,7 @@ def test_a_refused_restart_fails_the_script_with_systemds_words(tmp_path):
 def test_the_verbs_scripts_name_the_containers_unit():
     assert machine_control_script("web", "restart") == "systemctl restart web.service\n"
     assert machine_journal_script("web", 200) == (
-        "journalctl -u web.service -n 200 --no-pager --output short-iso\n"
+        "journalctl -u web.service -n 200 --no-pager --quiet --output short-iso\n"
     )
     with pytest.raises(ValueError):
         machine_control_script("web", "kill")

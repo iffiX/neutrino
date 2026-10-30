@@ -396,7 +396,7 @@ def machine_journal_script(name: str, lines: int) -> str:
         The POSIX sh text.
     """
     return (
-        f"journalctl -u {name}.service -n {int(lines)} --no-pager "
+        f"journalctl -u {name}.service -n {int(lines)} --no-pager --quiet "
         "--output short-iso\n"
     )
 

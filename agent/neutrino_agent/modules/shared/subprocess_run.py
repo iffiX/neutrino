@@ -189,7 +189,7 @@ def units_journal(units: list, lines: int) -> list:
     command = ["journalctl"]
     for unit in units:
         command += ["-u", unit]
-    command += ["-n", str(lines), "--no-pager", "--output", "short-iso"]
+    command += ["-n", str(lines), "--no-pager", "--quiet", "--output", "short-iso"]
     try:
         result = run(command, is_checked=False)
     except (OSError, subprocess.SubprocessError):

@@ -623,6 +623,7 @@ def test_the_journal_is_read_by_unit(commands):
         "-n",
         "50",
         "--no-pager",
+        "--quiet",
         "--output",
         "short-iso",
     ] in commands.calls
