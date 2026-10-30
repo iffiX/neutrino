@@ -10,6 +10,9 @@ from neutrino_agent.constants import (
 
 # Podman has no daemon; the API socket stands for the engine.
 PODMAN_UNIT = "podman.socket"
+# The API service the socket starts. Ubuntu's package enables it, and it
+# starts the socket at boot.
+PODMAN_API_UNIT = "podman.service"
 
 # Units name the binary in full: systemd runs them with a minimal PATH.
 PODMAN_BINARY = "/usr/bin/podman"

@@ -49,6 +49,7 @@ from neutrino_agent.modules.podman.config import (
     PodmanConfig,
 )
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_API_UNIT,
     PODMAN_BINARY,
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
@@ -238,7 +239,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             )
 
     def stop(self) -> None:
-        """Stop and disable every declared and hub container, then turn ``podman.socket`` off.
+        """Stop and disable every declared and hub container, then ``podman.service`` and ``podman.socket``.
 
         A container a person started by hand keeps running; images and
         volumes stay.
@@ -247,6 +248,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             ModuleApplyError: ``apply_failed`` when systemd refuses the socket.
         """
         PodmanUnitApplier().stop_all()
+        run(["systemctl", "disable", "--now", PODMAN_API_UNIT], is_checked=False)
         try:
             run(["systemctl", "disable", "--now", PODMAN_UNIT])
         except (OSError, subprocess.SubprocessError) as error:

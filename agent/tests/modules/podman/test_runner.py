@@ -277,11 +277,16 @@ def test_a_refused_apply_is_typed(runner, monkeypatch):
     assert refused.value.code == "apply_failed"
 
 
-def test_stop_takes_every_container_down_then_turns_the_socket_off(runner, system):
+def test_stop_takes_every_container_down_then_turns_the_service_and_socket_off(
+    runner, system
+):
     runner.stop()
 
     assert FakeUnitApplier.stops == 1
-    assert system.calls == [["systemctl", "disable", "--now", "podman.socket"]]
+    assert system.calls == [
+        ["systemctl", "disable", "--now", "podman.service"],
+        ["systemctl", "disable", "--now", "podman.socket"],
+    ]
 
 
 def plain_step(name):
