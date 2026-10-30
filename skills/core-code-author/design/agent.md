@@ -335,6 +335,14 @@ the `ai_tools` section, the agent compares the entry's hash:
 | neither, and the module has a running task | gives the task the newer entry |
 | neither, and the module has no task | makes a task for it |
 
+A module asks for a configure task of its own when a forwarder changes an
+instance's record at the instance's first start, as CloudCLI's and SiYuan's
+do. The ask makes a task from the module's entry in the latest state
+whatever hash was tried, or hands the running task that entry again, which
+plans once more at the next step boundary. An ask made before a state names
+the module is kept for the next state. One place applies a module, its
+task, and a forwarder changes nothing but the record.
+
 ### A newer entry while a task runs
 
 | Rule | Reason |
@@ -401,7 +409,11 @@ that can pass 30 seconds by the lab's times:
 
 Gitea's `account` is a step apart from its `configure`, so `system_accounts`
 is held for the one command that makes the account and not for Gitea's
-start. The `ai_tools` section's task is `artifact cc_switch` while the
+start. It comes before `configure` in every task that configures Gitea on
+Linux and macOS; on Windows Gitea runs as LocalSystem and has no `account`
+step. CloudCLI's `npm {account}` and every program's `account {account}`
+run under `running` alone, so a stop of a program run as an account starts
+no instance. The `ai_tools` section's task is `artifact cc_switch` while the
 pinned cc-switch is missing, then `tools {account}` per account the section
 names.
 
@@ -409,7 +421,7 @@ names.
 | --- | --- |
 | A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_containers`, `start` and the first-start steps its record does not hold |
 | A stop | `configure`, then `stop` |
-| A configure | `configure` and the `account` steps, then `start` or `stop` by the `want` |
+| A configure | `configure` and, under `running`, the `account` steps, then `start` or `stop` by the `want` |
 | An uninstall | `uninstall`; a container module's drops its hub containers and removes its containers, network, volumes and unused images |
 | A version switch | `switch {version}`, then the steps of a configure |
 
