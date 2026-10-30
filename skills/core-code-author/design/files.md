@@ -348,7 +348,12 @@ code, and every file in it goes when the task ends.
 `agent/siyuan/` hold programs the accounts of the machine run, so those directories alone
 are readable and executable by
 every account (mode 755; on Windows the Users group gets read and execute),
-while the rest of the agent's state stays root's. Where SELinux is
+while the rest of the agent's state stays root's. On Windows the folders
+above them, `C:\ProgramData\Neutrino\agent` and its `state`, let the Users
+group pass through and read their attributes, on each folder alone and with
+nothing listed: Node.js reads the attributes of every folder on the path of
+the script it runs, and an account's npm failed with `EPERM` on `state`
+without it. Where SELinux is
 enforcing or permissive, each module's unpack in them is labelled `bin_t`,
 after the unpack and at every apply of the module, since systemd does not
 run a program labelled `var_lib_t`
