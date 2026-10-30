@@ -60,6 +60,8 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_FRESH_STAMP_FORMAT,
     CLOUDCLI_INSTALL_LOG_PATTERN,
     CLOUDCLI_INSTALL_PATH,
+    CLOUDCLI_INSTALL_POLL_S,
+    CLOUDCLI_INSTALL_RUNNING_STATES,
     CLOUDCLI_INSTALL_SCRIPT_PATTERN,
     CLOUDCLI_INSTALL_TASK_PREFIX,
     CLOUDCLI_INSTALL_TIMEOUT_S,
@@ -591,6 +593,7 @@ class CloudcliHooks(InstanceHooks):
         pick_port=None,
         clock=time.time,
         probe=None,
+        sleep=time.sleep,
     ):
         """
         Args:
@@ -604,11 +607,13 @@ class CloudcliHooks(InstanceHooks):
             clock: Seconds since the epoch, which a login is judged by.
             probe: Probes one source, as :func:`source_fetch.probe`; None
                 probes over the network.
+            sleep: Waits between two asks about an install left running.
         """
         super().__init__(platform=platform, log=log)
         self._run_as = run_as if run_as is not None else _run_as_account
         self._pick_port = pick_port if pick_port is not None else free_loopback_port
         self._clock = clock
+        self._sleep = sleep
         self._probe = probe if probe is not None else source_fetch.probe
         # The accounts whose CloudCLI refused this hub's password and were
         # told to start afresh.
@@ -752,6 +757,8 @@ class CloudcliHooks(InstanceHooks):
                 else []
             )
         app = app_dir(entry.home, self._os_name)
+        if self._os_name == "linux":
+            self._wait_for_install_left(account)
         if self._version and installed_version(app) == self._version:
             return []
         attempts = self._attempts()
@@ -1101,6 +1108,30 @@ class CloudcliHooks(InstanceHooks):
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
         self._check_native(check, account)
+
+    def _wait_for_install_left(self, account: str) -> None:
+        """Wait at most the install's time for an install service left running, then stop it."""
+        unit = f"{CLOUDCLI_INSTALL_UNIT_PREFIX}{account}.service"
+        run = self.machine.run
+        try:
+            for turn in range(CLOUDCLI_INSTALL_TIMEOUT_S // CLOUDCLI_INSTALL_POLL_S):
+                shown = run(
+                    ["systemctl", "show", "-p", "ActiveState", "--value", unit],
+                    is_checked=False,
+                )
+                if shown.stdout.strip() not in CLOUDCLI_INSTALL_RUNNING_STATES:
+                    return
+                if turn == 0:
+                    self.installing = frozenset({account})
+                    self._log(
+                        f"{self.name}: waiting for the install for {account} "
+                        "that is already running"
+                    )
+                self._sleep(CLOUDCLI_INSTALL_POLL_S)
+            self._log(f"{self.name}: stopping the install for {account} past its time")
+            run(["systemctl", "stop", unit], is_checked=False)
+        finally:
+            self.installing = frozenset()
 
     def _install_darwin(
         self, account: str, entry: AccountEntry, app: str, registry: str, settings: dict

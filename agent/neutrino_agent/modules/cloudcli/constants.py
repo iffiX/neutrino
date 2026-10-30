@@ -103,6 +103,10 @@ CLOUDCLI_REGISTER_FAILED = "cloudcli_register_failed"
 CLOUDCLI_INSTALL_UNIT_PREFIX = "neutrino_cloudcli_install_"
 # What systemd records for a service the kernel killed for want of memory.
 CLOUDCLI_OOM_RESULT = "oom-kill"
+# The ActiveState values of an install service that still runs, and how
+# often an install left running is asked about.
+CLOUDCLI_INSTALL_RUNNING_STATES = ("active", "activating", "deactivating", "reloading")
+CLOUDCLI_INSTALL_POLL_S = 5
 # How many lines of an installer's own words a refusal carries, and how long.
 CLOUDCLI_FAILURE_LINES = 4
 CLOUDCLI_FAILURE_DETAIL_CHARS = 400

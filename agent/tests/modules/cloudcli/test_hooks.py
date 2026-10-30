@@ -8,26 +8,28 @@ integrity is used with ``--registry``, each host of an npm setting is set
 in turn, a failure runs again on the next registry or host and the last
 failure is reported, and no registry naming the integrity is
 ``download_failed`` naming each registry and why; npm runs as the account
-with its cache inside the app directory and an empty file as the
-account's configuration, as a transient service that may take
-``OOMPolicy=stop`` on Linux and as the account's own process on a Mac, and a
-failure names its step; on Windows an install runs as a task left running,
-the account reads installing with the install's log meanwhile, and an
-ended task is judged by its result and the app directory, the account's
-batch logon right held from the task's start until then; each instance's
-service runs Node.js with the account's server script from an environment
-written from scratch whose ``PATH`` lists Node's directory, the account's
-usual command directories and the system's and names no gateway, root-only
-on every system; the record keeps the loopback port and the database across
-applies; and the forwarder, driven against a fake CloudCLI, registers the
-administrator on the first start, refuses an administrator with another
-password once and asks to start afresh, never passes the register and login
-routes on, trades a token for CloudCLI's login kept in the browser and the
-cookie, passes a login CloudCLI issued on with its body and a WebSocket
-both ways, and answers 401 to a request with neither.
+with its cache inside the app directory and an empty file as the account's
+configuration, as a transient service that may take ``OOMPolicy=stop`` on
+Linux and as the account's own process on a Mac, and a failure names its
+step; on Linux an install service left running is waited for and its work
+taken, and stopped past the install's time; on Windows an install runs as a
+task left running, the account reads installing with the install's log
+meanwhile, and an ended task is judged by its result and the app directory,
+the account's batch logon right held from the task's start until then; each
+instance's service runs Node.js with the account's server script from an
+environment written from scratch whose ``PATH`` lists Node's directory, the
+account's usual command directories and the system's and names no gateway,
+root-only on every system; the record keeps the loopback port and the
+database across applies; and the forwarder, driven against a fake CloudCLI,
+registers the administrator on the first start, refuses an administrator
+with another password once and asks to start afresh, never passes the
+register and login routes on, trades a token for CloudCLI's login kept in
+the browser and the cookie, passes a login CloudCLI issued on with its body
+and a WebSocket both ways, and answers 401 to a request with neither.
 """
 
 import base64
+import functools
 import hashlib
 import hmac
 import io
@@ -384,9 +386,23 @@ class Machine:
         self.unit_result = "success"
         self.installing_seen: list = []
         self.hooks = None
+        # The install service's ActiveState answers in turn, then inactive.
+        self.active_states: list = []
+        # Called once when the install service left running ends.
+        self.on_ended = None
+        self.waiting_seen: list = []
+        self.slept: list = []
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         self.calls.append(list(command))
+        if command[:2] == ["systemctl", "show"] and "ActiveState" in command:
+            self.waiting_seen.append(self.hooks.installing)
+            if not self.active_states:
+                return CommandResult(list(command), 0, "inactive\n", "")
+            state = self.active_states.pop(0)
+            if not self.active_states and self.on_ended is not None:
+                self.on_ended()
+            return CommandResult(list(command), 0, state + "\n", "")
         if command[:2] == ["systemctl", "show"]:
             return CommandResult(list(command), 0, self.unit_result + "\n", "")
         if command[0] == "systemd-run":
@@ -402,11 +418,14 @@ class Machine:
     def install_call(self):
         return next(call for call in self.calls if call[0] == "systemd-run")
 
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+
 
 @pytest.fixture
 def linux(tmp_path):
     machine = Machine()
-    hooks = hooks_for("linux", with_node(tmp_path), run=machine)
+    hooks = hooks_for("linux", with_node(tmp_path), run=machine, sleep=machine.sleep)
     machine.hooks = hooks
     home = str(tmp_path / "home" / "ann")
     return hooks, machine, AccountEntry(1000, 1000, home, "/bin/bash")
@@ -519,6 +538,55 @@ def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(linux):
         "reset-failed",
         "neutrino_cloudcli_install_ann.service",
     ] in machine.calls
+
+
+def test_an_install_left_running_is_waited_for_and_its_work_taken(linux):
+    hooks, machine, entry = linux
+    app = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    )
+    machine.active_states = ["active", "active", "deactivating"]
+    machine.on_ended = functools.partial(land_package, app)
+
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == []
+    assert not any(call[0] == "systemd-run" for call in machine.calls)
+    assert machine.slept == [5, 5, 5]
+    assert machine.waiting_seen == [frozenset()] + [frozenset({"ann"})] * 3
+    assert hooks.installing == frozenset()
+
+
+def test_an_install_left_running_that_ends_without_the_app_runs_npm_after(linux):
+    hooks, machine, entry = linux
+    machine.active_states = ["activating"]
+
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == ["installed CloudCLI for ann"]
+    shown = machine.calls.index(
+        [
+            "systemctl",
+            "show",
+            "-p",
+            "ActiveState",
+            "--value",
+            "neutrino_cloudcli_install_ann.service",
+        ]
+    )
+    assert shown < machine.calls.index(machine.install_call())
+    assert machine.slept == [5]
+
+
+def test_an_install_left_running_past_the_install_time_is_stopped(linux):
+    hooks, machine, entry = linux
+    machine.active_states = ["active"] * 400
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert len(machine.slept) == 360
+    stop = ["systemctl", "stop", "neutrino_cloudcli_install_ann.service"]
+    assert machine.calls.index(stop) < machine.calls.index(machine.install_call())
 
 
 # --- the registries and the hosts ---

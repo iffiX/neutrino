@@ -539,7 +539,7 @@ def test_cloudcli_linux_install_commands(tmp_path):
         for command, timeout_s in recorder.calls
     ]
     expected = golden_text("cloudcli_linux_install_commands.jsonl").splitlines()
-    assert lines == expected[:3]
+    assert lines == expected[:4]
 
 
 def test_cloudcli_darwin_install_commands(tmp_path):
