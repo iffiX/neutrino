@@ -1000,7 +1000,9 @@ lines that name the module, from `agent.log` under the log root (the rotated
 `agent.log.1` read before it) on Windows and
 `/Library/Logs/Neutrino/agent/agent.log` on macOS; the agent's lines take at
 most half the box, and a box is empty only while the agent has logged
-nothing about the module. Which sources a module reads there is on its own
+nothing about the module. The lines a module's task writes about itself,
+its steps, its outcome and a crash, begin `<module> task: ` in the agent's
+log and are left out of the box. Which sources a module reads there is on its own
 page: [file_share.md](agent/modules/file_share.md),
 [gitea.md](agent/modules/gitea.md),
 [containers.md](agent/modules/containers.md), [vscode.md](agent/modules/vscode.md),
