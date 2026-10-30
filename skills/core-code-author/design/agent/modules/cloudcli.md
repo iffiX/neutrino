@@ -92,6 +92,18 @@ that setting's hosts, its GitHub releases and then npmmirror's copy, and the
 agent sets it to the fastest. An install that fails on a native module runs
 again with the next host.
 
+**npm's name lookups go one family at a time on Linux.** npm runs with
+`RES_OPTIONS=single-request-reopen`, so glibc asks for the A and the AAAA
+record one after the other, each on a socket of its own. Asked at once on
+one socket, as glibc does by default, one answer can be lost behind a NAT
+that tracks both as one flow, and the lookup then takes glibc's 5 seconds
+to try again. On Rocky 9 and Debian 12 in the lab, `github.com` took 5.1
+to 5.5 seconds that way and 0.1 to 0.3 seconds with the option. Node's
+HTTPS agent closes a socket idle for 5 seconds, the lookup among that time,
+so better-sqlite3's prebuilt download from GitHub failed, and the build
+from source that follows needs `make`, which those systems lack. The
+option is npm's alone: the machine's resolver settings stay the person's.
+
 **npm cannot take the agent down.** On Linux an account's npm runs as a
 transient service of its own, `neutrino_cloudcli_install_<account>.service`,
 started by `systemd-run --wait -p OOMPolicy=stop` with the service's output
