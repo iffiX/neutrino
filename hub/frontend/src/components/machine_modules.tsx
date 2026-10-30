@@ -662,7 +662,7 @@ export function MachineModules({
                 <ModuleLog
                   key={`${deviceId}:${activeRow.name}`}
                   deviceId={deviceId}
-                  row={activeRow}
+                  module={activeRow.name}
                   isAgentOnline={isAgentOnline}
                 />
               )}

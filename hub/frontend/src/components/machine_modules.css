@@ -119,7 +119,7 @@
   border-color: transparent;
 }
 
-/* An install's or an uninstall's lines, as the agent sends them up. */
+/* The module's journal. */
 .modules_log {
   display: flex;
   flex-direction: column;
