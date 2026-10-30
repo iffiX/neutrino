@@ -3,7 +3,8 @@
 What these pin: the CLI artifact, which names no directory, lands through
 the shared unpack directly in the module's directory beside the token
 files, runnable by every account and writable by none; the CLI is there
-when its file is;
+when its file is, and its version is what it prints, read once per CLI
+file;
 a configuration is checked for this system; each server's service runs the
 CLI as the account with its token in a file of the account's own, reading
 its address, port and token file from the environment on Linux and from
@@ -133,6 +134,47 @@ def test_the_cli_comes_out_of_a_zip_with_its_one_top_directory_dropped(tmp_path)
 
 
 # --- the configuration and the service ---
+
+
+class VersionRun:
+    """``code --version``, answered and counted."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.printed = "code 1.144.0 (commit 3b0d6c1)\n"
+
+    def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
+        self.calls.append(list(command))
+        return CommandResult(list(command), 0, self.printed, "")
+
+
+def test_the_version_is_what_the_cli_prints_read_once_per_cli_file(tmp_path):
+    hooks = VscodeHooks(platform=Platform("darwin"), log=lambda line: None)
+    run = VersionRun()
+    hooks.bind(
+        ServiceMachine(
+            os_name="darwin",
+            module_dir=str(tmp_path / "state" / "vscode"),
+            record_dir=str(tmp_path / "config" / "vscode"),
+            lookup_account=lambda account: ANN,
+            run=run,
+        ),
+        None,
+    )
+    assert hooks.module_details() == {"version": ""}
+
+    os.makedirs(os.path.dirname(hooks.cli_path))
+    with open(hooks.cli_path, "w", encoding="utf-8") as stream:
+        stream.write("1")
+
+    assert hooks.module_details() == {"version": "1.144.0"}
+    assert hooks.module_details() == {"version": "1.144.0"}
+    assert run.calls == [[hooks.cli_path, "--version"]]
+    with open(hooks.cli_path, "a", encoding="utf-8") as stream:
+        stream.write("1")
+    run.printed = "unexpected words\n"
+    assert hooks.module_details() == {"version": ""}
+    assert len(run.calls) == 2
 
 
 def test_a_configuration_is_checked_for_this_system(tmp_path):
@@ -319,6 +361,7 @@ def test_the_runner_writes_the_token_the_environment_and_the_unit(tmp_path):
         ["systemctl", "restart", "neutrino_vscode@ann.service"],
     ]
     assert runner.details({}) == {
+        "version": "",
         "instances": [
             {
                 "account": "ann",
@@ -327,6 +370,6 @@ def test_the_runner_writes_the_token_the_environment_and_the_unit(tmp_path):
                 "code": "",
                 "url": "http://127.0.0.1:8000/",
             }
-        ]
+        ],
     }
     assert runner.journal_units() == ["neutrino_vscode@ann.service"]

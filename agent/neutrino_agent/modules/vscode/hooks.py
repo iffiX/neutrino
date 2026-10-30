@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import ntpath
 import os
+import subprocess
 
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
@@ -39,6 +40,9 @@ from neutrino_agent.modules.vscode.constants import (
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_TITLE,
     VSCODE_TOKEN_DIR_NAME,
+    VSCODE_VERSION_ARGUMENT,
+    VSCODE_VERSION_PREFIX,
+    VSCODE_VERSION_TIMEOUT_S,
 )
 
 TOKEN_SUFFIX = ".token"
@@ -77,6 +81,8 @@ class VscodeHooks(InstanceHooks):
         super().__init__(platform=platform, log=log)
         self._sysctl_path = sysctl_path
         self._proc_dir = proc_dir
+        # The CLI's size and time, and the version it printed.
+        self._version: tuple = ((), "")
 
     @property
     def cli_path(self) -> str:
@@ -209,6 +215,15 @@ class VscodeHooks(InstanceHooks):
         host = record.get("host") or VSCODE_LOOPBACK_ADDRESS
         return {"url": f"http://{host}:{record.get('port')}/"}
 
+    def module_details(self) -> dict:
+        """The CLI installed.
+
+        Returns:
+            ``{"version"}``, the version ``code --version`` prints, empty
+            while the CLI does not answer.
+        """
+        return {"version": self._installed_version()}
+
     def forget_module(self) -> None:
         """Delete the inotify drop-in."""
         with contextlib.suppress(OSError):
@@ -220,6 +235,28 @@ class VscodeHooks(InstanceHooks):
 
     def _join(self, *parts: str) -> str:
         return (ntpath.join if self._os_name == "windows" else os.path.join)(*parts)
+
+    def _installed_version(self) -> str:
+        """The version the CLI prints, read once per CLI file."""
+        cli = self.cli_path
+        try:
+            found = os.stat(cli)
+        except OSError:
+            return ""
+        stamp = (found.st_mtime_ns, found.st_size)
+        if self._version[0] != stamp:
+            try:
+                result = self.machine.run(
+                    [cli, VSCODE_VERSION_ARGUMENT],
+                    is_checked=False,
+                    timeout_s=VSCODE_VERSION_TIMEOUT_S,
+                )
+                words = result.stdout.split() if result.is_success else []
+            except (OSError, subprocess.SubprocessError):
+                words = []
+            is_named = len(words) > 1 and words[0] == VSCODE_VERSION_PREFIX
+            self._version = (stamp, words[1] if is_named else "")
+        return self._version[1]
 
     def _raise_watch_limits(self) -> bool:
         """Lift the inotify limits to the module's floors, never lower them.

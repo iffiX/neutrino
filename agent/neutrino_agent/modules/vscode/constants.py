@@ -12,6 +12,12 @@ VSCODE_CLI_NAMES = {"windows": "code.exe", "linux": "code", "darwin": "code"}
 # account's environment file too.
 VSCODE_TOKEN_DIR_NAME = "tokens"
 
+# What the CLI prints its version with, the word its answer opens with, and
+# how long it may take.
+VSCODE_VERSION_ARGUMENT = "--version"
+VSCODE_VERSION_PREFIX = "code"
+VSCODE_VERSION_TIMEOUT_S = 30
+
 # What every instance runs after the CLI's path.
 VSCODE_SERVE_ARGUMENTS = ("serve-web", "--accept-server-license-terms")
 # The address an instance listens on and a reported url names when the
