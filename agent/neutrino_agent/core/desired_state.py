@@ -334,6 +334,8 @@ class DesiredStateApplier:
         self._order: list = []
         # The running task of each module, and of ``ai_tools``, by name.
         self._tasks: dict = {}
+        # The modules a configure task was asked for before a state named them.
+        self._asked: set = set()
         self._applied_hash = ""
         self._tried = store.read_tried()
         # Module name to its last task's failure in this process, ``{"state",
@@ -462,8 +464,13 @@ class DesiredStateApplier:
             self._modules = modules
             self._hashes = hashes
             self._order = order
+            asked, self._asked = self._asked, set()
             for name in order:
-                made.append(self._offer(name, modules[name], hashes[name]))
+                made.append(
+                    self._offer(
+                        name, modules[name], hashes[name], is_asked=name in asked
+                    )
+                )
             if self._ai_tools is not None:
                 section = document.get(AI_TOOLS_SECTION)
                 made.append(
@@ -720,7 +727,8 @@ class DesiredStateApplier:
         A running task of the module takes the ask as a newer entry and
         plans again once its running step ends; two asks while it runs make
         one more plan. With no task running, a task is made whatever hash
-        was last tried.
+        was last tried. An ask before the latest state names the module is
+        kept for the next state, which makes the task.
 
         Args:
             name: The module.
@@ -733,6 +741,7 @@ class DesiredStateApplier:
         with self._lock:
             entry = self._modules.get(name)
             if entry is None:
+                self._asked.add(name)
                 return None
             entry_hash = self._hashes.get(name, "")
             task = self._tasks.get(name)
@@ -798,18 +807,25 @@ class DesiredStateApplier:
             return module not in self._tasks
         return not self._tasks
 
-    def _offer(self, name: str, entry: dict, entry_hash: str):
+    def _offer(self, name: str, entry: dict, entry_hash: str, *, is_asked=False):
         """Hand one entry to the module's running task, or make a task for it. Call under the lock.
+
+        Args:
+            name: The module.
+            entry: The state's entry.
+            entry_hash: Its hash.
+            is_asked: Whether the module asked for a configure task before
+                a state named it, which plans it whatever hash was tried.
 
         Returns:
             The task made, for the caller to start; None when none was.
         """
         task = self._tasks.get(name)
         if task is not None and task.is_running:
-            if task.entry_hash != entry_hash:
+            if task.entry_hash != entry_hash or is_asked:
                 task.offer(entry, entry_hash)
             return None
-        if entry_hash == self._tried.get(name):
+        if entry_hash == self._tried.get(name) and not is_asked:
             return None
         return self._new_task(name, entry, entry_hash)
 

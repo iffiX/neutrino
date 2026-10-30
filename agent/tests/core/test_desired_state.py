@@ -16,10 +16,11 @@ modules running at once, a newer entry taken at the next step boundary and
 at a waiting step's check, a step that waits for something outside the
 agent run again every recheck interval with no lock held, the wait of a
 step lock naming the module that holds it and a first step's wait reading
-``queued``, ``settle`` waiting for one module's task alone, a restart's
-replan from what the machine shows, and a container module waiting for
-Containers, asking it to render, and ending quietly while Containers is not
-to run.
+``queued``, ``settle`` waiting for one module's task alone, an ask for a
+configure task made before a state names the module planned by the next
+state, a restart's replan from what the machine shows, and a container
+module waiting for Containers, asking it to render, and ending quietly while
+Containers is not to run.
 """
 
 import functools
@@ -1547,6 +1548,23 @@ def test_a_module_s_own_ask_makes_a_configure_task_whatever_was_tried(tmp_path):
     assert task is not None and task.ended.is_set()
     assert runners["cloudcli"].applied == [{"n": "cloudcli"}] * 2
     assert held.ask_configure("gitea") is None
+
+
+def test_an_ask_before_a_state_names_the_module_is_planned_by_the_next_state(
+    tmp_path,
+):
+    runners = {"cloudcli": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    document = state(cloudcli="running")
+    held._tried["cloudcli"] = desired_state_module._section_hash(
+        document["modules"]["cloudcli"]
+    )
+
+    assert held.ask_configure("cloudcli") is None
+    run(held, document)
+    run(held, state("h2", cloudcli="running"))
+
+    assert runners["cloudcli"].applied == [{"n": "cloudcli"}]
 
 
 def test_an_ask_while_the_module_s_task_runs_is_one_more_plan_after_it(tmp_path):
