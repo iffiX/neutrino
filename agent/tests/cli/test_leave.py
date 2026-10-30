@@ -189,3 +189,31 @@ def test_a_leave_says_each_account_it_switched_back(
     assert "ai tools   alice: switched_back\n" in out
     assert "ai tools   lab: failed switch_failed\n" in out
     assert out.index("ai tools   alice") < out.index(LEAVE_WORDS)
+
+
+@pytest.mark.parametrize("is_told", [True, False])
+def test_the_agents_own_log_stays_out_of_the_terminal(
+    monkeypatch, config_path, capsys, is_told
+):
+    bind(config_path, url="tcp://192.0.2.5:8443")
+    transport = FakeTransport()
+    opener = one_shot_for(transport)
+    if not is_told:
+        transport.answers["leave"] = {
+            "code": "hub_unreachable",
+            "params": {"detail": "x"},
+        }
+
+    def logging_one_shot(platform, log=print, **keywords):
+        log("transport: hub transport started")
+        log("transport: control_connected")
+        return opener(**keywords)
+
+    monkeypatch.setattr(loop_module, "one_shot_transport", logging_one_shot)
+    try:
+        assert leave_cli.main(is_forced=True) == 0
+    finally:
+        transport.close()
+
+    told = [] if is_told else ["could not tell the hub we are leaving: hub_unreachable"]
+    assert capsys.readouterr().out.splitlines() == told + [LEAVE_WORDS]

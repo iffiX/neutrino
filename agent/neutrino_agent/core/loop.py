@@ -400,14 +400,16 @@ class Agent:
         self._news.set()
         self._log("joined the hub")
 
-    def leave(self) -> list:
+    def leave(self) -> tuple:
         """Leave the hub, and stop reporting to it.
 
         The binding goes whether or not the hub could be told; the log says
         when it could not.
 
         Returns:
-            Each account's result of switching its AI tools back.
+            ``(outcome, switched_back)``: empty when the hub took the leave
+            and ``{"code", "params"}`` when it could not be told, then each
+            account's result of switching its AI tools back.
         """
         self._undial()
         self._ai_forward.stop()
@@ -423,7 +425,7 @@ class Agent:
         self._load_connection()
         self._engine.take_state({})
         self._log("left the hub")
-        return switched_back
+        return outcome, switched_back
 
     def report_soon(self) -> None:
         """Send the next report now rather than at the end of the interval."""
