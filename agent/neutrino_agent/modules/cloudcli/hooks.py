@@ -65,6 +65,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_INSTALL_SCRIPT_PATTERN,
     CLOUDCLI_INSTALL_TASK_PREFIX,
     CLOUDCLI_INSTALL_TIMEOUT_S,
+    CLOUDCLI_INSTALL_CUT_RESULTS,
     CLOUDCLI_INSTALL_UNIT_PREFIX,
     CLOUDCLI_RUNNER,
     CLOUDCLI_LOGIN_LIFETIME_S,
@@ -1203,8 +1204,9 @@ class CloudcliHooks(InstanceHooks):
         if task is not None:
             if str(task.get("state", "")) in INSTALL_RUNNING_STATES:
                 return INSTALL_RUNNING
-            self._judge_install(task, app, name, script, log_file, account)
-            return INSTALL_FINISHED
+            if not self._judge_install(task, app, name, script, log_file, account):
+                return INSTALL_FINISHED
+            self._log(f"{self.name}: the install for {account} was cut; it runs again")
         if is_app_ready(app, self._version):
             return INSTALL_READY
         attempts = self._attempts()
@@ -1248,14 +1250,24 @@ class CloudcliHooks(InstanceHooks):
 
     def _judge_install(
         self, task: dict, app: str, name: str, script: str, log_file: str, account: str
-    ) -> None:
-        """Unregister an ended install task and raise the step it failed at."""
+    ) -> bool:
+        """Unregister an ended install task and raise the step it failed at.
+
+        Returns:
+            True for a run a shutdown or a sign-out cut, which runs again;
+            False for one that took.
+
+        Raises:
+            ModuleApplyError: The step a run that ended by itself failed at.
+        """
         self.machine.powershell.call("task_remove", {"task": name})
         if self.machine.batch_logon is not None:
             self.machine.batch_logon.release(account, name)
         remove_path(script)
         output = install_output(log_file)
         result = int(task.get("last_result", 0) or 0) & 0xFFFFFFFF
+        if result in CLOUDCLI_INSTALL_CUT_RESULTS:
+            return True
         if result in ACCOUNT_SERVICE_LOGON_FAILURES:
             raise ModuleApplyError("credential_invalid", {"account": account})
         if result == NATIVE_CHECK_EXIT:
@@ -1270,6 +1282,7 @@ class CloudcliHooks(InstanceHooks):
             )
         if result != 0 or not is_app_ready(app, self._version):
             raise npm_failure(output, account)
+        return False
 
     def _install_script_path(self, account: str) -> str:
         return ntpath.join(

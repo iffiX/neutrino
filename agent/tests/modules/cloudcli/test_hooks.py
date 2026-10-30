@@ -15,7 +15,8 @@ step; on Linux an install service left running is waited for and its work
 taken, and stopped past the install's time, and a service of the install's
 name still loaded or a machine shutting down makes the step wait; on Windows an install runs as a
 task left running, the account reads installing with the install's log
-meanwhile, and an ended task is judged by its result and the app directory,
+meanwhile, an ended task is judged by its result and the app directory and
+one a shutdown cut runs again with no failure kept,
 the account's batch logon right held from the task's start until then; each
 instance's service runs Node.js with the account's server script from an
 environment written from scratch whose ``PATH`` lists Node's directory, the
@@ -955,6 +956,29 @@ def test_an_ended_install_is_unregistered_and_judged(windows, ready):
     assert not os.path.exists(script)
     assert notes == ["installed CloudCLI for ann"]
     assert hooks.installing == frozenset()
+
+
+@pytest.mark.parametrize("result", [0x41306, 0x8007042B, 0x800704C7, 0xC000013A])
+def test_an_install_a_shutdown_cut_runs_again_and_keeps_no_failure(windows, result):
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task("Ready", result)]}
+    log = hooks.machine.module_dir + "\\run\\install_ann.log"
+    with open(log, "w", encoding="utf-8") as stream:
+        stream.write("npm error gyp ERR! not ok\nbetter-sqlite3\n")
+
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == []
+    assert host.ops() == [
+        "task_states",
+        "task_remove",
+        "batch_logon_release",
+        "batch_logon_hold",
+        "task_run_once",
+    ]
+    assert hooks.installing == frozenset({"ann"})
+    with open(log, encoding="utf-8") as stream:
+        assert stream.read() == ""
 
 
 def test_an_app_already_there_starts_no_install(windows, ready):

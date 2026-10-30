@@ -107,6 +107,10 @@ CLOUDCLI_OOM_RESULT = "oom-kill"
 # loaded, and the state ``systemctl is-system-running`` reads at a shutdown.
 CLOUDCLI_UNIT_LOADED_TEXT = "already loaded"
 CLOUDCLI_SYSTEM_STOPPING = "stopping"
+# The results Windows records for an install task a shutdown or a sign-out
+# ended: the task terminated, the process aborted, the operation cancelled,
+# and the console closed.
+CLOUDCLI_INSTALL_CUT_RESULTS = (0x41306, 0x8007042B, 0x800704C7, 0xC000013A)
 # The ActiveState values of an install service that still runs, and how
 # often an install left running is asked about.
 CLOUDCLI_INSTALL_RUNNING_STATES = ("active", "activating", "deactivating", "reloading")
