@@ -344,6 +344,8 @@ class ModuleEngine(ReconcileWorker):
         # One runner per container module the state has named, by module
         # name, each reaching Podman through the Containers runner.
         self._container_runners: dict = {}
+        # Asks for a configure task of a module, by name; None asks nobody.
+        self._configure_asker = None
         self._failures = self._read_failures()
         super().__init__(log=log, on_change=on_change)
 
@@ -546,6 +548,19 @@ class ModuleEngine(ReconcileWorker):
             self.refresh_one(name)
         elif status is not None:
             self._publish_observed(name, dict(status))
+
+    def set_configure_asker(self, asker) -> None:
+        """Let every runner ask for a configure task of its own module.
+
+        Args:
+            asker: Called with a module's name; asks for a configure task
+                of it. A container module's runner made later takes it too.
+        """
+        with self._lock:
+            self._configure_asker = asker
+            runners = {**self._module_runners, **self._container_runners}
+        for name, runner in runners.items():
+            runner.bind_configure_asker(functools.partial(asker, name))
 
     def set_line_sink(self, on_line) -> None:
         """Hand the lines the runners log on this thread to a task's stream.
@@ -1394,13 +1409,16 @@ class ModuleEngine(ReconcileWorker):
             return
         if name in self._module_runners or not _is_plain(name):
             return
-        self._container_runners[name] = ContainerModuleRunner(
+        runner = ContainerModuleRunner(
             platform=self._platform,
             name=name,
             containers=containers,
             log=self._collect,
             publish=self._publish,
         )
+        if self._configure_asker is not None:
+            runner.bind_configure_asker(functools.partial(self._configure_asker, name))
+        self._container_runners[name] = runner
 
 
 def _switch_failed(version: str, detail: str) -> dict:

@@ -329,6 +329,7 @@ class DesiredStateApplier:
         # with a runner in the order they apply.
         self._document: dict = {}
         self._modules: dict = {}
+        self._hashes: dict = {}
         self._order: list = []
         # The running task of each module, and of ``ai_tools``, by name.
         self._tasks: dict = {}
@@ -458,6 +459,7 @@ class DesiredStateApplier:
         with self._lock:
             self._document = dict(document)
             self._modules = modules
+            self._hashes = hashes
             self._order = order
             for name in order:
                 made.append(self._offer(name, modules[name], hashes[name]))
@@ -711,6 +713,36 @@ class DesiredStateApplier:
             task.set_wait(module_wait(CONTAINERS_MODULE))
             task.wait_for_task(containers)
 
+    def ask_configure(self, name: str):
+        """Ask for a configure task of one module, from its entry in the latest state.
+
+        A running task of the module takes the ask as a newer entry and
+        plans again once its running step ends; two asks while it runs make
+        one more plan. With no task running, a task is made whatever hash
+        was last tried.
+
+        Args:
+            name: The module.
+
+        Returns:
+            The task that answers the ask; None when the latest state names
+            no such module.
+        """
+        made = None
+        with self._lock:
+            entry = self._modules.get(name)
+            if entry is None:
+                return None
+            entry_hash = self._hashes.get(name, "")
+            task = self._tasks.get(name)
+            if task is not None and task.is_running:
+                task.offer(entry, entry_hash)
+            else:
+                task = made = self._new_task(name, entry, entry_hash)
+        if made is not None:
+            made.start()
+        return task
+
     def render_containers(self, task) -> None:
         """Ask Containers for a configure task, and wait for it to end.
 
@@ -727,24 +759,11 @@ class DesiredStateApplier:
                 afterwards.
             StepSuperseded: When the task holds a newer entry meanwhile.
         """
-        made = None
         with self._lock:
-            entry = self._modules.get(CONTAINERS_MODULE)
-            if entry is None or self._containers_want() != AGENT_WANT_RUNNING:
-                containers = None
-            else:
-                containers = self._tasks.get(CONTAINERS_MODULE)
-                entry_hash = _section_hash(entry)
-                if containers is not None and containers.is_running:
-                    containers.offer(entry, entry_hash)
-                else:
-                    containers = made = self._new_task(
-                        CONTAINERS_MODULE, entry, entry_hash
-                    )
+            is_wanted = self._containers_want() == AGENT_WANT_RUNNING
+        containers = self.ask_configure(CONTAINERS_MODULE) if is_wanted else None
         if containers is None:
             raise self._module_needed()
-        if made is not None:
-            made.start()
         task.set_wait(module_wait(CONTAINERS_MODULE))
         task.wait_for_task(containers)
         task.set_wait({})

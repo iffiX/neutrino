@@ -122,6 +122,8 @@ class ModuleRunner:
         self._publish = publish if publish is not None else _ignore_status
         # The log sources a journal could not read, each warned of once.
         self._unread_sources: set = set()
+        # Asks the agent for a configure task of this module; None asks nobody.
+        self._configure_asker = None
 
     @property
     def module_dir(self) -> str:
@@ -180,6 +182,27 @@ class ModuleRunner:
             source_sets: ``{name: {probe, sources, variables}}``, each set a
                 recipe of the state names.
         """
+
+    def bind_configure_asker(self, asker) -> None:
+        """Take what asks the agent for a configure task of this module.
+
+        Args:
+            asker: Called with no argument; asks for a configure task from
+                the module's entry in the latest state.
+        """
+        self._configure_asker = asker
+
+    def ask_configure(self) -> bool:
+        """Ask the agent for a configure task of this module, outside the state's own tasks.
+
+        Returns:
+            Whether something took the ask.
+        """
+        asker = self._configure_asker
+        if asker is None:
+            return False
+        asker()
+        return True
 
     def step_locks(self, step: str) -> tuple:
         """The step locks this module adds to one of its steps.

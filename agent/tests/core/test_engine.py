@@ -152,6 +152,7 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._module_runners = {runner.name: runner}
     engine._runners_by_name = {runner.runner: runner}
     engine._container_runners = {}
+    engine._configure_asker = None
     engine._platform = None
     if verified is not None:
         answers = list(verified)
@@ -2368,3 +2369,21 @@ def test_a_package_step_takes_the_package_manager_and_containers_steps_its_lock(
         ("verify", {}, ()),
     ]
     assert [step.failed_state for step in steps] == ["install_failed"] * 4
+
+
+def test_every_runner_asks_for_a_configure_task_of_its_own_module(tmp_path):
+    engine, _containers = container_engine(tmp_path)
+    asked: list = []
+
+    engine.set_configure_asker(asked.append)
+    engine.take_state(
+        {"demo": {"want": "running", "config": {}, "install": CONTAINER_RECIPE}}
+    )
+
+    assert engine.runner_of("podman").ask_configure() is True
+    assert engine.runner_of("demo").ask_configure() is True
+    assert asked == ["podman", "demo"]
+
+
+def test_a_runner_with_nobody_to_ask_takes_no_ask():
+    assert HubRunner().ask_configure() is False

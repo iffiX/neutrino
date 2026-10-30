@@ -1527,3 +1527,42 @@ def test_nothing_here_applies_a_whole_state_again():
     """A waiting step checks itself; no pass over the whole state remains."""
     assert not hasattr(DesiredStateApplier, "apply_again")
     assert not hasattr(DesiredStateApplier, "_rechecked")
+
+
+def test_a_module_s_own_ask_makes_a_configure_task_whatever_was_tried(tmp_path):
+    """A forwarder that changed an instance's record asks for a configure
+    task of its module; the entry's hash was tried long ago."""
+    runners = {"cloudcli": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    run(held, state(cloudcli="running"))
+
+    task = held.ask_configure("cloudcli")
+    assert held.settle("", SETTLE_S)
+
+    assert task is not None and task.ended.is_set()
+    assert runners["cloudcli"].applied == [{"n": "cloudcli"}] * 2
+    assert held.ask_configure("gitea") is None
+
+
+def test_an_ask_while_the_module_s_task_runs_is_one_more_plan_after_it(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+
+    held.ask_configure("samba")
+    held.ask_configure("samba")
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    # Both asks are one more plan from the next boundary, which configures
+    # after them; the old plan's configure does not run as well.
+    assert runners["samba"].applied == [{"n": "samba"}]
+    plans = [
+        [step["name"] for step in task["steps"]]
+        for task, _state, _wait in engine.published["samba"]
+    ]
+    assert ["configure", "start"] in plans

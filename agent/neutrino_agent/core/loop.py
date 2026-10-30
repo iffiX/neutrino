@@ -302,6 +302,7 @@ class Agent:
             package_dir=self._package_dir,
             ai_tools=self._ai_tools,
         )
+        self._engine.set_configure_asker(self._desired.ask_configure)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._operator = None
