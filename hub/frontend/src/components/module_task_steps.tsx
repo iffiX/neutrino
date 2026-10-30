@@ -23,9 +23,18 @@ export const REBOOT_REQUIRED_CODE = "reboot_required";
 /** Where one step of the plan stands. */
 type StepStatus = "done" | "running" | "waiting" | "pending" | "failed";
 
-/** The step that installs one artifact; a plan with one of them reads
- * `ui.modules.step.artifact_alone`, and one with several names each. */
+/** The step that installs one artifact. One with no words of its own reads
+ * `ui.modules.step.artifact_alone` in a plan with one of them, and names its
+ * artifact in a plan with several. */
 const ARTIFACT_STEP = "artifact";
+
+/** The steps that may read their artifact's own words,
+ * `ui.modules.step.<step>.<module>.<artifact>`, each by the param that
+ * names the artifact. */
+const ARTIFACT_PARAMS: Record<string, string> = {
+  artifact: "name",
+  pull: "image",
+};
 
 /** The dot each step wears; the running step's alone pulses. */
 const STEP_TONES: Record<StepStatus, StatusTone> = {
@@ -37,6 +46,8 @@ const STEP_TONES: Record<StepStatus, StatusTone> = {
 };
 
 interface ModuleTaskStepsProps {
+  /** The module whose task this is. */
+  module: string;
   task: ModuleTask;
   /** Whether the module's last task ended in a failure at its `index` step. */
   isFailed: boolean;
@@ -47,6 +58,7 @@ interface ModuleTaskStepsProps {
 }
 
 export function ModuleTaskSteps({
+  module,
   task,
   isFailed,
   failure,
@@ -79,7 +91,7 @@ export function ModuleTaskSteps({
               isPulsing={status === "running"}
             />
             <span className="module_step_name">
-              {stepWords(step, artifactCount)}
+              {stepWords(step, module, artifactCount)}
             </span>
             {detail !== "" && (
               <span className="module_step_detail">{detail}</span>
@@ -109,9 +121,21 @@ function stepStatus(
   return isFailed ? "failed" : "done";
 }
 
-/** A step's words with its params; a step the catalog lacks reads as its
- * name. `artifactCount` counts the plan's `artifact` steps. */
-function stepWords(step: ModuleTaskStep, artifactCount: number): string {
+/** A step's words with its params, or its artifact's own words where the
+ * catalog has them; a step the catalog lacks reads as its name.
+ * `artifactCount` counts the plan's `artifact` steps. */
+function stepWords(
+  step: ModuleTaskStep,
+  module: string,
+  artifactCount: number,
+): string {
+  const param = ARTIFACT_PARAMS[step.name];
+  if (param !== undefined) {
+    const own = `ui.modules.step.${step.name}.${module}.${String(step.params[param] ?? "")}`;
+    if (hasWord(own)) {
+      return t(own);
+    }
+  }
   if (step.name === ARTIFACT_STEP && artifactCount === 1) {
     return t("ui.modules.step.artifact_alone");
   }

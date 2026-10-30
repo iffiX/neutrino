@@ -14,6 +14,16 @@ from pathlib import Path
 import pytest
 
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATES
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_ARTIFACT_KIND_NPM,
+    DEVICE_METHOD_CONTAINER,
+    DEVICE_METHOD_HUB,
+)
+from neutrino_hub.modules.devices.manifests import (
+    entry_artifacts,
+    entry_method,
+    load_module_manifests,
+)
 from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_LANGUAGES
 
 FRONTEND_SRC_DIR = Path(__file__).resolve().parents[2] / "frontend/src"
@@ -138,6 +148,27 @@ def test_every_step_of_a_module_task_is_worded_with_its_params(language, step):
 def test_the_one_artifact_step_of_a_plan_is_worded_with_no_params(language):
     words = catalog(language, "modules.json")["ui.modules.step.artifact_alone"]
     assert PLACEHOLDER_PATTERN.findall(words) == []
+
+
+# The step each artifact of an install method takes (agent.md, "The steps").
+ARTIFACT_STEPS = {DEVICE_METHOD_HUB: "artifact", DEVICE_METHOD_CONTAINER: "pull"}
+
+
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_every_artifact_step_of_an_entry_naming_several_has_its_own_words(language):
+    words = catalog(language, "modules.json")
+    for module, manifest in load_module_manifests().items():
+        for entry in manifest["platforms"].values():
+            step = ARTIFACT_STEPS.get(entry_method(entry))
+            artifacts = entry_artifacts(manifest, entry)
+            if step is None or len(artifacts) < 2:
+                continue
+            for artifact in artifacts:
+                if artifact.get("kind") == DEVICE_ARTIFACT_KIND_NPM:
+                    continue
+                key = f"ui.modules.step.{step}.{module}.{artifact['name']}"
+                assert key in words, key
+                assert PLACEHOLDER_PATTERN.findall(words[key]) == [], key
 
 
 @pytest.mark.parametrize("lock", MODULE_STEP_LOCKS)

@@ -585,6 +585,7 @@ export function MachineModules({
               </div>
               {stepsTask !== null && reportedRow !== undefined && (
                 <ModuleTaskSteps
+                  module={activeRow.name}
                   task={stepsTask}
                   isFailed={isStepFailed}
                   failure={describeFailure(reportedRow, manifestTitles)}
