@@ -887,7 +887,8 @@ row's code where the step list does not. Such a row has no task, as an
 whose next task runs. A `reboot_required` row words its code in the notice
 alone, beside **Restart now**, and its `restart` step reads waiting with no
 words under it. A step's words are
-`ui.modules.step.<name>` with its params, a lock's
+`ui.modules.step.<name>` with its params, or an artifact's or an image's
+own words ([ui_text.md](ui_text.md), "A module task's words"), a lock's
 `ui.modules.lock.<lock>`, and a wait's the code catalog's. A finished
 task's steps stay until the next task starts. The module list shows `<i>/<n>`,
 the running step's index and the plan's length, beside the spinner of a row

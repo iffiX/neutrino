@@ -424,8 +424,8 @@ sentences.
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.modules.step.packages` | Install system packages | 安装系统软件包 |
-| `ui.modules.step.artifact`, in a plan with several `artifact` steps | Install {name} | 安装 {name} |
-| `ui.modules.step.artifact_alone`, in a plan with one `artifact` step | Install the program | 安装程序 |
+| `ui.modules.step.artifact`, in a plan with several `artifact` steps, for an artifact with no words of its own | Install {name} | 安装 {name} |
+| `ui.modules.step.artifact_alone`, in a plan with one `artifact` step, for an artifact with no words of its own | Install the program | 安装程序 |
 | `ui.modules.step.verify` | Check the install | 检查安装结果 |
 | `ui.modules.step.switch` | Switch to version {version} | 切换到版本 {version} |
 | `ui.modules.step.configure` | Apply the configuration | 应用配置 |
@@ -435,7 +435,7 @@ sentences.
 | `ui.modules.step.stop` | Stop the module | 停止模块 |
 | `ui.modules.step.uninstall` | Uninstall the module | 卸载模块 |
 | `ui.modules.step.wait_containers` | Wait for Containers | 等待容器模块 |
-| `ui.modules.step.pull` | Pull image {image} | 拉取镜像 {image} |
+| `ui.modules.step.pull`, for an image with no words of its own | Pull image {image} | 拉取镜像 {image} |
 | `ui.modules.step.render` | Create the containers | 创建容器 |
 | `ui.modules.step.windows_features` | Turn on Windows features | 打开 Windows 功能 |
 | `ui.modules.step.restart` | Wait for the restart | 等待重启 |
@@ -448,6 +448,25 @@ sentences.
 | `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
 | `ui.modules.step.guests` | Create the Web share guests | 建好 Web 分享的访客账户 |
 | `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
+
+An `artifact` step reads its artifact's own words,
+`ui.modules.step.artifact.<module>.<artifact>`, and a `pull` step its
+image's, `ui.modules.step.pull.<module>.<image>`. Every artifact of a
+manifest entry that names more than one has them, except an npm package,
+which takes no step of its own:
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.step.artifact.podman.wsl` | Install WSL | 安装 WSL |
+| `ui.modules.step.artifact.podman.podman` | Install Podman | 安装 Podman |
+| `ui.modules.step.artifact.podman.image` | Download the machine image | 下载虚拟机映像 |
+| `ui.modules.step.artifact.cloudcli.node`, `ui.modules.step.artifact.codeg.node` | Install Node.js | 安装 Node.js |
+| `ui.modules.step.artifact.codeg.server` | Install the Codeg server | 安装 Codeg 服务端 |
+| `ui.modules.step.pull.ayakaleaf.app` | Pull the Ayakaleaf image | 拉取 Ayakaleaf 镜像 |
+| `ui.modules.step.pull.ayakaleaf.mongo` | Pull the MongoDB image | 拉取 MongoDB 镜像 |
+| `ui.modules.step.pull.ayakaleaf.redis` | Pull the Redis image | 拉取 Redis 镜像 |
+| `ui.modules.step.pull.hermes_webui.webui` | Pull the Hermes WebUI image | 拉取 Hermes WebUI 镜像 |
+| `ui.modules.step.pull.hermes_webui.agent` | Pull the Hermes Agent image | 拉取 Hermes Agent 镜像 |
 
 In a wait or a code, `{lock}` reads as the lock's words below, `{module}`
 as the module's title, and `{state}` as the state's word. A `{module}` of
