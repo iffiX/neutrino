@@ -172,6 +172,7 @@ macOS.
 | On macOS the script sets `TMPDIR` from `getconf DARWIN_USER_TEMP_DIR` before its first command. | The keeper, the agent's machine commands and the account's sessions then reach the same machine files. |
 | On macOS the keeper's LaunchDaemon has `AbandonProcessGroup`. | The machine's processes are children of the keeper's `podman machine start`, and launchd ends the job's whole process group when the job stops. |
 | **Stop** runs the root script that stops every declared container and every hub container, then stops the keeper, then runs `podman machine stop` as the account. The machine then stops answering the read, and the module reads `stopped`. A container a person started by hand stops with the machine. | A running machine keeps its memory, about 3 GiB on the lab machine, while the module is stopped. A keeper left running starts the stopped machine again within 30 seconds. |
+| Each time the agent stops the machine, it first saves the image references in the machine's store into the module's record. While the machine does not answer the read, a container module's presence check reads that saved list, and the module reads `stopped`. | A stopped machine lists no images. A container module that read `absent` while Containers was stopped had its uninstall skipped: on the lab machine Hermes WebUI's four volumes and its two images, 3.2 GB, stayed in the machine. |
 | **Start** applies the configuration, and the apply starts the keeper. The keeper starts the machine, and the apply waits until the machine answers the read. | The keeper is the one program that starts the machine. |
 | A stop lasts until the computer's next boot. The keeper's task or LaunchDaemon starts at boot, as every account service's does, and starts the machine. | The account service layer stops a service and leaves it registered ([module_template.md](../module_template.md), "The run"). |
 | A container module's uninstall while the machine is stopped starts the keeper and waits until the machine answers the read. It then removes the module's containers and their files in the machine, and stops the keeper and the machine again. | The uninstall's steps run through the machine's Podman. On Linux they run while Containers is stopped as well. |
@@ -362,7 +363,7 @@ Every container reaches the agent's `127.0.0.1` listeners at
 | --- | --- |
 | Every apply writes the names of the declared containers, and of the hub containers by module, into the module's record under `platform.agent_data_dir()`, root-only. | The report, a container's buttons and its journal tell a declared container from a hand-started one. |
 | Until its first apply after a start, the runner reads the names from the record. | An agent that starts on a state it already tried applies nothing ([agent.md](../../agent.md), "A retry is the same press again"), and its declared containers still run through systemd. |
-| On Windows and macOS the names are in the record the runner keeps of its last apply, beside the Run settings. | One record per runner. |
+| On Windows and macOS the names are in the record the runner keeps of its last apply, beside the Run settings and the image references saved at the machine's last stop ("The keeper"). | One record per runner. |
 
 ## A container's shell
 
