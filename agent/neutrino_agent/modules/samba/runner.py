@@ -154,7 +154,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         }
 
     def stop(self) -> None:
-        """Take the server down, leaving the shares' files in place."""
+        """Take the server down and disable it, leaving the shares' files in place."""
         SambaConfigApplier(unit=self._unit).stop()
 
     def remove_configuration(self) -> None:

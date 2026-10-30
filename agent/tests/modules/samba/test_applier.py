@@ -6,7 +6,8 @@ the module's include line once, after its ``[global]`` header; a missing
 ``smb.conf`` is the distribution's stock file with the line; a whole
 ``smb.conf`` an earlier version rendered is the person's and only gets the
 line; the module's shares go to its own file; an uninstall deletes that
-file and takes the line out; the sweep takes every ``neutrino-`` user and
+file and takes the line out; a stop stops the unit and disables it; the
+sweep takes every ``neutrino-`` user and
 credential off the machine; the person's own
 configuration refuses a taken share name and the global settings that stop
 the module's shares; each user's Samba password is set from the hub's map
@@ -459,12 +460,14 @@ def test_the_persons_configuration_that_leaves_the_loopback_open_passes():
     )
 
 
-def test_stop_stops_the_unit_and_leaves_it_enabled(box):
+def test_stop_stops_the_unit_and_disables_it(box):
     commands, _ = box
 
     SambaConfigApplier(unit="smbd.service").stop()
 
-    assert commands.ran("systemctl") == [(["systemctl", "stop", "smbd.service"], None)]
+    assert commands.ran("systemctl") == [
+        (["systemctl", "disable", "--now", "smbd.service"], None)
+    ]
 
 
 def users_config(passwords: dict) -> SambaConfig:

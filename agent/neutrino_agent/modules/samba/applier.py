@@ -665,8 +665,8 @@ class SambaConfigApplier:
         shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
 
     def stop(self) -> None:
-        """Take the server down until the next apply; the unit stays enabled."""
-        run(["systemctl", "stop", self._unit], is_checked=False)
+        """Take the server down and disable it until the next apply starts it."""
+        run(["systemctl", "disable", "--now", self._unit], is_checked=False)
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
         """Make a share's folder that is missing, owned by the one account it writes as."""
