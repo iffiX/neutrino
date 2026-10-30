@@ -146,7 +146,18 @@ func TestRefusedConnectionsAreHeldThenReset(t *testing.T) {
 func TestRefusalPastTheHoldDeadlineResetsAtOnce(t *testing.T) {
 	hub := newTestHubWith(t, fixedDraws(knock.DoorReadBytesMax, 0), nil)
 	hostPort, _ := session.ParseAddress(hub.listen(t))
-	n, elapsed, err := refusalOf(t, hostPort, randomBytes(40))
+	// With no hold the reset can reach the dial or the write before the read.
+	started := time.Now()
+	n := 0
+	conn, err := net.Dial("tcp", hostPort)
+	if err == nil {
+		defer conn.Close()
+		if _, err = conn.Write(randomBytes(40)); err == nil {
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			n, err = conn.Read(make([]byte, 64))
+		}
+	}
+	elapsed := time.Since(started)
 	if n != 0 || !isReset(err) || elapsed > time.Second {
 		t.Fatalf("read %d bytes, %v after %v; want a reset at once", n, err, elapsed)
 	}
