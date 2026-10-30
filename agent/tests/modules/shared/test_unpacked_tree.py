@@ -1,7 +1,8 @@
 """A module's software from the hub, unpacked and sealed.
 
-What these pin: a tarball and a zip land whole; an unknown kind and a
-member outside the directory are refused; a sealed tree has no write bit
+What these pin: a tarball and a zip land whole, each zip member with the
+Unix mode its entry names; an unknown kind and a member outside the
+directory are refused; a sealed tree has no write bit
 left; removing a sealed tree takes all of it; and an archive placed beside
 what a directory holds replaces its namesakes and leaves the rest. A disk
 image, against faked ``hdiutil`` and ``ditto`` on ``PATH``, is attached
@@ -48,6 +49,26 @@ def test_a_tarball_and_a_zip_land_whole(tmp_path):
 
     assert (tmp_path / "t" / "top" / "bin" / "run").read_bytes() == b"#!/bin/sh\n"
     assert (tmp_path / "z" / "top" / "file.txt").read_text() == "z"
+
+
+def test_a_zip_members_unix_mode_survives_the_unpack_and_the_seal(tmp_path):
+    with zipfile.ZipFile(tmp_path / "cli.zip", "w") as archive:
+        program = zipfile.ZipInfo("code")
+        program.external_attr = 0o104755 << 16
+        archive.writestr(program, "#!/bin/sh\n")
+        plain = zipfile.ZipInfo("notes.txt")
+        plain.external_attr = 0o100640 << 16
+        archive.writestr(plain, "n")
+        archive.writestr("bare.txt", "b")
+
+    unpack_into(str(tmp_path / "cli.zip"), "zip", str(tmp_path / "vscode"))
+
+    def mode(name):
+        return stat.S_IMODE((tmp_path / "vscode" / name).stat().st_mode)
+
+    assert mode("code") == 0o555
+    assert mode("notes.txt") == 0o440
+    assert mode("bare.txt") & 0o222 == 0
 
 
 def test_an_unknown_kind_and_a_member_outside_are_refused(tmp_path):

@@ -84,6 +84,7 @@ def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -
             for name in archive.namelist():
                 _check_member(name, directory)
             archive.extractall(directory)
+            _keep_zip_modes(archive, directory)
     else:
         raise ValueError(f"unknown archive kind {kind!r}")
 
@@ -302,6 +303,18 @@ def _unseal_file(path: str) -> None:
         return
     with contextlib.suppress(OSError):
         os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | stat.S_IWRITE)
+
+
+def _keep_zip_modes(archive: zipfile.ZipFile, directory: str) -> None:
+    """Give each unpacked member the permission bits its zip entry names.
+
+    An entry with no Unix mode keeps the mode the unpack gave it. Setuid,
+    setgid and sticky bits are dropped.
+    """
+    for info in archive.infolist():
+        mode = (info.external_attr >> 16) & 0o777
+        if mode:
+            os.chmod(os.path.join(directory, info.filename), mode)
 
 
 def _check_member(name: str, directory: str) -> None:
