@@ -377,7 +377,10 @@ and it exists only while the error is on screen.
 A cadence is a named constant at the top of the file, never a literal at the
 call site, and it slows to nothing while the tab is hidden — `document.hidden`
 gates the tick, because a background tab polling the gateway every second buys
-nobody anything.
+nobody anything. A tick of `usePolledResource` starts no request while its
+first load or its last tick is still out: a module's log on Windows took
+4 s to 2 minutes to answer, and four open tabs stacked a new request on it
+every 15 s.
 
 | Interval | For |
 | --- | --- |
