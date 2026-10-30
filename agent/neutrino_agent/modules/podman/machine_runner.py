@@ -40,6 +40,7 @@ from neutrino_agent.modules.podman.applier import (
     fastest_sources,
     image_references,
     podman_version,
+    read_image_references,
     ready_hub_containers,
 )
 from neutrino_agent.modules.podman.config import (
@@ -334,6 +335,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._lock = threading.Lock()
         # One apply, stop or removal at a time.
         self._apply_lock = threading.Lock()
+        # One change of the record at a time. A change reads the record again
+        # under it.
+        self._record_lock = threading.Lock()
         self._config: "PodmanConfig | None" = None
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
@@ -740,18 +744,18 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Every image reference with a digest in the machine's store, for a container module's presence check.
 
         Returns:
-            The references the machine's Podman lists while the machine
-            answers the read. While it does not, the references saved when
-            the agent last stopped the machine. Empty while no machine was
+            The references the machine's Podman lists, saved in the record.
+            While the machine or its image list does not answer, the
+            references saved at the last read. Empty while no machine was
             applied.
         """
         record = self._record()
         if not record:
             return set()
-        command, info = self._read(self._machine_of_record(record))
-        if info is not None and command:
-            return image_references(podman=command)
-        return {str(reference) for reference in record.get("images") or []}
+        references = self._save_images(self._machine_of_record(record))
+        if references is None:
+            return {str(reference) for reference in record.get("images") or []}
+        return references
 
     def hub_names(self) -> dict:
         """The hub containers the last apply wrote into the machine, by module.
@@ -870,13 +874,15 @@ class PodmanMachineModuleRunner(ModuleRunner):
                     if container.module != module
                 ]
             )
-        if record:
-            held = dict(record.get("hub_names") or {})
-            held.pop(module, None)
-            try:
-                self._records.write({**record, "hub_names": held})
-            except OSError as error:
-                self._log(f"podman: the record was not written: {error}")
+        with self._record_lock:
+            record = self._record()
+            if record:
+                held = dict(record.get("hub_names") or {})
+                held.pop(module, None)
+                try:
+                    self._records.write({**record, "hub_names": held})
+                except OSError as error:
+                    self._log(f"podman: the record was not written: {error}")
         self._page_ports.remove(module)
 
     def hub_journal(self, names: list, lines: int) -> list:
@@ -1207,7 +1213,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             self._machine_of(account, password).stop()
         except (ModuleApplyError, KeyError, OSError, PlatformUnsupportedError) as error:
             self._log(f"podman: the machine of {account} was not stopped: {error}")
-        self._records.remove(account)
+        with self._record_lock:
+            self._records.remove(account)
         with self._lock:
             self._reading = None
         self._log(f"podman: stopped the machine of {account}")
@@ -1253,22 +1260,35 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 self._reading = None
         self._log(f"podman: stopped the machine of {machine.account}")
 
-    def _save_images(self, machine: PodmanMachine) -> None:
-        """Save the store's image references in the record, logging a failure.
+    def _save_images(self, machine: PodmanMachine) -> "set | None":
+        """Read the store's image references and save them in the record, logging a failed write.
 
-        A machine that does not answer the read leaves the saved list as it is.
+        A machine or an image list that does not answer the read leaves the
+        saved list as it is.
+
+        Returns:
+            The references read, or None when nothing answered.
         """
-        record = self._record()
         command, info = self._read(machine)
-        if not record or info is None or not command:
-            return
-        references = image_references(podman=command)
-        try:
-            self._records.write({**record, "images": sorted(references)})
-        except OSError as error:
-            self._log(
-                f"podman: the images of {machine.account} were not saved: {error}"
-            )
+        if info is None or not command:
+            return None
+        references = read_image_references(podman=command)
+        if references is None:
+            return None
+        saved = sorted(references)
+        with self._record_lock:
+            record = self._record()
+            if (
+                record.get("account") == machine.account
+                and record.get("images") != saved
+            ):
+                try:
+                    self._records.write({**record, "images": saved})
+                except OSError as error:
+                    self._log(
+                        f"podman: the images of {machine.account} were not saved: {error}"
+                    )
+        return references
 
     def _run_quietly(self, machine: PodmanMachine, script: str) -> None:
         """Run one root script, logging a failure instead of raising it."""
@@ -1312,21 +1332,25 @@ class PodmanMachineModuleRunner(ModuleRunner):
     ) -> None:
         """Keep the last apply: the account, its login, the Run settings, the disk's size, the declared names and the hub names by module.
 
+        The account's saved images stay.
+
         Raises:
             ModuleApplyError: ``apply_failed`` when the record cannot be written.
         """
         try:
-            self._records.write(
-                {
-                    "account": settings.account,
-                    "password": settings.password,
-                    "cpus": settings.cpus,
-                    "memory_gib": settings.memory_gib,
-                    "disk_gib": disk_gib,
-                    "names": parsed.declared_names,
-                    "hub_names": parsed.hub_names(),
-                }
-            )
+            with self._record_lock:
+                self._records.write(
+                    {
+                        "account": settings.account,
+                        "password": settings.password,
+                        "cpus": settings.cpus,
+                        "memory_gib": settings.memory_gib,
+                        "disk_gib": disk_gib,
+                        "names": parsed.declared_names,
+                        "hub_names": parsed.hub_names(),
+                        "images": self._records.read(settings.account).get("images"),
+                    }
+                )
         except OSError as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": str(error)[:PODMAN_MACHINE_DETAIL_CHARS]}

@@ -1258,7 +1258,7 @@ def test_stop_saves_the_store_s_images_for_a_container_module_s_presence_check(
 ):
     store = {WEB_REFERENCE, AGENT_REFERENCE}
     monkeypatch.setattr(
-        machine_runner_module, "image_references", lambda *, podman: set(store)
+        machine_runner_module, "read_image_references", lambda *, podman: set(store)
     )
     rig.keep_image()
     rig.runner.apply(CONFIG)
@@ -1287,7 +1287,7 @@ def test_the_halt_after_a_container_module_s_uninstall_saves_the_store_without_i
 ):
     store = {WEB_REFERENCE, AGENT_REFERENCE}
     monkeypatch.setattr(
-        machine_runner_module, "image_references", lambda *, podman: set(store)
+        machine_runner_module, "read_image_references", lambda *, podman: set(store)
     )
     rig.keep_image()
     rig.runner.apply(CONFIG)
@@ -1309,6 +1309,67 @@ def test_the_halt_after_a_container_module_s_uninstall_saves_the_store_without_i
     assert rig.record()[0]["images"] == []
     assert module.verify(IMAGE_RECIPE) is False
     assert rig.world.calls[-1] == ("me", "stop", "")
+
+
+def test_a_running_machine_s_missed_read_reads_the_images_of_the_last_read(
+    rig, monkeypatch
+):
+    store = {WEB_REFERENCE}
+    monkeypatch.setattr(
+        machine_runner_module, "read_image_references", lambda *, podman: set(store)
+    )
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.runner.apply(CONFIG)
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+    store.add(AGENT_REFERENCE)
+    module = ContainerModuleRunner(
+        platform=rig.platform, name="demo", containers=rig.runner, log=rig.lines.append
+    )
+    is_present_while_answering = module.verify(IMAGE_RECIPE)
+
+    rig.world.is_answering = False
+    rig.advance(PODMAN_MACHINE_INFO_TTL_S + 1)
+
+    assert is_present_while_answering is True
+    assert rig.record()[0]["images"] == [AGENT_REFERENCE, WEB_REFERENCE]
+    assert rig.runner.image_references() == {WEB_REFERENCE, AGENT_REFERENCE}
+    assert module.verify(IMAGE_RECIPE) is True
+
+
+def test_an_image_list_that_does_not_answer_reads_the_saved_list_and_keeps_it(
+    rig, monkeypatch
+):
+    answers = [{WEB_REFERENCE, AGENT_REFERENCE}, None]
+    monkeypatch.setattr(
+        machine_runner_module,
+        "read_image_references",
+        lambda *, podman: answers.pop(0),
+    )
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.image_references()
+
+    seen = rig.runner.image_references()
+
+    assert seen == {WEB_REFERENCE, AGENT_REFERENCE}
+    assert rig.record()[0]["images"] == [AGENT_REFERENCE, WEB_REFERENCE]
+
+
+def test_an_apply_keeps_the_saved_images(rig, monkeypatch):
+    monkeypatch.setattr(
+        machine_runner_module,
+        "read_image_references",
+        lambda *, podman: {WEB_REFERENCE},
+    )
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.image_references()
+
+    rig.runner.apply(CONFIG)
+
+    assert rig.record()[0]["images"] == [WEB_REFERENCE]
 
 
 def test_a_machine_not_stopped_by_the_agent_has_no_saved_images(rig):

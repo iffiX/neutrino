@@ -214,18 +214,32 @@ def image_references(*, podman: tuple = (PODMAN_BINARY,)) -> set:
         the digest of the index it was pulled by among them; empty when
         Podman cannot say.
     """
+    references = read_image_references(podman=podman)
+    return references if references is not None else set()
+
+
+def read_image_references(*, podman: tuple = (PODMAN_BINARY,)) -> "set | None":
+    """Every image reference with a digest in Podman's store, or None when Podman cannot say.
+
+    Args:
+        podman: The podman command.
+
+    Returns:
+        The references :func:`image_references` returns, or None when the
+        command fails or prints no list.
+    """
     try:
         result = run(
             [*podman, "images", "--format", "json"], is_checked=False, timeout_s=60
         )
     except (OSError, subprocess.SubprocessError):
-        return set()
+        return None
     if not result.is_success:
-        return set()
+        return None
     try:
         entries = json.loads(result.stdout or "[]")
     except ValueError:
-        return set()
+        return None
     references: set = set()
     for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, dict):
