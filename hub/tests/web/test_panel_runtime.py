@@ -24,11 +24,13 @@ from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.web import channel_state
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.constants import WEB_EVENT_DEVICES
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from tests.conftest import unlock_vault
 
@@ -317,6 +319,9 @@ class ComposingStates:
     def uses_gateway_models(self, key):
         return False
 
+    def modules(self, key):
+        return {}
+
     def compose(self, key, platform, **kwargs):
         self.composed[key] = kwargs
         return {}, "h"
@@ -393,6 +398,48 @@ def gateway_reader(monkeypatch, tmp_path, answers: list) -> PanelRuntime:
     monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
     monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
     return panel
+
+
+def test_a_state_composed_during_a_press_carries_the_want_with_its_mark(
+    monkeypatch, tmp_path
+):
+    """A press writes the want, then the retry mark. A state composed between
+    the two waits for the mark."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    marks = DeviceRetryMarks(path=tmp_path / "marks.json")
+    store = DesiredStateStore()
+    store.set_want("other", "fakedesk", "running")
+    panel = object.__new__(PanelRuntime)
+    panel.desired_states = store
+    panel.device_platform = {"other": LINUX}
+    panel.device_address = {}
+    panel.device_account_details = {}
+    panel.device_hostname = {}
+    panel.module_releases = None
+    devices = OwnMachineDevices()
+    monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
+    monkeypatch.setattr(runtime_module, "DeviceRetryMarks", lambda: marks)
+    monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
+    monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
+    monkeypatch.setattr(panel, "_gateway_models_for", lambda key: [], raising=False)
+    composed: list = []
+    reader = threading.Thread(
+        target=lambda: composed.append(panel.desired_state_for("other"))
+    )
+
+    with CONFIG_WRITE_LOCK:
+        store.set_want("other", "fakedesk", "stopped")
+        reader.start()
+        reader.join(0.3)
+        mark = marks.mark("other", "fakedesk")
+    reader.join(5)
+
+    ((_, state),) = composed
+    entry = state["modules"]["fakedesk"]
+    assert (entry["want"], entry["retry_mark"]) == ("stopped", mark)
 
 
 def sign_in(tmp_path):

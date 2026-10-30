@@ -102,6 +102,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import (
+    CONFIG_WRITE_LOCK,
     read_config,
     set_config_write_hook,
     write_config,
@@ -916,6 +917,11 @@ class PanelRuntime:
             The hash and the state.
         """
         key = device if isinstance(device, str) else device.id
+        # The wants and the retry marks, read in one hold of the lock a press
+        # writes them under.
+        with CONFIG_WRITE_LOCK:
+            wanted = self.desired_states.modules(key)
+            marks = DeviceRetryMarks().marks(key)
         desired, state_hash = self.desired_states.compose(
             key,
             self.device_platform.get(key, {}),
@@ -923,7 +929,8 @@ class PanelRuntime:
             urls=self._device_urls(key),
             is_hub_machine=self.is_hub_machine(key),
             ai_models=self._gateway_models_for(key),
-            retry_marks=DeviceRetryMarks().marks(key),
+            retry_marks=marks,
+            wanted=wanted,
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
             releases=self.module_releases,

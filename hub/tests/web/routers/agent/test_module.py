@@ -19,6 +19,7 @@ view.
 
 import asyncio
 import json
+import threading
 
 import pytest
 from fastapi import FastAPI
@@ -1205,6 +1206,41 @@ def test_a_press_on_a_module_whose_state_is_not_its_want_puts_a_mark(api, press,
     )
 
     assert set(retry_marks()) == {"fakedesk"}
+
+
+def test_a_press_writes_its_want_and_its_mark_in_one_hold_of_the_lock(api, monkeypatch):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+    from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "running"}}
+    marked = DeviceRetryMarks.mark
+    taken_elsewhere: list = []
+
+    def mark(self, device_id, name):
+        def try_take():
+            if CONFIG_WRITE_LOCK.acquire(timeout=0.1):
+                CONFIG_WRITE_LOCK.release()
+                taken_elsewhere.append(True)
+            else:
+                taken_elsewhere.append(False)
+
+        other = threading.Thread(target=try_take)
+        other.start()
+        other.join()
+        return marked(self, device_id, name)
+
+    monkeypatch.setattr(DeviceRetryMarks, "mark", mark)
+
+    client.post(f"{MODULE_PATH}/stop", json={"device_id": DEVICE, "module": "fakedesk"})
+
+    assert taken_elsewhere == [False]
+    assert modules_file_want(runtime) == "stopped"
+
+
+def modules_file_want(runtime) -> str:
+    return runtime.desired_states.want_of(DEVICE, "fakedesk")
 
 
 def test_start_again_on_a_module_left_installed_under_running_asks_again(api):

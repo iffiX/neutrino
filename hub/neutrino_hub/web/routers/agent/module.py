@@ -87,6 +87,7 @@ from neutrino_hub.modules.devices.manifests import (
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
@@ -1118,9 +1119,12 @@ def _set_want(
                 settle_instance_keys(
                     runtime.desired_states, key, module, device.name if device else ""
                 )
-        runtime.desired_states.set_want(key, module, want)
-        if is_retried:
-            DeviceRetryMarks().mark(key, module)
+        # The want and its mark in one hold of the lock, so no state is
+        # composed between them.
+        with CONFIG_WRITE_LOCK:
+            runtime.desired_states.set_want(key, module, want)
+            if is_retried:
+                DeviceRetryMarks().mark(key, module)
     except OSError as error:
         raise _config_unwritable(error) from error
     push_state(runtime, key)
@@ -1147,9 +1151,10 @@ def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
     is_retried = _is_retried(
         runtime, key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING
     )
-    store.set_want(key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING)
-    if is_retried:
-        DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
+    with CONFIG_WRITE_LOCK:
+        store.set_want(key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING)
+        if is_retried:
+            DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
 
 
 def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> None:

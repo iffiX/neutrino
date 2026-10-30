@@ -1401,6 +1401,7 @@ class DesiredStateStore:
         is_hub_machine: bool = False,
         ai_models: "list | tuple" = (),
         retry_marks: "dict | None" = None,
+        wanted: "dict | None" = None,
         account_details: "dict | None" = None,
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         releases: "ModuleReleaseStore | None" = None,
@@ -1428,6 +1429,8 @@ class DesiredStateStore:
             retry_marks: Module name, or ``ai_tools``, to the mark the last
                 press on it after a failure left; each goes into its entry
                 as ``retry_mark``, the AI tools' only while they are on.
+            wanted: The modules ``modules.json`` names, as one read gave
+                them beside ``retry_marks``; None reads the file.
             account_details: Account to ``{home, shell}`` as the machine last
                 reported.
             machine_slug: The slug of the machine's name, for local names.
@@ -1453,7 +1456,7 @@ class DesiredStateStore:
             "manifests": load_module_manifests(),
         }
         modules = {}
-        for name, entry in self.modules(key).items():
+        for name, entry in (self.modules(key) if wanted is None else wanted).items():
             if entry["is_settled"] or name in DEVICE_AGENT_MODULES:
                 continue
             recipe = dict((resolved.get(name) or {}).get("recipe") or {})
