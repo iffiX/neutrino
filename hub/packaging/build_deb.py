@@ -97,10 +97,6 @@ if [ "$1" = configure ]; then
 if [ "$1" = configure ] && [ -n "$2" ] && hub_is_set_up; then
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
-    # The transport unit still runs the program this package replaced. It
-    # restarts after `nhub apply` wrote its unit and before the panel, only
-    # while it runs.
-    systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
     # The router unit is resident, so restarting it is what moves the box
     # onto this version. It stops without tearing the firewall down.
     if systemctl is-enabled --quiet neutrino_hub_router.service 2>/dev/null; then
@@ -112,6 +108,10 @@ if [ "$1" = configure ] && [ -n "$2" ] && hub_is_set_up; then
     # goes on running the old Python behind the new frontend, which is a strip
     # asking for fields the old API does not send. Only when it is already up.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
+    # The transport unit still runs the program this package replaced. It
+    # restarts last and only while it runs, so the peers that dial again
+    # reach the new panel.
+    systemctl try-restart neutrino_hub_transport.service >/dev/null 2>&1 || true
     exit 0
 fi
 

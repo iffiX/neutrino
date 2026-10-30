@@ -437,7 +437,7 @@ def test_an_upgrade_over_a_hub_set_up_applies_and_shows_no_wizard(
         ("arch", ["sh"]),
     ],
 )
-def test_an_upgrade_over_a_hub_set_up_restarts_a_running_transport_before_the_panel(
+def test_an_upgrade_over_a_hub_set_up_restarts_a_running_transport_after_the_panel(
     tmp_path, package, command
 ):
     upgrade = {
@@ -451,9 +451,9 @@ def test_an_upgrade_over_a_hub_set_up_restarts_a_running_transport_before_the_pa
     transport = f"systemctl try-restart {TRANSPORT_UNIT}"
     order = [
         "nhub apply",
-        transport,
         "systemctl restart neutrino_hub_router.service",
         "systemctl try-restart neutrino_hub_web.service",
+        transport,
     ]
     assert calls.count(transport) == 1
     assert [call for call in calls if call in order] == order
