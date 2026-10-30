@@ -78,6 +78,13 @@ before it installs a version older than the one installed
 `USER` on macOS, and the agent itself on Windows, which is LocalSystem as
 the service is.
 
+**The data belongs to the server's account.** The `account` step makes the
+account when it is missing, and gives the data directory with everything
+under it to the account when another uid owns it; on Linux `app.ini` goes
+to the account's group with it. A `git` account removed by hand comes back
+with a new uid, and Gitea fails to start on data the old uid owns. A
+symbolic link under the data keeps its owner.
+
 **Uninstall takes what the module added and keeps the data**: the unit,
 the LaunchDaemon or the service, the binary and `app.ini` go; the data
 directory and the account stay, so an install afterwards serves the same
