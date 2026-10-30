@@ -316,14 +316,19 @@ def test_remove_all_stops_disables_and_deletes_every_generated_file(commands, di
     assert list(dirs.envs.iterdir()) == []
 
 
-def test_stop_all_takes_down_every_generated_unit_and_keeps_the_files(commands, dirs):
+def test_stop_all_stops_and_disables_every_generated_unit_at_once_and_keeps_the_files(
+    commands, dirs
+):
     dirs.units.mkdir()
     (dirs.units / "web.service").write_text(rendered())
+    (dirs.units / "db.service").write_text(rendered())
     (dirs.units / "hand.service").write_text("[Service]\nmine\n")
 
     dirs.applier().stop_all()
 
-    assert commands.calls == [["systemctl", "stop", "web.service"]]
+    assert commands.calls == [
+        ["systemctl", "disable", "--now", "db.service", "web.service"]
+    ]
     assert (dirs.units / "web.service").exists()
 
 

@@ -18,6 +18,7 @@ from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import runner as runner_module
 from neutrino_agent.modules.podman.applier import PodmanContainerState
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -283,10 +284,31 @@ def test_stop_takes_every_container_down_then_turns_the_socket_off(runner, syste
     assert system.calls == [["systemctl", "disable", "--now", "podman.socket"]]
 
 
+def plain_step(name):
+    return ModuleStep(name=name, run=None)
+
+
 def test_every_step_of_the_module_s_own_task_takes_containers_alone(runner):
     assert runner.step_locks("packages") == (("containers", "alone"),)
     assert runner.step_locks("configure") == (("containers", "alone"),)
     assert runner.step_locks("stop") == (("containers", "alone"),)
+
+
+def test_the_configure_under_stopped_enables_and_starts_no_container(runner):
+    steps = runner.configure_steps(
+        CONFIG, "stopped", [plain_step("configure"), plain_step("stop")]
+    )
+
+    steps[0].run(None)
+
+    assert [step.name for step in steps] == ["configure", "stop"]
+    assert FakeUnitApplier.applied == [(["web.service"], [])]
+
+
+def test_the_configure_under_running_is_the_core_s_own(runner):
+    steps = [plain_step("configure"), plain_step("start")]
+
+    assert runner.configure_steps(CONFIG, "running", steps) is steps
 
 
 def test_start_turns_the_socket_on(runner, system):

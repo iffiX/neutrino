@@ -672,7 +672,7 @@ def test_the_verbs_scripts_name_the_containers_unit():
         machine_control_script("web", "kill")
 
 
-def test_the_stop_script_stops_each_generated_container_and_keeps_its_files(
+def test_the_stop_script_stops_and_disables_the_generated_containers_at_once(
     tmp_path,
 ):
     shell = MachineShell(tmp_path)
@@ -682,7 +682,7 @@ def test_the_stop_script_stops_each_generated_container_and_keeps_its_files(
     done, calls = shell.run_script(machine_stop_script(root=str(shell.root)))
 
     assert done.returncode == 0, done.stderr
-    assert calls == ["stop batch.service", "stop web.service"]
+    assert calls == ["disable --now batch.service web.service"]
     assert (shell.units / "web.service").exists()
     assert (shell.envs / "web.env").exists()
 

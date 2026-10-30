@@ -493,9 +493,17 @@ class PodmanUnitApplier:
         return removed
 
     def stop_all(self) -> None:
-        """Stop every generated unit, leaving its files in place."""
-        for file_name in self.generated_names():
-            run(["systemctl", "stop", file_name], is_checked=False)
+        """Stop and disable every generated unit with one ``systemctl`` call, leaving its files in place.
+
+        systemd stops the units in the order their ``After=`` names.
+        """
+        names = self.generated_names()
+        if names:
+            run(
+                ["systemctl", "disable", "--now", *names],
+                is_checked=False,
+                timeout_s=900,
+            )
 
     def remove_all(self) -> None:
         """Stop and disable every generated unit, and delete its files."""

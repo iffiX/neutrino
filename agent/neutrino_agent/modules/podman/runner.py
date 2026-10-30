@@ -10,7 +10,9 @@ read back with its owner, image, ports, volumes and environment, which is
 what the hub imports the first time it configures an engine somebody set
 up by hand. The names of the declared and hub containers are kept in a
 root-only record, read until the first apply after a start. Every step of
-the module's task takes the step lock ``containers`` alone.
+the module's task takes the step lock ``containers`` alone. **Stop** stops
+and disables every declared and hub unit, and an apply under ``stopped``
+enables and starts none of them.
 
 Not pure: drives podman and systemd through the applier.
 """
@@ -20,10 +22,13 @@ Not pure: drives podman and systemd through the applier.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import functools
 import os
 import shutil
 import subprocess
 
+from neutrino_agent.constants import AGENT_STEP_CONFIGURE, AGENT_WANT_STOPPED
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import command_outcome
 from neutrino_agent.modules.podman.applier import (
@@ -151,6 +156,30 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """
         return PODMAN_STEP_LOCKS
 
+    def configure_steps(self, config: dict, want: str, steps: list) -> list:
+        """The core's steps, the ``configure`` under ``stopped`` applying with no container started.
+
+        Args:
+            config: The configuration the task's entry carries.
+            want: ``running`` or ``stopped``.
+            steps: ``configure``, then ``start`` or ``stop``.
+
+        Returns:
+            The steps.
+        """
+        if want != AGENT_WANT_STOPPED:
+            return steps
+        return [
+            (
+                dataclasses.replace(
+                    step, run=functools.partial(self._run_apply_stopped, dict(config))
+                )
+                if step.name == AGENT_STEP_CONFIGURE
+                else step
+            )
+            for step in steps
+        ]
+
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration.
 
@@ -182,44 +211,18 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 refuses a unit; the first left-out container's refusal once
                 the rest is applied.
         """
-        # A failed first apply after a start leaves every module unwritten.
-        if self._written is None:
-            self._written = PodmanConfig()
-        parsed, refused = PodmanConfig.from_dict(config).without_refused()
-        parsed.validate()
-        # Held before the units are started: a start waits on the image
-        # pull, and a report taken meanwhile lists the declared container
-        # as not created yet rather than not at all.
-        self._config = parsed
-        try:
-            mirror_note = PodmanRegistriesApplier().apply(
-                PodmanRegistriesRenderer(config=parsed).render()
-            )
-            rendered, context = self._rendered_config(parsed)
-            renderer = PodmanUnitRenderer(config=rendered, context=context)
-            note = PodmanUnitApplier().apply(
-                renderer.render(),
-                renderer.environment_files(),
-                autostart_names=[
-                    container.name
-                    for container in [*rendered.containers, *rendered.hub_containers]
-                    if container.is_autostart
-                ],
-                source_keys=renderer.source_keys(),
-            )
-            self._config = rendered
-            self._written = rendered
-            self._write_record(rendered)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ModuleApplyError(
-                "apply_failed", {"detail": command_detail(error)[:500]}
-            )
-        line = f"podman: {note}; {mirror_note}"
-        if refused:
-            line += "; left out " + ", ".join(name for name, _ in refused)
-        self._log(line)
-        if refused:
-            raise refused[0][1]
+        self._apply(config, is_started=True)
+
+    def apply_stopped(self, config: dict) -> None:
+        """Render the units and the mirror drop-in under ``stopped``, every unit disabled and none started.
+
+        Args:
+            config: The desired configuration.
+
+        Raises:
+            ModuleApplyError: As :meth:`apply` does.
+        """
+        self._apply(config, is_started=False)
 
     def start(self) -> None:
         """Turn ``podman.socket`` on, so Podman starts with the machine.
@@ -235,7 +238,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             )
 
     def stop(self) -> None:
-        """Stop every declared and hub container, then turn ``podman.socket`` off.
+        """Stop and disable every declared and hub container, then turn ``podman.socket`` off.
 
         A container a person started by hand keeps running; images and
         volumes stay.
@@ -477,6 +480,51 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             OSError: When no port can be picked or kept.
         """
         return self._page_ports.port_for(module, name)
+
+    def _run_apply_stopped(self, config: dict, context) -> None:
+        """The ``configure`` step under ``stopped``."""
+        self.apply_stopped(config)
+
+    def _apply(self, config: dict, *, is_started: bool) -> None:
+        """Render and write the configuration. With ``is_started`` false no container starts with the box."""
+        # A failed first apply after a start leaves every module unwritten.
+        if self._written is None:
+            self._written = PodmanConfig()
+        parsed, refused = PodmanConfig.from_dict(config).without_refused()
+        parsed.validate()
+        # Held before the units are started: a start waits on the image
+        # pull, and a report taken meanwhile lists the declared container
+        # as not created yet rather than not at all.
+        self._config = parsed
+        try:
+            mirror_note = PodmanRegistriesApplier().apply(
+                PodmanRegistriesRenderer(config=parsed).render()
+            )
+            rendered, context = self._rendered_config(parsed)
+            renderer = PodmanUnitRenderer(config=rendered, context=context)
+            note = PodmanUnitApplier().apply(
+                renderer.render(),
+                renderer.environment_files(),
+                autostart_names=[
+                    container.name
+                    for container in [*rendered.containers, *rendered.hub_containers]
+                    if container.is_autostart and is_started
+                ],
+                source_keys=renderer.source_keys(),
+            )
+            self._config = rendered
+            self._written = rendered
+            self._write_record(rendered)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ModuleApplyError(
+                "apply_failed", {"detail": command_detail(error)[:500]}
+            )
+        line = f"podman: {note}; {mirror_note}"
+        if refused:
+            line += "; left out " + ", ".join(name for name, _ in refused)
+        self._log(line)
+        if refused:
+            raise refused[0][1]
 
     def _rendered_config(self, parsed: PodmanConfig) -> tuple:
         """The configuration this apply renders, and what its files name.

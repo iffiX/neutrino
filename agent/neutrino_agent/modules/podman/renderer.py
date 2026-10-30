@@ -175,13 +175,17 @@ done
 systemctl daemon-reload
 """
 
+# Stops and disables every marked unit with one systemctl call. systemd stops
+# them in the order their After= names.
 _MACHINE_SCRIPT_STOP = """units={units}
 marker={marker}
+names=''
 for file in "$units"/*.service; do
     [ -f "$file" ] || continue
     [ "$(head -n 1 "$file")" = "$marker" ] || continue
-    systemctl stop "$(basename "$file")"
+    names="$names $(basename "$file")"
 done
+[ -z "$names" ] || systemctl disable --now $names
 """
 
 
@@ -304,7 +308,7 @@ def source_sed(keys) -> str:
 
 
 def machine_stop_script(*, root: str = "") -> str:
-    """The root script that stops every generated container in a machine.
+    """The root script that stops and disables every generated container in a machine.
 
     Args:
         root: A directory every path in the machine is under; empty is the

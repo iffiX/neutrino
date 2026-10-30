@@ -624,10 +624,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._source_sets = dict(source_sets)
 
     def stop(self) -> None:
-        """Stop every declared and hub container, then the keeper, then the machine.
+        """Stop and disable every declared and hub container, then the keeper, then stop the machine.
 
-        Images and volumes stay. The keeper starts the machine again at
-        the computer's next boot.
+        Images and volumes stay. The machine stays stopped across the
+        computer's next boot.
 
         Raises:
             ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
