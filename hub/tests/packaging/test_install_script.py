@@ -6,8 +6,10 @@ the real ``curl`` against stand-in release sites on 127.0.0.1, so what is
 asserted is the package each system and machine takes, the command that
 installs it, the site and the release it comes from, the move to the next
 site on a stall, an error or other bytes, the checksum that stops a wrong
-file, and the one sentence each refusal prints. The fake ``nhub`` lies
-outside the path, where the script must name it whole.
+file, the one sentence each refusal prints, and the wait while another
+program holds dpkg's or dnf's lock, its holder named whole from a stand-in
+of the kernel's process list. The fake ``nhub`` lies outside the path,
+where the script must name it whole.
 """
 
 import hashlib
@@ -16,6 +18,7 @@ import sys
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -97,6 +100,11 @@ echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
     "apt-get": RECORDER,
     "dnf": """#!/bin/sh
 echo "$(basename "$0") $*" >> "$FAKE_LOG"
+if [ -n "${FAKE_DNF_LOCKED:-}" ] && [ -s "$FAKE_DNF_LOCKED" ]; then
+    sed -i 1d "$FAKE_DNF_LOCKED"
+    echo "Failed to obtain rpm transaction lock. Another transaction is in progress."
+    exit 1
+fi
 case "$*" in *"${FAKE_DNF_REFUSED:-no refusal}"*) exit 1 ;; esac
 """,
     "subscription-manager": RECORDER,
@@ -159,6 +167,7 @@ def stand_ins(tmp_path, release_sites):
         edition="intl",
         sites=None,
         script=SCRIPT,
+        lock_wait_s=300,
     ):
         release_file = tmp_path / "os-release"
         release_file.write_text(OS_RELEASES[os_release])
@@ -198,7 +207,11 @@ def stand_ins(tmp_path, release_sites):
                 f'HUB_COMMAND_LINUX="{programs}/nhub"; '
                 f'HUB_COMMAND_MACOS="{programs}/nhub"; '
                 f'HUB_SETTINGS_LINUX="{tmp_path}/settings.json"; '
-                f'HUB_SETTINGS_MACOS="{tmp_path}/settings.json"; main "$@"',
+                f'HUB_SETTINGS_MACOS="{tmp_path}/settings.json"; '
+                f'APT_LOCKS="{run.dpkg_lock} {run.lists_lock}"; '
+                f'DNF_LOCK_FILES="{run.dnf_lock}"; '
+                f'PROC_LOCKS="{run.locks}"; PROC_DIR="{run.proc}"; '
+                f'LOCK_WAIT_S={lock_wait_s}; main "$@"',
                 "install.sh",
                 *arguments,
             ],
@@ -217,6 +230,14 @@ def stand_ins(tmp_path, release_sites):
     run.served = served
     run.first = first
     run.second = second
+    run.dpkg_lock = tmp_path / "lock-frontend"
+    run.dpkg_lock.write_text("")
+    run.lists_lock = tmp_path / "lists-lock"
+    run.lists_lock.write_text("")
+    run.dnf_lock = tmp_path / "rpmdb_lock.pid"
+    run.locks = tmp_path / "locks"
+    run.locks.write_text("")
+    run.proc = tmp_path / "proc"
     run.dead = release_sites.dead
     run.dead_host = release_sites.dead_host
     run.open_site = release_sites
@@ -253,7 +274,7 @@ def test_a_debian_machine_installs_the_hub_deb_from_the_latest_release(stand_ins
 
     assert result.returncode == 0, result.stderr
     (install,) = _installs(asked)
-    assert install.startswith("apt-get install -y /")
+    assert install.startswith("apt-get install -y -o DPkg::Lock::Timeout=300 /")
     assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
     assert any(line.startswith("sudo apt-get install -y") for line in asked)
     paths = [
@@ -293,7 +314,12 @@ def test_the_component_names_the_package(stand_ins):
     [
         ("fedora", "aarch64", "dnf install -y", "neutrino-hub-9.9.9-1.aarch64.rpm"),
         ("rocky", "x86_64", "dnf install -y", "neutrino-hub-9.9.9-1.x86_64.rpm"),
-        ("ubuntu", "aarch64", "apt-get install -y", "neutrino-hub_9.9.9_arm64.deb"),
+        (
+            "ubuntu",
+            "aarch64",
+            "apt-get install -y -o DPkg::Lock::Timeout=300",
+            "neutrino-hub_9.9.9_arm64.deb",
+        ),
         (
             "arch",
             "x86_64",
@@ -1261,3 +1287,137 @@ def test_the_script_reads_the_bindings_where_the_client_writes_them():
     darwin = f"{DARWIN_CONFIG_DIR}/{CLIENT_CONFIG_FILE_NAME}"
     assert f"\nCLIENT_BINDINGS_LINUX={linux}\n" in text
     assert f'\nCLIENT_BINDINGS_MACOS="{darwin}"\n' in text
+
+
+# --- another program holding the package manager ---
+
+
+def _holder(run, pid, comm, *words):
+    """One process as the kernel shows it: its cut name and its command line."""
+    directory = run.proc / str(pid)
+    directory.mkdir(parents=True)
+    (directory / "comm").write_text(comm + "\n")
+    (directory / "cmdline").write_bytes(b"\0".join(words) + b"\0")
+
+
+def _hold_dpkg(run, pid, lock=None):
+    """One of apt's locks held by a process, as /proc/locks lists it."""
+    inode = os.stat(run.dpkg_lock if lock is None else lock).st_ino
+    run.locks.write_text(f"1: POSIX  ADVISORY  WRITE {pid} 08:01:{inode} 0 EOF\n")
+
+
+def _later(seconds, action):
+    """Run an action on a thread after a while, as a holder finishing."""
+    timer = threading.Timer(seconds, action)
+    timer.start()
+    return timer
+
+
+def test_an_install_waits_for_dpkg_s_holder_naming_it_whole(stand_ins):
+    _holder(
+        stand_ins,
+        4242,
+        "unattended-upgr",
+        b"/usr/bin/python3",
+        b"/usr/bin/unattended-upgrade",
+        b"--download-only",
+    )
+    _hold_dpkg(stand_ins, 4242)
+    released = _later(1.5, lambda: stand_ins.locks.write_text(""))
+
+    result, asked = stand_ins("agent")
+    released.join()
+
+    assert result.returncode == 0, result.stderr
+    waiting = [line for line in result.stdout.splitlines() if "Waiting" in line]
+    assert waiting == [
+        "Waiting up to 300 seconds for unattended-upgrade (process 4242) "
+        "to finish with the package manager"
+    ]
+    (install,) = _installs(asked)
+    assert install.startswith("apt-get install -y -o DPkg::Lock::Timeout=300 /")
+
+
+def test_an_install_waits_for_apt_get_update_writing_the_package_lists(stand_ins):
+    """A fresh machine's cloud-init runs apt-get update first: apt-get
+    install on lists half written finds none of the package's
+    dependencies."""
+    _holder(stand_ins, 1646, "apt-get", b"/usr/bin/apt-get", b"--assume-yes", b"update")
+    _hold_dpkg(stand_ins, 1646, stand_ins.lists_lock)
+    released = _later(1.5, lambda: stand_ins.locks.write_text(""))
+
+    result, asked = stand_ins("agent")
+    released.join()
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "Waiting up to 300 seconds for apt-get (process 1646) to finish with the "
+        "package manager"
+    ) in result.stdout.splitlines()
+    assert len(_installs(asked)) == 1
+
+
+def test_a_package_manager_held_past_the_wait_installs_nothing(stand_ins):
+    _holder(stand_ins, 4242, "apt-get", b"apt-get", b"install", b"-y", b"x")
+    _hold_dpkg(stand_ins, 4242)
+
+    result, asked = stand_ins("agent", lock_wait_s=2)
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        "apt-get (process 4242) still holds the package manager after 2 seconds; "
+        "nothing was installed. Run this script again once it has finished."
+    )
+    assert _installs(asked) == []
+
+
+def test_an_install_waits_for_the_holder_of_dnf_s_own_lock(stand_ins):
+    _holder(
+        stand_ins,
+        4343,
+        "dnf-automatic",
+        b"/usr/bin/python3",
+        b"-s",
+        b"/usr/bin/dnf-automatic",
+        b"--timer",
+    )
+    stand_ins.dnf_lock.write_text("4343")
+    released = _later(1.5, lambda: stand_ins.dnf_lock.unlink())
+
+    result, asked = stand_ins("agent", os_release="rocky")
+    released.join()
+
+    assert result.returncode == 0, result.stderr
+    waiting = [line for line in result.stdout.splitlines() if "Waiting" in line]
+    assert waiting == [
+        "Waiting up to 300 seconds for dnf-automatic (process 4343) "
+        "to finish with the package manager"
+    ]
+    assert _installs(asked)[-1].startswith("dnf install -y /")
+
+
+def test_a_dnf_lock_file_of_an_ended_process_holds_nothing(stand_ins):
+    stand_ins.dnf_lock.write_text("4343")
+
+    result, _ = stand_ins("agent", os_release="fedora")
+
+    assert result.returncode == 0, result.stderr
+    assert "Waiting" not in result.stdout
+
+
+def test_dnf_5_runs_again_while_another_transaction_holds_the_rpm_lock(
+    stand_ins, tmp_path
+):
+    locked = tmp_path / "dnf_locked"
+    locked.write_text("1\n2\n")
+
+    result, asked = stand_ins(
+        "agent", os_release="fedora", environment={"FAKE_DNF_LOCKED": str(locked)}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "Waiting up to 300 seconds for another transaction to finish with the "
+        "package manager"
+    ) in result.stdout.splitlines()
+    assert len([line for line in _installs(asked) if line.startswith("dnf")]) == 3

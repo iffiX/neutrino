@@ -18,7 +18,9 @@
 # downloads anything, and keeps sudo's ticket fresh until it ends: the
 # install, the hub's setup and the hub's own agent ask nothing more. An
 # account sudo already lets in without a password is asked nothing. On the
-# RHEL family EPEL is enabled under the same sudo before the install.
+# RHEL family EPEL is enabled under the same sudo before the install. While
+# another program holds the package manager's lock, each install waits up to
+# LOCK_WAIT_S seconds and names it.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -52,6 +54,19 @@ HUB_COMMAND_MACOS=/usr/local/bin/nhub
 # password hash, not the example's placeholder, has been set up.
 HUB_SETTINGS_LINUX=/etc/neutrino/hub/web/settings.json
 HUB_SETTINGS_MACOS="/Library/Application Support/Neutrino/hub/config/web/settings.json"
+# How long an install waits for another program to finish with the package
+# manager, in seconds, as the agent's own installs wait.
+LOCK_WAIT_S=300
+# The locks apt holds, dpkg's front end's and the package lists' that
+# apt-get update writes, the files dnf 4 names the holder of each of its own
+# locks in, and what dnf 5 prints when another transaction holds the rpm
+# lock.
+APT_LOCKS="/var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock"
+DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid"
+DNF_LOCK_TEXT="rpm transaction lock"
+# Where the kernel lists the file locks held, and shows each process.
+PROC_LOCKS=/proc/locks
+PROC_DIR=/proc
 
 fail() {
     echo "$1" >&2
@@ -85,6 +100,97 @@ linux_family() {
     return 1
 }
 
+# The whole name of a process: the last part of the first word of its
+# command line that begins with the kernel's name of it, which the kernel
+# cuts at 15 characters; that name where no word does.
+process_name() {
+    comm=$(cat "$PROC_DIR/$1/comm" 2>/dev/null) || return 0
+    name=$(tr '\0' '\n' <"$PROC_DIR/$1/cmdline" 2>/dev/null | while IFS= read -r word; do
+        case "${word##*/}" in
+            "$comm"*) echo "${word##*/}" && break ;;
+        esac
+    done)
+    echo "${name:-$comm}"
+}
+
+# The process that holds the package manager's lock of a package family:
+# one of apt's locks as the kernel lists it, or one of dnf 4's locks by its
+# file. Empty when none does.
+lock_holder() {
+    case "$1" in
+        deb)
+            for file in $APT_LOCKS; do
+                inode=$(stat -c %i "$file" 2>/dev/null) || continue
+                pid=$(awk -v inode=":$inode" '$2 != "->" && $5 > 0 \
+                    && substr($6, length($6) - length(inode) + 1) == inode { print $5; exit }' \
+                    "$PROC_LOCKS" 2>/dev/null) || pid=""
+                if [ -n "$pid" ]; then
+                    echo "$pid"
+                    return 0
+                fi
+            done
+            ;;
+        rpm)
+            for file in $DNF_LOCK_FILES; do
+                pid=$(cat "$file" 2>/dev/null) || continue
+                case "$pid" in
+                    "" | *[!0-9]*) continue ;;
+                esac
+                if [ -d "$PROC_DIR/$pid" ]; then
+                    echo "$pid"
+                    return 0
+                fi
+            done
+            ;;
+    esac
+}
+
+# Wait while another program holds the package manager's lock, naming each
+# holder once, and stop with one sentence after LOCK_WAIT_S seconds.
+wait_for_package_manager() {
+    waited=0
+    named=""
+    pid=$(lock_holder "$1")
+    while [ -n "$pid" ]; do
+        holder="$(process_name "$pid") (process $pid)"
+        if [ "$waited" -ge "$LOCK_WAIT_S" ]; then
+            fail "$holder still holds the package manager after $LOCK_WAIT_S seconds; nothing was installed. Run this script again once it has finished."
+        fi
+        if [ "$holder" != "$named" ]; then
+            echo "Waiting up to $LOCK_WAIT_S seconds for $holder to finish with the package manager"
+            named=$holder
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        pid=$(lock_holder "$1")
+    done
+}
+
+# Run dnf under root once no other program holds its lock: dnf 4's by the
+# wait above, and dnf 5's by running again each second while its output
+# names the rpm transaction lock, up to LOCK_WAIT_S seconds.
+run_dnf() {
+    tried=0
+    while :; do
+        wait_for_package_manager rpm
+        {
+            code=0
+            $as_root dnf "$@" 2>&1 || code=$?
+            echo "$code" >"$work/dnf_exit"
+        } | tee "$work/dnf_out"
+        code=$(cat "$work/dnf_exit")
+        [ "$code" != 0 ] || return 0
+        grep -q "$DNF_LOCK_TEXT" "$work/dnf_out" || return "$code"
+        if [ "$tried" -ge "$LOCK_WAIT_S" ]; then
+            fail "Another transaction still holds the package manager after $LOCK_WAIT_S seconds; nothing was installed. Run this script again once it has finished."
+        fi
+        [ "$tried" -gt 0 ] \
+            || echo "Waiting up to $LOCK_WAIT_S seconds for another transaction to finish with the package manager"
+        sleep 1
+        tried=$((tried + 1))
+    done
+}
+
 # Enable EPEL on the RHEL family, which every package's dependencies need
 # there: the hub's fail2ban and arp-scan, the agent's and the client's
 # xdotool. The steps are EPEL's own, CRB first: Rocky, AlmaLinux and CentOS
@@ -103,15 +209,15 @@ enable_epel() {
     case "$id" in
         rocky | almalinux | centos)
             echo "Enabling CRB and EPEL, which the package's dependencies come from"
-            if ! { $as_root dnf config-manager --set-enabled crb \
-                && $as_root dnf install -y epel-release; }; then
+            if ! { run_dnf config-manager --set-enabled crb \
+                && run_dnf install -y epel-release; }; then
                 fail "EPEL could not be enabled; nothing was installed."
             fi
             ;;
         rhel)
             echo "Enabling CodeReady Builder and EPEL, which the package's dependencies come from"
             if ! { $as_root subscription-manager repos --enable "codeready-builder-for-rhel-$major-$(uname -m)-rpms" \
-                && $as_root dnf install -y "$EPEL_RELEASE_PREFIX$major.noarch.rpm"; }; then
+                && run_dnf install -y "$EPEL_RELEASE_PREFIX$major.noarch.rpm"; }; then
                 fail "EPEL could not be enabled; nothing was installed."
             fi
             ;;
@@ -471,8 +577,11 @@ main() {
     echo "Installing $name"
     case "$kind" in
         macos) $as_root installer -pkg "$package" -target / ;;
-        deb) $as_root apt-get install -y "$package" ;;
-        rpm) $as_root dnf install -y "$package" ;;
+        deb)
+            wait_for_package_manager deb
+            $as_root apt-get install -y -o DPkg::Lock::Timeout="$LOCK_WAIT_S" "$package"
+            ;;
+        rpm) run_dnf install -y "$package" ;;
         arch) $as_root pacman -U --noconfirm "$package" ;;
     esac
     echo "Installed $name"
