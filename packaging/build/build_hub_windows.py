@@ -44,17 +44,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
-from constants import HUB_ICON_NAME  # noqa: E402
+from constants import HUB_ICON_FACE, HUB_ICON_NAME  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
+from shared import icons  # noqa: E402
 from shared import release_sites  # noqa: E402
 from shared import wix_build  # noqa: E402
 import venv_tree  # noqa: E402
-
-sys.path.append(
-    str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
-)
-import icons  # noqa: E402
 
 PACKAGE_NAME = compiled_tree.PACKAGE_NAME
 
@@ -465,7 +461,9 @@ def _lay_out(
         family=AGENT_FAMILY,
         machine=machine,
     )
-    icon = icons.write_ico(root / "neutrino_hub.ico", name=HUB_ICON_NAME)
+    icon = icons.write_ico(
+        root / "neutrino_hub.ico", name=HUB_ICON_NAME, face=HUB_ICON_FACE
+    )
     return {"payload": installed, "binary": binary, "state": state, "icon": icon}
 
 

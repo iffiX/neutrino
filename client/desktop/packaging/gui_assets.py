@@ -13,13 +13,15 @@ Not pure: copies files.
 import shutil
 from pathlib import Path
 
-import icons
+from shared import icons
 
 CLIENT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = CLIENT_ROOT / "frontend"
 LOCALES_DIR = FRONTEND_DIR / "locales"
 VENDOR_DIR = FRONTEND_DIR / "vendor"
-ICONS_DIR = CLIENT_ROOT.parent.parent / "images" / "icons"
+# The window icon's edge, and the launcher's edges in the icon theme.
+WINDOW_ICON_EDGE = 256
+LAUNCHER_ICON_EDGES = (16, 32, 48, 64, 128, 256)
 
 
 def stage_gui(package_dir: Path) -> None:
@@ -46,7 +48,25 @@ def stage_gui(package_dir: Path) -> None:
     for source in sorted(VENDOR_DIR.iterdir()):
         if source.is_file():
             shutil.copyfile(source, vendor_dir / source.name)
-    shutil.copyfile(ICONS_DIR / "neutrino_256.png", gui_dir / "neutrino_client.png")
+    icons.write_png(gui_dir / "neutrino_client.png", WINDOW_ICON_EDGE)
     # Windows loads a window and tray icon from an .ico and from nothing
     # else; a .png there leaves the stock grey application icon.
     icons.write_ico(gui_dir / "neutrino_client.ico")
+
+
+def stage_launcher_icons(tree: Path, desktop_name: str) -> None:
+    """Write the launcher's icons into a Linux package's icon theme.
+
+    Args:
+        tree: The directory standing in for the filesystem root.
+        desktop_name: The icon's name, the launcher's desktop name.
+
+    Raises:
+        SystemExit: When an icon source is missing or is not a PNG of its size.
+    """
+    for edge in LAUNCHER_ICON_EDGES:
+        target = icons.write_png(
+            tree / f"usr/share/icons/hicolor/{edge}x{edge}/apps/{desktop_name}.png",
+            edge,
+        )
+        target.chmod(0o644)

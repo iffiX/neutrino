@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import bundled  # noqa: E402
 import payload  # noqa: E402
-from gui_assets import ICONS_DIR  # noqa: E402
+from gui_assets import stage_launcher_icons  # noqa: E402
 from shared import edition_build  # noqa: E402
 
 from neutrino_client.constants import (  # noqa: E402
@@ -271,14 +271,7 @@ def _lay_out_desktop(staged: Path) -> None:
         staged / f"usr/share/applications/{CLIENT_DESKTOP_NAME}.desktop",
         (desktop / f"{CLIENT_DESKTOP_NAME}.desktop").read_text(encoding="utf-8"),
     )
-    for source, edge in (("neutrino_256.png", 256), ("neutrino_48.png", 48)):
-        destination = (
-            staged
-            / f"usr/share/icons/hicolor/{edge}x{edge}/apps/{CLIENT_DESKTOP_NAME}.png"
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ICONS_DIR / source, destination)
-        destination.chmod(0o644)
+    stage_launcher_icons(staged, CLIENT_DESKTOP_NAME)
 
 
 def _build(

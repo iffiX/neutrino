@@ -50,17 +50,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
-from constants import HUB_ICON_NAME  # noqa: E402
+from constants import HUB_ICON_FACE, HUB_ICON_NAME  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
+from shared import icons  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared import release_sites  # noqa: E402
 import venv_tree  # noqa: E402
-
-sys.path.append(
-    str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
-)
-import icons  # noqa: E402
 
 PACKAGE_NAME = compiled_tree.PACKAGE_NAME
 
@@ -303,7 +299,9 @@ def write_app_entry(package_root: Path, version: str, machine: str) -> Path:
     script.write_text(APP_SCRIPT, encoding="utf-8")
     script.chmod(0o755)
     icons.write_icns(
-        contents / "Resources" / f"{APP_ICON_NAME}.icns", name=HUB_ICON_NAME
+        contents / "Resources" / f"{APP_ICON_NAME}.icns",
+        name=HUB_ICON_NAME,
+        face=HUB_ICON_FACE,
     )
     information = {
         "CFBundleName": APP_ENTRY_NAME,

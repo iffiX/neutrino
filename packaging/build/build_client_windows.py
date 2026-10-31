@@ -70,8 +70,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
-import icons  # noqa: E402
 from shared import edition_build  # noqa: E402
+from shared import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import netbird_payload  # noqa: E402
 import payload  # noqa: E402

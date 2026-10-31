@@ -12,6 +12,6 @@ on. The names of the package files and of the machines are in
 # The build reads every ELF in its own tree against this.
 PACKAGING_GLIBC_FLOOR = "2.34"
 
-# The hub's icon set under images/icons: the mark with the panel's accent edge
-# and glow, told apart from the client's plain mark.
+# The hub's icon set under images/icons, and the face its application shows.
 HUB_ICON_NAME = "neutrino_hub"
+HUB_ICON_FACE = "open"

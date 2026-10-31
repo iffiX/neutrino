@@ -14,6 +14,7 @@ import subprocess
 
 import pytest
 
+from shared import icons
 import build_deb
 import build_pkg
 import build_rpm
@@ -194,11 +195,10 @@ def test_the_deb_lays_down_the_launcher_and_no_autostart(deb):
     assert launcher.stat().st_mode & 0o777 == 0o644
 
 
-def test_the_deb_carries_both_icon_sizes_under_the_installed_name(deb):
-    for edge in (48, 256):
+def test_the_deb_carries_every_icon_size_under_the_installed_name(deb):
+    for edge in (16, 32, 48, 64, 128, 256):
         icon = deb / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_client.png"
-        assert icon.is_file()
-        assert icon.read_bytes().startswith(b"\x89PNG")
+        assert icon.read_bytes() == icons.png(edge)
 
 
 def test_the_deb_lays_down_the_mount_helper_and_the_policy_that_gates_it(deb):

@@ -152,7 +152,13 @@ def window_icon_path() -> str:
         # else, so that one comes first where it exists.
         names.insert(0, "neutrino_client.ico")
     candidates = [GUI_DATA_DIR / name for name in names]
-    candidates.append(_PACKAGE_DIR.parents[2] / "images" / "icons" / "neutrino_256.png")
+    candidates.append(
+        _PACKAGE_DIR.parents[2]
+        / "images"
+        / "icons"
+        / "neutrino_client"
+        / "wolf_wink_1024.png"
+    )
     for path in candidates:
         if path.is_file():
             return str(path)

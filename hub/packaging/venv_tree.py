@@ -31,7 +31,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from constants import HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
+from constants import HUB_ICON_FACE, HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
 
 # The repository's packaging directory, for the names every package shares.
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
@@ -39,6 +39,7 @@ if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
+from shared import icons  # noqa: E402
 from shared import release_sites  # noqa: E402
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
@@ -49,7 +50,7 @@ HUB_ASSETS_SYSTEM = "linux"
 
 # The one icon source; the build copies what the wheel ships from here into
 # the package tree, which the checkout does not carry.
-ICONS_SOURCE_DIR = HUB_ROOT.parent / "images" / "icons"
+ICONS_SOURCE_DIR = HUB_ROOT.parent / "images" / "icons" / HUB_ICON_NAME
 ICONS_PACKAGE_DIR = HUB_ROOT / "neutrino_hub" / "data" / "resources"
 
 # A glibc version as readelf's version sections name it.
@@ -302,7 +303,7 @@ Icon=neutrino-hub
 Terminal=false
 Categories=Network;
 """
-DESKTOP_ICON_EDGES = (256, 48)
+DESKTOP_ICON_EDGES = (16, 32, 48, 64, 128, 256)
 
 # Where the Linux hub keeps its panel settings, and the shell function the
 # maintainer scripts ask whether the hub was set up: the settings hold a
@@ -504,7 +505,7 @@ def build_environment(
 
 
 def stage_icons() -> None:
-    """Copy the shipped icons from ``images/icons`` into the package tree.
+    """Copy the hub's icons from ``images/icons`` into the package tree.
 
     The copies land in ``neutrino_hub/data/resources``, which the wheel's
     package data names and the checkout gitignores.
@@ -1094,18 +1095,17 @@ def stage_desktop_entry(tree: Path) -> None:
         tree: The staging directory standing in for the filesystem root.
 
     Raises:
-        SystemExit: When an icon is not under ``images/icons``.
+        SystemExit: When an icon source is missing or is not a PNG of its size.
     """
     write(tree / f"usr/share/applications/{DESKTOP_ENTRY_NAME}.desktop", DESKTOP_ENTRY)
     for edge in DESKTOP_ICON_EDGES:
-        source = ICONS_SOURCE_DIR / f"{HUB_ICON_NAME}_{edge}.png"
-        if not source.is_file():
-            raise SystemExit(f"no {source.name} under {ICONS_SOURCE_DIR}")
-        target = tree / (
-            f"usr/share/icons/hicolor/{edge}x{edge}/apps/{DESKTOP_ENTRY_NAME}.png"
+        target = icons.write_png(
+            tree
+            / f"usr/share/icons/hicolor/{edge}x{edge}/apps/{DESKTOP_ENTRY_NAME}.png",
+            edge,
+            name=HUB_ICON_NAME,
+            face=HUB_ICON_FACE,
         )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
         target.chmod(0o644)
 
 
