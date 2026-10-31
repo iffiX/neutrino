@@ -148,6 +148,7 @@ CLI_CODE_WORDS = {
     "token_missing": "the hub sent no token for the server of {account}",
     "credential_missing": "the hub sent no login for {account}",
     "credential_invalid": "Windows refused the login of {account}; update it on the hub",
+    "account_logon_refused": "Windows refused the logon of {account}: {detail}",
     "session_unknown": "this machine keeps no terminal session {session_id}",
     "share_name_taken": "the machine already has a share named {name} that this module did not make; rename that share",
     "samba_hosts_allow_no_loopback": "Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer",

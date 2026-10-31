@@ -8,8 +8,9 @@ and a verb this agent does not have both refuse ``verb_unknown``, a runner
 that raises answers ``agent_internal`` and never drops the stream, the power and reinstall verbs keep their answers,
 ``resize`` reaches the shell stream it names, a process is ended with a
 term and then a kill against a real child and through the platform on
-Windows, never one of the protected pids, and the remote desktop verbs
-reach their reader with the status riding the result.
+Windows, never one of the protected pids, the remote desktop verbs reach
+their reader with the status riding the result, and the password test closes
+with the platform's answer and never the password.
 """
 
 import os
@@ -22,9 +23,11 @@ import pytest
 from neutrino_agent.core import commands
 from neutrino_agent.core.commands import (
     AGENT_VERBS,
+    CommandOutcome,
     DeviceOperator,
     is_reading_command,
 )
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.platforms.base import AgentPlatform
@@ -75,7 +78,7 @@ def operator(**runners) -> DeviceOperator:
 # --- the agent's own verbs ---
 
 
-def test_the_agent_verbs_are_the_six_the_protocol_names():
+def test_the_agent_verbs_are_the_seven_the_protocol_names():
     assert AGENT_VERBS == (
         "reboot",
         "shutdown",
@@ -83,6 +86,7 @@ def test_the_agent_verbs_are_the_six_the_protocol_names():
         "kill",
         "remote_desktop_read",
         "remote_desktop_password_set",
+        "account_password_test",
     )
 
 
@@ -219,6 +223,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
         ("gitea", "password", False),
         ("agent", "reboot", False),
         ("agent", "remote_desktop_password_set", False),
+        ("agent", "account_password_test", False),
         ("agent", "journal", False),
     ],
 )
@@ -372,6 +377,61 @@ def test_remote_desktop_password_set_reaches_the_reader_and_not_the_output():
 
     assert reader.calls == [("password", "teamviewer", "pw-1")]
     assert (outcome.exit_code, outcome.output) == (0, "set\n")
+
+
+class PasswordPlatform(PowerPlatform):
+    """A platform whose password check raises what it is given."""
+
+    def __init__(self, error=None):
+        self.calls: list = []
+        self.error = error
+
+    def check_account_password(self, account, password):
+        self.calls.append((account, password))
+        if self.error is not None:
+            raise self.error
+
+
+def run_password_test(platform) -> CommandOutcome:
+    return DeviceOperator(platform=platform, remote_desktop=NoRemoteDesktop()).run(
+        "agent", "account_password_test", {"account": "lab", "password": "pw-1"}
+    )
+
+
+def test_a_password_the_platform_takes_closes_with_nothing_said():
+    platform = PasswordPlatform()
+
+    outcome = run_password_test(platform)
+
+    assert platform.calls == [("lab", "pw-1")]
+    assert (outcome.exit_code, outcome.code, outcome.output) == (0, "", "")
+    assert outcome.params == {}
+
+
+def test_a_wrong_password_closes_credential_invalid_and_names_no_password():
+    outcome = run_password_test(
+        PasswordPlatform(ModuleApplyError("credential_invalid", {"account": "lab"}))
+    )
+
+    assert (outcome.exit_code, outcome.code) == (1, "credential_invalid")
+    assert outcome.params == {"account": "lab"}
+    assert "pw-1" not in repr(outcome)
+
+
+def test_a_logon_refused_otherwise_closes_with_the_systems_sentence():
+    outcome = run_password_test(
+        PasswordPlatform(OSError(13, "the account is locked out"))
+    )
+
+    assert outcome.code == "account_logon_refused"
+    assert outcome.params == {"account": "lab", "detail": "the account is locked out"}
+    assert "pw-1" not in repr(outcome)
+
+
+def test_a_system_with_no_account_password_refuses_the_test():
+    outcome = run_password_test(PowerPlatform())
+
+    assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
 
 
 def test_a_remote_desktop_product_outside_the_two_is_refused_typed():

@@ -149,10 +149,11 @@ SID_TYPE_USER = 1
 ERROR_NONE_MAPPED = 1332
 COMPUTER_NAME_CHARS = 256
 
-# Logons: the kinds tried for an account's files and for its terminal, the
-# answer a wrong password gets, and the one a kind the account may not use
-# gets.
+# Logons: the kinds tried for an account's files, for its terminal and for a
+# password check, the answer a wrong password gets, and the one a kind the
+# account may not use gets.
 LOGON32_LOGON_INTERACTIVE = 2
+LOGON32_LOGON_NETWORK = 3
 LOGON32_LOGON_BATCH = 4
 LOGON32_LOGON_NETWORK_CLEARTEXT = 8
 LOGON32_PROVIDER_DEFAULT = 0

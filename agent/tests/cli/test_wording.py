@@ -43,6 +43,7 @@ UNSTRUCTURED_CODES = (
     "kill_failed",
     "process_missing",
     "product_unknown",
+    "account_logon_refused",
     "package_digest_mismatch",
     "write_failed",
     "hub_unreachable",

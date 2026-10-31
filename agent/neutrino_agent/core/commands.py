@@ -35,7 +35,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_VERB_VALIDATE,
     AGENT_OUTPUT_LIMIT_BYTES,
 )
-from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
 )
@@ -48,6 +48,7 @@ VERB_REINSTALL = "reinstall"
 VERB_KILL = "kill"
 VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
+VERB_ACCOUNT_PASSWORD_TEST = "account_password_test"  # scan: allow
 
 # The verbs a ``command {module: agent}`` names.
 AGENT_VERBS = (
@@ -57,6 +58,7 @@ AGENT_VERBS = (
     VERB_KILL,
     VERB_REMOTE_DESKTOP_READ,
     VERB_REMOTE_DESKTOP_PASSWORD_SET,
+    VERB_ACCOUNT_PASSWORD_TEST,
 )
 # The verbs the platform's power action carries out, by its own word.
 POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
@@ -186,6 +188,8 @@ class DeviceOperator:
             return self._kill_process(args)
         if verb in (VERB_REMOTE_DESKTOP_READ, VERB_REMOTE_DESKTOP_PASSWORD_SET):
             return self._remote_desktop_verb(verb, args)
+        if verb == VERB_ACCOUNT_PASSWORD_TEST:
+            return self._test_account_password(args)
         return _refused("verb_unknown", module=AGENT_COMMAND_MODULE, verb=verb)
 
     def _module_verb(
@@ -301,6 +305,28 @@ class DeviceOperator:
             code=str(outcome.get("code", "") or ""),
             params=dict(outcome.get("params") or {}),
         )
+
+    def _test_account_password(self, args: dict) -> CommandOutcome:
+        """Test an account's password with one logon.
+
+        The outcome and the agent's log hold no password.
+        """
+        account = str(args.get("account", ""))
+        try:
+            self._platform.check_account_password(
+                account, str(args.get("password", ""))
+            )
+        except PlatformUnsupportedError:
+            return _refused("unsupported_platform")
+        except ModuleApplyError as error:
+            return _refused(error.code, **error.params)
+        except OSError as error:
+            return _refused(
+                "account_logon_refused",
+                account=account,
+                detail=str(error.strerror or error)[:200],
+            )
+        return CommandOutcome(exit_code=0, output="")
 
     def _power(self, action: str) -> CommandOutcome:
         try:

@@ -35,6 +35,7 @@ CONTRACT_CALLS = {
     ),
     "account_process": ("account_shell", ("alice", ["id"]), {}),
     "as_account": ("act_as", ("alice", len, "x"), {"password": "pw"}),
+    "check_account_password": ("act_as", ("alice", "pw"), {}),
     "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "read_agent_service_state": ("agent_service", (), {}),

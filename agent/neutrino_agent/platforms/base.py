@@ -241,6 +241,22 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot resolve an account home here")
 
+    def check_account_password(self, account: str, password: str) -> None:
+        """Check an account's password with one logon that leaves nothing behind.
+
+        Args:
+            account: The account.
+            password: Its password.
+
+        Raises:
+            PlatformUnsupportedError: On a system whose accounts take no
+                password from the hub.
+            ModuleApplyError: ``credential_invalid {account}`` when the
+                system refuses the password.
+            OSError: When the system refuses the logon for another reason.
+        """
+        raise PlatformUnsupportedError("no account password to check here")
+
     def control_socket_path(self) -> str:
         """Where the agent's control socket lives on this platform.
 

@@ -9,7 +9,8 @@ this computer, variables expanded, and a name with no account, a SID that
 is no user's and a SID with no profile are ``KeyError``; a thread acts as an
 account under a network logon, a batch logon when that is not granted, a
 wrong password is ``credential_invalid`` with no second try, and the thread
-reverts and the logon closes whatever the block does.
+reverts and the logon closes whatever the block does; a password check is one
+network logon, closed at once, which passes on a kind the account may not use.
 """
 
 import base64
@@ -24,6 +25,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows_accounts import (
     account_home,
+    check_password,
     impersonated,
     read_users,
     users_from,
@@ -371,3 +373,60 @@ def test_the_thread_reverts_and_the_logon_closes_when_the_block_raises():
 
     assert advapi32.calls[-1] == ("revert",)
     assert kernel32.closed == [0x708]
+
+
+# --- the password check ---
+
+
+def test_a_right_password_makes_one_network_logon_and_closes_it():
+    advapi32, kernel32 = FakeLogon({}), FakeKernel32()
+
+    check_password("ann", "pw", advapi32=advapi32, kernel32=kernel32)
+
+    assert advapi32.calls == [("logon", "ann", ".", "pw", win32.LOGON32_LOGON_NETWORK)]
+    assert kernel32.closed == [0x700 + win32.LOGON32_LOGON_NETWORK]
+
+
+def test_a_wrong_password_is_one_failed_logon_and_credential_invalid(monkeypatch):
+    advapi32, kernel32 = (
+        FakeLogon({win32.LOGON32_LOGON_NETWORK: win32.ERROR_LOGON_FAILURE}),
+        FakeKernel32(),
+    )
+    monkeypatch.setattr(win32, "last_error", lambda: advapi32.error)
+
+    with pytest.raises(ModuleApplyError) as caught:
+        check_password("ann", "old", advapi32=advapi32, kernel32=kernel32)
+
+    assert (caught.value.code, caught.value.params) == (
+        "credential_invalid",
+        {"account": "ann"},
+    )
+    assert len(advapi32.calls) == 1
+    assert kernel32.closed == []
+
+
+def test_a_logon_kind_the_account_may_not_use_passes_the_check(monkeypatch):
+    advapi32, kernel32 = (
+        FakeLogon({win32.LOGON32_LOGON_NETWORK: win32.ERROR_LOGON_TYPE_NOT_GRANTED}),
+        FakeKernel32(),
+    )
+    monkeypatch.setattr(win32, "last_error", lambda: advapi32.error)
+
+    check_password("ann", "pw", advapi32=advapi32, kernel32=kernel32)
+
+    assert len(advapi32.calls) == 1
+    assert kernel32.closed == []
+
+
+def test_a_logon_refused_for_another_reason_is_an_os_error(monkeypatch):
+    locked_out = 1909
+    advapi32, kernel32 = (
+        FakeLogon({win32.LOGON32_LOGON_NETWORK: locked_out}),
+        FakeKernel32(),
+    )
+    monkeypatch.setattr(win32, "last_error", lambda: advapi32.error)
+
+    with pytest.raises(OSError):
+        check_password("ann", "pw", advapi32=advapi32, kernel32=kernel32)
+
+    assert len(advapi32.calls) == 1

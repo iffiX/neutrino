@@ -313,6 +313,42 @@ def logon_token(
     raise refused
 
 
+def check_password(
+    account: str, password: str, *, advapi32=None, kernel32=None
+) -> None:
+    """Check an account's password with one network logon, closed at once.
+
+    A network logon stores no credential and loads no profile. Windows checks
+    the password before the logon kind, so a kind the account may not use
+    passes the check.
+
+    Args:
+        account: The account's name on this computer.
+        password: Its password.
+        advapi32: The bound advapi32; None binds the real one.
+        kernel32: The bound kernel32; None binds the real one.
+
+    Raises:
+        ModuleApplyError: ``credential_invalid {account}`` when Windows
+            refuses the password.
+        OSError: When Windows refuses the logon for another reason.
+    """
+    libraries = None
+    if advapi32 is None or kernel32 is None:
+        libraries = win32.libraries()
+    advapi32 = advapi32 or libraries.advapi32
+    kernel32 = kernel32 or libraries.kernel32
+    try:
+        token = logon_token(
+            advapi32, account, password, kinds=(win32.LOGON32_LOGON_NETWORK,)
+        )
+    except OSError as error:
+        if getattr(error, "winerror", None) != win32.ERROR_LOGON_TYPE_NOT_GRANTED:
+            raise
+        return
+    kernel32.CloseHandle(token)
+
+
 def _computer_name(kernel32) -> str:
     """This computer's name, as its local accounts are qualified with."""
     name = ctypes.create_unicode_buffer(win32.COMPUTER_NAME_CHARS)

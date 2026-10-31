@@ -78,6 +78,7 @@ from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 from neutrino_agent.platforms.powershell_host import agent_host
 from neutrino_agent.platforms.windows_accounts import (
     account_home,
+    check_password,
     impersonated,
     read_users,
 )
@@ -498,6 +499,22 @@ class WindowsPlatform(AgentPlatform):
             OSError: When the account's SID or the registry cannot be read.
         """
         return account_home(account, advapi32=self._advapi32, kernel32=self._kernel32)
+
+    def check_account_password(self, account: str, password: str) -> None:
+        """Check an account's password with one network logon, closed at once.
+
+        Args:
+            account: The account.
+            password: Its password.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}`` when Windows
+                refuses the password.
+            OSError: When Windows refuses the logon for another reason.
+        """
+        check_password(
+            account, password, advapi32=self._advapi32, kernel32=self._kernel32
+        )
 
     def run_as_account(
         self,
