@@ -574,6 +574,7 @@ function FrpTunnelsPanel({
         <div className="frp_tunnels">
           <div className="frp_tunnel_head">
             <span />
+            <span>{t("ui.overlay.frp_name")}</span>
             <span>{t("ui.overlay.frp_node")}</span>
             <span>{t("ui.overlay.frp_region")}</span>
             <span className="frp_tunnel_latency">
@@ -600,6 +601,7 @@ function FrpTunnelsPanel({
                   <span
                     className={`frp_radio ${isChosen ? "frp_radio--on" : ""}`}
                   />
+                  <span className="frp_tunnel_name">{tunnel.name}</span>
                   <span className="frp_tunnel_node">{tunnel.node_name}</span>
                   <span className="frp_tunnel_region">
                     {t(REGION_KEYS[tunnel.region])}

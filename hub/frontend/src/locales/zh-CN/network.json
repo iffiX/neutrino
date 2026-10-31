@@ -430,6 +430,7 @@
   "ui.overlay.frp_status_title": "状态",
   "ui.overlay.frp_account_title": "账户",
   "ui.overlay.frp_address": "客户端连接地址",
+  "ui.overlay.frp_name": "隧道",
   "ui.overlay.frp_node": "节点",
   "ui.overlay.frp_access_key": "访问密钥",
   "ui.overlay.frp_access_key_hint": "你的 SakuraFrp 账户的访问密钥。",

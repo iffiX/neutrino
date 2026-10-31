@@ -40,7 +40,7 @@
 .frp_tunnel_head,
 .frp_tunnel_row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) minmax(0, auto) 72px;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) minmax(0, auto) 72px;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-3);
@@ -89,6 +89,7 @@
   background: var(--color-ok-wash);
 }
 
+.frp_tunnel_name,
 .frp_tunnel_node {
   overflow: hidden;
   white-space: nowrap;

@@ -430,6 +430,7 @@
   "ui.overlay.frp_status_title": "Status",
   "ui.overlay.frp_account_title": "Account",
   "ui.overlay.frp_address": "Address for clients",
+  "ui.overlay.frp_name": "Tunnel",
   "ui.overlay.frp_node": "Node",
   "ui.overlay.frp_access_key": "Access key",
   "ui.overlay.frp_access_key_hint": "The access key of your SakuraFrp account.",

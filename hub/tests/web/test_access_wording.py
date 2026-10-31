@@ -76,3 +76,28 @@ def test_the_access_page_names_its_ways_in(language, key, word):
 def test_no_english_sentence_capitalises_the_ssh_relay():
     for path in (LOCALES_DIR / WEB_DEFAULT_LANGUAGE).glob("*.json"):
         assert "SSH Relay" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_a_tunnel_row_shows_the_tunnel_s_name_beside_its_node():
+    panel = " ".join(
+        (LOCALES_DIR.parent / "components" / "frp_panels.tsx")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+
+    assert (
+        '<span>{t("ui.overlay.frp_name")}</span> '
+        '<span>{t("ui.overlay.frp_node")}</span>'
+    ) in panel
+    assert (
+        '<span className="frp_tunnel_name">{tunnel.name}</span> '
+        '<span className="frp_tunnel_node">{tunnel.node_name}</span>'
+    ) in panel
+
+
+@pytest.mark.parametrize("language, word", [("en", "Tunnel"), ("zh-CN", "隧道")])
+def test_the_tunnel_s_name_column_is_worded(language, word):
+    path = LOCALES_DIR / language / "network.json"
+    words = json.loads(path.read_text(encoding="utf-8"))
+
+    assert words["ui.overlay.frp_name"] == word
