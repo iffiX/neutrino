@@ -1,4 +1,4 @@
-"""Build the desktop client's Linux packages, the .deb and the .rpm.
+"""Build the desktop client's Linux packages, the .deb, the .rpm and the Arch package.
 
     python3 packaging/build/build_client_desktop.py --architecture amd64 --output-dir dist/
 
@@ -25,7 +25,7 @@ from shared import container_build  # noqa: E402
 # the window loads; the viewer is unpacked out of upstream's .deb, so the
 # container needs dpkg and readelf too.
 #
-# Both formats are built in one image, which is what keeps the client's glibc
+# Every format is built in one image, which is what keeps the client's glibc
 # floor at 2.34. The client is the only package with C compiled in its
 # container, so it takes the symbol versions of that container's glibc:
 # Fedora 41 redirects strtol and sscanf to the __isoc23_ names glibc 2.38
@@ -36,6 +36,7 @@ from shared import container_build  # noqa: E402
 # Debian 12 is also the one image carrying both WebKit2 ABIs, so both sets of
 # typelibs go into the container and travel in every Linux package: the
 # window opens on 4.1 where a machine has it and on 4.0 where it has that.
+# Debian 12 also carries makepkg, which writes the Arch package.
 CLIENT_BUILDS = {
     "debian": {
         "image": "debian:12",
@@ -56,6 +57,21 @@ CLIENT_BUILDS = {
         "gir1.2-ayatanaappindicator3-0.1 "
         "rpm cpio ca-certificates",
         "script": "build_rpm.py",
+    },
+    "arch": {
+        "image": "debian:12",
+        "install": "apt-get -qq update && "
+        "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
+        "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
+        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-webkit2-4.0 "
+        "gir1.2-ayatanaappindicator3-0.1 "
+        "makepkg pacman-package-manager fakeroot libarchive-tools zstd "
+        "ca-certificates && "
+        "(useradd -m builder 2>/dev/null || true)",
+        "script": "build_pkg.py",
+        # Arch Linux is x86-64 only; Arch Linux ARM is another project with
+        # no image of its own to build in.
+        "architectures": ("amd64",),
     },
 }
 
@@ -132,8 +148,11 @@ def main() -> int:
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     for family in container_build.families(arguments.families):
-        if family not in CLIENT_BUILDS:
-            print(f"  no client package for {family}")
+        published = CLIENT_BUILDS[family].get(
+            "architectures", container_build.BUILD_PLATFORMS
+        )
+        if arguments.architecture not in published:
+            print(f"  no client package for {family} {arguments.architecture}")
             continue
         print(
             f"building the client package for {family} "

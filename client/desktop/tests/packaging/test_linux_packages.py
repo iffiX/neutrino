@@ -10,10 +10,12 @@ machine for.
 """
 
 import os
+import subprocess
 
 import pytest
 
 import build_deb
+import build_pkg
 import build_rpm
 import netbird_payload
 import payload
@@ -23,6 +25,7 @@ from neutrino_client.constants import (
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_SERVICE_LINUX,
     CLIENT_INSTALL_PREFIX_LINUX,
+    CLIENT_MOUNT_POLKIT_ACTION,
 )
 from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
@@ -59,7 +62,7 @@ def carried(monkeypatch, tmp_path):
         (prefix / "rustdesk" / "lib").mkdir(parents=True, exist_ok=True)
         (prefix / "rustdesk" / "rustdesk").write_text("")
 
-    for module in (build_deb, build_rpm):
+    for module in (build_deb, build_rpm, build_pkg):
         monkeypatch.setattr(module.payload, "compile_linux", compile_linux)
         monkeypatch.setattr(module.bundled, "stage_linux_binaries", stage_binaries)
     return compiled
@@ -378,6 +381,95 @@ def test_the_rpm_asks_the_machine_for_nothing_the_package_carries_itself(spec):
     """rpm's scan reads the compiled binary's NEEDED, and the interpreter's
     library it finds there travels in the package."""
     assert "%global __requires_exclude ^libpython3\\.13\\.so" in spec
+
+
+# --- the Arch package ---
+
+
+@pytest.fixture
+def arch_tree(tmp_path, carried):
+    """One laid-out Arch package tree."""
+    build_pkg._lay_out(tmp_path, "9.9.9", "x86_64")
+    return tmp_path
+
+
+def test_the_arch_package_lays_the_same_payload_under_the_same_prefix(arch_tree):
+    prefix = arch_tree / "opt/neutrino/client"
+
+    assert (prefix / "nclient").is_file()
+    assert (arch_tree / "usr/bin/nclient").is_symlink()
+    assert (
+        arch_tree / f"usr/share/polkit-1/actions/{CLIENT_MOUNT_POLKIT_ACTION}.policy"
+    ).is_file()
+    assert (arch_tree / "usr/share/applications").is_dir()
+    assert (
+        arch_tree / "usr/lib/systemd/system" / CLIENT_EASYTIER_SERVICE_LINUX
+    ).is_file()
+    assert not (arch_tree / "lib").exists()
+
+
+def test_the_pkgbuild_names_the_arch_family_libraries(tmp_path):
+    text = build_pkg.pkgbuild(tmp_path, "9.9.9", architecture="x86_64")
+
+    for name in (
+        "webkit2gtk-4.1",
+        "gtk3",
+        "polkit",
+        "libayatana-appindicator",
+        "cifs-utils",
+        "xdotool",
+        "gst-plugin-pipewire",
+    ):
+        assert f"'{name}'" in text
+    assert "python" not in text.split("depends=")[1].split("\n")[0]
+
+
+def test_the_pkgbuild_conflicts_with_the_packages_of_the_same_daemons(tmp_path):
+    text = build_pkg.pkgbuild(tmp_path, "9.9.9", architecture="x86_64")
+
+    assert "conflicts=('netbird')\n" in text
+
+
+@pytest.mark.parametrize("machine", ["arm64", "aarch64"])
+def test_no_client_arch_package_is_published_for_arm(machine):
+    with pytest.raises(SystemExit, match="no Arch package"):
+        build_pkg._architecture(machine)
+
+
+def test_the_arch_install_script_asks_every_resident_to_quit_first():
+    script = build_pkg.install_script()
+
+    assert payload.STOP_RESIDENTS in script
+    for hook in ("pre_upgrade", "pre_remove"):
+        assert "stop_residents" in script.split(f"{hook}() {{")[1].split("}")[0]
+
+
+def test_the_arch_install_script_registers_the_daemons_and_stops_them_on_removal():
+    script = build_pkg.install_script()
+    unit = CLIENT_EASYTIER_SERVICE_LINUX
+
+    for hook in ("post_install", "post_upgrade"):
+        start = script.split(f"{hook}() {{")[1].split("\n}\n")[0]
+        assert "systemctl enable" in start
+        assert unit in start
+    removal = script.split("pre_remove() {")[1].split("\n}\n")[0]
+    assert "systemctl disable --now" in removal
+    assert "down" in removal
+
+
+def test_the_arch_removal_keeps_every_persons_own_directory():
+    script = build_pkg.install_script()
+
+    assert "rm -rf /opt/neutrino/client\n" in script
+    assert ".config/neutrino" not in script
+    assert "rm -rf /opt/neutrino\n" not in script
+
+
+def test_the_arch_install_script_runs_in_a_plain_shell(tmp_path):
+    script = tmp_path / "hook"
+    script.write_text(build_pkg.install_script())
+
+    subprocess.run(["sh", "-n", str(script)], check=True)
 
 
 def test_the_rpm_build_allows_the_viewers_upstream_runpath_and_nothing_else():

@@ -1,10 +1,10 @@
 """Staging the payload every client package carries.
 
-All three packagers ship the same thing — the client compiled, with the
+Every packager ships the same thing — the client compiled, with the
 interpreter it runs on and the window's Python side inside the binary, the
 page and icon beside it, and the binaries the client drives — and differ only
 in how their format wants that described. What they have in common lives
-here so it cannot drift three ways.
+here so it cannot drift.
 
 Compiled rather than carried as an interpreter, for two reasons that hold on
 every platform: a tree of bytecode beside an interpreter is what heuristic
@@ -119,6 +119,8 @@ MACHINE_NAMES = {
 }
 DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
+# Arch Linux is x86-64 only.
+ARCH_ARCHITECTURES = {"x86_64": "x86_64"}
 
 # The Python side of the Linux window, built in the packaging container for
 # the interpreter above and compiled into the client. PyGObject links the
@@ -188,7 +190,7 @@ WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + (
 # under the LGPL and has no counterpart in the Windows and macOS packages.
 LINUX_CARRIED_LICENSES = CARRIED_LICENSES + ("gobject_introspection.txt",)
 
-# What both maintainer scripts run before the files a resident is running
+# What every maintainer script runs before the files a resident is running
 # from are replaced or taken away. The client's services exist only while it
 # runs, so a resident that is asked to quit releases them itself.
 STOP_RESIDENTS = r"""# Every resident on this machine, asked to quit; ended when it does not.
@@ -211,7 +213,7 @@ stop_residents() {
 }
 """
 
-# What both formats run once the files are in place: the daemons enabled and
+# What every format runs once the files are in place: the daemons enabled and
 # restarted.
 OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
@@ -222,7 +224,7 @@ OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
 fi
 """
 
-# What both formats run before the package goes: NetBird taken off its
+# What every format runs before the package goes: NetBird taken off its
 # network first, then the daemons stopped and disabled.
 OVERLAY_UNITS_STOP = netbird_payload.LINUX_UNITS_STOP + (
     f"""if [ -d /run/systemd/system ]; then
