@@ -744,6 +744,7 @@ page", places them.
 | `ui.overlay.summary_sakurafrp` | Through a SakuraFrp node | 经 SakuraFrp 的节点 |
 | `ui.overlay.summary_openfrp` | Through an OpenFrp node | 经 OpenFrp 的节点 |
 | `ui.overlay.frp_address` | Address for clients | 客户端连接地址 |
+| `ui.overlay.frp_name` | Tunnel | 隧道 |
 | `ui.overlay.frp_node` | Node | 节点 |
 | `ui.overlay.frp_access_key` | Access key | 访问密钥 |
 | `ui.overlay.frp_access_key_hint` | The access key of your SakuraFrp account. | 你的 SakuraFrp 账户的访问密钥。 |
