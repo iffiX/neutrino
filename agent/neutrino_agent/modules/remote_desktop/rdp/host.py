@@ -66,6 +66,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
 from neutrino_agent.modules.remote_desktop.records import (
     held,
     read_json,
+    remove_json,
     write_json,
 )
 from neutrino_agent.modules.shared.subprocess_run import command_detail
@@ -500,8 +501,7 @@ class RdpShareHost:
             raise ModuleApplyError(
                 CODE_RESTORE_FAILED, {"step": step, "detail": command_detail(error)}
             )
-        with contextlib.suppress(OSError):
-            os.unlink(self._registered_path())
+        remove_json(self._registered_path())
         shutil.rmtree(self._kept_dir, ignore_errors=True)
         self._log("remote_desktop: RustDesk is given back")
 

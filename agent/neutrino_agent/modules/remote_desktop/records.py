@@ -7,6 +7,7 @@ Not pure: reads and writes files.
 import contextlib
 import json
 import os
+import threading
 import time
 
 try:
@@ -20,6 +21,8 @@ except ImportError:  # Only Windows carries msvcrt.
 
 # How often a held lock is tried again.
 LOCK_POLL_S = 0.2
+# One open of a record at a time.
+_RECORDS_LOCK = threading.Lock()
 
 
 def read_json(path: str) -> dict:
@@ -31,11 +34,12 @@ def read_json(path: str) -> dict:
     Returns:
         Its object; empty when the file is missing or holds no object.
     """
-    try:
-        with open(path, "r", encoding="utf-8") as stream:
-            data = json.load(stream)
-    except (OSError, ValueError):
-        return {}
+    with _RECORDS_LOCK:
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                data = json.load(stream)
+        except (OSError, ValueError):
+            return {}
     return data if isinstance(data, dict) else {}
 
 
@@ -99,4 +103,15 @@ def write_json(path: str, data: dict) -> None:
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         json.dump(data, stream, indent=2, sort_keys=True)
-    os.replace(temporary, path)
+    with _RECORDS_LOCK:
+        os.replace(temporary, path)
+
+
+def remove_json(path: str) -> None:
+    """Delete one record; a record already gone is no error.
+
+    Args:
+        path: The file.
+    """
+    with _RECORDS_LOCK, contextlib.suppress(OSError):
+        os.unlink(path)
