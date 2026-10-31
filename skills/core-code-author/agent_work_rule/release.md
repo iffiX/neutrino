@@ -474,11 +474,13 @@ cloud-init runs from user-data has a process named `cloud-init` among its
 parents, and it waits for no cloud-init, since cloud-init waits for it.
 
 `install.sh` runs `apt-get install` under `LC_ALL=C`. When its output names
-`unmet dependencies` or `Unable to fetch some archives`, the script prints
-`Updating the package lists to find the package's dependencies`, runs
+`unmet dependencies`, `not installable`, `has no installation candidate`,
+`Unable to locate package` or `Unable to fetch some archives`, the script
+prints `Updating the package lists to find the package's dependencies`, runs
 `apt-get update` once, then the install again. Before their first update,
 Ubuntu's cloud image lists no universe package, and Debian's lists no
-package at all.
+package at all. cloud-init updates them only when its user-data names a
+package, so this retry covers a machine it has already finished on.
 
 For the hub it ends by printing the wizard's address with its token, and
 runs `nhub setup` in its place when its standard input is a terminal. Over a
