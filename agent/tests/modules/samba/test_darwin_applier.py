@@ -290,6 +290,24 @@ def test_an_apply_under_stopped_starts_no_smbd_and_takes_every_point_off(
     assert "started the server" not in notes
 
 
+def test_an_apply_under_stopped_takes_the_grants_off_a_folder_no_share_names(
+    applier, tools
+):
+    record = {"shares": {"old": "/Volumes/data/old"}, "accounts": ["neutrino-eve"]}
+
+    applier.apply(CONFIG, record, is_served=False)
+
+    taken = [
+        command
+        for command in tools.ran("chmod", "-a")
+        if command[-1] == "/Volumes/data/old"
+    ]
+    assert {command[2].split(" ")[0] for command in taken} >= {
+        "user:neutrino-eve",
+        "user:eve",
+    }
+
+
 def test_a_loaded_smbd_is_left_as_it_is(applier, tools):
     applier.apply(CONFIG, {})
 

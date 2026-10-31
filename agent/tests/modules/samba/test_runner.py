@@ -735,12 +735,44 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
         False,
     )
     assert record_of(native) == {
-        "shares": {},
+        "shares": {"share": "D:\\share"},
         "accounts": ["ann"],
         "passwords": {"ann": password_digest("pw")},
         "is_served": False,
     }
     assert native.is_active() is False
+
+
+def test_a_share_removed_while_stopped_reaches_the_applier_with_its_folder(native):
+    native.apply(WINDOWS_CONFIG)
+    native.stop()
+
+    native.apply_stopped({**WINDOWS_CONFIG, "shares": []})
+    _verb, _config, record = next(
+        call for call in reversed(native.applier.calls) if call[0] == "apply"
+    )
+    assert record["shares"] == {"share": "D:\\share"}
+    assert record_of(native)["shares"] == {}
+
+
+def test_a_share_added_while_stopped_stays_in_the_record_for_its_removal(native):
+    native.apply(WINDOWS_CONFIG)
+    native.stop()
+    probe = {"name": "probe", "path": "D:\\probe", "valid_users": ["ann"]}
+    added = {**WINDOWS_CONFIG, "shares": [*WINDOWS_CONFIG["shares"], probe]}
+
+    native.apply_stopped(added)
+    assert record_of(native)["shares"] == {
+        "share": "D:\\share",
+        "probe": "D:\\probe",
+    }
+
+    native.apply_stopped(WINDOWS_CONFIG)
+    _verb, _config, record = next(
+        call for call in reversed(native.applier.calls) if call[0] == "apply"
+    )
+    assert record["shares"]["probe"] == "D:\\probe"
+    assert record_of(native)["shares"] == {"share": "D:\\share"}
 
 
 def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(native):
@@ -761,7 +793,7 @@ def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(nati
     assert native.applier.calls[-2][2]["shares"] == {"share": "D:\\share"}
     assert native.applier.calls[-1] == ("set_password", "ann", "pw2")
     assert record_of(native) == {
-        "shares": {},
+        "shares": {"share": "D:\\share"},
         "accounts": ["ann"],
         "passwords": {"ann": password_digest("pw2")},
         "is_served": False,

@@ -553,9 +553,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._forget_status()
         self._write_record(
             {
-                "shares": (
-                    {share.name: share.path for share in served} if is_served else {}
-                ),
+                "shares": {share.name: share.path for share in served},
                 "accounts": accounts,
                 "passwords": passwords,
                 "is_served": is_served,
@@ -608,7 +606,7 @@ class SambaNativeServerRunner(ModuleRunner):
         return kept
 
     def stop(self) -> None:
-        """Take the module's shares off the server; the accounts stay.
+        """Take the module's shares off the server; the accounts stay, and the record keeps each share's folder.
 
         Raises:
             OSError: When the server will not let them go.
@@ -618,7 +616,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._applier.withdraw(record, is_removed=False)
         finally:
             self._forget_status()
-        self._write_record(dict(record, shares={}, is_served=False))
+        self._write_record(dict(record, is_served=False))
 
     def remove_configuration(self) -> None:
         """Take the shares away and disable the accounts.
@@ -697,7 +695,8 @@ class SambaNativeServerRunner(ModuleRunner):
     def _read_record(self) -> dict:
         """The record, ``{"shares", "accounts", "passwords", "is_served"}``.
 
-        Empty when none.
+        ``shares`` lists the folder of each share the module configured, on
+        the server or not. Empty when none.
         """
         with self._record_lock:
             try:
