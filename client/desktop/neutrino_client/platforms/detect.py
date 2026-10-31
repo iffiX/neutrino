@@ -25,6 +25,7 @@ MACHINE_TO_ARCH = {
 
 DEBIAN_LIKE = ("debian", "ubuntu", "raspbian", "linuxmint", "pop")
 RHEL_LIKE = ("rhel", "fedora", "centos", "rocky", "almalinux")
+ARCH_LIKE = ("arch", "manjaro", "endeavouros")
 
 
 def platform_tuple() -> dict:
@@ -33,7 +34,7 @@ def platform_tuple() -> dict:
     Returns:
         ``{"os", "family", "arch"}``: the operating system (``linux`` /
         ``windows`` / ``darwin``), the distribution family (``debian`` /
-        ``rhel`` / empty), and the normalized architecture.
+        ``rhel`` / ``arch`` / empty), and the normalized architecture.
     """
     if sys.platform.startswith("linux"):
         os_name = "linux"
@@ -82,4 +83,6 @@ def _distro_family() -> str:
             return "debian"
         if name in RHEL_LIKE:
             return "rhel"
+        if name in ARCH_LIKE:
+            return "arch"
     return ""

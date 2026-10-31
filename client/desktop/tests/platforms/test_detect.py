@@ -29,6 +29,14 @@ def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):
         "arch": "arm64",
     }
 
+    for os_release in (
+        "ID=arch\n",
+        "ID=manjaro\nID_LIKE=arch\n",
+        'ID=endeavouros\nID_LIKE="arch"\n',
+    ):
+        release.write_text(os_release)
+        assert detect_module.platform_tuple()["family"] == "arch"
+
     release.write_text("ID=alpine\n")
     assert detect_module.platform_tuple()["family"] == ""
 
