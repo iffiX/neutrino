@@ -1043,6 +1043,8 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         if AYAKALEAF_STEP_REPLICA_SET in steps:
             return
         self._initiate_replica_set()
+        if self._is_stopping(context, AYAKALEAF_STEP_REPLICA_SET):
+            return
         self._keep({**record, "steps": [*steps, AYAKALEAF_STEP_REPLICA_SET]})
         self._log(f"{self._name}: the replica set exists")
 
@@ -1052,7 +1054,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         Raises:
             ModuleInstallPending: While the app does not answer 200.
         """
-        self._end_first_start_when_done(self._record())
+        self._end_first_start_when_done(self._record(), context)
 
     def _run_admin(self, context) -> None:
         """The ``admin`` step: the administrator made, or its password changed, and kept done.
@@ -1089,7 +1091,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
                 if held
                 else f"{self._name}: the administrator is made"
             )
-        self._end_first_start_when_done(record)
+        self._end_first_start_when_done(record, context)
 
     def _run_tex(self, context) -> None:
         """The ``tex`` step: the Chinese TeX set installed, and kept done.
@@ -1102,9 +1104,11 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         steps = list(record.get("steps") or [])
         if AYAKALEAF_STEP_TEX not in steps:
             self._install_tex()
+            if self._is_stopping(context, AYAKALEAF_STEP_TEX):
+                return
             record = self._keep({**record, "steps": [*steps, AYAKALEAF_STEP_TEX]})
             self._log(f"{self._name}: the Chinese TeX set is installed")
-        self._end_first_start_when_done(record)
+        self._end_first_start_when_done(record, context)
 
     def _run_guests(self, context) -> None:
         """The ``guests`` step.
@@ -1115,7 +1119,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         """
         self._settle_guests(self._record())
 
-    def _end_first_start_when_done(self, record: dict) -> None:
+    def _end_first_start_when_done(self, record: dict, context) -> None:
         """Keep the first start ended once the record holds its three steps and ``/status`` answers 200.
 
         Raises:
@@ -1125,6 +1129,8 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
             raise ModuleInstallPending(AYAKALEAF_PENDING)
         steps = list(record.get("steps") or [])
         if record.get("is_ready") or not all(step in steps for step in AYAKALEAF_STEPS):
+            return
+        if self._is_stopping(context, "is_ready"):
             return
         self._keep({**record, "is_ready": True})
         with self._lock:
@@ -1296,6 +1302,13 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
     def _record(self) -> dict:
         """The module's record, empty when none is kept."""
         return self._records.read(self._name)
+
+    def _is_stopping(self, context, kept: str) -> bool:
+        """Whether the agent began to stop, after a line naming what the record does not keep."""
+        if not context.is_stopping():
+            return False
+        self._log(f"{self._name}: the agent stops, so the record does not keep {kept}")
+        return True
 
     def _keep(self, record: dict) -> dict:
         """Write the record whole where it differs from the one kept, and answer it; a failed write is a line in the log."""

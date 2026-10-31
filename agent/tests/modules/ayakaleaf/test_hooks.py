@@ -116,9 +116,13 @@ class FakePodman:
         # repositories whose install alone fails.
         self.tlmgr_exits: dict = {}
         self.install_refusals: set = set()
+        # Called with each command before it answers.
+        self.on_call = None
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
         self.calls.append(list(command))
+        if self.on_call is not None:
+            self.on_call(list(command))
         if "mongosh" in command:
             said = "" if self.mongo_exit == 0 else self.mongo_said
             return CommandResult(list(command), self.mongo_exit, "", said)
@@ -154,6 +158,16 @@ class FakeForwarder:
         self.is_closed = True
 
 
+class StepContext:
+    """A task's context as a step reaches it: whether the agent began to stop."""
+
+    def __init__(self):
+        self.is_stopped = False
+
+    def is_stopping(self):
+        return self.is_stopped
+
+
 def fast_ctan(url, *, source, headers=None):
     """The probe of a ctan source: the fast one answers quicker."""
     speed = 2_000_000.0 if "fast" in source else 100_000.0
@@ -170,6 +184,7 @@ class Box:
         self.forwarders: list = []
         self.lines: list = []
         self.now = 1000.0
+        self.context = StepContext()
         self.record_dir = str(tmp_path / "ayakaleaf")
         self.hooks = self.make()
         self.hooks.take_source_sets({"ctan": CTAN})
@@ -206,7 +221,7 @@ class Box:
         self.hooks.apply(config)
         self.hooks.start()
         for step in steps:
-            step.run(None)
+            step.run(self.context)
 
     def planned(self, config=None) -> list:
         version = self.record().get("version", "") if self.has_record() else ""
@@ -269,6 +284,65 @@ def test_the_first_start_runs_the_three_steps_in_order_and_keeps_each(box, app):
     assert box.record()["steps"] == ["replica_set", "admin", "tex"]
     assert box.record()["is_ready"] is True
     assert box.hooks.is_installing() is False
+
+
+def test_a_tex_step_whose_tlmgr_ends_after_the_agent_began_to_stop_keeps_nothing(
+    box,
+):
+    def stop_during_the_install(command):
+        if "tlmgr" in command and "install" in command:
+            box.context.is_stopped = True
+
+    box.podman.on_call = stop_during_the_install
+    box.hooks.installed("6.3.2")
+
+    box.start()
+
+    assert box.record()["steps"] == ["replica_set", "admin"]
+    assert box.record()["is_ready"] is False
+    assert box.planned() == ["wait_app", "tex"]
+
+
+def test_a_replica_set_made_after_the_agent_began_to_stop_is_not_kept(box):
+    def stop_during_mongosh(command):
+        if "mongosh" in command:
+            box.context.is_stopped = True
+
+    box.podman.on_call = stop_during_mongosh
+    box.hooks.installed("6.3.2")
+    steps = box.hooks.start_steps(CONFIG, "6.3.2")
+    box.hooks.apply(CONFIG)
+    box.hooks.start()
+
+    steps[0].run(box.context)
+
+    assert box.record()["steps"] == []
+    assert box.planned()[0] == "replica_set"
+
+
+def test_an_ended_first_start_is_not_kept_after_the_agent_began_to_stop(box):
+    ready(box)
+    box.hooks._keep({**box.record(), "is_ready": False})
+    box.context.is_stopped = True
+
+    box.start()
+
+    assert box.record()["is_ready"] is False
+
+
+def test_the_administrator_made_after_the_agent_began_to_stop_is_kept(box):
+    box.hooks.installed("6.3.2")
+    steps = box.hooks.start_steps(CONFIG, "6.3.2")
+    box.hooks.apply(CONFIG)
+    box.hooks.start()
+    for step in steps[:2]:
+        step.run(box.context)
+    box.context.is_stopped = True
+
+    steps[2].run(box.context)
+
+    assert box.record()["steps"] == ["replica_set", "admin"]
+    assert box.record()["admin_password"] == PASSWORD
 
 
 def test_a_first_start_plans_its_four_steps_each_failing_install_failed(box):

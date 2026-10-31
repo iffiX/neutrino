@@ -587,6 +587,14 @@ class DesiredStateApplier:
             steps += configuring
         return kind, steps
 
+    def is_stopping(self) -> bool:
+        """Whether the agent began to stop.
+
+        Returns:
+            True once :meth:`stop` was called.
+        """
+        return self._stopping.is_set()
+
     def is_task_cut(self, task) -> bool:
         """Whether a task ends at the next step boundary with no failure.
 

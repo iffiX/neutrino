@@ -524,11 +524,13 @@ class HermesWebuiHooks(ContainerHooks):
         with self._lock:
             self._is_starting = True
         base_url = self._base_url()
-        record = self._keys_written(record, base_url)
+        record = self._keys_written(record, base_url, context=context)
         is_written = bool(base_url) and record.get("base_url") == base_url
         port = int(record.get("upstream_port", 0) or 0)
         if not is_written or self._health(port) != 200:
             raise ModuleInstallPending(HERMES_WEBUI_PENDING)
+        if self._is_stopping(context, "is_ready"):
+            return
         self._keep({**record, "is_ready": True})
         self._log(f"{self._name}: the first start has ended")
         with self._lock:
@@ -540,18 +542,22 @@ class HermesWebuiHooks(ContainerHooks):
         if record.get("is_ready"):
             self._turn_update_check_off(record)
 
-    def _keys_written(self, record: dict, base_url: str) -> dict:
+    def _keys_written(self, record: dict, base_url: str, *, context=None) -> dict:
         """The record after the gateway keys are written for a base URL it does not hold, once ``config.yaml`` exists.
 
         Args:
             record: The module's record.
             base_url: The base URL the agent container names now.
+            context: The first start's task context. The record keeps no
+                base URL written after its agent began to stop. None keeps it.
 
         Returns:
             The record, with the base URL the keys hold.
         """
         if base_url and base_url != record.get("base_url") and self._has_config_file():
             if self._write_keys(base_url):
+                if context is not None and self._is_stopping(context, "base_url"):
+                    return record
                 return self._keep({**record, "base_url": base_url})
         return record
 
@@ -713,6 +719,13 @@ class HermesWebuiHooks(ContainerHooks):
     def _record(self) -> dict:
         """The module's record, empty when none is kept."""
         return self._records.read(self._name)
+
+    def _is_stopping(self, context, kept: str) -> bool:
+        """Whether the agent began to stop, after a line naming what the record does not keep."""
+        if not context.is_stopping():
+            return False
+        self._log(f"{self._name}: the agent stops, so the record does not keep {kept}")
+        return True
 
     def _keep(self, record: dict) -> dict:
         """Write the record whole and answer it; a failed write is a line in the log."""

@@ -117,6 +117,8 @@ class FakeEngine:
         self.install_refusal = install_refusal
         # Module name to what its install step waits on before it ends.
         self.install_gates: dict = {}
+        # Whether the agent stopped, as each install step's context read it.
+        self.stops_read: list = []
         # Module name to every row published for it, in order.
         self.published: dict = {}
         self.containers_state = "running"
@@ -259,6 +261,7 @@ class FakeEngine:
         gate = self.install_gates.get(name)
         if gate is not None:
             gate.wait(SETTLE_S)
+        self.stops_read.append(context.is_stopping())
         received = context.receive(ARTIFACT) if name in BYTE_MODULES else {}
         self.installs.append((name, received))
         context.log(f"{name}: installing")
@@ -1316,6 +1319,26 @@ def test_no_step_runs_after_one_that_took_while_the_agent_stops(tmp_path):
     assert runners["samba"].applied == []
     assert "samba" not in held._store.read_tried()
     assert "samba" not in engine.results
+
+
+def test_a_step_s_context_reads_the_agent_s_stop(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    run(_agent(runners, tmp_path, engine=engine), state(samba="running"))
+    gate = threading.Event()
+    stopping = FakeEngine(runners, absent=("samba",))
+    stopping.install_gates["samba"] = gate
+    (tmp_path / "held").mkdir()
+    held = _agent(runners, tmp_path / "held", engine=stopping)
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: stopping.last("samba")[0].get("index") == 1)
+
+    held.stop()
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.stops_read == [False]
+    assert stopping.stops_read == [True]
 
 
 def test_a_removal_lets_the_next_agent_apply_the_same_state_again(tmp_path):

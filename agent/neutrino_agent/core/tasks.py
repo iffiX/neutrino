@@ -341,6 +341,14 @@ class ModuleTask:
         if stream is not None:
             stream.send(str(line))
 
+    def is_stopping(self) -> bool:
+        """Whether the agent began to stop. A step writes no record of its own after it.
+
+        Returns:
+            True once the agent's stop began.
+        """
+        return self._owner.is_stopping()
+
     def receive(self, artifact: dict) -> dict:
         """One artifact's bytes for this module, down a ``package`` stream.
 

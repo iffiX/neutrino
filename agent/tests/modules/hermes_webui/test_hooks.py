@@ -110,6 +110,16 @@ class FakePodman:
         return [call for call in self.calls if "config" in call and "set" in call]
 
 
+class StepContext:
+    """A task's context as a step reaches it: whether the agent began to stop."""
+
+    def __init__(self):
+        self.is_stopped = False
+
+    def is_stopping(self):
+        return self.is_stopped
+
+
 class FakeForwarder:
     def __init__(self, *, name, record, hooks, log):
         self.record = dict(record)
@@ -142,6 +152,7 @@ class Box:
         self.lines: list = []
         self.record_dir = str(tmp_path / "hermes_webui")
         self.held_ports: set = set()
+        self.context = StepContext()
         self.hooks = self.make()
 
     def make(self) -> HermesWebuiHooks:
@@ -185,7 +196,7 @@ class Box:
         steps = self.hooks.start_steps({}, self.version())
         self.hooks.start()
         for step in steps:
-            step.run(None)
+            step.run(self.context)
 
     def planned(self, version="") -> list:
         return [
@@ -298,6 +309,37 @@ def test_once_config_yaml_exists_the_four_keys_are_written_with_hermes_config_se
     assert box.record()["base_url"] == URL + "/v1"
     assert box.record()["is_ready"] is True
     assert box.hooks.is_installing() is False
+
+
+def test_keys_written_after_the_agent_began_to_stop_are_not_kept(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.context.is_stopped = True
+
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+
+    assert len(box.podman.config_sets()) == 4
+    assert box.record()["base_url"] == ""
+    assert box.record()["is_ready"] is False
+    assert box.planned()[0] == "first_start"
+
+
+def test_a_first_start_ended_after_the_agent_began_to_stop_is_not_kept(box):
+    box.podman.has_config = True
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+    box.status = 200
+    box.context.is_stopped = True
+
+    box.start()
+
+    assert box.record()["base_url"] == URL + "/v1"
+    assert box.record()["is_ready"] is False
 
 
 def test_the_module_reads_installing_until_health_answers_200_once(box):
