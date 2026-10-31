@@ -1304,7 +1304,10 @@ module's `want` and its configuration; **Install** and **Uninstall** on an
 
 The agent has a runner for a `container` module only once a state names
 it, so a `container` module that a machine's report leaves out reads
-`absent` on every surface once that machine has reported.
+`absent` on every surface once that machine has reported, while its `want` is
+empty or `absent`. Under any other `want` it reads as a module that has not
+reported: an agent that just started reports before it reads the module's row,
+and Ayakaleaf read `absent` for 1 and 15 seconds in the lab before `stopped`.
 
 This table is closed on every surface; a surface that meets a token outside it
 shows the word for a machine that has not reported. That is also what the
