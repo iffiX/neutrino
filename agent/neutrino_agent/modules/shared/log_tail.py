@@ -56,7 +56,8 @@ def file_tail(path: str, lines: int, *, needle: str = "", skipped: str = "") -> 
         path: The file.
         lines: How many lines to return at most.
         needle: Text a line holds to be returned; empty returns every line.
-        skipped: Text a line holds to be left out; empty leaves none out.
+        skipped: A pattern matched at a line's start; a line it matches is
+            left out. Empty leaves none out.
 
     Returns:
         The non-blank lines; none while the file does not exist. With a
@@ -83,6 +84,6 @@ def file_tail(path: str, lines: int, *, needle: str = "", skipped: str = "") -> 
     kept = [
         line
         for line in held
-        if line.strip() and needle in line and not (skipped and skipped in line)
+        if line.strip() and needle in line and not (skipped and re.match(skipped, line))
     ]
     return kept[-lines:] if lines > 0 else []

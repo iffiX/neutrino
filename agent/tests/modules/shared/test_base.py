@@ -144,6 +144,20 @@ def test_the_agent_s_lines_leave_out_what_the_module_s_task_wrote(tmp_path):
     assert runner._with_agent_lines([], 10) == ["10:01 samba: created share media"]
 
 
+def test_the_agent_s_lines_leave_out_what_every_module_s_task_wrote(tmp_path):
+    """Ayakaleaf's task names Containers' module; the line is not Containers'."""
+    log = tmp_path / "agent.log"
+    log.write_text(
+        "2026-10-30 20:07:35,037 ayakaleaf task: step 1/6: wait_module samba\n"
+        "10:00 ai_tools task: samba waits\n"
+        "10:01 samba: the scheduled task: kept\n",
+        encoding="utf-8",
+    )
+    runner = PickyRunner(platform=LoggedPlatform(str(log)))
+
+    assert runner._agent_log_lines(10) == ["10:01 samba: the scheduled task: kept"]
+
+
 def test_the_agent_s_lines_read_the_rotated_file_first(tmp_path):
     log = tmp_path / "agent.log"
     (tmp_path / "agent.log.1").write_text("09:00 samba: created\n", encoding="utf-8")

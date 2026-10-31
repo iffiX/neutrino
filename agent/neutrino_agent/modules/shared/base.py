@@ -31,7 +31,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
-    AGENT_TASK_LINE_PREFIX,
+    AGENT_TASK_LINE_PATTERN,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared import installers
@@ -495,7 +495,7 @@ class ModuleRunner:
         """The agent's own log lines that name this module, empty in a journal.
 
         The file the last rotation left is read before the current one, so
-        a rotation does not empty the box. The lines the module's task
+        a rotation does not empty the box. The lines every module's task
         writes about itself are left out.
         """
         path = self._platform.agent_log_path()
@@ -506,7 +506,7 @@ class ModuleRunner:
             file_tail,
             lines=lines,
             needle=self.name,
-            skipped=AGENT_TASK_LINE_PREFIX.format(module=self.name),
+            skipped=AGENT_TASK_LINE_PATTERN,
         )
         held = []
         if os.path.isfile(rotated):

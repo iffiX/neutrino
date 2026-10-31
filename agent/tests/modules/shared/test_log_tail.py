@@ -37,7 +37,7 @@ def test_a_needle_keeps_only_the_lines_that_hold_it(tmp_path):
     ]
 
 
-def test_a_skipped_text_leaves_its_lines_out_before_the_cap(tmp_path):
+def test_a_skipped_pattern_leaves_its_lines_out_before_the_cap(tmp_path):
     log = tmp_path / "agent.log"
     log.write_text(
         "10:00 samba: created share media\n"
@@ -46,7 +46,7 @@ def test_a_skipped_text_leaves_its_lines_out_before_the_cap(tmp_path):
         encoding="utf-8",
     )
 
-    assert file_tail(str(log), 1, needle="samba", skipped="samba task: ") == [
+    assert file_tail(str(log), 1, needle="samba", skipped=r"\S+ samba task: ") == [
         "10:00 samba: created share media"
     ]
 
