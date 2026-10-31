@@ -604,7 +604,9 @@ def test_a_negative_resource_is_refused_before_the_agent_is_asked(box):
 def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(box):
     client, runtime = box
     runtime.device_platform[DEVICE] = WINDOWS
-    runtime.device_accounts[DEVICE] = ["lab", "ann"]
+    runtime.device_accounts[DEVICE] = ["lab", "ann", "kim"]
+    available(runtime, "lab")
+    available(runtime, "ann")
     runtime.desired_states.write(
         DEVICE,
         "podman",

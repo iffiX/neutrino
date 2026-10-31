@@ -87,8 +87,8 @@ def device_view(
     Returns:
         Declared containers as configured, the hub containers the machine's
         container modules compose, every container the device's podman
-        knows with its owner, the engine's own state, and the human accounts
-        the machine reported; on Windows and macOS the stored Run settings,
+        knows with its owner, the engine's own state, and the machine's
+        available accounts; on Windows and macOS the stored Run settings,
         the Podman machine wherever the machine reports one, and the memory
         the container modules need while it passes the machine's.
     """
@@ -124,7 +124,10 @@ def device_view(
         is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         is_active=bool(details.get("is_active")),
         version=str(details.get("version", "") or ""),
-        accounts=[str(name) for name in runtime.device_accounts.get(context.key, [])],
+        accounts=[
+            row.account
+            for row in runtime.desired_states.available_accounts(context.key)
+        ],
         machine=(
             PodmanMachineView(
                 **(stored_machine if isinstance(stored_machine, dict) else {})

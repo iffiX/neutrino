@@ -150,6 +150,7 @@ export function ContainersRunSettings({
           onChange={(account) => setDraft({ ...draft, account })}
           label={t("ui.containers.run_account")}
           hint={t("ui.containers.run_account_hint")}
+          emptyText={t("ui.accounts.empty")}
           isDisabled={isUnsupported}
         />
       </div>
