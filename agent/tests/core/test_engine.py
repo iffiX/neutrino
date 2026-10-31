@@ -34,6 +34,7 @@ import json
 import os
 import threading
 import time
+import types
 
 import pytest
 
@@ -2089,6 +2090,15 @@ def state_within(engine, name: str, state: str, seconds: float) -> bool:
     return False
 
 
+def state_within_real(engine, name, state, sleep) -> bool:
+    """Whether a row reads a state within a few real seconds, whatever clock the engine reads."""
+    for _turn in range(1000):
+        if (engine._statuses.get(name) or {}).get("state") == state:
+            return True
+        sleep(0.005)
+    return False
+
+
 def test_a_container_module_read_stopped_after_its_start_is_read_again(
     tmp_path, monkeypatch
 ):
@@ -2106,6 +2116,60 @@ def test_a_container_module_read_stopped_after_its_start_is_read_again(
 
     assert ended == "stopped"
     assert state_within(engine, "demo", "running", 2)
+
+
+def test_the_watch_after_a_start_lasts_until_a_late_check_passes(tmp_path, monkeypatch):
+    """Ayakaleaf's /status came up 42 and 78 seconds after its start task ended."""
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    engine.mark_configured("demo")
+    clock = types.SimpleNamespace(now=0.0)
+
+    def sleep(seconds):
+        clock.now += seconds
+        if clock.now >= 100.0:
+            reads.is_active = True
+        real_sleep(0.001)
+
+    real_sleep = engine_module.time.sleep
+    monkeypatch.setattr(
+        engine_module,
+        "time",
+        types.SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep),
+    )
+    engine.publish_task("demo", START_TASK, "", {})
+    engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
+    engine.refresh_one("demo")
+
+    assert state_within_real(engine, "demo", "running", real_sleep)
+
+
+def test_the_watch_after_a_start_gives_up_after_two_minutes(tmp_path, monkeypatch):
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    engine.mark_configured("demo")
+    clock = types.SimpleNamespace(now=0.0)
+
+    def sleep(seconds):
+        clock.now += seconds
+        real_sleep(0.001)
+
+    real_sleep = engine_module.time.sleep
+    monkeypatch.setattr(
+        engine_module,
+        "time",
+        types.SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep),
+    )
+    engine.publish_task("demo", START_TASK, "", {})
+    engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
+    engine.refresh_one("demo")
+
+    for _turn in range(2000):
+        if "demo" not in engine._start_watches:
+            break
+        real_sleep(0.005)
+    assert "demo" not in engine._start_watches
+    assert 118.0 <= clock.now <= 122.0
 
 
 def test_the_watch_after_a_start_ends_once_a_task_of_the_module_runs(

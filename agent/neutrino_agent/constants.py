@@ -320,7 +320,7 @@ AGENT_REINSTALL_INSTALLED_CODES = (0, AGENT_UPDATE_MSI_REBOOT_CODE)
 AGENT_MODULE_DETAILS_TTL_S = 5.0
 # How long after a container module's start task ends, and how often, a row
 # that reads stopped is read again.
-AGENT_STARTED_WATCH_S = 30.0
+AGENT_STARTED_WATCH_S = 120.0
 AGENT_STARTED_REREAD_S = 2.0
 
 # How long a module verb that acts waits for that module's task to end.
