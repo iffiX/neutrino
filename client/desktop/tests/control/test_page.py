@@ -715,6 +715,20 @@ def test_a_pickers_list_opens_above_its_field_when_there_is_no_room_under_it():
 # --- busy states spin ---
 
 
+# --- the dialogs ---
+
+
+def test_every_dialog_is_the_top_layer():
+    rule = re.search(r"\.overlay \{.*?\}", PAGE_CSS, re.DOTALL).group(0)
+    top = int(re.search(r"z-index: (\d+)", rule).group(1))
+    assert "backdrop-filter: blur" in rule
+    others = re.findall(r"z-index: (\d+)", PAGE_CSS.replace(rule, ""))
+    assert all(int(other) < top for other in others)
+    assert "document.querySelector('.wrap').inert = layers.length > 0;" in PAGE_JS
+    assert "layer.inert = index < layers.length - 1;" in PAGE_JS
+    assert "layers[layers.length - 1].click();" in PAGE_JS
+
+
 # --- the redraw guards ---
 
 

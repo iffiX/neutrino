@@ -3130,6 +3130,7 @@ function openConfigDialog(staged, models, onSave) {
 function openDialog(overlay) {
   openDialogs += 1;
   document.body.appendChild(overlay);
+  settleInert();
 }
 
 function settle() {
@@ -3139,8 +3140,25 @@ function settle() {
 function closeDialog(overlay) {
   openDialogs -= 1;
   overlay.remove();
+  settleInert();
   settle();
 }
+
+// Marks the page and every dialog under the top one inert.
+function settleInert() {
+  const layers = document.querySelectorAll('.overlay');
+  document.querySelector('.wrap').inert = layers.length > 0;
+  layers.forEach((layer, index) => { layer.inert = index < layers.length - 1; });
+}
+
+// Escape closes an open list, else the top dialog, as a press on its backdrop.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const layers = document.querySelectorAll('.overlay');
+  if (layers.length === 0) return;
+  if (openPicker) { closeEveryPicker(); return; }
+  layers[layers.length - 1].click();
+});
 
 // --- the browse dialog, fed by the client as this person ---
 

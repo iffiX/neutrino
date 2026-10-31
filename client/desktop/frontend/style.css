@@ -284,9 +284,11 @@ button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
        font-size: 12px; color: var(--color-text-muted);
        font-family: var(--font-mono); }
 .rec .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* Every dialog: above every other layer, the page under it blurred. */
 .overlay { position: fixed; inset: 0; background: var(--color-overlay);
+           -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
            display: flex; align-items: center; justify-content: center;
-           z-index: 10; }
+           z-index: 40; }
 .modal { width: min(500px, calc(100vw - 40px)); max-height: 76vh;
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
