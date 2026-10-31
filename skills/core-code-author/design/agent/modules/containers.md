@@ -367,7 +367,7 @@ Every container reaches the agent's `127.0.0.1` listeners at
 
 | Rule | Reason |
 | --- | --- |
-| Every apply writes the names of the declared containers, and of the hub containers by module, into the module's record under `platform.agent_data_dir()`, root-only. | The report, a container's buttons and its journal tell a declared container from a hand-started one. |
+| Every apply writes the names of the declared containers, and of the hub containers by module, into the module's record under `platform.agent_var_dir()`, root-only. | The report, a container's buttons and its journal tell a declared container from a hand-started one. |
 | Until its first apply after a start, the runner reads the names from the record. | An agent that starts on a state it already tried applies nothing ([agent.md](../../agent.md), "A retry is the same press again"), and its declared containers still run through systemd. |
 | On Windows and macOS the names are in the record the runner keeps of its last apply, beside the Run settings and the image references saved at the machine's last stop ("The keeper"). | One record per runner. |
 
