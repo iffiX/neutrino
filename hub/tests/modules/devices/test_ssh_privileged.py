@@ -22,6 +22,7 @@ from neutrino_hub.modules.devices.ssh_ops import (
     DeviceSshOperator,
     SshCredentials,
     epel_command,
+    package_tools,
 )
 
 SUDO_PASSWORD = "a-sudo-password"  # scan: allow
@@ -236,6 +237,7 @@ def packages(tmp_path) -> AgentPackageCache:
         "neutrino-agent_0.1.0_arm64.deb",
         "neutrino-agent-0.1.0-1.x86_64.rpm",
         "neutrino-agent-0.1.0-1.aarch64.rpm",
+        "neutrino-agent-0.1.0-1-x86_64.pkg.tar.zst",
     ):
         (pinned / name).write_bytes(name.encode())
     return AgentPackageCache(
@@ -468,6 +470,64 @@ def test_the_rpm_install_enables_epel_first_on_the_rhel_family(packages, os_rele
     assert [call["sudo_password"] for call in calls] == [SUDO_PASSWORD] * 3
     assert any("enabling EPEL" in line for line in lines)
     assert lines[-1] == "\n[exit 0]\n"
+
+
+ARCH = 'NAME="Arch Linux"\nID=arch\n'
+MANJARO = 'NAME="Manjaro Linux"\nID=manjaro\nID_LIKE=arch\n'
+ENDEAVOUR = 'NAME="EndeavourOS"\nID="endeavouros"\nID_LIKE="arch"\n'
+
+
+@pytest.mark.parametrize("os_release", [ARCH, MANJARO, ENDEAVOUR])
+def test_the_arch_install_refreshes_the_lists_and_installs_the_file(
+    packages, os_release
+):
+    """pacman -S takes names alone, and an image's package lists are empty."""
+    op = operator()
+    connection = FakeConnection(tools=("pacman",), os_release=os_release)
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
+
+    lines = asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
+
+    assert calls[0]["command"] == "pacman -Sy --noconfirm"
+    assert calls[1]["command"].startswith("pacman -U --noconfirm /tmp/neutrino-agent")
+    assert calls[1]["command"].endswith(".pkg.tar.zst")
+    assert calls[2]["command"] == f"nagent join --yes {LINK}"
+    assert lines[-1] == "\n[exit 0]\n"
+
+
+def test_an_arch_machine_holding_dpkg_and_rpm_installs_the_arch_package(packages):
+    """The Arch repositories hold both tools."""
+    op = operator()
+    connection = FakeConnection(tools=("dpkg", "rpm", "pacman"), os_release=ARCH)
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
+
+    assert any(call["command"].startswith("pacman -U") for call in calls)
+    assert connection.uploads[0][1].endswith(".pkg.tar.zst")
+
+
+def test_a_debian_machine_holding_pacman_installs_the_deb(packages):
+    op = operator()
+    connection = FakeConnection(
+        tools=("dpkg", "pacman"), os_release='ID=debian\nVERSION_ID="12"\n'
+    )
+    op._connect = fake_connect(connection)
+    calls = capture_privileged_once(op)
+
+    asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
+
+    assert not any("pacman" in call["command"] for call in calls)
+
+
+@pytest.mark.parametrize(
+    "os_release, first",
+    [(ARCH, "arch"), (MANJARO, "arch"), (ROCKY, "deb"), ("", "deb")],
+)
+def test_a_device_tries_its_own_system_s_package_first(os_release, first):
+    assert package_tools(os_release)[0][0] == first
 
 
 def test_epel_that_cannot_be_enabled_ends_the_task_before_the_package(packages):

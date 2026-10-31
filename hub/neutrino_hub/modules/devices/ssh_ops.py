@@ -63,6 +63,10 @@ MACHINE_TO_ARCH = {
 EPEL_CRB_IDS = ("rocky", "almalinux", "centos")
 EPEL_RHEL_ID = "rhel"
 EPEL_RELEASE_PREFIX = "https://dl.fedoraproject.org/pub/epel/epel-release-latest-"
+# What each agent package family installs with. The Arch repositories hold
+# dpkg and rpm too, so a system of the Arch family tries pacman first.
+AGENT_PACKAGE_TOOLS = (("deb", "dpkg"), ("rpm", "rpm"), ("arch", "pacman"))
+ARCH_FAMILY_IDS = ("arch", "manjaro", "endeavouros")
 
 
 def epel_command(os_release: str, machine: str) -> str:
@@ -81,11 +85,7 @@ def epel_command(os_release: str, machine: str) -> str:
         CentOS, CodeReady Builder and the EPEL release package on RHEL;
         empty for every other system.
     """
-    fields = {}
-    for line in os_release.splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            fields[key.strip()] = value.strip().strip("\"'")
+    fields = _os_release_fields(os_release)
     system = fields.get("ID", "")
     major = fields.get("VERSION_ID", "").split(".", 1)[0]
     if system in EPEL_CRB_IDS:
@@ -98,6 +98,32 @@ def epel_command(os_release: str, machine: str) -> str:
             f"dnf install -y {shlex.quote(release)}"
         )
     return ""
+
+
+def package_tools(os_release: str) -> tuple:
+    """The agent package families a device tries, its own system's first.
+
+    Args:
+        os_release: The device's ``/etc/os-release``.
+
+    Returns:
+        ``(family, tool)`` pairs in the order to try them.
+    """
+    fields = _os_release_fields(os_release)
+    names = [fields.get("ID", ""), *fields.get("ID_LIKE", "").split()]
+    if any(name in ARCH_FAMILY_IDS for name in names):
+        return tuple(reversed(AGENT_PACKAGE_TOOLS))
+    return AGENT_PACKAGE_TOOLS
+
+
+def _os_release_fields(os_release: str) -> dict:
+    """The fields of an ``/etc/os-release``, each value without its quotes."""
+    fields = {}
+    for line in os_release.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key.strip()] = value.strip().strip("\"'")
+    return fields
 
 
 def _os_family(os_release: str) -> str:
@@ -432,7 +458,9 @@ class DeviceSshOperator:
                 result = await connection.run("uname -m", check=False)
                 machine = (result.stdout or "").strip()
                 architecture = _normalise_machine(machine)
-                for candidate, tool in (("deb", "dpkg"), ("rpm", "rpm")):
+                result = await connection.run("cat /etc/os-release", check=False)
+                os_release = result.stdout or ""
+                for candidate, tool in package_tools(os_release):
                     if not packages.serves(family=candidate, architecture=architecture):
                         continue
                     probe = await connection.run(f"command -v {tool}", check=False)
@@ -450,14 +478,14 @@ class DeviceSshOperator:
                 if package_path is None:
                     yield (
                         "[the hub carries no agent package this machine can "
-                        f"install (dpkg or rpm, {machine or 'unknown machine'}); "
+                        "install (dpkg, rpm or pacman, "
+                        f"{machine or 'unknown machine'}); "
                         "join this machine with an enrollment link instead]\n"
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
                     return
                 if family == "rpm":
-                    result = await connection.run("cat /etc/os-release", check=False)
-                    epel = epel_command(result.stdout or "", machine)
+                    epel = epel_command(os_release, machine)
                 remote_package = f"/tmp/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
                 async with connection.start_sftp_client() as sftp:
@@ -497,6 +525,23 @@ class DeviceSshOperator:
                 "--reinstall "
                 f"--allow-downgrades {shlex.quote(remote_package)}"
             )
+        elif family == "arch":
+            # An image's package lists are empty until they are fetched, and
+            # pacman -U resolves the package's dependencies from them.
+            yield "[refreshing the package lists]\n"
+            code, output = await self.run_privileged_once(
+                "pacman -Sy --noconfirm",
+                timeout_s=REFRESH_TIMEOUT_S,
+                sudo_password=sudo_password,
+            )
+            if output:
+                yield output + "\n"
+            if code != 0:
+                yield (
+                    "[the package lists could not be refreshed; the install "
+                    "continues with the lists this device already has]\n"
+                )
+            install_command = f"pacman -U --noconfirm {shlex.quote(remote_package)}"
         else:
             if epel:
                 yield "[enabling EPEL, where the package's dependencies come from]\n"
