@@ -35,12 +35,12 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
-something the whole page is about: `Add over SSH`, `Declare a service`, `New
+something the whole page is about: `Add over SSH`, `Declare app`, `New
 Web share link`. Those sit in `page_actions`, and a page with none is the
 normal case.
 
 A header action that adds a record (**Add by link**, **Add over SSH**, **New
-client link**, **New Web share link**, **Declare a service**) opens a dialog in the style of the install
+client link**, **New Web share link**, **Declare app**) opens a dialog in the style of the install
 dialog (`install_agent_modal.tsx`). The dialog holds the form, the link or the
 QR it produces, and the output of the task it starts; the page itself never
 shows an add form or a produced link inline. A header add wears
