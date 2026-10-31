@@ -1525,6 +1525,20 @@ def test_a_container_module_s_start_writes_its_wants_and_its_file_in_one_hold(
     ]
 
 
+@pytest.mark.parametrize("want", ["running", "stopped", "installed"])
+def test_an_installed_container_module_a_new_agent_s_report_leaves_out_reads_unknown(
+    containers_api, want
+):
+    """An agent that just started reports before it read the module's row."""
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "demo", want)
+    runtime.device_modules[DEVICE] = {"podman": {"state": "running"}}
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+
+    assert {row["name"]: row["state"] for row in rows}["demo"] == "unknown"
+
+
 def test_a_container_module_a_report_leaves_out_reads_absent(containers_api):
     """The agent has a runner for a container module only once a state names it."""
     client, runtime = containers_api

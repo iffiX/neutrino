@@ -724,8 +724,9 @@ def module_status(
         "task", "step"}``, the details as the agent sent them and the
         version the one they name; the state is ``unknown`` until the agent
         has said, and ``absent`` for a ``container`` module a report from
-        the device leaves out, since the agent observes one only once a
-        state names it. The task is the module's last one: None before its
+        the device leaves out and nothing asks to have, since the agent
+        observes one only once a state names it. The task is the module's
+        last one: None before its
         first, and None for a task outside the protocol's shape. The step is
         the one the module's kept failure failed at, None without one.
     """
@@ -1342,8 +1343,11 @@ def _unreported_state(
     runtime: PanelRuntime, key: str, module: str, manifest: "dict | None"
 ) -> str:
     """The state of a module the device's report leaves out: ``absent`` for a
-    ``container`` module once the device has reported, else ``unknown``."""
+    ``container`` module nothing asks to have once the device has reported,
+    else ``unknown``."""
     if key not in runtime.device_modules:
+        return STATE_UNKNOWN
+    if _want_of(runtime, key, module) not in ("", CHANNEL_MODULE_STATE_ABSENT):
         return STATE_UNKNOWN
     if manifest is None:
         manifest = load_module_manifests().get(module) or {}
