@@ -214,8 +214,8 @@ module's `want` and mark for a state in one hold of it. A state composed
 between the two writes would carry the new `want` with the old mark, and
 the module would plan a second task when the press's own state arrives.
 Every part of the state composed from a `want`, the Containers entry's hub
-containers and their `is_autostart` among them, takes it from that one
-read. A second read could carry a container module's new `want` into
+containers and their `is_autostart` and the `ai_tools` section among them,
+takes it from that one read. A second read could carry a container module's new `want` into
 Containers' entry beside Containers' old `want`, and Containers would plan
 a stop or a start nobody pressed.
 Each binding's state is composed and sent under a push lock of its own,
