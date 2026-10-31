@@ -1,9 +1,10 @@
 """Making the share configuration true on the machine.
 
-Three effects, kept apart from the pure renderer: setting each SMB user's
+Four effects, kept apart from the pure renderer: setting each SMB user's
 Samba password, installing the module's own file and the one line of
-``smb.conf`` that includes it, and reading what the server is doing right
-now. ``smb.conf`` itself stays the person's, a whole file an earlier version
+``smb.conf`` that includes it, turning the SELinux boolean on and off, and
+reading what the server is doing right now. ``smb.conf`` itself stays the
+person's, a whole file an earlier version
 rendered included: the module adds that line once after the ``[global]``
 header and takes it out at uninstall. At its first apply after an install
 or an adoption the module sweeps every ``neutrino-`` user and credential
@@ -17,7 +18,7 @@ user the module set a password for and that the configuration no longer
 names loses that credential and, when the module made it, the account too;
 the person's own account is never touched.
 
-Not pure: writes ``/etc/samba``, runs Samba's tools and drives the unit.
+Not pure: writes ``/etc/samba``, runs Samba's and SELinux's tools and drives the unit.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -49,6 +50,8 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_LINUX_USER_PREFIX,
     SAMBA_MINIMAL_CONF,
     SAMBA_MODULE_CONF_PATH,
+    SAMBA_SELINUX_ACTIVE_MODES,
+    SAMBA_SELINUX_BOOLEAN,
     SAMBA_STOCK_CONF_PATHS,
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
@@ -802,6 +805,54 @@ def _write_file(
         if os.path.exists(temporary):
             os.unlink(temporary)
         raise
+
+
+class SambaSelinuxApplier:
+    """Turns :data:`SAMBA_SELINUX_BOOLEAN` on and off where SELinux is active."""
+
+    def turn_on(self) -> bool:
+        """Turn the boolean on when it is off.
+
+        Returns:
+            True when this call turned it on; False when it is on already,
+            or where SELinux is disabled or absent.
+
+        Raises:
+            OSError: When ``getsebool`` or ``setsebool`` cannot start.
+            subprocess.SubprocessError: When either refuses or does not finish.
+        """
+        return self._change("off", "on")
+
+    def turn_off(self) -> bool:
+        """Turn the boolean off when it is on.
+
+        Returns:
+            True when this call turned it off; False when it is off already,
+            or where SELinux is disabled or absent.
+
+        Raises:
+            OSError: When ``getsebool`` or ``setsebool`` cannot start.
+            subprocess.SubprocessError: When either refuses or does not finish.
+        """
+        return self._change("on", "off")
+
+    def _change(self, before: str, after: str) -> bool:
+        """Run ``setsebool -P`` only when the boolean reads ``before``."""
+        if self._read() != before:
+            return False
+        run(["setsebool", "-P", SAMBA_SELINUX_BOOLEAN, after])
+        return True
+
+    def _read(self) -> str:
+        """The boolean's value; empty where SELinux is disabled or absent."""
+        if shutil.which("getenforce") is None:
+            return ""
+        mode = run(["getenforce"], is_checked=False).stdout.strip()
+        if mode not in SAMBA_SELINUX_ACTIVE_MODES:
+            return ""
+        return (
+            run(["getsebool", SAMBA_SELINUX_BOOLEAN]).stdout.rpartition(" ")[2].strip()
+        )
 
 
 class SambaStatusReader:

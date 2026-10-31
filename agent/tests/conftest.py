@@ -92,6 +92,7 @@ REFUSED_PROGRAMS = frozenset(
         "useradd",
         "userdel",
         "usermod",
+        "setsebool",
         "groupadd",
         "groupdel",
         "chpasswd",

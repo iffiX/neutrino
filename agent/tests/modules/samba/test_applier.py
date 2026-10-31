@@ -21,7 +21,9 @@ otherwise, and a user the module set a password for and the configuration
 dropped loses its credential, and the account too when the module made it;
 a configured user the machine lacks is made as a system account with no
 home and no login shell; an account a share writes as that is no account
-of the machine's is ``account_unknown``.
+of the machine's is ``account_unknown``; ``setsebool -P`` runs only when
+``getsebool`` reads the boolean the other way, and where ``getenforce`` reads
+``Enforcing`` or ``Permissive`` alone.
 """
 
 import itertools
@@ -35,6 +37,7 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
+    SambaSelinuxApplier,
     SambaStatusReader,
     SambaUserManager,
     check_person_config,
@@ -1019,3 +1022,71 @@ def test_a_missing_folder_is_made_for_the_account_it_writes_as():
         "ann",
         "",
     ]
+
+
+def selinux_commands(monkeypatch, *, mode="Enforcing", value="off") -> FakeCommands:
+    """A machine with ``getenforce`` reading ``mode`` and the boolean reading ``value``."""
+    commands = FakeCommands(
+        {
+            ("getenforce",): (0, f"{mode}\n"),
+            ("getsebool", "samba_export_all_rw"): (
+                0,
+                f"samba_export_all_rw --> {value}\n",
+            ),
+        }
+    )
+    monkeypatch.setattr(applier_module, "run", commands)
+    monkeypatch.setattr(
+        applier_module.shutil, "which", lambda name: f"/usr/sbin/{name}"
+    )
+    return commands
+
+
+@pytest.mark.parametrize("mode", ["Enforcing", "Permissive"])
+def test_the_boolean_goes_on_where_selinux_is_active_and_it_is_off(monkeypatch, mode):
+    commands = selinux_commands(monkeypatch, mode=mode, value="off")
+
+    assert SambaSelinuxApplier().turn_on() is True
+
+    assert commands.ran("setsebool") == [
+        (["setsebool", "-P", "samba_export_all_rw", "on"], None)
+    ]
+
+
+def test_a_boolean_already_on_runs_no_setsebool(monkeypatch):
+    commands = selinux_commands(monkeypatch, value="on")
+
+    assert SambaSelinuxApplier().turn_on() is False
+
+    assert commands.ran("setsebool") == []
+
+
+def test_the_boolean_goes_off_only_when_it_is_on(monkeypatch):
+    commands = selinux_commands(monkeypatch, value="on")
+    assert SambaSelinuxApplier().turn_off() is True
+    assert commands.ran("setsebool") == [
+        (["setsebool", "-P", "samba_export_all_rw", "off"], None)
+    ]
+
+    commands = selinux_commands(monkeypatch, value="off")
+    assert SambaSelinuxApplier().turn_off() is False
+    assert commands.ran("setsebool") == []
+
+
+@pytest.mark.parametrize("turn", ["turn_on", "turn_off"])
+def test_selinux_disabled_reads_and_changes_nothing(monkeypatch, turn):
+    commands = selinux_commands(monkeypatch, mode="Disabled")
+
+    assert getattr(SambaSelinuxApplier(), turn)() is False
+
+    assert [call[0][0] for call in commands.calls] == ["getenforce"]
+
+
+@pytest.mark.parametrize("turn", ["turn_on", "turn_off"])
+def test_a_machine_with_no_getenforce_runs_nothing(monkeypatch, turn):
+    commands = selinux_commands(monkeypatch)
+    monkeypatch.setattr(applier_module.shutil, "which", lambda name: None)
+
+    assert getattr(SambaSelinuxApplier(), turn)() is False
+
+    assert commands.calls == []

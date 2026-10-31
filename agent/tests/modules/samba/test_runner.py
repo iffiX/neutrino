@@ -12,7 +12,10 @@ the SMB users are made before the file is written; ``configure`` and
 On Windows and macOS the apply sets each account's password the same way,
 after the server has made the account, and a removal forgets the digests.
 A ``configure`` under ``stopped`` starts no server on any system and serves
-no share on Windows and macOS.
+no share on Windows and macOS. On Linux a ``configure`` that serves a share
+turns the SELinux boolean on and the record stores the mark; a boolean on
+before the module stays unmarked; a refusal logs a line and the apply goes on;
+a **Stop** leaves it on; an uninstall turns it off only with the mark.
 """
 
 import json
@@ -124,6 +127,29 @@ class FakeApplier:
         FakeApplier.stops += 1
 
 
+class FakeSelinux:
+    """The SELinux boolean, its value in :attr:`value`, every change in :attr:`changes`."""
+
+    value = "off"
+    changes: list = []
+    refusal: "BaseException | None" = None
+
+    def turn_on(self):
+        return self._change("off", "on")
+
+    def turn_off(self):
+        return self._change("on", "off")
+
+    def _change(self, before, after):
+        if FakeSelinux.refusal is not None:
+            raise FakeSelinux.refusal
+        if FakeSelinux.value != before:
+            return False
+        FakeSelinux.value = after
+        FakeSelinux.changes.append(after)
+        return True
+
+
 class FakeReader:
     persons: tuple = ({}, [])
     judged = b""
@@ -177,6 +203,9 @@ def runner(monkeypatch, tmp_path):
     FakeUsers.made = []
     FakeUsers.sweeps = 0
     FakeReader.persons = ({}, [])
+    FakeSelinux.value = "off"
+    FakeSelinux.changes = []
+    FakeSelinux.refusal = None
     (tmp_path / "configured").mkdir()
     (tmp_path / "configured" / "samba").write_text("")
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
@@ -184,6 +213,7 @@ def runner(monkeypatch, tmp_path):
     monkeypatch.setattr(runner_module, "testparm", lambda smb_conf, rendered: None)
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "SambaConfigReader", FakeReader)
+    monkeypatch.setattr(runner_module, "SambaSelinuxApplier", FakeSelinux)
     held = SambaModuleRunner(
         platform=RecordingPlatform(tmp_path), log=lambda m: None, family="rhel"
     )
@@ -253,7 +283,7 @@ def test_apply_keeps_the_digest_of_each_password_root_only(runner):
     runner.apply(CONFIG)
 
     record = json.loads(runner.record_path.read_text())
-    assert record == {"passwords": {"ann": password_digest("generated")}}
+    assert record["passwords"] == {"ann": password_digest("generated")}
     assert "generated" not in runner.record_path.read_text()
     assert stat.S_IMODE(os.stat(runner.record_path).st_mode) == 0o600
     assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
@@ -311,6 +341,137 @@ def test_the_persons_own_samba_refuses_before_anything_is_applied(
     assert FakeApplier.applied == []
     assert FakeUsers.made == []
     assert FakeReader.judged == b"[global]\n   include = /etc/samba/neutrino.conf\n"
+
+
+def logged_runner(tmp_path) -> tuple:
+    lines: list = []
+    return (
+        SambaModuleRunner(
+            platform=RecordingPlatform(tmp_path), log=lines.append, family="rhel"
+        ),
+        lines,
+    )
+
+
+def test_a_configure_serving_a_share_turns_the_boolean_on_and_marks_it(
+    runner, tmp_path
+):
+    held, lines = logged_runner(tmp_path)
+
+    held.apply(CONFIG)
+
+    assert FakeSelinux.changes == ["on"]
+    assert json.loads(runner.record_path.read_text())["is_selinux_boolean_ours"] is True
+    assert "samba: turned on the SELinux boolean samba_export_all_rw" in lines
+
+
+def test_an_apply_that_changes_nothing_changes_no_boolean_and_keeps_the_mark(runner):
+    runner.apply(CONFIG)
+    written = runner.record_path.read_text()
+
+    runner.apply(CONFIG)
+
+    assert FakeSelinux.changes == ["on"]
+    assert runner.record_path.read_text() == written
+
+
+def test_a_new_password_keeps_the_mark(runner):
+    runner.apply(CONFIG)
+
+    runner.apply(dict(CONFIG, passwords={"ann": "another"}))
+
+    record = json.loads(runner.record_path.read_text())
+    assert record["passwords"] == {"ann": password_digest("another")}
+    assert record["is_selinux_boolean_ours"] is True
+
+
+def test_a_boolean_on_before_the_module_stays_on_after_the_uninstall(runner):
+    FakeSelinux.value = "on"
+
+    runner.apply(CONFIG)
+
+    assert "is_selinux_boolean_ours" not in json.loads(runner.record_path.read_text())
+    runner.remove_configuration()
+    assert FakeSelinux.changes == []
+    assert FakeSelinux.value == "on"
+
+
+def test_an_uninstall_turns_the_marked_boolean_off(runner, tmp_path):
+    held, lines = logged_runner(tmp_path)
+    held.apply(CONFIG)
+
+    held.remove_configuration()
+
+    assert FakeSelinux.changes == ["on", "off"]
+    assert not runner.record_path.exists()
+    assert "samba: turned off the SELinux boolean samba_export_all_rw" in lines
+
+
+def test_stop_leaves_the_boolean_on(runner):
+    runner.apply(CONFIG)
+
+    runner.stop()
+
+    assert FakeSelinux.value == "on"
+    assert FakeSelinux.changes == ["on"]
+
+
+def test_a_configure_under_stopped_leaves_the_boolean_alone(runner):
+    runner.apply_stopped(CONFIG)
+
+    assert FakeSelinux.changes == []
+
+
+def test_a_configure_serving_no_share_leaves_the_boolean_alone(runner):
+    runner.apply({"shares": [], "users": [], "passwords": {}})
+
+    assert FakeSelinux.changes == []
+
+
+def test_a_configure_serving_no_share_keeps_the_boolean_on(runner):
+    runner.apply(CONFIG)
+
+    runner.apply({"shares": [], "users": [], "passwords": {}})
+
+    assert FakeSelinux.value == "on"
+    assert json.loads(runner.record_path.read_text())["is_selinux_boolean_ours"] is True
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        FileNotFoundError("getsebool"),
+        subprocess.CalledProcessError(1, ["setsebool"], stderr="permission denied"),
+    ],
+)
+def test_a_refused_boolean_logs_a_line_and_the_share_goes_on(runner, tmp_path, refusal):
+    FakeSelinux.refusal = refusal
+    held, lines = logged_runner(tmp_path)
+
+    held.apply(CONFIG)
+
+    assert FakeApplier.started == [True]
+    assert any(
+        line.startswith("samba: could not turn on the SELinux boolean")
+        for line in lines
+    )
+    assert "is_selinux_boolean_ours" not in json.loads(runner.record_path.read_text())
+
+
+def test_a_refused_turn_off_logs_a_line_and_the_uninstall_goes_on(runner, tmp_path):
+    held, lines = logged_runner(tmp_path)
+    held.apply(CONFIG)
+    FakeSelinux.refusal = subprocess.CalledProcessError(
+        1, ["setsebool"], stderr="permission denied"
+    )
+
+    held.remove_configuration()
+
+    assert not runner.record_path.exists()
+    assert any(
+        line.startswith("samba: could not turn off the SELinux boolean")
+        for line in lines
+    )
 
 
 def test_apply_renders_applies_and_keeps_the_configuration(runner):

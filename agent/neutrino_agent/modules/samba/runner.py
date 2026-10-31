@@ -7,7 +7,8 @@ Samba password, is applied here from the hub's desired configuration; what
 the machine actually serves, read back from Samba itself, is reported and
 never imported. A root-only record under the agent's work root keeps the
 digest of each password the module set, so a password is set again only
-when the hub's differs.
+when the hub's differs. The record also stores whether the module turned the
+SELinux boolean on, and an uninstall turns off only what the module turned on.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -40,6 +41,7 @@ from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
+    SambaSelinuxApplier,
     SambaStatusReader,
     SambaUserManager,
     check_person_config,
@@ -53,6 +55,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
+    SAMBA_SELINUX_BOOLEAN,
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
@@ -230,8 +233,16 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
-        if kept != held:
-            write_record(self._record_path, {"passwords": kept})
+        is_turned_on = (
+            is_started
+            and bool(parsed.served_shares())
+            and self._turn_selinux_boolean(SambaSelinuxApplier().turn_on, "on")
+        )
+        if kept != held or is_turned_on:
+            record = {"passwords": kept}
+            if is_turned_on or is_selinux_boolean_ours(self._record_path):
+                record["is_selinux_boolean_ours"] = True
+            write_record(self._record_path, record)
         self._config = parsed
         self._left_out = renderer.left_out()
         if self._left_out:
@@ -252,12 +263,38 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).stop()
 
     def remove_configuration(self) -> None:
-        """Delete the module's file, its include line, the users' files and the record; the share directories stay."""
+        """Delete the module's file, its include line, the users' files and the record; the share directories stay. The SELinux boolean goes off when the record marks it as the module's."""
         self._config = None
         self._left_out = []
         SambaConfigApplier(unit=self._unit).remove()
+        if is_selinux_boolean_ours(self._record_path):
+            self._turn_selinux_boolean(SambaSelinuxApplier().turn_off, "off")
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
+
+    def _turn_selinux_boolean(self, turn, word: str) -> bool:
+        """Turn the SELinux boolean and log it. A failure logs a line and the caller goes on.
+
+        Args:
+            turn: :meth:`SambaSelinuxApplier.turn_on` or its ``turn_off``.
+            word: ``on`` or ``off``, for the line.
+
+        Returns:
+            True when this call turned it.
+        """
+        try:
+            is_turned = turn()
+        except (OSError, subprocess.SubprocessError) as error:
+            self._log(
+                f"samba: could not turn {word} the SELinux boolean "
+                f"{SAMBA_SELINUX_BOOLEAN}: {command_detail(error)[:500]}"
+            )
+            return False
+        if is_turned:
+            self._log(
+                f"samba: turned {word} the SELinux boolean {SAMBA_SELINUX_BOOLEAN}"
+            )
+        return is_turned
 
     def _is_first_apply(self) -> bool:
         """Whether no apply of the hub's configuration has succeeded here yet."""
@@ -331,15 +368,33 @@ def read_digests(path: str) -> dict:
         ``{user: digest}``; empty when there is no record or it does not
         read.
     """
+    passwords = _read_record(path).get("passwords")
+    if not isinstance(passwords, dict):
+        return {}
+    return {str(name): str(digest) for name, digest in passwords.items()}
+
+
+def is_selinux_boolean_ours(path: str) -> bool:
+    """Whether the module turned the SELinux boolean on.
+
+    Args:
+        path: The record's file.
+
+    Returns:
+        True when the record stores the mark; False when it stores none,
+        there is no record or it does not read.
+    """
+    return _read_record(path).get("is_selinux_boolean_ours") is True
+
+
+def _read_record(path: str) -> dict:
+    """The record's fields; empty when there is no record or it does not read."""
     try:
         with open(path, "r", encoding="utf-8") as stream:
             held = json.load(stream)
     except (OSError, ValueError):
         return {}
-    passwords = held.get("passwords") if isinstance(held, dict) else None
-    if not isinstance(passwords, dict):
-        return {}
-    return {str(name): str(digest) for name, digest in passwords.items()}
+    return held if isinstance(held, dict) else {}
 
 
 def write_record(path: str, record: dict) -> None:

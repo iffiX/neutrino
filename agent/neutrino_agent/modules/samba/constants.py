@@ -34,9 +34,13 @@ SAMBA_DOMAIN_SERVER_ROLES = (
     "classic primary domain controller",
     "classic backup domain controller",
 )
-# What the module set on Linux: each SMB user's password as its SHA-256,
-# root-only under the agent's work root.
+# What the module set on Linux: each SMB user's password as its SHA-256 and
+# whether it turned the SELinux boolean on, root-only under the agent's work root.
 SAMBA_RECORD_NAME = "samba.json"
+# The SELinux boolean that lets smbd read and write the folder of any share,
+# and the words of getenforce on a machine where SELinux is active.
+SAMBA_SELINUX_BOOLEAN = "samba_export_all_rw"
+SAMBA_SELINUX_ACTIVE_MODES = ("Enforcing", "Permissive")
 
 # Linux: the SMB user of an enabled account is a system account the module
 # makes, with no home, no login shell and this comment, by which the module
