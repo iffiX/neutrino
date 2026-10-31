@@ -79,6 +79,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_NODE_PARTS,
     CLOUDCLI_NODE_PREFIX,
     CLOUDCLI_NPM_CACHE_NAME,
+    CLOUDCLI_NPM_LOCK_NAME,
     CLOUDCLI_NPM_PARTS,
     CLOUDCLI_NPM_USERCONFIG_NAME,
     CLOUDCLI_NPM_WRITTEN_NAMES,
@@ -262,10 +263,13 @@ def is_app_ready(app: str, version: str) -> bool:
         version: The version the recipe names.
 
     Returns:
-        True when the package names the version and every native module
-        has its ``package.json`` beside it or inside it.
+        True when npm's lockfile is there, the package names the version
+        and every native module has its ``package.json`` beside it or
+        inside it.
     """
     if not version or installed_version(app) != version:
+        return False
+    if not os.path.isfile(os.path.join(app, CLOUDCLI_NPM_LOCK_NAME)):
         return False
     package = os.path.join(app, *CLOUDCLI_PACKAGE_PARTS)
     places = (os.path.join(app, "node_modules"), os.path.join(package, "node_modules"))
@@ -791,7 +795,7 @@ class CloudcliHooks(InstanceHooks):
         app = app_dir(entry.home, self._os_name)
         if self._os_name == "linux":
             self._wait_for_install_left(account)
-        if self._version and installed_version(app) == self._version:
+        if is_app_ready(app, self._version):
             return []
         attempts = self._attempts()
         self.installing = frozenset({account})

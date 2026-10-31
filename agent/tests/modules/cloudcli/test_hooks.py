@@ -56,6 +56,7 @@ from neutrino_agent.modules.cloudcli.hooks import (
     CloudcliHooks,
     cookie_name,
     install_output,
+    is_app_ready,
     is_login_valid,
     node_dir,
     node_path,
@@ -185,11 +186,24 @@ def tarball(path, top=NODE, extra=()):
     return str(path)
 
 
-def land_package(app: str) -> None:
+def land_package(app: str, *, is_finished: bool = True) -> None:
+    """Write the app directory as npm leaves it; unfinished holds no lockfile."""
     package = os.path.join(app, "node_modules", "@cloudcli-ai", "cloudcli")
     os.makedirs(package, exist_ok=True)
     with open(os.path.join(package, "package.json"), "w", encoding="utf-8") as stream:
         stream.write('{"version": "1.37.3"}')
+    for name in ("better-sqlite3", "node-pty", "bcrypt"):
+        native = os.path.join(app, "node_modules", name)
+        os.makedirs(native, exist_ok=True)
+        with open(
+            os.path.join(native, "package.json"), "w", encoding="utf-8"
+        ) as stream:
+            stream.write("{}")
+    if is_finished:
+        with open(
+            os.path.join(app, "package-lock.json"), "w", encoding="utf-8"
+        ) as stream:
+            stream.write("{}")
 
 
 def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
@@ -638,6 +652,29 @@ def test_an_install_left_running_is_waited_for_and_its_work_taken(linux):
     assert machine.slept == [5, 5, 5]
     assert machine.waiting_seen == [frozenset()] + [frozenset({"ann"})] * 3
     assert hooks.installing == frozenset()
+
+
+def test_a_tree_npm_did_not_finish_runs_npm_again(linux):
+    hooks, machine, entry = linux
+    app = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    )
+    land_package(app, is_finished=False)
+
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == ["installed CloudCLI for ann"]
+    assert any(call[0] == "systemd-run" for call in machine.calls)
+
+
+def test_an_app_holds_a_whole_install_once_npm_wrote_its_lockfile(tmp_path):
+    app = str(tmp_path / "app")
+    land_package(app, is_finished=False)
+    assert is_app_ready(app, "1.37.3") is False
+
+    land_package(app)
+    assert is_app_ready(app, "1.37.3") is True
+    assert is_app_ready(app, "1.37.4") is False
 
 
 def test_an_install_left_running_that_ends_without_the_app_runs_npm_after(linux):
