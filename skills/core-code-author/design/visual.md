@@ -54,8 +54,8 @@ set of colour tokens under `[data-theme="<name>"]` and never under `:root`.
 The token names are the contract: `light.css` answers every token `dark.css`
 answers, in the same order, so a diff shows one a theme forgot. `<html
 data-theme>` carries the palette the page is drawn in; a subtree that pins its
-own (`setup_page.tsx`, always dark) sets the attribute on its root, and every
-token under it resolves from that file.
+own (`setup_page.tsx` and the login page's lockdown card, always dark) sets the
+attribute on its root, and every token under it resolves from that file.
 
 - A derived colour is a `color-mix` of a token:
   `color-mix(in srgb, var(--color-accent) 45%, transparent)`. A colour literal
