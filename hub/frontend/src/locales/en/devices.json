@@ -318,7 +318,7 @@
   "ui.remote_desktop.viewers": "{count} viewers",
   "ui.services.badge": "{healthy} of {total} healthy",
   "ui.services.cancel": "Cancel",
-  "ui.services.declare": "Declare service",
+  "ui.services.declare": "Declare app",
   "ui.services.delete": "Delete",
   "ui.services.delete_body": "The app and its entries are removed.",
   "ui.services.delete_title": "Delete {name}",

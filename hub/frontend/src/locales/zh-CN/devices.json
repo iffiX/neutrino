@@ -318,7 +318,7 @@
   "ui.remote_desktop.viewers": "{count} 位观看者",
   "ui.services.badge": "{total} 个中有 {healthy} 个健康",
   "ui.services.cancel": "取消",
-  "ui.services.declare": "声明服务",
+  "ui.services.declare": "声明应用",
   "ui.services.delete": "删除",
   "ui.services.delete_body": "这个应用和它的入口都会移除。",
   "ui.services.delete_title": "删除 {name}",
