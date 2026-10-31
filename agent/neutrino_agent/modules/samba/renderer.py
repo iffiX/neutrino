@@ -1,8 +1,10 @@
 """Rendering the module's own configuration file, the shares it serves.
 
 The module writes its shares to a file of its own, which ``smb.conf``
-includes; ``smb.conf`` itself stays the person's or the distribution's, so
-the file renders no ``[global]``.
+includes; ``smb.conf`` itself stays the person's or the distribution's. Samba
+reads the file in place of the include line, so the file ends with a
+``[global]`` header: without it the person's lines after that line fall in
+the last share.
 
 Pure: text in, text out. Writing, validating and reloading is
 :mod:`neutrino_agent.modules.samba.applier`.
@@ -15,6 +17,7 @@ from __future__ import annotations
 from neutrino_agent.modules.samba.config import SambaConfig, SambaShare
 from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_MARKER,
+    SAMBA_GLOBAL_HEADER,
     SAMBA_SHARE_HOSTS_ALLOW,
     SAMBA_USERS_FILE_SUFFIX,
     SAMBA_USERS_INCLUDE,
@@ -32,7 +35,7 @@ class SambaConfigRenderer:
         self._config = config
 
     def render(self) -> str:
-        """Render the module's file: the marker, then every share with a user.
+        """Render the module's file: the marker, every share with a user, a ``[global]`` header.
 
         Returns:
             Text ready to write as the module's own file, which ``smb.conf``
@@ -42,6 +45,7 @@ class SambaConfigRenderer:
         lines = [SAMBA_CONF_MARKER, ""]
         for share in self._config.served_shares():
             lines += self._render_share(share)
+        lines += [SAMBA_GLOBAL_HEADER, ""]
         return "\n".join(lines)
 
     def left_out(self) -> list:

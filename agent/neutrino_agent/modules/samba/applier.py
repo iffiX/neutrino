@@ -41,6 +41,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_PATH,
     SAMBA_DOMAIN_SECURITY_MODES,
     SAMBA_DOMAIN_SERVER_ROLES,
+    SAMBA_GLOBAL_HEADER,
     SAMBA_LINUX_NOLOGIN_SHELLS,
     SAMBA_LINUX_USER_COMMENT,
     SAMBA_LINUX_USER_PREFIX,
@@ -140,15 +141,16 @@ def with_include_line(text: str) -> str:
         text: The file without the line.
 
     Returns:
-        The file with the line added once; a file with no ``[global]``
-        header gets one, with the line, in front.
+        The file with the line added once; in a file with no ``[global]``
+        header the line comes first, and Samba reads a line before any
+        section as a global line.
     """
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        if line.strip().lower() == "[global]":
+        if line.strip().lower() == SAMBA_GLOBAL_HEADER:
             lines.insert(index + 1, include_line())
             return "\n".join(lines) + "\n"
-    return "[global]\n" + include_line() + "\n\n" + text
+    return include_line() + "\n" + text
 
 
 def without_include_line(text: str) -> str:

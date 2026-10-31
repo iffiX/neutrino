@@ -289,7 +289,7 @@ def test_validate_has_samba_check_the_render_with_the_planned_smb_conf(
 
     assert checked[0][0] == "[global]\n   include = /etc/samba/neutrino.conf\n"
     assert "[share]" in checked[0][1]
-    assert "[global]" not in checked[0][1]
+    assert checked[0][1].endswith("[global]\n")
 
 
 @pytest.mark.parametrize(

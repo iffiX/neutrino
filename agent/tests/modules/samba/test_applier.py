@@ -2,10 +2,11 @@
 
 What these pin beside the reads: a missing share folder is made and an
 existing one is left as it is; ``smb.conf`` stays the person's and gets
-the module's include line once, after its ``[global]`` header; a missing
-``smb.conf`` is the distribution's stock file with the line; a whole
-``smb.conf`` an earlier version rendered is the person's and only gets the
-line; the module's shares go to its own file; an uninstall deletes that
+the module's include line once, after its ``[global]`` header; the person's
+lines after that line stay where they were once the module's file is read in
+its place; a missing ``smb.conf`` is the distribution's stock file with the
+line; a whole ``smb.conf`` an earlier version rendered is the person's and
+only gets the line; the module's shares go to its own file; an uninstall deletes that
 file and takes the line out; a stop stops the unit and disables it; the
 sweep takes every ``neutrino-`` user and
 credential off the machine; the person's own
@@ -32,6 +33,7 @@ from neutrino_agent.modules.samba.applier import (
     SambaStatusReader,
     SambaUserManager,
     check_person_config,
+    is_include_line,
     password_digest,
     plan_smb_conf,
     share_owner,
@@ -39,6 +41,7 @@ from neutrino_agent.modules.samba.applier import (
     without_include_line,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 # What Samba 4.15.13 on Ubuntu 22.04 prints; it does not know ``--json``.
@@ -84,6 +87,25 @@ def one_share(tmp_path) -> SambaConfig:
 
 INCLUDE = "   include = "
 MARKER = applier_module.SAMBA_CONF_MARKER
+MEDIA = "[media]\n   path = /srv/media\n"
+INCLUDE_LINE = f"{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n"
+
+
+def sections_as_samba_reads(smb_conf: str, module_file: str) -> dict:
+    """Each section's lines in Samba's reading order, the module's file in place of its line."""
+    lines = []
+    for line in smb_conf.splitlines():
+        lines += module_file.splitlines() if is_include_line(line) else [line]
+    section = "global"
+    sections: dict = {section: []}
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            section = stripped.strip("[]")
+            sections.setdefault(section, [])
+        elif stripped and not stripped.startswith("#"):
+            sections[section].append(stripped)
+    return sections
 
 
 class FakeCommands:
@@ -294,31 +316,65 @@ def test_the_sweep_takes_every_neutrino_user_and_credential_and_no_other(box):
     ]
 
 
-def test_the_plan_is_pure_and_puts_a_global_header_in_front_of_a_file_without_one():
-    text, note = plan_smb_conf(
-        "[media]\n   path = /srv/media\n",
-        stock=("[global]\n", "stock"),
-        is_served=True,
-    )
+def test_the_plan_is_pure_and_puts_the_line_first_in_a_file_without_a_global_header():
+    text, note = plan_smb_conf(MEDIA, stock=("[global]\n", "stock"), is_served=True)
 
-    assert text == (
-        f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n\n"
-        "[media]\n   path = /srv/media\n"
-    )
+    assert text == f"{INCLUDE_LINE}{MEDIA}"
     assert note == "added the include line"
     assert plan_smb_conf(None, stock=("[global]\n", "a stock"), is_served=True) == (
-        f"[global]\n{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n",
+        f"[global]\n{INCLUDE_LINE}",
         "wrote a stock; added the include line",
     )
     assert plan_smb_conf(text, stock=("", ""), is_served=True) == (text, "")
     assert plan_smb_conf(text, stock=("", ""), is_served=False) == (
-        "[global]\n\n[media]\n   path = /srv/media\n",
+        MEDIA,
         "took the include line out",
     )
     assert plan_smb_conf(None, stock=("x", "s"), is_served=False) == ("", "")
     persons = "[global]\n   workgroup = HOME\n"
     assert plan_smb_conf(persons, stock=("", ""), is_served=False) == (persons, "")
-    assert without_include_line(text) == "[global]\n\n[media]\n   path = /srv/media\n"
+    assert without_include_line(text) == MEDIA
+
+
+@pytest.mark.parametrize(
+    "persons, persons_global",
+    [
+        (f"[global]\n   workgroup = HOME\n\n{MEDIA}", ["workgroup = HOME"]),
+        (f"workgroup = HOME\n\n{MEDIA}", ["workgroup = HOME"]),
+        (MEDIA, []),
+    ],
+)
+def test_a_persons_lines_after_the_include_line_stay_where_they_were(
+    tmp_path, persons, persons_global
+):
+    rendered = SambaConfigRenderer(config=one_share(tmp_path)).render()
+
+    text, _ = plan_smb_conf(persons, stock=("", ""), is_served=True)
+
+    sections = sections_as_samba_reads(text, rendered)
+    assert sections["global"] == persons_global
+    assert sections["media"] == ["path = /srv/media"]
+    assert "workgroup = HOME" not in sections["s"]
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        f"[global]\n{INCLUDE_LINE}   workgroup = HOME\n\n{MEDIA}",
+        f"[global]\n{INCLUDE_LINE}\nworkgroup = HOME\n\n{MEDIA}",
+    ],
+)
+def test_an_include_line_an_earlier_build_wrote_stays_and_reads_right(
+    tmp_path, earlier
+):
+    rendered = SambaConfigRenderer(config=one_share(tmp_path)).render()
+
+    text, note = plan_smb_conf(earlier, stock=("", ""), is_served=True)
+
+    assert (text, note) == (earlier, "")
+    sections = sections_as_samba_reads(text, rendered)
+    assert sections["global"] == ["workgroup = HOME"]
+    assert "workgroup = HOME" not in sections["s"]
 
 
 def test_a_removal_deletes_the_modules_file_and_takes_the_line_out(box):
