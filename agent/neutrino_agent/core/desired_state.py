@@ -58,7 +58,7 @@ from neutrino_agent.constants import (
     AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_PRESENT_WANTS,
-    AGENT_STEP_WAIT_CONTAINERS,
+    AGENT_STEP_WAIT_MODULE,
     AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
     AGENT_WANT_RUNNING,
@@ -80,6 +80,7 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.modules.shared import system_package
+from neutrino_agent.modules.shared.package import requires_of
 from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
 from neutrino_agent.streams.log import LogStream
@@ -109,7 +110,7 @@ CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
 # The one failure the next state frame tries again: the socket went away
 # under the operation, and nothing about the machine made it fail.
 RETRIED_CODE = "hub_unreachable"
-# A container module's failure while Containers does not run.
+# A module's failure while a module it requires does not run.
 CODE_MODULE_NEEDED = "module_needed"
 # The file beside the state that keeps the hash last tried, per section.
 TRIED_SUFFIX = ".tried"
@@ -154,6 +155,12 @@ def _method_of(entry: dict) -> str:
     return (
         str((recipe or {}).get("method", "") or "") if isinstance(recipe, dict) else ""
     )
+
+
+def _requires_of(entry: dict) -> list:
+    """The modules a state entry's recipe requires, empty for none."""
+    recipe = entry.get("install") if isinstance(entry, dict) else None
+    return requires_of(recipe)
 
 
 def _section_hash(section) -> str:
@@ -532,7 +539,7 @@ class DesiredStateApplier:
         ``want`` plans the install when the software is missing or the last
         install failed, the version switch when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
-        ``stopped`` and ``running``, less a second ``wait_containers``.
+        ``stopped`` and ``running``, less a second ``wait_module``.
 
         Args:
             task: The task.
@@ -573,11 +580,9 @@ class DesiredStateApplier:
             steps += self._engine.switch_steps(name, entry)
         if want in CONFIGURING_WANTS:
             configuring = self._engine.configure_steps(name, entry, want)
-            if any(step.name == AGENT_STEP_WAIT_CONTAINERS for step in steps):
+            if any(step.name == AGENT_STEP_WAIT_MODULE for step in steps):
                 configuring = [
-                    step
-                    for step in configuring
-                    if step.name != AGENT_STEP_WAIT_CONTAINERS
+                    step for step in configuring if step.name != AGENT_STEP_WAIT_MODULE
                 ]
             steps += configuring
         return kind, steps
@@ -586,8 +591,8 @@ class DesiredStateApplier:
         """Whether a task ends at the next step boundary with no failure.
 
         Every task ends there once the agent began to stop, and an
-        installed container module's configure task while Containers'
-        ``want`` is not ``running``.
+        installed module's configure task while the ``want`` of a module it
+        requires is not ``running``.
 
         Args:
             task: The task.
@@ -599,9 +604,10 @@ class DesiredStateApplier:
             return True
         if task.kind != PLAN_CONFIGURE:
             return False
-        if _method_of(task.entry) != AGENT_METHOD_CONTAINER:
-            return False
-        return self._containers_want() != AGENT_WANT_RUNNING
+        return any(
+            self._want_of(module) != AGENT_WANT_RUNNING
+            for module in _requires_of(task.entry)
+        )
 
     def end_task(self, task, outcome, *, is_cut: bool, is_forced: bool = False) -> bool:
         """End a task, unless a newer entry came: keep its outcome and its tried hash.
@@ -741,38 +747,39 @@ class DesiredStateApplier:
             return {"code": RETRIED_CODE, "params": {}}
         return PackageStream(channel, directory=self._package_dir).receive()
 
-    def wait_for_containers(self, task) -> None:
-        """Wait until Containers reads ``running`` and has no task.
+    def wait_for_module(self, task, module: str) -> None:
+        """Wait until a module the task's module requires reads ``running`` and has no task.
 
-        A configure task of an installed container module plans again once
-        Containers' ``want`` is not ``running``, and so ends with no
+        A configure task of an installed module plans again once the
+        required module's ``want`` is not ``running``, and so ends with no
         failure, as :meth:`is_task_cut` has it.
 
         Args:
-            task: The container module's task.
+            task: The requiring module's task.
+            module: The required module.
 
         Raises:
-            ModuleApplyError: ``module_needed {module, state}`` when
-                Containers' ``want`` is not ``running`` in an install, or
-                when Containers has no task and does not read ``running``.
+            ModuleApplyError: ``module_needed {module, state}`` when the
+                required module's ``want`` is not ``running`` in an install,
+                or when it has no task and does not read ``running``.
             StepSuperseded: When the task holds a newer entry meanwhile, or
                 is a configure task that ends at the step's boundary.
         """
         while True:
             with self._lock:
-                want = self._containers_want()
-                containers = self._tasks.get(CONTAINERS_MODULE)
+                want = self._want_of(module)
+                required = self._tasks.get(module)
             if want != AGENT_WANT_RUNNING:
                 if self.is_task_cut(task):
                     raise StepSuperseded(task.name)
-                raise self._module_needed()
-            if containers is None:
-                if self._containers_state() == AGENT_WANT_RUNNING:
+                raise self._module_needed(module)
+            if required is None:
+                if self._state_of(module) == AGENT_WANT_RUNNING:
                     task.set_wait({})
                     return
-                raise self._module_needed()
-            task.set_wait(module_wait(CONTAINERS_MODULE))
-            task.wait_for_task(containers)
+                raise self._module_needed(module)
+            task.set_wait(module_wait(module))
+            task.wait_for_task(required)
 
     def ask_configure(self, name: str):
         """Ask for a configure task of one module, from its entry in the latest state.
@@ -823,15 +830,15 @@ class DesiredStateApplier:
             StepSuperseded: When the task holds a newer entry meanwhile.
         """
         with self._lock:
-            is_wanted = self._containers_want() == AGENT_WANT_RUNNING
+            is_wanted = self._want_of(CONTAINERS_MODULE) == AGENT_WANT_RUNNING
         containers = self.ask_configure(CONTAINERS_MODULE) if is_wanted else None
         if containers is None:
-            raise self._module_needed()
+            raise self._module_needed(CONTAINERS_MODULE)
         task.set_wait(module_wait(CONTAINERS_MODULE))
         task.wait_for_task(containers)
         task.set_wait({})
-        if self._containers_state() != AGENT_WANT_RUNNING:
-            raise self._module_needed()
+        if self._state_of(CONTAINERS_MODULE) != AGENT_WANT_RUNNING:
+            raise self._module_needed(CONTAINERS_MODULE)
 
     def _keep_outcome(self, task, entry: dict, outcome, *, is_cut: bool) -> None:
         """Mark a module configured once its task took, keep its failure, and read its row again."""
@@ -900,24 +907,23 @@ class DesiredStateApplier:
         """The runner of one module, a container module's made since the start among them."""
         return self._runners.get(name) or self._engine.runner_of(name)
 
-    def _containers_want(self) -> str:
-        """Containers' ``want`` in the latest state. Call under the lock."""
-        entry = self._modules.get(CONTAINERS_MODULE) or {}
+    def _want_of(self, module: str) -> str:
+        """A module's ``want`` in the latest state. Call under the lock."""
+        entry = self._modules.get(module) or {}
         return str(entry.get("want", "") or "")
 
-    def _containers_state(self) -> str:
-        """Containers' state as its row reads it now, read first when nothing read it yet."""
-        row = self._engine.report().get(CONTAINERS_MODULE) or {}
+    def _state_of(self, module: str) -> str:
+        """A module's state as its row reads it now, read first when nothing read it yet."""
+        row = self._engine.report().get(module) or {}
         if not str(row.get("state", "") or ""):
-            self._engine.refresh_one(CONTAINERS_MODULE)
-            row = self._engine.report().get(CONTAINERS_MODULE) or {}
+            self._engine.refresh_one(module)
+            row = self._engine.report().get(module) or {}
         return str(row.get("state", "") or "")
 
-    def _module_needed(self) -> ModuleApplyError:
-        """``module_needed {module, state}`` naming Containers and the state it reads."""
+    def _module_needed(self, module: str) -> ModuleApplyError:
+        """``module_needed {module, state}`` naming a required module and the state it reads."""
         return ModuleApplyError(
-            CODE_MODULE_NEEDED,
-            {"module": CONTAINERS_MODULE, "state": self._containers_state()},
+            CODE_MODULE_NEEDED, {"module": module, "state": self._state_of(module)}
         )
 
     def _apply_desktop(self, wanted) -> None:

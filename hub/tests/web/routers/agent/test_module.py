@@ -656,7 +656,7 @@ def test_a_machine_below_the_entry_floor_cannot_run_the_module(api, monkeypatch)
 # configure task, as the agent reports it (protocol.md, "The sections").
 TASK = {
     "steps": [
-        {"name": "wait_containers", "params": {}},
+        {"name": "wait_module", "params": {"module": "podman"}},
         {"name": "pull", "params": {"image": "app"}},
         {"name": "verify", "params": {}},
         {"name": "render", "params": {}},

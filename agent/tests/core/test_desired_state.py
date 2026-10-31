@@ -61,7 +61,12 @@ INSTALL = {
         "uninstall": {"packages": ["x"], "post_uninstall": []},
     },
 }
-CONTAINER_INSTALL = {"runner": "container", "method": "container", "params": {}}
+CONTAINER_INSTALL = {
+    "runner": "container",
+    "method": "container",
+    "params": {},
+    "requires": ["podman"],
+}
 # The artifact a module's recipe receives in these tests.
 ARTIFACT = {"name": "gitea", "kind": "binary", "digest": "sha256:" + "ab" * 32}
 # The module whose recipe installs from bytes; the rest install by name.
@@ -71,8 +76,21 @@ SETTLE_S = 5.0
 PACKAGE_LOCKS = (("package_manager", "alone"),)
 
 
-def wait_for_containers(context):
-    context.wait_for_containers()
+def wait_for_module(module, context):
+    context.wait_for_module(module)
+
+
+def wait_steps(entry, failed_state="failed"):
+    """A ``wait_module`` step per module the entry's recipe requires."""
+    return [
+        ModuleStep(
+            name="wait_module",
+            params={"module": module},
+            run=functools.partial(wait_for_module, module),
+            failed_state=failed_state,
+        )
+        for module in entry.get("install", {}).get("requires") or []
+    ]
 
 
 def render_containers(context):
@@ -104,6 +122,9 @@ class FakeEngine:
         self.containers_state = "running"
         # What a first read of Containers' row finds, while nothing read it yet.
         self.containers_read = "running"
+        # Module name to the state its row reads, over what the scripted
+        # install gives.
+        self.row_states: dict = {}
         self.refreshed: list = []
         self.lock = threading.Lock()
 
@@ -137,18 +158,12 @@ class FakeEngine:
             )
         ]
         if entry.get("install", {}).get("method") == "container":
-            steps = [
-                ModuleStep(
-                    name="wait_containers",
-                    run=wait_for_containers,
-                    failed_state="install_failed",
-                ),
-                *steps,
+            steps.append(
                 ModuleStep(
                     name="render", run=render_containers, failed_state="install_failed"
-                ),
-            ]
-        return steps
+                )
+            )
+        return wait_steps(entry, "install_failed") + steps
 
     def switch_steps(self, name, entry):
         return [
@@ -163,9 +178,7 @@ class FakeEngine:
     def configure_steps(self, name, entry, want):
         runner = self.runners[name]
         config = dict(entry.get("config") or {})
-        steps = []
-        if entry.get("install", {}).get("method") == "container":
-            steps.append(ModuleStep(name="wait_containers", run=wait_for_containers))
+        steps = wait_steps(entry)
         steps.append(
             ModuleStep(name="configure", run=functools.partial(_apply, runner, config))
         )
@@ -222,6 +235,8 @@ class FakeEngine:
             failure = self.failures.get(name)
             if failure:
                 rows[name] = {"state": failure["state"]}
+            elif name in self.row_states:
+                rows[name] = {"state": self.row_states[name]}
             elif name == "podman":
                 continue
             elif name in self.installed:
@@ -1526,9 +1541,59 @@ def test_a_container_module_s_install_plan_waits_for_containers_once(tmp_path):
     run(held, container_state(demo="running"))
 
     names = [step["name"] for step in engine.last("demo")[0]["steps"]]
-    assert names[0] == "wait_containers"
-    assert names.count("wait_containers") == 1
+    assert names[0] == "wait_module"
+    assert names.count("wait_module") == 1
     assert names[-1] == "start"
+
+
+def requiring_state(state_hash="h1", samba="running", vscode="running") -> dict:
+    """A state whose VS Code recipe requires the file share."""
+    document = state(state_hash, samba=samba, vscode=vscode)
+    document["modules"]["vscode"]["install"] = dict(INSTALL, requires=["samba"])
+    return document
+
+
+def test_a_module_waits_for_each_module_its_recipe_requires(tmp_path):
+    runners = {"samba": FakeRunner(), "vscode": FakeRunner()}
+    engine = FakeEngine(runners, absent=("vscode",))
+    engine.row_states["samba"] = "running"
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, requiring_state())
+
+    steps = engine.last("vscode")[0]["steps"]
+    assert steps[0] == {"name": "wait_module", "params": {"module": "samba"}}
+    assert [step["name"] for step in steps].count("wait_module") == 1
+    assert engine.results["vscode"] == ("", {})
+
+
+def test_a_module_fails_module_needed_naming_the_module_it_requires(tmp_path):
+    runners = {"samba": FakeRunner(), "vscode": FakeRunner()}
+    engine = FakeEngine(runners, absent=("vscode",))
+    engine.row_states["samba"] = "stopped"
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, requiring_state(samba="stopped"))
+
+    assert engine.results["vscode"] == (
+        "module_needed",
+        {"module": "samba", "state": "stopped"},
+    )
+    assert engine.failures["vscode"]["state"] == "install_failed"
+
+
+def test_an_installed_module_ends_quietly_while_a_module_it_requires_is_stopped(
+    tmp_path,
+):
+    runners = {"samba": FakeRunner(), "vscode": FakeRunner()}
+    engine = FakeEngine(runners)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, requiring_state(samba="stopped"))
+
+    assert runners["vscode"].applied == []
+    assert engine.results["vscode"] == ("", {})
+    assert "vscode" not in held._store.read_tried()
 
 
 def test_a_container_module_fails_module_needed_while_containers_is_not_to_run(

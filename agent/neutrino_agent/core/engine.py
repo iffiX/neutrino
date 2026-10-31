@@ -73,7 +73,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_SWITCH,
     AGENT_STEP_UNINSTALL,
     AGENT_STEP_VERIFY,
-    AGENT_STEP_WAIT_CONTAINERS,
+    AGENT_STEP_WAIT_MODULE,
     AGENT_VERSIONS_DIR_NAME,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
@@ -111,6 +111,7 @@ from neutrino_agent.modules.shared.package import (
     received_artifacts,
     remove_received,
     remove_staged,
+    requires_of,
     stage_artifact,
     swap_back,
     swap_in,
@@ -651,11 +652,11 @@ class ModuleEngine(ReconcileWorker):
 
         Returns:
             :class:`ModuleStep` each, with the runner's own changes:
+            ``wait_module {module}`` per module the recipe requires, then
             ``packages`` for a ``system`` recipe and a ``hub`` recipe that
             names system packages, ``artifact {name}`` per artifact a
             ``hub`` recipe receives, then ``verify``; a ``container``
-            recipe's ``wait_containers``, ``pull {image}`` per image,
-            ``verify`` and ``render``.
+            recipe's ``pull {image}`` per image, ``verify`` and ``render``.
         """
         recipe = _recipe_of(entry)
         runner = self._runner_for(name, recipe)
@@ -663,8 +664,7 @@ class ModuleEngine(ReconcileWorker):
         if runner is None or method not in INSTALLED_METHODS:
             return [self._refused_step(name, recipe, runner)]
         if method == AGENT_METHOD_CONTAINER:
-            steps = [self._wait_containers_step(AGENT_MODULE_STATE_INSTALL_FAILED)]
-            steps += [
+            steps = [
                 ModuleStep(
                     name=AGENT_STEP_PULL,
                     params={"image": image["name"]},
@@ -718,7 +718,10 @@ class ModuleEngine(ReconcileWorker):
                     for artifact in received_artifacts(recipe)
                 ]
             steps.append(self._verify_step(name, runner, recipe, ()))
-        return self._with_runner_locks(runner, runner.install_steps(recipe, steps))
+        waits = self._wait_module_steps(recipe, AGENT_MODULE_STATE_INSTALL_FAILED)
+        return waits + self._with_runner_locks(
+            runner, runner.install_steps(recipe, steps)
+        )
 
     def switch_steps(self, name: str, entry: dict) -> list:
         """The one ``switch {version}`` step that puts the recipe's version in place of the one installed.
@@ -751,10 +754,10 @@ class ModuleEngine(ReconcileWorker):
             want: ``running`` or ``stopped``.
 
         Returns:
+            ``wait_module {module}`` per module the recipe requires, then
             ``configure``, then ``start`` under ``running`` and ``stop``
             under ``stopped``, with the runner's own changes; a container
-            module's begin with ``wait_containers``, and its ``start`` and
-            ``stop`` take ``containers`` shared.
+            module's ``start`` and ``stop`` take ``containers`` shared.
         """
         recipe = _recipe_of(entry)
         runner = self._runner_for(name, recipe)
@@ -762,17 +765,12 @@ class ModuleEngine(ReconcileWorker):
         config = dict(config) if isinstance(config, dict) else {}
         is_container = str(recipe.get("method", "") or "") == AGENT_METHOD_CONTAINER
         unit_locks = CONTAINERS_SHARED_LOCKS if is_container else ()
-        steps = (
-            [self._wait_containers_step(AGENT_MODULE_STATE_FAILED)]
-            if is_container
-            else []
-        )
-        steps.append(
+        steps = [
             ModuleStep(
                 name=AGENT_STEP_CONFIGURE,
                 run=functools.partial(_run_apply, runner, config),
             )
-        )
+        ]
         if want == AGENT_WANT_RUNNING:
             steps.append(
                 ModuleStep(
@@ -789,9 +787,10 @@ class ModuleEngine(ReconcileWorker):
                     locks=unit_locks,
                 )
             )
-        return self._with_runner_locks(
+        planned = self._with_runner_locks(
             runner, runner.configure_steps(config, want, steps)
         )
+        return self._wait_module_steps(recipe, AGENT_MODULE_STATE_FAILED) + planned
 
     def uninstall_steps(self, name: str, entry: dict) -> list:
         """The one ``uninstall`` step that takes one module's software off the machine.
@@ -887,14 +886,18 @@ class ModuleEngine(ReconcileWorker):
             error_code="install_failed",
         )
 
-    def _wait_containers_step(self, failed_state: str) -> ModuleStep:
-        """The ``wait_containers`` step, holding no lock."""
-        return ModuleStep(
-            name=AGENT_STEP_WAIT_CONTAINERS,
-            run=_wait_for_containers,
-            failed_state=failed_state,
-            error_code="install_failed",
-        )
+    def _wait_module_steps(self, recipe: dict, failed_state: str) -> list:
+        """A ``wait_module {module}`` step per module the recipe requires, each holding no lock."""
+        return [
+            ModuleStep(
+                name=AGENT_STEP_WAIT_MODULE,
+                params={"module": module},
+                run=functools.partial(_wait_for_module, module),
+                failed_state=failed_state,
+                error_code="install_failed",
+            )
+            for module in requires_of(recipe)
+        ]
 
     def _refused_step(self, name: str, recipe: dict, runner) -> ModuleStep:
         """A ``verify`` step that fails at once: no runner, a module the agent carries, or a method this agent does not install by."""
@@ -1542,9 +1545,9 @@ def _run_stop(runner, context) -> None:
     runner.stop()
 
 
-def _wait_for_containers(context) -> None:
-    """The ``wait_containers`` step: the task waits until Containers runs and has no task."""
-    context.wait_for_containers()
+def _wait_for_module(module: str, context) -> None:
+    """The ``wait_module`` step: the task waits until a module it requires runs and has no task."""
+    context.wait_for_module(module)
 
 
 def _render_containers(context) -> None:

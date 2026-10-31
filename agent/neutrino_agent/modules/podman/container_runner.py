@@ -380,8 +380,7 @@ class ContainerModuleRunner(ModuleRunner):
         Args:
             config: The configuration the task's entry carries.
             want: ``running`` or ``stopped``.
-            steps: ``wait_containers``, ``configure``, then ``start`` or
-                ``stop``.
+            steps: ``configure``, then ``start`` or ``stop``.
 
         Returns:
             The steps; ``start`` hands the hooks the configuration before

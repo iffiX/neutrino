@@ -188,8 +188,8 @@ class StepContext:
     def receive(self, artifact):
         return self._receive(self.name, artifact)
 
-    def wait_for_containers(self):
-        self.waits.append("wait_containers")
+    def wait_for_module(self, module):
+        self.waits.append(f"wait_module {module}")
 
     def render_containers(self):
         self.waits.append("render")
@@ -1844,6 +1844,7 @@ CONTAINER_RECIPE = {
         ],
         "source_sets": ["pypi"],
     },
+    "requires": ["podman"],
 }
 PYPI = {"pypi": {"probe": "/pip/", "sources": ["https://p.example"], "variables": []}}
 
@@ -1959,7 +1960,7 @@ def test_a_container_install_runs_the_runner_s_install_and_checks_it_took(
     # It waits for Containers, pulls each image on it shared, checks, and has
     # Containers render its containers.
     assert [step.name for step in steps] == [
-        "wait_containers",
+        "wait_module",
         *["pull"] * len(pulled),
         "verify",
         "render",
@@ -2019,7 +2020,7 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
     engine._statuses["podman"] = dict(running)
     pulling = {
         "steps": [
-            {"name": "wait_containers", "params": {}},
+            {"name": "wait_module", "params": {"module": "podman"}},
             {"name": "pull", "params": {"image": "app"}},
         ],
         "index": 2,
@@ -2039,7 +2040,7 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
 
 START_TASK = {
     "steps": [
-        {"name": "wait_containers", "params": {}},
+        {"name": "wait_module", "params": {"module": "podman"}},
         {"name": "start", "params": {}},
     ],
     "index": 2,
@@ -2249,6 +2250,7 @@ def image_recipe(*names) -> dict:
                 for name in names
             ],
         },
+        "requires": ["podman"],
     }
 
 
@@ -2291,18 +2293,18 @@ def test_a_container_module_plans_its_pulls_then_its_start_and_first_start(
     stop = engine.configure_steps(module, entry, "stopped")
 
     assert planned(install) == [
-        ("wait_containers", {}, ()),
+        ("wait_module", {"module": "podman"}, ()),
         *[("pull", {"image": image}, (CONTAINERS_SHARED,)) for image in images],
         ("verify", {}, (CONTAINERS_SHARED,)),
         ("render", {}, ()),
     ]
     assert planned(start) == [
-        ("wait_containers", {}, ()),
+        ("wait_module", {"module": "podman"}, ()),
         ("start", {}, (CONTAINERS_SHARED,)),
         *first_start,
     ]
     assert planned(stop) == [
-        ("wait_containers", {}, ()),
+        ("wait_module", {"module": "podman"}, ()),
         ("stop", {}, (CONTAINERS_SHARED,)),
     ]
     assert planned(engine.uninstall_steps(module, entry)) == [
@@ -2629,7 +2631,7 @@ STEP_NAMES = {
     "start",
     "stop",
     "uninstall",
-    "wait_containers",
+    "wait_module",
     "pull",
     "render",
     "windows_features",
@@ -2666,6 +2668,7 @@ def every_step(engine) -> list:
                         "packages": ["x"],
                         "artifacts": artifacts,
                     },
+                    "requires": ["podman"],
                 },
             }
             engine._wanted[name] = entry
@@ -2726,6 +2729,43 @@ def test_a_package_step_takes_the_package_manager_and_containers_steps_its_lock(
         ("verify", {}, ()),
     ]
     assert [step.failed_state for step in steps] == ["install_failed"] * 4
+
+
+def test_a_recipe_s_required_modules_open_its_install_and_configure_plans(tmp_path):
+    engine = bare_engine(tmp_path=tmp_path)
+    entry = dict(WANTED["fakedesk"], install=dict(HUB_RECIPE, requires=["a", "b"]))
+    waits = [
+        ("wait_module", {"module": "a"}, ()),
+        ("wait_module", {"module": "b"}, ()),
+    ]
+
+    install = engine.install_steps("fakedesk", entry)
+    running = engine.configure_steps("fakedesk", entry, "running")
+    uninstall = engine.uninstall_steps("fakedesk", entry)
+
+    assert planned(install)[:2] == waits
+    assert planned(install)[2:] == planned(
+        engine.install_steps("fakedesk", WANTED["fakedesk"])
+    )
+    assert planned(running)[:2] == waits
+    assert [step.failed_state for step in install[:2]] == ["install_failed"] * 2
+    assert [step.failed_state for step in running[:2]] == ["failed"] * 2
+    assert "wait_module" not in [step.name for step in uninstall]
+
+
+def test_a_container_recipe_that_requires_nothing_waits_for_no_module(tmp_path):
+    engine, _containers = container_engine(tmp_path)
+    recipe = {
+        key: value for key, value in CONTAINER_RECIPE.items() if key != "requires"
+    }
+    entry = {"want": "running", "config": {}, "install": recipe}
+    engine.take_state({"demo": entry})
+
+    steps = engine.install_steps("demo", entry) + engine.configure_steps(
+        "demo", entry, "running"
+    )
+
+    assert "wait_module" not in [step.name for step in steps]
 
 
 def test_every_runner_asks_for_a_configure_task_of_its_own_module(tmp_path):

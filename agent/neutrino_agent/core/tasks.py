@@ -352,15 +352,18 @@ class ModuleTask:
         """
         return self._owner.receive(self.name, artifact)
 
-    def wait_for_containers(self) -> None:
-        """Wait until Containers reads ``running`` and has no task.
+    def wait_for_module(self, module: str) -> None:
+        """Wait until a module this task's module requires reads ``running`` and has no task.
+
+        Args:
+            module: The required module.
 
         Raises:
-            ModuleApplyError: ``module_needed {module, state}`` when
-                Containers will not run.
+            ModuleApplyError: ``module_needed {module, state}`` when that
+                module will not run.
             StepSuperseded: When this task holds a newer entry meanwhile.
         """
-        self._owner.wait_for_containers(self)
+        self._owner.wait_for_module(self, module)
 
     def render_containers(self) -> None:
         """Ask Containers for a configure task, and wait for it to end.

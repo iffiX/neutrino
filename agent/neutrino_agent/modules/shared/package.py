@@ -128,6 +128,19 @@ def verify_detail(command: str) -> str:
     return said[-500:] or f"exit {result.returncode}"
 
 
+def requires_of(recipe) -> list:
+    """The modules a recipe requires, empty when it names none.
+
+    Args:
+        recipe: ``{runner, method, params, requires}`` as the state carries it.
+
+    Returns:
+        The module names, in the recipe's order.
+    """
+    held = recipe.get("requires") if isinstance(recipe, dict) else None
+    return [str(name) for name in held] if isinstance(held, list) else []
+
+
 def params_of(recipe) -> dict:
     """A recipe's ``params``, empty when it names none.
 
