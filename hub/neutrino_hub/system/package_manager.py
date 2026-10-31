@@ -10,6 +10,8 @@ the module that needs it.
 Not pure: runs the machine's package manager.
 """
 
+import subprocess
+
 from neutrino_hub.system.constants import SYSTEM_PACKAGE_NAMES
 from neutrino_hub.system.machine import distribution_family, distribution_name
 from neutrino_hub.system.sandbox import run_outside_sandbox
@@ -78,6 +80,19 @@ class SystemPackageController:
                 implement it.
         """
         raise NotImplementedError
+
+    def install_file(self, path: str) -> None:
+        """Install one package file and what it depends on.
+
+        Args:
+            path: The package file.
+
+        Raises:
+            subprocess.CalledProcessError: If the package manager refuses.
+            NotImplementedError: If the family's controller does not
+                implement it.
+        """
+        self.install((path,))
 
     def remove(self, packages: tuple, *, is_purged: bool = False) -> None:
         """Remove packages, ignoring those that are not installed.
@@ -297,6 +312,16 @@ class PacmanPackageController(SystemPackageController):
             ["pacman", "-S", "--needed", "--noconfirm", *packages],
             timeout_s=PACKAGE_INSTALL_TIMEOUT_S,
         )
+
+    def install_file(self, path: str) -> None:
+        # pacman -S takes names alone. -U fails on a dependency while the lists
+        # are older than the mirrors, so a refused -U refreshes them once.
+        command = ["pacman", "-U", "--noconfirm", path]
+        try:
+            run_outside_sandbox(command, timeout_s=PACKAGE_INSTALL_TIMEOUT_S)
+        except subprocess.CalledProcessError:
+            self.refresh()
+            run_outside_sandbox(command, timeout_s=PACKAGE_INSTALL_TIMEOUT_S)
 
     def remove(self, packages: tuple, *, is_purged: bool = False) -> None:
         # -Rns removes the packages, their unused dependencies and the system

@@ -1108,7 +1108,7 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
     try:
         package = str(cache.package(family=family, architecture=architecture))
         if is_linux():
-            package_manager.current().install((package,))
+            package_manager.current().install_file(package)
         else:
             run(
                 hub_platform().agent_install_command(package),

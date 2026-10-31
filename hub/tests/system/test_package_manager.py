@@ -5,6 +5,8 @@ off Debian 12, Ubuntu 22.04, Fedora 41 and Arch. A floor that a module writes
 against upstream has to survive every way a distribution decorates one.
 """
 
+import subprocess
+
 import pytest
 
 from neutrino_hub.system import machine, package_manager
@@ -124,6 +126,59 @@ def test_every_change_to_the_packages_runs_outside_the_sandbox(
 
     (command,) = handed
     assert tool in command
+
+
+def _package_runs(monkeypatch, *, refused=0):
+    """The commands the package manager is asked for, the first ones refused."""
+    handed: list = []
+
+    def run_outside_sandbox(command, **keywords):
+        handed.append(command)
+        if len(handed) <= refused:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(package_manager, "run_outside_sandbox", run_outside_sandbox)
+    return handed
+
+
+@pytest.mark.parametrize(
+    "controller, expected",
+    [
+        (AptPackageController, "apt-get"),
+        (DnfPackageController, "dnf"),
+    ],
+)
+def test_a_package_file_goes_through_the_family_s_own_install(
+    monkeypatch, controller, expected
+):
+    handed = _package_runs(monkeypatch)
+
+    controller().install_file("/cache/agent.file")
+
+    (command,) = handed
+    assert expected in command
+    assert "/cache/agent.file" in command
+
+
+def test_pacman_installs_a_package_file_with_its_upgrade_verb(monkeypatch):
+    """pacman -S takes names alone."""
+    handed = _package_runs(monkeypatch)
+
+    PacmanPackageController().install_file("/cache/agent.pkg.tar.zst")
+
+    assert handed == [["pacman", "-U", "--noconfirm", "/cache/agent.pkg.tar.zst"]]
+
+
+def test_pacman_refreshes_its_lists_once_after_a_refused_file(monkeypatch):
+    handed = _package_runs(monkeypatch, refused=1)
+
+    PacmanPackageController().install_file("/cache/agent.pkg.tar.zst")
+
+    assert handed == [
+        ["pacman", "-U", "--noconfirm", "/cache/agent.pkg.tar.zst"],
+        ["pacman", "-Sy", "--noconfirm"],
+        ["pacman", "-U", "--noconfirm", "/cache/agent.pkg.tar.zst"],
+    ]
 
 
 def test_an_unknown_distribution_is_refused_by_name(monkeypatch):

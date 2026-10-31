@@ -63,6 +63,9 @@ class FakePackageManager:
     def install(self, packages: tuple) -> None:
         self.installed.append(packages)
 
+    def install_file(self, path: str) -> None:
+        self.installed.append((path,))
+
 
 @pytest.fixture
 def box(monkeypatch):
@@ -120,7 +123,7 @@ def test_a_machine_this_hub_has_no_agent_for_is_said_and_the_run_goes_on(
 
 def test_a_family_with_no_agent_build_is_not_asked_for_one(box, monkeypatch):
     manager, commands = box
-    monkeypatch.setattr(setup, "distribution_family", lambda: "arch")
+    monkeypatch.setattr(setup, "distribution_family", lambda: "gentoo")
     reporter = FakeReporter()
 
     setup._install_local_agent("panel-password", reporter)
@@ -154,13 +157,33 @@ def test_a_development_root_installs_nothing(box, monkeypatch):
     assert reporter.started == []
 
 
+def test_an_arch_hub_installs_its_own_agent_from_the_cache(box, monkeypatch):
+    manager, _ = box
+    monkeypatch.setattr(setup, "distribution_family", lambda: "arch")
+    asked = {}
+    real_package = FakeCache.package
+
+    def package(self, *, family, architecture):
+        asked["family"] = family
+        return real_package(self, family=family, architecture=architecture)
+
+    monkeypatch.setattr(FakeCache, "package", package)
+    reporter = FakeReporter()
+
+    setup._install_local_agent("panel-password", reporter)
+
+    assert asked["family"] == "arch"
+    assert manager.installed
+    assert reporter.failures == []
+
+
 def test_a_refusal_from_the_package_manager_is_reported(box, monkeypatch):
     manager, _ = box
 
-    def refuse(packages):
+    def refuse(path):
         raise OSError("dpkg is locked")
 
-    monkeypatch.setattr(manager, "install", refuse)
+    monkeypatch.setattr(manager, "install_file", refuse)
     reporter = FakeReporter()
 
     setup._install_local_agent("panel-password", reporter)
