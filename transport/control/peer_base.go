@@ -20,11 +20,12 @@ type peerBase struct {
 	log      relay.EventFunc
 	handOff  *relay.HandOff
 
-	// mu guards control, pending and nextID.
-	mu      sync.Mutex
-	control *LineConnection
-	pending map[string]chan map[string]any
-	nextID  uint64
+	// mu guards control, pending, nextID and nextStream.
+	mu         sync.Mutex
+	control    *LineConnection
+	pending    map[string]chan map[string]any
+	nextID     uint64
+	nextStream uint64
 }
 
 // peerLine is a line from the Python on a peer: a command, an answer or a
@@ -121,6 +122,15 @@ func (b *peerBase) serveControl(line *LineConnection, onLine func(*LineConnectio
 	b.mu.Unlock()
 	line.Close()
 	b.log("control_disconnected")
+}
+
+// newStreamID returns the next id an announced stream waits under. No two
+// streams of the channel share one.
+func (b *peerBase) newStreamID() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.nextStream++
+	return "t" + strconv.FormatUint(b.nextStream, 10)
 }
 
 func (b *peerBase) deliverAnswer(id string, raw []byte) {

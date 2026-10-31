@@ -472,7 +472,7 @@ func (l *agentLink) handleStream(stream *yamux.Stream) {
 		return
 	}
 	if kind != session.KindConnect {
-		id := "t" + time.Now().Format("150405.000000000")
+		id := l.control.newStreamID()
 		l.control.handOff.Announce(id, record)
 		l.control.event(EventStream, map[string]any{"stream": id, "open": json.RawMessage(open.Payload)})
 		return
