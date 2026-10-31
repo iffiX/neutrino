@@ -1372,3 +1372,11 @@ Everything the channel and the panel mutate follows two laws:
 The reason it is a law: the panel's sync routes run concurrently in a thread
 pool, and a report writes the same file a rename on the panel writes. The
 read-modify-write that loses is the one that read before the lock.
+
+The agent reads and replaces each file that one thread writes and another
+reads one open at a time, under a lock of that file's store: the kept state
+and its tried hashes, the binding file, the machine's share record, the
+desktop share's records, the native file share's record and the instance
+records. The reason: on Windows a replace or a delete of a file another
+thread has open fails with Access is denied, and a report reads these files
+while a task writes them.
