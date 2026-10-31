@@ -1017,9 +1017,13 @@ class CloudcliHooks(InstanceHooks):
                 "download_failed", {"file": named, "sources": failures}
             )
         held = self._npm.get("hosts")
+        paths = self._npm.get("hosts_probe")
+        paths = paths if isinstance(paths, dict) else {}
         orders = {
-            str(name): source_fetch.rank_hosts(
-                [str(host) for host in hosts], probe_one=self._probe
+            str(name): source_fetch.rank_set(
+                [str(host) for host in hosts],
+                probe_path=str(paths.get(name, "") or "/"),
+                probe_one=self._probe,
             )
             for name, hosts in (held.items() if isinstance(held, dict) else ())
             if isinstance(hosts, list) and hosts

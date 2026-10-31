@@ -93,6 +93,9 @@ CLOUDCLI_RECIPE = {
                 "hosts": {
                     "npm_config_better_sqlite3_binary_host": ["https://m.example/bs3"]
                 },
+                "hosts_probe": {
+                    "npm_config_better_sqlite3_binary_host": "/v1/file.tar.gz"
+                },
             }
         ],
     },
@@ -109,7 +112,7 @@ CLOUDCLI_SOURCE_SETS = {
 }
 
 
-def answering_probe(url, *, source="", is_error_answer=False):
+def answering_probe(url, *, source="", is_document=False):
     """Every source answers at once, a registry with the pinned integrity."""
     body = json.dumps(
         {"versions": {"1.37.3": {"dist": {"integrity": CLOUDCLI_INTEGRITY}}}}

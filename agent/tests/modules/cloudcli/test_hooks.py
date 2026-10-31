@@ -93,6 +93,7 @@ INTEGRITY = "sha512-pinned"
 REGISTRY = "https://registry.npmmirror.com"
 HOST = "https://m/bs3"
 HOST_SETTING = "npm_config_better_sqlite3_binary_host"
+HOST_FILE = "/v1/file.tar.gz"
 
 
 class HeldRecipe(dict):
@@ -131,6 +132,7 @@ def recipe(registries=(REGISTRY,), hosts=(HOST,)) -> HeldRecipe:
                         "digest": INTEGRITY,
                         "source_set": "npm",
                         "hosts": {HOST_SETTING: list(hosts)} if hosts else {},
+                        "hosts_probe": {HOST_SETTING: HOST_FILE} if hosts else {},
                     },
                 ],
             },
@@ -147,7 +149,7 @@ class Probe:
         self.speeds = dict(speeds or {})
         self.asked: list = []
 
-    def __call__(self, url, *, source="", is_error_answer=False):
+    def __call__(self, url, *, source="", is_document=False):
         self.asked.append(url)
         source = source or url
         speed = self.speeds.get(source, 1.0)
@@ -735,6 +737,7 @@ def test_the_fastest_registry_naming_the_integrity_is_used_with_the_fastest_host
 
     assert machine.tried == [("https://fast.example", "https://h-fast")]
     assert "https://wrong.example/@cloudcli-ai%2Fcloudcli" in probe.asked
+    assert f"https://h-fast{HOST_FILE}" in probe.asked
 
 
 def test_a_failed_install_runs_again_on_the_next_registry_and_host(tmp_path):

@@ -20,6 +20,7 @@ from neutrino_agent.platforms.base import AgentPlatform
 
 WEB = "sha256:" + "a" * 64
 AGENT = "sha256:" + "b" * 64
+IMAGE_MANIFEST = json.dumps({"layers": [{"digest": WEB, "size": 1}]}).encode()
 
 RECIPE = {
     "runner": "container",
@@ -136,11 +137,17 @@ class FakePodman:
 def answering(speeds):
     """A probe whose sources answer at these speeds; a source missing is unreachable."""
 
-    def probe_one(url, *, source="", headers=None):
+    def probe_one(url, *, source="", headers=None, is_document=False):
         speed = speeds.get(source)
         if speed is None:
             return SourceProbe(source=source, reason="unreachable", detail="refused")
-        return SourceProbe(source=source, is_answered=True, speed=speed, status=200)
+        return SourceProbe(
+            source=source,
+            is_answered=True,
+            speed=speed,
+            status=200,
+            body=IMAGE_MANIFEST,
+        )
 
     return probe_one
 

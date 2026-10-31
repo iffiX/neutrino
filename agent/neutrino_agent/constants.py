@@ -501,9 +501,10 @@ AGENT_ARTIFACT_KEPT_SUFFIXES = {
 # A hub artifact's digest is this prefix and the SHA-256 of its bytes in hex.
 AGENT_DIGEST_SHA256_PREFIX = "sha256:"
 # The probe of a source: how long it waits for an answer, how much of a
-# document it reads, and the share of a speed within which two sources go
-# to the earlier first byte.
+# file and of a document it reads, and the share of a speed within which two
+# sources go to the earlier first byte.
 AGENT_SOURCE_PROBE_TIMEOUT_S = 5.0
+AGENT_SOURCE_PROBE_BYTES = 1024 * 1024
 AGENT_SOURCE_DOCUMENT_LIMIT_BYTES = 4 * 1024 * 1024
 AGENT_SOURCE_NEAR_TIE = 0.1
 AGENT_SOURCE_HEADERS = {"User-Agent": "neutrino-agent"}

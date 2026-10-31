@@ -3,12 +3,15 @@
 What these pin: a probe reads a source's answer and times it from its first
 byte to its last, names an HTTP error ``http_<status>``, a refused
 connection ``unreachable`` and a source that does not answer in time
-``timeout``, and takes any HTTP answer from a host; the ranking puts the
-fastest first and gives two speeds within a tenth of each other to the
-earlier first byte; a registry is ranked only while it names the pinned
-integrity, the others listed with their reason; the hosts of an npm setting
-are ranked fastest first with those that did not answer after them; and
-nothing is remembered between two rankings.
+``timeout``; a file's probe asks for and reads at most 1 MiB and stops 5
+seconds after its first byte, and a document is read whole; a token stays
+with the registry across a redirect; the ranking puts the fastest first and
+gives two speeds within a tenth of each other to the earlier first byte; a
+registry is ranked only while it names the pinned integrity, the others
+listed with their reason; an image is timed on its largest layer, and a list
+of one is not probed; the hosts of an npm setting rank as a set does, with
+those that did not answer after them; and nothing is remembered between two
+rankings.
 """
 
 import http.server
@@ -22,10 +25,10 @@ import pytest
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.source_fetch import (
     SourceProbe,
+    layer_document,
     manifest_document,
     probe,
     probe_image,
-    rank_hosts,
     rank_images,
     rank_registries,
     rank_set,
@@ -37,20 +40,34 @@ from neutrino_agent.modules.shared.source_fetch import (
 PACKAGE = "@cloudcli-ai/cloudcli"
 VERSION = "1.37.3"
 INTEGRITY = "sha512-pinned"
+MIB = 1024 * 1024
 
 
 class Source:
     """One loopback HTTP server answering every GET as it is told."""
 
-    def __init__(self, *, status=200, body=b"{}", chunks=1, pause_s=0.0, wait_s=0.0):
+    def __init__(
+        self,
+        *,
+        status=200,
+        body=b"{}",
+        chunks=1,
+        pause_s=0.0,
+        wait_s=0.0,
+        location="",
+    ):
         self.asked: list = []
+        self.headers: list = []
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 owner.asked.append(self.path)
+                owner.headers.append(dict(self.headers))
                 time.sleep(wait_s)
                 self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 size = max(1, len(body) // chunks)
@@ -117,11 +134,10 @@ def test_a_probe_reads_the_answer_and_times_it(sources):
     assert source.asked == ["/doc"]
 
 
-def test_an_http_error_is_its_status_unless_any_answer_counts(sources):
+def test_an_http_error_is_its_status(sources):
     source = sources(status=404, body=b"gone")
 
     refused = probe(source.url)
-    answered = probe(source.url, is_error_answer=True)
 
     assert (refused.is_answered, refused.reason) == (False, "http_404")
     assert refused.failure() == {
@@ -129,7 +145,6 @@ def test_an_http_error_is_its_status_unless_any_answer_counts(sources):
         "reason": "http_404",
         "detail": refused.detail,
     }
-    assert (answered.is_answered, answered.status) == (True, 404)
 
 
 def test_a_refused_connection_is_unreachable():
@@ -146,6 +161,89 @@ def test_a_source_that_does_not_answer_in_time_is_a_timeout(sources):
 
     assert (found.is_answered, found.reason) == (False, "timeout")
     assert time.monotonic() - started < 0.9
+
+
+def test_a_file_s_probe_asks_for_and_reads_at_most_one_mib(sources):
+    source = sources(body=b"x" * (2 * MIB))
+
+    found = probe(source.url + "/file")
+
+    assert len(found.body) == MIB
+    assert source.headers[0]["Range"] == f"bytes=0-{MIB - 1}"
+
+
+def test_a_document_is_read_whole_with_no_range(sources):
+    source = sources(body=b"x" * (2 * MIB))
+
+    found = probe(source.url + "/doc", is_document=True)
+
+    assert len(found.body) == 2 * MIB
+    assert "Range" not in source.headers[0]
+
+
+def test_a_slow_file_stops_at_its_time_limit_and_counts_what_arrived(sources):
+    source = sources(body=b"x" * 40_000, chunks=40, pause_s=0.05)
+
+    started = time.monotonic()
+    found = probe(source.url, timeout_s=0.25)
+
+    assert time.monotonic() - started < 1.5
+    assert found.is_answered is True
+    assert 1_000 < len(found.body) < 40_000
+    assert found.speed > 0
+
+
+def test_a_slow_document_is_read_past_the_time_limit(sources):
+    source = sources(body=b"x" * 10_000, chunks=10, pause_s=0.1)
+
+    found = probe(source.url, timeout_s=0.5, is_document=True)
+
+    assert len(found.body) == 10_000
+
+
+def test_a_source_that_stalls_after_its_first_byte_is_a_timeout(sources):
+    source = sources(body=b"x" * 40_000, chunks=2, pause_s=3.0)
+
+    found = probe(source.url, timeout_s=0.5)
+
+    assert (found.is_answered, found.reason) == (False, "timeout")
+
+
+def test_a_broken_answer_is_unreachable():
+    class Broken(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            self.wfile.write(b"1\r\nx\r\nnot a chunk size\r\n")
+
+        def log_message(self, *args):
+            """Quiet."""
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Broken)
+    server.daemon_threads = True
+    threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True
+    ).start()
+    try:
+        found = probe(f"http://127.0.0.1:{server.server_address[1]}", timeout_s=1.0)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert (found.is_answered, found.reason) == (False, "unreachable")
+
+
+def test_a_token_stays_with_the_address_asked_across_a_redirect(sources):
+    landing = sources(body=b"x" * 1000)
+    registry = sources(status=307, body=b"", location=landing.url + "/layer")
+
+    found = probe(registry.url, headers={"Authorization": "Bearer anon"})
+
+    assert found.is_answered is True
+    assert registry.headers[0]["Authorization"] == "Bearer anon"
+    assert "Authorization" not in landing.headers[0]
+    assert landing.headers[0]["Range"] == f"bytes=0-{MIB - 1}"
 
 
 # --- the ranking ---
@@ -175,7 +273,7 @@ def test_a_registry_document_names_the_package_with_its_slash_escaped():
 
 
 def test_registries_are_ranked_by_speed_while_they_name_the_pinned_integrity(sources):
-    slow = sources(body=document(), chunks=10, pause_s=0.03)
+    slow = sources(body=document(), chunks=10, pause_s=0.15)
     fast = sources(body=document())
     wrong = sources(body=document("sha512-other"))
     missing = sources(status=404)
@@ -227,14 +325,6 @@ def test_every_ranking_probes_again(sources):
         )
 
     assert len(source.asked) == 2
-
-
-def test_hosts_are_ranked_fastest_first_whatever_they_answer(sources):
-    slow = sources(status=404, body=b"x" * 100_000, chunks=10, pause_s=0.03)
-    fast = sources(status=404, body=b"x" * 100_000)
-    silent = closed_port()
-
-    assert rank_hosts([silent, slow.url, fast.url]) == [fast.url, slow.url, silent]
 
 
 def test_the_probes_run_at_once():
@@ -318,19 +408,128 @@ def test_an_image_is_asked_at_its_registry_s_manifest_address():
     assert manifest_document("localhost:5000/acme/demo", DIGEST) == (
         f"https://localhost:5000/v2/acme/demo/manifests/{DIGEST}"
     )
+    assert layer_document("ghcr.io/acme/demo", DIGEST) == (
+        f"https://ghcr.io/v2/acme/demo/blobs/{DIGEST}"
+    )
+    assert layer_document("docker.io/mongo", DIGEST) == (
+        f"https://registry-1.docker.io/v2/library/mongo/blobs/{DIGEST}"
+    )
+
+
+LAYER = "sha256:" + "b" * 64
+SMALL_LAYER = "sha256:" + "c" * 64
+IMAGE = "sha256:" + "d" * 64
+ATTESTATION = "sha256:" + "e" * 64
+WINDOWS_IMAGE = "sha256:" + "f" * 64
+IMAGE_MANIFEST = json.dumps(
+    {
+        "layers": [
+            {"digest": SMALL_LAYER, "size": 1_000},
+            {"digest": LAYER, "size": 5_000_000},
+        ]
+    }
+).encode()
+MANIFEST_LIST = json.dumps(
+    {
+        "manifests": [
+            {
+                "digest": ATTESTATION,
+                "platform": {"os": "unknown", "architecture": "unknown"},
+            },
+            {
+                "digest": WINDOWS_IMAGE,
+                "platform": {"os": "windows", "architecture": "amd64"},
+            },
+            {"digest": IMAGE, "platform": {"os": "linux", "architecture": "amd64"}},
+        ]
+    }
+).encode()
+
+
+def image_registry(asked, *, blob_status=200):
+    """A registry serving a manifest list, its image's manifest and its layers."""
+
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        asked.append((url, dict(headers or {}), is_document))
+        if url.endswith(f"/manifests/{DIGEST}"):
+            return SourceProbe(source=source, is_answered=True, body=MANIFEST_LIST)
+        if url.endswith(f"/manifests/{IMAGE}"):
+            return SourceProbe(source=source, is_answered=True, body=IMAGE_MANIFEST)
+        if blob_status != 200:
+            return SourceProbe(
+                source=source, status=blob_status, reason=f"http_{blob_status}"
+            )
+        return SourceProbe(source=source, is_answered=True, status=200, speed=7.0)
+
+    return probe_one
+
+
+def test_an_image_is_timed_on_the_largest_layer_of_its_first_linux_image():
+    asked: list = []
+
+    found = probe_image("ghcr.io/acme/demo", DIGEST, probe_one=image_registry(asked))
+
+    assert (found.is_answered, found.speed) == (True, 7.0)
+    assert [(url, is_document) for url, _, is_document in asked] == [
+        (f"https://ghcr.io/v2/acme/demo/manifests/{DIGEST}", True),
+        (f"https://ghcr.io/v2/acme/demo/manifests/{IMAGE}", True),
+        (f"https://ghcr.io/v2/acme/demo/blobs/{LAYER}", False),
+    ]
+    assert asked[1][1]["Accept"].startswith("application/vnd.oci.image.index.v1+json")
+
+
+def test_a_digest_that_names_one_image_goes_straight_to_its_layer():
+    asked: list = []
+
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        asked.append(url)
+        return SourceProbe(source=source, is_answered=True, body=IMAGE_MANIFEST)
+
+    probe_image("ghcr.io/acme/demo", DIGEST, probe_one=probe_one)
+
+    assert asked == [
+        f"https://ghcr.io/v2/acme/demo/manifests/{DIGEST}",
+        f"https://ghcr.io/v2/acme/demo/blobs/{LAYER}",
+    ]
+
+
+def test_a_layer_a_registry_will_not_serve_leaves_the_source_unanswered():
+    found = probe_image(
+        "ghcr.m.daocloud.io/acme/demo",
+        DIGEST,
+        probe_one=image_registry([], blob_status=503),
+    )
+
+    assert (found.is_answered, found.reason) == (False, "http_503")
+
+
+def test_a_manifest_that_names_no_layer_leaves_the_source_unanswered():
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        return SourceProbe(source=source, is_answered=True, body=b"<html>")
+
+    found = probe_image("ghcr.io/acme/demo", DIGEST, probe_one=probe_one)
+
+    assert found.is_answered is False
+    assert found.detail == "the manifest names no layer"
 
 
 def test_a_registry_that_wants_a_token_is_asked_again_with_an_anonymous_one():
     asked: list = []
 
-    def probe_one(url, *, source="", headers=None):
-        asked.append((url, dict(headers or {})))
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        asked.append((url, dict(headers or {}), is_document))
         if url.startswith("https://auth.example/token"):
             return SourceProbe(
                 source=source, is_answered=True, body=b'{"token": "anon"}', speed=1.0
             )
         if (headers or {}).get("Authorization") == "Bearer anon":
-            return SourceProbe(source=source, is_answered=True, status=200, speed=5.0)
+            return SourceProbe(
+                source=source,
+                is_answered=True,
+                status=200,
+                speed=5.0,
+                body=IMAGE_MANIFEST,
+            )
         return SourceProbe(
             source=source,
             status=401,
@@ -345,17 +544,35 @@ def test_a_registry_that_wants_a_token_is_asked_again_with_an_anonymous_one():
     assert asked[1][0] == (
         "https://auth.example/token?service=ghcr.io&scope=repository%3Aacme%2Fdemo%3Apull"
     )
+    assert asked[1][2] is True
     assert asked[0][1]["Accept"].startswith("application/vnd.oci.image.index.v1+json")
     assert asked[2][1]["Authorization"] == "Bearer anon"
+    assert asked[3][0] == f"https://ghcr.io/v2/acme/demo/blobs/{LAYER}"
+    assert asked[3][1] == {"Authorization": "Bearer anon"}
 
 
-def test_images_are_ranked_by_their_manifest_and_the_unanswered_follow_in_order():
+def test_a_list_of_one_image_source_is_not_probed():
+    asked: list = []
+
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        asked.append(url)
+        return SourceProbe(source=source, reason="timeout")
+
+    sources = ["docker.io/library/mongo"]
+
+    assert rank_images(sources, DIGEST, probe_one=probe_one) == sources
+    assert asked == []
+
+
+def test_images_are_ranked_by_their_layer_and_the_unanswered_follow_in_order():
     speeds = {"ghcr.io/acme/demo": 1.0, "ghcr.nju.edu.cn/acme/demo": 8.0}
 
-    def probe_one(url, *, source="", headers=None):
-        if source in speeds:
-            return SourceProbe(source=source, is_answered=True, speed=speeds[source])
-        return SourceProbe(source=source, reason="timeout", detail="slow")
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        if source not in speeds:
+            return SourceProbe(source=source, reason="timeout", detail="slow")
+        return SourceProbe(
+            source=source, is_answered=True, speed=speeds[source], body=IMAGE_MANIFEST
+        )
 
     sources = [
         "docker.io/acme/demo",
@@ -373,7 +590,7 @@ def test_images_are_ranked_by_their_manifest_and_the_unanswered_follow_in_order(
 
 
 def test_a_set_is_probed_at_its_path_under_each_source_fastest_first(sources):
-    slow = sources(body=b"x" * 200_000, chunks=20, pause_s=0.01)
+    slow = sources(body=b"x" * 200_000, chunks=20, pause_s=0.075)
     fast = sources(body=b"x" * 200_000)
     gone = closed_port()
 
