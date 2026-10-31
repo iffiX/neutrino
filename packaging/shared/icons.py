@@ -28,6 +28,10 @@ DEFAULT_ICON_FACE = "wink"
 ICON_EDGE_DRAWN = 16
 ICON_EDGE_LARGE = 1024
 
+# The iOS icon's edge inside its large square. iOS rounds the square and lights
+# its outer pixels, and at this edge the coloured corners stay inside both.
+IOS_ICON_INNER_EDGE = 992
+
 ICO_EDGES = (16, 32, 48, 64, 128, 256)
 # Each ``.icns`` PNG entry's four-letter type and the edge it holds, in the
 # order written. The hand-drawn edge goes under ``is32`` and ``s8mk``.
@@ -181,7 +185,7 @@ def write_opaque_png(
     name: str = DEFAULT_ICON_NAME,
     face: str = DEFAULT_ICON_FACE,
 ) -> Path:
-    """Write a face at 1024 on opaque black with no alpha, as iOS takes it.
+    """Write a face centred on an opaque black 1024 square, as iOS takes it.
 
     Args:
         target: The file to write.
@@ -195,16 +199,20 @@ def write_opaque_png(
         SystemExit: When a source is missing, or is not a PNG of its size.
     """
     width, rows = _pixels(ICON_EDGE_LARGE, name, face)
-    opaque = []
-    for row in rows:
+    margin = (width - IOS_ICON_INNER_EDGE) // 2
+    black_row = bytes(width * 3)
+    black_side = bytes(margin * 3)
+    opaque = [black_row] * margin
+    for row in _area_average(width, rows, IOS_ICON_INNER_EDGE):
         alpha = row[3::4]
-        line = bytearray(width * 3)
+        line = bytearray(IOS_ICON_INNER_EDGE * 3)
         for channel in range(3):
             line[channel::3] = bytes(
                 (value * cover + CHANNEL_MAX // 2) // CHANNEL_MAX
                 for value, cover in zip(row[channel::4], alpha)
             )
-        opaque.append(bytes(line))
+        opaque.append(black_side + bytes(line) + black_side)
+    opaque += [black_row] * margin
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(_encode(width, opaque, PNG_RGB_FORMAT))
     return target

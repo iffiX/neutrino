@@ -275,6 +275,20 @@ def test_the_ios_icon_is_opaque_on_black(tmp_path):
     assert len(data) == stride * 1024
 
 
+def test_the_ios_icon_holds_its_face_inside_a_black_margin(tmp_path):
+    written = icons.write_opaque_png(tmp_path / "ios.png")
+
+    payload = written.read_bytes()
+    data = zlib.decompress(payload[payload.index(b"IDAT") + 4 :])
+    stride = 1024 * 3 + 1
+    margin = (1024 - icons.IOS_ICON_INNER_EDGE) // 2
+    rows = [data[line * stride + 1 : (line + 1) * stride] for line in range(1024)]
+    assert all(row == bytes(1024 * 3) for row in rows[:margin])
+    assert all(row == bytes(1024 * 3) for row in rows[-margin:])
+    assert all(row[: margin * 3] == bytes(margin * 3) for row in rows)
+    assert any(any(row) for row in rows[margin : margin + 8])
+
+
 def test_a_source_that_is_not_a_png_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(icons, "ICONS_DIR", tmp_path)
     source = tmp_path / "neutrino_client" / "wolf_wink_16.png"
