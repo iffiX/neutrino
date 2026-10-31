@@ -260,6 +260,19 @@ mean it. The exception is a modal that captures the keyboard: a terminal's
 Escape belongs to the shell, the way every established terminal works, and its
 hint names the close button instead.
 
+**Every dialog is the top layer, with no exception**, because a dialog
+interrupts the person until they choose.
+
+| Rule | Reason |
+| --- | --- |
+| Every dialog is drawn through `components/dialog_layer.tsx`, a child of the body at the one z-index `--layer-top`, covering the whole window. | A dialog inside the page body sits under the sidebar and the top bar, and a press on them navigates away. |
+| The sidebar, the top bar, the page and every dialog under the top one are blurred and `inert`. | A blurred thing that takes a press or the keyboard does not interrupt anybody. |
+| A dialog opened from a dialog lies above its parent, and Escape and the backdrop act on the top dialog alone. | The parent is still waiting on the person. |
+| A picker's list, a row menu and the device icon grid are dropdowns and no dialog. Each shares `--layer-top`, and the later child of the body lies above. | A dropdown opened from a dialog stays above that dialog, and one left open under a new dialog stays under it. |
+
+The desktop client's window follows the same rule ([client.md](client.md),
+"The layout").
+
 A field that takes a directory on a machine has **Browse…** beside it, which
 opens the file browser in a modal at the field's path, files greyed, and
 writes back the directory chosen (`directory_picker_modal.tsx`).
