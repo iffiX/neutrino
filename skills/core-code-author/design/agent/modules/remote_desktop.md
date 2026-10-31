@@ -68,7 +68,9 @@ because a session's host that takes the service's settings writes them over
 that account's own. An account is skipped when its home is no folder it owns,
 when the path to its settings passes through a symbolic link, and, with a line
 in the log, when its home refuses the write. An account made after the switch
-went on holds no such file and takes the service's settings alone.
+went on holds no such file and takes the service's settings alone; at the switch
+off its two files are deleted when its `RustDesk2.toml` holds the two servers at
+the loopback, and stay otherwise, with the same skips.
 
 While the switch is on, the agent reads the service's two settings files when
 it starts, before any host starts, and at each report. When `RustDesk2.toml`
