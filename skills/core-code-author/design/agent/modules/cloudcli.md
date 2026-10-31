@@ -59,6 +59,22 @@ package's dependencies from the same registry, each under its own
 integrity. An install that fails on one registry runs again on the next, and
 the last failure is the one reported.
 
+**Every npm run starts from a clean app directory.** Each attempt, on every
+system, first deletes `package-lock.json`, `package.json` and `node_modules`
+in that order, and keeps npm's cache. npm treats a package folder it finds as
+installed, and a reboot in the lab left `semver` with no `package.json` and no
+`internal\re.js`: the next four attempts over that tree failed in
+better-sqlite3's install script with `Cannot find module './internal/re'`,
+over 58 minutes, until the folder was deleted by hand. On Windows Node.js does
+the deleting, since it handles paths past 260 characters and tries again on a
+file in use; a deletion that still fails ends that attempt.
+
+**An app directory holds a whole install once it holds npm's lockfile.** npm
+writes `package-lock.json` last, and the deletion above removes it first, so a
+tree that a cut or a failure left has none. An install is taken as there only
+with the lockfile, the package at the recipe's version and the three native
+modules' `package.json`, and anything less runs npm.
+
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
 `SERVER_PORT` (CloudCLI's own name for its port) and `PATH`. Nothing is
 inherited from a login profile or a version manager, and nothing names the
@@ -120,8 +136,8 @@ peer`. The service outlives an agent that stops during the install, and
 systemd refuses a second service of its name while it runs. So the install
 first waits for a service of its name that runs, polling every 5 seconds
 for at most the install's 30 minutes, and stops it when the time is up.
-When CloudCLI's version is then in the account's app directory, the
-install takes that service's work and runs no npm. A `systemd-run` that
+When the account's app directory then holds a whole install, the install
+takes that service's work and runs no npm. A `systemd-run` that
 finds a service of that name still loaded, or a run the machine's shutdown
 stopped, makes the step wait for its next check and keeps no failure, so a
 reboot during npm leaves the step to run again after it. When the kernel kills the
@@ -136,8 +152,7 @@ step `npm {account}` of CloudCLI's task ([agent.md](../../agent.md), "The
 steps"). On Linux and macOS it runs to its end; on Windows the step starts
 the install task and leaves it running (four hours at most), checks its
 state every 30 seconds, and starts no instance until it has ended; an ended task is judged by its
-result and by the app directory holding the package and the three native
-modules, then unregistered. A task whose result says a shutdown or a
+result and by the app directory holding a whole install, then unregistered. A task whose result says a shutdown or a
 sign-out ended it is unregistered and started again, and keeps no failure. The hub publishes an instance's `web` entry
 only while the device reports it running.
 
