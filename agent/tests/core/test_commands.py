@@ -225,6 +225,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
         ("agent", "remote_desktop_password_set", False),
         ("agent", "account_password_test", False),
         ("agent", "journal", False),
+        ("podman", "machine_read", True),
     ],
 )
 def test_only_the_reads_are_reading_commands(module, verb, is_reading):
@@ -432,6 +433,16 @@ def test_a_system_with_no_account_password_refuses_the_test():
     outcome = run_password_test(PowerPlatform())
 
     assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
+
+
+def test_a_module_verb_that_reads_closes_with_its_result():
+    class Reading(FakeRunner):
+        def command(self, verb, args, on_line=None):
+            return {"exit_code": 0, "code": "", "params": {}, "result": {"cpus": 4}}
+
+    outcome = operator(podman=Reading()).run("podman", "machine_read", {})
+
+    assert outcome.result == {"cpus": 4}
 
 
 def test_a_remote_desktop_product_outside_the_two_is_refused_typed():

@@ -64,6 +64,7 @@ from neutrino_agent.modules.podman.config import (
 from neutrino_agent.modules.podman.constants import (
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
+    PODMAN_COMMAND_MACHINE_READ,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_GIB,
     PODMAN_JOURNAL_LINES,
@@ -141,6 +142,18 @@ def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
 
         return PodmanDarwinApplier(platform=platform)
     return PodmanSystemApplier()
+
+
+def default_cpus(host_cpus: int) -> int:
+    """The machine's processors for a 0 in the Run settings.
+
+    Args:
+        host_cpus: The computer's logical processors; 0 when they were not read.
+
+    Returns:
+        Half the computer's logical processors, at least 1.
+    """
+    return max(1, host_cpus // 2)
 
 
 def default_memory_gib(host_memory_gib: int) -> int:
@@ -861,14 +874,18 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Run one of the module's verbs.
 
         Args:
-            verb: ``control``, ``journal`` or ``validate``.
+            verb: ``control``, ``journal``, ``machine_read`` or ``validate``.
             args: ``{"name", "action"}`` for control, ``{"name"}`` for one
-                container's journal, ``{"lines"}`` for the module's own.
+                container's journal, ``{"lines"}`` for the module's own,
+                ``{"account"}`` for machine_read.
             on_line: Called with each output line.
 
         Returns:
-            ``{"exit_code", "code", "params", "output"}``.
+            ``{"exit_code", "code", "params", "output"}``, with ``result``
+            beside them for machine_read.
         """
+        if verb == PODMAN_COMMAND_MACHINE_READ:
+            return self._read_new_machine(str(args.get("account", "")))
         if verb not in (PODMAN_COMMAND_CONTROL, PODMAN_COMMAND_JOURNAL) or (
             verb == PODMAN_COMMAND_JOURNAL and not args.get("name")
         ):
@@ -1259,6 +1276,36 @@ class PodmanMachineModuleRunner(ModuleRunner):
             self._host_memory_gib = self._system.host_facts()[1]
         return default_memory_gib(self._host_memory_gib)
 
+    def _read_new_machine(self, account: str) -> dict:
+        """The numbers a new machine starts from, and the account's disk now.
+
+        Args:
+            account: The account whose disk to read; empty reads none.
+
+        Returns:
+            A command outcome. Its ``result`` is ``{cpus, memory_gib, disk_gib,
+            disk_gib_now}``, ``disk_gib`` the disk now or else the default,
+            and ``disk_gib_now`` 0 while the account has no machine.
+            ``account_unknown {account}`` for an account the computer does
+            not have.
+        """
+        disk_gib_now = 0
+        if account:
+            try:
+                self._service_machine.lookup_account(account)
+            except KeyError:
+                return command_outcome(1, "account_unknown", {"account": account})
+            disk_gib_now = self._disk_now(self._machine_of(account, ""), self._record())
+        return {
+            **command_outcome(0),
+            "result": {
+                "cpus": default_cpus(self._system.host_facts()[0]),
+                "memory_gib": self._default_memory_gib(),
+                "disk_gib": disk_gib_now or PODMAN_MACHINE_DEFAULT_DISK_GIB,
+                "disk_gib_now": disk_gib_now,
+            },
+        }
+
     def _machine_of(self, account: str, password: str) -> PodmanMachine:
         return self._machine_class(
             platform=self._platform,
@@ -1352,7 +1399,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 or the image cannot be opened to the account.
         """
         host_cpus, host_memory_gib = self._system.host_facts()
-        cpus = settings.cpus or max(1, host_cpus // 2)
+        cpus = settings.cpus or default_cpus(host_cpus)
         memory_gib = settings.memory_gib or default_memory_gib(host_memory_gib)
         keeper = self._keeper_of(settings.account, settings.password)
         notes = []

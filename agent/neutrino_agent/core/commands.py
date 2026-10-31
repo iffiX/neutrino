@@ -36,6 +36,7 @@ from neutrino_agent.constants import (
     AGENT_OUTPUT_LIMIT_BYTES,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.podman.constants import PODMAN_COMMAND_MACHINE_READ
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
 )
@@ -68,8 +69,13 @@ KILL_POLL_S = 0.05
 VERB_LOCKS = {
     (AGENT_CONTAINERS_MODULE, "control"): CONTAINERS_SHARED_LOCKS,
 }
-# The verbs every module answers that only read.
-MODULE_READING_VERBS = (AGENT_MODULE_VERB_VALIDATE, AGENT_MODULE_VERB_JOURNAL)
+# The module verbs that only read: those of every module, and Containers'
+# read of a new machine.
+MODULE_READING_VERBS = (
+    AGENT_MODULE_VERB_VALIDATE,
+    AGENT_MODULE_VERB_JOURNAL,
+    PODMAN_COMMAND_MACHINE_READ,
+)
 
 
 def is_reading_command(module: str, verb: str) -> bool:
@@ -221,6 +227,7 @@ class DeviceOperator:
             output=str(outcome.get("output", "") or "")[-AGENT_OUTPUT_LIMIT_BYTES:],
             code=str(outcome.get("code", "") or ""),
             params=dict(outcome.get("params") or {}),
+            result=dict(outcome.get("result") or {}),
         )
 
     def _reinstall_agent(self) -> CommandOutcome:

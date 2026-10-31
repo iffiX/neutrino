@@ -265,6 +265,7 @@ PODMAN_CNI_VERSION = "0.4.0"
 # The verbs a ``command {module: podman}`` names, beside ``validate``.
 PODMAN_COMMAND_CONTROL = "control"
 PODMAN_COMMAND_JOURNAL = "journal"
+PODMAN_COMMAND_MACHINE_READ = "machine_read"
 PODMAN_JOURNAL_LINES = 200
 
 # The service type of a container's host port, and what each type holds.

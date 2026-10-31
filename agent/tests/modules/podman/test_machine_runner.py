@@ -659,6 +659,39 @@ def test_the_machine_step_waits_while_a_restart_is_owed(rig):
     assert rig.world.calls == []
 
 
+# --- the read of a new machine ---
+
+
+def test_a_new_machine_reads_the_defaults_and_nothing_of_an_account(rig):
+    rig.system.facts = (8, 16)
+
+    closed = rig.runner.command("machine_read", {"account": ""})
+
+    assert (closed["exit_code"], closed["code"]) == (0, "")
+    assert closed["result"] == {
+        "cpus": 4,
+        "memory_gib": 4,
+        "disk_gib": 100,
+        "disk_gib_now": 0,
+    }
+
+
+def test_a_new_machine_reads_the_disk_the_account_already_has(rig):
+    rig.system.disk = 1024
+
+    closed = rig.runner.command("machine_read", {"account": "ann"})
+
+    assert closed["result"]["disk_gib"] == 1024
+    assert closed["result"]["disk_gib_now"] == 1024
+
+
+def test_a_new_machine_of_an_account_the_computer_lacks_is_refused(rig):
+    closed = rig.runner.command("machine_read", {"account": "ghost"})
+
+    assert (closed["exit_code"], closed["code"]) == (1, "account_unknown")
+    assert closed["params"] == {"account": "ghost"}
+
+
 # --- refusals ---
 
 
