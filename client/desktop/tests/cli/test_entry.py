@@ -23,7 +23,7 @@ class FakeStream:
     def __init__(self):
         self.reconfigured = None
 
-    def reconfigure(self, *, encoding, errors):
+    def reconfigure(self, *, errors, encoding=None):
         self.reconfigured = (encoding, errors)
 
 
@@ -453,14 +453,17 @@ def test_the_windows_console_is_switched_to_utf8(monkeypatch):
     assert err.reconfigured == ("utf-8", "replace")
 
 
-def test_other_platforms_leave_the_console_alone(monkeypatch):
+def test_other_platforms_keep_the_encoding_and_replace_what_it_cannot_print(
+    monkeypatch,
+):
+    """A person's list under the POSIX locale holds a middle dot."""
     out = FakeStream()
     monkeypatch.setattr(entry.os, "name", "posix")
     monkeypatch.setattr(entry.sys, "stdout", out)
 
     entry._use_utf8_console()
 
-    assert out.reconfigured is None
+    assert out.reconfigured == (None, "replace")
 
 
 def test_a_click_on_the_app_icon_opens_the_window(monkeypatch):

@@ -553,16 +553,19 @@ def _argv_without_launch_services() -> list:
 def _use_utf8_console() -> None:
     """Print UTF-8 on Windows, where the console default mangles arrows.
 
-    A redirected stream, or one that cannot be reconfigured, is left as is.
+    Another system keeps each stream's encoding and replaces what it cannot
+    encode, which under the POSIX locale is every character past ASCII. A
+    stream that cannot be reconfigured is left as is.
     """
-    if os.name != "nt":
-        return
+    settings = {"errors": "replace"}
+    if os.name == "nt":
+        settings["encoding"] = "utf-8"
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
         try:
-            reconfigure(encoding="utf-8", errors="replace")
+            reconfigure(**settings)
         except (OSError, ValueError):
             pass
 
