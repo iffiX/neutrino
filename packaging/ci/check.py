@@ -442,7 +442,7 @@ HUB_INSTALLED_SENTENCE = "Neutrino Hub installed"
 HUB_AGENT_CACHE_DIR = "/var/lib/neutrino/hub/agent_cache"
 HUB_AGENT_CACHE_LINE = "agent cache: "
 # The hub package kinds that carry an agent package of their own family.
-HUB_AGENT_CARRYING_SUFFIXES = (".deb", ".rpm")
+HUB_AGENT_CARRYING_SUFFIXES = (".deb", ".rpm", ".pkg.tar.zst")
 # What an installed agent package must hold of RustDesk, its copy, and
 # what it must not, a unit or a name on the path: each one sentence on the
 # error stream when it fails.
@@ -1607,8 +1607,7 @@ def hub_agent_cache(name: str) -> list:
         name: The hub package's file name.
 
     Returns:
-        The one agent file of the same version, family and machine, or
-        nothing for the Arch package.
+        The one agent file of the same version, family and machine.
     """
     if not name.endswith(HUB_AGENT_CARRYING_SUFFIXES):
         return []

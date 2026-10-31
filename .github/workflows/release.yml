@@ -131,7 +131,7 @@ jobs:
           if-no-files-found: error
 
   agent:
-    name: agent .deb and .rpm (${{ matrix.architecture }})
+    name: agent .deb, .rpm and Arch (${{ matrix.architecture }})
     if: inputs.editions != 'cn'
     needs: [go_programs]
     runs-on: ubuntu-24.04
@@ -382,7 +382,7 @@ jobs:
   # architecture: Nuitka under emulation is hours, and the arm runners are
   # native.
   client:
-    name: client .deb and .rpm (${{ matrix.architecture }})
+    name: client .deb, .rpm and Arch (${{ matrix.architecture }})
     if: inputs.editions != 'cn'
     needs: [go_programs]
     runs-on: ${{ matrix.runner }}
@@ -419,6 +419,7 @@ jobs:
           path: |
             dist/*.deb
             dist/*.rpm
+            dist/*.pkg.tar.zst
           if-no-files-found: error
 
   # x64 only: cc-switch upstream publishes no Windows arm64 build, so there
@@ -882,7 +883,7 @@ jobs:
           if-no-files-found: error
 
   agent_cn:
-    name: cn agent .deb and .rpm (${{ matrix.architecture }})
+    name: cn agent .deb, .rpm and Arch (${{ matrix.architecture }})
     needs: [go_programs, sources_cn]
     runs-on: ubuntu-24.04
     strategy:
@@ -926,6 +927,7 @@ jobs:
           path: |
             cn/dist/*.deb
             cn/dist/*.rpm
+            cn/dist/*.pkg.tar.zst
           if-no-files-found: error
 
   agent_windows_cn:
@@ -1228,7 +1230,7 @@ jobs:
         working-directory: cn
 
   client_cn:
-    name: cn client .deb and .rpm (${{ matrix.architecture }})
+    name: cn client .deb, .rpm and Arch (${{ matrix.architecture }})
     needs: [go_programs, sources_cn]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -1273,6 +1275,7 @@ jobs:
           path: |
             cn/dist/*.deb
             cn/dist/*.rpm
+            cn/dist/*.pkg.tar.zst
           if-no-files-found: error
 
   client_windows_cn:

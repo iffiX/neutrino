@@ -312,13 +312,19 @@ def test_an_frpc_answering_the_pin_passes(check, capsys):
     [
         ("neutrino-hub_0.5.0_arm64.deb", ["neutrino-agent_0.5.0_arm64.deb"]),
         ("neutrino-hub-0.5.0-1.aarch64.rpm", ["neutrino-agent-0.5.0-1.aarch64.rpm"]),
-        ("neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst", []),
+        (
+            "neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst",
+            ["neutrino-agent-0.5.0-1-x86_64.pkg.tar.zst"],
+        ),
         ("neutrino-hub_0.5.0_amd64-cn.deb", ["neutrino-agent_0.5.0_amd64-cn.deb"]),
         (
             "neutrino-hub-0.5.0-1.x86_64-cn.rpm",
             ["neutrino-agent-0.5.0-1.x86_64-cn.rpm"],
         ),
-        ("neutrino-hub-0.5.0-1-x86_64-cn.pkg.tar.zst", []),
+        (
+            "neutrino-hub-0.5.0-1-x86_64-cn.pkg.tar.zst",
+            ["neutrino-agent-0.5.0-1-x86_64-cn.pkg.tar.zst"],
+        ),
     ],
 )
 def test_a_linux_hub_carries_the_agent_package_of_its_own_platform(check, hub, agent):
