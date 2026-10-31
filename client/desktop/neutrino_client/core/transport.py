@@ -47,6 +47,7 @@ from neutrino_client.constants import (
 )
 from neutrino_client.core.streams import ClientStream
 from neutrino_client.exceptions import GatewayUnreachable
+from neutrino_client.platforms.base import CREATE_NO_WINDOW
 
 # The most one line of the control connection may take, the transport's
 # ``ControlFrameBytesMax``.
@@ -127,6 +128,7 @@ class ClientTransportProcess:
                 stdin=subprocess.PIPE,
                 stdout=log_file,
                 stderr=log_file,
+                creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
         except OSError:
             log_file.close()

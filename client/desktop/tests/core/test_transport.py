@@ -15,6 +15,7 @@ stays open until the stop.
 
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -27,6 +28,7 @@ from neutrino_client.core.transport import (
     make_secret,
 )
 from neutrino_client.exceptions import GatewayUnreachable
+from neutrino_client.platforms.base import CREATE_NO_WINDOW
 from tests.fake_transport import RECORD_DATA, FakeTransport, unix_connect
 
 WAIT_S = 5
@@ -249,6 +251,28 @@ def test_the_program_is_started_in_client_mode_with_the_secret_on_its_stdin(
     process.stop()
     assert not process.is_running()
     assert oct(os.stat(os.path.dirname(listen)).st_mode & 0o777) == "0o700"
+
+
+def test_on_windows_the_program_starts_with_no_console_window(tmp_path, monkeypatch):
+    started = {}
+
+    def refuse(_arguments, **options):
+        started.update(options)
+        raise OSError("not started")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setattr(os, "name", "nt")
+    process = ClientTransportProcess(
+        program=str(tmp_path / "neutrino_transport.exe"),
+        listen="\\\\.\\pipe\\neutrino_client_transport",
+        log_path=str(tmp_path / "t.log"),
+    )
+
+    with pytest.raises(OSError):
+        process.start()
+
+    monkeypatch.undo()
+    assert started["creationflags"] == CREATE_NO_WINDOW
 
 
 def test_a_program_that_cannot_start_is_an_os_error(tmp_path):
