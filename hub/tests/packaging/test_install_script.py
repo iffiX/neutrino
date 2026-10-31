@@ -17,6 +17,7 @@ import json
 import sys
 import os
 import re
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -47,6 +48,8 @@ PACKAGES = (
     "neutrino-agent-9.9.9-1.x86_64.rpm",
     "neutrino-client-9.9.9-1.x86_64.rpm",
     "neutrino-hub-9.9.9-1-x86_64.pkg.tar.zst",
+    "neutrino-agent-9.9.9-1-x86_64.pkg.tar.zst",
+    "neutrino-client-9.9.9-1-x86_64.pkg.tar.zst",
     "neutrino-hub-9.9.9-macos-arm64.pkg",
     "neutrino-hub-9.9.9-macos-amd64.pkg",
     "neutrino-client-9.9.9-macos-amd64.pkg",
@@ -67,6 +70,8 @@ OS_RELEASES = {
     "almalinux": 'ID="almalinux"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.5"\n',
     "rhel": 'ID="rhel"\nID_LIKE="fedora"\nVERSION_ID="9.4"\n',
     "arch": "ID=arch\n",
+    "manjaro": "ID=manjaro\nID_LIKE=arch\n",
+    "endeavouros": 'ID="endeavouros"\nID_LIKE="arch"\n',
     "suse": 'ID="opensuse-leap"\nID_LIKE="suse opensuse"\n',
 }
 
@@ -135,7 +140,14 @@ fi
 case "$*" in *"${FAKE_DNF_REFUSED:-no refusal}"*) exit 1 ;; esac
 """,
     "subscription-manager": RECORDER,
-    "pacman": RECORDER,
+    "pacman": """#!/bin/sh
+echo "$(basename "$0") $*" >> "$FAKE_LOG"
+if [ "$1" = -U ] && [ -n "${FAKE_PACMAN_FAILS:-}" ] && [ -s "$FAKE_PACMAN_FAILS" ]; then
+    if [ "${LC_ALL:-}" = C ]; then head -n 1 "$FAKE_PACMAN_FAILS"; else echo "错误：无法满足依赖"; fi
+    sed -i 1d "$FAKE_PACMAN_FAILS"
+    exit 1
+fi
+""",
 }
 
 NHUB = """#!/bin/sh
@@ -240,6 +252,7 @@ def stand_ins(tmp_path, release_sites):
                 f'HUB_SETTINGS_MACOS="{tmp_path}/settings.json"; '
                 f'APT_LOCKS="{run.dpkg_lock} {run.lists_lock}"; '
                 f'DNF_LOCK_FILES="{run.dnf_lock}"; '
+                f'PACMAN_LOCK="{run.pacman_lock}"; '
                 f'PROC_LOCKS="{run.locks}"; PROC_DIR="{proc_dir or run.proc}"; '
                 f'LOCK_WAIT_S={lock_wait_s}; main "$@"',
                 "install.sh",
@@ -260,6 +273,7 @@ def stand_ins(tmp_path, release_sites):
     run.served = served
     run.first = first
     run.second = second
+    run.pacman_lock = tmp_path / "db.lck"
     run.dpkg_lock = tmp_path / "lock-frontend"
     run.dpkg_lock.write_text("")
     run.lists_lock = tmp_path / "lists-lock"
@@ -384,6 +398,19 @@ EPEL_STEPS = {
         "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm",
     ],
 }
+
+
+@pytest.mark.parametrize("os_release", ["arch", "manjaro", "endeavouros"])
+@pytest.mark.parametrize("component", ["hub", "agent", "client"])
+def test_the_arch_family_installs_each_package_from_its_own_file(
+    stand_ins, os_release, component
+):
+    result, asked = stand_ins(component, os_release=os_release)
+
+    assert result.returncode == 0, result.stderr
+    install = _installs(asked)[-1]
+    assert install.startswith("pacman -U --noconfirm /")
+    assert install.endswith(f"/neutrino-{component}-9.9.9-1-x86_64.pkg.tar.zst")
 
 
 @pytest.mark.parametrize("component", ["hub", "agent", "client"])
@@ -1574,6 +1601,95 @@ def test_lists_still_stale_after_the_update_fail_with_apt_s_code(stand_ins, tmp_
         "apt-get install -y",
     ]
     assert "Installed" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "error: failed to prepare transaction (could not satisfy dependencies)",
+        ":: unable to satisfy dependency 'gtk3' required by neutrino-agent",
+        "error: failed retrieving file 'gtk3-1.pkg.tar.zst' from a mirror : 404",
+        "error: failed to commit transaction (failed to retrieve some files)",
+    ],
+)
+def test_stale_pacman_lists_are_refreshed_once_in_any_language(
+    stand_ins, tmp_path, said
+):
+    fails = tmp_path / "pacman_fails"
+    fails.write_text(said + "\n")
+
+    result, asked = stand_ins(
+        "agent",
+        os_release="arch",
+        environment={"FAKE_PACMAN_FAILS": str(fails), "LANG": "zh_CN.UTF-8"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert LISTS_UPDATE in result.stdout.splitlines()
+    assert [" ".join(line.split()[:3]) for line in _installs(asked)] == [
+        "pacman -U --noconfirm",
+        "pacman -Sy --noconfirm",
+        "pacman -U --noconfirm",
+    ]
+
+
+def test_another_pacman_failure_refreshes_no_lists(stand_ins, tmp_path):
+    fails = tmp_path / "pacman_fails"
+    fails.write_text("error: failed to commit transaction (conflicting files)\n")
+
+    result, asked = stand_ins(
+        "agent", os_release="arch", environment={"FAKE_PACMAN_FAILS": str(fails)}
+    )
+
+    assert result.returncode == 1
+    assert [" ".join(line.split()[:3]) for line in _installs(asked)] == [
+        "pacman -U --noconfirm"
+    ]
+    assert LISTS_UPDATE not in result.stdout
+
+
+@pytest.mark.parametrize("comm", ["pacman", "packagekitd", "pamac-daemon"])
+def test_an_install_waits_for_a_process_that_holds_pacman_s_lock_file(stand_ins, comm):
+    _holder(stand_ins, 4242, comm, f"/usr/bin/{comm}".encode(), b"-Syu")
+    stand_ins.pacman_lock.write_text("")
+    released = _later(1.5, lambda: shutil.rmtree(stand_ins.proc / "4242"))
+
+    result, asked = stand_ins("agent", os_release="arch")
+    released.join()
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        f"Waiting up to 300 seconds for {comm} (process 4242) to finish with the "
+        "package manager"
+    ) in result.stdout.splitlines()
+    assert len(_installs(asked)) == 1
+
+
+def test_a_pacman_lock_file_no_process_holds_is_removed(stand_ins):
+    """A cut pacman run leaves the file behind, and pacman refuses at once."""
+    stand_ins.pacman_lock.write_text("")
+
+    result, asked = stand_ins("agent", os_release="arch")
+
+    assert result.returncode == 0, result.stderr
+    assert not stand_ins.pacman_lock.exists()
+    assert "Waiting" not in result.stdout
+    assert len(_installs(asked)) == 1
+
+
+def test_pacman_s_lock_held_past_the_wait_installs_nothing(stand_ins):
+    _holder(stand_ins, 4242, "pacman", b"pacman", b"-Syu")
+    stand_ins.pacman_lock.write_text("")
+
+    result, asked = stand_ins("agent", os_release="arch", lock_wait_s=2)
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        "pacman (process 4242) still holds the package manager after 2 seconds; "
+        "nothing was installed. Run this script again once it has finished."
+    )
+    assert stand_ins.pacman_lock.exists()
+    assert _installs(asked) == []
 
 
 def test_another_apt_failure_updates_no_lists(stand_ins, tmp_path):

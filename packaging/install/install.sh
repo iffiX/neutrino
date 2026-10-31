@@ -62,14 +62,20 @@ HUB_SETTINGS_MACOS="/Library/Application Support/Neutrino/hub/config/web/setting
 LOCK_WAIT_S=300
 # The locks apt holds, dpkg's front end's and the package lists' that
 # apt-get update writes, the files dnf 4 names the holder of each of its own
-# locks in, and what dnf 5 prints when another transaction holds the rpm
-# lock.
+# locks in, what dnf 5 prints when another transaction holds the rpm lock,
+# the file pacman makes while it runs, and the names of the processes that
+# make it.
 APT_LOCKS="/var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock"
 DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid"
 DNF_LOCK_TEXT="rpm transaction lock"
+PACMAN_LOCK=/var/lib/pacman/db.lck
+PACMAN_LOCK_HOLDERS="pacman packagekitd pamac-daemon"
 # What apt prints in C when its package lists name no version of a
 # dependency, or a version the archive no longer serves.
 APT_STALE_LISTS_TEXT="unmet dependencies|not installable|has no installation candidate|Unable to locate package|Unable to fetch some archives"
+# What pacman prints in C when its package lists name no version of a
+# dependency, or a version the mirror no longer serves.
+PACMAN_STALE_LISTS_TEXT="could not satisfy dependencies|unable to satisfy dependency|failed retrieving file|failed to retrieve some files"
 # Where the kernel lists the file locks held, and shows each process.
 PROC_LOCKS=/proc/locks
 PROC_DIR=/proc
@@ -120,8 +126,9 @@ process_name() {
 }
 
 # The process that holds the package manager's lock of a package family:
-# one of apt's locks as the kernel lists it, or one of dnf 4's locks by its
-# file. Empty when none does.
+# one of apt's locks as the kernel lists it, one of dnf 4's locks by its
+# file, or a process of pacman's holders while its lock file stands. Empty
+# when none does.
 lock_holder() {
     case "$1" in
         deb)
@@ -146,6 +153,18 @@ lock_holder() {
                     echo "$pid"
                     return 0
                 fi
+            done
+            ;;
+        arch)
+            [ -e "$PACMAN_LOCK" ] || return 0
+            for directory in "$PROC_DIR"/[0-9]*; do
+                comm=$(cat "$directory/comm" 2>/dev/null) || continue
+                case " $PACMAN_LOCK_HOLDERS " in
+                    *" $comm "*)
+                        echo "${directory##*/}"
+                        return 0
+                        ;;
+                esac
             done
             ;;
     esac
@@ -220,6 +239,35 @@ install_deb() {
         echo "Updating the package lists to find the package's dependencies"
         wait_for_package_manager deb
         $as_root apt-get update -o DPkg::Lock::Timeout="$LOCK_WAIT_S" || return
+    done
+}
+
+# Wait while a process holds pacman's lock file. A file no process holds is
+# what a cut run left, and is removed.
+wait_for_pacman() {
+    wait_for_package_manager arch
+    $as_root rm -f "$PACMAN_LOCK"
+}
+
+# Install an Arch package with pacman once no process holds its lock file. An
+# install whose output names stale package lists runs pacman -Sy once, then
+# the install again.
+install_arch() {
+    for attempt in first last; do
+        wait_for_pacman
+        {
+            code=0
+            $as_root env LC_ALL=C pacman -U --noconfirm "$1" 2>&1 || code=$?
+            echo "$code" >"$work/pacman_exit"
+        } | tee "$work/pacman_out"
+        code=$(cat "$work/pacman_exit")
+        [ "$code" != 0 ] || return 0
+        if [ "$attempt" = last ] || ! grep -Eq "$PACMAN_STALE_LISTS_TEXT" "$work/pacman_out"; then
+            return "$code"
+        fi
+        echo "Updating the package lists to find the package's dependencies"
+        wait_for_pacman
+        $as_root pacman -Sy --noconfirm || return
     done
 }
 
@@ -637,7 +685,7 @@ main() {
         macos) $as_root installer -pkg "$package" -target / ;;
         deb) install_deb "$package" ;;
         rpm) run_dnf install -y "$package" ;;
-        arch) $as_root pacman -U --noconfirm "$package" ;;
+        arch) install_arch "$package" ;;
     esac
     echo "Installed $name"
 
