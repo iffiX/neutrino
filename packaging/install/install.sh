@@ -69,7 +69,7 @@ DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid"
 DNF_LOCK_TEXT="rpm transaction lock"
 # What apt prints in C when its package lists name no version of a
 # dependency, or a version the archive no longer serves.
-APT_STALE_LISTS_TEXT="unmet dependencies|Unable to fetch some archives"
+APT_STALE_LISTS_TEXT="unmet dependencies|not installable|has no installation candidate|Unable to locate package|Unable to fetch some archives"
 # Where the kernel lists the file locks held, and shows each process.
 PROC_LOCKS=/proc/locks
 PROC_DIR=/proc

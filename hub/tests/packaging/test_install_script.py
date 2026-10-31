@@ -1533,6 +1533,9 @@ def test_a_script_cloud_init_runs_waits_for_no_cloud_init(stand_ins, tmp_path):
     "said",
     [
         "The following packages have unmet dependencies:",
+        " neutrino-agent : Depends: xdotool but it is not installable",
+        "E: Package 'xdotool' has no installation candidate",
+        "E: Unable to locate package xdotool",
         "E: Unable to fetch some archives, maybe run apt-get update or try with "
         "--fix-missing?",
     ],
