@@ -15,7 +15,8 @@ root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
 shell runs through, empty before any apply; a machine step with no
 account failing ``machine_account_missing``; the keeper's log in the
-journal; the verbs; stop stopping the containers, the keeper and the
+journal; a container module's journal asked while one runs taking that
+read's lines; the verbs; stop stopping the containers, the keeper and the
 machine, and start bringing them back; a stopped machine woken by its
 keeper for a removal or a container module's uninstall; removal and
 uninstall keeping the machine; a configure under ``stopped`` keeping the
@@ -29,6 +30,7 @@ import functools
 import json
 import os
 import subprocess
+import threading
 
 import pytest
 
@@ -1865,3 +1867,56 @@ def test_a_container_module_drives_and_drops_its_containers_in_the_machine(rig):
     )
     assert rig.world.scripts[-1][2] == machine_drop_script(["neutrino_demo"])
     assert rig.runner.hub_names() == {"late": ["neutrino_late"]}
+
+
+def test_a_container_module_s_journal_asked_during_a_read_takes_that_read(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    entered, release = threading.Event(), threading.Event()
+    machine_class = rig.runner._machine_class
+    asked_by = []
+
+    class SlowMachine(machine_class):
+        def shell(self, script):
+            entered.set()
+            release.wait(5)
+            return super().shell(script)
+
+    def clock():
+        asked_by.append(threading.current_thread().name)
+        return rig.now[0]
+
+    rig.runner._machine_class = SlowMachine
+    rig.runner._clock = clock
+    rig.world.shell_answers = [(0, "first\n"), (0, "second\n")]
+    answers = {}
+
+    def read(name):
+        answers[name] = rig.runner.hub_journal(["neutrino_demo"], 200)
+
+    first = threading.Thread(target=read, args=("first",), name="first")
+    first.start()
+    assert entered.wait(5)
+    rig.now[0] = 1.0
+    waiting = threading.Thread(target=read, args=("waiting",), name="waiting")
+    waiting.start()
+    for _ in range(200):
+        if "waiting" in asked_by:
+            break
+        threading.Event().wait(0.01)
+    rig.now[0] = 2.0
+    release.set()
+    first.join(5)
+    waiting.join(5)
+    rig.now[0] = 3.0
+    after = rig.runner.hub_journal(["neutrino_demo"], 200)
+
+    assert answers == {"first": ["first"], "waiting": ["first"]}
+    assert after == ["second"]
+    assert (
+        len(rig.world.scripts)
+        - rig.world.scripts.index(
+            next(item for item in rig.world.scripts if "journalctl" in item[2])
+        )
+        == 2
+    )

@@ -401,6 +401,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # The computer's memory in GiB, read at the first report; 0 until
         # it is read.
         self._host_memory_gib = 0
+        # One journal read in the machine at a time.
+        self._journal_lock = threading.Lock()
+        # The last journal read: ``(names, lines, ended at, its lines)``.
+        self._journal_read: "tuple | None" = None
 
     def verify(self, recipe: dict) -> bool:
         """Whether Podman's program is on the computer.
@@ -1053,18 +1057,30 @@ class PodmanMachineModuleRunner(ModuleRunner):
 
         Returns:
             The lines, each container's oldest first; empty while no
-            machine was applied or the machine cannot be reached.
+            machine was applied or the machine cannot be reached. A read
+            of the same containers that ended after the ask serves it.
         """
+        asked = self._clock()
         record = self._record()
         if not record or not names:
             return []
-        script = "".join(machine_journal_script(name, lines) for name in names)
-        try:
-            done = self._machine_of_record(record).shell(script)
-        except ModuleApplyError as error:
-            self._log(f"podman: the journal was not read: {error}")
-            return []
-        return (done.stdout or "").splitlines()
+        with self._journal_lock:
+            held = self._journal_read
+            if (
+                held is not None
+                and held[:2] == (list(names), lines)
+                and held[2] > asked
+            ):
+                return list(held[3])
+            script = "".join(machine_journal_script(name, lines) for name in names)
+            try:
+                done = self._machine_of_record(record).shell(script)
+            except ModuleApplyError as error:
+                self._log(f"podman: the journal was not read: {error}")
+                return []
+            read = (done.stdout or "").splitlines()
+            self._journal_read = (list(names), lines, self._clock(), read)
+            return list(read)
 
     def page_port(self, module: str, name: str) -> int:
         """The loopback port a hub container's page is published at.
