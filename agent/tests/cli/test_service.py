@@ -151,6 +151,21 @@ def test_a_process_the_manager_did_not_start_is_told_so(
     assert "started by the service control manager" in capsys.readouterr().err
 
 
+def test_a_message_of_several_lines_is_one_record_of_the_service_log(tmp_path):
+    path = tmp_path / "agent.log"
+    log = service_cli.service_log(str(path))
+
+    log("cloudcli task: failed detail=npm error code 1\r\n\nnpm error path x\n")
+    log("the next record")
+
+    records = path.read_text(encoding="utf-8").splitlines()
+    assert len(records) == 2
+    assert records[0].endswith(
+        "cloudcli task: failed detail=npm error code 1 / npm error path x"
+    )
+    assert records[1].endswith("the next record")
+
+
 def test_the_service_log_makes_its_directory_and_writes_the_file(tmp_path):
     log = service_cli.service_log(str(tmp_path / "log" / "agent.log"))
 

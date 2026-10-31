@@ -44,6 +44,8 @@ from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 SERVICE_LOG_MAX_BYTES = 1024 * 1024
 SERVICE_LOG_BACKUP_COUNT = 3
 SERVICE_LOG_FORMAT = "%(asctime)s %(message)s"
+# What stands between the lines of a message, each record being one line.
+SERVICE_LOG_LINE_JOIN = " / "
 SERVICE_NOT_FROM_MANAGER = (
     "nagent service run is started by the service control manager; "
     "run nagent run in a terminal instead"
@@ -213,6 +215,7 @@ def service_log(path: str):
     logger.addHandler(handler)
 
     def log(message: str) -> None:
-        logger.info(str(message))
+        lines = [line.strip() for line in str(message).splitlines() if line.strip()]
+        logger.info(SERVICE_LOG_LINE_JOIN.join(lines))
 
     return log
