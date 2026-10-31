@@ -474,6 +474,7 @@ module is planned again from what the machine shows:
 | --- | --- |
 | `packages` with apt | apt installs what is missing; after a cut dpkg run the helper runs `dpkg --configure -a` once when apt says `dpkg was interrupted`, then apt again |
 | `packages` with dnf, an `artifact` of kind `msi` or `pkg` | an rpm transaction and the system installers' transactions finish whole or roll back |
+| `packages` with pacman | pacman installs what is missing with `--needed`; the stop's SIGTERM ends pacman with its lock file left, and the helper removes a file no process holds ("The system's own lock") |
 | an `artifact` that unpacks | the unpack goes to a staging directory and replaces the target |
 | `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
 | `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
@@ -514,7 +515,7 @@ lets them go when it ends. A task holds no step lock between steps.
 | Lock | What it guards | The steps that take it | Reason |
 | --- | --- | --- | --- |
 | `containers` | Containers' engine: its Podman on Linux or its Podman machine, its rendered files and units, its record and in-memory configuration, its page ports | alone: every step of Containers' own task, and a container module's `uninstall`; shared: a container module's `pull`, `verify`, `start`, `replica_set` and `tex`, Hermes WebUI's key write in `first_start`, and Containers' `control` verb | A pull or a `tlmgr` run must not meet a Containers apply that restarts units, resizes the machine or runs `wsl --shutdown`, and two pulls, or a pull and an exec, on one Podman are safe together. |
-| `package_manager` | the system's installer: apt and dpkg, dnf, yum and rpm, msiexec and dism, macOS `installer` | `packages`, an `artifact` of kind `msi` or `pkg`, `windows_features`, an `uninstall` that removes system packages or an msi, and the self-update before it launches | One package manager runs on a machine at a time, and apt and dnf 5 fail at once on a lock another run holds. dism and msiexec share Windows servicing. |
+| `package_manager` | the system's installer: apt and dpkg, dnf, yum and rpm, pacman, msiexec and dism, macOS `installer` | `packages`, an `artifact` of kind `msi` or `pkg`, `windows_features`, an `uninstall` that removes system packages or an msi, and the self-update before it launches | One package manager runs on a machine at a time, and apt and dnf 5 fail at once on a lock another run holds. dism and msiexec share Windows servicing. |
 | `system_accounts` | the machine's account database: `useradd` and `userdel` on Linux, `sysadminctl` and `dscl` on macOS, local accounts on Windows | the file share's `configure`, Gitea's `account`, and their `uninstall` | `useradd` fails at once with `cannot lock /etc/passwd` while another one runs. On Windows the PowerShell host already runs one request at a time, so the lock costs nothing there and keeps one rule. |
 
 | Rule | Reason |
@@ -560,6 +561,7 @@ for an msi or a pkg, therefore waits on the system's lock too:
 | dnf 4, yum | before each run, every 5 seconds up to 300 seconds while a live process holds one of dnf's own locks, `/var/lib/dnf/rpmdb_lock.pid` and `/var/cache/dnf/metadata_lock.pid`, each file naming its holder; dnf 4 alone would wait on them with no word and no end |
 | dnf 5 | runs again every 5 seconds, up to 300 seconds, while its output names `rpm transaction lock` |
 | msiexec | waits for the `Global\_MSIExecute` mutex up to 300 seconds, and runs once more on 1618 |
+| pacman | before each run, every 5 seconds up to 300 seconds while `/var/lib/pacman/db.lck` stands and a process named `pacman`, `packagekitd` or `pamac-daemon` runs, and again while its output names `unable to lock database`. The file names no holder, and a file no such process holds is removed |
 | dism, macOS `installer` | none yet; the lab records what each prints while another run holds the system's lock |
 
 | Rule | Reason |
