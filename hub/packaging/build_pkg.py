@@ -12,11 +12,6 @@ Not pure: creates a virtual environment, installs into it, runs makepkg.
 """
 
 import argparse
-import os
-import pwd
-import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -39,6 +34,7 @@ from venv_tree import (
     HUB_RESTART_REPLACED,
     stage_desktop_entry,
 )
+from shared import arch_build  # noqa: E402
 from shared import edition_build  # noqa: E402
 
 UNIT_DIR = "usr/lib/systemd/system"
@@ -185,7 +181,7 @@ def main() -> int:
     package_version = version()
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    builder = arguments.build_user or _unprivileged_user()
+    builder = arch_build.builder_account(arguments.build_user)
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
@@ -223,7 +219,7 @@ def main() -> int:
                 ),
             ),
         )
-        target = _build(
+        target = arch_build.build_package(
             root,
             output_dir,
             builder,
@@ -238,63 +234,6 @@ def main() -> int:
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
-
-
-def _build(
-    root: Path, output_dir: Path, builder: str, *, built: str, name: str
-) -> Path:
-    """Run makepkg and move the result where it was asked for.
-
-    Args:
-        root: The directory holding the PKGBUILD.
-        output_dir: Where the package should land.
-        builder: The account makepkg runs as.
-        built: The file makepkg is expected to write, so a build whose
-            ``PKGEXT`` differs is refused rather than published under
-            another name.
-        name: The name a release holds the package under and the hub asks
-            for.
-
-    Returns:
-        The path written.
-
-    Raises:
-        SystemExit: If makepkg refuses, or writes nothing under that name.
-    """
-    command = ["makepkg", "--nodeps", "--noconfirm", "--clean"]
-    if os.geteuid() == 0:
-        # makepkg will not run as root, and stepping down is `runuser`: sudo
-        # is not on every Arch install and is not what this needs.
-        shutil.chown(root, user=builder)
-        command = ["runuser", "-u", builder, "--", *command]
-
-    result = subprocess.run(command, cwd=root, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise SystemExit((result.stderr or result.stdout).strip()[-2000:])
-
-    written = root / built
-    if not written.is_file():
-        found = ", ".join(path.name for path in sorted(root.glob("*.pkg.tar.*")))
-        raise SystemExit(
-            f"makepkg wrote no {built}" + (f" (found {found})" if found else "")
-        )
-    target = output_dir / name
-    shutil.copyfile(written, target)
-    return target
-
-
-def _unprivileged_user() -> str:
-    """An account makepkg can run as.
-
-    Returns:
-        The invoking user when that is not root, otherwise ``nobody``.
-
-    Raises:
-        SystemExit: If run as root with no account named.
-    """
-    if os.geteuid() != 0:
-        return pwd.getpwuid(os.geteuid()).pw_name
-    raise SystemExit("makepkg will not run as root; name an account with --build-user")
 
 
 if __name__ == "__main__":
