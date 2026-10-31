@@ -20,7 +20,9 @@
 # account sudo already lets in without a password is asked nothing. On the
 # RHEL family EPEL is enabled under the same sudo before the install. While
 # another program holds the package manager's lock, each install waits up to
-# LOCK_WAIT_S seconds and names it.
+# LOCK_WAIT_S seconds and names it. While cloud-init sets the machine up, the
+# script first waits up to LOCK_WAIT_S seconds for it, unless cloud-init runs
+# the script.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -164,6 +166,34 @@ wait_for_package_manager() {
         waited=$((waited + 1))
         pid=$(lock_holder "$1")
     done
+}
+
+# Whether cloud-init runs this script: a process the script descends from
+# has the name cloud-init.
+is_run_by_cloud_init() {
+    pid=$$
+    while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
+        [ "$(process_name "$pid")" != cloud-init ] || return 0
+        pid=$(sed -n 's/^PPid:[[:space:]]*//p' "$PROC_DIR/$pid/status" 2>/dev/null) || return 1
+    done
+    return 1
+}
+
+# Wait while cloud-init sets the machine up, with one line, and stop with
+# one sentence after LOCK_WAIT_S seconds. cloud-init runs the package
+# manager several times, apt-get update first, with gaps between the runs.
+wait_for_cloud_init() {
+    command -v cloud-init >/dev/null 2>&1 || return 0
+    case "$(cloud-init status 2>/dev/null)" in
+        *"status: running"*) ;;
+        *) return 0 ;;
+    esac
+    ! is_run_by_cloud_init || return 0
+    echo "Waiting up to $LOCK_WAIT_S seconds for cloud-init to finish setting up this machine"
+    code=0
+    timeout "$LOCK_WAIT_S" cloud-init status --wait >/dev/null 2>&1 || code=$?
+    [ "$code" != 124 ] \
+        || fail "cloud-init is still setting up this machine after $LOCK_WAIT_S seconds; nothing was installed. Run this script again once it has finished."
 }
 
 # Run dnf under root once no other program holds its lock: dnf 4's by the
@@ -573,6 +603,7 @@ main() {
         *) package="$(pwd)/$package" ;;
     esac
 
+    [ "$kind" = macos ] || wait_for_cloud_init
     [ "$kind" != rpm ] || enable_epel "$OS_RELEASE"
     echo "Installing $name"
     case "$kind" in

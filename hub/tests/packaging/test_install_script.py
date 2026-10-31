@@ -97,9 +97,31 @@ exec "$@"
 echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
 """,
     "installer": RECORDER,
-    "apt-get": RECORDER,
+    "apt-get": """#!/bin/sh
+running=""
+[ ! -f "${FAKE_CLOUD_INIT:-/none}" ] || running=" (cloud-init running)"
+echo "$(basename "$0") $*$running" >> "$FAKE_LOG"
+""",
+    "cloud-init": """#!/bin/sh
+case "$1" in
+    status)
+        if [ "${2:-}" = --wait ]; then
+            while [ -f "${FAKE_CLOUD_INIT:-/none}" ]; do sleep 0.1; done
+        fi
+        if [ -f "${FAKE_CLOUD_INIT:-/none}" ]; then echo "status: running"; else echo "status: done"; fi
+        ;;
+    modules)
+        shift
+        "$@"
+        code=$?
+        exit $code
+        ;;
+esac
+""",
     "dnf": """#!/bin/sh
-echo "$(basename "$0") $*" >> "$FAKE_LOG"
+running=""
+[ ! -f "${FAKE_CLOUD_INIT:-/none}" ] || running=" (cloud-init running)"
+echo "$(basename "$0") $*$running" >> "$FAKE_LOG"
 if [ -n "${FAKE_DNF_LOCKED:-}" ] && [ -s "$FAKE_DNF_LOCKED" ]; then
     sed -i 1d "$FAKE_DNF_LOCKED"
     echo "Failed to obtain rpm transaction lock. Another transaction is in progress."
@@ -168,6 +190,8 @@ def stand_ins(tmp_path, release_sites):
         sites=None,
         script=SCRIPT,
         lock_wait_s=300,
+        proc_dir=None,
+        parent=(),
     ):
         release_file = tmp_path / "os-release"
         release_file.write_text(OS_RELEASES[os_release])
@@ -197,6 +221,7 @@ def stand_ins(tmp_path, release_sites):
         }
         result = subprocess.run(
             [
+                *parent,
                 "sh",
                 "-c",
                 f'. "{functions}"; RELEASE_SITES="{addresses}"; '
@@ -210,7 +235,7 @@ def stand_ins(tmp_path, release_sites):
                 f'HUB_SETTINGS_MACOS="{tmp_path}/settings.json"; '
                 f'APT_LOCKS="{run.dpkg_lock} {run.lists_lock}"; '
                 f'DNF_LOCK_FILES="{run.dnf_lock}"; '
-                f'PROC_LOCKS="{run.locks}"; PROC_DIR="{run.proc}"; '
+                f'PROC_LOCKS="{run.locks}"; PROC_DIR="{proc_dir or run.proc}"; '
                 f'LOCK_WAIT_S={lock_wait_s}; main "$@"',
                 "install.sh",
                 *arguments,
@@ -1421,3 +1446,74 @@ def test_dnf_5_runs_again_while_another_transaction_holds_the_rpm_lock(
         "package manager"
     ) in result.stdout.splitlines()
     assert len([line for line in _installs(asked) if line.startswith("dnf")]) == 3
+
+
+# --- cloud-init setting the machine up ---
+
+CLOUD_INIT_WAIT = (
+    "Waiting up to 300 seconds for cloud-init to finish setting up this machine"
+)
+
+
+@pytest.mark.parametrize("os_release", ["ubuntu", "rocky"])
+def test_an_install_waits_for_cloud_init_setting_the_machine_up(
+    stand_ins, tmp_path, os_release
+):
+    """cloud-init runs the package manager with gaps between its runs: an
+    install in a gap takes dpkg's lock and fails cloud-init's own."""
+    running = tmp_path / "cloud_init_running"
+    running.write_text("")
+    finished = _later(1.5, running.unlink)
+
+    result, asked = stand_ins(
+        "agent",
+        os_release=os_release,
+        environment={"FAKE_CLOUD_INIT": str(running)},
+    )
+    finished.join()
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert [line for line in lines if "Waiting" in line] == [CLOUD_INIT_WAIT]
+    assert lines.index(CLOUD_INIT_WAIT) < lines.index(
+        "Installing neutrino-agent_9.9.9_amd64.deb"
+        if os_release == "ubuntu"
+        else "Installing neutrino-agent-9.9.9-1.x86_64.rpm"
+    )
+    assert _installs(asked)
+    assert not any("(cloud-init running)" in line for line in asked)
+
+
+def test_cloud_init_still_running_past_the_wait_installs_nothing(stand_ins, tmp_path):
+    running = tmp_path / "cloud_init_running"
+    running.write_text("")
+
+    result, asked = stand_ins(
+        "agent", lock_wait_s=2, environment={"FAKE_CLOUD_INIT": str(running)}
+    )
+    running.unlink()
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        "cloud-init is still setting up this machine after 2 seconds; nothing was "
+        "installed. Run this script again once it has finished."
+    )
+    assert _installs(asked) == []
+
+
+def test_a_script_cloud_init_runs_waits_for_no_cloud_init(stand_ins, tmp_path):
+    """A user-data script runs inside cloud-init, which waits for it."""
+    running = tmp_path / "cloud_init_running"
+    running.write_text("")
+
+    result, asked = stand_ins(
+        "agent",
+        lock_wait_s=2,
+        environment={"FAKE_CLOUD_INIT": str(running)},
+        proc_dir="/proc",
+        parent=(str(tmp_path / "bin" / "cloud-init"), "modules"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "cloud-init" not in result.stdout
+    assert len(_installs(asked)) == 1
