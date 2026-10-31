@@ -85,8 +85,9 @@ a running module serves is published as one app,
 `is_token_required: true` and `description_code` `codeg_module`. `details`
 is `{version, instances: [{account, port, is_running, code}]}`, and an apply
 refuses `account_invalid`, `account_duplicate` and `secret_missing`, each
-naming the `account`, and `account_unknown {account}` for an account the
-machine does not have ([protocol.md](../../protocol.md), "The modules section, one entry per
+naming the `account`, `account_unknown {account}` for an account the
+machine does not have, and on Windows `account_no_profile {account}` for an
+account that never signed in ([protocol.md](../../protocol.md), "The modules section, one entry per
 module").
 
 **The version moves in the hub.** Codeg's **Software Update** screen cannot

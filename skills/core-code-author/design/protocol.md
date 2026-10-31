@@ -319,6 +319,7 @@ walk theirs. A new code and its wording are one change.
 | `terminal_account_missing` | none | a `shell` or an `exec` on a machine whose Terminal module enables no account | added |
 | `account_not_enabled` | `{account}` | a `shell` or an `exec` naming an account the Terminal module does not enable | added |
 | `account_home_unknown` | `{account}` | the `code` of a `samba` row of `GET /api/agent/module/samba`, an enabled account with no `share_path` whose machine reports no home for it ("The account layer in the state") | added |
+| `account_no_profile` | `{account}` | an apply of `ssh_server`, `vscode`, `code_server`, `cloudcli`, `codeg` or `siyuan` on Windows, an account the machine has that never signed in, so it has no profile and no home | added |
 | `samba_hosts_allow_no_loopback`, `samba_interfaces_no_loopback`, `samba_domain_member` | none | the `code` of the `samba` module row on Linux, a `hosts allow` of the person's `[global]` that leaves out the loopback, a `bind interfaces only` whose `interfaces` leaves out `lo`, and a domain member's `security` or `server role`, each a setting of the person's the module never changes ([agent/modules/file_share.md](agent/modules/file_share.md), "Linux") | added |
 | `share_users_unknown` | `{shares}` | the `code` of a `running` or `stopped` `samba` row, the folder shares with no account, which the module leaves off the server ([agent/modules/file_share.md](agent/modules/file_share.md)) | added |
 | `share_name_taken` | `{name}` | an apply of the `samba` module, a share of the person's that has the name of a Home share or a folder share; and the folder share routes and `samba/set`, a name another share of the machine has, compared without case ("`/api/agent/module`") | widened to folder shares |
@@ -1429,8 +1430,9 @@ token, and `code` `credential_invalid` for a Windows task that cannot sign
 its account in. An apply refuses `account_invalid`, `account_duplicate`,
 `token_missing` and, on Windows, `credential_missing`, all naming the
 `account`; `account_unknown {account}` for an
-account a Linux machine or a Mac does not have; and `credential_invalid
-{account}` when Windows refuses the login.
+account a Linux machine or a Mac does not have; on Windows
+`account_no_profile {account}` for an account that never signed in; and
+`credential_invalid {account}` when Windows refuses the login.
 
 The `cloudcli` module runs CloudCLI once per enabled account
 ([agent/modules/cloudcli.md](agent/modules/cloudcli.md)), its configuration

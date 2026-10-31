@@ -65,7 +65,8 @@ host_key_fingerprint, instances: [{account, port, is_running, code}]}`,
 `host_key` the public host key in OpenSSH form and `host_key_fingerprint`
 its `SHA256:<base64>`. An apply refuses `account_invalid`,
 `account_duplicate`, `key_missing`, each naming the `account`, and
-`account_unknown {account}`; on Windows `credential_missing {account}` and
+`account_unknown {account}`; on Windows `account_no_profile {account}` for an
+account that never signed in, `credential_missing {account}` and
 `credential_invalid {account}`.
 
 Each account the module enables is one `ssh` entry, named by its account,

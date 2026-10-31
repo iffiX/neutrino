@@ -869,6 +869,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.transport_key_missing` | The transport has not written its key yet; try again in a moment. | 传输层还没有写出密钥，稍后再试。 |
 | `code.transport_apply_failed` | The transport could not be started: {detail} | 传输层没能启动：{detail} |
 | `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这台机器还没有报告 {account} 的家目录，请填写它的共享路径。 |
+| `code.account_no_profile` | {account} has never signed in on this machine. Sign in as {account} once, then try again. | {account} 还没有在这台机器上登录过。请先用这个账户登录一次，再重试。 |
 | `code.share_name_taken` | The machine already has a share named {name}. Give the new share another name, or rename or remove the other one. | 这台机器上已经有一个叫 {name} 的共享。请给新的共享换个名字，或者把原来那个改名或删掉。 |
 | `code.samba_hosts_allow_no_loopback` | Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer; add it there. | 这台机器的 Samba hosts allow 没有 127.0.0.1，本模块的共享无法应答；请在那里加上它。 |
 | `code.samba_interfaces_no_loopback` | Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there. | 这台机器的 Samba 只绑定了不含 lo 的网卡，本模块的共享无法应答；请在那里加上 lo。 |
