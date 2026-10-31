@@ -397,7 +397,7 @@ the first failure in `APPLY_ORDER`.
 | `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's system account | `failed` |
 | `npm {account}` | CloudCLI's npm for one account | `failed` |
 | `start`, `stop` | the runner's start or stop | `failed` |
-| `uninstall` | the module stopped, the hub's configuration removed, the software, `post_uninstall`, and the data where the recipe says | `failed` |
+| `uninstall` | the module stopped, the hub's configuration removed, an install still running stopped ([modules/cloudcli.md](agent/modules/cloudcli.md), "An uninstall stops what still installs"), the software, `post_uninstall`, and the data where the recipe says | `failed` |
 | `wait_module {module}` | waits until a module the task's module requires reads `running` and has no task | `install_failed` in an install, `failed` in a start or a configure |
 | `pull {image}` | one image of a container module, from the fastest source | `install_failed` |
 | `render` | a configure task of Containers, asked for and waited for | `install_failed` |
