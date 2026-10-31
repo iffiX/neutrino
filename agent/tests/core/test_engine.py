@@ -25,8 +25,9 @@ root-only on disk and read the same by an engine that starts again, until
 the next attempt replaces them or a state stops naming the module, and kept
 off the row while the module's task runs; an uninstall of what a failed
 install left judged by the check afterwards; the steps of the programs run
-as an account, the file share and Gitea with their locks; and that nothing
-in it ever retries anything.
+as an account, the file share and Gitea with their locks; a container
+module read stopped after its start task read again until it runs; and
+that nothing in it ever retries anything.
 """
 
 import json
@@ -158,6 +159,7 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._module_runners = {runner.name: runner}
     engine._runners_by_name = {runner.runner: runner}
     engine._container_runners = {}
+    engine._start_watches = {}
     engine._configure_asker = None
     engine._platform = None
     if verified is not None:
@@ -2033,6 +2035,63 @@ def test_the_containers_row_is_kept_while_a_container_module_pulls(
 
     assert kept == running
     assert engine.report()["podman"]["state"] != "running"
+
+
+START_TASK = {
+    "steps": [
+        {"name": "wait_containers", "params": {}},
+        {"name": "start", "params": {}},
+    ],
+    "index": 2,
+    "wait": {},
+    "is_running": True,
+}
+
+
+def state_within(engine, name: str, state: str, seconds: float) -> bool:
+    """Whether one row reads a state before the seconds pass."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if (engine._statuses.get(name) or {}).get("state") == state:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_a_container_module_read_stopped_after_its_start_is_read_again(
+    tmp_path, monkeypatch
+):
+    """Hermes WebUI's /health returns 200 a few seconds after its containers start."""
+    monkeypatch.setattr(engine_module, "AGENT_STARTED_REREAD_S", 0.02)
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    engine.mark_configured("demo")
+    engine.publish_task("demo", START_TASK, "", {})
+    engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
+    engine.refresh_one("demo")
+    ended = engine._statuses["demo"]["state"]
+
+    reads.is_active = True
+
+    assert ended == "stopped"
+    assert state_within(engine, "demo", "running", 2)
+
+
+def test_the_watch_after_a_start_ends_once_a_task_of_the_module_runs(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(engine_module, "AGENT_STARTED_REREAD_S", 0.02)
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    engine.mark_configured("demo")
+    engine.publish_task("demo", START_TASK, "", {})
+    engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
+    engine.refresh_one("demo")
+    engine.publish_task("demo", dict(START_TASK, index=1), "", {})
+
+    reads.is_active = True
+
+    assert not state_within(engine, "demo", "running", 0.3)
 
 
 # --- the steps of Containers, Ayakaleaf and Hermes WebUI ---

@@ -61,6 +61,8 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_RUNNING,
     AGENT_MODULE_STATE_STOPPED,
     AGENT_MODULE_STATE_UNSUPPORTED,
+    AGENT_STARTED_REREAD_S,
+    AGENT_STARTED_WATCH_S,
     AGENT_STEP_ARTIFACT,
     AGENT_STEP_CONFIGURE,
     AGENT_STEP_PACKAGES,
@@ -345,6 +347,9 @@ class ModuleEngine(ReconcileWorker):
         # One runner per container module the state has named, by module
         # name, each reaching Podman through the Containers runner.
         self._container_runners: dict = {}
+        # The watch of each container module read again after its start task,
+        # by module name.
+        self._start_watches: dict = {}
         # Asks for a configure task of a module, by name; None asks nobody.
         self._configure_asker = None
         self._failures = self._read_failures()
@@ -552,12 +557,20 @@ class ModuleEngine(ReconcileWorker):
                 and not was_running
                 and name in self._failures
             )
+            is_start_ended = (
+                was_running
+                and not self._is_task_running(name)
+                and name in self._container_runners
+                and _has_step(task, AGENT_STEP_START)
+            )
         if state:
             self._publish_observed(name, _typed(state))
         elif was_transient or is_failure_hidden:
             self.refresh_one(name)
         elif status is not None:
             self._publish_observed(name, dict(status))
+        if is_start_ended:
+            self._watch_start(name)
 
     def set_configure_asker(self, asker) -> None:
         """Let every runner ask for a configure task of its own module.
@@ -594,6 +607,40 @@ class ModuleEngine(ReconcileWorker):
             observed = self._observed()
         if name in observed:
             self._publish_observed(name, self._read_one(name, observed[name]))
+
+    def _watch_start(self, name: str) -> None:
+        """Read one container module again while it reads stopped after its start task.
+
+        The row is read every :data:`AGENT_STARTED_REREAD_S` for
+        :data:`AGENT_STARTED_WATCH_S`, on a thread of its own, until it reads
+        another state, a task of the module runs or a later start's watch
+        replaces this one.
+
+        Args:
+            name: The module name.
+        """
+        watch = object()
+        with self._lock:
+            self._start_watches[name] = watch
+        threading.Thread(
+            target=self._run_start_watch, args=(name, watch), daemon=True
+        ).start()
+
+    def _run_start_watch(self, name: str, watch: object) -> None:
+        """The thread of one start's watch."""
+        deadline = time.monotonic() + AGENT_STARTED_WATCH_S
+        while time.monotonic() < deadline:
+            time.sleep(AGENT_STARTED_REREAD_S)
+            with self._lock:
+                is_replaced = self._start_watches.get(name) is not watch
+                is_tasked = self._is_task_running(name)
+                state = (self._statuses.get(name) or {}).get("state")
+            if is_replaced or is_tasked or state != AGENT_MODULE_STATE_STOPPED:
+                break
+            self.refresh_one(name)
+        with self._lock:
+            if self._start_watches.get(name) is watch:
+                del self._start_watches[name]
 
     def install_steps(self, name: str, entry: dict) -> list:
         """The steps that put one module's software on the machine, by its recipe's method.
@@ -1580,6 +1627,14 @@ def _recipe_of(wanted: "dict | None") -> dict:
     """The install recipe one state entry carries, empty when it carries none."""
     recipe = (wanted or {}).get("install")
     return dict(recipe) if isinstance(recipe, dict) else {}
+
+
+def _has_step(task: dict, step: str) -> bool:
+    """Whether a task's row plans a step of this name."""
+    return any(
+        isinstance(planned, dict) and planned.get("name") == step
+        for planned in task.get("steps") or []
+    )
 
 
 def _steady_state(*, is_active: bool, is_configured: bool) -> str:
