@@ -177,7 +177,7 @@ client/desktop/
                      page it serves, its routes.
     gui/             The window and the tray, one file per toolkit:
                      WebKitGTK, WebView2, WKWebView; tray_linux, tray_windows,
-                     tray_macos.
+                     tray_macos; tray_face the face for the hubs' state.
     services/        One file per service kind: the apps' entries, file,
                      ai, rdp, ssh and its configuration; the cc-switch
                      driver and the worker that runs them.

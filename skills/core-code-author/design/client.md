@@ -118,6 +118,24 @@ and wrap to a second line where one line is too narrow.
 A page with nothing to show has one row with one sentence
 (`ui.no_hubs`, `ui.services_wait_join`, `ui.empty_<page>`) and no picture.
 
+## The tray's face
+
+The desktop client's tray shows the face of the worst connection among the
+hubs joined, from `images/icons/neutrino_client/`. The worst row of this table
+that any hub matches decides.
+
+| A hub's connection ("The Hubs page") | Face |
+| --- | --- |
+| `waiting`, each of the states that wait for something | `error` |
+| `connecting` | `waiting` |
+| `connected` | `wink` |
+| `replaced` or `disabled`, or no hub joined | `sleep` |
+
+| Rule | Reason |
+| --- | --- |
+| The face follows the state document's `connection` and adds no state, no menu entry and no timer. A hub stays `waiting` through its next rounds, so its face stays `error` until it connects. A press on **Refresh** clears the wait, so its face is `waiting` for that round and `error` again if the round fails. | The tray says what the Hubs page says, and a face that changed with every round would change every few seconds. |
+| On Linux a face is a name in the installed icon theme, `neutrino_client_<face>`, at 16, 22, 24, 32 and 48 px, and the desktop picks the size. On Windows it is a `.ico` loaded at the notification area's small icon size. On macOS it is a 64 px PNG drawn at the menu bar's 18 points. In a checkout it is the repository's large file. | Windows, and a Linux desktop with a 16 px panel, then show the hand-drawn 16 px file. A file path on Linux shows one size for every panel. |
+
 ## The button rule
 
 | Rule | Reason |
