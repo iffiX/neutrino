@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
-import { apiPath, apiPost, describeError } from "../api_client";
+import { apiGet, apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { AyakaleafPanels } from "./ayakaleaf_panels";
+import { ContainersAccountModal } from "./containers_account_modal";
 import { ContainersPanels } from "./containers_panels";
 import { ErrorPanel } from "./error_panel";
 import { FolderSharesPanel } from "./folder_shares_panel";
@@ -31,6 +32,7 @@ import {
 import { MODULE_DESCRIPTORS } from "../module_descriptors";
 import { stepWords } from "../module_step_words";
 import { moduleTitle, withModuleTitle } from "../module_title";
+import { MACHINE_RUN_OS } from "../podman_machine";
 import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -48,6 +50,7 @@ import type {
   DeviceRequest,
   EnabledAccountsView,
   ModuleUninstallData,
+  PodmanDeviceView,
   TaskStarted,
 } from "../api_types";
 
@@ -171,6 +174,9 @@ const TAB_ORDER = [
   "ayakaleaf",
 ];
 
+/** The module whose containers run in an account's Podman machine. */
+const CONTAINERS_MODULE = "podman";
+
 /** The module whose tab opens only once its terms are accepted. */
 const TERMS_MODULE = "vscode";
 
@@ -291,6 +297,7 @@ export function MachineModules({
   // The modules whose configuration is open.
   const [configured, setConfigured] = useState<string[]>([]);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isAccountAsked, setIsAccountAsked] = useState(false);
   const confirm = useConfirm();
 
   const modules = useApiResource<DeviceModuleListView>(
@@ -458,17 +465,51 @@ export function MachineModules({
       onConfirm: () => void restart(),
     });
 
+  // Whether Install on this row needs the account of Containers' machine.
+  const isAccountMissing = async (row: DeviceModuleView) => {
+    const isOnMachine =
+      MACHINE_RUN_OS.includes(platformOs) &&
+      (row.name === CONTAINERS_MODULE ||
+        row.requires.includes(CONTAINERS_MODULE));
+    if (!isOnMachine) {
+      return false;
+    }
+    const view = await apiGet<PodmanDeviceView>(
+      apiPath(`/agent/module/${CONTAINERS_MODULE}`, { device_id: deviceId }),
+    );
+    return (view.machine?.account ?? "") === "";
+  };
+
   // Install on a module whose required modules read absent opens a dialog
-  // listing them first.
-  const askInstall = () => {
+  // listing them first. Install asks for Containers' account after that dialog
+  // and before anything installs.
+  const askInstall = async () => {
     if (activeRow === undefined) {
       return;
     }
+    setBusyAction("install");
+    setActionError(null);
+    let isAsked = false;
+    try {
+      isAsked = await isAccountMissing(activeRow);
+    } catch (cause: unknown) {
+      setActionError(describeError(cause));
+      return;
+    } finally {
+      setBusyAction(null);
+    }
+    const install = () => {
+      if (isAsked) {
+        setIsAccountAsked(true);
+      } else {
+        void act("install");
+      }
+    };
     const absent = activeRow.requires.filter(
       (name) => reportedRows[name]?.state === "absent",
     );
     if (absent.length === 0) {
-      void act("install");
+      install();
       return;
     }
     confirm.ask({
@@ -483,7 +524,7 @@ export function MachineModules({
       question: t("ui.modules.install_requires_question"),
       confirmLabel: t("ui.confirm.yes"),
       cancelLabel: t("ui.confirm.no"),
-      onConfirm: () => void act("install"),
+      onConfirm: install,
     });
   };
 
@@ -759,7 +800,7 @@ export function MachineModules({
                       isPresent ? t("ui.modules.install_present") : undefined
                     }
                     isBusy={busyAction === "install"}
-                    onClick={askInstall}
+                    onClick={() => void askInstall()}
                   />
                   <ActionButton
                     action="start"
@@ -838,6 +879,16 @@ export function MachineModules({
           deviceId={deviceId}
           onChanged={modules.reload}
           onClose={() => setIsCatalogOpen(false)}
+        />
+      )}
+      {isAccountAsked && (
+        <ContainersAccountModal
+          deviceId={deviceId}
+          onChosen={() => {
+            setIsAccountAsked(false);
+            void act("install");
+          }}
+          onCancel={() => setIsAccountAsked(false)}
         />
       )}
       {confirm.modal}

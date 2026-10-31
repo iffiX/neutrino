@@ -37,7 +37,7 @@ const STATE_UNSUPPORTED = "unsupported";
 const WANT_STOPPED = "stopped";
 
 /** The disk limit a Windows machine with none stored starts at, in GiB. */
-const WINDOWS_NEW_DISK_GIB = 100;
+export const WINDOWS_NEW_DISK_GIB = 100;
 
 /** The Run settings while none are stored: no account, Podman's defaults. */
 const EMPTY_MACHINE: PodmanMachine = {

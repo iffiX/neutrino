@@ -21,6 +21,7 @@ import {
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
+import { MACHINE_RUN_OS } from "../podman_machine";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -115,9 +116,6 @@ const SOURCE_TONES: Record<PodmanContainerSource, string> = {
 
 /** How many characters of a digest's hex a hub container's row shows. */
 const DIGEST_SHOWN_CHARS = 12;
-
-/** The systems whose containers run in an account's Podman machine. */
-const MACHINE_RUN_OS = ["windows", "darwin"];
 
 /** The system whose machine starts with the account's Windows login. */
 const WINDOWS_OS = "windows";
