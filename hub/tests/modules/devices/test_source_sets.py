@@ -24,7 +24,7 @@ def test_the_shipped_file_holds_the_four_sets_of_the_standard():
 
     assert sets == {
         "pypi": {
-            "probe": "/pip/",
+            "probe": "/numpy/",
             "sources": [
                 "https://pypi.org/simple",
                 "https://pypi.tuna.tsinghua.edu.cn/simple",
@@ -34,7 +34,7 @@ def test_the_shipped_file_holds_the_four_sets_of_the_standard():
             "variables": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX_URL"],
         },
         "npm": {
-            "probe": "/npm/latest",
+            "probe": "/npm/-/npm-10.9.2.tgz",
             "sources": [
                 "https://registry.npmjs.org",
                 "https://registry.npmmirror.com",
@@ -47,12 +47,13 @@ def test_the_shipped_file_holds_the_four_sets_of_the_standard():
             ],
         },
         "huggingface": {
-            "probe": "/openai-community/gpt2/resolve/main/config.json",
+            "probe": "/openai-community/gpt2/resolve/"
+            "607a30d783dfa663caf39e06633721c8d4cfcd7e/tokenizer.json",  # scan: allow
             "sources": ["https://huggingface.co", "https://hf-mirror.com"],
             "variables": ["HF_ENDPOINT"],
         },
         "ctan": {
-            "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.sha512",
+            "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz",
             "sources": [
                 "https://mirror.ctan.org",
                 "https://mirrors.mit.edu/CTAN",
@@ -126,7 +127,7 @@ def test_a_state_carries_each_set_its_recipes_name_and_no_other():
     carried = state_source_sets(modules)
 
     assert list(carried) == ["npm", "pypi"]
-    assert carried["pypi"]["probe"] == "/pip/"
+    assert carried["pypi"]["probe"] == "/numpy/"
     assert state_source_sets({"samba": modules["samba"]}) == {}
 
 

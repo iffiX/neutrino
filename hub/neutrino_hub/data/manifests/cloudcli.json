@@ -39,7 +39,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
@@ -69,7 +70,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "/var/lib/neutrino/agent/cloudcli/node/bin/node --version",
@@ -99,7 +101,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
@@ -129,7 +132,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
@@ -159,7 +163,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",
@@ -189,7 +194,8 @@
               "package": "@cloudcli-ai/cloudcli",
               "digest": "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw==", "_digest_scan": "scan: allow",
               "source_set": "npm",
-              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow"
+              "hosts": {"npm_config_better_sqlite3_binary_host": ["https://github.com/WiseLibs/better-sqlite3/releases/download", "https://registry.npmmirror.com/-/binary/better-sqlite3"]}, "_hosts_scan": "scan: allow",
+              "hosts_probe": {"npm_config_better_sqlite3_binary_host": "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"}
             }
           ],
           "verify": "\"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node\" --version",

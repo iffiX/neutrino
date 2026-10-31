@@ -161,6 +161,8 @@ NODE_SOURCES = [
 CLOUDCLI_VERSION = "1.37.3"
 # The integrity registry.npmjs.org gives @cloudcli-ai/cloudcli 1.37.3.
 CLOUDCLI_INTEGRITY = "sha512-z9ewBL8imlK2IgfuribkbE2N/7XCV6z6cSevQFxaIAP3UdA3gzSI41MLMb+2RBEyiYgCAU6hPRPN7O1ZyK8RNw=="  # scan: allow
+# The file an install's probe reads on each host of better-sqlite3's binary.
+BETTER_SQLITE3_PROBE = "/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz"
 
 CODEG_VERSION = "0.35.1"
 # The sha256 of each server bundle, from the publisher's own .sha256 sidecar.
@@ -362,6 +364,9 @@ def sample_manifest() -> dict:
                                 sources=None,
                                 hosts={
                                     "npm_config_cli_binary_host": ["https://h.example"]
+                                },
+                                hosts_probe={
+                                    "npm_config_cli_binary_host": "/v1/cli.tar.gz"
                                 },
                                 directory=None,
                                 file=None,
@@ -758,6 +763,9 @@ def test_cloudcli_pins_node_and_its_npm_package_on_six_platforms():
                     "https://github.com/WiseLibs/better-sqlite3/releases/download",
                     "https://registry.npmmirror.com/-/binary/better-sqlite3",
                 ]
+            },
+            "hosts_probe": {
+                "npm_config_better_sqlite3_binary_host": BETTER_SQLITE3_PROBE,
             },
         }
         assert "node-v" not in params["verify"]
@@ -1242,6 +1250,7 @@ def test_the_recipe_drops_the_feeds_and_the_sources_the_package_stream_serves():
                     "digest": "sha512-" + "b" * 86 + "==",
                     "source_set": "npm",
                     "hosts": {"npm_config_cli_binary_host": ["https://h.example"]},
+                    "hosts_probe": {"npm_config_cli_binary_host": "/v1/cli.tar.gz"},
                 },
             ],
             "verify": "sample --version",
@@ -1839,12 +1848,28 @@ def _npm_of_another_set(manifest):
     hub_params(manifest)["artifacts"][1]["source_set"] = "pypi"
 
 
+def _npm_hosts_without_a_probe(manifest):
+    del hub_params(manifest)["artifacts"][1]["hosts_probe"]
+
+
+def _npm_probe_of_another_setting(manifest):
+    hub_params(manifest)["artifacts"][1]["hosts_probe"] = {"other": "/v1/cli.tar.gz"}
+
+
+def _npm_probe_that_is_no_path(manifest):
+    held = hub_params(manifest)["artifacts"][1]["hosts_probe"]
+    held["npm_config_cli_binary_host"] = "v1/cli.tar.gz"
+
+
 @pytest.mark.parametrize(
     "spoil, said",
     [
         (_npm_with_sources, "sources"),
         (_npm_without_its_set, "source_set"),
         (_npm_of_another_set, "npm set"),
+        (_npm_hosts_without_a_probe, "must name each setting of hosts"),
+        (_npm_probe_of_another_setting, "must name each setting of hosts"),
+        (_npm_probe_that_is_no_path, "is not of the form"),
     ],
 )
 def test_an_npm_artifact_names_the_npm_set_alone(spoil, said, manifests_dir):

@@ -62,6 +62,8 @@ MANIFEST_VERSION_PATTERN = r"\d+(\.\d+)*"
 MANIFEST_PLATFORM_PATTERN = r"[a-z]+(-[a-z0-9]+){0,2}"
 MANIFEST_SHA256_PATTERN = r"sha256:[0-9a-f]{64}"
 MANIFEST_INTEGRITY_PATTERN = r"sha512-[A-Za-z0-9+/]+={0,2}"
+# The path of the file a probe reads under each host.
+MANIFEST_PROBE_PATTERN = r"/.+"
 MODULE_KEYS = {
     "name",
     "title",
@@ -114,7 +116,15 @@ FILE_ARTIFACT_KEYS = {
     "directory",
     "member",
 }
-NPM_ARTIFACT_KEYS = {"name", "kind", "digest", "package", "source_set", "hosts"}
+NPM_ARTIFACT_KEYS = {
+    "name",
+    "kind",
+    "digest",
+    "package",
+    "source_set",
+    "hosts",
+    "hosts_probe",
+}
 IMAGE_ARTIFACT_KEYS = {"name", "kind", "digest", "sources"}
 # What the recipe keeps of a hub artifact the agent takes from the package
 # stream: the bytes come down the stream, so no source is sent.
@@ -835,7 +845,7 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 named,
                 artifact,
                 NPM_ARTIFACT_KEYS,
-                NPM_ARTIFACT_KEYS - {"hosts"},
+                NPM_ARTIFACT_KEYS - {"hosts", "hosts_probe"},
             )
             _check_text(file_name, f"{named} package", artifact["package"])
             _check_text(
@@ -848,9 +858,22 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 _refuse(file_name, f"{named} source_set", "must be the npm set")
             if artifact["source_set"] not in load_source_sets():
                 _refuse(file_name, f"{named} source_set", "names no set")
-            for setting, hosts in (artifact.get("hosts") or {}).items():
+            settings = artifact.get("hosts") or {}
+            for setting, hosts in settings.items():
                 _check_texts(
                     file_name, f"{named} hosts {setting}", hosts, is_empty_allowed=False
+                )
+            probes = artifact.get("hosts_probe") or {}
+            if set(probes) != set(settings):
+                _refuse(
+                    file_name, f"{named} hosts_probe", "must name each setting of hosts"
+                )
+            for setting, path in probes.items():
+                _check_text(
+                    file_name,
+                    f"{named} hosts_probe {setting}",
+                    path,
+                    pattern=MANIFEST_PROBE_PATTERN,
                 )
             continue
         if kind == DEVICE_ARTIFACT_KIND_IMAGE:
