@@ -116,6 +116,8 @@ class FakePodman:
         # repositories whose install alone fails.
         self.tlmgr_exits: dict = {}
         self.install_refusals: set = set()
+        # The files kpsewhich does not find; it finds every other one.
+        self.tex_missing: set = set()
         # Called with each command before it answers.
         self.on_call = None
 
@@ -133,6 +135,17 @@ class FakePodman:
                 code = 3
             said = "" if code == 0 else f"tlmgr: {repository} is not a repository"
             return CommandResult(list(command), code, "running mktexlsr\n", said)
+        if "kpsewhich" in command:
+            names = command[command.index("kpsewhich") + 1 :]
+            found = [
+                f"/usr/local/texlive/2026/texmf-dist/tex/latex/{name}"
+                for name in names
+                if name not in self.tex_missing
+            ]
+            code = 0 if len(found) == len(names) else 1
+            return CommandResult(
+                list(command), code, "".join(f"{path}\n" for path in found), ""
+            )
         return CommandResult(list(command), 0, "", "")
 
     def named(self, word: str) -> list:
@@ -284,6 +297,40 @@ def test_the_first_start_runs_the_three_steps_in_order_and_keeps_each(box, app):
     assert box.record()["steps"] == ["replica_set", "admin", "tex"]
     assert box.record()["is_ready"] is True
     assert box.hooks.is_installing() is False
+
+
+def test_the_tex_step_checks_its_files_with_kpsewhich_after_tlmgr(box):
+    ready(box)
+
+    assert box.podman.calls[-1] == [
+        PODMAN,
+        "exec",
+        "neutrino_ayakaleaf",
+        "kpsewhich",
+        "ctex.sty",
+        "xeCJK.sty",
+        "pgfplots.sty",
+    ]
+
+
+def test_a_tlmgr_that_exits_0_without_the_files_fails_the_tex_step(box):
+    box.podman.tex_missing = {"xeCJK.sty"}
+    box.hooks.installed("6.3.2")
+
+    with pytest.raises(ModuleSetupError) as failed:
+        box.start()
+
+    assert [call[5:7] for call in box.podman.named("tlmgr")] == [
+        ["https://fast.example/CTAN/systems/texlive/tlnet", "update"],
+        ["https://fast.example/CTAN/systems/texlive/tlnet", "install"],
+        ["https://slow.example/CTAN/systems/texlive/tlnet", "update"],
+        ["https://slow.example/CTAN/systems/texlive/tlnet", "install"],
+    ]
+    assert failed.value.params == {
+        "step": "tex",
+        "detail": "kpsewhich finds no xeCJK.sty",
+    }
+    assert box.record()["steps"] == ["replica_set", "admin"]
 
 
 def test_a_tex_step_whose_tlmgr_ends_after_the_agent_began_to_stop_keeps_nothing(

@@ -105,6 +105,7 @@ from neutrino_agent.modules.ayakaleaf.constants import (
     AYAKALEAF_STEP_TEX,
     AYAKALEAF_STEP_WAIT_APP,
     AYAKALEAF_STEPS,
+    AYAKALEAF_TEX_FILES,
     AYAKALEAF_TEX_REPOSITORY_PATH,
     AYAKALEAF_TEX_SET,
     AYAKALEAF_TEX_TIMEOUT_S,
@@ -1178,6 +1179,9 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
     def _install_tex(self) -> None:
         """Install the Chinese TeX set with ``tlmgr``, from each source of the ``ctan`` set fastest first.
 
+        A source serves the set once ``tlmgr`` exits 0 and ``kpsewhich``
+        finds each of its files.
+
         Raises:
             ModuleSetupError: When no source serves it.
         """
@@ -1210,14 +1214,33 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
                     timeout_s=AYAKALEAF_TEX_TIMEOUT_S,
                 )
                 if done is None or not done.is_success:
+                    detail = (
+                        last_line(done.stderr or done.stdout)
+                        if done is not None
+                        else ""
+                    ) or "tlmgr failed"
                     break
             else:
-                return
-            detail = (
-                last_line(done.stderr or done.stdout) if done is not None else ""
-            ) or "tlmgr failed"
+                missing = self._missing_tex_files()
+                if not missing:
+                    return
+                detail = f"kpsewhich finds no {' '.join(missing)}"
             self._log(f"{self._name}: tlmgr from {source}: {detail}")
         raise _setup_failed(AYAKALEAF_STEP_TEX, detail)
+
+    def _missing_tex_files(self) -> list:
+        """The files of the Chinese TeX set ``kpsewhich`` does not find in the app container."""
+        done = self._podman(
+            ["exec", AYAKALEAF_APP_CONTAINER, "kpsewhich", *AYAKALEAF_TEX_FILES]
+        )
+        found = set()
+        if done is not None:
+            found = {
+                line.strip().rsplit("/", 1)[-1]
+                for line in done.stdout.splitlines()
+                if line.strip()
+            }
+        return [name for name in AYAKALEAF_TEX_FILES if name not in found]
 
     def _settle_guests(self, record: dict) -> dict:
         """Make and remove the guests of the module's Web shares, once the app answers.

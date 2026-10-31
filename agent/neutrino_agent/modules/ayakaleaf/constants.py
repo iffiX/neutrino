@@ -62,6 +62,9 @@ AYAKALEAF_TEX_VERBS = (
     ("update", "--self"),
     ("install", *AYAKALEAF_TEX_COLLECTIONS),
 )
+# The files ``kpsewhich`` finds once the collections are installed, one of
+# each collection the basic scheme lacks.
+AYAKALEAF_TEX_FILES = ("ctex.sty", "xeCJK.sty", "pgfplots.sty")
 AYAKALEAF_TEX_SET = "ctan"
 AYAKALEAF_TEX_REPOSITORY_PATH = "/systems/texlive/tlnet"
 AYAKALEAF_TEX_TIMEOUT_S = 1800
