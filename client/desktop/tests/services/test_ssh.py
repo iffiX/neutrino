@@ -7,8 +7,9 @@ account's key is read once for a list that did not change, and read again
 and written over when the entry's ``account_key_fingerprint`` changes. Many
 rewrites at once all finish and leave the newest list and its keys alone, a
 rewrite held by a slow hub never replaces a newer list, a clear during a
-rewrite leaves no file behind, and many Include edits at once all finish and
-keep the person's lines.
+rewrite leaves no file behind, a stop waits for a rewrite running and none
+runs after it, and many Include edits at once all finish and keep the
+person's lines.
 """
 
 import os
@@ -247,6 +248,58 @@ def test_a_clear_during_a_rewrite_leaves_no_file_behind(tmp_path):
     assert rewrites.failures == []
     assert not os.path.exists(writer.config_path)
     assert not os.path.exists(writer.keys_dir)
+
+
+def test_a_stop_waits_for_a_rewrite_running(tmp_path):
+    rewrites = Rewrites()
+    is_reading = threading.Event()
+    may_answer = threading.Event()
+
+    def open_service(hub_id, entry_id):
+        is_reading.set()
+        may_answer.wait(timeout=5)
+        return MATERIAL
+
+    writer = SshConfigWriter(
+        home=str(tmp_path),
+        open_service=open_service,
+        log=str,
+        start_thread=rewrites,
+    )
+
+    writer.refresh(**machine("lab"))
+    assert is_reading.wait(timeout=5)
+    stopping = threading.Thread(target=writer.stop)
+    stopping.start()
+    stopping.join(timeout=HELD_REWRITE_WAIT_S)
+    assert stopping.is_alive()
+
+    may_answer.set()
+    stopping.join(timeout=5)
+    assert not stopping.is_alive()
+    assert os.path.exists(writer.config_path)
+    rewrites.join()
+    assert rewrites.failures == []
+
+
+def test_a_rewrite_waiting_at_a_stop_and_a_refresh_after_it_write_nothing(tmp_path):
+    started = []
+    writer = SshConfigWriter(
+        home=str(tmp_path),
+        open_service=lambda hub_id, entry_id: MATERIAL,
+        log=str,
+        start_thread=started.append,
+    )
+
+    writer.refresh(**machine("waiting"))
+    writer.stop()
+    writer.stop()
+    writer.refresh(**machine("after"))
+    for rewrite in started:
+        rewrite()
+
+    assert len(started) == 1
+    assert not os.path.exists(os.path.dirname(writer.config_path))
 
 
 def test_many_include_edits_at_once_all_finish_and_keep_the_persons_lines(tmp_path):

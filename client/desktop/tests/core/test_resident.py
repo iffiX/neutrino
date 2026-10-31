@@ -15,7 +15,8 @@ restarts none, the exit hub chosen and followed with the tools moved in one
 activation, the disabled check per hub, a start that turns nothing on and
 clears what an unclean exit left, and a shutdown that runs its order once,
 logs a line a step, lets no step hold up the rest and ends the transport,
-with a virtual network's connect ending after it writing no binding.
+with a virtual network's connect ending after it writing no binding, and a
+rewrite of the SSH configuration ending before it and none running after it.
 The state document's jobs: a refresh set per hub and cleared by its answer,
 a leave and a service press shown before the work, a duplicate press
 dropped and never answered as ``busy``, a failure kept on its row until the
@@ -2054,6 +2055,35 @@ def test_a_connect_ending_after_the_shutdown_writes_no_binding(
 
     assert resident.hubs()[0]["overlay"]["state"] == "on"
     assert config_path.read_bytes() == written
+
+
+def test_a_shutdown_ends_a_rewrite_of_the_ssh_configuration(tmp_path, overlay_resident):
+    resident, _driver = overlay_resident
+    started = []
+    resident._ssh._start_thread = started.append
+    machine = {
+        "entries": [
+            {
+                "id": "ssh_server_d1_lab",
+                "hub_id": "h1",
+                "app_id": "ssh_server_d1",
+                "device_id": "d1",
+                "device_name": "lab",
+                "type": "ssh",
+                "payload": {"account": "lab"},
+            }
+        ],
+        "apps": [],
+        "hub_names": {},
+    }
+
+    resident._ssh.refresh(**machine)
+    resident.shutdown()
+    for rewrite in started:
+        rewrite()
+
+    assert started
+    assert not (tmp_path / "home" / ".ssh").exists()
 
 
 # --- the terminals ---

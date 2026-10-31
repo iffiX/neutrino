@@ -1755,7 +1755,8 @@ class ClientResident:
         The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
         is given up and the next runs. A virtual network's step that ends
-        after the shutdown returns writes no binding.
+        after the shutdown returns writes no binding, and no rewrite of the
+        SSH configuration runs after it.
         """
         with self._lock:
             if self._is_shut_down:
@@ -1767,6 +1768,8 @@ class ClientResident:
         for session in sessions:
             session.stop()
         self._overlay.stop()
+        # Every session has stopped, so a rewrite asks no hub and ends.
+        self._ssh.stop()
         self._release_in_time()
         self._files_adapter.stop()
         self._transport.stop()

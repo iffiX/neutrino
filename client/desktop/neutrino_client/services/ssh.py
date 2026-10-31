@@ -261,6 +261,7 @@ class SshConfigWriter:
         self._written: "tuple | None" = None
         # The newest refresh's machines, until a rewrite takes them.
         self._newest: "list | None" = None
+        self._is_stopped = False
 
     @property
     def config_path(self) -> str:
@@ -310,11 +311,18 @@ class SshConfigWriter:
             for row in machines
         )
         with self._lock:
-            if shape == self._written:
+            if self._is_stopped or shape == self._written:
                 return
             self._written = shape
             self._newest = machines
         self._start_thread(self._rewrite_newest)
+
+    def stop(self) -> None:
+        """End the rewrites. A rewrite running finishes first. Idempotent."""
+        with self._rewrite_lock:
+            with self._lock:
+                self._is_stopped = True
+                self._newest = None
 
     def clear(self) -> None:
         """Delete the configuration, the keys and the known_hosts: no hub is left."""
