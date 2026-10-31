@@ -113,6 +113,8 @@
   "ui.clients.waiting": "等待加入（还剩 {minutes} 分钟）",
   "ui.clients.waiting_delete_body": "它的链接随即失效。",
   "ui.confirm.cancel": "取消",
+  "ui.confirm.no": "否",
+  "ui.confirm.yes": "是",
   "ui.credentials.add_key": "添加密钥",
   "ui.credentials.add_login": "添加登录信息",
   "ui.credentials.add_token": "添加令牌",

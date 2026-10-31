@@ -458,8 +458,8 @@ export function MachineModules({
       onConfirm: () => void restart(),
     });
 
-  // Install on a module whose required module reads absent opens a dialog
-  // naming that module first.
+  // Install on a module whose required modules read absent opens a dialog
+  // listing them first.
   const askInstall = () => {
     if (activeRow === undefined) {
       return;
@@ -476,11 +476,13 @@ export function MachineModules({
         module: moduleTitle(activeRow.name, activeRow.title),
         device: deviceName,
       }),
-      body: t(
-        "ui.modules.install_requires_body",
-        codeParams({ modules: absent }),
+      body: t("ui.modules.install_requires_body"),
+      items: absent.map((name) =>
+        moduleTitle(name, reportedRows[name]?.title ?? name),
       ),
-      confirmLabel: t("ui.modules.install"),
+      question: t("ui.modules.install_requires_question"),
+      confirmLabel: t("ui.confirm.yes"),
+      cancelLabel: t("ui.confirm.no"),
       onConfirm: () => void act("install"),
     });
   };

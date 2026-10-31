@@ -61,6 +61,11 @@
   margin-top: var(--space-3);
 }
 
+.confirm_items {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
 .confirm_detail {
   color: var(--color-text);
 }

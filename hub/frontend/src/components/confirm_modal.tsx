@@ -22,8 +22,14 @@ interface ConfirmModalProps {
   title: string;
   /** What it costs. One or two sentences, mechanism first; empty for none. */
   body: string;
+  /** Names listed under the body, one to a line. */
+  items?: string[];
+  /** A question under the list. */
+  question?: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;
+  /** The button that cancels; `ui.confirm.cancel` when absent. */
+  cancelLabel?: string;
   /** A line under the body about the person's data. */
   detail?: string;
   /** Whether the act destroys data. The detail then takes the error tone,
@@ -36,7 +42,10 @@ interface ConfirmModalProps {
 export function ConfirmModal({
   title,
   body,
+  items = [],
+  question = "",
   confirmLabel,
+  cancelLabel,
   detail = "",
   isDanger = false,
   onConfirm,
@@ -66,6 +75,14 @@ export function ConfirmModal({
         {(body !== "" || detail !== "") && (
           <div className="confirm_body">
             {body !== "" && <p>{body}</p>}
+            {items.length > 0 && (
+              <ul className="confirm_items">
+                {items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+            {question !== "" && <p>{question}</p>}
             {detail !== "" && (
               <p
                 className={
@@ -81,7 +98,7 @@ export function ConfirmModal({
         )}
         <div className="confirm_foot">
           <button type="button" className="button" onClick={onCancel}>
-            {t("ui.confirm.cancel")}
+            {cancelLabel ?? t("ui.confirm.cancel")}
           </button>
           <button
             type="button"

@@ -113,6 +113,8 @@
   "ui.clients.waiting": "Waiting to join ({minutes} min left)",
   "ui.clients.waiting_delete_body": "Its link stops working.",
   "ui.confirm.cancel": "Cancel",
+  "ui.confirm.no": "No",
+  "ui.confirm.yes": "Yes",
   "ui.credentials.add_key": "Add key",
   "ui.credentials.add_login": "Add login",
   "ui.credentials.add_token": "Add token",

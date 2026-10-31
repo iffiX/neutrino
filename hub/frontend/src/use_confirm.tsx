@@ -19,8 +19,14 @@ export interface ConfirmRequest {
   title: string;
   /** What it costs. One or two sentences, mechanism first; empty for none. */
   body: string;
+  /** Names listed under the body, one to a line. */
+  items?: string[];
+  /** A question under the list. */
+  question?: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;
+  /** The button that cancels; `ui.confirm.cancel` when absent. */
+  cancelLabel?: string;
   /** A line under the body about the person's data. */
   detail?: string;
   /** Whether the act destroys data. The detail then takes the error tone,
@@ -48,7 +54,10 @@ export function useConfirm(): Confirm {
       <ConfirmModal
         title={pending.title}
         body={pending.body}
+        items={pending.items}
+        question={pending.question}
         confirmLabel={pending.confirmLabel}
+        cancelLabel={pending.cancelLabel}
         detail={pending.detail}
         isDanger={pending.isDanger}
         onConfirm={() => {
