@@ -549,6 +549,9 @@ class OverlayMemberships:
         self._news = threading.Event()
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
+        # Locked across a write onto a binding, so ``stop_keeping`` waits for it.
+        self._keep_lock = threading.Lock()
+        self._is_keeping = True
 
     # --- what the page draws ---
 
@@ -739,9 +742,14 @@ class OverlayMemberships:
         self._thread = thread
 
     def stop(self) -> None:
-        """End the poll; every network stays as it is. Idempotent."""
+        """End the poll and a connect still logging in. Every network stays as it is. Idempotent."""
         self._stop.set()
         self._news.set()
+
+    def stop_keeping(self) -> None:
+        """End the writes onto the bindings. A write running finishes first. Idempotent."""
+        with self._keep_lock:
+            self._is_keeping = False
 
     def resume(self) -> None:
         """Connect once each hub whose network was last on and is off now."""
@@ -926,7 +934,7 @@ class OverlayMemberships:
             self._log_end("login", network, started, error.code)
             self._settle_off(hub_id, count, _refusal(error))
             return None
-        while not cancel.is_set():
+        while not cancel.is_set() and not self._stop.is_set():
             try:
                 status = driver.status(material)
             except OverlayControlError:
@@ -1061,15 +1069,18 @@ class OverlayMemberships:
         return by_provider.get(pick, materials[0])
 
     def _keep(self, hub_id: str, is_on: bool, pick: str) -> None:
-        """Write where one hub's network stands onto its binding."""
+        """Write where one hub's network stands onto its binding, until ``stop_keeping``."""
         with self._lock:
             choice = self._choices.setdefault(hub_id, {"pick": pick})
             choice["is_on"] = is_on
             choice["pick"] = pick
-        try:
-            self._keep_choice(hub_id, is_on, pick)
-        except OSError as error:
-            self._log(f"overlay: could not record the network's state: {error}")
+        with self._keep_lock:
+            if not self._is_keeping:
+                return
+            try:
+                self._keep_choice(hub_id, is_on, pick)
+            except OSError as error:
+                self._log(f"overlay: could not record the network's state: {error}")
 
 
 def _off_record() -> dict:

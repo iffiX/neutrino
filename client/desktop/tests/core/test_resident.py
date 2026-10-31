@@ -14,7 +14,8 @@ rewrite restarts only the sessions it changed and the welcome's own write
 restarts none, the exit hub chosen and followed with the tools moved in one
 activation, the disabled check per hub, a start that turns nothing on and
 clears what an unclean exit left, and a shutdown that runs its order once,
-logs a line a step, lets no step hold up the rest and ends the transport.
+logs a line a step, lets no step hold up the rest and ends the transport,
+with a virtual network's connect ending after it writing no binding.
 The state document's jobs: a refresh set per hub and cleared by its answer,
 a leave and a service press shown before the work, a duplicate press
 dropped and never answered as ``busy``, a failure kept on its row until the
@@ -1983,8 +1984,11 @@ def test_a_peer_list_change_on_a_network_that_is_on_starts_a_round(
 ):
     resident, driver = overlay_resident
     session = resident._sessions["c1"]
+    before = set(threading.enumerate())
     assert resident.connect_overlay("h1") == {}
-    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+    # The step names the route after the state reads on.
+    for step in set(threading.enumerate()) - before:
+        step.join(timeout=5)
     changes = []
     session.change_network = functools.partial(changes.append, "change")
 
@@ -2021,6 +2025,35 @@ def test_leaving_a_hub_leaves_its_network_when_no_other_hub_names_it(
 
     wait_until(lambda: len(driver.steps) == 2)
     assert driver.steps == [("join", "home"), ("leave", "home")]
+
+
+def test_a_connect_ending_after_the_shutdown_writes_no_binding(
+    overlay_resident, config_path
+):
+    resident, driver = overlay_resident
+    is_asked = threading.Event()
+    may_answer = threading.Event()
+    answer_status = driver.status
+
+    def held_status(material):
+        is_asked.set()
+        may_answer.wait(timeout=5)
+        return answer_status(material)
+
+    driver.status = held_status
+    before = set(threading.enumerate())
+    resident.connect_overlay("h1")
+    assert is_asked.wait(timeout=5)
+    steps = set(threading.enumerate()) - before
+
+    resident.shutdown()
+    written = config_path.read_bytes()
+    may_answer.set()
+    for step in steps:
+        step.join(timeout=5)
+
+    assert resident.hubs()[0]["overlay"]["state"] == "on"
+    assert config_path.read_bytes() == written
 
 
 # --- the terminals ---

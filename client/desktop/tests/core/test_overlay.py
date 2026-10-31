@@ -23,7 +23,9 @@ does not fit the state is dropped; the picker changes the engine only while
 off and nothing changes it by itself; a network the hub stops naming goes
 off with ``overlay_withdrawn``; an engine that stops by itself goes off with
 its code; a binding last on gets one connect at start; a hub's release stops
-the engine only when no other hub is on it.
+the engine only when no other hub is on it; a stop ends a connect still logging
+in with the network as it stands; a write onto a binding finishes before
+``stop_keeping`` returns, and none starts after it.
 """
 
 import functools
@@ -49,6 +51,8 @@ from neutrino_client.core.overlay import (
 from neutrino_client.exceptions import OverlayControlError
 from tests.conftest import discard
 
+# How long a test leaves a write held before it looks at a stop still waiting.
+WRITE_HELD_S = 0.2
 KEY = "SETUP-KEY-1"  # scan: allow
 NETBIRD = {
     "provider": "netbird",
@@ -521,6 +525,7 @@ class Hubs:
         routes: Every ``(hub_id, host, provider)`` a network turning on or
             off named.
         urls: ``{hub_id: [urls]}`` the bindings hold.
+        on_keep: Called inside a write onto a binding, for a test to act mid-step.
     """
 
     def __init__(self, rows):
@@ -529,6 +534,7 @@ class Hubs:
         self.kept = []
         self.routes = []
         self.urls = {}
+        self.on_keep = None
 
     def __call__(self):
         answer = []
@@ -546,6 +552,8 @@ class Hubs:
         return answer
 
     def keep(self, hub_id, is_on, pick):
+        if self.on_keep is not None:
+            self.on_keep()
         self.kept.append((hub_id, is_on, pick))
         self.choices[hub_id] = (is_on, pick)
 
@@ -940,6 +948,75 @@ def test_a_shutdown_keeps_every_network_and_counts_them():
 
     assert subject.release() == 1
     assert ("leave", "netbird") not in steps
+
+
+def test_a_stop_ends_a_connect_still_logging_in_and_leaves_its_engine():
+    threads = []
+
+    def start_thread(target) -> None:
+        threads.append(threading.Thread(target=target, daemon=True))
+        threads[-1].start()
+
+    subject, engines, hubs, steps = subject_for(
+        {"h1": [NETBIRD]}, start_thread=start_thread, login_s=60
+    )
+    engines["netbird"].address = ""
+    subject.connect("h1")
+
+    subject.stop()
+    threads[0].join(timeout=5)
+
+    assert not threads[0].is_alive()
+    assert steps == [("join", "netbird")]
+    assert hubs.kept == []
+
+
+def test_a_disconnect_ending_after_a_stop_writes_the_network_off():
+    subject, _engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+
+    subject.stop()
+    subject.disconnect("h1")
+
+    assert hubs.kept[-1] == ("h1", False, "netbird")
+
+
+def test_a_step_ending_after_stop_keeping_writes_no_binding():
+    subject, _engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
+
+    subject.stop_keeping()
+    subject.stop_keeping()
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["state"] == "on"
+    assert hubs.kept == []
+
+
+def test_stop_keeping_waits_for_a_write_running():
+    subject, _engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
+    is_writing = threading.Event()
+    may_end = threading.Event()
+
+    def on_keep() -> None:
+        is_writing.set()
+        may_end.wait(timeout=5)
+
+    hubs.on_keep = on_keep
+    connecting = threading.Thread(target=subject.connect, args=("h1",), daemon=True)
+    connecting.start()
+    assert is_writing.wait(timeout=5)
+
+    stopping = threading.Thread(target=subject.stop_keeping, daemon=True)
+    stopping.start()
+    stopping.join(timeout=WRITE_HELD_S)
+    assert stopping.is_alive()
+    assert hubs.kept == []
+
+    may_end.set()
+    stopping.join(timeout=5)
+    connecting.join(timeout=5)
+    assert not stopping.is_alive()
+    assert hubs.kept == [("h1", True, "netbird")]
 
 
 def test_no_secret_reaches_a_row():

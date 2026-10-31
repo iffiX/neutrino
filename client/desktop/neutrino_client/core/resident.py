@@ -1754,7 +1754,8 @@ class ClientResident:
         the transport ended.
         The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
-        is given up and the next runs.
+        is given up and the next runs. A virtual network's step that ends
+        after the shutdown returns writes no binding.
         """
         with self._lock:
             if self._is_shut_down:
@@ -1772,6 +1773,7 @@ class ClientResident:
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
+        self._overlay.stop_keeping()
         self._log("shut down")
 
     def _announce(self) -> None:
