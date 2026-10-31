@@ -265,7 +265,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             os.path.join(self._var_dir, AGENT_CONFIGURED_DIR_NAME, self.name)
         )
 
-    def _check_persons(self, parsed: SambaConfig) -> str:
+    def _check_persons(self, parsed: SambaConfig) -> bytes:
         """Refuse what the person's own ``smb.conf`` makes impossible.
 
         Returns:

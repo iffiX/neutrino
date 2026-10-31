@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -95,10 +96,10 @@ def password_digest(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def read_text(path: str) -> "str | None":
-    """A file's text, or None when it is not there or cannot be read."""
+def read_bytes(path: str) -> "bytes | None":
+    """A file's bytes, or None when it is not there or cannot be read."""
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as stream:
+        with open(path, "rb") as stream:
             return stream.read()
     except OSError:
         return None
@@ -108,67 +109,87 @@ def read_stock_conf() -> tuple:
     """The distribution's stock ``smb.conf``, for a machine that has none to keep.
 
     Returns:
-        ``(text, source)``: the first of :data:`SAMBA_STOCK_CONF_PATHS` that
+        ``(data, source)``: the first of :data:`SAMBA_STOCK_CONF_PATHS` that
         is there and its path, else a ``[global]`` of one line and its name.
     """
     for path in SAMBA_STOCK_CONF_PATHS:
-        text = read_text(path)
-        if text is not None:
-            return text, f"the distribution's {path}"
-    return SAMBA_MINIMAL_CONF, "a one-line [global]"
+        data = read_bytes(path)
+        if data is not None:
+            return data, f"the distribution's {path}"
+    return SAMBA_MINIMAL_CONF.encode("utf-8"), "a one-line [global]"
 
 
-def include_line() -> str:
-    """The one line of ``smb.conf`` that is the module's."""
-    return f"   include = {SAMBA_MODULE_CONF_PATH}"
+def include_line() -> bytes:
+    """The one line of ``smb.conf`` that is the module's, without its ending."""
+    return f"   include = {SAMBA_MODULE_CONF_PATH}".encode("utf-8")
 
 
-def is_include_line(line: str) -> bool:
+def is_include_line(line: bytes) -> bool:
     """Whether a line of ``smb.conf`` is the module's include line."""
-    key, _, value = line.strip().partition("=")
-    return key.strip().lower() == "include" and value.strip() == SAMBA_MODULE_CONF_PATH
+    key, _, value = line.strip().partition(b"=")
+    return key.strip().lower() == b"include" and (
+        value.strip() == SAMBA_MODULE_CONF_PATH.encode("utf-8")
+    )
 
 
-def has_include_line(text: str) -> bool:
+def has_include_line(data: bytes) -> bool:
     """Whether ``smb.conf`` already includes the module's file."""
-    return any(is_include_line(line) for line in text.splitlines())
+    return any(is_include_line(line) for line in _conf_lines(data))
 
 
-def with_include_line(text: str) -> str:
+def with_include_line(data: bytes) -> bytes:
     """``smb.conf`` with the module's include line after its ``[global]`` header.
 
     Args:
-        text: The file without the line.
+        data: The file without the line.
 
     Returns:
-        The file with the line added once; in a file with no ``[global]``
-        header the line comes first, and Samba reads a line before any
-        section as a global line.
+        The file with the line added once and every other byte kept. The
+        line ends as the file's first line ends. In a file with no
+        ``[global]`` header the line comes first, and Samba reads a line
+        before any section as a global line. After a header with no line
+        ending the ending goes before the line, and the file still has no
+        last newline.
     """
-    lines = text.splitlines()
+    lines = _conf_lines(data)
+    ending = _conf_line_ending(lines)
     for index, line in enumerate(lines):
-        if line.strip().lower() == SAMBA_GLOBAL_HEADER:
-            lines.insert(index + 1, include_line())
-            return "\n".join(lines) + "\n"
-    return include_line() + "\n" + text
+        if line.strip().lower() == SAMBA_GLOBAL_HEADER.encode("utf-8"):
+            is_ended = line.endswith(b"\n")
+            added = include_line() + ending if is_ended else ending + include_line()
+            lines.insert(index + 1, added)
+            return b"".join(lines)
+    return include_line() + ending + data
 
 
-def without_include_line(text: str) -> str:
-    """``smb.conf`` without the module's include line."""
-    lines = [line for line in text.splitlines() if not is_include_line(line)]
-    return "\n".join(lines) + ("\n" if lines else "")
+def without_include_line(data: bytes) -> bytes:
+    """``smb.conf`` without the module's include line.
+
+    Args:
+        data: The file.
+
+    Returns:
+        The file with every other byte kept. Removing a line with no line
+        ending also removes the ending before it, and the file still has no
+        last newline.
+    """
+    lines = _conf_lines(data)
+    kept = [line for line in lines if not is_include_line(line)]
+    if kept and is_include_line(lines[-1]) and not lines[-1].endswith(b"\n"):
+        kept[-1] = kept[-1].removesuffix(_conf_line_ending(lines))
+    return b"".join(kept)
 
 
-def plan_smb_conf(current: "str | None", *, stock: tuple, is_served: bool) -> tuple:
+def plan_smb_conf(current: "bytes | None", *, stock: tuple, is_served: bool) -> tuple:
     """What ``smb.conf`` is to hold beside the module's file. Pure.
 
     Args:
         current: The file as it is, None when the machine has none.
-        stock: ``(text, source)`` as :func:`read_stock_conf` gives them.
+        stock: ``(data, source)`` as :func:`read_stock_conf` gives them.
         is_served: Whether the module serves at least one share of its own.
 
     Returns:
-        ``(text, note)``: the file to write, and what changed in words,
+        ``(data, note)``: the file to write, and what changed in words,
         empty when the file stays as it is. The file is the person's,
         whoever wrote it, an earlier version of this module included, and
         is left as it is; a missing file is the stock text. While the
@@ -177,26 +198,26 @@ def plan_smb_conf(current: "str | None", *, stock: tuple, is_served: bool) -> tu
         without it is left byte for byte.
     """
     notes = []
-    text = current
-    if text is None:
+    data = current
+    if data is None:
         if not is_served:
-            return "", ""
-        text, source = stock
+            return b"", ""
+        data, source = stock
         notes.append(f"wrote {source}")
-    if is_served and not has_include_line(text):
-        text = with_include_line(text)
+    if is_served and not has_include_line(data):
+        data = with_include_line(data)
         notes.append("added the include line")
-    elif not is_served and has_include_line(text):
-        text = without_include_line(text)
+    elif not is_served and has_include_line(data):
+        data = without_include_line(data)
         notes.append("took the include line out")
-    return text, "; ".join(notes)
+    return data, "; ".join(notes)
 
 
-def testparm(smb_conf: str, rendered: str) -> None:
+def testparm(smb_conf: bytes, rendered: str) -> None:
     """Have Samba check ``smb.conf`` as it will be with the module's file.
 
     Args:
-        smb_conf: The ``smb.conf`` text, with the include line.
+        smb_conf: The ``smb.conf`` bytes, with the include line.
         rendered: The module's own file.
 
     Raises:
@@ -211,8 +232,12 @@ def testparm(smb_conf: str, rendered: str) -> None:
         conf_path = os.path.join(directory, "smb.conf")
         with open(module_path, "w", encoding="utf-8") as stream:
             stream.write(rendered)
-        with open(conf_path, "w", encoding="utf-8") as stream:
-            stream.write(smb_conf.replace(SAMBA_MODULE_CONF_PATH, module_path))
+        with open(conf_path, "wb") as stream:
+            stream.write(
+                smb_conf.replace(
+                    SAMBA_MODULE_CONF_PATH.encode("utf-8"), module_path.encode("utf-8")
+                )
+            )
         result = run(["testparm", "-s", conf_path], is_checked=False)
     finally:
         shutil.rmtree(directory, ignore_errors=True)
@@ -262,6 +287,18 @@ def check_person_config(
 def _is_loopback_word(word: str) -> bool:
     lowered = word.lower()
     return lowered.startswith(("127.", "::1", "localhost"))
+
+
+def _conf_lines(data: bytes) -> list:
+    """The lines of ``smb.conf``, each with its ending. Samba ends a line at LF alone."""
+    return io.BytesIO(data).readlines()
+
+
+def _conf_line_ending(lines: list) -> bytes:
+    """The line ending of ``smb.conf``. CRLF when its first line ends in CR or CRLF, else LF."""
+    if lines and lines[0].rstrip(b"\n").endswith(b"\r"):
+        return b"\r\n"
+    return b"\n"
 
 
 def parse_smb_conf(text: str) -> tuple:
@@ -318,16 +355,16 @@ class SambaConfigReader:
             return {}, []
         return _testparm_output(SAMBA_CONF_PATH)
 
-    def read_persons(self, text: str) -> tuple:
+    def read_persons(self, data: bytes) -> tuple:
         """The person's own configuration: ``smb.conf`` without the module's line.
 
         Args:
-            text: ``smb.conf`` as the next apply leaves it
+            data: ``smb.conf`` as the next apply leaves it
                 (:meth:`SambaConfigApplier.plan`), so a whole file an
                 earlier version rendered is not mistaken for the person's.
 
         Returns:
-            ``(global, shares)`` of the text with the include line taken
+            ``(global, shares)`` of the file with the include line taken
             out, so the module's shares are not among them; both empty
             when testparm is not there.
         """
@@ -335,8 +372,8 @@ class SambaConfigReader:
             return {}, []
         handle, path = tempfile.mkstemp(prefix="smb_", suffix=".conf")
         try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(without_include_line(text))
+            with os.fdopen(handle, "wb") as stream:
+                stream.write(without_include_line(data))
             return _testparm_output(path)
         finally:
             os.unlink(path)
@@ -598,12 +635,12 @@ class SambaConfigApplier:
             is_served: Whether the module serves at least one share of its own.
 
         Returns:
-            ``(text, note)`` as :func:`plan_smb_conf` gives them, for the
-            file, the backup and the stock text on this machine; an empty
-            text when the machine has no file and the module serves nothing.
+            ``(data, note)`` as :func:`plan_smb_conf` gives them, for the
+            file, the backup and the stock text on this machine; empty
+            bytes when the machine has no file and the module serves nothing.
         """
         return plan_smb_conf(
-            read_text(SAMBA_CONF_PATH), stock=read_stock_conf(), is_served=is_served
+            read_bytes(SAMBA_CONF_PATH), stock=read_stock_conf(), is_served=is_served
         )
 
     def apply(
@@ -640,10 +677,10 @@ class SambaConfigApplier:
         is_served = bool(config.served_shares())
         smb_conf, note = self.plan(is_served=is_served)
         notes = [note] if note else []
-        current = read_text(SAMBA_CONF_PATH)
+        current = read_bytes(SAMBA_CONF_PATH)
         if not is_served:
             self._remove_own()
-            if smb_conf != (current or ""):
+            if smb_conf != (current or b""):
                 _write_file(SAMBA_CONF_PATH, smb_conf)
             if notes and is_started and unit_state(self._unit) == "active":
                 run(["systemctl", "reload", self._unit])
@@ -652,7 +689,7 @@ class SambaConfigApplier:
         testparm(smb_conf, rendered)
         self._ensure_share_directories(config)
         self._write_user_files(dict(user_files or {}))
-        _write_file(SAMBA_MODULE_CONF_PATH, rendered)
+        _write_file(SAMBA_MODULE_CONF_PATH, rendered.encode("utf-8"))
         if smb_conf != current:
             _write_file(SAMBA_CONF_PATH, smb_conf)
         if not is_started:
@@ -666,9 +703,9 @@ class SambaConfigApplier:
     def remove(self) -> None:
         """Delete the module's file and its users' files, and take the include line out of ``smb.conf``."""
         self._remove_own()
-        text = read_text(SAMBA_CONF_PATH)
-        if text is not None and has_include_line(text):
-            _write_file(SAMBA_CONF_PATH, without_include_line(text))
+        data = read_bytes(SAMBA_CONF_PATH)
+        if data is not None and has_include_line(data):
+            _write_file(SAMBA_CONF_PATH, without_include_line(data))
 
     def _remove_own(self) -> None:
         with contextlib.suppress(OSError):
@@ -698,7 +735,7 @@ class SambaConfigApplier:
             if name.endswith(SAMBA_USERS_FILE_SUFFIX) and name not in user_files:
                 os.unlink(os.path.join(SAMBA_USERS_DIR, name))
         for name, text in user_files.items():
-            _write_file(os.path.join(SAMBA_USERS_DIR, name), text)
+            _write_file(os.path.join(SAMBA_USERS_DIR, name), text.encode("utf-8"))
 
 
 def share_owner(share, config: SambaConfig) -> str:
@@ -724,14 +761,14 @@ def share_owner(share, config: SambaConfig) -> str:
     return ""
 
 
-def _write_file(path: str, text: str) -> None:
+def _write_file(path: str, data: bytes) -> None:
     """Write a world-readable file in one move, in place of a symlink too."""
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=directory, prefix=".neutrino_")
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(text)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
         os.chmod(temporary, 0o644)
         if os.path.islink(path):
             os.unlink(path)

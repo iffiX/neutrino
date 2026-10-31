@@ -109,7 +109,7 @@ class FakeApplier:
 
     def plan(self, *, is_served):
         FakeApplier.served.append(is_served)
-        return "[global]\n   include = /etc/samba/neutrino.conf\n", ""
+        return b"[global]\n   include = /etc/samba/neutrino.conf\n", ""
 
     def apply(self, rendered, *, config, user_files=None, is_started=True):
         FakeApplier.applied.append((self.unit, rendered, config))
@@ -126,13 +126,13 @@ class FakeApplier:
 
 class FakeReader:
     persons: tuple = ({}, [])
-    judged = ""
+    judged = b""
 
     def read(self):
         return {}, []
 
-    def read_persons(self, text):
-        FakeReader.judged = text
+    def read_persons(self, data):
+        FakeReader.judged = data
         return FakeReader.persons
 
 
@@ -287,7 +287,7 @@ def test_validate_has_samba_check_the_render_with_the_planned_smb_conf(
 
     runner.validate(CONFIG)
 
-    assert checked[0][0] == "[global]\n   include = /etc/samba/neutrino.conf\n"
+    assert checked[0][0] == b"[global]\n   include = /etc/samba/neutrino.conf\n"
     assert "[share]" in checked[0][1]
     assert checked[0][1].endswith("[global]\n")
 
@@ -310,7 +310,7 @@ def test_the_persons_own_samba_refuses_before_anything_is_applied(
         assert refused.value.code == code
     assert FakeApplier.applied == []
     assert FakeUsers.made == []
-    assert FakeReader.judged == "[global]\n   include = /etc/samba/neutrino.conf\n"
+    assert FakeReader.judged == b"[global]\n   include = /etc/samba/neutrino.conf\n"
 
 
 def test_apply_renders_applies_and_keeps_the_configuration(runner):

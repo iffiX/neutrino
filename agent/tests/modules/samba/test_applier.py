@@ -2,9 +2,11 @@
 
 What these pin beside the reads: a missing share folder is made and an
 existing one is left as it is; ``smb.conf`` stays the person's and gets
-the module's include line once, after its ``[global]`` header; the person's
-lines after that line stay where they were once the module's file is read in
-its place; a missing ``smb.conf`` is the distribution's stock file with the
+the module's include line once, after its ``[global]`` header; adding and
+taking out that line keeps every other byte of the file, a comment in Latin-1,
+CRLF lines and a missing last newline among them, and Samba checks those bytes;
+the person's lines after that line stay where they were once the module's file
+is read in its place; a missing ``smb.conf`` is the distribution's stock file with the
 line; a whole ``smb.conf`` an earlier version rendered is the person's and
 only gets the line; the module's shares go to its own file; an uninstall deletes that
 file and takes the line out; a stop stops the unit and disables it; the
@@ -20,6 +22,7 @@ home and no login shell; an account a share writes as that is no account
 of the machine's is ``account_unknown``.
 """
 
+import itertools
 import os
 import stat
 
@@ -38,6 +41,7 @@ from neutrino_agent.modules.samba.applier import (
     plan_smb_conf,
     share_owner,
     testparm as samba_testparm,
+    with_include_line,
     without_include_line,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
@@ -87,15 +91,31 @@ def one_share(tmp_path) -> SambaConfig:
 
 INCLUDE = "   include = "
 MARKER = applier_module.SAMBA_CONF_MARKER
-MEDIA = "[media]\n   path = /srv/media\n"
-INCLUDE_LINE = f"{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n"
+MEDIA = b"[media]\n   path = /srv/media\n"
+INCLUDE_LINE = f"{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n".encode("utf-8")
+# A person's file: a comment in Latin-1, CRLF lines, no last newline.
+PERSONS_BYTES = (
+    b"# caf\xe9 de Jos\xe9\r\n"
+    b"[global]\r\n"
+    b"   workgroup = HOME\r\n"
+    b"\r\n"
+    b"[media]\r\n"
+    b"   path = /srv/media"
+)
+# Pieces of the generated files.
+FILE_PIECES = (b"[global]", b"# \xe9\x85\x0c", b"   a = b", b"\r", b"\n")
+FILE_PIECES_MAX = 4
 
 
-def sections_as_samba_reads(smb_conf: str, module_file: str) -> dict:
+def sections_as_samba_reads(smb_conf: bytes, module_file: str) -> dict:
     """Each section's lines in Samba's reading order, the module's file in place of its line."""
     lines = []
     for line in smb_conf.splitlines():
-        lines += module_file.splitlines() if is_include_line(line) else [line]
+        lines += (
+            module_file.splitlines()
+            if is_include_line(line)
+            else [line.decode("utf-8")]
+        )
     section = "global"
     sections: dict = {section: []}
     for line in lines:
@@ -157,7 +177,7 @@ def test_testparm_refuses_typed_with_sambas_own_words(box):
     commands.answers[("testparm", "-s")] = (1, "")
 
     with pytest.raises(ModuleApplyError) as refused:
-        samba_testparm("[global]\n", "[global]\n")
+        samba_testparm(b"[global]\n", "[global]\n")
 
     assert refused.value.code == "samba_config_rejected"
     assert refused.value.params["detail"] == "refused"
@@ -167,7 +187,7 @@ def test_a_missing_testparm_is_samba_missing(box, monkeypatch):
     monkeypatch.setattr(applier_module.shutil, "which", lambda name: None)
 
     with pytest.raises(ModuleApplyError) as refused:
-        samba_testparm("[global]\n", "[global]\n")
+        samba_testparm(b"[global]\n", "[global]\n")
 
     assert refused.value.code == "samba_missing"
 
@@ -317,30 +337,100 @@ def test_the_sweep_takes_every_neutrino_user_and_credential_and_no_other(box):
 
 
 def test_the_plan_is_pure_and_puts_the_line_first_in_a_file_without_a_global_header():
-    text, note = plan_smb_conf(MEDIA, stock=("[global]\n", "stock"), is_served=True)
+    data, note = plan_smb_conf(MEDIA, stock=(b"[global]\n", "stock"), is_served=True)
 
-    assert text == f"{INCLUDE_LINE}{MEDIA}"
+    assert data == INCLUDE_LINE + MEDIA
     assert note == "added the include line"
-    assert plan_smb_conf(None, stock=("[global]\n", "a stock"), is_served=True) == (
-        f"[global]\n{INCLUDE_LINE}",
+    assert plan_smb_conf(None, stock=(b"[global]\n", "a stock"), is_served=True) == (
+        b"[global]\n" + INCLUDE_LINE,
         "wrote a stock; added the include line",
     )
-    assert plan_smb_conf(text, stock=("", ""), is_served=True) == (text, "")
-    assert plan_smb_conf(text, stock=("", ""), is_served=False) == (
+    assert plan_smb_conf(data, stock=(b"", ""), is_served=True) == (data, "")
+    assert plan_smb_conf(data, stock=(b"", ""), is_served=False) == (
         MEDIA,
         "took the include line out",
     )
-    assert plan_smb_conf(None, stock=("x", "s"), is_served=False) == ("", "")
-    persons = "[global]\n   workgroup = HOME\n"
-    assert plan_smb_conf(persons, stock=("", ""), is_served=False) == (persons, "")
-    assert without_include_line(text) == MEDIA
+    assert plan_smb_conf(None, stock=(b"x", "s"), is_served=False) == (b"", "")
+    persons = b"[global]\n   workgroup = HOME\n"
+    assert plan_smb_conf(persons, stock=(b"", ""), is_served=False) == (persons, "")
+    assert without_include_line(data) == MEDIA
+
+
+def test_adding_and_taking_out_the_line_keeps_every_other_byte_of_the_persons_file(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    smb_conf = tmp_path / "etc/smb.conf"
+    smb_conf.write_bytes(PERSONS_BYTES)
+    applier = SambaConfigApplier(unit="smbd.service")
+    line = f"{INCLUDE}{tmp_path / 'etc/neutrino.conf'}\r\n".encode("utf-8")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    included = smb_conf.read_bytes()
+    applier.remove()
+    removed = smb_conf.read_bytes()
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    applier.apply(f"{MARKER}\n", config=SambaConfig())
+    unserved = smb_conf.read_bytes()
+
+    assert included == PERSONS_BYTES.replace(b"[global]\r\n", b"[global]\r\n" + line)
+    assert removed == PERSONS_BYTES
+    assert unserved == PERSONS_BYTES
+
+
+def test_samba_checks_the_persons_own_bytes(box):
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_bytes(PERSONS_BYTES)
+    seen = []
+
+    def read_what_samba_reads(command):
+        with open(command[2], "rb") as stream:
+            seen.append(stream.read())
+        return 0, ""
+
+    commands.answers[("testparm", "-s")] = (read_what_samba_reads, "")
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    SambaConfigReader().read_persons(applier.plan(is_served=True)[0])
+
+    assert b"# caf\xe9 de Jos\xe9\r\n[global]\r\n   include = " in seen[0]
+    assert seen[1] == PERSONS_BYTES
+
+
+@pytest.mark.parametrize(
+    "persons, included",
+    [
+        (b"[global]\n", b"[global]\n" + INCLUDE_LINE),
+        (
+            b"[global]\r\n   a = b\r\n",
+            b"[global]\r\n" + INCLUDE_LINE[:-1] + b"\r\n   a = b\r\n",
+        ),
+        (b"[global]", b"[global]\n" + INCLUDE_LINE[:-1]),
+        (b"# mine\r\n[global]", b"# mine\r\n[global]\r\n" + INCLUDE_LINE[:-1]),
+        (b"[media]\r\n", INCLUDE_LINE[:-1] + b"\r\n[media]\r\n"),
+        (b"[media]", INCLUDE_LINE + b"[media]"),
+        (b"", INCLUDE_LINE),
+    ],
+)
+def test_the_line_takes_the_files_own_ending(persons, included):
+    assert with_include_line(persons) == included
+    assert without_include_line(included) == persons
+
+
+def test_taking_the_line_out_of_any_file_gives_its_bytes_back():
+    for count in range(FILE_PIECES_MAX + 1):
+        for pieces in itertools.product(FILE_PIECES, repeat=count):
+            persons = b"".join(pieces)
+
+            assert without_include_line(with_include_line(persons)) == persons
 
 
 @pytest.mark.parametrize(
     "persons, persons_global",
     [
-        (f"[global]\n   workgroup = HOME\n\n{MEDIA}", ["workgroup = HOME"]),
-        (f"workgroup = HOME\n\n{MEDIA}", ["workgroup = HOME"]),
+        (b"[global]\n   workgroup = HOME\n\n" + MEDIA, ["workgroup = HOME"]),
+        (b"workgroup = HOME\n\n" + MEDIA, ["workgroup = HOME"]),
         (MEDIA, []),
     ],
 )
@@ -349,9 +439,9 @@ def test_a_persons_lines_after_the_include_line_stay_where_they_were(
 ):
     rendered = SambaConfigRenderer(config=one_share(tmp_path)).render()
 
-    text, _ = plan_smb_conf(persons, stock=("", ""), is_served=True)
+    data, _ = plan_smb_conf(persons, stock=(b"", ""), is_served=True)
 
-    sections = sections_as_samba_reads(text, rendered)
+    sections = sections_as_samba_reads(data, rendered)
     assert sections["global"] == persons_global
     assert sections["media"] == ["path = /srv/media"]
     assert "workgroup = HOME" not in sections["s"]
@@ -360,8 +450,8 @@ def test_a_persons_lines_after_the_include_line_stay_where_they_were(
 @pytest.mark.parametrize(
     "earlier",
     [
-        f"[global]\n{INCLUDE_LINE}   workgroup = HOME\n\n{MEDIA}",
-        f"[global]\n{INCLUDE_LINE}\nworkgroup = HOME\n\n{MEDIA}",
+        b"[global]\n" + INCLUDE_LINE + b"   workgroup = HOME\n\n" + MEDIA,
+        b"[global]\n" + INCLUDE_LINE + b"\nworkgroup = HOME\n\n" + MEDIA,
     ],
 )
 def test_an_include_line_an_earlier_build_wrote_stays_and_reads_right(
@@ -369,10 +459,10 @@ def test_an_include_line_an_earlier_build_wrote_stays_and_reads_right(
 ):
     rendered = SambaConfigRenderer(config=one_share(tmp_path)).render()
 
-    text, note = plan_smb_conf(earlier, stock=("", ""), is_served=True)
+    data, note = plan_smb_conf(earlier, stock=(b"", ""), is_served=True)
 
-    assert (text, note) == (earlier, "")
-    sections = sections_as_samba_reads(text, rendered)
+    assert (data, note) == (earlier, "")
+    sections = sections_as_samba_reads(data, rendered)
     assert sections["global"] == ["workgroup = HOME"]
     assert "workgroup = HOME" not in sections["s"]
 
@@ -476,7 +566,7 @@ def test_the_persons_configuration_is_read_without_the_modules_line(box):
     commands.answers[("testparm", "-s")] = (answer, "")
     planned = (
         f"[global]\n{INCLUDE}{tmp_path / 'etc/neutrino.conf'}\n   workgroup = HOME\n"
-    )
+    ).encode("utf-8")
 
     global_section, shares = SambaConfigReader().read_persons(planned)
 
