@@ -395,7 +395,7 @@
   "ui.modules.step.update_check": "读取更新设置",
   "ui.modules.step.verify": "检查安装结果",
   "ui.modules.step.wait_app": "等待应用启动",
-  "ui.modules.step.wait_containers": "等待容器模块",
+  "ui.modules.step.wait_module": "等待“{module}”",
   "ui.modules.step.windows_features": "打开 Windows 功能",
   "ui.modules.stop": "停止",
   "ui.modules.stopped_hint": "模块已停止，这些设置在下次启动时生效。",

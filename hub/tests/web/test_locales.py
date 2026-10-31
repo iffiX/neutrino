@@ -119,7 +119,7 @@ MODULE_STEP_PARAMS = {
     "start": set(),
     "stop": set(),
     "uninstall": set(),
-    "wait_containers": set(),
+    "wait_module": {"module"},
     "pull": {"image"},
     "render": set(),
     "windows_features": set(),

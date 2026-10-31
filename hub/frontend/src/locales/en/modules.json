@@ -395,7 +395,7 @@
   "ui.modules.step.update_check": "Read the update setting",
   "ui.modules.step.verify": "Check the install",
   "ui.modules.step.wait_app": "Wait for the app to start",
-  "ui.modules.step.wait_containers": "Wait for Containers",
+  "ui.modules.step.wait_module": "Wait for {module}",
   "ui.modules.step.windows_features": "Turn on Windows features",
   "ui.modules.stop": "Stop",
   "ui.modules.stopped_hint": "The module is stopped; these settings take effect at the next Start.",

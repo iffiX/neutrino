@@ -92,7 +92,7 @@ export function ModuleTaskSteps({
               isPulsing={status === "running"}
             />
             <span className="module_step_name">
-              {stepWords(step, module, artifactCount)}
+              {stepWords(step, module, artifactCount, manifestTitles)}
             </span>
             {detail !== "" && (
               <span className="module_step_detail">{stripAnsi(detail)}</span>
@@ -122,13 +122,14 @@ function stepStatus(
   return isFailed ? "failed" : "done";
 }
 
-/** A step's words with its params, or its artifact's own words where the
- * catalog has them; a step the catalog lacks reads as its name.
- * `artifactCount` counts the plan's `artifact` steps. */
+/** A step's words with its params, a module it names by its title, or its
+ * artifact's own words where the catalog has them; a step the catalog lacks
+ * reads as its name. `artifactCount` counts the plan's `artifact` steps. */
 function stepWords(
   step: ModuleTaskStep,
   module: string,
   artifactCount: number,
+  manifestTitles: Record<string, string>,
 ): string {
   const param = ARTIFACT_PARAMS[step.name];
   if (param !== undefined) {
@@ -141,7 +142,9 @@ function stepWords(
     return t("ui.modules.step.artifact_alone");
   }
   const key = `ui.modules.step.${step.name}`;
-  return hasWord(key) ? t(key, codeParams(step.params)) : step.name;
+  return hasWord(key)
+    ? t(key, withModuleTitle(codeParams(step.params), manifestTitles))
+    : step.name;
 }
 
 /** What a step waits for, in the code catalog's words; a code the catalog
