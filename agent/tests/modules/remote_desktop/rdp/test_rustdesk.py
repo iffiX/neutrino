@@ -646,6 +646,9 @@ def test_no_options_table_reads_as_no_options(tmp_path, text):
     assert rustdesk.read_options(str(path)) == {}
     assert rustdesk.read_options(str(tmp_path / "absent.toml")) == {}
 
+    path.write_bytes(b"[options]\n\xff\xfe")
+    assert rustdesk.read_options(str(path)) == {}
+
 
 def test_the_options_are_held_in_any_order(tmp_path):
     path = tmp_path / "RustDesk2.toml"

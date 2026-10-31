@@ -1296,6 +1296,252 @@ def test_a_link_planted_after_the_switch_is_not_written_through(linux_host):
     assert not (settings / "RustDesk2.toml").is_symlink()
 
 
+# --- an account made after the switch went on ---
+
+SHARE_OPTIONS = (
+    "rendezvous_server = ''\n\n[options]\ndirect-server = 'Y'\n"
+    "relay-server = '127.0.0.1'\ncustom-rendezvous-server = '127.0.0.1'\n"
+)
+SHARE_IDENTITY = "enc_id = '00sealed'\nkey_pair = [[1], [2]]\npassword = '00sealed'\n"
+
+
+def _later_account(host, options=SHARE_OPTIONS, identity=SHARE_IDENTITY):
+    """The share stands, and an account made since holds what a session's host
+    wrote."""
+    host.seat.seated = []
+    host.set_switch(True)
+    return _account(
+        host, "late", ("RustDesk2.toml", options), ("RustDesk.toml", identity)
+    )
+
+
+def test_the_switch_off_deletes_the_files_of_an_account_made_after_the_switch(
+    linux_host,
+):
+    settings = _later_account(linux_host)
+
+    linux_host.set_switch(False)
+
+    assert not (settings / "RustDesk2.toml").exists()
+    assert not (settings / "RustDesk.toml").exists()
+    assert not settings.exists()
+
+
+def test_the_switch_off_leaves_a_folder_holding_another_file(linux_host):
+    settings = _later_account(linux_host)
+    (settings / "RustDesk_local.toml").write_text("[options]\n")
+
+    linux_host.set_switch(False)
+
+    assert not (settings / "RustDesk2.toml").exists()
+    assert not (settings / "RustDesk.toml").exists()
+    assert (settings / "RustDesk_local.toml").exists()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        "[options]\ncustom-rendezvous-server = 'mine.example'\n"
+        "relay-server = 'mine.example'\n",
+        "[options]\ncustom-rendezvous-server = '127.0.0.1'\n"
+        "relay-server = 'mine.example'\n",
+        "[options]\ncustom-rendezvous-server = 'mine.example'\n"
+        "relay-server = '127.0.0.1'\n",
+        "[options]\ndirect-server = 'Y'\n",
+        "",
+    ],
+)
+def test_a_file_without_the_loopback_servers_stays_with_its_account(
+    linux_host, options
+):
+    settings = _later_account(linux_host, options=options)
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == options
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_an_account_holding_only_its_password_file_keeps_it(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    host.set_switch(True)
+    settings = _account(host, "late", ("RustDesk.toml", SHARE_IDENTITY))
+
+    host.set_switch(False)
+
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_an_options_file_that_is_no_text_stays_and_the_switch_goes_off(linux_host):
+    settings = _later_account(linux_host)
+    (settings / "RustDesk2.toml").write_bytes(b"\xff\xfe\x00")
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_bytes() == b"\xff\xfe\x00"
+    assert (settings / "RustDesk.toml").exists()
+    assert "restore" in _steps(linux_host.applier)
+
+
+def test_an_options_path_that_is_no_regular_file_is_not_opened(linux_host):
+    settings = _later_account(linux_host)
+    (settings / "RustDesk2.toml").unlink()
+    os.mkfifo(settings / "RustDesk2.toml")
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").exists()
+    assert (settings / "RustDesk.toml").exists()
+
+
+def test_a_later_settings_folder_behind_a_link_is_left_alone(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    host.set_switch(True)
+    _account(host, "late")
+    elsewhere = host.root / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "RustDesk2.toml").write_text(SHARE_OPTIONS)
+    (elsewhere / "RustDesk.toml").write_text(SHARE_IDENTITY)
+    config = host.root / "home" / "late" / ".config"
+    config.mkdir()
+    (config / "rustdesk").symlink_to(elsewhere)
+
+    host.set_switch(False)
+
+    assert (elsewhere / "RustDesk2.toml").read_text() == SHARE_OPTIONS
+    assert (elsewhere / "RustDesk.toml").read_text() == SHARE_IDENTITY
+    assert (config / "rustdesk").is_symlink()
+
+
+def test_a_later_options_file_behind_a_link_keeps_both_files(linux_host):
+    settings = _later_account(linux_host)
+    target = linux_host.root / "target"
+    target.write_text(SHARE_OPTIONS)
+    (settings / "RustDesk2.toml").unlink()
+    (settings / "RustDesk2.toml").symlink_to(target)
+
+    linux_host.set_switch(False)
+
+    assert target.read_text() == SHARE_OPTIONS
+    assert (settings / "RustDesk2.toml").is_symlink()
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_a_later_password_file_behind_a_link_is_not_deleted_through(linux_host):
+    settings = _later_account(linux_host)
+    target = linux_host.root / "target"
+    target.write_text(SHARE_IDENTITY)
+    (settings / "RustDesk.toml").unlink()
+    (settings / "RustDesk.toml").symlink_to(target)
+
+    linux_host.set_switch(False)
+
+    assert target.read_text() == SHARE_IDENTITY
+    assert (settings / "RustDesk.toml").is_symlink()
+    assert not (settings / "RustDesk2.toml").exists()
+
+
+def test_a_home_outside_the_account_list_is_left_alone(linux_host):
+    settings = _later_account(linux_host)
+    linux_host.seat.homes.clear()
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == SHARE_OPTIONS
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_a_later_home_that_refuses_a_removal_is_logged_and_the_switch_goes_off(
+    linux_host, monkeypatch
+):
+    settings = _later_account(linux_host)
+    unlink = os.unlink
+
+    def refuse(path, *args, **kwargs):
+        if os.sep + "late" + os.sep in str(path):
+            raise PermissionError(f"refused {path}")
+        unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", refuse)
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk.toml").exists()
+    assert "restore" in _steps(linux_host.applier)
+    assert any("could not delete" in line for line in linux_host.lines)
+
+
+def test_a_new_password_does_not_keep_a_later_accounts_files_as_its_own(linux_host):
+    settings = _later_account(linux_host)
+    linux_host.take_seat_password("new-pass")
+    linux_host.set_switch(True)
+
+    linux_host.set_switch(False)
+
+    assert not (settings / "RustDesk2.toml").exists()
+    assert not (settings / "RustDesk.toml").exists()
+
+
+def test_a_new_password_does_not_keep_a_later_seated_accounts_files_as_its_own(
+    linux_host,
+):
+    settings = _later_account(linux_host)
+    linux_host.seat.seated = ["late"]
+    linux_host.take_seat_password("new-pass")
+    linux_host.set_switch(True)
+
+    linux_host.set_switch(False)
+
+    assert not (settings / "RustDesk2.toml").exists()
+    assert not (settings / "RustDesk.toml").exists()
+
+
+def test_servers_a_person_set_before_a_new_password_come_back_at_the_switch_off(
+    linux_host,
+):
+    options = "[options]\ncustom-rendezvous-server = 'mine.example'\n"
+    settings = _later_account(linux_host, options=options)
+    linux_host.take_seat_password("new-pass")
+    linux_host.set_switch(True)
+    assert "127.0.0.1" in (settings / "RustDesk2.toml").read_text()
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == options
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_an_accounts_own_loopback_servers_from_before_the_switch_come_back(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    settings = _account(
+        host,
+        "sam",
+        ("RustDesk2.toml", SHARE_OPTIONS),
+        ("RustDesk.toml", SHARE_IDENTITY),
+    )
+    host.set_switch(True)
+    host.take_seat_password("new-pass")
+    host.set_switch(True)
+
+    host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == SHARE_OPTIONS
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
+def test_a_switch_off_without_a_record_deletes_no_accounts_files(linux_host):
+    settings = _later_account(linux_host)
+    os.unlink(linux_host.root / "var" / "remote_desktop" / "registered.json")
+
+    linux_host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == SHARE_OPTIONS
+    assert (settings / "RustDesk.toml").read_text() == SHARE_IDENTITY
+
+
 # --- the service's settings at each report ---
 
 

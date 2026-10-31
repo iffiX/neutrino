@@ -462,12 +462,14 @@ class RdpShareHost:
             step = STEP_STOP
             applier.stop_hosts()
             step = STEP_SETTINGS
-            for path in paths:
+            is_share_older = bool(registered.get("settings"))
+            for path in paths[:2]:
                 self._keep_settings(registered, path)
+            self._keep_account_settings(registered, paths[2:], is_share_older)
             write_json(self._registered_path(), registered)
             for path in written:
                 rustdesk.write_settings(path, self._render(path, password), home)
-            self._settle_other_accounts(registered, home)
+            self._settle_other_accounts(registered, home, is_share_older)
             step = STEP_REGISTER
             applier.register()
             step = STEP_START
@@ -497,6 +499,7 @@ class RdpShareHost:
             applier.unregister()
             step = STEP_SETTINGS
             self._restore_settings(registered)
+            self._remove_later_account_settings(registered)
             step = STEP_RESTORE
             applier.restore()
         except STEP_ERRORS as error:
@@ -533,7 +536,9 @@ class RdpShareHost:
             if given:
                 self._log(f"remote_desktop: gave {', '.join(given)} to its owner")
 
-    def _settle_other_accounts(self, registered: dict, seat_home: str) -> None:
+    def _settle_other_accounts(
+        self, registered: dict, seat_home: str, is_share_older: bool
+    ) -> None:
         """Copy aside the settings files of every other account that can come
         to the screen, and write its options. A home that refuses is logged
         and skipped.
@@ -542,6 +547,8 @@ class RdpShareHost:
             registered: The record that names each kept copy.
             seat_home: The home of the account at the screen, empty for
                 nobody.
+            is_share_older: Whether the record already named kept files before
+                this press.
 
         Raises:
             OSError: When the record cannot be written.
@@ -550,8 +557,9 @@ class RdpShareHost:
             if home == seat_home:
                 continue
             try:
-                for path in self._settings_paths(home)[2:]:
-                    self._keep_settings(registered, path)
+                paths = self._settings_paths(home)[2:]
+                self._keep_account_settings(registered, paths, is_share_older)
+                for path in paths:
                     if not _is_password_file(path):
                         rustdesk.write_settings(path, self._render(path, ""), home)
             except STEP_ERRORS as error:
@@ -682,6 +690,33 @@ class RdpShareHost:
             status.st_mode & 0o777,
         ]
 
+    def _keep_account_settings(
+        self, registered: dict, paths: list, is_share_older: bool
+    ) -> None:
+        """Copy one account's settings files aside before their first write.
+
+        Files a session's host wrote under a share that already stood are no
+        originals. They stay out of the record, and the switch off deletes them.
+
+        Args:
+            registered: The record that names each kept copy.
+            paths: The account's settings files.
+            is_share_older: Whether the record already named kept files before
+                this press.
+
+        Raises:
+            OSError: When a copy cannot be made.
+        """
+        named = registered.get("settings") or {}
+        if (
+            is_share_older
+            and not any(path in named for path in paths)
+            and _holds_share_servers(paths)
+        ):
+            return
+        for path in paths:
+            self._keep_settings(registered, path)
+
     def _restore_settings(self, registered: dict) -> None:
         """Put every settings file back as it was before the first write.
 
@@ -702,6 +737,25 @@ class RdpShareHost:
             if owner and hasattr(os, "chown"):
                 os.chown(path, int(owner[0]), int(owner[1]))
                 os.chmod(path, int(owner[2]))
+
+    def _remove_later_account_settings(self, registered: dict) -> None:
+        """Delete the settings files of each account the record does not name,
+        when its ``RustDesk2.toml`` holds the loopback servers. A record that
+        names no file deletes nothing.
+
+        Args:
+            registered: The record that names each kept copy.
+        """
+        named = registered.get("settings")
+        if not named:
+            return
+        for home in self._seat.account_homes():
+            paths = self._settings_paths(home)[2:]
+            if any(path in named for path in paths):
+                continue
+            if _holds_share_servers(paths):
+                for path in paths:
+                    self._remove_settings(path)
 
     def _remove_settings(self, path: str) -> None:
         """Delete one settings file nobody had before the share, and its folder
@@ -848,3 +902,14 @@ def _is_same(program: str, listener: str) -> bool:
 def _is_password_file(path: str) -> bool:
     """Whether a settings file is the one the permanent password is in."""
     return os.path.basename(path) == REMOTE_DESKTOP_PASSWORD_FILE
+
+
+def _holds_share_servers(paths: list) -> bool:
+    """Whether the ``RustDesk2.toml`` among an account's settings files is a
+    regular file that holds the loopback servers."""
+    return any(
+        not _is_password_file(path)
+        and os.path.isfile(path)
+        and rustdesk.holds_options(path, REMOTE_DESKTOP_SERVER_OPTIONS)
+        for path in paths
+    )

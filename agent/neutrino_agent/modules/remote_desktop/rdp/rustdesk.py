@@ -270,12 +270,12 @@ def read_options(path: str) -> dict:
 
     Returns:
         Each option's value without its quotes; empty when the file is
-        missing or holds no such table.
+        missing, is no text or holds no such table.
     """
     try:
         with open(path, "r", encoding="utf-8") as stream:
             lines = stream.read().splitlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return {}
     stripped = [line.strip() for line in lines]
     if RUSTDESK_OPTIONS_TABLE not in stripped:
