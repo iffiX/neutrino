@@ -31,6 +31,7 @@ try:
 except ImportError:
     pwd = None
 
+from neutrino_agent.modules.remote_desktop.rdp import rustdesk
 from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_DARWIN_AGENT_PROGRAM,
     RDP_DARWIN_CONSOLE_OWNER_COMMAND,
@@ -38,6 +39,7 @@ from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_DARWIN_DIALOG_SCRIPT,
     RDP_DARWIN_DIALOG_TIMEOUT_S,
     RDP_DARWIN_ESTABLISHED,
+    RDP_DARWIN_FIRST_ACCOUNT_UID,
     RDP_DARWIN_LAUNCHCTL,
     RDP_DARWIN_NETSTAT_COMMAND,
     RDP_DARWIN_NOBODY_NAMES,
@@ -193,6 +195,11 @@ class DarwinSeat:
         if seated is None:
             return None
         return [seated[0]] if seated else []
+
+    def account_homes(self) -> list:
+        """The homes of a person's accounts: launchd starts a session's host at
+        each login."""
+        return rustdesk.account_homes(RDP_DARWIN_FIRST_ACCOUNT_UID, ())
 
     def has_desktop_session(self) -> bool:
         """Whether there is a desktop to share: always, on a Mac."""

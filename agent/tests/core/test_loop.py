@@ -730,7 +730,7 @@ class RecordedDesktop:
     def settle_at_start(self):
         """Nothing to settle."""
 
-    def repair_password(self):
+    def repair_settings(self):
         self.repaired += 1
 
 

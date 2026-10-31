@@ -56,7 +56,11 @@ RDP_WAYLAND_TOKEN_OPTION = "wayland-restore-token"
 
 # The greeter's session owns a home on a tmpfs, so it can hold no such
 # permission and a peer would wait for a dialog nobody is there to answer.
-RDP_GREETER_ACCOUNTS = ("gdm", "gdm-greeter", "sddm", "lightdm", "greetd")
+RDP_GREETER_ACCOUNTS = ("gdm", "Debian-gdm", "gdm-greeter", "sddm", "lightdm", "greetd")
+
+# The first uid of a person's account on Linux and on a Mac.
+RDP_LINUX_FIRST_ACCOUNT_UID = 1000
+RDP_DARWIN_FIRST_ACCOUNT_UID = 501
 
 # What a peer would wait on if it dialed now. Typed, like every refusal:
 # each surface words them itself.

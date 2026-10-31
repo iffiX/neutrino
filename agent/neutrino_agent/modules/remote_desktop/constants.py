@@ -29,9 +29,11 @@ REMOTE_DESKTOP_PASSWORD_FILE = "RustDesk.toml"  # scan: allow
 # What a share writes into RustDesk2.toml: direct connection on the port
 # above with a permanent password, no rendezvous and no relay, file transfer
 # and the clipboard on, the channels the hub does not publish off.
-REMOTE_DESKTOP_OPTIONS = (
+REMOTE_DESKTOP_SERVER_OPTIONS = (
     ("custom-rendezvous-server", REMOTE_DESKTOP_NO_SERVER),
     ("relay-server", REMOTE_DESKTOP_NO_SERVER),
+)
+REMOTE_DESKTOP_OPTIONS = REMOTE_DESKTOP_SERVER_OPTIONS + (
     ("direct-server", "Y"),
     ("direct-access-port", str(REMOTE_DESKTOP_DIRECT_PORT)),
     ("allow-auto-update", "N"),
@@ -59,9 +61,6 @@ REMOTE_DESKTOP_VIEWER_FLAGS = (
 REMOTE_DESKTOP_STOP_TIMEOUT_S = 30
 REMOTE_DESKTOP_POLL_S = 0.5
 REMOTE_DESKTOP_COMMAND_TIMEOUT_S = 60
-# How long root's RustDesk.toml is read after a start, every
-# REMOTE_DESKTOP_POLL_S, for the id and the key pair RustDesk writes into it.
-REMOTE_DESKTOP_IDENTITY_WAIT_S = 30
 # The systems whose session host writes its own settings over the root
 # service's until root's RustDesk.toml holds an id and a key pair.
 REMOTE_DESKTOP_SYNCED_OS_NAMES = ("linux", "darwin")

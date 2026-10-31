@@ -1077,12 +1077,12 @@ class Agent:
 
     def _tick(self) -> None:
         """Between reports: look at the network, ask the transport for the AI
-        gateway forward if it could not listen, write the seat password into
-        RustDesk again if it was replaced, and read the hub clock, so a
+        gateway forward if it could not listen, write RustDesk's service
+        settings again if they were replaced, and read the hub clock, so a
         setting of this machine's clock is taken up within one interval."""
         self._watch_network()
         self._ai_forward.ensure()
-        self._rdp.repair_password()
+        self._rdp.repair_settings()
         hub_clock().now()
 
     def _watch_network(self) -> bool:

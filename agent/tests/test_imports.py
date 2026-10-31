@@ -129,6 +129,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.remote_desktop.rdp",
     "neutrino_agent.modules.remote_desktop.rdp.constants",
     "neutrino_agent.modules.remote_desktop.rdp.darwin_seat",
+    "neutrino_agent.modules.remote_desktop.rdp.ed25519",
     "neutrino_agent.modules.remote_desktop.rdp.host",
     "neutrino_agent.modules.remote_desktop.rdp.linux_seat",
     "neutrino_agent.modules.remote_desktop.rdp.netstat",

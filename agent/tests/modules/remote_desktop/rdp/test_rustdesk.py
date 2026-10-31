@@ -6,12 +6,15 @@ send nothing to a public server, and that the permanent password lands as
 plain text in ``RustDesk.toml``.
 """
 
+import ast
 import os
+import types
 
 import pytest
 
 from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+from neutrino_agent.modules.remote_desktop.rdp.ed25519 import public_key
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_DIRECT_PORT,
     REMOTE_DESKTOP_OPTIONS,
@@ -23,8 +26,14 @@ from neutrino_agent.modules.remote_desktop.rdp.rustdesk import (
     render_password,
     would_change,
     write_config,
-    write_password,
+    write_settings,
 )
+
+
+def write_password(path, password):
+    """One ``RustDesk.toml`` written with a password, as the share writes it."""
+    return write_settings(path, lambda existing: render_password(existing, password))
+
 
 # --- the options ---
 
@@ -312,7 +321,7 @@ def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path
     path = tmp_path / "root" / ".config" / "rustdesk" / "RustDesk.toml"
 
     rustdesk.write_settings(str(path), lambda existing: "id = ''\n", str(home))
-    rustdesk.write_password(str(path), "seat-pass")
+    write_password(str(path), "seat-pass")
 
     assert [target for target, _, _ in chowned if not target.endswith(".tmp")] == []
     assert "seat-pass" in path.read_text()
@@ -519,3 +528,238 @@ def test_a_password_rewrite_keeps_what_rustdesk_wrote(tmp_path):
     assert rustdesk.has_identity(str(path)) is True
     assert rustdesk.stored_password(str(path), lambda: MACHINE_ID) == "seat-pass"
     assert "[keys_confirmed]" in path.read_text()
+
+
+# --- the id and the key pair ---
+
+
+def _key_pair_of(text):
+    """The key pair one ``RustDesk.toml`` holds, as two lists of bytes."""
+    return ast.literal_eval(rustdesk._values_of(text.splitlines())["key_pair"])
+
+
+def test_an_empty_file_gets_an_id_and_a_key_pair_rustdesk_reads(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+
+    path.write_text(rustdesk.render_identity(""), encoding="utf-8")
+
+    assert rustdesk.has_identity(str(path))
+    number = rustdesk.read_values(str(path))["id"]
+    assert number.isdigit() and len(number) == 9 and number[0] != "0"
+    secret, public = _key_pair_of(path.read_text(encoding="utf-8"))
+    assert len(secret) == 64 and len(public) == 32
+    assert bytes(secret[32:]) == bytes(public) == public_key(bytes(secret[:32]))
+
+
+def test_two_machines_get_different_ids_and_keys():
+    assert rustdesk.render_identity("") != rustdesk.render_identity("")
+
+
+def test_an_id_and_a_key_pair_already_there_leave_the_text_as_it_was():
+    existing = (
+        "enc_id = '00abc'\npassword = ''\nkey_pair = [\n    [\n        1,\n    ],"
+        "\n    [\n        2,\n    ],\n]\n\n[keys_confirmed]\n"
+    )
+
+    assert rustdesk.render_identity(existing) == existing
+
+
+def test_an_empty_key_pair_rustdesk_wrote_is_replaced_and_the_rest_kept():
+    existing = (
+        "enc_id = '00abc'\npassword = 'p'\nsalt = 's'\nkey_pair = [\n    [],\n    [],\n]\n"
+        "key_confirmed = false\n\n[keys_confirmed]\nrs = true\n"
+    )
+
+    rendered = rustdesk.render_identity(existing)
+
+    lines = rendered.splitlines()
+    assert "    []," not in lines
+    assert "enc_id = '00abc'" in lines
+    assert "password = 'p'" in lines
+    assert "key_confirmed = false" in lines
+    assert "rs = true" in lines
+    assert not any(line.startswith("id =") for line in lines)
+    assert lines.index("[keys_confirmed]") > next(
+        index for index, line in enumerate(lines) if line.startswith("key_pair")
+    )
+    assert len(_key_pair_of(rendered)[0]) == 64
+
+
+def test_a_key_pair_with_no_id_gets_an_id_alone():
+    existing = "key_pair = [[1, 2], [3]]\n"
+
+    rendered = rustdesk.render_identity(existing)
+
+    assert "key_pair = [[1, 2], [3]]" in rendered
+    assert rendered.startswith("id = '")
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        "",
+        "password = 'p'\nsalt = 's'\n",
+        "enc_id = ''\npassword = 'p'\nkey_pair = [\n    [],\n    [],\n]\n",
+        "password = 'p'\nkey_pair = [\n    [\n        1,\n    ],\n    [\n        2,\n"
+        "    ],\n]\nid = ''\n\n[keys_confirmed]\nrs = true\n",
+        "salt = 'a[b'\nid = ''\nkey_pair = [\n    [],\n    [],\n]\nkey_confirmed = false\n"
+        "\n[keys_confirmed]\n",
+    ],
+)
+def test_what_is_rendered_is_toml_with_one_of_each_key(existing):
+    tomllib = pytest.importorskip("tomllib")
+
+    rendered = rustdesk.render_identity(existing)
+    rendered = render_password(rendered, "seat-pass")
+
+    parsed = tomllib.loads(rendered)
+    assert parsed["id"] or parsed["enc_id"]
+    assert parsed["key_pair"][0]
+    assert parsed["password"] == "seat-pass"
+
+
+def test_the_password_goes_in_after_the_identity():
+    rendered = render_password(rustdesk.render_identity(""), "seat-pass")
+
+    assert "password = 'seat-pass'" in rendered
+    assert len(_key_pair_of(rendered)[1]) == 32
+
+
+# --- what the options hold ---
+
+
+def test_the_options_are_read_from_their_table_alone(tmp_path):
+    path = tmp_path / "RustDesk2.toml"
+    path.write_text(
+        "rendezvous_server = 'x'\n\n[options]\ndirect-server = 'Y'\n",
+        encoding="utf-8",
+    )
+
+    assert rustdesk.read_options(str(path)) == {"direct-server": "Y"}
+
+
+@pytest.mark.parametrize("text", ["", "rendezvous_server = ''\n"])
+def test_no_options_table_reads_as_no_options(tmp_path, text):
+    path = tmp_path / "RustDesk2.toml"
+    path.write_text(text, encoding="utf-8")
+
+    assert rustdesk.read_options(str(path)) == {}
+    assert rustdesk.read_options(str(tmp_path / "absent.toml")) == {}
+
+
+def test_the_options_are_held_in_any_order(tmp_path):
+    path = tmp_path / "RustDesk2.toml"
+    wanted = (("a", "1"), ("b", "2"))
+
+    path.write_text("[options]\nb = '2'\nother = 'x'\na = '1'\n", encoding="utf-8")
+    assert rustdesk.holds_options(str(path), wanted)
+
+    path.write_text("[options]\nb = '2'\na = '9'\n", encoding="utf-8")
+    assert not rustdesk.holds_options(str(path), wanted)
+    assert not rustdesk.holds_options(str(tmp_path / "absent.toml"), wanted)
+
+
+def test_a_file_of_no_bytes_is_being_written(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+
+    assert not rustdesk.is_being_written(str(path))
+    path.write_text("", encoding="utf-8")
+    assert rustdesk.is_being_written(str(path))
+    path.write_text("id = 'x'\n", encoding="utf-8")
+    assert not rustdesk.is_being_written(str(path))
+
+
+# --- writing a file under somebody's home ---
+
+
+def test_a_link_left_at_the_temporary_name_is_not_written_through(tmp_path):
+    target = tmp_path / "target"
+    target.write_text("not settings\n", encoding="utf-8")
+    path = tmp_path / "RustDesk2.toml"
+    (tmp_path / "RustDesk2.toml.tmp").symlink_to(target)
+
+    write_config(str(path), REMOTE_DESKTOP_OPTIONS)
+
+    assert target.read_text(encoding="utf-8") == "not settings\n"
+    assert "direct-server = 'Y'" in path.read_text(encoding="utf-8")
+
+
+def test_a_file_nothing_says_the_owner_of_is_private(tmp_path, monkeypatch):
+    monkeypatch.setattr(rustdesk, "_owner_of", lambda path: None)
+    path = tmp_path / "RustDesk.toml"
+
+    write_password(str(path), "seat-pass")
+
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_level_below_the_home_that_is_a_link_is_found(tmp_path):
+    home = tmp_path / "home"
+    (home / ".config").mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    (home / ".config" / "rustdesk").symlink_to(tmp_path / "elsewhere")
+    path = home / ".config" / "rustdesk" / "RustDesk2.toml"
+
+    assert rustdesk.is_below_link(str(path), str(home))
+    assert not rustdesk.is_below_link(str(home / ".config" / "x"), str(home))
+    assert not rustdesk.is_below_link(str(path), str(tmp_path / "other"))
+    assert not rustdesk.is_below_link(str(path), "")
+
+
+# --- the accounts that can come to the screen ---
+
+
+def _entry(name, uid, home, shell="/bin/bash"):
+    return types.SimpleNamespace(
+        pw_name=name, pw_uid=uid, pw_dir=str(home), pw_shell=shell
+    )
+
+
+def test_a_persons_account_and_a_named_greeter_count(tmp_path, monkeypatch):
+    uid = os.getuid()
+    pat = tmp_path / "pat"
+    greeter = tmp_path / "greeter"
+    daemon = tmp_path / "daemon"
+    service = tmp_path / "service"
+    for home in (pat, greeter, daemon, service):
+        home.mkdir()
+    entries = [
+        _entry("pat", uid, pat),
+        _entry("lightdm", uid, greeter, "/usr/bin/nologin"),
+        _entry("daemon", uid, daemon),
+        _entry("svc", uid, service, "/usr/sbin/nologin"),
+    ]
+    monkeypatch.setattr(
+        rustdesk, "pwd", types.SimpleNamespace(getpwall=lambda: entries)
+    )
+
+    homes = rustdesk.account_homes(0, ("lightdm",))
+    assert homes == [str(pat), str(greeter), str(daemon)]
+
+    assert rustdesk.account_homes(uid + 1, ("lightdm",)) == [str(greeter)]
+
+
+def test_a_home_that_is_no_folder_of_the_accounts_own_does_not_count(
+    tmp_path, monkeypatch
+):
+    uid = os.getuid()
+    not_a_folder = tmp_path / "file"
+    not_a_folder.write_text("", encoding="utf-8")
+    entries = [
+        _entry("gone", uid, tmp_path / "absent"),
+        _entry("file", uid, not_a_folder),
+        _entry("other", uid + 1, tmp_path),
+        _entry("pat", uid, tmp_path),
+        _entry("twin", uid, tmp_path),
+    ]
+    monkeypatch.setattr(
+        rustdesk, "pwd", types.SimpleNamespace(getpwall=lambda: entries)
+    )
+
+    assert rustdesk.account_homes(0, ()) == [str(tmp_path)]
+
+
+def test_a_system_with_no_account_database_has_no_homes(monkeypatch):
+    monkeypatch.setattr(rustdesk, "pwd", None)
+
+    assert rustdesk.account_homes(0, ()) == []

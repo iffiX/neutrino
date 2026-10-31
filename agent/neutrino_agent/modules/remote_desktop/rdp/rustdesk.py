@@ -9,6 +9,11 @@ loopback; the password goes in as ``password = '<p>'``, which RustDesk
 reads as given, since ``--password`` from a copy outside RustDesk's
 standard place sets nothing.
 
+**The service's file holds an id and a key pair before the service starts.**
+A session's host copies the service's settings only when that file holds
+both, and keeps its own otherwise; empty options mean upstream's public
+server.
+
 **The owner is part of the file.** A seated account's copy is written by
 this root daemon but read and written by RustDesk running as that person;
 on Wayland it stores the screen-capture permission there, so a copy left
@@ -30,13 +35,19 @@ Not pure: writes files.
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 import posixpath
 import re
+import secrets
 import stat
 import sys
 
 from neutrino_agent.exceptions import InstallError
+from neutrino_agent.modules.remote_desktop.rdp.ed25519 import (
+    ED25519_SEED_BYTES,
+    public_key,
+)
 from neutrino_agent.modules.remote_desktop.rdp.secretbox import (
     SECRETBOX_KEY_BYTES,
     SECRETBOX_NONCE_BYTES,
@@ -44,6 +55,11 @@ from neutrino_agent.modules.remote_desktop.rdp.secretbox import (
     secretbox_open,
 )
 from neutrino_agent.platforms.detect import OS_NAMES
+
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
 
 # The settings file the seat's Wayland permission is read from, under
 # root's and an account's own configuration on Linux.
@@ -58,6 +74,14 @@ RUSTDESK_PASSWORD_KEY = "password"
 # sealed, and a key pair.
 RUSTDESK_ID_KEYS = ("id", "enc_id")
 RUSTDESK_KEY_PAIR_KEY = "key_pair"
+# The range of the id the agent writes, nine digits. RustDesk seals it when it
+# rewrites the file.
+RUSTDESK_ID_FIRST = 100000000
+RUSTDESK_ID_COUNT = 900000000
+# The table RustDesk2.toml keeps its options in.
+RUSTDESK_OPTIONS_TABLE = "[options]"
+# The login shells that open no session.
+RUSTDESK_NO_LOGIN_SHELLS = ("nologin", "false")
 # A sealed value's prefix, and the format byte its decoded bytes open with.
 RUSTDESK_SEALED_PREFIX = "00"
 RUSTDESK_SEALED_FORMAT = 1
@@ -132,6 +156,37 @@ def render_config(existing: str, options: tuple) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_identity(existing: str) -> str:
+    """One ``RustDesk.toml`` that holds an id and a key pair.
+
+    What the text already holds is kept; the rest is made here and added at
+    the top, above every table.
+
+    Args:
+        existing: The file's current text, empty when there is none.
+
+    Returns:
+        The whole file to write.
+    """
+    lines = existing.splitlines()
+    values = _values_of(lines)
+    added = []
+    if not _has_id(values):
+        number = RUSTDESK_ID_FIRST + secrets.randbelow(RUSTDESK_ID_COUNT)
+        lines = _without_key(lines, RUSTDESK_ID_KEYS[0])
+        added.append(f"{RUSTDESK_ID_KEYS[0]} = {_quoted(str(number))}")
+    if not _has_key_pair(values):
+        seed = os.urandom(ED25519_SEED_BYTES)
+        public = public_key(seed)
+        lines = _without_key(lines, RUSTDESK_KEY_PAIR_KEY)
+        added.append(
+            f"{RUSTDESK_KEY_PAIR_KEY} = [{list(seed + public)}, {list(public)}]"
+        )
+    if not added:
+        return existing
+    return "\n".join(added + lines) + "\n"
+
+
 def render_password(existing: str, password: str) -> str:
     """One ``RustDesk.toml`` with its permanent password set as plain text.
 
@@ -202,28 +257,58 @@ def read_values(path: str) -> dict:
     """
     try:
         with open(path, "r", encoding="utf-8") as stream:
+            return _values_of(stream.read().splitlines())
+    except OSError:
+        return {}
+
+
+def read_options(path: str) -> dict:
+    """The options table of one ``RustDesk2.toml``.
+
+    Args:
+        path: The file.
+
+    Returns:
+        Each option's value without its quotes; empty when the file is
+        missing or holds no such table.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
             lines = stream.read().splitlines()
     except OSError:
         return {}
-    values = {}
-    key = ""
-    depth = 0
-    for line in lines:
-        if depth > 0:
-            values[key] += "\n" + line
-            depth += line.count("[") - line.count("]")
-            continue
-        if line.strip().startswith("["):
-            break
-        match = RUSTDESK_OPTION_PATTERN.match(line)
-        if match is None:
-            continue
-        key = match.group(1)
-        value = line.split("=", 1)[1].strip()
-        values[key] = _unquoted(value)
-        if value.startswith("["):
-            depth = value.count("[") - value.count("]")
-    return values
+    stripped = [line.strip() for line in lines]
+    if RUSTDESK_OPTIONS_TABLE not in stripped:
+        return {}
+    return _values_of(lines[stripped.index(RUSTDESK_OPTIONS_TABLE) + 1 :])
+
+
+def holds_options(path: str, options: tuple) -> bool:
+    """Whether one ``RustDesk2.toml`` holds the given options, in any order.
+
+    Args:
+        path: The file.
+        options: ``(key, value)`` pairs.
+
+    Returns:
+        True when each key has that value.
+    """
+    held_options = read_options(path)
+    return all(held_options.get(key) == value for key, value in options)
+
+
+def is_being_written(path: str) -> bool:
+    """Whether one settings file is there and empty: RustDesk truncates a file
+    before it writes it.
+
+    Args:
+        path: The file.
+
+    Returns:
+        True for a file of no bytes.
+    """
+    status = _stat(path)
+    return status is not None and status.st_size == 0
 
 
 def has_identity(path: str) -> bool:
@@ -240,9 +325,7 @@ def has_identity(path: str) -> bool:
         bytes in it.
     """
     values = read_values(path)
-    if not any(values.get(key, "") for key in RUSTDESK_ID_KEYS):
-        return False
-    return any(part.isalnum() for part in values.get(RUSTDESK_KEY_PAIR_KEY, ""))
+    return _has_id(values) and _has_key_pair(values)
 
 
 def is_sealed(value: str) -> bool:
@@ -331,6 +414,55 @@ def give_back_dirs(directory: str, home: str) -> list:
     return _give_dirs(os.path.normpath(directory), home, ())
 
 
+def is_below_link(path: str, home: str) -> bool:
+    """Whether a settings file under a home is reached through a symbolic
+    link, the file itself included.
+
+    Args:
+        path: The file.
+        home: The home of the account the file is for.
+
+    Returns:
+        True when a level below the home is a link; False for a path that is
+        not under the home.
+    """
+    for level in _levels_below(home, path):
+        status = _lstat(level)
+        if status is not None and stat.S_ISLNK(status.st_mode):
+            return True
+    return False
+
+
+def account_homes(first_uid: int, named: tuple) -> list:
+    """The home of every account that can come to this machine's screen.
+
+    Args:
+        first_uid: The first uid of a person's account. An account from there
+            up counts unless its shell opens no session.
+        named: The accounts that count whatever their uid and shell: a
+            display manager's greeter.
+
+    Returns:
+        The homes that are folders the account owns, each once; empty where
+        the system has no account database.
+    """
+    if pwd is None:
+        return []
+    homes = []
+    for entry in pwd.getpwall():
+        is_person = entry.pw_uid >= first_uid and not entry.pw_shell.endswith(
+            RUSTDESK_NO_LOGIN_SHELLS
+        )
+        if not is_person and entry.pw_name not in named:
+            continue
+        status = _stat(entry.pw_dir)
+        if status is None or not stat.S_ISDIR(status.st_mode):
+            continue
+        if status.st_uid == entry.pw_uid and entry.pw_dir not in homes:
+            homes.append(entry.pw_dir)
+    return homes
+
+
 def write_config(path: str, options: tuple) -> bool:
     """Write one ``RustDesk2.toml``, keeping what it said and whose it was.
 
@@ -345,22 +477,6 @@ def write_config(path: str, options: tuple) -> bool:
         InstallError: If the file cannot be written.
     """
     return write_settings(path, lambda existing: render_config(existing, options))
-
-
-def write_password(path: str, password: str) -> bool:
-    """Write the permanent password into one ``RustDesk.toml``.
-
-    Args:
-        path: The file to write.
-        password: The seat password.
-
-    Returns:
-        True when the file's text is not what it was.
-
-    Raises:
-        InstallError: If the file cannot be written.
-    """
-    return write_settings(path, lambda existing: render_password(existing, password))
 
 
 def would_change(path: str, render) -> bool:
@@ -407,7 +523,9 @@ def write_settings(path: str, render, home: str = "") -> bool:
                 existing = stream.read()
         rendered = render(existing)
         temporary = f"{path}.tmp"
-        with open(temporary, "w", encoding="utf-8") as stream:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+        with open(temporary, "x", encoding="utf-8", opener=_private) as stream:
             stream.write(rendered)
         if kept is not None and hasattr(os, "chown"):
             os.chown(temporary, kept[0], kept[1])
@@ -416,6 +534,71 @@ def write_settings(path: str, render, home: str = "") -> bool:
     except OSError as error:
         raise InstallError(f"could not write {path}: {error}")
     return rendered != existing
+
+
+def _private(path: str, flags: int) -> int:
+    """Open a new file only its owner reads."""
+    return os.open(path, flags, 0o600)
+
+
+def _values_of(lines: list) -> dict:
+    """The keys above the first table of the given lines; a string without its
+    quotes, anything else as written, an array across every line it spans."""
+    values = {}
+    key = ""
+    depth = 0
+    for line in lines:
+        if depth > 0:
+            values[key] += "\n" + line
+            depth += line.count("[") - line.count("]")
+            continue
+        if line.strip().startswith("["):
+            break
+        match = RUSTDESK_OPTION_PATTERN.match(line)
+        if match is None:
+            continue
+        key = match.group(1)
+        value = line.split("=", 1)[1].strip()
+        values[key] = _unquoted(value)
+        if value.startswith("["):
+            depth = value.count("[") - value.count("]")
+    return values
+
+
+def _has_id(values: dict) -> bool:
+    """Whether the keys of one ``RustDesk.toml`` name an id, plain or sealed."""
+    return any(values.get(key, "") for key in RUSTDESK_ID_KEYS)
+
+
+def _has_key_pair(values: dict) -> bool:
+    """Whether the keys of one ``RustDesk.toml`` name a key pair with bytes."""
+    return any(part.isalnum() for part in values.get(RUSTDESK_KEY_PAIR_KEY, ""))
+
+
+def _without_key(lines: list, key: str) -> list:
+    """The lines without one key above the first table, an array across every
+    line it spans."""
+    kept = []
+    depth = 0
+    is_dropped = False
+    is_above_table = True
+    for line in lines:
+        if depth > 0:
+            depth += line.count("[") - line.count("]")
+            if not is_dropped:
+                kept.append(line)
+            continue
+        if line.strip().startswith("["):
+            is_above_table = False
+        match = RUSTDESK_OPTION_PATTERN.match(line)
+        if is_above_table and match is not None:
+            value = line.split("=", 1)[1].strip()
+            depth = value.count("[") - value.count("]") if value[:1] == "[" else 0
+            is_dropped = match.group(1) == key
+            if is_dropped:
+                continue
+        kept.append(line)
+    return kept
 
 
 def _quoted(value: str) -> str:

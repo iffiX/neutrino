@@ -40,6 +40,11 @@ class WindowsSeat:
         self._kernel32 = kernel32
         self._wtsapi32 = wtsapi32
 
+    def account_homes(self) -> list:
+        """Nothing: the service and its session host share one settings
+        folder."""
+        return []
+
     def graphical_accounts(self) -> "list | None":
         """The account signed in at the console.
 

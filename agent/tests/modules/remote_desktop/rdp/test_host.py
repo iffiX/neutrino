@@ -8,7 +8,9 @@ system's registration is a fake applier here; each system's own is pinned
 in its own file.
 """
 
+import ast
 import os
+import shutil
 import socket
 
 import pytest
@@ -30,12 +32,16 @@ class FakeSeat:
         self.attention = ""
         self.attention_homes = []
         self.asked = []
+        self.homes = []
 
     def ask_for_permissions(self, account):
         self.asked.append(account)
 
     def graphical_accounts(self):
         return self.seated
+
+    def account_homes(self):
+        return list(self.homes)
 
     def has_desktop_session(self):
         return True
@@ -815,27 +821,11 @@ class _LinuxPlatform(_Platform):
         return MACHINE_ID
 
 
-class Sleeper:
-    """Records every wait, and runs once what a test says RustDesk does
-    meanwhile."""
-
-    def __init__(self):
-        self.waits = []
-        self.meanwhile = None
-
-    def __call__(self, seconds):
-        self.waits.append(seconds)
-        if self.meanwhile is not None:
-            meanwhile, self.meanwhile = self.meanwhile, None
-            meanwhile()
-
-
 @pytest.fixture()
 def linux_host(tmp_path):
     store = MachineStateStore(path=str(tmp_path / "state.json"))
     applier = FakeApplier(str(tmp_path))
     platform = _LinuxPlatform(str(tmp_path))
-    sleeper = Sleeper()
     lines = []
     made = RdpShareHost(
         platform=platform,
@@ -845,13 +835,11 @@ def linux_host(tmp_path):
         log=lines.append,
         seat=FakeSeat(),
         applier=applier,
-        sleep=sleeper,
     )
     made.applier = applier
     made.seat = made._seat
     made.root = tmp_path
     made.platform = platform
-    made.sleeper = sleeper
     made.lines = lines
     return made
 
@@ -878,7 +866,6 @@ def _shared(host):
     host.set_switch(True)
     _rustdesk_wrote(host, SEALED_SEAT_PASS)
     host.applier.calls.clear()
-    host.sleeper.waits.clear()
 
 
 def _stored_password(host):
@@ -888,86 +875,17 @@ def _stored_password(host):
     return rustdesk.stored_password(path, lambda: MACHINE_ID)
 
 
-def test_a_fresh_machine_gets_the_seat_password_back_from_rustdesks_first_write(
-    linux_host,
-):
-    """The session's host makes its own key pair while root's file has none,
-    sends its settings to root, and root's password comes out empty."""
-    host = linux_host
-    (host.root / "home" / "pat").mkdir(parents=True)
-    names = ("RustDesk2.toml", "RustDesk.toml")
-    assert not any(_root_file(host, name).exists() for name in names)
-    assert not any(_seat_file(host, name).exists() for name in names)
-    host.take_seat_password("seat-pass")
-    host.sleeper.meanwhile = lambda: _rustdesk_wrote(host, "")
-
-    host.set_switch(True)
-
-    assert _steps(host.applier) == [
-        "keep",
-        "stop",
-        "register",
-        "start",
-        "stop",
-        "start",
-    ]
-    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
-    assert _stored_password(host) == "seat-pass"
-    assert "56," in _root_file(host, "RustDesk.toml").read_text()
-    assert _root_file(host, "RustDesk2.toml").exists()
-    assert _seat_file(host, "RustDesk2.toml").exists()
-    assert not _seat_file(host, "RustDesk.toml").exists()
-
-
-def test_the_wait_for_rustdesks_id_and_key_pair_is_bounded(linux_host):
-    from neutrino_agent.modules.remote_desktop.constants import (
-        REMOTE_DESKTOP_IDENTITY_WAIT_S,
-        REMOTE_DESKTOP_POLL_S,
-    )
-
-    host = linux_host
-    host.take_seat_password("seat-pass")
-
-    host.set_switch(True)
-
-    assert set(host.sleeper.waits) == {REMOTE_DESKTOP_POLL_S}
-    assert sum(host.sleeper.waits) == REMOTE_DESKTOP_IDENTITY_WAIT_S
-    assert _steps(host.applier) == ["keep", "stop", "register", "start"]
-    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
-
-
-def test_with_nobody_at_the_screen_nothing_is_waited_for(linux_host):
-    host = linux_host
-    host.seat.seated = []
-    host.take_seat_password("seat-pass")
-
-    host.set_switch(True)
-
-    assert host.sleeper.waits == []
-
-
-def test_an_id_and_key_pair_already_there_end_the_wait_at_once(linux_host):
-    host = linux_host
-
-    _shared(host)
-    host.take_seat_password("second")
-    host.set_switch(True)
-
-    assert host.sleeper.waits == []
-    assert _steps(host.applier) == ["stop", "register", "start"]
-
-
 def test_a_password_rustdesk_emptied_later_is_written_again(linux_host):
     host = linux_host
     _shared(host)
     _rustdesk_wrote(host, "")
 
-    host.repair_password()
+    host.repair_settings()
 
     assert _steps(host.applier) == ["stop", "start"]
     assert _stored_password(host) == "seat-pass"
     assert "56," in _root_file(host, "RustDesk.toml").read_text()
-    assert any("replaced the seat password" in line for line in host.lines)
+    assert any("the service's settings" in line for line in host.lines)
 
 
 def test_a_password_of_somebody_elses_is_replaced_too(linux_host):
@@ -976,7 +894,7 @@ def test_a_password_of_somebody_elses_is_replaced_too(linux_host):
     _shared(host)
     _rustdesk_wrote(host, SEALED_SOMEBODY_ELSE)
 
-    host.repair_password()
+    host.repair_settings()
 
     assert _steps(host.applier) == ["stop", "start"]
     assert _stored_password(host) == "seat-pass"
@@ -999,8 +917,8 @@ def test_an_intact_password_is_a_file_read_and_no_command(
     monkeypatch.setattr(subprocess, "Popen", refuse)
     monkeypatch.setattr(subprocess, "check_output", refuse)
 
-    host.repair_password()
-    host.repair_password()
+    host.repair_settings()
+    host.repair_settings()
 
     assert host.applier.calls == []
     assert _root_file(host, "RustDesk.toml").read_text() == before
@@ -1013,17 +931,7 @@ def test_a_sealed_password_that_does_not_open_here_is_left_alone(linux_host):
     host.platform.read_machine_id = lambda: "another-machine-id"
     host._machine_id_read = ""
 
-    host.repair_password()
-
-    assert _steps(host.applier) == []
-
-
-def test_before_rustdesk_wrote_a_key_pair_nothing_is_repaired(linux_host):
-    host = linux_host
-    _shared(host)
-    _rustdesk_wrote(host, "", has_key_pair=False)
-
-    host.repair_password()
+    host.repair_settings()
 
     assert _steps(host.applier) == []
 
@@ -1035,7 +943,7 @@ def test_with_the_switch_off_nothing_is_repaired(linux_host):
     host.applier.calls.clear()
     _rustdesk_wrote(host, "")
 
-    host.repair_password()
+    host.repair_settings()
 
     assert _steps(host.applier) == []
 
@@ -1046,7 +954,7 @@ def test_a_repair_skips_the_turn_while_another_change_holds_the_lock(linux_host)
     _rustdesk_wrote(host, "")
 
     with host._lock:
-        host.repair_password()
+        host.repair_settings()
 
     assert _steps(host.applier) == []
 
@@ -1057,13 +965,13 @@ def test_a_failed_repair_is_logged_and_tried_at_the_next_report(linux_host):
     _rustdesk_wrote(host, "")
     host.applier.failing = "start"
 
-    host.repair_password()
+    host.repair_settings()
 
     assert any("rdp_takeover_failed step=start" in line for line in host.lines)
     host.applier.failing = ""
     host.applier.calls.clear()
     _rustdesk_wrote(host, "")
-    host.repair_password()
+    host.repair_settings()
     assert _steps(host.applier) == ["stop", "start"]
 
 
@@ -1113,7 +1021,381 @@ def test_on_windows_the_service_password_is_not_watched(linux_host):
     host.set_switch(True)
     host.applier.calls.clear()
     _rustdesk_wrote(host, "")
-    host.repair_password()
+    host.repair_settings()
 
-    assert host.sleeper.waits == []
     assert _steps(host.applier) == []
+
+
+# --- a session's host that starts after the switch ---
+
+
+def _session_host_options(host, seat_home):
+    """The options a session's host of RustDesk 1.4.9 runs with.
+
+    ``sync_and_watch_config_dir`` in its ``src/server.rs``: it asks the service
+    for its settings before it dials anything, and takes them when the
+    service's ``RustDesk.toml`` holds an id and a key pair. Otherwise the host
+    keeps its own file, and no ``custom-rendezvous-server`` there means
+    upstream's public server.
+    """
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    if rustdesk.has_identity(str(_root_file(host, "RustDesk.toml"))):
+        return rustdesk.read_options(str(_root_file(host, "RustDesk2.toml")))
+    return rustdesk.read_options(
+        os.path.join(seat_home, ".config", "rustdesk", "RustDesk2.toml")
+    )
+
+
+def test_a_session_that_appears_after_the_switch_takes_the_loopback(linux_host):
+    """A display manager or a login that arrives after the switch: the agent
+    wrote nothing for that account, and the host must not reach the public
+    server."""
+    host = linux_host
+    host.seat.seated = []
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    late = str(host.root / "home" / "late")
+    assert _session_host_options(host, late)["custom-rendezvous-server"] == "127.0.0.1"
+    assert _session_host_options(host, late)["relay-server"] == "127.0.0.1"
+    assert _session_host_options(host, late)["direct-server"] == "Y"
+
+
+def test_the_service_holds_a_real_id_and_key_pair_before_it_starts(linux_host):
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+    from neutrino_agent.modules.remote_desktop.rdp.ed25519 import public_key
+
+    host = linux_host
+    host.seat.seated = []
+
+    host.set_switch(True)
+
+    path = str(_root_file(host, "RustDesk.toml"))
+    assert path in host.applier.seen_at_register
+    assert rustdesk.has_identity(path)
+    secret, public = ast.literal_eval(rustdesk.read_values(path)["key_pair"])
+    assert len(secret) == 64
+    assert bytes(public) == bytes(secret[32:]) == public_key(bytes(secret[:32]))
+
+
+def test_an_id_and_key_pair_rustdesk_made_are_kept(linux_host):
+    host = linux_host
+    _shared(host)
+    before = _root_file(host, "RustDesk.toml").read_text()
+
+    host.take_seat_password("second")
+    host.set_switch(True)
+
+    after = _root_file(host, "RustDesk.toml").read_text()
+    assert "enc_id = '00AQIDBAUGBwgJCgsMDQ4PEBES'" in after
+    assert before.split("key_pair")[1] == after.split("key_pair")[1]
+
+
+def test_a_service_with_no_key_pair_is_given_one_with_the_host_stopped(linux_host):
+    """The state of a machine a former agent switched on with nobody there."""
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, "seat-pass", has_key_pair=False)
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == ["stop", "register", "start"]
+    path = str(_root_file(host, "RustDesk.toml"))
+    assert rustdesk.has_identity(path)
+    assert "enc_id = '00AQIDBAUGBwgJCgsMDQ4PEBES'" in (
+        _root_file(host, "RustDesk.toml").read_text()
+    )
+
+
+def test_the_seat_is_written_no_id_and_no_key_pair(linux_host):
+    host = linux_host
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    assert not _seat_file(host, "RustDesk.toml").exists()
+
+
+def test_on_windows_the_service_is_given_no_id_and_no_key_pair(linux_host):
+    host = linux_host
+    host.platform.os_name = "windows"
+
+    host.set_switch(True)
+
+    assert not _root_file(host, "RustDesk.toml").exists()
+
+
+def test_nothing_waits_for_rustdesk_after_a_start(linux_host):
+    host = linux_host
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == ["keep", "stop", "register", "start"]
+    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
+
+
+# --- every account that can come to the screen ---
+
+
+def _account(host, name, *files):
+    """One account's home, holding the given settings files."""
+    home = host.root / "home" / name
+    settings = home / ".config" / "rustdesk"
+    home.mkdir(parents=True, exist_ok=True)
+    for file_name, text in files:
+        settings.mkdir(parents=True, exist_ok=True)
+        (settings / file_name).write_text(text)
+    host.seat.homes.append(str(home))
+    return settings
+
+
+def test_every_account_gets_the_options_and_no_password(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam")
+    settings = host.root / "home" / "sam" / ".config" / "rustdesk"
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    options = (settings / "RustDesk2.toml").read_text()
+    assert "custom-rendezvous-server = '127.0.0.1'" in options
+    assert not (settings / "RustDesk.toml").exists()
+
+
+def test_the_switch_off_takes_away_what_an_account_came_to_hold(linux_host):
+    """A session's host writes both files once it took the service's."""
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam")
+    settings = host.root / "home" / "sam" / ".config" / "rustdesk"
+    host.set_switch(True)
+    (settings / "RustDesk.toml").write_text("key_pair = [[1], [2]]\n")
+
+    host.set_switch(False)
+
+    assert not (settings / "RustDesk2.toml").exists()
+    assert not (settings / "RustDesk.toml").exists()
+    assert not settings.exists()
+
+
+def test_the_switch_off_puts_back_an_accounts_own_settings(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    settings = _account(
+        host,
+        "sam",
+        ("RustDesk2.toml", "[options]\ndirect-server = 'N'\n"),
+        ("RustDesk.toml", "id = 'hers'\n"),
+    )
+    host.set_switch(True)
+    (settings / "RustDesk.toml").write_text("id = 'overwritten by the host'\n")
+
+    host.set_switch(False)
+
+    assert (settings / "RustDesk2.toml").read_text() == (
+        "[options]\ndirect-server = 'N'\n"
+    )
+    assert (settings / "RustDesk.toml").read_text() == "id = 'hers'\n"
+
+
+def test_an_account_whose_home_refuses_is_logged_and_the_share_goes_on(
+    linux_host, monkeypatch
+):
+    from neutrino_agent.exceptions import InstallError
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam")
+    written = rustdesk.write_settings
+
+    def refuse(path, render, home=""):
+        if os.sep + "sam" + os.sep in path:
+            raise InstallError(f"could not write {path}")
+        return written(path, render, home)
+
+    monkeypatch.setattr(rustdesk, "write_settings", refuse)
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == ["keep", "stop", "register", "start"]
+    assert any("could not write" in line for line in host.lines)
+
+
+def test_an_account_removed_during_the_share_leaves_the_switch_off_working(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam", ("RustDesk2.toml", "[options]\n"))
+    host.set_switch(True)
+    shutil.rmtree(host.root / "home" / "sam")
+
+    host.set_switch(False)
+
+    assert not (host.root / "home" / "sam").exists()
+    assert "restore" in _steps(host.applier)
+
+
+def test_a_home_that_refuses_a_removal_is_logged_and_the_switch_goes_off(
+    linux_host, monkeypatch
+):
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam")
+    host.set_switch(True)
+    unlink = os.unlink
+
+    def refuse(path, *args, **kwargs):
+        if os.sep + "sam" + os.sep in str(path):
+            raise PermissionError(f"refused {path}")
+        unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", refuse)
+
+    host.set_switch(False)
+
+    assert "restore" in _steps(host.applier)
+    assert any("could not delete" in line for line in host.lines)
+
+
+def test_a_settings_folder_behind_a_link_is_left_alone(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    _account(host, "sam")
+    elsewhere = host.root / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "RustDesk2.toml").write_text("not settings\n")
+    config = host.root / "home" / "sam" / ".config"
+    config.mkdir()
+    (config / "rustdesk").symlink_to(elsewhere)
+
+    host.set_switch(True)
+    host.set_switch(False)
+
+    assert (elsewhere / "RustDesk2.toml").read_text() == "not settings\n"
+
+
+def test_a_link_planted_after_the_switch_is_not_written_through(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    settings = _account(host, "sam", ("RustDesk2.toml", "[options]\n"))
+    host.set_switch(True)
+    target = host.root / "target"
+    target.write_text("not settings\n")
+    (settings / "RustDesk2.toml").unlink()
+    (settings / "RustDesk2.toml").symlink_to(target)
+
+    host.set_switch(False)
+
+    assert target.read_text() == "not settings\n"
+    assert not (settings / "RustDesk2.toml").is_symlink()
+
+
+# --- the service's settings at each report ---
+
+
+def _options_rustdesk_wrote(host, text):
+    _root_file(host, "RustDesk2.toml").write_text(text)
+
+
+EMPTY_OPTIONS = "rendezvous_server = ''\nnat_type = 1\nserial = 0\n\n[options]\n"
+OPTIONS_IN_ITS_ORDER = (
+    "rendezvous_server = ''\n\n[options]\ndirect-server = 'Y'\n"
+    "relay-server = '127.0.0.1'\ncustom-rendezvous-server = '127.0.0.1'\n"
+)
+
+
+def test_servers_a_session_wiped_from_the_service_are_written_again(linux_host):
+    """A session's host that kept its own empty options sends them to the
+    service, and the next host starts from there."""
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    host = linux_host
+    _shared(host)
+    _options_rustdesk_wrote(host, EMPTY_OPTIONS)
+
+    host.repair_settings()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    options = rustdesk.read_options(str(_root_file(host, "RustDesk2.toml")))
+    assert options["custom-rendezvous-server"] == "127.0.0.1"
+    assert options["relay-server"] == "127.0.0.1"
+    assert options["direct-server"] == "Y"
+    assert any("the service's settings" in line for line in host.lines)
+
+
+def test_a_service_with_no_key_pair_gets_one_at_the_next_report(linux_host):
+    """The state a former agent left on a machine nobody sat at yet."""
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, SEALED_SEAT_PASS, has_key_pair=False)
+
+    host.repair_settings()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    assert rustdesk.has_identity(str(_root_file(host, "RustDesk.toml")))
+    assert _stored_password(host) == "seat-pass"
+
+
+def test_options_in_rustdesks_own_order_are_not_repaired(linux_host):
+    host = linux_host
+    _shared(host)
+    _options_rustdesk_wrote(host, OPTIONS_IN_ITS_ORDER)
+
+    host.repair_settings()
+
+    assert _steps(host.applier) == []
+
+
+def test_a_settings_file_being_written_is_read_again_at_the_next_report(linux_host):
+    """RustDesk truncates a file before it writes it."""
+    host = linux_host
+    _shared(host)
+
+    _options_rustdesk_wrote(host, "")
+    host.repair_settings()
+    assert _steps(host.applier) == []
+
+    _options_rustdesk_wrote(host, OPTIONS_IN_ITS_ORDER)
+    _root_file(host, "RustDesk.toml").write_text("")
+    host.repair_settings()
+    assert _steps(host.applier) == []
+
+
+def test_a_missing_settings_file_is_written_again(linux_host):
+    host = linux_host
+    _shared(host)
+    _root_file(host, "RustDesk2.toml").unlink()
+
+    host.repair_settings()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    assert _root_file(host, "RustDesk2.toml").exists()
+
+
+def test_the_agent_at_start_writes_lost_settings_before_any_host_starts(linux_host):
+    """An upgrade over a machine in that state: the new program must not start
+    from options a session wiped."""
+    host = linux_host
+    _shared(host)
+    _options_rustdesk_wrote(host, EMPTY_OPTIONS)
+    seen = []
+    start = host.applier.start
+
+    def seen_at_start(uid):
+        seen.append(_root_file(host, "RustDesk2.toml").read_text())
+        start(uid)
+
+    host.applier.start = seen_at_start
+
+    host.settle_at_start()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    assert "custom-rendezvous-server = '127.0.0.1'" in seen[0]

@@ -51,3 +51,7 @@ def test_a_host_given_no_seat_reads_its_platforms(tmp_path, platform_class, seat
             DarwinSeat: "RemoteDesktopDarwinApplier",
         }[seat_class]
     )
+
+
+def test_on_windows_no_account_holds_settings_of_its_own():
+    assert WindowsSeat().account_homes() == []

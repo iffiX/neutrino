@@ -19,6 +19,8 @@ from neutrino_agent.modules.remote_desktop.rdp import rustdesk
 from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
     RDP_GRAPHICAL_SESSION_TYPES,
+    RDP_GREETER_ACCOUNTS,
+    RDP_LINUX_FIRST_ACCOUNT_UID,
     RDP_PROC_DIR,
     RDP_PROC_TCP_PATHS,
     RDP_SESSION_ENVIRONMENT_KEYS,
@@ -228,6 +230,11 @@ class LinuxSeat:
     def graphical_accounts(self) -> "list | None":
         """The accounts signed in at the screen; None where nothing says."""
         return graphical_accounts()
+
+    def account_homes(self) -> list:
+        """The homes of a person's accounts and of a display manager's
+        greeter: RustDesk's service starts a session's host for either."""
+        return rustdesk.account_homes(RDP_LINUX_FIRST_ACCOUNT_UID, RDP_GREETER_ACCOUNTS)
 
     def has_desktop_session(self) -> bool:
         """Whether this machine has a desktop for RustDesk to share."""

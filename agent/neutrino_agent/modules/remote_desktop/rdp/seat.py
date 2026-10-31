@@ -1,9 +1,10 @@
 """Which seat answers for this machine's screen.
 
-A seat says who is signed in at the screen, whether there is a desktop to
-share, how many peers are connected to the direct port, and what a peer
-would wait on at a seated screen, and asks the seated person for what
-RustDesk needs granted there. Each platform has its own.
+A seat says who is signed in at the screen, the homes of the accounts that can
+come to it, whether there is a desktop to share, how many peers are connected
+to the direct port, and what a peer would wait on at a seated screen, and asks
+the seated person for what RustDesk needs granted there. Each platform has its
+own.
 """
 
 from neutrino_agent.modules.remote_desktop.rdp.darwin_seat import DarwinSeat

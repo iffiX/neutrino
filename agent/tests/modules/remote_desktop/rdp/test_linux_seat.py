@@ -262,3 +262,20 @@ def test_the_permission_is_the_token_rustdesk_wrote_into_its_config(
 
     config.write_text("[options]\nwayland-restore-token = 'abc'\n")
     assert seat_module.has_screen_permission(str(home)) is True
+
+
+def test_the_accounts_that_can_come_to_the_screen_hold_a_persons_and_a_greeters(
+    monkeypatch,
+):
+    asked = []
+
+    def account_homes(first_uid, named):
+        asked.append((first_uid, named))
+        return ["/home/pat"]
+
+    monkeypatch.setattr(seat_module.rustdesk, "account_homes", account_homes)
+
+    assert LinuxSeat().account_homes() == ["/home/pat"]
+    first_uid, named = asked[0]
+    assert first_uid == 1000
+    assert {"lightdm", "gdm", "Debian-gdm", "sddm"} <= set(named)

@@ -282,3 +282,16 @@ def test_an_account_the_mac_does_not_have_is_asked_nothing(monkeypatch):
 
 def test_a_mac_screen_is_always_a_desktop():
     assert DarwinSeat().has_desktop_session() is True
+
+
+def test_the_accounts_that_can_come_to_the_screen_are_a_persons(monkeypatch):
+    asked = []
+
+    def account_homes(first_uid, named):
+        asked.append((first_uid, named))
+        return ["/Users/pat"]
+
+    monkeypatch.setattr(seat_module.rustdesk, "account_homes", account_homes)
+
+    assert DarwinSeat().account_homes() == ["/Users/pat"]
+    assert asked == [(501, ())]
