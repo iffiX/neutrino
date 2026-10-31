@@ -1202,6 +1202,36 @@ def test_a_kept_failure_keeps_its_step_on_disk_and_after_a_restart(tmp_path):
     assert second._failures["terminal"]["step"] == step
 
 
+@pytest.mark.parametrize("state", ["install_failed", "failed"])
+def test_a_kept_failure_s_row_names_its_step_after_a_restart(tmp_path, state):
+    configured_dir = str(tmp_path / "configured")
+    step = {"name": "tex", "params": {}, "index": 12, "count": 12}
+    first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    first.record_failure(
+        "terminal", {**failure(state, "ayakaleaf_setup_failed"), "step": step}
+    )
+
+    second = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    second.refresh_now()
+
+    row = second.report()["terminal"]
+    assert (row["state"], row["code"], row["step"]) == (
+        state,
+        "ayakaleaf_setup_failed",
+        step,
+    )
+    assert row["task"] is None
+
+
+def test_a_row_with_no_kept_failure_names_no_step(tmp_path):
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+    engine.refresh_now()
+
+    assert "step" not in engine.report()["terminal"]
+
+
 def test_a_kept_apply_failure_reads_failed_after_the_agent_starts_again(tmp_path):
     configured_dir = str(tmp_path / "configured")
     first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)

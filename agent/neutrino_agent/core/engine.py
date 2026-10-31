@@ -1308,7 +1308,8 @@ class ModuleEngine(ReconcileWorker):
             ``installing`` row carries the runner's install wait as its
             code and params, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
-            whatever is on the machine, except while its task runs.
+            whatever is on the machine, except while its task runs. A row
+            with a kept failure adds its ``step``.
         """
         recipe = _recipe_of(wanted)
         runner = self._runner_for(name, recipe)
@@ -1322,7 +1323,7 @@ class ModuleEngine(ReconcileWorker):
         ):
             status = _typed(AGENT_MODULE_STATE_INSTALL_FAILED, failure["code"])
             status["params"] = dict(failure["params"])
-            return status
+            return _with_failed_step(status, failure)
         try:
             if not self._is_present(runner, recipe):
                 with self._lock:
@@ -1363,8 +1364,8 @@ class ModuleEngine(ReconcileWorker):
     def _with_failure(
         self, name: str, status: dict, *, is_present: bool = True
     ) -> dict:
-        """One row with the last failed step's code, failed when the software
-        is there."""
+        """One row with the last failed step's code and step, failed when the
+        software is there."""
         with self._lock:
             failure = self._kept_failure(name)
         if failure is not None:
@@ -1372,6 +1373,7 @@ class ModuleEngine(ReconcileWorker):
                 status["state"] = AGENT_MODULE_STATE_FAILED
             status["code"] = failure["code"]
             status["params"] = dict(failure["params"])
+            status = _with_failed_step(status, failure)
         return status
 
     def _failure_path(self, name: str) -> str:
@@ -1624,6 +1626,14 @@ def _failure(held) -> "dict | None":
     if isinstance(step, dict) and step.get("name"):
         kept["step"] = dict(step)
     return kept
+
+
+def _with_failed_step(status: dict, failure: dict) -> dict:
+    """One row with the step its kept failure names, ``{name, params, index, count}``; the row as it is for a failure that names none."""
+    step = failure.get("step")
+    if not isinstance(step, dict):
+        return status
+    return {**status, "step": dict(step)}
 
 
 def _recipe_of(wanted: "dict | None") -> dict:
