@@ -477,7 +477,7 @@ module is planned again from what the machine shows:
 | an `artifact` that unpacks | the unpack goes to a staging directory and replaces the target |
 | `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
 | `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
-| Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}` |
+| Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}`. `replica_set`, `tex` and `wait_app`, and Hermes WebUI's `first_start`, write nothing in the record once the agent began to stop, since their commands run in a container the stop's signal reaches. `admin`, `guests` and Hermes WebUI's `update_check` call the app over HTTP, which the stop does not end, and keep what they did |
 | `npm {account}` on Linux | the transient service of that name outlives the agent, and the step waits for it, at most the install's 30 minutes, before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md), "npm cannot take the agent down") |
 
 A self-update takes `package_manager` before it launches, so it never cuts
