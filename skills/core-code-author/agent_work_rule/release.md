@@ -461,6 +461,25 @@ again once it has finished.` A fresh machine's first boot is the common
 case: cloud-init's apt holds these locks for minutes, and an install over
 package lists `apt-get update` has half written finds none of the
 package's dependencies.
+
+On Linux, while `cloud-init status` reads `running`, `install.sh` first
+runs `cloud-init status --wait` for up to 300 seconds and prints one line,
+`Waiting up to 300 seconds for cloud-init to finish setting up this
+machine`. cloud-init runs the package manager several times with gaps
+between the runs, and an install in a gap takes dpkg's lock and fails
+cloud-init's own install. Past the 300 seconds the script stops with
+`cloud-init is still setting up this machine after 300 seconds; nothing was
+installed. Run this script again once it has finished.` A script that
+cloud-init runs from user-data has a process named `cloud-init` among its
+parents, and it waits for no cloud-init, since cloud-init waits for it.
+
+`install.sh` runs `apt-get install` under `LC_ALL=C`. When its output names
+`unmet dependencies` or `Unable to fetch some archives`, the script prints
+`Updating the package lists to find the package's dependencies`, runs
+`apt-get update` once, then the install again. Before their first update,
+Ubuntu's cloud image lists no universe package, and Debian's lists no
+package at all.
+
 For the hub it ends by printing the wizard's address with its token, and
 runs `nhub setup` in its place when its standard input is a terminal. Over a
 hub already set up, one whose panel settings hold a password hash, it runs
