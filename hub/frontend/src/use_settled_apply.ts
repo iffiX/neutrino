@@ -9,10 +9,16 @@ import { useCallback, useEffect, useState } from "react";
  * when it settled without a failure. A report that never settles releases
  * the apply after two minutes with no outcome, and the module's own state
  * stands as the answer.
+ *
+ * A failure reported at the press belongs to the run before it. It ends the
+ * apply only when the machine reports nothing else within five seconds.
  */
 
 /** How long an apply waits for the machine's report. */
 const SETTLE_LIMIT_MS = 120_000;
+
+/** How long a failing report after a press counts as the run before it. */
+const OLD_FAILURE_LIMIT_MS = 5_000;
 
 /** The states a module passes through on its way to another. */
 const TRANSIENT_STATES = ["installing", "uninstalling"];
@@ -60,20 +66,35 @@ export function useSettledApply(
 ): SettledApply {
   const [isSettling, setIsSettling] = useState(false);
   const [isApplied, setIsApplied] = useState(false);
+  const [isFailureOld, setIsFailureOld] = useState(false);
 
   useEffect(() => {
     if (!isSettling || report === null) {
       return;
     }
     if (isFailing(report)) {
-      setIsSettling(false);
+      if (!isFailureOld) {
+        setIsSettling(false);
+      }
       return;
     }
+    setIsFailureOld(false);
     if (isSettled(report, want)) {
       setIsSettling(false);
       setIsApplied(true);
     }
-  }, [isSettling, report, want]);
+  }, [isSettling, isFailureOld, report, want]);
+
+  useEffect(() => {
+    if (!isFailureOld) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setIsFailureOld(false),
+      OLD_FAILURE_LIMIT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isFailureOld]);
 
   useEffect(() => {
     if (!isSettling) {
@@ -88,11 +109,13 @@ export function useSettledApply(
 
   const begin = useCallback(() => {
     setIsApplied(false);
+    setIsFailureOld(true);
     setIsSettling(true);
   }, []);
 
   const clear = useCallback(() => {
     setIsApplied(false);
+    setIsFailureOld(false);
     setIsSettling(false);
   }, []);
 
@@ -100,7 +123,7 @@ export function useSettledApply(
 }
 
 /** The states of a module whose last step failed. */
-const FAILED_STATES = ["failed", "install_failed"];
+export const FAILED_STATES = ["failed", "install_failed"];
 
 /** Whether the machine reports the module or one of its instances failing. */
 export function isFailing(report: ReportedModule): boolean {

@@ -8,7 +8,11 @@ import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
-import { isFailing, useSettledApply } from "../use_settled_apply";
+import {
+  FAILED_STATES,
+  isFailing,
+  useSettledApply,
+} from "../use_settled_apply";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type { ReportedModule } from "../use_settled_apply";
 import type { ModuleDescriptor } from "../module_descriptors";
@@ -25,10 +29,11 @@ import "./instances_panel.css";
  * available accounts it runs for, **Enabled accounts**.
  *
  * One check row per available account; an account checked goes to the end
- * of the order, and the apply bar writes the whole list. A row shows the
- * module's own field of the account, whether its instance runs, and its
- * code's words. The SSH server shows the machine's host key under the rows.
- * The module's words come from its descriptor.
+ * of the order, and the apply bar writes the whole list. While the module
+ * reads failed the bar is lit, and its apply with nothing changed tries the
+ * module again. A row shows the module's own field of the account, whether
+ * its instance runs, and its code's words. The SSH server shows the machine's
+ * host key under the rows. The module's words come from its descriptor.
  */
 
 /** What an agent older than the module reports for it. */
@@ -101,6 +106,7 @@ export function InstancesPanel({
 
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const isLocked = !isEditable || isUnsupported;
+  const isPending = isDirty || FAILED_STATES.includes(saved.state);
   const version = saved.version ?? "";
 
   const toggle = (account: string, isOn: boolean) => {
@@ -120,9 +126,14 @@ export function InstancesPanel({
       accounts: draft.accounts,
     };
     try {
-      resource.setData(
-        await apiPost<EnabledAccountsView>(`${basePath}/set`, request),
-      );
+      if (isDirty) {
+        resource.setData(
+          await apiPost<EnabledAccountsView>(`${basePath}/set`, request),
+        );
+      } else {
+        await apiPost(`${basePath}/apply`, { device_id: deviceId });
+        resource.reload();
+      }
       settle.begin();
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -142,7 +153,7 @@ export function InstancesPanel({
         </p>
       )}
       <section
-        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+        className={`settings_group ${isPending ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
           <h2>{t(descriptor.title ?? "ui.modules.enabled_accounts")}</h2>
@@ -175,7 +186,7 @@ export function InstancesPanel({
             </p>
           )}
         <ApplyBar
-          isDirty={isDirty}
+          isDirty={isPending}
           isBusy={isBusy || settle.isSettling}
           label={t(descriptor.apply)}
           hint={

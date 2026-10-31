@@ -9,8 +9,9 @@ active; a set replaces the enabled accounts, generates each
 newly enabled account's secrets once and keeps them across a disable,
 checks the section on the agent as the state will carry it, wants the
 module running and pushes; a set on a stopped module keeps it stopped and
-pushes; an account that is not available or named twice is refused; VS Code's set waits for its terms; and the terms route
-answers the same view.
+pushes; an account that is not available or named twice is refused; VS Code's set waits for its terms; the terms route
+answers the same view; and an apply on a failed module of any of the eight
+puts a retry mark and pushes.
 """
 
 import json
@@ -19,6 +20,7 @@ import pytest
 
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.web.routers.agent import module_instances, module_vscode_terms
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
@@ -81,6 +83,22 @@ def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(modul
         ("POST", f"/api/agent/module/{module}/apply"),
         ("POST", f"/api/agent/module/{module}/set"),
     ]
+
+
+@pytest.mark.parametrize("state", ["failed", "install_failed"])
+@pytest.mark.parametrize("module", EIGHT)
+def test_an_apply_on_a_failed_module_puts_a_retry_mark_and_pushes(api, module, state):
+    client, runtime = api
+    runtime.report(DEVICE, module, state=state)
+    pushes = len(runtime.agent_sessions.pushes)
+
+    answer = client.post(
+        f"/api/agent/module/{module}/apply", json={"device_id": DEVICE}
+    )
+
+    assert answer.status_code == 200
+    assert module in DeviceRetryMarks().marks(DEVICE)
+    assert len(runtime.agent_sessions.pushes) == pushes + 1
 
 
 def test_the_view_lists_every_available_account_with_the_modules_own_field(api):
