@@ -9,7 +9,8 @@ provider takes no size at init, its image opened to the account first,
 and removed when that sizing fails; a
 memory of 0 as half the computer's at most 4 GiB, in the details too; a
 machine taken over made rootful and sized, refused a smaller disk; a change
-of size against the last apply, the disk grown and never shrunk; a new account stopping the old
+of size against the last apply, the disk grown and never shrunk; a growth
+cut half way finished at the next apply; a new account stopping the old
 machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
@@ -268,6 +269,7 @@ class FakeSystem(PodmanSystemApplier):
         self.opened: list = []
         self.is_pending = False
         self.disk = 0
+        self.file_system = 0
         self.disk_error = None
         self.facts = (8, 16)
 
@@ -289,6 +291,9 @@ class FakeSystem(PodmanSystemApplier):
     def disk_gib(self, machine):
         return self.disk
 
+    def file_system_gib(self, machine):
+        return self.file_system
+
     def halt(self, machine):
         self.calls.append(("halt", machine.account))
 
@@ -300,8 +305,10 @@ class FakeSystem(PodmanSystemApplier):
 
     def resize_disk(self, machine, *, disk_gib):
         self.calls.append(("disk", machine.account, disk_gib))
+        self.disk = disk_gib
         if self.disk_error is not None:
             raise self.disk_error
+        self.file_system = disk_gib
 
     def machine_environment(self, account):
         return {"TMPDIR": f"/var/folders/{account}/T/"}
@@ -1090,6 +1097,74 @@ def test_a_new_size_halts_the_machine_and_grows_the_disk_alone(rig):
     rig.system.calls.clear()
 
     rig.runner.apply(dict(CONFIG, machine=dict(MACHINE, cpus=4, disk_gib=0)))
+
+    assert rig.system.calls == []
+
+
+def test_a_growth_cut_half_way_finishes_at_the_next_apply(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image()
+    machine = dict(MACHINE, disk_gib=100)
+    rig.system.disk = rig.system.file_system = 100
+    rig.world.present.add("me")
+    rig.world.rootful.add("me")
+    rig.runner.apply(dict(CONFIG, machine=machine))
+    grown = dict(CONFIG, machine=dict(machine, disk_gib=120))
+    rig.system.disk_error = ModuleApplyError("machine_set_failed", {"detail": "e2fsck"})
+
+    found = refusal(lambda: rig.runner.apply(grown))
+
+    assert found.code == "machine_set_failed"
+    assert (rig.system.disk, rig.system.file_system) == (120, 100)
+    rig.system.disk_error = None
+    rig.system.calls.clear()
+
+    rig.runner.apply(grown)
+
+    assert rig.system.calls == [
+        ("halt", "me"),
+        ("resources", "me", 2, 4),
+        ("disk", "me", 120),
+    ]
+    assert rig.system.file_system == 120
+    assert rig.record()[0]["disk_gib"] == 120
+    rig.system.calls.clear()
+
+    rig.runner.apply(grown)
+
+    assert rig.system.calls == []
+
+
+def test_a_cut_growth_and_a_larger_limit_resize_once_to_the_limit(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image()
+    rig.system.disk = 120
+    rig.system.file_system = 100
+    rig.world.present.add("me")
+    rig.world.rootful.add("me")
+
+    rig.runner.apply(dict(CONFIG, machine=dict(MACHINE, disk_gib=150)))
+
+    assert [call for call in rig.system.calls if call[0] == "disk"] == [
+        ("disk", "me", 150)
+    ]
+
+
+@pytest.mark.parametrize("file_system", [0, 120])
+def test_a_file_system_unread_or_as_big_as_the_disk_resizes_nothing(
+    tmp_path, file_system
+):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image()
+    rig.system.disk = 120
+    rig.system.file_system = file_system
+    rig.world.present.add("me")
+    rig.world.rootful.add("me")
+    config = dict(CONFIG, machine=dict(MACHINE, disk_gib=120))
+    rig.runner.apply(config)
+    rig.system.calls.clear()
+
+    rig.runner.apply(config)
 
     assert rig.system.calls == []
 

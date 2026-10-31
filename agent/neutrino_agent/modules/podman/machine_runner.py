@@ -278,6 +278,17 @@ class PodmanSystemApplier:
         """
         return 0
 
+    def file_system_gib(self, machine: PodmanMachine) -> int:
+        """The size of the file system on the machine's disk in GiB.
+
+        Args:
+            machine: The machine.
+
+        Returns:
+            The size; 0 when it cannot be read.
+        """
+        return 0
+
     def halt(self, machine: PodmanMachine) -> None:
         """Stop what holds the machine's size, so a new size can take.
 
@@ -1415,12 +1426,15 @@ class PodmanMachineModuleRunner(ModuleRunner):
             notes.append(f"made the machine of {settings.account}")
         else:
             disk_gib = self._disk_now(machine, record)
+            file_system_gib = self._system.file_system_gib(machine)
+            is_growth_cut = 0 < file_system_gib < disk_gib
             state = machine.inspect()
             is_resized = (
                 not record
                 or record.get("cpus") != settings.cpus
                 or record.get("memory_gib") != settings.memory_gib
                 or bool(settings.disk_gib and settings.disk_gib != disk_gib)
+                or is_growth_cut
             )
             is_set = not state.is_rootful or state.has_user_mode_networking
             if is_set or is_resized:
@@ -1438,9 +1452,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             if is_resized:
                 self._system.halt(machine)
                 self._system.write_resources(machine, cpus=cpus, memory_gib=memory_gib)
-                if settings.disk_gib > disk_gib:
-                    self._system.resize_disk(machine, disk_gib=settings.disk_gib)
-                    disk_gib = settings.disk_gib
+                if settings.disk_gib > disk_gib or is_growth_cut:
+                    disk_gib = max(settings.disk_gib, disk_gib)
+                    self._system.resize_disk(machine, disk_gib=disk_gib)
                 notes.append("sized the machine")
         is_changed = account_service.write(keeper, self._service_machine)
         account_service.start(keeper, self._service_machine, is_restart=is_changed)

@@ -82,6 +82,27 @@ _VHDX_METADATA_SIGNATURE = b"metadata"
 _VHDX_VIRTUAL_DISK_SIZE = uuid.UUID("2FA54224-CD1B-4876-B211-5DBED83BF4B8").bytes_le
 _VHDX_TABLE_BYTES = 64 * 1024
 _VHDX_ENTRY_BYTES = 32
+# The block table region, and in an entry its state bits, the state of a block
+# the file stores in full, and the bits above which the block's offset in MiB
+# starts.
+_VHDX_BLOCK_TABLE_REGION = uuid.UUID("2DC27766-F623-4200-9D64-115E9BFD4A08").bytes_le
+_VHDX_BLOCK_STATE_BITS = 0x7
+_VHDX_BLOCK_FULLY_PRESENT = 6
+_VHDX_BLOCK_OFFSET_SHIFT = 20
+_VHDX_BLOCK_OFFSET_UNIT = 1024 * 1024
+# The ext4 superblock: where it sits on the disk, and the offsets of its low
+# block count, its block size's power, its magic number, its feature flags and
+# its high block count.
+_EXT4_SUPERBLOCK_OFFSET = 1024
+_EXT4_SUPERBLOCK_BYTES = 1024
+_EXT4_BLOCKS_LOW_AT = 0x04
+_EXT4_LOG_BLOCK_SIZE_AT = 0x18
+_EXT4_MAGIC_AT = 0x38
+_EXT4_MAGIC = 0xEF53
+_EXT4_FEATURES_AT = 0x60
+_EXT4_FEATURE_64BIT = 0x80
+_EXT4_BLOCKS_HIGH_AT = 0x150
+_EXT4_BLOCK_SIZE_MIN = 1024
 
 
 def version_numbers(text: str) -> tuple:
@@ -168,6 +189,31 @@ def merged_wslconfig(text: str, *, processors: int, memory_gib: int) -> str:
     return "".join(lines)
 
 
+def _vhdx_region_at(stream, region_id: bytes) -> int:
+    """The file offset of one region of a VHDX disk, from its region table.
+
+    Raises:
+        ValueError: When the file is not a VHDX disk or lacks the region.
+        OSError: When the file cannot be read.
+        struct.error: When the table is cut short.
+    """
+    stream.seek(0)
+    if stream.read(len(_VHDX_SIGNATURE)) != _VHDX_SIGNATURE:
+        raise ValueError("not a VHDX disk")
+    stream.seek(_VHDX_REGION_TABLE_OFFSET)
+    regions = stream.read(_VHDX_TABLE_BYTES)
+    signature, _checksum, count, _reserved = struct.unpack_from("<4sIII", regions)
+    if signature != _VHDX_REGION_SIGNATURE:
+        raise ValueError("the VHDX disk has no region table")
+    for index in range(count):
+        region, region_at, _length, _required = struct.unpack_from(
+            "<16sQII", regions, 16 + _VHDX_ENTRY_BYTES * index
+        )
+        if region == region_id:
+            return region_at
+    raise ValueError("the VHDX disk lacks a region")
+
+
 def vhdx_virtual_size(stream) -> int:
     """The virtual size of a VHDX disk, read from its metadata.
 
@@ -181,23 +227,8 @@ def vhdx_virtual_size(stream) -> int:
         ValueError: When the file is not a VHDX disk or names no size.
         OSError: When the file cannot be read.
     """
-    stream.seek(0)
-    if stream.read(len(_VHDX_SIGNATURE)) != _VHDX_SIGNATURE:
-        raise ValueError("not a VHDX disk")
-    stream.seek(_VHDX_REGION_TABLE_OFFSET)
-    regions = stream.read(_VHDX_TABLE_BYTES)
     try:
-        signature, _checksum, count, _reserved = struct.unpack_from("<4sIII", regions)
-        if signature != _VHDX_REGION_SIGNATURE:
-            raise ValueError("the VHDX disk has no region table")
-        for index in range(count):
-            region, metadata_at, _length, _required = struct.unpack_from(
-                "<16sQII", regions, 16 + _VHDX_ENTRY_BYTES * index
-            )
-            if region == _VHDX_METADATA_REGION:
-                break
-        else:
-            raise ValueError("the VHDX disk has no metadata region")
+        metadata_at = _vhdx_region_at(stream, _VHDX_METADATA_REGION)
         stream.seek(metadata_at)
         metadata = stream.read(_VHDX_TABLE_BYTES)
         signature, _reserved, count = struct.unpack_from("<8sHH", metadata)
@@ -213,6 +244,47 @@ def vhdx_virtual_size(stream) -> int:
     except struct.error as error:
         raise ValueError(f"the VHDX disk is cut short: {error}") from error
     raise ValueError("the VHDX disk names no virtual size")
+
+
+def vhdx_file_system_size(stream) -> int:
+    """The size of the ext4 file system on a WSL disk, read from its superblock.
+
+    WSL formats the whole disk, so the superblock sits in the disk's first
+    block, 1024 bytes in.
+
+    Args:
+        stream: The disk file, open for reading in binary.
+
+    Returns:
+        The file system's blocks in bytes.
+
+    Raises:
+        ValueError: When the file is not a VHDX disk, stores no first block,
+            or holds no ext4 file system.
+        OSError: When the file cannot be read.
+    """
+    try:
+        stream.seek(_vhdx_region_at(stream, _VHDX_BLOCK_TABLE_REGION))
+        entry = struct.unpack("<Q", stream.read(8))[0]
+        if entry & _VHDX_BLOCK_STATE_BITS != _VHDX_BLOCK_FULLY_PRESENT:
+            raise ValueError("the VHDX disk stores no first block")
+        stream.seek(
+            (entry >> _VHDX_BLOCK_OFFSET_SHIFT) * _VHDX_BLOCK_OFFSET_UNIT
+            + _EXT4_SUPERBLOCK_OFFSET
+        )
+        superblock = stream.read(_EXT4_SUPERBLOCK_BYTES)
+        magic = struct.unpack_from("<H", superblock, _EXT4_MAGIC_AT)[0]
+        if magic != _EXT4_MAGIC:
+            raise ValueError("the VHDX disk holds no ext4 file system")
+        blocks = struct.unpack_from("<I", superblock, _EXT4_BLOCKS_LOW_AT)[0]
+        features = struct.unpack_from("<I", superblock, _EXT4_FEATURES_AT)[0]
+        if features & _EXT4_FEATURE_64BIT:
+            high = struct.unpack_from("<I", superblock, _EXT4_BLOCKS_HIGH_AT)[0]
+            blocks += high << 32
+        power = struct.unpack_from("<I", superblock, _EXT4_LOG_BLOCK_SIZE_AT)[0]
+    except struct.error as error:
+        raise ValueError(f"the VHDX disk is cut short: {error}") from error
+    return blocks * (_EXT4_BLOCK_SIZE_MIN << power)
 
 
 def wsl_script(wsl: str, arguments: list) -> str:
@@ -559,12 +631,27 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         Returns:
             The size, rounded to whole GiB; 0 when the disk cannot be read.
         """
+        return self._read_disk(machine, vhdx_virtual_size)
+
+    def file_system_gib(self, machine) -> int:
+        """The size of the file system on the machine's WSL disk in GiB.
+
+        Args:
+            machine: The machine.
+
+        Returns:
+            The size, rounded to whole GiB; 0 when it cannot be read.
+        """
+        return self._read_disk(machine, vhdx_file_system_size)
+
+    def _read_disk(self, machine, read) -> int:
+        """One size read from the machine's WSL disk, in whole GiB; 0 when it cannot be read."""
         try:
             path = self._join(
                 self._platform.account_home(machine.account), *PODMAN_WINDOWS_DISK_PARTS
             )
             with open(path, "rb") as stream:
-                return round(vhdx_virtual_size(stream) / PODMAN_GIB)
+                return round(read(stream) / PODMAN_GIB)
         except (KeyError, OSError, ValueError):
             return 0
 

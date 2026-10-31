@@ -15,6 +15,7 @@ from neutrino_agent.modules.podman.windows_applier import (
     PodmanWindowsApplier,
     merged_wslconfig,
     version_numbers,
+    vhdx_file_system_size,
     vhdx_virtual_size,
     wsl_script,
 )
@@ -174,6 +175,24 @@ def vhdx(size: int) -> bytes:
     item = uuid.UUID("2FA54224-CD1B-4876-B211-5DBED83BF4B8").bytes_le
     struct.pack_into("<16sIIII", data, metadata_at + 64, item, 0x10000, 8, 6, 0)
     struct.pack_into("<Q", data, metadata_at + 0x10000, size)
+    return bytes(data)
+
+
+def vhdx_with_file_system(
+    size: int, *, blocks: int, power: int = 2, high: int = 0, state: int = 6
+) -> bytes:
+    """A VHDX disk's head, its first block stored 4 MiB in and holding an ext4
+    superblock with this many blocks of 1024 << power bytes."""
+    block_at = 0x400000
+    data = bytearray(vhdx(size))
+    data.extend(bytes(block_at + 4096 - len(data)))
+    struct.pack_into("<Q", data, 0x300000, (block_at >> 20) << 20 | state)
+    superblock = block_at + 1024
+    struct.pack_into("<I", data, superblock + 0x04, blocks)
+    struct.pack_into("<I", data, superblock + 0x18, power)
+    struct.pack_into("<H", data, superblock + 0x38, 0xEF53)
+    struct.pack_into("<I", data, superblock + 0x60, 0x80 if high else 0)
+    struct.pack_into("<I", data, superblock + 0x150, high)
     return bytes(data)
 
 
@@ -450,10 +469,30 @@ def test_the_disk_is_the_virtual_size_of_the_machines_vhdx(rig):
     assert rig.applier.disk_gib(Machine()) == 0
 
 
+def test_the_file_system_is_the_block_count_in_the_disks_superblock(rig):
+    disk = rig.home().joinpath(
+        ".local", "share", "containers", "podman", "machine", "wsl", "wsldist"
+    )
+    disk = disk / "podman-machine-default"
+    disk.mkdir(parents=True)
+    (disk / "ext4.vhdx").write_bytes(
+        vhdx_with_file_system(120 * GIB, blocks=100 * GIB // 4096)
+    )
+
+    assert rig.applier.disk_gib(Machine()) == 120
+    assert rig.applier.file_system_gib(Machine()) == 100
+    assert rig.applier.file_system_gib(Machine(account="nobody")) == 0
+
+    (disk / "ext4.vhdx").write_bytes(vhdx(120 * GIB))
+
+    assert rig.applier.file_system_gib(Machine()) == 0
+
+
 def test_a_disk_that_is_not_there_is_zero(rig):
     rig.home()
 
     assert rig.applier.disk_gib(Machine()) == 0
+    assert rig.applier.file_system_gib(Machine()) == 0
 
 
 @pytest.mark.parametrize("head", [b"", b"conectix" + bytes(600000), vhdx(1)[:0x30010]])
@@ -471,6 +510,32 @@ def test_a_vhdx_reads_its_size_in_bytes(tmp_path):
 
     with open(path, "rb") as stream:
         assert vhdx_virtual_size(stream) == 100 * GIB + 5
+
+
+def test_a_file_system_past_32_bits_of_blocks_counts_its_high_part(tmp_path):
+    path = tmp_path / "disk"
+    path.write_bytes(vhdx_with_file_system(GIB, blocks=5, power=0, high=1))
+
+    with open(path, "rb") as stream:
+        assert vhdx_file_system_size(stream) == ((1 << 32) + 5) * 1024
+
+
+@pytest.mark.parametrize(
+    "disk",
+    [
+        b"",
+        b"conectix" + bytes(600000),
+        vhdx(GIB),
+        vhdx_with_file_system(GIB, blocks=1, state=0),
+        vhdx_with_file_system(GIB, blocks=1)[:0x400000],
+    ],
+)
+def test_a_disk_with_no_readable_superblock_names_no_file_system(tmp_path, disk):
+    path = tmp_path / "disk"
+    path.write_bytes(disk)
+
+    with open(path, "rb") as stream, pytest.raises(ValueError):
+        vhdx_file_system_size(stream)
 
 
 # --- wsl.exe as the account ---
