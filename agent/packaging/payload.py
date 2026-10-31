@@ -1,8 +1,8 @@
-"""Staging the payload both agent packages carry.
+"""Staging the payload every agent Linux package carries.
 
-The deb and the rpm ship the same thing — an interpreter with the agent
-installed beside it — and differ only in how their format wants that
-described. What they have in common lives here so it cannot drift two ways.
+The deb, the rpm and the Arch package ship the same thing — an interpreter
+with the agent installed beside it — and differ only in how their format wants
+that described. What they have in common lives here so it cannot drift.
 
 The interpreter is carried rather than depended on, the hub package's own
 precedent: a machine's own interpreter is not a place this project may
@@ -105,6 +105,10 @@ RUSTDESK_ASSETS = {
         "-0.aarch64.rpm",
         "3e523df7ceb6f3804b047a3cac797354c4bf46ec19f2d7ff5e198787003cb092",  # scan: allow
     ),
+    ("pkg", "x86_64"): (
+        "-0-x86_64.pkg.tar.zst",
+        "679760e1a1f1b930529069edfaec219afa16b5efe44c1bc593cede0e65576c11",  # scan: allow
+    ),
 }
 # Where what the agent packages vendor is installed. Under /usr because
 # RustDesk 1.4.9 answers `--password` only when its own `is_installed()`
@@ -153,6 +157,8 @@ MACHINE_NAMES = {
 }
 DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
+# Arch Linux is x86-64 only.
+ARCH_ARCHITECTURES = {"x86_64": "x86_64"}
 
 # What the interpreter carries to install with, which the package drops: the
 # agent is copied into the tree, and an installed package is replaced whole.
@@ -163,7 +169,7 @@ INTERPRETER_INSTALLER = ("pip", "ensurepip", "setuptools", "pkg_resources")
 # imports them.
 BYTECODE_EXCLUDED = r"/(test|tests|idle_test)/"
 
-# What both maintainer scripts run over the prefix, given the paths their
+# What every maintainer script runs over the prefix, given the paths its
 # package manager tracks. Configuration, state and logs live under roots it
 # never names.
 PRUNE_UNTRACKED = """# Everything under the package's own prefix that the package did not install,
@@ -319,7 +325,7 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
     Args:
         tree: The staging directory standing in for the filesystem root.
         architecture: The architecture, named however the format names it.
-        kind: ``deb`` or ``rpm``, which says how the asset is opened.
+        kind: ``deb``, ``rpm`` or ``pkg``, which says how the asset is opened.
 
     Raises:
         SystemExit: When there is no asset pinned for the machine, when what
@@ -684,13 +690,19 @@ def _unpack_package(package: Path, into: Path, kind: str) -> None:
     Args:
         package: The file on disk.
         into: The directory its payload belongs in.
-        kind: ``deb`` or ``rpm``.
+        kind: ``deb``, ``rpm`` or ``pkg``.
 
     Raises:
         SystemExit: When the tooling is absent or refuses.
     """
     if kind == "deb":
         _run_tool(["dpkg-deb", "-x", str(package), str(into)], into)
+        return
+    if kind == "pkg":
+        _run_tool(
+            ["bsdtar", "-xf", str(package), "-C", str(into), RUSTDESK_UPSTREAM_DIR],
+            into,
+        )
         return
     payload_stream = package.parent / f"{package.name}.cpio"
     with open(payload_stream, "wb") as target:

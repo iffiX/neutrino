@@ -116,18 +116,18 @@ def downloaded(monkeypatch):
 # --- the pins ---
 
 
-def test_every_machine_the_agent_is_published_for_has_both_packages():
+def test_every_machine_the_agent_is_published_for_has_each_package():
     machines = set(payload.DEBIAN_ARCHITECTURES) | set(payload.RPM_ARCHITECTURES)
 
     assert set(payload.RUSTDESK_ASSETS) == {
         (kind, machine) for kind in ("deb", "rpm") for machine in machines
-    }
+    } | {("pkg", machine) for machine in payload.ARCH_ARCHITECTURES}
 
 
 def test_the_pinned_assets_are_the_flutter_builds_and_carry_a_digest():
     for (kind, machine), (suffix, digest) in payload.RUSTDESK_ASSETS.items():
         assert "sciter" not in suffix
-        assert suffix.endswith(f".{kind}")
+        assert suffix.endswith(".pkg.tar.zst" if kind == "pkg" else f".{kind}")
         assert machine in suffix
         assert len(digest) == 64
 
@@ -216,6 +216,29 @@ def test_the_rpm_is_opened_the_same_way_as_the_deb(tmp_path, downloaded):
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
     assert not (tmp_path / "tree/usr/bin/rustdesk").exists()
+
+
+def test_upstream_s_arch_package_is_opened_for_its_host_directory_alone(
+    tmp_path, downloaded, monkeypatch
+):
+    """Its link in usr/bin names a file that exists only once installed, and
+    a container's root cannot set a link's permissions."""
+    calls = []
+
+    def opened(command, cwd, **streams):
+        calls.append(command)
+        host = cwd / "usr/share/rustdesk"
+        (host / "lib").mkdir(parents=True)
+        (host / "rustdesk").write_bytes(b"host")
+
+    downloaded(b"an archive")
+    monkeypatch.setattr(payload, "_run_tool", opened)
+
+    payload.stage_rustdesk(tmp_path / "tree", "x86_64", "pkg")
+
+    ((tool, verb, _, flag, _, member),) = calls
+    assert (tool, verb, flag, member) == ("bsdtar", "-xf", "-C", "usr/share/rustdesk")
+    assert (tmp_path / "tree/usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
 
 
 # --- the licence that carrying it owes ---

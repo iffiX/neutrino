@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 import build_deb
+import build_pkg
 import build_rpm
 import payload
 
@@ -37,7 +38,7 @@ def carried(monkeypatch):
         vendor.mkdir(parents=True)
         (vendor / "rustdesk").write_text("")
 
-    for module in (build_deb, build_rpm):
+    for module in (build_deb, build_rpm, build_pkg):
         monkeypatch.setattr(module.payload, "stage_linux_interpreter", stage)
         monkeypatch.setattr(module.payload, "compile_bytecode", compile_bytecode)
         monkeypatch.setattr(module.payload, "stage_rustdesk", stage_rustdesk)
@@ -378,6 +379,169 @@ def _run_with_fakes(tmp_path, script, argument, owner=""):
     environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
     subprocess.run(["sh", str(script), argument], env=environment, check=True)
     return record.read_text().splitlines() if record.exists() else []
+
+
+# --- the Arch package ---
+
+
+def _run_install_hook(tmp_path, hook, *arguments, listed=""):
+    """Run one function of the pacman install script with its commands faked.
+
+    Args:
+        tmp_path: Where the fakes and their record go.
+        hook: The function to run.
+        *arguments: Its arguments.
+        listed: What ``pacman -Qlq`` prints.
+
+    Returns:
+        What the hook ran, one line each, and what it printed.
+    """
+    fakes = tmp_path / "fakes"
+    fakes.mkdir(exist_ok=True)
+    record = tmp_path / "calls"
+    for name in ("nagent", "systemctl"):
+        fake = fakes / name
+        fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
+        fake.chmod(0o755)
+    pacman = fakes / "pacman"
+    listing = tmp_path / "listing"
+    listing.write_text(listed)
+    pacman.write_text(f'#!/bin/sh\ncat "{listing}"\n')
+    pacman.chmod(0o755)
+    script = tmp_path / "hook"
+    script.write_text(
+        build_pkg.install_script().replace(
+            payload.AGENT_BINDING_PATH, str(tmp_path / "agent.json")
+        )
+        + f"\n{hook} {' '.join(arguments)}\n"
+    )
+    result = subprocess.run(
+        ["sh", str(script)],
+        env=dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin"),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    calls = record.read_text().splitlines() if record.exists() else []
+    return calls, result.stdout
+
+
+def test_the_arch_package_lays_the_same_payload_under_the_same_prefix(
+    tmp_path, carried
+):
+    build_pkg._lay_out(tmp_path, "9.9.9", "x86_64")
+
+    site = tmp_path / "opt/neutrino/agent/python/lib/python3.13/site-packages"
+    assert (
+        'AGENT_VERSION = "9.9.9"'
+        in (site / "neutrino_agent" / "_version.py").read_text()
+    )
+    assert carried == [(tmp_path / "opt/neutrino/agent/python", payload.PYTHON_DIR)]
+    assert (tmp_path / "usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
+    assert (tmp_path / "usr/share/doc/neutrino-agent/licenses/rustdesk.txt").is_file()
+    assert (
+        "python/bin/python3 -m neutrino_agent.cli.entry"
+        in (tmp_path / "usr/bin/nagent").read_text()
+    )
+
+
+def test_the_arch_package_keeps_its_unit_out_of_a_lib_directory(tmp_path, carried):
+    """/lib on Arch is a link, and pacman refuses a directory over it."""
+    build_pkg._lay_out(tmp_path, "9.9.9", "x86_64")
+
+    assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
+    assert not (tmp_path / "lib").exists()
+
+
+def test_the_pkgbuild_names_the_machine_and_asks_for_no_python(tmp_path):
+    text = build_pkg.pkgbuild(tmp_path, "9.9.9", architecture="x86_64")
+
+    assert "pkgname=neutrino-agent\n" in text
+    assert "pkgver=9.9.9\n" in text
+    assert "arch=('x86_64')\n" in text
+    assert "install=neutrino-agent.install\n" in text
+    for name in ("systemd", "gtk3", "xdotool", "gst-plugin-pipewire"):
+        assert f"'{name}'" in text
+    assert "python" not in text.split("depends=")[1].split("\n")[0]
+
+
+def test_the_pkgbuild_leaves_the_payload_as_it_was_staged(tmp_path):
+    """Debian's and Arch's makepkg.conf each strip and purge by default."""
+    text = build_pkg.pkgbuild(tmp_path, "9.9.9", architecture="x86_64")
+
+    for option in ("'!strip'", "'!debug'", "'!purge'", "'!zipman'", "'emptydirs'"):
+        assert option in text
+
+
+@pytest.mark.parametrize("machine", ["arm64", "aarch64"])
+def test_no_arch_package_is_published_for_arm(machine):
+    with pytest.raises(SystemExit, match="no Arch package"):
+        build_pkg._architecture(machine)
+
+
+def test_the_arch_install_starts_the_agent(tmp_path):
+    calls, printed = _run_install_hook(tmp_path, "post_install", "9.9.9-1")
+
+    assert calls == [
+        "systemctl daemon-reload",
+        "systemctl enable --now neutrino_agent.service",
+    ]
+    assert "sudo nagent join" in printed
+
+
+def test_the_arch_install_tells_a_joined_machine_nothing(tmp_path):
+    (tmp_path / "agent.json").write_text(BINDING)
+
+    _, printed = _run_install_hook(tmp_path, "post_install", "9.9.9-1")
+
+    assert "nagent join" not in printed
+
+
+def test_the_arch_upgrade_restarts_the_agent(tmp_path):
+    calls, printed = _run_install_hook(tmp_path, "post_upgrade", "9.9.9-1", "9.9.8-1")
+
+    assert calls.index("systemctl daemon-reload") < calls.index(
+        "systemctl try-restart neutrino_agent.service"
+    )
+    assert "nagent join" not in printed
+
+
+def test_the_arch_upgrade_prunes_what_the_package_did_not_install():
+    """pacman's own file list says what the package put under the prefix."""
+    script = build_pkg.install_script()
+
+    assert payload.PRUNE_UNTRACKED in script
+    assert (
+        "pacman -Qlq neutrino-agent | sed 's:/*$::' | prune_untracked "
+        "/opt/neutrino/agent" in script
+    )
+
+
+def test_the_arch_removal_leaves_the_hub_and_takes_the_modules_units(tmp_path):
+    calls, _ = _run_install_hook(tmp_path, "pre_remove", "9.9.9-1")
+
+    assert calls == [
+        "nagent leave --yes",
+        "systemctl stop neutrino_agent.service",
+        "systemctl disable neutrino_agent.service",
+        "nagent service uninstall --yes",
+    ]
+
+
+def test_the_arch_removal_shows_what_the_leave_and_the_uninstall_print():
+    for line in build_pkg.install_script().splitlines():
+        if "nagent leave" in line or "nagent service uninstall" in line:
+            assert ">/dev/null" not in line, line
+
+
+def test_the_arch_removal_takes_its_own_payload_and_never_the_hub_s():
+    script = build_pkg.install_script()
+
+    assert "rm -rf /opt/neutrino/agent\n" in script
+    assert "rm -rf /usr/lib/neutrino/agent\n" in script
+    assert "rm -rf /opt/neutrino\n" not in script
+    assert "rm -rf /opt/neutrino/hub" not in script
+    assert "Leaving /etc/neutrino/agent in place" in script
 
 
 def test_the_agent_package_carries_no_cc_switch(tmp_path, carried):

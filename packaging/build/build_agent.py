@@ -1,4 +1,4 @@
-"""Build the agent's Linux packages, the .deb and the .rpm.
+"""Build the agent's Linux packages, the .deb, the .rpm and the Arch package.
 
     python3 packaging/build/build_agent.py --architecture amd64 --output-dir dist/
 
@@ -47,6 +47,17 @@ AGENT_BUILDS = {
         "mkdir -p /build && cp -r /src/licenses /build/licenses",
         "script": "build_rpm.py",
     },
+    "arch": {
+        "image": "archlinux:latest",
+        "install": "pacman -Sy --noconfirm --needed archlinux-keyring && "
+        "pacman -S --noconfirm --needed python base-devel libarchive && "
+        "(useradd -m builder 2>/dev/null || true) && "
+        "mkdir -p /build && cp -r /src/licenses /build/licenses",
+        "script": "build_pkg.py",
+        # Arch Linux is x86-64 only; Arch Linux ARM is another project with
+        # no image of its own to build in.
+        "architectures": ("amd64",),
+    },
 }
 
 # The Go programs go into the container where the package build takes them
@@ -92,8 +103,11 @@ def main() -> int:
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     for family in container_build.families(arguments.families):
-        if family not in AGENT_BUILDS:
-            print(f"  no agent package for {family}")
+        published = AGENT_BUILDS[family].get(
+            "architectures", container_build.BUILD_PLATFORMS
+        )
+        if arguments.architecture not in published:
+            print(f"  no agent package for {family} {arguments.architecture}")
             continue
         print(
             f"building the agent package for {family} "
