@@ -931,9 +931,10 @@ the install goes on after the restart with no press ([agent.md](agent.md),
 
 **Install** on a module that requires a module the machine reports
 `absent` asks through `useConfirm` first: the title
-`ui.modules.install_title`, the body `ui.modules.install_requires_body`
-naming the required modules that are absent, and the confirming button
-`ui.modules.install`. **Install** on any other module acts at once, with no
+`ui.modules.install_title`, the body `ui.modules.install_requires_body`, the
+required modules that are absent listed one to a line, the question
+`ui.modules.install_requires_question`, and the buttons `ui.confirm.yes` and
+`ui.confirm.no`. **Install** on any other module acts at once, with no
 dialog.
 
 **Uninstall** asks through `useConfirm`, one dialog for every module: the

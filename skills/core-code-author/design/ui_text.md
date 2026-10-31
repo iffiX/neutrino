@@ -379,7 +379,9 @@ where they fit.
 | `ui.module_catalog.<module>` | one line on the module, in each language | |
 | `ui.module_catalog.requires`, under the line of a module that requires another | Needs: {modules} | 需要：{modules} |
 | `ui.modules.install_title` | Install {module} on {device} | 在 {device} 上安装 {module} |
-| `ui.modules.install_requires_body`, the body of **Install** on a module whose required module is absent | Installs {modules} first. | 会先安装“{modules}”。 |
+| `ui.modules.install_requires_body`, the body of **Install** on a module whose required modules are absent, the modules listed under it one to a line | Installing this also installs: | 安装本项会额外安装以下模块： |
+| `ui.modules.install_requires_question`, under that list | Install? | 要安装吗？ |
+| `ui.confirm.yes`, `ui.confirm.no`, its two buttons | Yes, No | 是，否 |
 | `ui.ssh_server.host_key` | Host key {fingerprint} | 主机密钥 {fingerprint} |
 | `ui.ssh_server.apply` | Apply SSH server | 应用 SSH 服务器 |
 | `state.queued` | queued | 排队中 |
