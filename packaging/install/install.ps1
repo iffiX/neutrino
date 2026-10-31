@@ -89,6 +89,8 @@ function Test-NeutrinoInstallerBusy {
         if (-not [Threading.Mutex]::TryOpenExisting($NeutrinoInstallerMutex, [ref]$held)) { return $false }
         $held.Dispose()
     } catch [UnauthorizedAccessException] {
+        # The mutex exists and another account's install holds it.
+        return $true
     }
     return $true
 }
