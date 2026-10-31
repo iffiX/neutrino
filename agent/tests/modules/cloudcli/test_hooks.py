@@ -52,6 +52,7 @@ from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli import hooks as hooks_module
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
 from neutrino_agent.modules.cloudcli.hooks import (
+    INSTALL_ATTEMPT_MARK,
     NATIVE_CHECK_EXIT,
     CloudcliHooks,
     cookie_name,
@@ -372,8 +373,7 @@ Node.js v22.23.3
                     "account": "ann",
                     "module": "node-pty",
                     "detail": "prebuild-install warn install No prebuilt binaries "
-                    "found\ngyp ERR! build error\nnpm error path "
-                    ".../node_modules/node-pty",
+                    "found\nnpm error path .../node_modules/node-pty",
                 },
             ),
         ),
@@ -414,9 +414,131 @@ def test_a_failed_install_names_its_step(output, expected):
     assert (failure.code, failure.params) == expected
 
 
+# npm's report of a request the machine refused, on Windows.
+NPM_FETCH_REFUSED = """npm warn cleanup [Error: EPERM: operation not permitted, rmdir 'x']
+npm error code EACCES
+npm error errno EACCES
+npm error FetchError: request to https://registry.example/@cloudcli-ai%2fcloudcli failed, reason:
+npm error     at ClientRequest.<anonymous> (C:\\node\\index.js:130:14)
+npm error   code: 'EACCES',
+npm error   errno: 'EACCES',
+npm error }
+npm error
+npm error The operation was rejected by your operating system.
+npm error It's possible that the file was already in use (by a text editor or antivirus),
+npm error or that you lack permissions to access it.
+npm error
+npm error If you believe this might be a permissions issue, please double-check the
+npm error permissions of the file and its containing directories, or try running
+npm error the command again as root/Administrator.
+npm error A complete log of this run can be found in: C:\\app\\.npm\\_logs\\debug-0.log
+"""
+# npm's report of better-sqlite3's install script on a tree a cut left half written.
+NPM_TREE_CUT = """npm warn cleanup Failed to remove some directories [
+npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'C:\\app\\x'] {
+npm error code 1
+npm error path C:\\app\\node_modules\\better-sqlite3
+npm error command failed
+npm error command C:\\WINDOWS\\system32\\cmd.exe /d /s /c prebuild-install || node-gyp rebuild --release
+npm error node:internal/modules/cjs/loader:1433
+npm error   throw err;
+npm error
+npm error Error: Cannot find module './internal/re'
+npm error Require stack:
+npm error - C:\\app\\node_modules\\semver\\index.js
+npm error - C:\\app\\node_modules\\prebuild-install\\bin.js
+npm error gyp ERR! find VS You need to install the latest version of Visual Studio
+npm error gyp ERR! stack Error: Could not find any Visual Studio installation to use
+npm error gyp ERR! System Windows_NT 10.0.26100
+npm error gyp ERR! node -v v22.23.3
+npm error gyp ERR! not ok
+npm error A complete log of this run can be found in: C:\\app\\.npm\\_logs\\debug-0.log
+"""
+# npm's report of a binary prebuild-install could not fetch, with no compiler to build it.
+NPM_BINARY_UNFETCHED = """npm error code 1
+npm error path /home/ann/app/node_modules/better-sqlite3
+npm error command failed
+npm error command sh -c prebuild-install || node-gyp rebuild --release
+npm error prebuild-install warn install Request timed out
+npm error gyp ERR! build error
+npm error gyp ERR! stack Error: not found: make
+npm error gyp ERR! not ok
+npm error A complete log of this run can be found in: /home/ann/app/.npm/_logs/debug-0.log
+"""
+
+
+def test_a_refused_request_keeps_npm_s_code_and_the_request_and_no_closing_advice():
+    failure = npm_failure(NPM_FETCH_REFUSED, "ann")
+
+    assert failure.code == "cloudcli_npm_install_failed"
+    assert failure.params["detail"] == (
+        "npm error code EACCES\n"
+        "npm error FetchError: request to "
+        "https://registry.example/@cloudcli-ai%2fcloudcli failed, reason:"
+    )
+
+
+def test_a_cut_tree_is_no_binary_that_could_not_be_fetched():
+    failure = npm_failure(NPM_TREE_CUT, "ann")
+
+    assert failure.code == "cloudcli_npm_install_failed"
+    assert failure.params["detail"] == (
+        "npm error code 1\n"
+        "npm error path C:\\app\\node_modules\\better-sqlite3\n"
+        "npm error Error: Cannot find module './internal/re'\n"
+        "npm error gyp ERR! stack Error: Could not find any Visual Studio "
+        "installation to use"
+    )
+
+
+def test_a_binary_prebuild_install_could_not_fetch_names_the_failing_module():
+    failure = npm_failure(
+        "prebuild-install warn install elsewhere node-pty\n" + NPM_BINARY_UNFETCHED,
+        "ann",
+    )
+
+    assert failure.code == "cloudcli_native_module_failed"
+    assert failure.params["module"] == "better-sqlite3"
+    assert failure.params["detail"].splitlines()[-2:] == [
+        "npm error prebuild-install warn install Request timed out",
+        "npm error gyp ERR! stack Error: not found: make",
+    ]
+
+
+def test_a_report_with_no_cause_line_keeps_its_first_lines_and_never_the_log_line():
+    output = (
+        "npm warn deprecated x\n"
+        "npm error Exit handler never called!\n"
+        "npm error A complete log of this run can be found in: C:\\debug-0.log\n"
+    )
+
+    assert npm_failure(output, "ann").params["detail"] == (
+        "npm error Exit handler never called!"
+    )
+
+
+def test_a_failed_windows_install_is_judged_by_its_last_attempt_alone(windows):
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task("Ready", 1)]}
+    log = hooks.machine.module_dir + "\\run\\install_ann.log"
+    with open(log, "w", encoding="utf-8") as stream:
+        stream.write(
+            f"{INSTALL_ATTEMPT_MARK} 1/2\n{NPM_BINARY_UNFETCHED}"
+            f"{INSTALL_ATTEMPT_MARK} 2/2\n{NPM_FETCH_REFUSED}"
+        )
+
+    hooks.prepare_module()
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.code == "cloudcli_npm_install_failed"
+    assert "Request timed out" not in caught.value.params["detail"]
+    assert "code EACCES" in caught.value.params["detail"]
+
+
 def test_a_failure_keeps_its_last_whole_lines_within_its_length():
-    last = "npm error " + "x" * 150 + " 5"
-    output = "\n".join(f"npm error {'x' * 150} {n}" for n in range(5)) + "\n" + last
+    last = "npm error code " + "x" * 150 + "5"
+    output = "\n".join(f"npm error code {'x' * 150}{n}" for n in range(5)) + "\n" + last
 
     detail = npm_failure(output, "ann").params["detail"]
 
@@ -604,17 +726,20 @@ def test_a_log_an_earlier_install_left_is_not_read_as_this_ones(linux):
     assert caught.value.params["detail"] == "npm error code ETIMEDOUT"
 
 
-def test_a_native_module_without_its_binary_names_it(linux):
+def test_a_native_module_node_cannot_load_is_named_with_its_error(linux):
     hooks, machine, entry = linux
     machine.check_exit = NATIVE_CHECK_EXIT
-    machine.check_output = "better-sqlite3\n"
+    machine.check_output = "better-sqlite3: Could not locate the bindings file.\n"
 
     with pytest.raises(ModuleApplyError) as caught:
         hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
-    assert (caught.value.code, caught.value.params["module"]) == (
-        "cloudcli_native_module_failed",
-        "better-sqlite3",
+    assert (caught.value.code, caught.value.params) == (
+        "cloudcli_npm_install_failed",
+        {
+            "account": "ann",
+            "detail": "better-sqlite3: Could not locate the bindings file.",
+        },
     )
 
 
@@ -1108,10 +1233,13 @@ def test_an_app_already_there_starts_no_install(windows, ready):
     [
         (
             NATIVE_CHECK_EXIT,
-            "npm ok\nnode-pty\n",
+            "npm ok\nnode-pty: The specified module could not be found.\n",
             (
-                "cloudcli_native_module_failed",
-                {"account": "ann", "module": "node-pty", "detail": "node-pty"},
+                "cloudcli_npm_install_failed",
+                {
+                    "account": "ann",
+                    "detail": "node-pty: The specified module could not be found.",
+                },
             ),
         ),
         (

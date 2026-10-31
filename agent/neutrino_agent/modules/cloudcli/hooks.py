@@ -134,19 +134,34 @@ from neutrino_agent.modules.shared.package import npm_artifact, params_of
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 from neutrino_agent.modules.shared.windows_acl import grant_account_alone
 
-# The words in npm's output that say a native module could not get its
-# binary: prebuild-install gave up, and node-gyp could not build it either.
-NATIVE_FAILURE_WORDS = ("gyp", "prebuild")
-# The lines of npm's output that are its tools' own account of a failure.
-FAILURE_LINE_WORDS = ("prebuild-install", "gyp err", "npm error", "npm err!")
-# A line naming an error Node.js threw, such as ``Error: EPERM: ...``.
-ERROR_LINE = re.compile(r"\w*Error( \[\w+\])?: ")
-# The exit status the native check ends with, the module's name printed.
+# The line prebuild-install writes when it could not fetch a binary, lower case.
+PREBUILD_FETCH_FAILED = "prebuild-install warn install "
+# npm's prefix on each line of its failure report, and on a warning, lower case.
+NPM_ERROR_PREFIX = re.compile(r"npm (error|err!)( |$)", re.IGNORECASE)
+NPM_WARNING = "npm warn"
+# The line of npm's report that names the path it failed at.
+NPM_PATH_LINE = re.compile(r"path (\S.*)$")
+# The words of the last line of npm's report. The line names npm's log file.
+NPM_LOG_LINE = "A complete log of this run"
+# A line of a failure report that names the cause, npm's prefix taken off: npm's
+# code, the path, a failed request, prebuild-install's failed fetch, a thrown error.
+CAUSE_LINE = re.compile(
+    r"code \S+$"
+    r"|path \S"
+    r"|network request "
+    r"|\d{3} .+ - [A-Z]+ "
+    r"|prebuild-install warn install "
+    r"|(gyp ERR! stack )?\w*Error( \[\w+\])?: "
+    r"|(\w+ )?E[A-Z]{2,}: "
+)
+# The exit status the native check ends with, the module's name and the first
+# line of its error printed.
 NATIVE_CHECK_EXIT = 3
 NATIVE_CHECK_SCRIPT = (
     "const load = require('module').createRequire(process.cwd() + '/'); "
     "for (const name of [%s]) { try { load(name) } catch (error) "
-    "{ console.log(name); process.exit(%d) } }"
+    "{ console.log(name + ': ' + String(error.message).split('\\n')[0]); "
+    "process.exit(%d) } }"
     % (",".join("'%s'" % name for name in CLOUDCLI_NATIVE_MODULES), NATIVE_CHECK_EXIT)
 )
 # What an account's install runs under ``sh``: the app directory and the
@@ -170,6 +185,8 @@ CLEAN_SCRIPT = (
 NPM_FAILED_EXIT = 1
 INSTALL_RESULT_VARIABLE = "NEUTRINO_INSTALL_RESULT"
 INSTALL_ATTEMPT_LABEL = "attempt_"
+# The line a Windows install script writes to its log as each attempt starts.
+INSTALL_ATTEMPT_MARK = "neutrino: npm attempt"
 # The task states of an install that has not ended.
 INSTALL_RUNNING_STATES = ("Running", "Queued")
 # What one account's install step found: CloudCLI already there, installed
@@ -340,45 +357,98 @@ def npm_failure(output: str, account: str) -> ModuleApplyError:
         account: The account it ran as.
 
     Returns:
-        ``cloudcli_native_module_failed {account, module, detail}`` when a
-        native module could not get its binary, else
-        ``cloudcli_npm_install_failed {account, detail}``; ``detail`` is the
-        last lines prebuild-install, node-gyp and npm wrote about it.
+        ``cloudcli_native_module_failed {account, module, detail}`` when
+        prebuild-install could not fetch a native module's binary, else
+        ``cloudcli_npm_install_failed {account, detail}``; ``detail`` is
+        what :func:`failure_detail` keeps.
     """
     detail = failure_detail(output)
-    lowered = output.lower()
-    if any(word in lowered for word in NATIVE_FAILURE_WORDS):
-        for name in CLOUDCLI_NATIVE_MODULES:
-            if name in lowered:
-                return ModuleApplyError(
-                    "cloudcli_native_module_failed",
-                    {"account": account, "module": name, "detail": detail},
-                )
+    module = unfetched_module(output)
+    if module:
+        return ModuleApplyError(
+            "cloudcli_native_module_failed",
+            {"account": account, "module": module, "detail": detail},
+        )
     return ModuleApplyError(
         "cloudcli_npm_install_failed", {"account": account, "detail": detail}
     )
 
 
-def failure_detail(output: str) -> str:
-    """The last lines an installer's tools wrote about a failure.
+def native_check_failure(said: str, account: str) -> ModuleApplyError:
+    """The failure of a native module npm installed and Node.js cannot load.
+
+    Args:
+        said: What the native check printed, the module and its error.
+        account: The account it ran as.
+
+    Returns:
+        ``cloudcli_npm_install_failed {account, detail}``.
+    """
+    return ModuleApplyError(
+        "cloudcli_npm_install_failed",
+        {
+            "account": account,
+            "detail": bounded_detail(said, CLOUDCLI_FAILURE_DETAIL_CHARS),
+        },
+    )
+
+
+def unfetched_module(output: str) -> str:
+    """The native module whose binary prebuild-install could not fetch.
 
     Args:
         output: What npm printed.
 
     Returns:
-        Up to four distinct lines naming prebuild-install, node-gyp or npm's
-        own errors; else up to four distinct lines naming an error Node.js
-        threw; else the output's last line. Joined by newlines and bounded
-        as :func:`bounded_detail` bounds them.
+        The native module npm's ``path`` line ends with, else the first one
+        the output names; empty when prebuild-install reported no failed
+        fetch.
     """
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
-    named = [
+    lowered = output.lower()
+    if PREBUILD_FETCH_FAILED not in lowered:
+        return ""
+    for line in output.splitlines():
+        found = NPM_PATH_LINE.match(without_npm_prefix(line))
+        name = re.split(r"[\\/]", found.group(1).rstrip("\\/"))[-1] if found else ""
+        if name in CLOUDCLI_NATIVE_MODULES:
+            return name
+    for name in CLOUDCLI_NATIVE_MODULES:
+        if name in lowered:
+            return name
+    return ""
+
+
+def without_npm_prefix(line: str) -> str:
+    """A line of npm's output stripped, without the prefix of npm's failure report."""
+    return NPM_ERROR_PREFIX.sub("", line.strip()).strip()
+
+
+def failure_detail(output: str) -> str:
+    """The lines of a failed install's output that name its cause.
+
+    Args:
+        output: What npm printed.
+
+    Returns:
+        The last four distinct lines ``CAUSE_LINE`` matches; else the first
+        four lines of npm's report, leaving out its line naming the log
+        file; else the output's last line. npm's warnings are left out.
+        Joined by newlines and bounded as :func:`bounded_detail` bounds them.
+    """
+    lines = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip() and not line.strip().lower().startswith(NPM_WARNING)
+    ]
+    causes = [line for line in lines if CAUSE_LINE.match(without_npm_prefix(line))]
+    report = [
         line
         for line in lines
-        if any(word in line.lower() for word in FAILURE_LINE_WORDS)
+        if NPM_ERROR_PREFIX.match(line)
+        and without_npm_prefix(line)
+        and NPM_LOG_LINE not in line
     ]
-    thrown = [line for line in lines if ERROR_LINE.match(line)]
-    kept = last_distinct(named) or last_distinct(thrown) or lines[-1:]
+    kept = last_distinct(causes) or report[:CLOUDCLI_FAILURE_LINES] or lines[-1:]
     return bounded_detail("\n".join(kept), CLOUDCLI_FAILURE_DETAIL_CHARS)
 
 
@@ -410,6 +480,19 @@ def install_output(log_file: str) -> str:
     except OSError:
         return ""
     return text.lstrip("\ufeff")[-CLOUDCLI_INSTALL_OUTPUT_CHARS:]
+
+
+def last_attempt(output: str) -> str:
+    """The part of a Windows install's output that its last attempt wrote.
+
+    Args:
+        output: The install's log.
+
+    Returns:
+        What follows the last attempt's mark; the whole output without one.
+    """
+    _head, mark, tail = output.rpartition(INSTALL_ATTEMPT_MARK)
+    return tail.partition("\n")[2] if mark else output
 
 
 def registry_host(registry: str) -> str:
@@ -504,6 +587,7 @@ def render_install_script(
     for index, (registry, settings) in enumerate(attempts):
         following = f":{INSTALL_ATTEMPT_LABEL}{index + 1}"
         lines.append(f":{INSTALL_ATTEMPT_LABEL}{index}")
+        lines.append(f"echo {INSTALL_ATTEMPT_MARK} {index + 1}/{len(attempts)}")
         lines += [f'set "{name}={value}"' for name, value in settings.items()]
         lines.append(f'set "{INSTALL_RESULT_VARIABLE}={NPM_FAILED_EXIT}"')
         lines.append(f'"{node}" -e "{CLEAN_SCRIPT}" || goto {following}')
@@ -1309,7 +1393,7 @@ class CloudcliHooks(InstanceHooks):
         if self.machine.batch_logon is not None:
             self.machine.batch_logon.release(account, name)
         remove_path(script)
-        output = install_output(log_file)
+        output = last_attempt(install_output(log_file))
         result = int(task.get("last_result", 0) or 0) & 0xFFFFFFFF
         if result in CLOUDCLI_INSTALL_CUT_RESULTS:
             return True
@@ -1317,14 +1401,7 @@ class CloudcliHooks(InstanceHooks):
             raise ModuleApplyError("credential_invalid", {"account": account})
         if result == NATIVE_CHECK_EXIT:
             lines = output.strip().splitlines()
-            raise ModuleApplyError(
-                "cloudcli_native_module_failed",
-                {
-                    "account": account,
-                    "module": lines[-1] if lines else "",
-                    "detail": failure_detail(output),
-                },
-            )
+            raise native_check_failure(lines[-1] if lines else "", account)
         if result != 0 or not is_app_ready(app, self._version):
             raise npm_failure(output, account)
         return False
@@ -1344,16 +1421,9 @@ class CloudcliHooks(InstanceHooks):
         )
 
     def _check_native(self, check, account: str) -> None:
-        """Raise the native module the check found without its binary."""
+        """Raise the native module the check could not load."""
         if check.exit_code == NATIVE_CHECK_EXIT:
-            raise ModuleApplyError(
-                "cloudcli_native_module_failed",
-                {
-                    "account": account,
-                    "module": check.stdout.strip(),
-                    "detail": failure_detail(check.stderr),
-                },
-            )
+            raise native_check_failure(check.stdout.strip(), account)
 
     def _is_machine_stopping(self) -> bool:
         """Whether the machine is shutting down, which stops an install's service."""
