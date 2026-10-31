@@ -619,21 +619,58 @@ def test_a_resize_shuts_wsl_down_then_sizes_the_machines_disk(rig):
     assert "podman: the disk of lab's machine is 120 GB" in rig.lines
 
 
+def test_a_resize_that_fails_once_runs_again_after_another_shutdown(rig):
+    machine = Machine(
+        answers=[(0, ""), (1, "/dev/sdd: recovering journal\r\nWsl/Service/E_FAIL")]
+    )
+
+    rig.applier.resize_disk(machine, disk_gib=120)
+
+    resize = (
+        "& 'C:\\Windows\\System32\\wsl.exe' '--manage' 'podman-machine-default' "
+        "'--resize' '120GB'"
+    )
+    shutdown = "& 'C:\\Windows\\System32\\wsl.exe' '--shutdown'"
+    assert [line.split("; ")[1] for line in wsl_lines(machine)] == [
+        shutdown,
+        resize,
+        shutdown,
+        resize,
+    ]
+    assert (
+        "podman: resizing the disk of lab's machine again: "
+        "/dev/sdd: recovering journal\r\nWsl/Service/E_FAIL"
+    ) in rig.lines
+    assert "podman: the disk of lab's machine is 120 GB" in rig.lines
+
+
 @pytest.mark.parametrize(
     "answers, said",
     [
         ([(1, "Access is denied.")], "Access is denied."),
-        ([(0, ""), (1, "The disk is in use.")], "The disk is in use."),
-        ([(0, ""), (5, "")], "wsl --manage exited 5"),
+        ([(0, ""), (1, "journal"), (1, "Access is denied.")], "Access is denied."),
+        ([(0, ""), (1, "journal"), (0, ""), (1, "In use.")], "In use."),
+        ([(0, ""), (5, ""), (0, ""), (5, "")], "wsl --manage exited 5"),
     ],
 )
-def test_a_size_wsl_refuses_is_machine_set_failed(rig, answers, said):
+def test_a_size_wsl_refuses_twice_is_machine_set_failed(rig, answers, said):
     machine = Machine(answers=answers)
 
     refused = refusal(lambda: rig.applier.resize_disk(machine, disk_gib=120))
 
     assert refused.code == "machine_set_failed"
     assert refused.params == {"detail": said}
+    assert "podman: the disk of lab's machine is 120 GB" not in rig.lines
+
+
+def test_a_login_windows_refuses_is_not_resized_again(rig):
+    refused_login = ModuleApplyError("credential_invalid", {"account": "lab"})
+    machine = Machine(answers=[(0, ""), refused_login])
+
+    refused = refusal(lambda: rig.applier.resize_disk(machine, disk_gib=120))
+
+    assert refused is refused_login
+    assert len(machine.runs) == 2
 
 
 # --- the account's .wslconfig ---

@@ -711,20 +711,31 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         """Stop every WSL system of the account, then give the machine's disk a new size, as the account.
 
         WSL holds the disk until its virtual machine stops, after an init
-        too, so the resize follows a ``wsl --shutdown``.
+        too, so the resize follows a ``wsl --shutdown``. A resize WSL fails
+        runs once more, after another ``wsl --shutdown``.
 
         Args:
             machine: The machine.
             disk_gib: The size in GiB.
 
         Raises:
-            ModuleApplyError: ``machine_set_failed`` when WSL refuses the
-                size; ``credential_invalid`` when Windows refuses the login.
+            ModuleApplyError: ``machine_set_failed`` when WSL fails the
+                second resize; ``credential_invalid`` when Windows refuses the
+                login.
         """
+        resize = ["--manage", PODMAN_MACHINE_NAME, "--resize", f"{disk_gib}GB"]
         self._wsl_as(machine, ["--shutdown"])
-        self._wsl_as(
-            machine, ["--manage", PODMAN_MACHINE_NAME, "--resize", f"{disk_gib}GB"]
-        )
+        try:
+            self._wsl_as(machine, resize)
+        except ModuleApplyError as error:
+            if error.code != "machine_set_failed":
+                raise
+            self._log(
+                f"podman: resizing the disk of {machine.account}'s machine again: "
+                f"{error.params['detail']}"
+            )
+            self._wsl_as(machine, ["--shutdown"])
+            self._wsl_as(machine, resize)
         self._log(f"podman: the disk of {machine.account}'s machine is {disk_gib} GB")
 
     def _enable_feature(self, feature: str) -> None:
