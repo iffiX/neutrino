@@ -459,6 +459,21 @@ def test_run_settings_are_refused_for_a_machine_that_is_not_windows_or_macos(
     assert "machine" not in runtime.desired_states.read(DEVICE, "podman")
 
 
+def test_run_settings_are_stored_with_containers_absent_and_want_nothing(box):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = WINDOWS
+    available(runtime, "lab", login_id=login("lab"))
+    runtime.report(DEVICE, "podman", "absent")
+
+    response = client.post(
+        f"{BASE}/machine/set", json={"device_id": DEVICE, **RUN_SETTINGS}
+    )
+
+    assert response.status_code == 200
+    assert runtime.desired_states.read(DEVICE, "podman")["machine"] == RUN_SETTINGS
+    assert not runtime.desired_states.want_of(DEVICE, "podman")
+
+
 def test_an_account_not_available_and_a_windows_account_with_no_login_are_refused(
     box,
 ):
