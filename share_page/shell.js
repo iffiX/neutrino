@@ -123,10 +123,15 @@ function screenOf(code) {
 
 // --- the link ------------------------------------------------------------
 
+// The share's facts from the address's # part, or null.
+function linkedFacts() {
+  const fragment = location.hash.slice(1);
+  return fragment ? parseFacts(() => decoder.decode(base64urlDecode(fragment))) : null;
+}
+
 // The share's facts from the link's fragment, else the tab's kept copy.
 function readFacts() {
-  const fragment = location.hash.slice(1);
-  const linked = fragment ? parseFacts(() => decoder.decode(base64urlDecode(fragment))) : null;
+  const linked = linkedFacts();
   if (linked) sessionStorage.setItem(KEPT_FACTS, JSON.stringify(linked));
   return linked || parseFacts(() => sessionStorage.getItem(KEPT_FACTS));
 }
@@ -1473,5 +1478,12 @@ setInterval(() => {
 // A message to the worker every TIMING.awake while it streams a response of the app.
 // Firefox stops a worker 30 seconds after its last event, and the bodies it streams end there.
 setInterval(() => { if (page.serving.size) worker.wake(); }, TIMING.awake);
+
+// A changed # part loads the page again in a tab with no facts, and when it holds other facts.
+window.addEventListener("hashchange", () => {
+  const linked = linkedFacts();
+  if (page.facts && (!linked || JSON.stringify(linked) === JSON.stringify(page.facts))) return;
+  location.reload();
+});
 
 page.start().catch(() => { if (!page.isEnded) screen.refuse("hub"); });
