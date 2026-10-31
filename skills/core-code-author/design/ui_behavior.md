@@ -948,7 +948,30 @@ the install goes on after the restart with no press ([agent.md](agent.md),
 required modules that are absent listed one to a line, the question
 `ui.modules.install_requires_question`, and the buttons `ui.confirm.yes` and
 `ui.confirm.no`. **Install** on any other module acts at once, with no
-dialog.
+dialog, except for the account below.
+
+**Install** on Containers or on a module that requires it, on a Windows or
+macOS machine whose Run settings name no account, asks for the account before
+anything installs (`components/containers_account_modal.tsx`). The **Yes** of
+the dialog above opens it; Containers itself opens it alone. An account already
+named asks nothing, and Linux never asks.
+
+| Part | Idiom |
+| --- | --- |
+| Title | `ui.containers.account_title` |
+| **Account** | a picker with one choice among the accounts the machine reports (`system_accounts`), the hint `ui.containers.account_hint` under it, and `ui.containers.account_empty` in an empty list |
+| **Password** | on a Windows machine alone, while the chosen account has no stored login: the **Available accounts** form's field, with its words |
+| Buttons | `ui.confirm.cancel` and `ui.modules.install` |
+
+**Cancel**, Escape and the backdrop write nothing and install nothing, and
+the first dialog's **Yes** counts for nothing. **Install** sends, in order,
+`account/add` for an account not yet available (`account/set` for an available
+one with no login), `machine/set`, and the press itself. A refused write shows
+in the dialog and installs nothing; an account already added stays available.
+CPUs and memory are 0, and the disk limit 0 on macOS and 100 on Windows. A
+`machine_disk_shrink` on that limit sends `machine/set` again with the
+refusal's `current_gib`: the dialog has no field for the disk, and an account's
+existing WSL disk can read 1 TB. All three change later in Run settings.
 
 **Uninstall** asks through `useConfirm`, one dialog for every module: the
 title `ui.modules.uninstall_title`, the body `ui.modules.uninstall_body`, and
@@ -1068,7 +1091,7 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 | Control | Idiom |
 | --- | --- |
-| **Account** | a picker over the machine's available accounts; on Windows the account's login is the one its form holds |
+| **Account** | a picker over the machine's available accounts, `ui.accounts.empty` in an empty list; on Windows the account's login is the one its form holds |
 | **CPUs**, **Memory (GiB)** | number fields, 0 for the default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows; under **Memory (GiB)** `ui.containers.run_memory_need {need}` while the view's `memory_need` is set and the field holds less than its `need_gib` |
 | **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 

@@ -605,6 +605,9 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_wsl_warning` | Every WSL system of this account restarts with the new settings. | 这个账户下的所有 WSL 系统都会重启并使用新设置。 |
 | `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
 | `ui.containers.run_needed` | Choose an account under Run settings first. | 先在“运行设置”里选一个账户。 |
+| `ui.containers.account_title`, the dialog before an **Install** | Choose the account that runs the containers | 选择运行容器的账户 |
+| `ui.containers.account_hint` | CPUs, memory and the disk limit use their defaults; change them later under Run settings. | CPU、内存和磁盘上限先用默认值，之后可在“运行设置”里修改。 |
+| `ui.containers.account_empty` | This machine reports no account. | 这台机器没有上报账户。 |
 | `ui.containers.browse` | Browse… | 浏览… |
 | `ui.containers.volume_placeholder_linux`, `ui.containers.volume_placeholder_windows`, `ui.containers.volume_placeholder_darwin` | `/srv/share:/data`, `C:\data:/data`, `/Users/me/data:/data` | `/srv/share:/data`、`C:\data:/data`、`/Users/me/data:/data` |
 | `ui.containers.services` | Services | 服务 |
