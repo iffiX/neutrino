@@ -2563,6 +2563,15 @@ class AccountRequest(BaseModel):
     account: str
 
 
+class AccountPasswordTest(BaseModel):
+    """A password to test for one account of one Windows machine."""
+
+    device_id: str
+    account: str
+    # Empty tests the login the account has.
+    password: str = ""
+
+
 class EnabledAccountRowView(BaseModel):
     """One available account as an account-layer module's tab lists it."""
 
@@ -2830,6 +2839,19 @@ class PodmanSettingsView(BaseModel):
     # Set on Windows and macOS while the container modules need more memory
     # than the Podman machine has; None otherwise.
     memory_need: PodmanMemoryNeedView | None = None
+
+
+class PodmanNewMachineView(BaseModel):
+    """The numbers a new Podman machine starts from, as the machine reports them."""
+
+    cpus: int
+    memory_gib: int
+    # The account's disk now, else the default.
+    disk_gib: int
+    # The account's disk now; 0 while the account has no machine.
+    disk_gib_now: int
+    # What the container modules need, the module being installed among them.
+    need_gib: int
 
 
 class PodmanDeviceView(ModuleDeviceFields, PodmanSettingsView):

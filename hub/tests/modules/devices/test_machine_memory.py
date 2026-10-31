@@ -14,6 +14,7 @@ import pytest
 from neutrino_hub.modules.devices.machine_memory import (
     machine_memory_gib,
     memory_need,
+    need_gib,
 )
 from tests.conftest import DEMO_MANIFEST
 
@@ -52,6 +53,11 @@ def test_the_need_sums_every_container_module_not_asked_absent(modules):
     )
 
     assert need == {"need_gib": 5, "memory_gib": 2}
+
+
+def test_the_need_alone_is_whole_gib_with_or_without_a_machine(modules):
+    assert need_gib(wants(demo="installed")) == 3
+    assert need_gib(wants(demo="absent", samba="running")) == 0
 
 
 def test_a_module_asked_absent_needs_nothing(modules):

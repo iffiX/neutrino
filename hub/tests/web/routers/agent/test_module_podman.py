@@ -6,7 +6,9 @@ of 0 before the agent is asked, and takes a macOS disk of 0; the agent
 checks the settings as the state carries them, with the login's password on
 Windows alone and never the login's id; the view holds the stored settings
 on Windows and macOS, the reported machine, the accounts, and the memory
-the container modules need past the machine's.
+the container modules need past the machine's. The read of a new machine
+answers the agent's numbers beside what the container modules need, the module
+being installed counted, and refuses Linux before the agent is asked.
 """
 
 import json
@@ -668,6 +670,78 @@ def test_the_view_advises_memory_past_the_run_settings(box, demo_container_modul
     view = client.get(BASE, params={"device_id": DEVICE}).json()
 
     assert view["memory_need"] == {"need_gib": 3, "memory_gib": 2}
+
+
+NEW_MACHINE = {"cpus": 4, "memory_gib": 4, "disk_gib": 100, "disk_gib_now": 0}
+
+
+def answer_new_machine(runtime, result=None) -> None:
+    runtime.agent_sessions.outcomes["machine_read"] = {
+        "exit_code": 0,
+        "result": dict(NEW_MACHINE if result is None else result),
+    }
+
+
+def test_a_new_machine_reads_the_agents_numbers_for_the_account(box):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = WINDOWS
+    answer_new_machine(runtime, dict(NEW_MACHINE, disk_gib=1024, disk_gib_now=1024))
+
+    response = client.get(
+        f"{BASE}/new_machine", params={"device_id": DEVICE, "account": "lab"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "cpus": 4,
+        "memory_gib": 4,
+        "disk_gib": 1024,
+        "disk_gib_now": 1024,
+        "need_gib": 0,
+    }
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "podman", "machine_read", {"account": "lab"})
+    ]
+
+
+def test_a_new_machine_counts_the_module_being_installed(box, demo_container_module):
+    client, runtime = box
+    demo = json.loads((demo_container_module / "demo.json").read_text())
+    (demo_container_module / "demo.json").write_text(
+        json.dumps(dict(demo, memory_mib=2600))
+    )
+    runtime.device_platform[DEVICE] = DARWIN
+    answer_new_machine(runtime)
+
+    alone = client.get(f"{BASE}/new_machine", params={"device_id": DEVICE}).json()
+    counted = client.get(
+        f"{BASE}/new_machine", params={"device_id": DEVICE, "module": "demo"}
+    ).json()
+
+    assert alone["need_gib"] == 0
+    assert counted["need_gib"] == 3
+    assert "demo" not in runtime.desired_states.modules(DEVICE)
+
+
+def test_a_linux_machine_has_no_new_machine(box):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = LINUX
+
+    response = client.get(f"{BASE}/new_machine", params={"device_id": DEVICE})
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "unsupported_platform"
+    assert runtime.agent_sessions.commands == []
+
+
+def test_a_new_machine_with_no_socket_answers_agent_offline(box):
+    client, runtime = box
+    runtime.device_platform[OFFLINE] = WINDOWS
+
+    response = client.get(f"{BASE}/new_machine", params={"device_id": OFFLINE})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "agent_offline"
 
 
 def test_the_run_settings_are_empty_on_windows_and_macos_until_stored_and_none_on_linux(

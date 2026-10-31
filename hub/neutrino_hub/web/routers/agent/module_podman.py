@@ -13,7 +13,11 @@ in one account's Podman machine, which the Run settings name.
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_PRESENT_STATES,
+    CHANNEL_MODULE_STATE_INSTALLED,
+    CHANNEL_VERB_MACHINE_READ,
+)
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CONTAINER_SOURCE_DECLARED,
@@ -28,6 +32,7 @@ from neutrino_hub.modules.devices.hub_containers import (
     compose_hub_containers,
     is_hub_container,
 )
+from neutrino_hub.modules.devices.machine_memory import need_gib
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.modules.devices.module_import import podman_import_config
 from neutrino_hub.web.dependencies import get_runtime
@@ -43,6 +48,7 @@ from neutrino_hub.web.models import (
     PodmanMachineUpdate,
     PodmanMachineView,
     PodmanMirrorListUpdate,
+    PodmanNewMachineView,
     PodmanTagListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -290,6 +296,44 @@ def update_machine(
     config[DEVICE_PODMAN_MACHINE_KEY] = update.model_dump(exclude={"device_id"})
     store_config(runtime, context, config)
     return device_view(runtime, context)
+
+
+@router.get("/new_machine", response_model=PodmanNewMachineView)
+def read_new_machine(
+    device_id: str,
+    account: str = "",
+    module: str = "",
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PodmanNewMachineView:
+    """Read the numbers a new machine starts from, as the machine reports them.
+
+    Args:
+        device_id: The device, from the query.
+        account: The account whose disk to read; empty reads none.
+        module: The module being installed, counted in the need; empty adds
+            none.
+        runtime: The shared runtime.
+
+    Returns:
+        The default CPUs and memory, the disk the account's machine has or
+        else the default, and what the container modules need.
+
+    Raises:
+        HTTPException: 400 ``unsupported_platform`` for a machine that is
+            not Windows or macOS; 409 ``agent_offline``; 502 with the agent's
+            code when it cannot answer.
+    """
+    context = device_context(runtime, MODULE, device_id)
+    os_name = runtime.device_platform.get(context.key, {}).get("os")
+    if os_name not in DEVICE_PODMAN_MACHINE_OS:
+        raise _refusal(CODE_UNSUPPORTED_PLATFORM)
+    closed = run_command(
+        runtime, context, CHANNEL_VERB_MACHINE_READ, {"account": account}
+    )
+    wants = dict(runtime.desired_states.modules(context.key))
+    if module:
+        wants[module] = {"want": CHANNEL_MODULE_STATE_INSTALLED}
+    return PodmanNewMachineView(**closed["result"], need_gib=need_gib(wants))
 
 
 @router.get("/tag", response_model=PodmanTagListView)

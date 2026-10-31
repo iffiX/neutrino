@@ -17,7 +17,9 @@ from neutrino_hub.exceptions import (
     VaultLockedError,
 )
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_STREAM_COMMAND,
+    CHANNEL_VERB_ACCOUNT_PASSWORD_TEST,
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.clients.ai_keys import (
@@ -42,6 +44,7 @@ from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AccountCreate,
     AccountListView,
+    AccountPasswordTest,
     AccountRequest,
     AccountToolsView,
     AccountView,
@@ -50,6 +53,7 @@ from neutrino_hub.web.models import (
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
     CODE_AGENT_OFFLINE,
+    CODE_COMMAND_FAILED,
     CODE_DEVICE_UNKNOWN,
     push_state,
 )
@@ -66,6 +70,7 @@ CODE_CREDENTIAL_MISSING = "credential_missing"
 CODE_PATH_INVALID = "path_invalid"
 CODE_GATEWAY_NOT_SERVING = "gateway_not_serving"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
+CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
 # The vault kind a Windows account's password is stored as, and its label.
 LOGIN_KIND = "login"
 LOGIN_NAME = "{device} / {account}"
@@ -178,6 +183,58 @@ def set_account(
         _delete_login(held.login_id)
     _settle_device_key(runtime, key)
     push_state(runtime, key)
+    return _view(runtime, key)
+
+
+@router.post("/password/test", response_model=AccountListView)
+def test_account_password(
+    request: AccountPasswordTest, runtime: PanelRuntime = Depends(get_runtime)
+) -> AccountListView:
+    """Test an account's password on its Windows machine, writing nothing.
+
+    Each call is one logon on the machine, and a wrong password counts as one
+    failed logon there.
+
+    Args:
+        request: The account, and the password, empty for the login it has.
+        runtime: The shared runtime.
+
+    Returns:
+        The rows, unchanged.
+
+    Raises:
+        HTTPException: 400 ``unsupported_platform`` for a machine that is
+            not Windows, ``account_unknown {account}`` for an account the
+            machine does not report, ``credential_missing {account}`` with no
+            password and no login, the agent's ``credential_invalid {account}``
+            and ``account_logon_refused {account, detail}``; 409
+            ``agent_offline``.
+    """
+    key = _require_device(request.device_id).id
+    if runtime.device_platform.get(key, {}).get("os") != DEVICE_PASSWORD_OS:
+        raise _refusal(status.HTTP_400_BAD_REQUEST, CODE_UNSUPPORTED_PLATFORM)
+    if request.account not in runtime.device_accounts.get(key, []):
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_UNKNOWN, account=request.account
+        )
+    password = request.password or _stored_password(runtime, key, request.account)
+    if not password:
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST,
+            CODE_CREDENTIAL_MISSING,
+            account=request.account,
+        )
+    _ask_machine(
+        runtime,
+        key,
+        {
+            "module": CHANNEL_COMMAND_MODULE_AGENT,
+            "verb": CHANNEL_VERB_ACCOUNT_PASSWORD_TEST,
+            "account": request.account,
+            "password": password,
+        },
+        fallback_code=CODE_COMMAND_FAILED,
+    )
     return _view(runtime, key)
 
 
@@ -337,20 +394,43 @@ def _check_shell(runtime: PanelRuntime, key: str, request: AccountCreate) -> Non
         HTTPException: 409 ``agent_offline``; 400 with the agent's code,
             ``shell_program_unusable {path}`` among them.
     """
-    if not runtime.agent_sessions.is_online(key):
-        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     config = {
         "accounts": [{"account": request.account, "shell_path": request.shell_path}]
     }
+    _ask_machine(
+        runtime,
+        key,
+        {
+            "module": DEVICE_TERMINAL_MODULE,
+            "verb": CHANNEL_VERB_VALIDATE,
+            "config": config,
+        },
+        fallback_code="config_invalid",
+    )
+
+
+def _ask_machine(
+    runtime: PanelRuntime, key: str, command: dict, *, fallback_code: str
+) -> None:
+    """Run one verb on the machine, a refusal raised with the agent's code.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        command: The command stream's arguments.
+        fallback_code: The code of a failure that names none.
+
+    Raises:
+        HTTPException: 409 ``agent_offline``; 502 when the stream is refused;
+            400 with the agent's code.
+    """
+    if not runtime.agent_sessions.is_online(key):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     try:
         verdict = runtime.agent_sessions.run_stream_from_thread(
             key,
             CHANNEL_STREAM_COMMAND,
-            {
-                "module": DEVICE_TERMINAL_MODULE,
-                "verb": CHANNEL_VERB_VALIDATE,
-                "config": config,
-            },
+            command,
             timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
         )
     except AgentOfflineError:
@@ -363,9 +443,24 @@ def _check_shell(runtime: PanelRuntime, key: str, request: AccountCreate) -> Non
             params.pop(name, None)
         raise _refusal(
             status.HTTP_400_BAD_REQUEST,
-            str(verdict.get("code") or "config_invalid"),
+            str(verdict.get("code") or fallback_code),
             **params,
         )
+
+
+def _stored_password(runtime: PanelRuntime, key: str, account: str) -> str:
+    """The password of the login an available account has, empty with none.
+
+    Raises:
+        VaultLockedError: When the vault cannot open the login.
+    """
+    row = DeviceAccountStore(runtime.desired_states).get(key, account)
+    if row is None or not row.login_id:
+        return ""
+    try:
+        return str(SecretVault().open(row.login_id).get(LOGIN_PASSWORD_FIELD, "") or "")
+    except ValueError:
+        return ""
 
 
 def _store_login(key: str, account: str, password: str) -> str:

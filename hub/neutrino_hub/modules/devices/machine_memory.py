@@ -39,17 +39,29 @@ def memory_need(wants: dict, *, os_name: str, stored: dict, reported: dict):
     """
     if os_name not in DEVICE_PODMAN_MACHINE_OS:
         return None
+    need = need_gib(wants)
+    memory_gib = machine_memory_gib(stored, reported)
+    if memory_gib <= 0 or need <= memory_gib:
+        return None
+    return {"need_gib": need, "memory_gib": memory_gib}
+
+
+def need_gib(wants: dict) -> int:
+    """The memory the container modules a machine is asked for need.
+
+    Args:
+        wants: Module name to ``{want, is_settled}``, as ``modules.json``
+            holds them.
+
+    Returns:
+        The sum of the ``memory_mib`` of the container modules not asked
+        ``absent``, in whole GiB rounded up.
+    """
     manifests = load_module_manifests()
     need_mib = sum(
         int(manifests[name].get("memory_mib", 0)) for name in container_modules(wants)
     )
-    memory_gib = machine_memory_gib(stored, reported)
-    if memory_gib <= 0 or need_mib <= memory_gib * DEVICE_MIB_PER_GIB:
-        return None
-    return {
-        "need_gib": math.ceil(need_mib / DEVICE_MIB_PER_GIB),
-        "memory_gib": memory_gib,
-    }
+    return math.ceil(need_mib / DEVICE_MIB_PER_GIB)
 
 
 def machine_memory_gib(stored: dict, reported: dict) -> int:

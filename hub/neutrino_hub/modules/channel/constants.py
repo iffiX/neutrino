@@ -139,8 +139,16 @@ CHANNEL_COMMAND_MODULE_AGENT = "agent"
 CHANNEL_VERB_RESIZE = "resize"
 CHANNEL_VERB_VALIDATE = "validate"
 CHANNEL_VERB_JOURNAL = "journal"
+# Containers' read of what a new machine starts from.
+CHANNEL_VERB_MACHINE_READ = "machine_read"
+# The agent's test of an account's password. One test is one logon.
+CHANNEL_VERB_ACCOUNT_PASSWORD_TEST = "account_password_test"  # scan: allow
 # The verbs that read and change nothing on the machine.
-CHANNEL_READ_VERBS = (CHANNEL_VERB_VALIDATE, CHANNEL_VERB_JOURNAL)
+CHANNEL_READ_VERBS = (
+    CHANNEL_VERB_VALIDATE,
+    CHANNEL_VERB_JOURNAL,
+    CHANNEL_VERB_MACHINE_READ,
+)
 # The two verbs on a shell session: whether it outlives its streams and
 # whether others see it, and ending it. Both name the session by the id its
 # opener generated.
