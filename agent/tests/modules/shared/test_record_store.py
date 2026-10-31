@@ -2,14 +2,17 @@
 
 What these pin: a record is written whole, mode 0600, in a directory only
 the agent reads; only the fields the store names are kept; an unreadable
-file is left out; a record is forgotten by account; and a retired record
-keeps its port alone, read by nobody but the kept ports.
+file is left out; a record is forgotten by account; a retired record
+keeps its port alone, read by nobody but the kept ports; and a write waits
+for a read that holds the record open.
 """
 
 import json
 import os
 import stat
+import threading
 
+import neutrino_agent.modules.shared.record_store as record_store_module
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 
 FIELDS = ("account", "port", "secret")
@@ -97,3 +100,32 @@ def test_a_sealed_store_seals_each_file_before_writing_into_it(tmp_path):
     assert sealed[0][0].startswith(".record_")
     assert sealed[0][1] == 0
     assert store.read("ann") == {"account": "ann", "port": 6810, "secret": "s"}
+
+
+def test_a_write_waits_for_a_read_that_holds_the_record_open(tmp_path, monkeypatch):
+    store = InstanceRecordStore(directory=str(tmp_path), fields=FIELDS)
+    store.write({"account": "ann", "port": 1, "secret": "s"})
+    reading, released = threading.Event(), threading.Event()
+    loaded = json.load
+
+    def slow_load(stream):
+        reading.set()
+        released.wait(5)
+        return loaded(stream)
+
+    monkeypatch.setattr(record_store_module.json, "load", slow_load)
+    reader = threading.Thread(target=store.read_all)
+    reader.start()
+    assert reading.wait(5)
+    writer = threading.Thread(
+        target=store.write, args=({"account": "ann", "port": 2, "secret": "s"},)
+    )
+    writer.start()
+    writer.join(0.2)
+
+    assert writer.is_alive()
+    released.set()
+    reader.join(5)
+    writer.join(5)
+    monkeypatch.setattr(record_store_module.json, "load", loaded)
+    assert store.read("ann")["port"] == 2

@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import tempfile
+import threading
 
 # The end of every record's file name.
 RECORD_SUFFIX = ".json"
@@ -44,6 +45,8 @@ class InstanceRecordStore:
         self.directory = directory
         self._fields = tuple(fields)
         self._seal = seal
+        # One open of the files at a time.
+        self._lock = threading.Lock()
 
     def read_all(self) -> list:
         """Every record held, by account; a retired one left out.
@@ -124,7 +127,7 @@ class InstanceRecordStore:
         Args:
             account: The account.
         """
-        with contextlib.suppress(OSError):
+        with self._lock, contextlib.suppress(OSError):
             os.unlink(self._path(account))
 
     def accounts(self) -> list:
@@ -147,8 +150,9 @@ class InstanceRecordStore:
         found = []
         for account in self.accounts():
             try:
-                with open(self._path(account), "r", encoding="utf-8") as stream:
-                    held = json.load(stream)
+                with self._lock:
+                    with open(self._path(account), "r", encoding="utf-8") as stream:
+                        held = json.load(stream)
             except (OSError, ValueError):
                 continue
             if isinstance(held, dict):
@@ -165,7 +169,8 @@ class InstanceRecordStore:
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
                 json.dump(content, stream)
             os.chmod(temporary, 0o600)
-            os.replace(temporary, self._path(account))
+            with self._lock:
+                os.replace(temporary, self._path(account))
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(temporary)
