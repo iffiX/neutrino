@@ -322,7 +322,7 @@ class LinuxPlatform(AgentPlatform):
         )
 
     def install_system_packages(self, names: list) -> str:
-        """Install packages by name with apt, dnf or yum.
+        """Install packages by name with apt, pacman, dnf or yum.
 
         Args:
             names: The package names.
@@ -361,7 +361,7 @@ class LinuxPlatform(AgentPlatform):
         )
 
     def remove_system_packages(self, names: list) -> str:
-        """Remove packages by name, purging their configuration on apt.
+        """Remove packages by name, purging their configuration on apt and pacman.
 
         Args:
             names: The package names.
@@ -376,6 +376,8 @@ class LinuxPlatform(AgentPlatform):
             return ""
         if shutil.which("apt-get"):
             command = ["apt-get", "purge", "-y"] + list(names)
+        elif shutil.which("pacman"):
+            command = ["pacman", "-Rns", "--noconfirm"] + list(names)
         else:
             manager = "dnf" if shutil.which("dnf") else "yum"
             command = [manager, "remove", "-y"] + list(names)
@@ -384,6 +386,10 @@ class LinuxPlatform(AgentPlatform):
     def _install_system_package(self, package: str) -> str:
         if shutil.which("apt-get"):
             return run_package_manager(["apt-get", "install", "-y", package])
+        if shutil.which("pacman"):
+            return run_package_manager(
+                ["pacman", "-Sy", "--needed", "--noconfirm", package]
+            )
         manager = "dnf" if shutil.which("dnf") else "yum"
         return run_package_manager([manager, "install", "-y", package])
 

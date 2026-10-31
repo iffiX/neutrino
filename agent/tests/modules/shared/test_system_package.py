@@ -133,11 +133,11 @@ INTERRUPTED_LINE = (
 
 @pytest.fixture
 def fakes(tmp_path, monkeypatch):
-    """apt-get, dpkg and dnf on PATH under tmp_path, each answering from a
-    script of turns and recording its arguments."""
+    """apt-get, dpkg, dnf and pacman on PATH under tmp_path, each answering
+    from a script of turns and recording its arguments."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for program in ("apt-get", "dpkg", "dnf"):
+    for program in ("apt-get", "dpkg", "dnf", "pacman"):
         path = bin_dir / program
         path.write_text(
             "#!/bin/sh\n"
@@ -152,6 +152,9 @@ def fakes(tmp_path, monkeypatch):
             f'  busy) echo "{BUSY_LINE}"; exit 100 ;;\n'
             f'  interrupted) echo "{INTERRUPTED_LINE}"; exit 100 ;;\n'
             '  rpm) echo "Error: waiting for the rpm transaction lock"; exit 1 ;;\n'
+            '  alpm) echo "error: failed to init transaction'
+            ' (unable to lock database)"; exit 1 ;;\n'
+            '  noname) echo "error: target not found: nothing"; exit 1 ;;\n'
             '  fail) echo "E: Unable to locate package nothing"; exit 100 ;;\n'
             "  *) exit 0 ;;\n"
             "esac\n"
@@ -162,9 +165,12 @@ def fakes(tmp_path, monkeypatch):
     monkeypatch.setattr(system_package_module, "PROC_DIR", str(tmp_path / "proc"))
     dnf_lock = tmp_path / "rpmdb_lock.pid"
     monkeypatch.setattr(system_package_module, "DNF_LOCK_PATHS", (str(dnf_lock),))
+    alpm_lock = tmp_path / "db.lck"
+    monkeypatch.setattr(system_package_module, "PACMAN_LOCK_PATH", str(alpm_lock))
 
     class Fakes:
         lock = dnf_lock
+        pacman_lock = alpm_lock
 
         def turns(self, program, *turns):
             (tmp_path / f"{program}.turns").write_text("\n".join(turns) + "\n")
@@ -338,3 +344,80 @@ def test_a_dnf_lock_file_of_an_ended_process_holds_nothing(fakes):
     system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
 
     assert len(fakes.args("dnf")) == 1
+
+
+PACMAN = ["pacman", "-Sy", "--needed", "--noconfirm", "x"]
+
+
+def test_pacman_runs_at_once_while_its_lock_file_is_not_there(fakes):
+    system_package_module.run_package_manager(PACMAN)
+
+    assert fakes.args("pacman") == ["-Sy --needed --noconfirm x"]
+
+
+def test_pacman_waits_while_a_process_holds_its_lock_file_and_names_it(
+    fakes, monkeypatch
+):
+    fakes.pacman_lock.write_text("")
+    fakes.process(4321, "packagekitd", b"/usr/lib/packagekitd")
+    waits: list = []
+
+    def release(seconds):
+        fakes.pacman_lock.unlink()
+
+    monkeypatch.setattr(system_package_module.time, "sleep", release)
+    system_package_module.set_wait_sink(waits.append)
+    try:
+        system_package_module.run_package_manager(PACMAN)
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    assert waits == [
+        {"code": "waiting_for_package_manager", "params": {"holder": "packagekitd"}},
+        {},
+    ]
+    assert len(fakes.args("pacman")) == 1
+
+
+def test_a_pacman_lock_held_past_the_wait_fails_naming_its_holder(fakes, monkeypatch):
+    monkeypatch.setattr(system_package_module, "AGENT_UPDATE_LOCK_TIMEOUT_S", 0)
+    fakes.pacman_lock.write_text("")
+    fakes.process(4321, "pacman", b"/usr/bin/pacman", b"-Syu")
+
+    with pytest.raises(ModuleApplyError) as refused:
+        system_package_module.run_package_manager(PACMAN)
+
+    assert (refused.value.code, refused.value.params) == (
+        "package_manager_busy",
+        {"holder": "pacman"},
+    )
+    assert fakes.args("pacman") == []
+    assert fakes.pacman_lock.exists()
+
+
+def test_a_pacman_lock_file_no_process_holds_is_removed(fakes):
+    """A pacman the agent's stop ended leaves its lock file behind."""
+    fakes.pacman_lock.write_text("")
+    fakes.process(4321, "bash", b"/bin/bash")
+
+    system_package_module.run_package_manager(PACMAN)
+
+    assert not fakes.pacman_lock.exists()
+    assert len(fakes.args("pacman")) == 1
+
+
+def test_pacman_runs_again_while_it_refuses_on_its_lock(fakes):
+    fakes.turns("pacman", "alpm", "ok")
+
+    system_package_module.run_package_manager(PACMAN)
+
+    assert len(fakes.args("pacman")) == 2
+
+
+def test_pacman_s_own_refusal_is_an_install_error_with_its_words(fakes):
+    fakes.turns("pacman", "noname")
+
+    with pytest.raises(InstallError) as refused:
+        system_package_module.run_package_manager(PACMAN)
+
+    assert "target not found" in str(refused.value)

@@ -309,6 +309,28 @@ def test_linux_system_package_removal_purges_on_apt(monkeypatch):
     ]
 
 
+def test_arch_system_packages_ride_pacman(monkeypatch):
+    present = {"pacman": "/usr/bin/pacman"}
+    monkeypatch.setattr(linux_module.shutil, "which", present.get)
+    calls = []
+
+    def record(command, **kwargs):
+        calls.append(list(command))
+        return "ok"
+
+    monkeypatch.setattr(linux_module, "run_package_manager", record)
+    platform = LinuxPlatform()
+
+    platform.install_system_packages(["podman", "runc"])
+    platform.remove_system_packages(["podman"])
+
+    assert calls == [
+        ["pacman", "-Sy", "--needed", "--noconfirm", "podman"],
+        ["pacman", "-Sy", "--needed", "--noconfirm", "runc"],
+        ["pacman", "-Rns", "--noconfirm", "podman"],
+    ]
+
+
 def test_linux_service_state_and_power_go_through_systemd(monkeypatch):
     commands = []
     result = {"returncode": 0, "stdout": "active\n"}

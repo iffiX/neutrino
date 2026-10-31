@@ -6,8 +6,9 @@ tooling, one operation at a time under the step lock ``package_manager``.
 :func:`run_package_manager` is the one helper every such run goes through:
 it waits up to 300 seconds for the system's own lock, which unattended
 upgrades and PackageKit take without asking the agent, names the process
-that holds it as the running step's wait, and runs ``dpkg --configure -a``
-once after a cut dpkg run. A recipe may name ``pre_install`` shell
+that holds it as the running step's wait, runs ``dpkg --configure -a``
+once after a cut dpkg run, and removes the lock file a cut pacman run left.
+A recipe may name ``pre_install`` shell
 steps, run before the packages, for a repository the distribution keeps the
 software in. Whether the software is there is the recipe's ``verify``; the
 runner's own check, its binary on the path, answers only for a module the
@@ -20,6 +21,7 @@ Not pure: runs the package manager.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -51,6 +53,12 @@ DNF_LOCK_PATHS = ("/var/lib/dnf/rpmdb_lock.pid", "/var/cache/dnf/metadata_lock.p
 PROC_DIR = "/proc"
 # What apt prints after a dpkg run was cut.
 DPKG_INTERRUPTED_TEXT = "dpkg was interrupted"
+# The file pacman makes while it runs, what it prints while that file stands,
+# and the kernel's names of the processes that make it. The file names no
+# holder, and a pacman the agent's stop ended leaves it behind.
+PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
+PACMAN_LOCK_TEXT = "unable to lock database"
+PACMAN_LOCK_HOLDERS = ("pacman", "packagekitd", "pamac-daemon")
 # The code a step fails with once the system's lock stayed held.
 CODE_PACKAGE_MANAGER_BUSY = "package_manager_busy"
 # The wait sink of the task running on each thread.
@@ -70,14 +78,15 @@ def set_wait_sink(on_wait) -> None:
 def run_package_manager(
     command: list, *, timeout_s: int = installers.INSTALL_TIMEOUT_S
 ) -> str:
-    """Run one ``apt-get``, ``dnf`` or ``yum`` command, waiting for the system's own lock.
+    """Run one ``apt-get``, ``dnf``, ``yum`` or ``pacman`` command, waiting for the system's own lock.
 
     apt waits up to 300 seconds through ``DPkg::Lock::Timeout`` and names
     the process that holds the lock; dnf runs once no process holds dnf 4's
     own locks, and again every few seconds while its output names the rpm
-    transaction lock, up to 300 seconds in all. A run
-    apt refuses because a dpkg run was cut runs ``dpkg --configure -a``
-    once, then the command again.
+    transaction lock, up to 300 seconds in all; pacman runs once no process
+    holds its lock file, up to 300 seconds, and a file no process holds is
+    removed. A run apt refuses because a dpkg run was cut runs ``dpkg
+    --configure -a`` once, then the command again.
 
     Args:
         command: The argument vector, the package manager first.
@@ -94,6 +103,8 @@ def run_package_manager(
     program = os.path.basename(command[0])
     if program in ("dnf", "yum"):
         return _run_dnf(command, timeout_s)
+    if program == "pacman":
+        return _run_pacman(command, timeout_s)
     if program != "apt-get":
         return installers.run_checked(command, timeout_s=timeout_s)
     apt = [
@@ -263,6 +274,61 @@ def _dnf_lock_pid() -> int:
             if os.path.exists(os.path.join(PROC_DIR, str(pid))):
                 return pid
     return 0
+
+
+def _run_pacman(command: list, timeout_s: int) -> str:
+    """Run pacman once no process holds its lock file, up to the wait.
+
+    pacman refuses at once while the file stands. A file no process holds is
+    what a cut run left, and is removed.
+    """
+    waited = 0
+    told = None
+    try:
+        while True:
+            holder = _pacman_lock_holder()
+            if not holder:
+                if told:
+                    told = None
+                    _tell_wait({})
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(PACMAN_LOCK_PATH)
+                try:
+                    return installers.run_checked(command, timeout_s=timeout_s)
+                except InstallError as error:
+                    if PACMAN_LOCK_TEXT not in str(error):
+                        raise
+            if waited >= AGENT_UPDATE_LOCK_TIMEOUT_S:
+                raise ModuleApplyError(CODE_PACKAGE_MANAGER_BUSY, {"holder": holder})
+            if told != holder:
+                told = holder
+                _tell_wait(_package_wait(holder))
+            time.sleep(AGENT_PACKAGE_LOCK_RETRY_S)
+            waited += AGENT_PACKAGE_LOCK_RETRY_S
+    finally:
+        if told is not None:
+            _tell_wait({})
+
+
+def _pacman_lock_holder() -> str:
+    """The name of a process that holds pacman's lock file; empty while none does."""
+    if not os.path.exists(PACMAN_LOCK_PATH):
+        return ""
+    try:
+        names = os.listdir(PROC_DIR)
+    except OSError:
+        return ""
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(os.path.join(PROC_DIR, name, "comm"), encoding="utf-8") as stream:
+                held = stream.read().strip()
+        except OSError:
+            continue
+        if held in PACMAN_LOCK_HOLDERS:
+            return held
+    return ""
 
 
 def _lines(stream):
