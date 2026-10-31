@@ -1047,6 +1047,13 @@ null for a module that has had no task since the agent started, and a row
 keeps its last task's `task` until the next one starts. It is an added
 field and keeps `PROTOCOL` 4.
 
+`step` in a module row is the step its kept failure failed at
+([agent.md](agent.md), "A failure outlives a restart"): `{name, params,
+index, count}`, `index` the step's 1-based place in the plan and `count` the
+plan's length. A row with no kept failure leaves it out, as a row does while
+its task runs, and the hub reads it as null. It is an added field and keeps
+`PROTOCOL` 4.
+
 `sessions` lists the shells the agent keeps by id, oldest first, each
 `{session_id, account, started_at, title, owner, is_attached, is_persistent,
 is_shared, attached_count}`: `started_at` is Unix seconds, `title` the last

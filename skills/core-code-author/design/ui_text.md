@@ -454,6 +454,7 @@ sentences.
 | `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
 | `ui.modules.step.guests` | Create the Web share guests | 建好 Web 分享的访客账户 |
 | `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
+| `ui.modules.failed_step`, the first line of a failed row's notice, `{step}` being one of the step words above | Failed at step {index} of {count}: {step} | 第 {index}/{count} 步失败：{step} |
 
 An `artifact` step reads its artifact's own words,
 `ui.modules.step.artifact.<module>.<artifact>`, and a `pull` step its

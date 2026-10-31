@@ -896,7 +896,10 @@ notice of the tab repeats them. The notice at the top of the tab words a
 row's code where the step list does not. Such a row has no task, as an
 `absent` row with a code or a failed row after the agent restarted
 ([agent.md](agent.md), "A failure outlives a restart"), or is a failed row
-whose next task runs. A `reboot_required` row words its code in the notice
+whose next task runs. A failed row's notice opens with the step its `step`
+names, `ui.modules.failed_step` with that step's words, and the code's words
+under it keep their line breaks, as they do under a step. A `reboot_required`
+row words its code in the notice
 alone, beside **Restart now**, and its `restart` step reads waiting with no
 words under it. A step's words are
 `ui.modules.step.<name>` with its params, or an artifact's or an image's
