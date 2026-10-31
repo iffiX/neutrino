@@ -1396,6 +1396,70 @@ def test_containers_cannot_be_uninstalled_while_a_container_module_is_installed(
     assert modules_file(tmp_path)["podman"]["want"] == "absent"
 
 
+def test_a_container_module_s_start_writes_its_wants_and_its_file_in_one_hold(
+    containers_api, monkeypatch
+):
+    """The gateway is handed the minted key after the hold, since it can
+    wait seconds for the gateway's reload."""
+    from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+
+    client, runtime = containers_api
+    runtime.device_modules[DEVICE] = {"podman": {"state": "stopped"}}
+    store = runtime.desired_states
+    held_at: list = []
+
+    def is_held_here() -> bool:
+        taken: list = []
+
+        def try_take():
+            if CONFIG_WRITE_LOCK.acquire(timeout=0.1):
+                CONFIG_WRITE_LOCK.release()
+                taken.append(True)
+            else:
+                taken.append(False)
+
+        other = threading.Thread(target=try_take)
+        other.start()
+        other.join()
+        return not taken[0]
+
+    set_want = store.set_want
+
+    def recorded_set_want(key, module, want):
+        held_at.append((f"want {module}", is_held_here()))
+        set_want(key, module, want)
+
+    def recorded_config(held, key):
+        held_at.append(("file", is_held_here()))
+        held.write(key, "hermes_webui", {"secret": "s"})
+
+    def recorded_mint(held, key, module, name):
+        held_at.append(("key", is_held_here()))
+        held.write(key, module, {**held.read(key, module), "gateway_key": "k"})
+        return "material"
+
+    def recorded_apply(new_key=None):
+        held_at.append((f"apply {new_key}", is_held_here()))
+
+    monkeypatch.setattr(store, "set_want", recorded_set_want)
+    monkeypatch.setattr(device_modules.hermes_webui, "ensure_config", recorded_config)
+    monkeypatch.setattr(device_modules, "mint_module_key", recorded_mint)
+    monkeypatch.setattr(device_modules, "apply_keys", recorded_apply)
+
+    answer = client.post(
+        f"{MODULE_PATH}/start", json={"device_id": DEVICE, "module": "hermes_webui"}
+    )
+
+    assert answer.status_code == 200
+    assert held_at == [
+        ("want podman", True),
+        ("file", True),
+        ("key", True),
+        ("want hermes_webui", True),
+        ("apply material", False),
+    ]
+
+
 def test_a_container_module_a_report_leaves_out_reads_absent(containers_api):
     """The agent has a runner for a container module only once a state names it."""
     client, runtime = containers_api

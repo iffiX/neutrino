@@ -64,7 +64,8 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.module_releases import is_locked
 from neutrino_hub.modules.clients.ai_keys import (
-    ensure_module_key,
+    apply_keys,
+    mint_module_key,
     revoke_instance_keys,
     revoke_module_key,
     settle_instance_keys,
@@ -1127,11 +1128,9 @@ def _set_want(
         CHANNEL_MODULE_STATE_RUNNING,
     )
     is_retried = _is_retried(runtime, key, module, want)
+    minted = ""
     try:
-        if is_engine_wanted:
-            _want_containers_running(runtime, key)
-            _prepare_container_module(runtime, key, module)
-        elif is_container and want == CHANNEL_MODULE_STATE_ABSENT:
+        if is_container and want == CHANNEL_MODULE_STATE_ABSENT:
             if module in gateway_module_names():
                 revoke_module_key(runtime.desired_states, key, module)
         if module in gateway_instance_names():
@@ -1142,14 +1141,19 @@ def _set_want(
                 settle_instance_keys(
                     runtime.desired_states, key, module, device.name if device else ""
                 )
-        # The want and its mark in one hold of the lock, so no state is
-        # composed between them.
+        # The wants, their marks and the module's file in one hold of the
+        # lock, so no state is composed between them.
         with CONFIG_WRITE_LOCK:
+            if is_engine_wanted:
+                _want_containers_running(runtime, key)
+                minted = _prepare_container_module(runtime, key, module)
             runtime.desired_states.set_want(key, module, want)
             if is_retried:
                 DeviceRetryMarks().mark(key, module)
     except OSError as error:
         raise _config_unwritable(error) from error
+    if minted:
+        apply_keys(new_key=minted)
     push_state(runtime, key)
     recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
@@ -1180,7 +1184,7 @@ def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
             DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
 
 
-def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> None:
+def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> str:
     """Give a container module what its containers are composed from, ahead of its install or start.
 
     Hermes WebUI and Ayakaleaf get the secrets their files hold none of,
@@ -1191,6 +1195,10 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> N
         runtime: The shared runtime.
         key: The device.
         module: The container module.
+
+    Returns:
+        The gateway key minted now, for the caller to hand the gateway;
+        empty when none was.
 
     Raises:
         OSError: When the module's file cannot be written.
@@ -1205,9 +1213,10 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> N
             ensure_config(store, key)
         except VaultLockedError:
             pass
-    if module in gateway_module_names():
-        device = DeviceRegistry().get(key)
-        ensure_module_key(store, key, module, device.name if device else "")
+    if module not in gateway_module_names():
+        return ""
+    device = DeviceRegistry().get(key)
+    return mint_module_key(store, key, module, device.name if device else "")
 
 
 def _refuse_containers_in_use(runtime: PanelRuntime, key: str) -> None:

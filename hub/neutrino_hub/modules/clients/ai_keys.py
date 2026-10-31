@@ -165,27 +165,46 @@ def ensure_module_key(store, device_id: str, module: str, name: str) -> "str | N
     Raises:
         OSError: When the module's file cannot be written.
     """
+    minted = mint_module_key(store, device_id, module, name)
+    if minted:
+        _apply(new_key=minted)
+        return minted
+    return module_key(store, device_id, module) or None
+
+
+def mint_module_key(store, device_id: str, module: str, name: str) -> str:
+    """Mint one container module's key on one device when its file holds none.
+
+    The caller hands the gateway the new key with :func:`apply_keys`.
+
+    Args:
+        store: The desired state store, whose file of the module holds the key.
+        device_id: The device.
+        module: The container module.
+        name: What the device is called, for the key's label.
+
+    Returns:
+        The new key's material; empty when the file already holds a key or
+        the vault is locked.
+
+    Raises:
+        OSError: When the module's file cannot be written.
+    """
     with CONFIG_WRITE_LOCK:
         held = store.read(device_id, module)
-        key = CliproxyApiClientKey.from_stored(held.get(DEVICE_MODULE_GATEWAY_KEY))
-        if key is not None:
-            try:
-                return key.open_key()
-            except ValueError:
-                return None
+        if CliproxyApiClientKey.from_stored(held.get(DEVICE_MODULE_GATEWAY_KEY)):
+            return ""
         label = DEVICE_MODULE_GATEWAY_LABEL.format(
             device=name or device_id, module=module
         )
         try:
             key = CliproxyApiClientKey.generated(label)
         except ValueError:
-            return None
+            return ""
         store.write(
             device_id, module, {**held, DEVICE_MODULE_GATEWAY_KEY: key.to_dict()}
         )
-    material = key.open_key()
-    _apply(new_key=material)
-    return material
+    return key.open_key()
 
 
 def module_key(store, device_id: str, module: str) -> str:
@@ -339,9 +358,14 @@ def instance_key(record: dict) -> str:
         return ""
 
 
-def apply_keys() -> None:
-    """Hand the gateway the keys as they stand, after a file that held some went away."""
-    _apply()
+def apply_keys(*, new_key: "str | None" = None) -> None:
+    """Hand the gateway the keys as they stand, after a file that held some went away or gained one.
+
+    Args:
+        new_key: A key minted since the last apply, which the gateway must
+            accept before the call returns; None for no new key.
+    """
+    _apply(new_key=new_key)
 
 
 def device_gateway(device_id: str, *, is_hub_machine: bool = False) -> dict:
