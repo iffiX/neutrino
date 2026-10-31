@@ -252,7 +252,10 @@ hub.
 ### The journal
 
 A container's journal is `journalctl -u <name>.service` in the machine, run
-by the root script. The module's journal reads the keeper's log first and
+by the root script. One journal read runs in the machine at a time, and a
+read of the same containers asked while it runs takes its lines: each root
+script of an account waits for the one before it, about 4 s each on
+Windows. The module's journal reads the keeper's log first and
 then the agent's own lines that name the module, as every module on Windows
 and macOS reads its sources ([agent.md](../../agent.md), "Which modules
 each system runs"). The keeper's log is `<account>.log` under `podman\` in
