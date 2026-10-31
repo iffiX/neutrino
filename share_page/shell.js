@@ -125,25 +125,35 @@ function screenOf(code) {
 
 // The share's facts from the link's fragment, else the tab's kept copy.
 function readFacts() {
-  let facts = null;
   const fragment = location.hash.slice(1);
+  const linked = fragment ? parseFacts(() => decoder.decode(base64urlDecode(fragment))) : null;
+  if (linked) sessionStorage.setItem(KEPT_FACTS, JSON.stringify(linked));
+  return linked || parseFacts(() => sessionStorage.getItem(KEPT_FACTS));
+}
+
+// The facts a JSON text reads as, or null.
+function parseFacts(read) {
   try {
-    facts = JSON.parse(fragment ? decoder.decode(base64urlDecode(fragment)) : sessionStorage.getItem(KEPT_FACTS) || "null");
+    const facts = JSON.parse(read() || "null");
+    return isFacts(facts) ? facts : null;
   } catch (e) {
-    facts = null;
+    return null;
   }
-  if (!isFacts(facts)) return null;
-  if (fragment) sessionStorage.setItem(KEPT_FACTS, JSON.stringify(facts));
-  return facts;
+}
+
+// The tab this tab was opened from, taken off the address; empty for none.
+function takeOpener() {
+  const url = new URL(location.href);
+  const from = url.searchParams.get(FROM_PARAM) || "";
+  if (!from) return "";
+  url.searchParams.delete(FROM_PARAM);
+  history.replaceState(null, "", url.pathname + url.search + url.hash);
+  return from;
 }
 
 // The share's facts from the tab this tab was opened from, through the worker.
-async function factsFromOpener() {
-  const url = new URL(location.href);
-  const from = url.searchParams.get(FROM_PARAM);
+async function factsFromOpener(from) {
   if (!from) return null;
-  url.searchParams.delete(FROM_PARAM);
-  history.replaceState(null, "", url.pathname + url.search + url.hash);
   const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
   if (!controller) return null;
   const channel = new MessageChannel();
@@ -1171,9 +1181,9 @@ const page = {
 
   async start() {
     if (window.top !== window) { screen.refuse("link"); return; }
-    const isOpened = new URL(location.href).searchParams.has(FROM_PARAM);
-    this.facts = readFacts() || (await factsFromOpener());
-    if (!this.facts) { this.showFactless(isOpened); return; }
+    const from = takeOpener();
+    this.facts = readFacts() || (await factsFromOpener(from));
+    if (!this.facts) { this.showFactless(from !== ""); return; }
     const title = this.facts.app.title || "";
     screen.loading(title);
     setTimeout(() => screen.slow(), TIMING.slow);
