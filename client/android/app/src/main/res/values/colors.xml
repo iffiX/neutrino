@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The panel's dark background, behind the first frame and the launcher icon. -->
+    <!-- The panel's dark background, behind the first frame. -->
     <color name="window_background">#070809</color>
-    <color name="launcher_background">#0A0E14</color>
+    <!-- The icon's own black, behind the launcher icon. -->
+    <color name="launcher_background">#000000</color>
 </resources>

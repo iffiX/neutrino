@@ -139,7 +139,8 @@ abstract class RepositoryAssetsCopy : DefaultTask() {
 }
 
 // The launcher icon's foreground, drawn from images/icons at each density: the
-// mark fills 72 of the 108 units an adaptive icon's layer spans.
+// icon fills 53 of the 108 units an adaptive icon's layer spans. At 53 its
+// coloured corners stay inside the safe circle of 66 units.
 abstract class LauncherIconRender : DefaultTask() {
     @get:InputFile
     abstract val source: RegularFileProperty
@@ -149,13 +150,13 @@ abstract class LauncherIconRender : DefaultTask() {
 
     @TaskAction
     fun render() {
-        val mark = ImageIO.read(source.get().asFile)
+        val icon = ImageIO.read(source.get().asFile)
         val edges = mapOf("mdpi" to 108, "hdpi" to 162, "xhdpi" to 216, "xxhdpi" to 324, "xxxhdpi" to 432)
         for ((density, edge) in edges) {
-            val inner = edge * 72 / 108
+            val inner = edge * 53 / 108
             val canvas = BufferedImage(edge, edge, BufferedImage.TYPE_INT_ARGB)
             val graphics = canvas.createGraphics()
-            val scaled = mark.getScaledInstance(inner, inner, Image.SCALE_AREA_AVERAGING)
+            val scaled = icon.getScaledInstance(inner, inner, Image.SCALE_AREA_AVERAGING)
             graphics.drawImage(scaled, (edge - inner) / 2, (edge - inner) / 2, null)
             graphics.dispose()
             val directory = output.get().asFile.resolve("mipmap-$density")
@@ -167,7 +168,7 @@ abstract class LauncherIconRender : DefaultTask() {
 
 val launcherIconRender =
     tasks.register<LauncherIconRender>("launcherIconRender") {
-        source.set(repositoryRoot.resolve("images/icons/neutrino_512.png"))
+        source.set(repositoryRoot.resolve("images/icons/neutrino_client/wolf_wink_1024.png"))
         output.set(layout.buildDirectory.dir("generated/launcher_icon"))
     }
 
