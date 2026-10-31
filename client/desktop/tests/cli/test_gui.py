@@ -43,6 +43,12 @@ class FakeResidentFactory:
         return resident
 
 
+@pytest.fixture(autouse=True)
+def _no_renew_thread(monkeypatch):
+    """No test starts ``main``'s renew thread, which runs until the process ends."""
+    monkeypatch.setattr(gui_cli, "_keep_holding", lambda: None)
+
+
 @pytest.fixture
 def platform(monkeypatch):
     platform = FakeClientPlatform()
