@@ -26,6 +26,7 @@ class FakeMac:
         self.arguments = {}
         self.listening = ""
         self.loaded = set()
+        self.owners = {}
 
     def __call__(self, command, *, is_checked=True, timeout_s=0, input_text=None):
         self.calls.append(list(command))
@@ -34,6 +35,11 @@ class FakeMac:
             code = 0 if command[2] in self.loaded else 113
         elif command[0].endswith("launchctl") and command[1] == "bootout":
             self.loaded.discard(command[2])
+        elif command[0].endswith("ps") and command[3].startswith("uid="):
+            out = "".join(
+                f"  {self.owners.get(pid, 0)} {path}\n"
+                for pid, path in self.programs.items()
+            )
         elif command[0].endswith("ps") and command[1] == "-axww":
             out = "".join(f"{pid} {path}\n" for pid, path in self.programs.items())
         elif command[0].endswith("ps"):
@@ -155,6 +161,65 @@ def test_stopping_boots_out_the_seats_job_before_the_service(made):
         "gui/501/com.carriez.RustDesk_server",
         "system/com.carriez.RustDesk_service",
     ]
+
+
+COPY_HOST = APP + "/Contents/MacOS/RustDesk"
+SESSION_LABEL = "com.carriez.RustDesk_server"
+
+
+def _bootouts(made):
+    return [call[2] for call in made.mac.calls if call[1] == "bootout"]
+
+
+def test_the_switch_off_boots_the_job_out_of_the_login_window(made):
+    """launchd loads the session job into the login window's session as root
+    and starts it again when it is only ended."""
+    made.mac.programs = {21: COPY_HOST}
+    made.mac.owners = {21: 0}
+
+    made.unregister()
+
+    assert _bootouts(made)[0] == f"loginwindow/{SESSION_LABEL}"
+
+
+def test_the_switch_off_boots_the_job_out_of_each_accounts_session(made):
+    made.mac.programs = {21: COPY_HOST, 22: COPY_HOST, 23: COPY_HOST}
+    made.mac.owners = {21: 501, 22: 502, 23: 503}
+
+    made.unregister()
+
+    bootouts = _bootouts(made)
+    assert bootouts[:3] == [
+        f"gui/501/{SESSION_LABEL}",
+        f"gui/502/{SESSION_LABEL}",
+        f"gui/503/{SESSION_LABEL}",
+    ]
+    assert bootouts[-1] == "system/com.carriez.RustDesk_service"
+
+
+def test_the_switch_off_leaves_a_persons_own_job_in_its_session(made):
+    made.mac.programs = {
+        21: UPSTREAM + "/Contents/MacOS/RustDesk",
+        22: UPSTREAM + "/Contents/MacOS/RustDesk",
+        23: APP + "/Contents/MacOS/service",
+    }
+    made.mac.owners = {21: 0, 22: 502, 23: 0}
+
+    made.unregister()
+
+    assert _bootouts(made) == [
+        f"gui/501/{SESSION_LABEL}",
+        "system/com.carriez.RustDesk_service",
+    ]
+
+
+def test_stopping_the_hosts_leaves_the_login_windows_job_loaded(made):
+    made.mac.programs = {21: COPY_HOST}
+    made.mac.owners = {21: 0}
+
+    made.stop_hosts()
+
+    assert f"loginwindow/{SESSION_LABEL}" not in _bootouts(made)
 
 
 def test_every_host_is_ended_and_a_viewer_left_alone(made):

@@ -5,8 +5,9 @@ With the switch on the agent writes ``com.carriez.RustDesk_service`` into
 ``/Library/LaunchAgents``, both running its copy, and bootstraps the service
 into the system domain and the session job into the seated account's. A
 plist found under either name that is not the agent's is moved to
-``kept/`` first. With the switch off both jobs are booted out and the
-agent's plists deleted; what was kept is moved back and bootstrapped again.
+``kept/`` first. With the switch off both jobs are booted out of every session
+its copy runs in and the agent's plists deleted; what was kept is moved back
+and bootstrapped again.
 
 Not pure: drives launchd, writes plists and ends processes.
 """
@@ -40,6 +41,8 @@ from neutrino_agent.modules.shared.subprocess_run import run as run_command
 LAUNCHCTL = "/bin/launchctl"
 LSOF = "/usr/sbin/lsof"
 PS = "/bin/ps"
+# launchd's domain of the login window's session.
+LOGIN_WINDOW_DOMAIN = "loginwindow"
 # launchd starts a job with no locale.
 LAUNCHD_LANG = "en_US.UTF-8"
 # The bundle the session job is shown as in the privacy settings.
@@ -253,6 +256,7 @@ class RemoteDesktopDarwinApplier:
 
     def unregister(self) -> None:
         """Boot both jobs out, delete the agent's plists, end its copy."""
+        self._bootout_copy_sessions()
         self._bootout()
         for _, path, _ in self._plists:
             if self._is_own(path):
@@ -385,6 +389,27 @@ class RemoteDesktopDarwinApplier:
             ).exit_code
             != 0
         )
+
+    def _bootout_copy_sessions(self) -> None:
+        """Boot the session job out of each session its copy runs in: the login
+        window's as root and each account's. A job only ended starts again, with
+        the settings the switch off puts back."""
+        listed = self._run([PS, "-axww", "-o", "uid=,comm="], is_checked=False)
+        uids = set()
+        for line in listed.stdout.splitlines():
+            uid, _, program = line.strip().partition(" ")
+            if uid.isdigit() and program.strip() == self.program:
+                uids.add(int(uid))
+        for uid in sorted(uids):
+            domain = f"gui/{uid}" if uid else LOGIN_WINDOW_DOMAIN
+            self._run(
+                [
+                    LAUNCHCTL,
+                    "bootout",
+                    f"{domain}/{REMOTE_DESKTOP_DARWIN_SESSION_LABEL}",
+                ],
+                is_checked=False,
+            )
 
     def _is_own(self, path: str) -> bool:
         try:
