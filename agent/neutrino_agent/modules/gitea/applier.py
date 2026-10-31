@@ -261,20 +261,24 @@ class GiteaConfigApplier:
 class GiteaAdminManager:
     """Administers accounts through the gitea CLI, as the git user."""
 
-    def survey(self) -> GiteaState:
+    def survey(self, *, version: str = "") -> GiteaState:
         """Read what the machine actually has.
+
+        Args:
+            version: The version the program file reads as; empty runs
+                ``gitea --version``.
 
         Returns:
             Installed-ness, version, and the administrators by name.
         """
         if not os.path.isfile(GITEA_BINARY_PATH):
             return GiteaState(is_installed=False, version="", admin_usernames=[])
-        version_output = run(
-            [GITEA_BINARY_PATH, "--version"], is_checked=False, timeout_s=30
-        ).stdout
-        version = ""
-        if version_output.lower().startswith(GITEA_VERSION_PREFIX):
-            version = version_output.split()[2]
+        if not version:
+            version_output = run(
+                [GITEA_BINARY_PATH, "--version"], is_checked=False, timeout_s=30
+            ).stdout
+            if version_output.lower().startswith(GITEA_VERSION_PREFIX):
+                version = version_output.split()[2]
         return GiteaState(
             is_installed=True, version=version, admin_usernames=self._admin_names()
         )

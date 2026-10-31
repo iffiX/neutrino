@@ -76,10 +76,12 @@ class FakeAdmins:
     created: list = []
     changed: list = []
     surveys: list = []
+    versions: list = []
     error = None
 
-    def survey(self):
+    def survey(self, *, version=""):
         FakeAdmins.surveys.append(list(FakeAdmins.admins))
+        FakeAdmins.versions.append(version)
         return GiteaState(True, "1.27.3", list(FakeAdmins.admins))
 
     def create_admin(self, *, username, password, email):
@@ -335,18 +337,57 @@ def test_the_details_read_the_url_from_the_installed_file_before_an_apply(
     assert runner.details({})["url"] == "http://192.168.100.7:3000/"
 
 
-def test_the_survey_stands_for_a_minute(runner, monkeypatch, tmp_path):
+def test_the_survey_stands_for_ten_minutes_and_keeps_the_version(
+    runner, monkeypatch, tmp_path
+):
     (tmp_path / "gitea").write_text("")
     monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea"))
     clock = [1000.0]
     monkeypatch.setattr(runner_module.time, "monotonic", lambda: clock[0])
+    FakeAdmins.versions = []
 
     runner.details({})
     runner.details({})
-    clock[0] += 61.0
+    clock[0] += 599.0
+    runner.details({})
+    assert FakeAdmins.versions == [""]
+    clock[0] += 2.0
     runner.details({})
 
-    assert len(FakeAdmins.surveys) == 2
+    assert FakeAdmins.versions == ["", "1.27.3"]
+
+
+def test_a_new_program_file_reads_the_version_and_the_administrators(
+    runner, monkeypatch, tmp_path
+):
+    binary = tmp_path / "gitea"
+    binary.write_text("")
+    monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(binary))
+    monkeypatch.setattr(runner_module.time, "monotonic", lambda: 1000.0)
+    FakeAdmins.versions = []
+    runner.details({})
+
+    binary.write_text("another release")
+    runner.details({})
+
+    assert FakeAdmins.versions == ["", ""]
+
+
+def test_an_apply_reads_the_administrators_again_and_keeps_the_version(
+    runner, monkeypatch, tmp_path
+):
+    (tmp_path / "gitea_program").write_text("")
+    monkeypatch.setattr(
+        runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea_program")
+    )
+    monkeypatch.setattr(runner_module.time, "monotonic", lambda: 1000.0)
+    FakeAdmins.versions = []
+    runner.details({})
+
+    runner.apply(CONFIG)
+    runner.details({})
+
+    assert FakeAdmins.versions == ["", "1.27.3"]
 
 
 def test_a_new_administrator_is_surveyed_at_once(runner, monkeypatch, tmp_path):
@@ -426,7 +467,7 @@ class SystemApplier:
     def is_active(self):
         return True
 
-    def survey(self):
+    def survey(self, *, version=""):
         return GiteaState(True, "1.27.3", [])
 
     def read_listen_port(self):

@@ -317,6 +317,19 @@ def test_survey_reads_the_version_and_the_admins_as_the_git_user(box):
     assert "sudo" not in " ".join(listing)
 
 
+def test_a_survey_with_the_version_runs_only_the_admin_list(box):
+    commands, _, tmp_path = box
+    (tmp_path / "bin/gitea").write_text("")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/app.ini").write_text("")
+    commands.answers[("runuser", "-u")] = (0, "ID Username\n1 root root@x true\n")
+
+    state = GiteaAdminManager().survey(version="1.27.3")
+
+    assert state.version == "1.27.3"
+    assert [call[0] for call in commands.calls] == ["runuser"]
+
+
 def test_a_missing_binary_surveys_as_not_installed(box):
     state = GiteaAdminManager().survey()
 

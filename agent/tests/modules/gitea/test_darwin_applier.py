@@ -305,6 +305,19 @@ def test_a_stop_disables_and_unloads_the_job_and_keeps_its_plist(
     )
 
 
+def test_a_survey_with_the_version_leaves_out_gitea_version(applier, tools, binary):
+    tools.has_account = True
+    applier.install(binary)
+    applier.apply("x\n", git_path="/opt/homebrew/bin/git")
+    tools.calls.clear()
+
+    state = applier.survey(version="1.26.0")
+
+    assert state.version == "1.26.0"
+    assert state.admin_usernames == ["ann"]
+    assert not any("--version" in call for call in tools.calls)
+
+
 def test_the_cli_runs_as_the_servers_account(applier, tools, binary):
     tools.has_account = True
     applier.install(binary)

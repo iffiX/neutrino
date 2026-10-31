@@ -71,6 +71,7 @@ from neutrino_agent.modules.shared.loopback_port import (
     is_listening as loopback_is_listening,
 )
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
+from neutrino_agent.modules.shared.package import program_stamp
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import (
@@ -131,9 +132,17 @@ class GiteaLinuxApplier:
         """Whether the unit is active."""
         return unit_state(GITEA_UNIT) == "active"
 
-    def survey(self):
-        """The binary, its version and the administrators."""
-        return GiteaAdminManager().survey()
+    def survey(self, *, version: str = ""):
+        """The binary, its version and the administrators.
+
+        Args:
+            version: The version the program file reads as; empty runs
+                ``gitea --version``.
+
+        Returns:
+            What the machine has.
+        """
+        return GiteaAdminManager().survey(version=version)
 
     def create_admin(self, **fields) -> None:
         """Create an administrator through the CLI."""
@@ -241,6 +250,9 @@ class GiteaModuleRunner(ModuleRunner):
         self._config: "GiteaConfig | None" = None
         self._survey = None
         self._surveyed_at = 0.0
+        # The program file the version was read from, and that version.
+        self._program = None
+        self._version = ""
 
     def verify(self, recipe: dict) -> bool:
         """Whether the binary is on the machine.
@@ -363,6 +375,7 @@ class GiteaModuleRunner(ModuleRunner):
         self._config = parsed
         if is_started:
             self._wait_for_server(parsed.listen_port)
+        self._survey = None
         self._log(f"gitea: {note}")
 
     def stop(self) -> None:
@@ -621,19 +634,32 @@ class GiteaModuleRunner(ModuleRunner):
         return git_path
 
     def _surveyed(self):
-        """The version and the administrators, read at most once a minute.
+        """The version, read once per program file, and the administrators.
+
+        The administrators are read with the version, after an apply and a
+        verb of the module's own, and at most every 10 minutes otherwise.
 
         Returns:
             The last survey while it stands, a fresh one past that, None
             when the read fails.
         """
+        program = program_stamp(f'"{self._applier.binary_path}"')
+        is_same_program = program == self._program
         now = time.monotonic()
-        if self._survey is not None and now - self._surveyed_at < GITEA_SURVEY_TTL_S:
+        if (
+            is_same_program
+            and self._survey is not None
+            and now - self._surveyed_at < GITEA_SURVEY_TTL_S
+        ):
             return self._survey
         try:
-            self._survey = self._applier.survey()
+            self._survey = self._applier.survey(
+                version=self._version if is_same_program else ""
+            )
         except (OSError, subprocess.SubprocessError):
             self._survey = None
             return None
+        self._program = program
+        self._version = self._survey.version
         self._surveyed_at = now
         return self._survey

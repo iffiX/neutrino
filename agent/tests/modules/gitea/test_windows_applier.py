@@ -230,6 +230,10 @@ def test_the_cli_is_run_by_the_agent_itself(sc, tmp_path, state):
         sleep=lambda seconds: None,
     )
 
+    state_kept = applier.survey(version="1.26.0")
+    assert state_kept.version == "1.26.0"
+    assert not any("--version" in call for call in sc.calls)
+
     state_read = applier.survey()
     applier.change_password(username="ann", password="pw")
 

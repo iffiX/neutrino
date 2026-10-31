@@ -281,16 +281,24 @@ class GiteaWindowsApplier:
         """Whether the service runs now."""
         return self._service_state() == "RUNNING"
 
-    def survey(self) -> GiteaState:
-        """Whether the binary is there, its version, and the administrators."""
+    def survey(self, *, version: str = "") -> GiteaState:
+        """Whether the binary is there, its version, and the administrators.
+
+        Args:
+            version: The version the program file reads as; empty runs
+                ``gitea --version``.
+
+        Returns:
+            What the machine has.
+        """
         if not self._is_file(self.binary_path):
             return GiteaState(is_installed=False, version="", admin_usernames=[])
-        output = self._run(
-            [self.binary_path, "--version"], is_checked=False, timeout_s=30
-        ).stdout
-        version = (
-            output.split()[2] if output.lower().startswith(GITEA_VERSION_PREFIX) else ""
-        )
+        if not version:
+            output = self._run(
+                [self.binary_path, "--version"], is_checked=False, timeout_s=30
+            ).stdout
+            if output.lower().startswith(GITEA_VERSION_PREFIX):
+                version = output.split()[2]
         return GiteaState(
             is_installed=True, version=version, admin_usernames=self._admin_names()
         )
