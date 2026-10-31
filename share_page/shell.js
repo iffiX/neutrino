@@ -27,11 +27,10 @@ const TAB_PARAM = "__neutrino_tab";
 // The query parameter that names the tab a new tab was opened from.
 const FROM_PARAM = "__neutrino_from";
 const KEPT_FACTS = "neutrino_share";
-// The N icon of images/icons/neutrino.png, on the introduction's tab.
-const MARK_ICON = "data:image/svg+xml," + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><linearGradient id="n" gradientUnits="userSpaceOnUse" x1="196" y1="32" x2="383" y2="63">' +
-  '<stop stop-color="#08adfe"/><stop offset=".5" stop-color="#8d61f6"/><stop offset="1" stop-color="#ef2eb6"/></linearGradient>' +
-  '<rect width="512" height="512" rx="106" fill="#0a0e14"/><path fill="url(#n)" d="M182 83h89l16 165 44-165h81l-93 347h-82l-16-172-45 172h-78z"/></svg>');
+// The face of each screen, a symbol of the page's sprite.
+const FACES = { loading: "waiting", intro: "wink", incomplete: "sad", link: "sad", hub: "sleep", unavailable: "error" };
+// images/icons/neutrino_client/wolf_wink_16.png, on the introduction's tab.
+const WINK_ICON_16 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAyUlEQVR4nJWSvQ2DMBCFH2mRaVNGSh1lACbIEOxGhzJBRsgEdElDSRUJRGfppcGOf86GPMkSOvx9OvsMrDnfSQD/rF9C+MjdsjzcarLV5NhlhT5sBK32oZTkgCBjUYSlzSTbM13sPkLdD6z7QZSk9hT2NtfU/QAAeF5O2FO3gmlebLFSpXhWs8f9H11ipUpPFsLhdyTIpVKl2B3ftxcBcJoXTvMSPSJpCoaBUPAmsAH7Y4TwlF0BG1/2uT7sBCOJK2LDLCxKcsuFv7EqGoqvgTPAAAAAAElFTkSuQmCC";  // scan: allow
 const WORDS = {
   en: {
     opening: "Opening {app}…",
@@ -199,11 +198,16 @@ const screen = {
     document.title = line;
     this.element("icon").href = "data:,";
   },
+  // Shows a screen's face.
+  face(kind) {
+    this.element("face").setAttribute("href", "#wolf_" + FACES[kind]);
+  },
   loading(title) {
     this.kind = "loading";
     this.serial++;
     const line = words.opening.replace(title ? "{app}" : " {app}", title || "");
     this.element("box").classList.add("loading");
+    this.face("loading");
     this.element("title").textContent = line;
     this.element("screen").classList.remove("hidden");
     this.tab(line);
@@ -231,16 +235,35 @@ const screen = {
     this.kind = kind;
     this.serial++;
     this.element("box").classList.remove("loading");
+    this.face(kind);
     this.element("title").textContent = title;
     this.element("detail").textContent = detail;
     this.element("screen").classList.remove("hidden");
     this.tab(title);
     stats.screen = kind;
   },
-  // The introduction, with the N icon on the tab.
+  // The introduction, with the wink on the tab: the hand-drawn file at 16 px, the sprite's face above it.
   intro() {
     this.refuse("intro");
-    this.element("icon").href = MARK_ICON;
+    const icon = this.element("icon");
+    icon.setAttribute("sizes", "16x16");
+    icon.href = WINK_ICON_16;
+    const large = document.createElement("link");
+    large.rel = "icon";
+    large.type = "image/svg+xml";
+    large.setAttribute("sizes", "any");
+    large.href = "data:image/svg+xml," + encodeURIComponent(this.spriteOf("wink"));
+    document.head.append(large);
+  },
+  // One face of the page's sprite as a whole SVG document.
+  spriteOf(face) {
+    const copy = this.element("wolf").cloneNode(true);
+    copy.removeAttribute("style");
+    copy.setAttribute("viewBox", "0 0 1024 1024");
+    copy.setAttribute("width", "1024");
+    copy.setAttribute("height", "1024");
+    copy.insertAdjacentHTML("beforeend", '<use href="#wolf_' + face + '"/>');
+    return new XMLSerializer().serializeToString(copy);
   },
   app() {
     this.kind = "app";
