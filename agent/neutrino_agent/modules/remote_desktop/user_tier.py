@@ -152,7 +152,11 @@ class RemoteDesktopReader:
         if any(os.path.exists(path) for path in units["paths"]):
             return True
         package = str(units["package"])
-        for argv in (["dpkg", "-s", package], ["rpm", "-q", package]):
+        for argv in (
+            ["dpkg", "-s", package],
+            ["rpm", "-q", package],
+            ["pacman", "-Q", package],
+        ):
             if self._run(argv).returncode == 0:
                 return True
         return False

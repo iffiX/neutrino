@@ -101,6 +101,7 @@ def test_a_product_that_is_not_there_reads_absent(machine):
     }
     assert ["dpkg", "-s", "teamviewer"] in runs.calls
     assert ["rpm", "-q", "teamviewer"] in runs.calls
+    assert ["pacman", "-Q", "teamviewer"] in runs.calls
 
 
 def test_teamviewer_is_read_as_root_and_its_daemon_started(machine):
