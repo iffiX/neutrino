@@ -195,7 +195,8 @@ wait to be written back. A failure carries the client's
 code where it fits, `switch_failed {account, detail}`, the download's
 `download_failed {file, sources}`, and the module codes for an account it
 cannot run as:
-`account_unknown {account}`, and on Windows `credential_missing {account}`
+`account_unknown {account}`, and on Windows `account_no_profile {account}`
+for an account that never signed in, `credential_missing {account}`
 and `credential_invalid {account}`. A failed account is not tried again
 while the state's hash is unchanged, as a failed module is not.
 
