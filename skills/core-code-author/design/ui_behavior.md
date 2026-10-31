@@ -812,7 +812,10 @@ module, and that row scrolls sideways.
 frame, wider: the title with a search box at its right, a row of activity
 filters (`ui.module_catalog.category_<id>`, **All** first), and a grid of
 cards, each the module's icon, its name, one line on it, its activity and a
-check at its top right. Checking a card adds its tab, and unchecking takes
+check at its top right. A card of a module that requires another
+([agent/module_install.md](agent/module_install.md), "Dependencies") shows
+`ui.module_catalog.requires` under its line with the required modules'
+titles, whether they are installed or not. Checking a card adds its tab, and unchecking takes
 it away; Terminal, Remote desktop and the SSH server are checked and locked,
 since the agent carries them, a module installed on the machine stays
 checked, a module the machine cannot run is greyed out, and a module the hub
@@ -922,6 +925,13 @@ the top of its tab, and its buttons are those of any `absent` module. A
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
 the install goes on after the restart with no press ([agent.md](agent.md),
 "Status is typed").
+
+**Install** on a module that requires a module the machine reports
+`absent` asks through `useConfirm` first: the title
+`ui.modules.install_title`, the body `ui.modules.install_requires_body`
+naming the required modules that are absent, and the confirming button
+`ui.modules.install`. **Install** on any other module acts at once, with no
+dialog.
 
 **Uninstall** asks through `useConfirm`, one dialog for every module: the
 title `ui.modules.uninstall_title`, the body `ui.modules.uninstall_body`, and

@@ -27,19 +27,21 @@ is the module's identity, the same on every platform:
 | `web_share` | `{guest_login}`, present for every module with a page and absent for a module without one: `guest_login` is how a Web share's visitor is signed in, `app` for the app's own login page, `guest_account` for one account of the app per share, which the forwarder signs every visitor of that share in as, and `run_account` for the account the app runs as, which the visitor is signed in as, the way the owner's clients are ([module_template.md](module_template.md), "The run") |
 | `platforms` | one entry per platform the module runs on |
 
-A platform entry is `{runner, min_version, install}`:
+A platform entry is `{runner, min_version, install, requires}`:
 
 | Key | Holds |
 | --- | --- |
 | `runner` | the agent runner that makes the machine match the module's `want` ([module_template.md](module_template.md), "How a module runs") |
 | `min_version` | optional: the lowest system version the entry runs on, a dotted number the loader checks |
 | `install` | `{method, params}`: the install method, and the parameters whose shape the method fixes |
+| `requires` | optional: the modules the entry runs on, by name and with no version ("Dependencies") |
 
 | Rule | Reason |
 | --- | --- |
 | A platform key is `<os>-<family>-<arch>`, `<os>-<family>`, `<os>-<arch>` or `<os>`, tried in that order, and the first key the manifest names wins. | A `system` entry differs by distribution family, a download by architecture, and a `builtin` entry by system alone. |
 | `resolve_platform_entry(manifest, platform)` in `modules/devices/manifests.py` is the one function that picks a machine's entry. The catalog's row, the machine page's tabs, the cache and the state's recipe all read it. | Two resolvers can disagree about which entry a machine has. |
 | A machine whose platform has no entry, or whose system version is below the entry's `min_version`, cannot run the module. The machine page's catalog greys it out, and a press on it is refused `no_platform_build {module}` ([protocol.md](../protocol.md), "The modules section, one entry per module"). | A machine that reports no system version is not ruled out, since its floor is unknown. |
+| A machine where a module the entry requires resolves no entry cannot run the module either, and the press is refused `no_platform_build {module}` naming the required module. | Hermes WebUI and Ayakaleaf name one `linux` entry, and Containers has none for a Linux whose agent reports no family, such as Arch. |
 | The catalog shows the licence and the source address for a `hub` or a `container` entry alone. | The other methods install the system's own software or the agent's. |
 | The loader refuses a manifest whose keys or `params` fall outside the shapes on this page, so a wrong file fails the suite. | The hub acts on a manifest as root on every managed machine. |
 | Every manifest of a module a person can uninstall names `uninstall_data`, with a line in both languages; a module whose entries name the method `agent` names none. The loader refuses a manifest without it, and one whose `is_deleted` disagrees with its entries: true beside a `system` or `builtin` entry or a `hub` entry whose `is_data_kept` is true, false beside a `container` entry or a `hub` entry whose `is_data_kept` is false. | Every module's uninstall shows one dialog, and the line in it is the one place a person reads what happens to their data before it happens. |
@@ -304,7 +306,7 @@ containers").
 | The manifest has one `container` entry for each platform Containers runs on: `linux`, `windows-amd64`, `darwin-arm64` and `darwin-amd64`, all naming the same images, each built for amd64 and arm64. | Podman pulls the variant of the Linux it runs on: the machine's own on Linux, the Podman machine's on Windows and macOS. |
 | The agent chooses a source for each image and has the Containers module's Podman pull `<source>@<digest>`; the hub caches no image. | An image is often several GB, and the machine reaches the registries itself. |
 | A hub container names its image as `{digest, sources}`, and the agent renders the reference it finds in Podman's store with that digest. | An image pulled from a mirror is stored under the mirror's name. |
-| The module depends on Containers alone. Its install or **Start** sets Containers' `want` to `running` first, which installs Containers where it is absent. The module's task waits for Containers' task in its first step, `wait_containers`, and asks Containers for a configure task once its images are pulled, in its step `render` ([../agent.md](../agent.md), "A step that brings up another module"). Containers' **Uninstall** is refused `module_in_use {modules}` while a container module is installed. | A container module runs on Containers' Podman, and two container modules share nothing but it. |
+| Every entry of the module names `requires: ["podman"]` ("Dependencies"). The module's task waits for Containers in its first step, `wait_module {module: podman}`, and asks Containers for a configure task once its images are pulled, in its step `render` ([../agent.md](../agent.md), "A step that brings up another module"). | A container module runs on Containers' Podman, and two container modules share nothing but it. |
 | Containers' **Stop** stops the hub containers with the declared ones, and each container module then reads `stopped`. | The containers stop with the engine that runs them. |
 | The module's data is in its named volumes, and it binds no host folder. | An uninstall removes everything the module wrote. |
 | An uninstall stops and removes the module's containers, their units, its network and its named volumes, and the images no other container uses. A `container` entry names no `uninstall`. | A container module is removed whole, and a person's container on the same image keeps it. |
@@ -367,7 +369,16 @@ Installing another version of a `hub` module replaces its files as one step:
 
 ## Dependencies
 
+A module depends on another when its platform entry names it in
+`requires`. The container modules are the modules that require one, and
+each requires Containers alone.
+
 | Rule | Reason |
 | --- | --- |
-| A `container` module depends on Containers alone ("From container images"). | It runs on Containers' Podman. |
-| Every other module depends on no other module: it reads only its own directory, and installs with no other module present. | A module installs and uninstalls by itself, so two modules that need the same runtime each hold it. |
+| `requires` names modules alone, each once, never the module itself, and no version. | The required module's own entry decides its version on each machine. |
+| Every `container` entry names `podman`. Every other module requires nothing: it reads only its own directory, and installs with no other module present. | A module that needs a runtime holds it, so two modules that need the same runtime each hold it. |
+| Every name in `requires` is a module of the catalog. On each platform the agent reports, the Linux of no family among them, a module whose entry resolves while a module it requires resolves none reads unsupported ("The manifest"), and on the Debian and RHEL families, Windows and macOS every required module resolves. The names of every manifest form no cycle. The manifest tests check all three. | A press installs each required module first, and a cycle would make two tasks wait for each other. |
+| **Install** or **Start** of a module first writes `want: running` on each module it requires whose `want` is another, which installs a required module that is absent. | The required module's install stays its own task, and **Install** again retries both. |
+| The module's task waits for each module it requires in its first steps, `wait_module {module}` ([../agent.md](../agent.md), "A step that brings up another module"). | The required module runs before the module's first step that needs it. |
+| **Uninstall** of a module is refused `module_in_use {modules}` while another module whose `want` is not `absent` requires it on the machine. | The modules that require it could no longer run. |
+| A required module's **Stop** leaves each module that requires it reading `stopped`: Containers' **Stop** stops the hub containers with the declared ones ("From container images"). The hub writes no `want` of the modules that require it. | The state that starts the required module again plans their start. |

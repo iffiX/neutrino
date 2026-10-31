@@ -376,6 +376,9 @@ where they fit.
 | `ui.module_catalog.close` | Close | 关闭 |
 | `ui.module_catalog.category_all`, `_code`, `_paper`, `_lab`, `_design`, `_notes`, `_files`, `_remote`, `_other` | All, Coding, Writing papers, Experiments, Design and creation, Notes, Files, Remote desktop, Other | 全部、写代码、写论文、跑实验、设计与创作、笔记、文件、远程桌面、其它 |
 | `ui.module_catalog.<module>` | one line on the module, in each language | |
+| `ui.module_catalog.requires`, under the line of a module that requires another | Needs: {modules} | 需要：{modules} |
+| `ui.modules.install_title` | Install {module} on {device} | 在 {device} 上安装 {module} |
+| `ui.modules.install_requires_body`, the body of **Install** on a module whose required module is absent | Installs {modules} first. | 会先安装“{modules}”。 |
 | `ui.ssh_server.host_key` | Host key {fingerprint} | 主机密钥 {fingerprint} |
 | `ui.ssh_server.apply` | Apply SSH server | 应用 SSH 服务器 |
 | `state.queued` | queued | 排队中 |
@@ -437,7 +440,7 @@ sentences.
 | `ui.modules.step.start` | Start the module | 启动模块 |
 | `ui.modules.step.stop` | Stop the module | 停止模块 |
 | `ui.modules.step.uninstall` | Uninstall the module | 卸载模块 |
-| `ui.modules.step.wait_containers` | Wait for Containers | 等待容器模块 |
+| `ui.modules.step.wait_module` | Wait for {module} | 等待“{module}” |
 | `ui.modules.step.pull`, for an image with no words of its own | Pull image {image} | 拉取镜像 {image} |
 | `ui.modules.step.render` | Create the containers | 创建容器 |
 | `ui.modules.step.windows_features` | Turn on Windows features | 打开 Windows 功能 |
@@ -471,7 +474,7 @@ which takes no step of its own:
 | `ui.modules.step.pull.hermes_webui.webui` | Pull the Hermes WebUI image | 拉取 Hermes WebUI 镜像 |
 | `ui.modules.step.pull.hermes_webui.agent` | Pull the Hermes Agent image | 拉取 Hermes Agent 镜像 |
 
-In a wait or a code, `{lock}` reads as the lock's words below, `{module}`
+In a step, a wait or a code, `{lock}` reads as the lock's words below, `{module}`
 as the module's title, and `{state}` as the state's word. A `{module}` of
 `agent`, the self-update, reads `ui.modules.holder_agent`, and an empty
 `{holder}` reads `ui.modules.holder_unnamed`.
@@ -640,7 +643,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |
 | `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
 | `code.container_name_reserved` | The name {name} starts with neutrino_, which the hub keeps for the containers of its modules. | 容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。 |
-| `code.module_in_use` | {modules} run on Containers; uninstall them first. | {modules} 运行在容器模块上，先卸载它们。 |
+| `code.module_in_use` | {modules} need this module; uninstall them first. | {modules} 依赖这个模块，先卸载它们。 |
 | `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
 | `code.containers_not_applied` | Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here. | 容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。 |
 

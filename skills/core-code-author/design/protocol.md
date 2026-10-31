@@ -328,9 +328,10 @@ walk theirs. A new code and its wording are one change.
 | `state_not_settled` | `{module}` | a module verb that acts, refused while that module's task runs on past 30 seconds ([agent.md](agent.md), "A retry is the same press again") | params added |
 | `waiting_for_lock` | `{lock, module}` | the `code` of a `queued` row and a task's `wait`: a step that waits for the step lock `lock`, which the task of `module` holds, `agent` for the self-update ([agent.md](agent.md), "Step locks") | added |
 | `waiting_for_package_manager` | `{holder}` | a task's `wait`, and the `code` of an `installing` row: the package helper waiting for the system's own lock, `holder` the process the system names, empty when it names none | added |
-| `waiting_for_module` | `{module}` | a task's `wait`, and the `code` of an `installing` row: a container module's `wait_containers` or `render` waiting for Containers' task | added |
+| `waiting_for_module` | `{module}` | a task's `wait`, and the `code` of an `installing` row: a `wait_module` or `render` step waiting for the task of a module its module requires | added |
 | `waiting_for_check` | `{seconds}` | a task's `wait`, and the `code` of an `installing` row: a step that checks something outside the agent every `seconds`, 30 | added |
-| `module_needed` | `{module, state}` | the `code` of an `install_failed` container module row: its `wait_containers` ended while Containers read `state` and not `running`, or while Containers' `want` was not `running` ([agent.md](agent.md), "A step that brings up another module") | added |
+| `module_needed` | `{module, state}` | the `code` of an `install_failed` or `failed` row: its `wait_module {module}` ended while the required `module` read `state` and not `running`, or while that module's `want` was not `running` in an install ([agent.md](agent.md), "A step that brings up another module") | added |
+| `module_in_use` | `{modules}` | 409 of `module/uninstall`, a module that the installed `modules` require ([agent/module_install.md](agent/module_install.md), "Dependencies") | added |
 | `package_manager_busy` | `{holder}` | the `code` of an `install_failed` or `failed` row: a step whose package helper waited 300 seconds for the system's own lock ([agent.md](agent.md), "The system's own lock") | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
 | `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
@@ -742,12 +743,12 @@ to pick one.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/agent/module` | `?device_id=` | one row per module, `{name, title, description, runner, method, publisher, license, corresponding_source, uninstall_data, is_configured, task_id, want, state, is_active, version, code, params, details, is_supported, is_carried, is_shown}`: the manifest's words first, `uninstall_data` being the manifest's `{is_deleted, text}` with `{data_dir}` written in for the machine's system and absent for a module the agent carries ([agent/module_install.md](agent/module_install.md), "The manifest"), `is_configured` whether the hub holds a file for it, `task_id` the running install or removal task's, `want` the stored one, empty when the hub holds none, `version` the version installed as the machine reports it, `code` and `params` the reported failure or hold-up; the page's tabs are the rows `is_shown` names, in the page's order; beside the rows `memory_need`, `{need_gib, memory_gib}` on Windows and macOS while the container modules need more memory than the Podman machine has and null otherwise ([agent/modules/containers.md](agent/modules/containers.md), "Memory for the container modules") |
-| `GET /api/agent/module/catalog` | `?device_id=` | `ModuleCatalogView`: `categories`, the activity filters in their order, and `modules`, each `{name, category, is_available, is_supported, is_carried, is_shown, state}`, in the order `data/module_catalog.json` lists them: `is_available` false for a module the hub has no manifest of yet, `is_supported` whether the machine's platform has an entry, `is_carried` for Terminal, Remote desktop and the SSH server, `is_shown` whether its tab is on the page, and `state` as last reported |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; for a `container` module, first `want: running` on `podman` when its `want` is another ([agent/module_install.md](agent/module_install.md), "From container images") |
-| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; for a `container` module, first `want: running` on `podman` as **Install** does |
+| `GET /api/agent/module` | `?device_id=` | one row per module, `{name, title, description, runner, method, publisher, license, corresponding_source, uninstall_data, requires, is_configured, task_id, want, state, is_active, version, code, params, details, is_supported, is_carried, is_shown}`: the manifest's words first, `requires` the modules the machine's entry requires ([agent/module_install.md](agent/module_install.md), "Dependencies"), `uninstall_data` being the manifest's `{is_deleted, text}` with `{data_dir}` written in for the machine's system and absent for a module the agent carries ([agent/module_install.md](agent/module_install.md), "The manifest"), `is_configured` whether the hub holds a file for it, `task_id` the running install or removal task's, `want` the stored one, empty when the hub holds none, `version` the version installed as the machine reports it, `code` and `params` the reported failure or hold-up; the page's tabs are the rows `is_shown` names, in the page's order; beside the rows `memory_need`, `{need_gib, memory_gib}` on Windows and macOS while the container modules need more memory than the Podman machine has and null otherwise ([agent/modules/containers.md](agent/modules/containers.md), "Memory for the container modules") |
+| `GET /api/agent/module/catalog` | `?device_id=` | `ModuleCatalogView`: `categories`, the activity filters in their order, and `modules`, each `{name, category, is_available, is_supported, is_carried, is_shown, state, requires}`, in the order `data/module_catalog.json` lists them: `is_available` false for a module the hub has no manifest of yet, `is_supported` whether the machine's platform has an entry and each module that entry requires has one too, `requires` the modules that entry requires, `is_carried` for Terminal, Remote desktop and the SSH server, `is_shown` whether its tab is on the page, and `state` as last reported |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; first `want: running` on each module the machine's entry requires whose `want` is another, with the same `retry_mark` on it ([agent/module_install.md](agent/module_install.md), "Dependencies"); 409 `no_platform_build {module}` naming a required module with no entry for the machine |
+| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; first `want: running` on each module it requires as **Install** does |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running` |
-| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` on `podman` while a `container` module has a `want` other than `absent` |
+| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` while a module whose `want` is not `absent` requires it on the machine, `modules` those modules |
 | `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method and for a `container` module whose manifest names no `releases`; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one, and the one locked version for a locked module; `is_data_forward_only` from the manifest; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
 | `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json` and pushes the state; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
@@ -1249,8 +1250,8 @@ while the switch is off and none of its RustDesk processes runs, and
 
 `install` is the recipe the hub resolves from `data/manifests/<module>.json`
 for the machine's platform and the version the machine chose: `{runner,
-method, params}` ([agent/module_install.md](agent/module_install.md), "The
-manifest"). The hub sends it with the state, and the agent has no manifest
+method, params, requires}`, `requires` present where the entry names it
+([agent/module_install.md](agent/module_install.md), "The manifest"). The hub sends it with the state, and the agent has no manifest
 logic of its own. `params` is the method's: a `system` entry's `packages`,
 `pre_install`, `verify` and `uninstall`; a `hub` entry's `version`, its
 `artifacts` without their `sources`, `packages`, `verify` and `uninstall`; a
@@ -1264,7 +1265,8 @@ as a platform the manifest does not name, and one that reports no `version`
 is not ruled out. `GET /api/agent/module` answers such a module
 `is_supported: false`, the machine page's catalog greys its card out and the
 page never shows it as a tab, and a press on it is refused 409 `no_platform_build
-{module}`.
+{module}`. A module whose entry requires a module that resolves no entry
+reads the same, and the press is refused naming the required module.
 
 The agent observes each module it has a runner for and reports a state derived
 from the same facts, whoever installed the software:
@@ -1559,12 +1561,12 @@ published on UDP. An install ends
 `machine_set_failed {detail}` and `machine_unreachable {detail}`. `machine`,
 its `default_memory_gib`, `services`, `detected`, `hub_containers`, each
 reported container's `module` and the code on an `installing` row are added
-fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params}`, and each
+fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params, requires}`, and each
 module's `version` in the report come with 0.6.0, which no released agent
 read before, and keep `PROTOCOL` 4 ("Versioning").
 
 A `container` module's recipe is `{runner: container, method: container,
-params: {version, artifacts, source_sets}}`, each artifact of kind `image`
+params: {version, artifacts, source_sets}, requires: [podman]}`, each artifact of kind `image`
 with its `digest` and `sources`, `source_sets` the sets its containers
 fetch from, and no `verify`
 ([agent/module_install.md](agent/module_install.md), "From container
@@ -2280,7 +2282,7 @@ stream is judged by the `terminal` kind, as a `shell` is ("The exec
 stream"). The `ai_tools` section's `base_url` names the agent's own AI
 gateway forward on `127.0.0.1`, and the agent opens a `connect` stream to
 the hub for each connection made to it ("The connect stream"). A module's
-recipe is `{runner, method, params}`, and a `package` stream names `{module,
+recipe is `{runner, method, params, requires}`, and a `package` stream names `{module,
 artifact, digest}` ("The modules section, one entry per module").
 `PROTOCOL_MIN` is 4. An agent or a client of 0.5 speaks TLS, which the
 port refuses, and is installed again with 0.6 and joins again

@@ -397,7 +397,7 @@ the first failure in `APPLY_ORDER`.
 | `npm {account}` | CloudCLI's npm for one account | `failed` |
 | `start`, `stop` | the runner's start or stop | `failed` |
 | `uninstall` | the module stopped, the hub's configuration removed, the software, `post_uninstall`, and the data where the recipe says | `failed` |
-| `wait_containers` | waits until Containers reads `running` and has no task | `install_failed` in an install, `failed` in a start or a configure |
+| `wait_module {module}` | waits until a module the task's module requires reads `running` and has no task | `install_failed` in an install, `failed` in a start or a configure |
 | `pull {image}` | one image of a container module, from the fastest source | `install_failed` |
 | `render` | a configure task of Containers, asked for and waited for | `install_failed` |
 | `windows_features`, `restart` | Containers on Windows: the two Windows features turned on with dism, and the restart they owe | `install_failed` |
@@ -419,8 +419,8 @@ that can pass 30 seconds by the lab's times:
 | Containers on Linux | `packages`, `verify`, `configure`, `start` | `packages`, and `configure` while it restarts containers |
 | Containers on Windows | `windows_features`, `restart`, `artifact wsl`, `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `restart` until a person restarts, `machine` about 40 seconds, `configure` 15 to 23 seconds |
 | Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |
-| Hermes WebUI | `wait_containers`, `pull webui`, `pull agent`, `verify`, `render`, `start`, `first_start`, `update_check` | `pull agent` 73 seconds, `first_start` 30 to 38 seconds |
-| Ayakaleaf | `wait_containers`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
+| Hermes WebUI | `wait_module podman`, `pull webui`, `pull agent`, `verify`, `render`, `start`, `first_start`, `update_check` | `pull agent` 73 seconds, `first_start` 30 to 38 seconds |
+| Ayakaleaf | `wait_module podman`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
 
@@ -436,23 +436,28 @@ names.
 
 | Task | Its steps |
 | --- | --- |
-| A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_containers`, `start` and the first-start steps its record does not hold |
-| A stop | `configure`, then `stop`; a container module's `wait_containers`, then `stop` |
+| A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_module podman`, `start` and the first-start steps its record does not hold |
+| A stop | `configure`, then `stop`; a container module's `wait_module podman`, then `stop` |
 | A configure | `configure` and, under `running`, the `account` steps, then `start` or `stop` by the `want` |
 | An uninstall | `uninstall`; a container module's drops its hub containers and removes its containers, network, volumes and unused images |
 | A version switch | `switch {version}`, then the steps of a configure |
 
 ### A step that brings up another module
 
+A module's recipe names the modules it requires
+([agent/module_install.md](agent/module_install.md), "Dependencies"), and
+every task of the module but an uninstall begins with one `wait_module
+{module}` for each of them. The container modules require Containers alone.
+
 | Rule | Reason |
 | --- | --- |
-| A container module's task never runs Containers' steps and never makes a task for Containers. Its `wait_containers` waits until Containers reads `running` and has no task. | One owner per module: two tasks never act on Containers at once, and a failure lands on the row of the module whose step failed. |
-| The hub writes Containers' `want` `running` at a container module's **Install** or **Start**, so the same state gives Containers a task of its own. | Containers' install stays Containers' task, and nothing on the hub changes. |
-| `wait_containers` ends the task with `module_needed {module: podman, state}`, `install_failed` in an install and `failed` after it, when Containers' task ends and Containers does not read `running`, or when Containers' `want` is not `running` in an install. Containers' row is read first when nothing read it since the agent started. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks Containers too. |
-| An installed container module plans no step while Containers' `want` is not `running`, and its task that waits in `wait_containers` plans again once that `want` leaves `running`: its task ends with no failure and no tried hash, and the module reads `stopped`. | Containers' **Stop** stops every hub container, and the state that starts Containers again plans the module's start. Containers and a container module pressed **Stop** together both end `stopped`. |
+| A module's task never runs a required module's steps and never makes a task for it. Its `wait_module` waits until that module reads `running` and has no task. | One owner per module: two tasks never act on one module at once, and a failure lands on the row of the module whose step failed. |
+| The hub writes each required module's `want` `running` at the module's **Install** or **Start**, so the same state gives the required module a task of its own. | The required module's install stays its own task. |
+| `wait_module` ends the task with `module_needed {module, state}`, `install_failed` in an install and `failed` after it, when the required module's task ends and it does not read `running`, or when its `want` is not `running` in an install. Its row is read first when nothing read it since the agent started. | The person reads which module stopped the install, and **Install** again retries both, since the hub marks the required module too. |
+| An installed module plans no step of a configure task while the `want` of a module it requires is not `running`, and its task that waits in `wait_module` plans again once that `want` leaves `running`: its task ends with no failure and no tried hash, and the module reads `stopped`. | Containers' **Stop** stops every hub container, and the state that starts Containers again plans the module's start. Containers and a container module pressed **Stop** together both end `stopped`. |
 | `render` asks Containers for a configure task and waits for it to end. Two asks while one Containers task runs become one more configure after it. | Containers renders a container module's containers once their images are in its store, and does it once for a run of pulls. |
-| An install plan holds one `wait_containers`, its first step; the configure steps after the install steps add none. | Containers is waited for once, before the first pull. |
-| Containers' task never waits for a container module. | Module waits then form no loop ("Step locks"). |
+| An install plan holds one `wait_module` per required module, its first steps; the configure steps after the install steps add none. | A required module is waited for once, before the first step that needs it. |
+| A required module's task never waits for a module that requires it. | The manifests' `requires` form no cycle, so module waits form no loop ("Step locks"). |
 
 ### A restart mid-task
 
@@ -527,8 +532,8 @@ PowerShell host, Containers' page ports and the core's state lock.
 | Rule | Reason |
 | --- | --- |
 | A step takes all its step locks before it starts, in the order. | A step waiting for a lock then holds only locks before it in the order, and a loop of waits needs a step that holds a later lock while it waits for an earlier one. |
-| A step that waits for a module, `wait_containers` or `render`, holds no step lock. | A module wait then never joins a lock wait into a loop. |
-| Only a container module waits for a module, and only for Containers, whose task waits for none. | Module waits form no loop either. |
+| A step that waits for a module, `wait_module` or `render`, holds no step lock. | A module wait then never joins a lock wait into a loop. |
+| A task waits only for the modules its recipe requires, and the manifests' `requires` form no cycle. | Module waits form no loop either. |
 | The inner locks take no step lock inside them, and a unit test checks every step's locks against the order. | A new step cannot break the first rule. |
 
 ### Timeouts
@@ -537,7 +542,7 @@ PowerShell host, Containers' page ports and the core's state lock.
 | --- | --- | --- |
 | for a step lock | none of its own | Every holder runs under its own command timeout, a pull 3600 seconds, `tlmgr` and npm 1800, an msi or apt 1800, a unit start 900, a machine init 900, and the row names the wait meanwhile. A second timeout would fail a module only because another one is slow. |
 | for the system's package lock | 300 seconds, then the step fails `package_manager_busy {holder}` | The self-update already waits 300 seconds, and a failure that names the holder beats an endless wait. |
-| for Containers, in `wait_containers` and `render` | none of its own: it ends with Containers' task | Containers' task has its own timeouts. |
+| for a required module, in `wait_module` and `render` | none of its own: it ends with that module's task | That module's task has its own timeouts. |
 | a step's own check every 30 seconds | the module's own, as Ayakaleaf's replica set and CloudCLI's four-hour install task have | A step that waits for something outside the agent ends by its own rule. |
 
 ### The system's own lock
