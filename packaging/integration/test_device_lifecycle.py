@@ -49,8 +49,11 @@ DROP_BYTECODE = f"sudo rm -rf {AGENT_TREE}/__pycache__"
 # The package database records the older version as well. apt installs
 # nothing for a version it has recorded already.
 RECORD_OLDER_PACKAGE = (
-    "sudo sed -i '/^Package: neutrino-agent$/,/^$/s/^Version: .*/Version: 0.0.0/'"
-    " /var/lib/dpkg/status"
+    "if command -v pacman >/dev/null; then "
+    "sudo sed -i '/^%VERSION%$/{n;s/.*/0.0.0-1/}'"
+    " /var/lib/pacman/local/neutrino-agent-*/desc; "
+    "else sudo sed -i '/^Package: neutrino-agent$/,/^$/s/^Version: .*/Version: 0.0.0/'"
+    " /var/lib/dpkg/status; fi"
 )
 
 

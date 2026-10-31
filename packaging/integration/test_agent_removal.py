@@ -39,6 +39,8 @@ PLANT_UNITS = (
 REMOVE_PACKAGE = (
     "if command -v apt-get >/dev/null; then "
     "sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y neutrino-agent; "
+    "elif command -v pacman >/dev/null; then "
+    "sudo pacman -R --noconfirm neutrino-agent; "
     "else sudo dnf remove -y neutrino-agent; fi"
 )
 # The SMB server's unit on Debian and on Fedora.
