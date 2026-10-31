@@ -1427,6 +1427,13 @@ export interface AccountRemoveRequest {
   account: string;
 }
 
+export interface AccountPasswordTest {
+  device_id: string;
+  account: string;
+  /** Empty tests the login the account has. */
+  password: string;
+}
+
 /** One available account as an account-layer module's tab lists it. */
 export interface EnabledAccountView {
   account: string;
@@ -2356,6 +2363,18 @@ export interface PodmanSettings {
 export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 
 /** The Run settings being saved. */
+/** The numbers a new Podman machine starts from, as the machine reports them. */
+export interface PodmanNewMachineView {
+  cpus: number;
+  memory_gib: number;
+  /** The account's disk now, else the default. */
+  disk_gib: number;
+  /** The account's disk now; 0 while the account has no machine. */
+  disk_gib_now: number;
+  /** What the container modules need, the module being installed among them. */
+  need_gib: number;
+}
+
 export interface PodmanMachineUpdate {
   device_id: string;
   /** An available account; a Windows machine signs in with its login. */

@@ -1,0 +1,7 @@
+/* A Podman machine's CPUs, memory and disk limit in one row. */
+.containers_run_numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}

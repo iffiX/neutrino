@@ -884,6 +884,7 @@ export function MachineModules({
       {isAccountAsked && (
         <ContainersAccountModal
           deviceId={deviceId}
+          module={activeRow?.name ?? ""}
           onChosen={() => {
             setIsAccountAsked(false);
             void act("install");

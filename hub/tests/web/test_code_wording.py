@@ -161,6 +161,7 @@ CONTAINERS_CODES = (
     "account_unknown",
     "credential_missing",
     "credential_invalid",
+    "account_logon_refused",
     "unknown_credential",
     "unsupported_platform",
     "volume_invalid",

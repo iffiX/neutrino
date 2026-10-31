@@ -58,6 +58,16 @@ WORDS = {
     },
 }
 CODES = ("container_name_reserved", "module_in_use", "container_hub_owned")
+LOGON_WORDS = {
+    "en": {
+        "code.credential_invalid": "Windows does not accept this password for {account}. Type the right one in the account's form.",
+        "code.account_logon_refused": "Windows refused the logon of {account}: {detail}",
+    },
+    "zh-CN": {
+        "code.credential_invalid": "非法凭据：Windows 不接受 {account} 的这个密码。请在账户的表单里填对。",
+        "code.account_logon_refused": "Windows 拒绝了 {account} 的登录：{detail}",
+    },
+}
 
 
 def catalog(language: str, name: str) -> dict:
@@ -80,6 +90,14 @@ def test_every_code_of_hub_containers_has_a_sentence(language):
         assert worded[f"code.{code}"]
     assert "{modules}" in worded["code.module_in_use"]
     assert "{name}" in worded["code.container_hub_owned"]
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN"])
+def test_a_refused_logon_says_what_ui_text_writes(language):
+    worded = catalog(language, "codes.json")
+
+    for key, sentence in LOGON_WORDS[language].items():
+        assert worded[key] == sentence
 
 
 @pytest.mark.parametrize("language", ["en", "zh-CN"])

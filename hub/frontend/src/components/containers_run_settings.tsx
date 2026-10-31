@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
+import { ContainersMachineFields } from "./containers_machine_fields";
 import { Picker } from "./picker";
 import { apiPost, describeApplyFailure, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { machineDiskError } from "../podman_machine";
 import { useDraft } from "../use_draft";
 import { isFailing, useSettledApply } from "../use_settled_apply";
 import type { ReportedModule } from "../use_settled_apply";
@@ -37,7 +39,7 @@ const STATE_UNSUPPORTED = "unsupported";
 const WANT_STOPPED = "stopped";
 
 /** The disk limit a Windows machine with none stored starts at, in GiB. */
-export const WINDOWS_NEW_DISK_GIB = 100;
+const WINDOWS_NEW_DISK_GIB = 100;
 
 /** The Run settings while none are stored: no account, Podman's defaults. */
 const EMPTY_MACHINE: PodmanMachine = {
@@ -94,20 +96,10 @@ export function ContainersRunSettings({
   const stored = draftOf(saved, isWindows);
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const currentDisk = currentDiskGib(saved.machine_state, draft.account);
-  const leastDisk = isWindows ? Math.max(1, currentDisk) : currentDisk;
-  const isShrunk = draft.disk_gib !== 0 && draft.disk_gib < currentDisk;
-  const isDiskMissing = isWindows && draft.disk_gib < 1;
   const memoryNeed = saved.memory_need;
   const isMemoryShort =
     memoryNeed !== null && draft.memory_gib < memoryNeed.need_gib;
-  const diskError = isDiskMissing
-    ? t("code.machine_disk_invalid", { disk_gib: draft.disk_gib })
-    : isShrunk
-      ? t("code.machine_disk_shrink", {
-          disk_gib: draft.disk_gib,
-          current_gib: currentDisk,
-        })
-      : null;
+  const diskError = machineDiskError(draft.disk_gib, currentDisk, isWindows);
 
   const apply = async () => {
     setIsBusy(true);
@@ -154,66 +146,14 @@ export function ContainersRunSettings({
           isDisabled={isUnsupported}
         />
       </div>
-      <div className="containers_run_numbers">
-        <label className="field">
-          <span className="field_label">{t("ui.containers.run_cpus")}</span>
-          <input
-            className="input"
-            type="number"
-            min={0}
-            value={draft.cpus}
-            disabled={isUnsupported}
-            onChange={(event) =>
-              setDraft({ ...draft, cpus: wholeNumber(event.target.value) })
-            }
-          />
-        </label>
-        <label className="field">
-          <span className="field_label">{t("ui.containers.run_memory")}</span>
-          <input
-            className="input"
-            type="number"
-            min={0}
-            value={draft.memory_gib}
-            disabled={isUnsupported}
-            onChange={(event) =>
-              setDraft({
-                ...draft,
-                memory_gib: wholeNumber(event.target.value),
-              })
-            }
-          />
-          {isMemoryShort && (
-            <span className="field_hint">
-              {t("ui.containers.run_memory_need", {
-                need: memoryNeed.need_gib,
-              })}
-            </span>
-          )}
-        </label>
-        <label className="field">
-          <span className="field_label">{t("ui.containers.run_disk")}</span>
-          <input
-            className="input"
-            type="number"
-            min={leastDisk}
-            value={draft.disk_gib}
-            disabled={isUnsupported}
-            onChange={(event) =>
-              setDraft({ ...draft, disk_gib: wholeNumber(event.target.value) })
-            }
-          />
-          {diskError !== null ? (
-            <span className="field_error">{diskError}</span>
-          ) : (
-            currentDisk > 0 && (
-              <span className="field_hint">
-                {t("ui.containers.run_disk_hint", { current: currentDisk })}
-              </span>
-            )
-          )}
-        </label>
-      </div>
+      <ContainersMachineFields
+        size={draft}
+        currentDisk={currentDisk}
+        isWindows={isWindows}
+        memoryNeedGib={isMemoryShort ? memoryNeed.need_gib : null}
+        isDisabled={isUnsupported}
+        onChange={(change) => setDraft({ ...draft, ...change })}
+      />
       <p className="field_hint">
         {isWindows
           ? t("ui.containers.run_default_hint_windows")
@@ -304,10 +244,4 @@ function runWarning(
     lines.push(t("ui.containers.run_account_warning"));
   }
   return lines.length === 0 ? undefined : lines.join(" ");
-}
-
-/** A number field's text as a count: a whole number, 0 for none. */
-function wholeNumber(text: string): number {
-  const value = Number.parseInt(text, 10);
-  return Number.isNaN(value) || value < 0 ? 0 : value;
 }
