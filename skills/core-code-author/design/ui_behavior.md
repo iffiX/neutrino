@@ -1035,7 +1035,9 @@ The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, the SSH server, Remote
 desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
 WebUI, Ayakaleaf. The eight modules of the account layer are drawn by one
-`instances_panel.tsx` from the hub's description table. A module the machine cannot
+`instances_panel.tsx` from the hub's description table. Its apply bar and frame
+are lit while the module reads `failed` or `install_failed`, and its apply with
+nothing changed sends `POST /api/agent/module/<name>/apply`. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").
 
