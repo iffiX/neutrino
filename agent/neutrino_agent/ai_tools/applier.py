@@ -48,6 +48,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APPS,
     AI_TOOLS_CC_SWITCH_ARTIFACT_KEY,
     AI_TOOLS_CC_SWITCH_MODULE,
+    AI_TOOLS_CODE_ACCOUNT_NO_PROFILE,
     AI_TOOLS_CODE_ACCOUNT_UNKNOWN,
     AI_TOOLS_CODE_CREDENTIAL_MISSING,
     AI_TOOLS_CODE_DOWNLOAD_FAILED,
@@ -491,12 +492,7 @@ class AiToolsApplier:
         try:
             home = self._platform.account_home(account)
         except KeyError:
-            return result(
-                account,
-                AI_TOOLS_STATE_FAILED,
-                AI_TOOLS_CODE_ACCOUNT_UNKNOWN,
-                {"account": account},
-            )
+            return self._no_home(account)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             return self._failed(account, error)
         if self._platform.os_name == "windows" and not password:
@@ -512,6 +508,23 @@ class AiToolsApplier:
             home=home,
             binary=self._binary,
             password=password,
+        )
+
+    def _no_home(self, account: str) -> dict:
+        """The result of an account with no home: no profile yet, or no account."""
+        try:
+            is_had = self._platform.has_account(account)
+        except Exception as error:  # noqa: BLE001 - reported, never raised
+            return self._failed(account, error)
+        return result(
+            account,
+            AI_TOOLS_STATE_FAILED,
+            (
+                AI_TOOLS_CODE_ACCOUNT_NO_PROFILE
+                if is_had
+                else AI_TOOLS_CODE_ACCOUNT_UNKNOWN
+            ),
+            {"account": account},
         )
 
     def _account_lock(self, account: str) -> AiToolsAccountLock:

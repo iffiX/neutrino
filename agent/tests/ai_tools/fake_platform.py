@@ -35,9 +35,10 @@ WINDOWS_STEP_VERBS = {
 class FakeAccountPlatform:
     """Runs as an account against its own :class:`FakeCcSwitch` and a home in memory."""
 
-    def __init__(self, *, os_name="linux", homes=None, root=""):
+    def __init__(self, *, os_name="linux", homes=None, root="", no_profile=()):
         self.os_name = os_name
         self.homes = dict(homes if homes is not None else {"ann": "/home/ann"})
+        self.no_profile = no_profile
         self.stores: dict = {}
         self.files: dict = {}
         self.dirs: set = set()
@@ -66,6 +67,11 @@ class FakeAccountPlatform:
         if account not in self.homes:
             raise KeyError(account)
         return self.homes[account]
+
+    def has_account(self, account):
+        if isinstance(self.no_profile, Exception):
+            raise self.no_profile
+        return account in self.homes or account in self.no_profile
 
     def run_as_account(
         self, account, argv, *, stdin="", timeout_s=0, password="", environment=None

@@ -6,7 +6,8 @@ switched; nothing
 runs when the records already carry the settings, and a state applied once
 is not applied again; an account the section no longer names, and every
 account when it is off, is switched back and its records removed; an
-account the machine lacks is ``account_unknown``; on Windows an account with
+account the machine lacks is ``account_unknown``, one it has with no profile
+``account_no_profile``; on Windows an account with
 no login is ``credential_missing`` and the login it was switched with is
 kept, root's own, for the switch back; a refusing account does not stop the
 next; the report while the section's steps run keeps the last result of
@@ -196,6 +197,33 @@ def test_an_account_the_machine_lacks_is_account_unknown_and_the_next_still_swit
 
     assert states(applier) == {
         "ghost": ("failed", "account_unknown"),
+        "ann": ("switched", ""),
+    }
+
+
+def test_an_account_with_no_profile_is_account_no_profile_and_the_next_still_switches(
+    tmp_path, binary
+):
+    applier, _platform = make(tmp_path, binary, no_profile=("fresh",))
+
+    applier.apply(section("fresh", "ann"), "h1")
+
+    assert states(applier) == {
+        "fresh": ("failed", "account_no_profile"),
+        "ann": ("switched", ""),
+    }
+    assert applier.report()["accounts"][0]["params"] == {"account": "fresh"}
+
+
+def test_an_account_lookup_that_cannot_run_is_switch_failed_and_the_next_still_switches(
+    tmp_path, binary
+):
+    applier, _platform = make(tmp_path, binary, no_profile=OSError("no registry"))
+
+    applier.apply(section("fresh", "ann"), "h1")
+
+    assert states(applier) == {
+        "fresh": ("failed", "switch_failed"),
         "ann": ("switched", ""),
     }
 
