@@ -459,6 +459,18 @@ def test_a_round_that_reached_no_address_waits_for_the_transports_next_round(
     assert 15 < waiting["next_round_at"] - time.time() <= 20
 
 
+def test_a_waiting_hub_stays_waiting_while_its_next_round_runs(harness):
+    harness.transport.next_command("dial")
+    harness.transport.emit(
+        {"event": "round_end", "binding": "c1", "code": "hub_unreachable"}
+    )
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_WAITING)
+
+    harness.session.change_network()
+
+    assert harness.session.connection() == CONNECTION_WAITING
+
+
 def test_a_round_with_the_hubs_network_on_waits_off_the_overlay(harness):
     harness.session.set_overlay_route("100.64.0.1", "netbird")
     harness.transport.next_command("dial")

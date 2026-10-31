@@ -19,10 +19,18 @@ import os
 import pathlib
 
 from neutrino_client import words
+from neutrino_client.constants import (
+    CLIENT_DESKTOP_NAME,
+    CLIENT_TRAY_FACE_CONNECTED,
+    CLIENT_TRAY_FACES,
+)
 
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent.parent
 GUI_DATA_DIR = _PACKAGE_DIR / "data" / "gui"
 GUI_SOURCE_DIR = _PACKAGE_DIR.parent / "frontend"
+
+# A tray face's packaged file on each system with no icon theme.
+TRAY_ICON_NAMES = {"windows": "tray_{}.ico", "darwin": "tray_{}.png"}
 
 GUI_STYLE_TAG = '<link rel="stylesheet" href="style.css">'
 GUI_SCRIPT_TAG = '<script src="app.js"></script>'
@@ -152,14 +160,38 @@ def window_icon_path() -> str:
         # else, so that one comes first where it exists.
         names.insert(0, "neutrino_client.ico")
     candidates = [GUI_DATA_DIR / name for name in names]
-    candidates.append(
-        _PACKAGE_DIR.parents[2]
-        / "images"
-        / "icons"
-        / "neutrino_client"
-        / "wolf_wink_1024.png"
-    )
+    candidates.append(_source_icon(CLIENT_TRAY_FACE_CONNECTED))
     for path in candidates:
         if path.is_file():
             return str(path)
     return ""
+
+
+def tray_icons(os_name: str) -> dict:
+    """The tray's icon of each face.
+
+    Args:
+        os_name: The platform's ``os_name``.
+
+    Returns:
+        The icon by face. In a Linux package, a name in the installed icon
+        theme. In another package, the packaged file. In a checkout, the
+        repository's source icon.
+    """
+    if not (GUI_DATA_DIR / "neutrino_client.png").is_file():
+        return {face: str(_source_icon(face)) for face in CLIENT_TRAY_FACES}
+    if os_name == "linux":
+        return {face: f"{CLIENT_DESKTOP_NAME}_{face}" for face in CLIENT_TRAY_FACES}
+    name = TRAY_ICON_NAMES[os_name]
+    return {face: str(GUI_DATA_DIR / name.format(face)) for face in CLIENT_TRAY_FACES}
+
+
+def _source_icon(face: str) -> pathlib.Path:
+    """A face's large file in the repository."""
+    return (
+        _PACKAGE_DIR.parents[2]
+        / "images"
+        / "icons"
+        / "neutrino_client"
+        / f"wolf_{face}_1024.png"
+    )

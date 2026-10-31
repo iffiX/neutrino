@@ -55,23 +55,39 @@ class MacosTrayIcon:
         """Whether an item actually reached the menu bar."""
         return self._status_item is not None
 
+    def set_icon(self, icon_path: str) -> None:
+        """Show another icon. The caller is on the main thread.
+
+        Args:
+            icon_path: The icon file.
+        """
+        image = self._load_image(icon_path)
+        if self._status_item is not None and image is not None:
+            self._status_item.button().setImage_(image)
+
     def _attach(self) -> None:
         """Put the item in the menu bar with the icon, or the title, on it."""
         appkit = self._appkit
         bar = appkit.NSStatusBar.systemStatusBar()
         item = bar.statusItemWithLength_(appkit.NSVariableStatusItemLength)
         button = item.button()
-        image = None
-        if self._icon_path:
-            image = appkit.NSImage.alloc().initWithContentsOfFile_(self._icon_path)
+        image = self._load_image(self._icon_path)
         if image is not None:
-            image.setSize_((STATUS_ICON_EDGE, STATUS_ICON_EDGE))
             button.setImage_(image)
         else:
             button.setTitle_(self._title)
         button.setToolTip_(self._title)
         item.setMenu_(self._menu)
         self._status_item = item
+
+    def _load_image(self, icon_path: str):
+        """The icon file at the menu bar's size, or None where it does not load."""
+        if not icon_path:
+            return None
+        image = self._appkit.NSImage.alloc().initWithContentsOfFile_(icon_path)
+        if image is not None:
+            image.setSize_((STATUS_ICON_EDGE, STATUS_ICON_EDGE))
+        return image
 
     def _build_menu(self):
         """The two-item menu, each entry aimed at the target."""

@@ -27,6 +27,7 @@ from neutrino_client.constants import (
     CLIENT_EASYTIER_SERVICE_LINUX,
     CLIENT_INSTALL_PREFIX_LINUX,
     CLIENT_MOUNT_POLKIT_ACTION,
+    CLIENT_TRAY_FACES,
 )
 from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
@@ -199,6 +200,20 @@ def test_the_deb_carries_every_icon_size_under_the_installed_name(deb):
     for edge in (16, 32, 48, 64, 128, 256):
         icon = deb / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_client.png"
         assert icon.read_bytes() == icons.png(edge)
+
+
+def test_the_deb_carries_each_tray_face_under_the_name_the_tray_shows(deb):
+    for face in CLIENT_TRAY_FACES:
+        for edge in (16, 22, 24, 32, 48):
+            icon = (
+                deb
+                / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino_client_{face}.png"
+            )
+            assert icon.read_bytes() == icons.png(edge, face=face)
+
+
+def test_the_rpm_spec_lists_the_tray_faces(spec):
+    assert "/usr/share/icons/hicolor/*/apps/neutrino_client_*.png\n" in spec
 
 
 def test_the_deb_lays_down_the_mount_helper_and_the_policy_that_gates_it(deb):

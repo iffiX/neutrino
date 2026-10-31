@@ -115,6 +115,7 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/bin/nclient
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
+/usr/share/icons/hicolor/*/apps/{desktop}_*.png
 /usr/share/polkit-1/actions/{action}.policy
 {units}
 /usr/share/doc/{name}

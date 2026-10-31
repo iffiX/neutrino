@@ -16,6 +16,7 @@ import pytest
 
 import neutrino_client.cli.gui as gui_cli
 from neutrino_client.cli import wording
+from neutrino_client.constants import CLIENT_TRAY_FACES
 from neutrino_client.control import client
 from neutrino_client.control.server import ControlServer
 from neutrino_client.exceptions import (
@@ -342,6 +343,41 @@ def test_the_window_is_pushed_the_state_after_every_change(
     watcher()
     assert pushed[0]["hostname"] == resident.hostname()
     assert "services" in pushed[0]
+
+
+def test_the_tray_shows_the_hubs_state_and_changes_with_it(
+    platform, residents, monkeypatch
+):
+    shown = []
+
+    def fake_shell(*, on_tray_ready, **rest):
+        residents.made[0].is_bound = False
+        on_tray_ready(shown.append)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+    monkeypatch.setattr(gui_cli, "tray_icons", _face_is_the_icon)
+
+    assert gui_cli.main() == 0
+
+    (resident,) = residents.made
+    (watcher,) = resident.watchers
+    assert shown == ["sleep"]
+
+    resident.is_bound = True
+    resident.hubs_value = [{"connection": "connecting"}]
+    watcher()
+    watcher()
+    resident.hubs_value = [{"connection": "connected"}]
+    watcher()
+    resident.hubs_value = [{"connection": "waiting"}]
+    watcher()
+
+    assert shown == ["sleep", "waiting", "wink", "error"]
+
+
+def _face_is_the_icon(_os_name):
+    """Each face's own name as its icon."""
+    return {face: face for face in CLIENT_TRAY_FACES}
 
 
 def test_a_terminals_output_its_clearing_and_its_end_are_pushed(

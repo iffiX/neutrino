@@ -640,7 +640,9 @@ def test_the_stand_in_lands_beside_the_core(monkeypatch, tmp_path):
         build_client_windows.bundled, "stage_windows_binaries", stage_windows_binaries
     )
     monkeypatch.setattr(build_client_windows, "_fetch_bootstrapper", lambda: b"MZ")
-    monkeypatch.setattr(build_client_windows.icons, "write_ico", lambda path: path)
+    monkeypatch.setattr(
+        build_client_windows.icons, "write_ico", lambda path, **options: path
+    )
     monkeypatch.setattr(
         build_client_windows.wix_build,
         "write_license_rtf",

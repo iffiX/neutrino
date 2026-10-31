@@ -164,6 +164,17 @@ CLIENT_DESKTOP_NAME = "neutrino_client"
 CLIENT_GUI_WINDOW_TITLE_KEY = "ui.window.title"
 CLIENT_TRAY_OPEN_LABEL_KEY = "ui.tray.open"
 CLIENT_TRAY_QUIT_LABEL_KEY = "ui.tray.quit"
+# The tray's faces, files of images/icons/neutrino_client.
+CLIENT_TRAY_FACE_CONNECTED = "wink"
+CLIENT_TRAY_FACE_CONNECTING = "waiting"
+CLIENT_TRAY_FACE_UNREACHABLE = "error"
+CLIENT_TRAY_FACE_IDLE = "sleep"
+CLIENT_TRAY_FACES = (
+    CLIENT_TRAY_FACE_CONNECTED,
+    CLIENT_TRAY_FACE_CONNECTING,
+    CLIENT_TRAY_FACE_UNREACHABLE,
+    CLIENT_TRAY_FACE_IDLE,
+)
 CLIENT_GUI_WINDOW_WIDTH = 1080
 CLIENT_GUI_WINDOW_HEIGHT = 640
 # What the window's frame and title bar take beyond its page, kept free of

@@ -28,7 +28,7 @@ from neutrino_client.gui.bridge import GuiBridge
 from neutrino_client.gui.shell import open_shell_window
 from neutrino_client.words import word
 from tests.gui.test_bridge import FakeGuiChannel
-from tests.gui.test_tray_linux import FakeGtk
+from tests.gui.test_tray_linux import FakeGtk, FakeIndicatorModule
 from tests.gui.test_tray_macos import FakeAppKit, FakeNSObject, FakeStatusBar
 
 CLIENT_ROOT = Path(__file__).resolve().parents[2]
@@ -150,6 +150,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
             "on_quit": quit_it,
             "on_show_ready": show_ready,
             "on_push_ready": None,
+            "on_tray_ready": None,
         }
     ]
 
@@ -182,6 +183,7 @@ class FakeTrayIcon:
         self.on_quit = on_quit
         self.starts = 0
         self.stops = 0
+        self.shown = []
         FakeTrayIcon.made.append(self)
 
     def start(self) -> None:
@@ -189,6 +191,9 @@ class FakeTrayIcon:
 
     def stop(self) -> None:
         self.stops += 1
+
+    def set_icon(self, icon_path: str) -> None:
+        self.shown.append(icon_path)
 
 
 def windows_toolkit(monkeypatch) -> FakeWebviewModule:
@@ -278,6 +283,25 @@ def test_the_windows_tray_opens_the_window_again_and_quits_the_client(monkeypatc
     assert window.is_destroyed is True
     # Quit is the one close that goes through, or the loop never ends.
     assert window.events.closing.fire() == [True]
+
+
+def test_the_windows_shell_hands_back_the_trays_icon_change(monkeypatch):
+    windows_toolkit(monkeypatch)
+    handed = []
+
+    webview2.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_tray_ready=handed.append,
+    )
+    (set_icon,) = handed
+
+    set_icon("C:\\icons\\error.ico")
+
+    (icon,) = FakeTrayIcon.made
+    assert icon.shown == ["C:\\icons\\error.ico"]
 
 
 def test_a_missing_pywebview_refuses_with_the_shells_own_code(monkeypatch):
@@ -549,6 +573,28 @@ def test_the_show_the_shell_hands_back_brings_the_window_up(monkeypatch):
     show()
 
     assert gtk.windows[0].presents == 1
+
+
+def test_the_linux_shell_changes_the_trays_icon_on_the_main_loop(monkeypatch):
+    glib, _gtk = linux_toolkit(monkeypatch)
+    module = FakeIndicatorModule()
+    monkeypatch.setattr(tray_module, "load_indicator", lambda: module)
+    handed = []
+
+    webkitgtk.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_tray_ready=handed.append,
+    )
+    (set_icon,) = handed
+    idles_before = len(glib.idles)
+
+    set_icon("neutrino_client_error")
+
+    assert len(glib.idles) == idles_before + 1
+    assert module.made[0].icon == "neutrino_client_error"
 
 
 def window_menu(gtk):
@@ -989,6 +1035,26 @@ def test_the_show_the_macos_shell_hands_back_brings_the_window_up(monkeypatch):
 
     assert FakeCocoaWindow.made[0].shows == 1
     assert len(FakeOperationQueue.blocks) == 1
+
+
+def test_the_macos_shell_changes_the_menu_bar_icon_on_the_main_queue(monkeypatch):
+    macos_toolkit(monkeypatch)
+    handed = []
+
+    wkwebview.open_window(
+        title="t",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_tray_ready=handed.append,
+    )
+    (set_icon,) = handed
+
+    set_icon("/icons/error.png")
+
+    assert len(FakeOperationQueue.blocks) == 1
+    (item,) = FakeStatusBar.items
+    assert item.button().image.path == "/icons/error.png"
 
 
 def test_the_macos_window_pushes_state_through_the_main_queue(monkeypatch):

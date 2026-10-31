@@ -6,6 +6,7 @@ falling back to GTK's status icon on a machine without the indicator.
 """
 
 import ctypes
+import os
 
 from neutrino_client.constants import CLIENT_DESKTOP_NAME
 
@@ -56,7 +57,7 @@ class LinuxTrayIcon:
             title: What the icon calls itself.
             open_label: What the menu's first item says.
             quit_label: What the menu's second item says.
-            icon_path: The icon file, empty to use the installed theme icon.
+            icon_path: The icon file or theme name, empty for the launcher's.
             on_open: Called when the person asks for the window.
             on_quit: Called when the person asks the client to stop.
             gtk: The ``Gtk`` bindings the window already loaded.
@@ -82,6 +83,17 @@ class LinuxTrayIcon:
         """Whether an icon actually reached the status area."""
         return self._indicator is not None or self._status_icon is not None
 
+    def set_icon(self, icon: str) -> None:
+        """Show another icon. The caller is on the GTK main thread.
+
+        Args:
+            icon: The icon file or theme name.
+        """
+        if self._indicator is not None:
+            self._indicator.set_icon_full(icon, self._title)
+        elif self._status_icon is not None:
+            self._show_on_status_icon(icon)
+
     def _attach(self) -> None:
         """Hand the menu to the indicator, or to a status icon instead."""
         if self._indicator_module is not None:
@@ -98,15 +110,18 @@ class LinuxTrayIcon:
         status_icon = getattr(self._gtk, "StatusIcon", None)
         if status_icon is None:
             return
-        icon = status_icon()
-        if self._icon_path:
-            icon.set_from_file(self._icon_path)
+        self._status_icon = status_icon()
+        self._show_on_status_icon(self._icon_path or CLIENT_DESKTOP_NAME)
+        self._status_icon.set_tooltip_text(self._title)
+        self._status_icon.connect("activate", self._on_activated)
+        self._status_icon.connect("popup-menu", self._on_popup)
+
+    def _show_on_status_icon(self, icon: str) -> None:
+        """Draw a file or a theme name on the status icon."""
+        if os.path.isabs(icon):
+            self._status_icon.set_from_file(icon)
         else:
-            icon.set_from_icon_name(CLIENT_DESKTOP_NAME)
-        icon.set_tooltip_text(self._title)
-        icon.connect("activate", self._on_activated)
-        icon.connect("popup-menu", self._on_popup)
-        self._status_icon = icon
+            self._status_icon.set_from_icon_name(icon)
 
     def _build_menu(self):
         """The two-item menu both paths share, or None without a toolkit."""

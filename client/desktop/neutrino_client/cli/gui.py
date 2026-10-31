@@ -35,7 +35,11 @@ from neutrino_client.constants import (
     CLIENT_LOG_KEEP_BYTES,
 )
 from neutrino_client.control import client, routes
-from neutrino_client.control.page import control_page_html, window_icon_path
+from neutrino_client.control.page import (
+    control_page_html,
+    tray_icons,
+    window_icon_path,
+)
 from neutrino_client.control.server import ControlServer
 from neutrino_client.core.resident import ClientResident, end_process
 from neutrino_client.gui.bridge import GuiBridge
@@ -45,6 +49,7 @@ from neutrino_client.exceptions import (
     PlatformUnsupportedError,
 )
 from neutrino_client.gui.shell import open_shell_window
+from neutrino_client.gui.tray_face import tray_face
 from neutrino_client.platforms.detect import detect_platform
 
 
@@ -228,6 +233,19 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
         resident.subscribe(push_state)
         resident.on_terminal_output = push_terminal
 
+    def register_tray(set_icon) -> None:
+        icons = tray_icons(os_name)
+        shown = {"face": ""}
+
+        def show_state() -> None:
+            face = tray_face(resident.hubs())
+            if face != shown["face"]:
+                shown["face"] = face
+                set_icon(icons[face])
+
+        resident.subscribe(show_state)
+        show_state()
+
     language = resident.language()
     try:
         open_shell_window(
@@ -241,6 +259,7 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
             on_quit=resident.shutdown,
             on_show_ready=register_show,
             on_push_ready=register_push,
+            on_tray_ready=register_tray,
         )
     except GuiShellUnavailableError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)

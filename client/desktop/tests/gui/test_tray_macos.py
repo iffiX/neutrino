@@ -13,7 +13,7 @@ from neutrino_client.constants import (
     CLIENT_TRAY_OPEN_LABEL_KEY,
     CLIENT_TRAY_QUIT_LABEL_KEY,
 )
-from neutrino_client.gui.tray_macos import MacosTrayIcon
+from neutrino_client.gui.tray_macos import STATUS_ICON_EDGE, MacosTrayIcon
 from neutrino_client.words import word
 
 TRAY_OPEN = word(CLIENT_DEFAULT_LANGUAGE, CLIENT_TRAY_OPEN_LABEL_KEY)
@@ -193,6 +193,25 @@ def test_the_icon_file_is_drawn_at_menu_bar_size(clicks):
     assert button.image.path == "/icons/x.png"
     assert button.image.size == (18, 18)
     assert button.title == ""
+
+
+def test_the_item_changes_to_another_icon_at_menu_bar_size(clicks):
+    tray = macos_tray(clicks)
+
+    tray.set_icon("/icons/error.png")
+
+    image = tray._status_item.button().image
+    assert image.path == "/icons/error.png"
+    assert image.size == (STATUS_ICON_EDGE, STATUS_ICON_EDGE)
+
+
+def test_an_icon_that_does_not_load_leaves_the_item_as_it_is(clicks):
+    tray = macos_tray(clicks)
+    before = tray._status_item.button().image
+
+    tray.set_icon("/icons/x.missing")
+
+    assert tray._status_item.button().image is before
 
 
 @pytest.mark.parametrize("icon_path", ["", "/icons/x.missing"])

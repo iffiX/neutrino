@@ -93,6 +93,14 @@ class WindowsTrayIcon:
         self._win32.remove_icon(window=window)
         self._win32.close_window(window=window)
 
+    def set_icon(self, icon_path: str) -> None:
+        """Show another icon, from any thread.
+
+        Args:
+            icon_path: The ``.ico`` file.
+        """
+        self._win32.set_icon(icon_path=icon_path)
+
     def _serve(self) -> None:
         """Own the icon's window for as long as its pump runs."""
         self._window = self._win32.create_window(
@@ -169,6 +177,8 @@ class _Win32TrayApi:
         # Held so the trampoline the window keeps is not collected under it.
         self._procedure = None
         self._notify_data = None
+        # Each icon file's handle, by path. Loaded once and kept until the end.
+        self._icon_handles: dict = {}
 
     def create_window(self, *, title: str, on_event) -> int:
         """Register a class and make the unseen window behind the icon.
@@ -238,6 +248,19 @@ class _Win32TrayApi:
         self._notify_data = data
         self._shell32.Shell_NotifyIconW(win32.NIM_ADD, ctypes.byref(data))
 
+    def set_icon(self, *, icon_path: str) -> None:
+        """Change the icon in the notification area.
+
+        Args:
+            icon_path: The ``.ico`` file.
+        """
+        data = self._notify_data
+        if data is None:
+            return
+        data.uFlags = win32.NIF_ICON
+        data.hIcon = self._icon_handle(icon_path)
+        self._shell32.Shell_NotifyIconW(win32.NIM_MODIFY, ctypes.byref(data))
+
     def remove_icon(self, *, window: int) -> None:
         """Take the icon out of the notification area.
 
@@ -303,16 +326,22 @@ class _Win32TrayApi:
         self._user32.PostMessageW(ctypes.c_void_p(window), win32.WM_CLOSE, 0, 0)
 
     def _icon_handle(self, icon_path: str) -> int:
-        """The icon file's handle, or the stock application icon."""
+        """The icon file's handle at the notification area's size, or the stock icon."""
+        if icon_path in self._icon_handles:
+            return self._icon_handles[icon_path]
+        handle = None
         if icon_path:
             handle = self._user32.LoadImageW(
                 None,
                 icon_path,
                 win32.IMAGE_ICON,
-                0,
-                0,
-                win32.LR_LOADFROMFILE | win32.LR_DEFAULTSIZE,
+                self._user32.GetSystemMetrics(win32.SM_CXSMICON),
+                self._user32.GetSystemMetrics(win32.SM_CYSMICON),
+                win32.LR_LOADFROMFILE,
             )
-            if handle:
-                return handle
-        return self._user32.LoadIconW(None, ctypes.c_void_p(win32.IDI_APPLICATION))
+        if not handle:
+            handle = self._user32.LoadIconW(
+                None, ctypes.c_void_p(win32.IDI_APPLICATION)
+            )
+        self._icon_handles[icon_path] = handle
+        return handle

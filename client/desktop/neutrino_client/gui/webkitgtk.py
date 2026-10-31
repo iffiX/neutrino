@@ -50,6 +50,7 @@ def open_window(
     on_quit=None,
     on_show_ready=None,
     on_push_ready=None,
+    on_tray_ready=None,
 ) -> None:
     """Open the window and run the GTK main loop until Quit ends it.
 
@@ -64,6 +65,8 @@ def open_window(
         on_push_ready: Called with a callable that hands the page one
             state payload; the page redraws from it without asking.
         on_show_ready: Called with a callable that brings the window up,
+            safe to call from any thread.
+        on_tray_ready: Called with a callable that shows another tray icon,
             safe to call from any thread.
 
     Raises:
@@ -137,7 +140,11 @@ def open_window(
     window.add(view)
     view.load_html(html, "about:blank")
     window.connect("delete-event", on_delete)
-    LinuxTrayIcon(
+
+    def set_tray_icon(icon: str) -> None:
+        GLib.idle_add(tray.set_icon, icon)
+
+    tray = LinuxTrayIcon(
         title=title,
         open_label=words.word(language, CLIENT_TRAY_OPEN_LABEL_KEY),
         quit_label=words.word(language, CLIENT_TRAY_QUIT_LABEL_KEY),
@@ -153,6 +160,8 @@ def open_window(
         on_show_ready(show_window)
     if on_push_ready is not None:
         on_push_ready(push_state)
+    if on_tray_ready is not None:
+        on_tray_ready(set_tray_icon)
     Gtk.main()
 
 

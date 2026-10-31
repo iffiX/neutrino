@@ -173,6 +173,11 @@ class FakeIndicator:
         self.status = ""
         self.title = ""
         self.menu = None
+        self.icon_description = ""
+
+    def set_icon_full(self, icon: str, description: str) -> None:
+        self.icon = icon
+        self.icon_description = description
 
     def set_status(self, status) -> None:
         self.status = status
@@ -307,6 +312,36 @@ def test_a_status_icon_with_no_file_falls_back_to_the_installed_icon(
     icon = linux_tray(clicks, icon_path="")
 
     assert icon._status_icon.icon_name == CLIENT_DESKTOP_NAME
+
+
+def test_the_indicator_shows_another_icon(clicks):
+    module = FakeIndicatorModule()
+    tray = linux_tray(clicks, indicator=module)
+
+    tray.set_icon("neutrino_client_error")
+
+    (indicator,) = module.made
+    assert indicator.icon == "neutrino_client_error"
+    assert indicator.icon_description == "Neutrino client"
+
+
+@pytest.mark.parametrize(
+    "icon, file_path, icon_name",
+    [
+        ("/icons/error.png", "/icons/error.png", ""),
+        ("neutrino_client_error", "/icons/x.png", "neutrino_client_error"),
+    ],
+)
+def test_the_status_icon_shows_another_file_or_theme_name(
+    clicks, monkeypatch, icon, file_path, icon_name
+):
+    monkeypatch.setattr(tray_module, "load_indicator", lambda: None)
+    tray = linux_tray(clicks)
+
+    tray.set_icon(icon)
+
+    assert tray._status_icon.file_path == file_path
+    assert tray._status_icon.icon_name == icon_name
 
 
 def test_a_toolkit_with_no_status_area_shows_nothing_and_does_not_fail(

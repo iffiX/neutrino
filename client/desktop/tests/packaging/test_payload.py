@@ -16,7 +16,8 @@ import zipfile
 
 import pytest
 
-from shared import nuitka_build
+from neutrino_client.constants import CLIENT_TRAY_FACES
+from shared import icons, nuitka_build
 import netbird_payload
 import payload
 
@@ -127,6 +128,16 @@ def test_the_staged_tree_carries_the_page_and_the_window_icon(tmp_path):
     assert (gui / "app.js").is_file()
     assert (gui / "style.css").is_file()
     assert (gui / "neutrino_client.png").is_file()
+
+
+def test_the_staged_tree_carries_each_tray_face(tmp_path):
+    staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
+
+    gui = staged / "data" / "gui"
+    for face in CLIENT_TRAY_FACES:
+        assert (gui / f"tray_{face}.png").read_bytes() == icons.png(64, face=face)
+        members = (gui / f"tray_{face}.ico").read_bytes()
+        assert icons.png(16, face=face) in members
 
 
 def test_the_staged_tree_carries_both_word_catalogs(tmp_path):

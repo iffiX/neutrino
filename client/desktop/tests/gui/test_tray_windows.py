@@ -40,6 +40,7 @@ class FakeWin32TrayApi:
 
     Attributes:
         added: Every icon put up.
+        shown: Every icon changed to.
         removed: Every window an icon was taken down for.
         menus: Every menu dropped.
         chosen: What the next ``popup_menu`` returns.
@@ -48,6 +49,7 @@ class FakeWin32TrayApi:
     def __init__(self, chosen: int = 0):
         self.on_event = None
         self.added = []
+        self.shown = []
         self.removed = []
         self.menus = []
         self.closed = []
@@ -61,6 +63,9 @@ class FakeWin32TrayApi:
 
     def add_icon(self, *, window: int, icon_path: str, tip: str) -> None:
         self.added.append({"window": window, "icon_path": icon_path, "tip": tip})
+
+    def set_icon(self, *, icon_path: str) -> None:
+        self.shown.append(icon_path)
 
     def remove_icon(self, *, window: int) -> None:
         self.removed.append(window)
@@ -115,6 +120,16 @@ def test_the_icon_goes_up_on_start_and_comes_down_on_stop(clicks):
     assert win32.is_pumping is True
     assert win32.removed == [4242]
     assert win32.closed == [4242]
+
+
+def test_the_icon_changes_to_another_file(clicks):
+    win32 = FakeWin32TrayApi()
+    icon = windows_tray(clicks, win32=win32)
+    icon.start()
+
+    icon.set_icon("C:\\icons\\error.ico")
+
+    assert win32.shown == ["C:\\icons\\error.ico"]
 
 
 def test_stopping_an_icon_that_never_went_up_does_nothing(clicks):

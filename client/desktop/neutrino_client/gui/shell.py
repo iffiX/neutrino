@@ -52,6 +52,7 @@ def open_shell_window(
     on_quit=None,
     on_show_ready=None,
     on_push_ready=None,
+    on_tray_ready=None,
 ):
     """Open the platform's window and block until its Quit ends the loop.
 
@@ -67,6 +68,8 @@ def open_shell_window(
         on_show_ready: Called with a callable that brings the window up.
         on_push_ready: Called with a callable that hands the page one state
             payload to redraw from, or one piece of a terminal it shows.
+        on_tray_ready: Called with a callable that shows another tray icon,
+            safe to call from any thread.
 
     Raises:
         GuiShellUnavailableError: When the platform has no shell, or its
@@ -85,6 +88,7 @@ def open_shell_window(
         on_quit=on_quit,
         on_show_ready=on_show_ready,
         on_push_ready=on_push_ready,
+        on_tray_ready=on_tray_ready,
     )
 
 

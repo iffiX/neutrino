@@ -13,6 +13,7 @@ Not pure: copies files.
 import shutil
 from pathlib import Path
 
+from neutrino_client.constants import CLIENT_TRAY_FACES
 from shared import icons
 
 CLIENT_ROOT = Path(__file__).resolve().parent.parent
@@ -22,10 +23,15 @@ VENDOR_DIR = FRONTEND_DIR / "vendor"
 # The window icon's edge, and the launcher's edges in the icon theme.
 WINDOW_ICON_EDGE = 256
 LAUNCHER_ICON_EDGES = (16, 32, 48, 64, 128, 256)
+# A tray face's edges in the icon theme, in its .ico on Windows, and in its
+# file on macOS.
+TRAY_THEME_EDGES = (16, 22, 24, 32, 48)
+TRAY_ICO_EDGES = (16, 20, 24, 32, 40, 48)
+TRAY_PNG_EDGE = 64
 
 
 def stage_gui(package_dir: Path) -> None:
-    """Copy the page, its word catalogs and the window icon into ``data/gui``.
+    """Copy the page, its word catalogs and the window and tray icons into ``data/gui``.
 
     Args:
         package_dir: The copied ``neutrino_client`` package in a build tree.
@@ -52,10 +58,13 @@ def stage_gui(package_dir: Path) -> None:
     # Windows loads a window and tray icon from an .ico and from nothing
     # else; a .png there leaves the stock grey application icon.
     icons.write_ico(gui_dir / "neutrino_client.ico")
+    for face in CLIENT_TRAY_FACES:
+        icons.write_png(gui_dir / f"tray_{face}.png", TRAY_PNG_EDGE, face=face)
+        icons.write_ico(gui_dir / f"tray_{face}.ico", face=face, edges=TRAY_ICO_EDGES)
 
 
 def stage_launcher_icons(tree: Path, desktop_name: str) -> None:
-    """Write the launcher's icons into a Linux package's icon theme.
+    """Write the launcher's and the tray's icons into a Linux package's icon theme.
 
     Args:
         tree: The directory standing in for the filesystem root.
@@ -70,3 +79,12 @@ def stage_launcher_icons(tree: Path, desktop_name: str) -> None:
             edge,
         )
         target.chmod(0o644)
+    for face in CLIENT_TRAY_FACES:
+        for edge in TRAY_THEME_EDGES:
+            target = icons.write_png(
+                tree
+                / f"usr/share/icons/hicolor/{edge}x{edge}/apps/{desktop_name}_{face}.png",
+                edge,
+                face=face,
+            )
+            target.chmod(0o644)

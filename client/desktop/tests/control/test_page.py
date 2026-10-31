@@ -24,7 +24,11 @@ import pytest
 
 import neutrino_client
 from neutrino_client import words
-from neutrino_client.constants import CLIENT_LANGUAGES, CLIENT_THEMES
+from neutrino_client.constants import (
+    CLIENT_LANGUAGES,
+    CLIENT_THEMES,
+    CLIENT_TRAY_FACES,
+)
 from neutrino_client.control import page
 from neutrino_client.services.ai import AI_CLAUDE_SLOTS, AI_REASONING_EFFORTS
 
@@ -841,6 +845,36 @@ def test_windows_is_given_the_icon_it_can_actually_load(tmp_path, monkeypatch):
 
     monkeypatch.setattr(page.os, "name", "posix")
     assert page.window_icon_path().endswith("neutrino_client.png")
+
+
+@pytest.mark.parametrize(
+    "os_name, expected",
+    [
+        ("linux", "neutrino_client_error"),
+        ("windows", "tray_error.ico"),
+        ("darwin", "tray_error.png"),
+    ],
+)
+def test_a_package_gives_the_tray_each_faces_icon(
+    tmp_path, monkeypatch, os_name, expected
+):
+    (tmp_path / "neutrino_client.png").write_bytes(b"png")
+    monkeypatch.setattr(page, "GUI_DATA_DIR", tmp_path)
+
+    icons = page.tray_icons(os_name)
+
+    assert set(icons) == set(CLIENT_TRAY_FACES)
+    assert icons["error"].endswith(expected)
+
+
+def test_a_checkout_gives_the_tray_the_source_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(page, "GUI_DATA_DIR", tmp_path)
+
+    icons = page.tray_icons("linux")
+
+    for face, icon in icons.items():
+        assert icon.endswith(f"neutrino_client/wolf_{face}_1024.png")
+        assert pathlib.Path(icon).is_file()
 
 
 def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
