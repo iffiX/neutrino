@@ -1714,11 +1714,11 @@ def test_a_memory_named_by_a_module_without_a_container_entry_is_refused(
 
 # --- the modules an entry requires ---
 
-# The platforms the agent reports: a Linux of the Debian or RHEL family or
-# of none, Windows and macOS.
+# The platforms the agent reports: a Linux of the Debian, RHEL or Arch family
+# or of none, Windows and macOS.
 REPORTED_PLATFORMS = [
     {"os": "linux", "family": family, "arch": arch}
-    for family in ("debian", "rhel", "")
+    for family in ("debian", "rhel", "arch", "")
     for arch in ("amd64", "arm64")
 ] + [
     {"os": os_name, "family": "", "arch": arch}

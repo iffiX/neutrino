@@ -54,6 +54,19 @@ def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):
     assert detect_module.platform_tuple()["family"] == ""
 
 
+@pytest.mark.parametrize(
+    "os_release",
+    ["ID=arch\n", "ID=manjaro\nID_LIKE=arch\n", 'ID=endeavouros\nID_LIKE="arch"\n'],
+)
+def test_an_arch_machine_reports_the_arch_family(monkeypatch, tmp_path, os_release):
+    release = tmp_path / "os-release"
+    release.write_text(os_release)
+    monkeypatch.setattr(detect_module, "OS_RELEASE_PATH", str(release))
+    monkeypatch.setattr(detect_module.sys, "platform", "linux")
+
+    assert detect_module.platform_tuple()["family"] == "arch"
+
+
 class WindowsVersion:
     build = 26100
 
