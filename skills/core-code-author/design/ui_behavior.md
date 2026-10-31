@@ -1125,7 +1125,9 @@ after its press until the machine reports the module where its `want` asks,
 at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
 `running` or `stopped` on Linux, and on Windows and macOS `running` with the
 stored account's machine running; under `stopped` it is `stopped`.
-`ui.api.applied` shows only then, and a failure shows under its step.
+`ui.api.applied` shows only then, and a failure shows under its step. A failure
+reported at the press belongs to the run before it, and ends the wait only when
+the machine reports nothing else within 5 s.
 
 On every system the tab has **Hub containers** (`ui.containers.hub_title`)
 between **Running now** and **Registry mirrors**: one read-only row per hub
