@@ -854,8 +854,9 @@ class InstancesModuleRunner(ModuleRunner):
         """The configuration parsed, and each account it names as the machine has it.
 
         Raises:
-            ModuleApplyError: The hooks' refusal, and ``account_unknown
-                {account}`` for an account the machine lacks.
+            ModuleApplyError: The hooks' refusal, ``account_unknown
+                {account}`` for an account the machine lacks, and
+                ``account_no_profile {account}`` for one with no profile yet.
         """
         parsed = self._hooks.parse(config)
         entries = {
@@ -868,9 +869,10 @@ class InstancesModuleRunner(ModuleRunner):
         """The configuration parsed, one account's instance in it, and the account.
 
         Raises:
-            ModuleApplyError: The hooks' refusal, and ``account_unknown
+            ModuleApplyError: The hooks' refusal, ``account_unknown
                 {account}`` for an account the machine lacks or the
-                configuration does not name.
+                configuration does not name, and ``account_no_profile
+                {account}`` for one with no profile yet.
         """
         parsed = self._hooks.parse(config)
         for instance in parsed.instances:
@@ -882,12 +884,18 @@ class InstancesModuleRunner(ModuleRunner):
         """One account as the machine has it.
 
         Raises:
-            ModuleApplyError: ``account_unknown {account}`` for one it lacks.
+            ModuleApplyError: ``account_unknown {account}`` for one it lacks,
+                ``account_no_profile {account}`` for one with no profile yet.
         """
         try:
             return self._machine.lookup_account(account)
         except KeyError:
-            raise ModuleApplyError("account_unknown", {"account": account}) from None
+            code = (
+                "account_no_profile"
+                if self._platform.has_account(account)
+                else "account_unknown"
+            )
+            raise ModuleApplyError(code, {"account": account}) from None
 
     def _held(self) -> dict:
         """Every live record, by account."""

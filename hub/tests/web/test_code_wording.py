@@ -159,6 +159,7 @@ CONTAINERS_CODES = (
     "machine_set_failed",
     "machine_unreachable",
     "account_unknown",
+    "account_no_profile",
     "credential_missing",
     "credential_invalid",
     "account_logon_refused",

@@ -5,6 +5,7 @@
   "code.account_duplicate": "{account} 已经是这台机器的可用账户了。",
   "code.account_home_unknown": "这台机器还没有报告 {account} 的家目录，请填写它的共享路径。",
   "code.account_invalid": "非法账户名：这台机器上的这个模块不能用 {account}。",
+  "code.account_no_profile": "{account} 还没有在这台机器上登录过。请先用这个账户登录一次，再重试。",
   "code.account_not_enabled": "这台机器的终端没有启用 {account}。",
   "code.account_unknown": "这台机器上没有叫 {account} 的账户。",
   "code.agent_internal": "这台机器内部出错了。",

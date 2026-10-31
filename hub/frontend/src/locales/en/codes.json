@@ -5,6 +5,7 @@
   "code.account_duplicate": "{account} is already one of this machine's accounts.",
   "code.account_home_unknown": "The machine has not reported a home directory for {account}; set its share path.",
   "code.account_invalid": "{account} cannot be an account name for this module on this machine.",
+  "code.account_no_profile": "{account} has never signed in on this machine. Sign in as {account} once, then try again.",
   "code.account_not_enabled": "{account} is not enabled for this machine's terminal.",
   "code.account_unknown": "This machine has no account called {account}.",
   "code.agent_internal": "Something went wrong on the machine.",

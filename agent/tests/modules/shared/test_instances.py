@@ -406,6 +406,20 @@ def test_an_account_no_longer_named_loses_its_service_record_and_forwarder(
     assert FakeForwarder.made[0].is_closed
 
 
+def test_an_account_with_no_profile_is_refused_by_name_before_anything_is_written(
+    runner, systemd, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(Platform, "has_account", lambda self, account: True)
+
+    with pytest.raises(ModuleApplyError) as caught:
+        runner.apply({"instances": [dict(INSTANCE, account="fresh")]})
+
+    assert caught.value.code == "account_no_profile"
+    assert caught.value.params == {"account": "fresh"}
+    assert systemd.calls == [] and runner.hooks.prepared == []
+    assert os.listdir(tmp_path / "systemd") == []
+
+
 def test_an_account_the_machine_lacks_is_refused_before_anything_is_written(
     runner, systemd, tmp_path
 ):

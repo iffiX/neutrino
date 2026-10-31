@@ -68,6 +68,9 @@ class Platform(AgentPlatform):
     def agent_log_path(self):
         return self._log_path
 
+    def has_account(self, account):
+        return account in ("lab", "dev")
+
 
 class BinPlatform(Platform):
     def agent_bin_dir(self):
