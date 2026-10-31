@@ -371,6 +371,16 @@ jobs:
           path: dist/*-ios.ipa
           if-no-files-found: error
 
+  # install.sh parsed by macOS's own /bin/sh, bash 3.2, which reads some
+  # constructs bash 5 and dash accept as errors.
+  install_script_macos:
+    name: install.sh under macOS's /bin/sh
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: /bin/sh -n packaging/install/install.sh
+
   # The two one-command installers, each held to its language's linter.
   install_scripts:
     name: shellcheck and PSScriptAnalyzer

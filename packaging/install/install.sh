@@ -107,7 +107,7 @@ process_name() {
     comm=$(cat "$PROC_DIR/$1/comm" 2>/dev/null) || return 0
     name=$(tr '\0' '\n' <"$PROC_DIR/$1/cmdline" 2>/dev/null | while IFS= read -r word; do
         case "${word##*/}" in
-            "$comm"*) echo "${word##*/}" && break ;;
+            ("$comm"*) echo "${word##*/}" && break ;;
         esac
     done)
     echo "${name:-$comm}"
