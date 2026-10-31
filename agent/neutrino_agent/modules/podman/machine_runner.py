@@ -839,13 +839,16 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def journal_text(self, lines: int) -> list:
         """The keeper's log, then the agent's lines that name the module.
 
+        With no record the keeper is the one of the account the configuration
+        names.
+
         Args:
             lines: How many lines to return at most.
 
         Returns:
             The lines, oldest first.
         """
-        record = self._record()
+        record = self._record() or self._configured_record()
         own = []
         if record:
             path = account_service.log_path(

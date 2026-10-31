@@ -1361,6 +1361,24 @@ def test_stop_with_no_record_stops_and_disables_the_configured_keeper(rig):
     assert rig.lines[-1] == "podman: stopped the keeper of me"
 
 
+def test_the_journal_with_no_record_reads_the_configured_keeper_s_log(rig):
+    unanswered_machine(rig)
+
+    outcome = rig.runner.command("journal", {"lines": 10})
+
+    assert outcome["output"].splitlines() == ["vfkit exited"]
+
+
+def test_the_journal_with_no_record_and_no_account_reads_the_agent_s_lines(
+    rig, tmp_path
+):
+    (tmp_path / "agent.log").write_text("podman: no account is named\n")
+
+    outcome = rig.runner.command("journal", {"lines": 10})
+
+    assert outcome["output"].splitlines() == ["podman: no account is named"]
+
+
 def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):
     unanswered_machine(rig)
 
